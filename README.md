@@ -6,12 +6,17 @@ Desktop music visualizer. Tauri 2 + React + TypeScript, WebGPU rendering (Canvas
 
 - Local file playback (mp3/flac/wav/ogg/m4a) via Web Audio — drag & drop or file picker
 - Log-spaced spectrum analysis, asymmetric smoothing, peak hold, band energies, spectral-flux beat detection
-- 8 WebGPU shader presets with live-tweakable parameters (persisted per preset):
+- 9 WebGPU shader presets with live-tweakable parameters (persisted per preset):
   Spectrum Bars, Radial Burst, Oscilloscope, Starfield Warp, Tunnel,
-  Kaleido Nebula, Metaballs, LED Matrix
-- Deterministic offline analysis path (own FFT) — foundation for frame-perfect
-  MP4 export, see [docs/EXPORT-DESIGN.md](docs/EXPORT-DESIGN.md); sync budget
-  documented there (live skew ≤ ~30 ms constant, export sample-exact)
+  Kaleido Nebula, Metaballs, LED Matrix, Voice Orb (voiceover/narration mode)
+- Background system on every preset: preset-animated, any solid color
+  (incl. chroma green/magenta swatches), or transparent (luma alpha,
+  checkerboard preview)
+- **MP4 export**: offline-rendered WebCodecs pipeline (H.264 + AAC, hardware
+  encode, faster than realtime) — WYSIWYG from the live view, sample-exact
+  sync by construction, 720p→4K / 30/60 fps / auto or manual bitrate.
+  Design: [docs/EXPORT-DESIGN.md](docs/EXPORT-DESIGN.md); live skew ≤ ~30 ms
+  constant, export drift-free
 - Three synthesized demo tracks (120 BPM house / 174 BPM DnB / 70 BPM ambient)
   for instant cross-style testing without files
 

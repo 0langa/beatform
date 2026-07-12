@@ -1,5 +1,5 @@
 import type { AudioFeatures } from "../audio/types";
-import type { ParamValues, PresetDef, Renderer } from "./types";
+import type { BgSettings, ParamValues, PresetDef, Renderer } from "./types";
 
 /**
  * Canvas2D fallback renderer — used when WebGPU is unavailable (old WebView2
@@ -11,6 +11,7 @@ export class Canvas2DRenderer implements Renderer {
 
   private ctx: CanvasRenderingContext2D;
   private canvas: HTMLCanvasElement;
+  private bg: BgSettings = { mode: 0, color: [0, 0, 0] };
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -21,6 +22,10 @@ export class Canvas2DRenderer implements Renderer {
 
   setPreset(_preset: PresetDef): void {
     // Single built-in look; params are read live in render().
+  }
+
+  setBackground(bg: BgSettings): void {
+    this.bg = bg;
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -40,8 +45,16 @@ export class Canvas2DRenderer implements Renderer {
     const hueSpread = params.hueSpread ?? 80;
     const gap = params.barGap ?? 0.22;
 
-    ctx.fillStyle = `hsl(${hue + 40} 50% ${4 + f.beatIntensity * 6}%)`;
-    ctx.fillRect(0, 0, W, H);
+    if (this.bg.mode === 2) {
+      ctx.clearRect(0, 0, W, H);
+    } else if (this.bg.mode === 1) {
+      const [br, bgc, bb] = this.bg.color;
+      ctx.fillStyle = `rgb(${br * 255} ${bgc * 255} ${bb * 255})`;
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      ctx.fillStyle = `hsl(${hue + 40} 50% ${4 + f.beatIntensity * 6}%)`;
+      ctx.fillRect(0, 0, W, H);
+    }
 
     const n = f.bins.length;
     const bw = W / n;

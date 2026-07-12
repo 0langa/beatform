@@ -114,6 +114,11 @@ export class AudioEngine {
     return this.buffer?.duration ?? 0;
   }
 
+  /** Decoded track, if any — the export pipeline's input. */
+  get audioBuffer(): AudioBuffer | null {
+    return this.buffer;
+  }
+
   get currentTime(): number {
     if (!this.buffer) return 0;
     if (!this._playing) return this.offset;

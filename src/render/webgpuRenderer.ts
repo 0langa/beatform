@@ -1,11 +1,11 @@
 import type { AudioFeatures } from "../audio/types";
-import type { ParamValues, PresetDef, Renderer } from "./types";
+import type { BgSettings, ParamValues, PresetDef, Renderer } from "./types";
 
 const MAX_PARAMS = 16;
 /** Downsampled waveform points exposed to shaders */
 const WAVE_POINTS = 512;
-/** Uniform struct size in bytes (12 x 4) */
-const UNIFORM_SIZE = 48;
+/** Uniform struct size in bytes (12 x 4 scalars + vec4 bgColor) */
+const UNIFORM_SIZE = 64;
 
 /**
  * WebGPU renderer. Fullscreen-triangle pass; the active preset supplies the
@@ -29,7 +29,8 @@ struct Uniforms {
   waveCount: u32,
   progress: f32,
   energy: f32,
-  _pad1: f32,
+  bgMode: u32,
+  bgColor: vec4f,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> bins: array<f32>;
@@ -134,7 +135,19 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VSOut {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-  return preset(in.uv);
+  var out = preset(in.uv);
+  // Central background compositing: presets author light-over-black
+  // (premultiplied form), so a luma-derived alpha lets us re-base them on
+  // any background or none — without touching preset code.
+  if (u.bgMode != 0u) {
+    let a = clamp(max(out.r, max(out.g, out.b)), 0.0, 1.0);
+    if (u.bgMode == 1u) {
+      out = vec4f(u.bgColor.rgb * (1.0 - a) + out.rgb, 1.0);
+    } else {
+      out = vec4f(out.rgb, a); // premultiplied alpha
+    }
+  }
+  return out;
 }
 `;
 
@@ -144,7 +157,8 @@ export class WebGPURenderer implements Renderer {
   private device: GPUDevice;
   private context: GPUCanvasContext;
   private format: GPUTextureFormat;
-  private canvas: HTMLCanvasElement;
+  private canvas: HTMLCanvasElement | OffscreenCanvas;
+  private bg: BgSettings = { mode: 0, color: [0, 0, 0] };
 
   private pipeline: GPURenderPipeline | null = null;
   private bindGroup: GPUBindGroup | null = null;
@@ -164,7 +178,9 @@ export class WebGPURenderer implements Renderer {
   private paramsData = new Float32Array(MAX_PARAMS);
   private waveData = new Float32Array(WAVE_POINTS);
 
-  static async create(canvas: HTMLCanvasElement): Promise<WebGPURenderer> {
+  static async create(
+    canvas: HTMLCanvasElement | OffscreenCanvas,
+  ): Promise<WebGPURenderer> {
     if (!navigator.gpu) throw new Error("WebGPU not available");
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error("No WebGPU adapter");
@@ -172,7 +188,7 @@ export class WebGPURenderer implements Renderer {
     return new WebGPURenderer(canvas, device);
   }
 
-  private constructor(canvas: HTMLCanvasElement, device: GPUDevice) {
+  private constructor(canvas: HTMLCanvasElement | OffscreenCanvas, device: GPUDevice) {
     this.canvas = canvas;
     this.device = device;
     // Surface GPU validation failures loudly; __gpuErrors is an E2E probe
@@ -181,14 +197,16 @@ export class WebGPURenderer implements Renderer {
       const g = globalThis as unknown as { __gpuErrors: number };
       g.__gpuErrors = (g.__gpuErrors ?? 0) + 1;
     });
-    const context = canvas.getContext("webgpu");
+    const context = canvas.getContext("webgpu") as GPUCanvasContext | null;
     if (!context) throw new Error("No webgpu canvas context");
     this.context = context;
     this.format = navigator.gpu.getPreferredCanvasFormat();
     this.context.configure({
       device,
       format: this.format,
-      alphaMode: "opaque",
+      // premultiplied: identical to opaque while alpha stays 1, enables the
+      // transparent background mode without reconfiguring
+      alphaMode: "premultiplied",
     });
     this.uniformBuf = device.createBuffer({
       size: UNIFORM_SIZE,
@@ -218,6 +236,15 @@ export class WebGPURenderer implements Renderer {
     this.pipelineLayout = device.createPipelineLayout({
       bindGroupLayouts: [this.bindLayout],
     });
+  }
+
+  setBackground(bg: BgSettings): void {
+    this.bg = bg;
+  }
+
+  /** Resolves when all submitted GPU work has executed (export frame sync). */
+  gpuDone(): Promise<undefined> {
+    return this.device.queue.onSubmittedWorkDone();
   }
 
   setPreset(preset: PresetDef): void {
@@ -270,6 +297,11 @@ export class WebGPURenderer implements Renderer {
     this.uniformU32[8] = WAVE_POINTS;
     this.uniformF32[9] = f.duration > 0 ? f.time / f.duration : 0;
     this.uniformF32[10] = f.energy;
+    this.uniformU32[11] = this.bg.mode;
+    this.uniformF32[12] = this.bg.color[0];
+    this.uniformF32[13] = this.bg.color[1];
+    this.uniformF32[14] = this.bg.color[2];
+    this.uniformF32[15] = 1;
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniformData);
     this.device.queue.writeBuffer(this.binsBuf!, 0, f.bins);
     this.device.queue.writeBuffer(this.peaksBuf!, 0, f.peaks);
@@ -292,12 +324,13 @@ export class WebGPURenderer implements Renderer {
     this.device.queue.writeBuffer(this.paramsBuf, 0, this.paramsData);
 
     const encoder = this.device.createCommandEncoder();
+    const clearA = this.bg.mode === 2 ? 0 : 1;
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
           view: this.context.getCurrentTexture().createView(),
           loadOp: "clear",
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          clearValue: { r: 0, g: 0, b: 0, a: clearA },
           storeOp: "store",
         },
       ],

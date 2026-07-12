@@ -46,22 +46,31 @@ structurally impossible — there is no clock, only indices.
 - `WebGPURenderer` renders to any canvas size; export uses an
   `OffscreenCanvas` at target resolution, UI canvas untouched.
 
-## To build (implementation order)
+## Status: IMPLEMENTED (src/export/videoExporter.ts)
 
-1. `src/export/videoExporter.ts` — orchestrator: loop frames, backpressure on
-   `VideoEncoder.encodeQueueSize`, progress callback, cancel.
-2. Audio encode: `AudioEncoder` with `mp4a.40.2` (AAC-LC 256 kbps); probe
-   support via `AudioEncoder.isConfigSupported`, fall back to Opus-in-MP4
-   (fine in modern players; note in UI).
-3. Mux: `mp4-muxer` package (avc + aac/opus, streaming writes).
-4. File out: `showSaveFilePicker` → `FileSystemWritableFileStream` (WebView2
-   supports it; Tauri dialog+fs plugin as fallback).
-5. UI: export dialog (resolution, fps, bitrate presets), progress bar
-   (frame N / total), cancel button. Run exporter in a Worker with
-   OffscreenCanvas so the UI thread stays alive.
-6. Later, Rust escape hatch: if a codec is missing in WebView2, pipe raw
-   frames to an ffmpeg sidecar via Tauri command. Same OfflineAnalyzer feeds
-   it — only the encode/mux tail changes.
+Shipped: frame loop with encode-queue backpressure, per-frame
+`queue.onSubmittedWorkDone` sync before canvas snapshot, AAC probe with Opus
+fallback, mp4-muxer in-memory fastStart, progress + AbortSignal cancel,
+export dialog (resolution 720p→4K/square/vertical, 30/60 fps, auto/manual
+bitrate), anchor-download save. Verified E2E: 16 s track → valid MP4,
+decodes with duration exactly 16.00 s, seekable; ~140 fps export throughput
+at preview size. Dev hook: `window.__runExport({width,height,fps})`.
+
+Background modes are composited centrally in the shader header from a
+luma-derived alpha (presets author light-over-black), so every preset gets
+preset-animated / solid-color / transparent backgrounds with zero per-preset
+code. MP4 carries no alpha: transparent mode renders over black; chroma
+green/magenta swatches cover editor keying.
+
+Still open (deliberately):
+- Worker + OffscreenCanvas move (UI stays responsive enough via per-frame
+  GPU-completion yields for now; timers must NOT be used — throttled in
+  hidden tabs).
+- `showSaveFilePicker` streaming for hour-long exports (in-memory target is
+  fine up to a few GB).
+- WebM/VP9-alpha or PNG-sequence path for true-alpha deliverables.
+- Rust/ffmpeg sidecar if a WebView2 codec gap ever appears (AAC verified
+  present on Windows).
 
 ## Quality defaults
 

@@ -7,6 +7,7 @@ import { tunnelRings } from "./tunnelRings";
 import { nebula } from "./nebula";
 import { metaballs } from "./metaballs";
 import { ledMatrix } from "./ledMatrix";
+import { voiceOrb } from "./voiceOrb";
 
 /** Registry: adding a preset = write the file, add it here. */
 export const presets: PresetDef[] = [
@@ -18,6 +19,7 @@ export const presets: PresetDef[] = [
   nebula,
   metaballs,
   ledMatrix,
+  voiceOrb,
 ];
 
 export function presetById(id: string): PresetDef {

@@ -5,12 +5,36 @@ import { demos } from "./audio/demoTrack";
 import type { PlaybackState } from "./audio/types";
 import { Canvas2DRenderer } from "./render/canvas2dRenderer";
 import { WebGPURenderer } from "./render/webgpuRenderer";
-import { defaultParams, type ParamValues, type Renderer } from "./render/types";
+import {
+  BG_PRESET,
+  BG_SOLID,
+  BG_TRANSPARENT,
+  defaultParams,
+  type BgMode,
+  type BgSettings,
+  type ParamValues,
+  type Renderer,
+} from "./render/types";
 import { presets, presetById } from "./render/presets";
+import { exportVideo, saveBlob } from "./export/videoExporter";
 import "./App.css";
 
 const LS_PRESET = "viz.activePreset";
 const LS_PARAMS = "viz.params.v1";
+const LS_BG = "viz.bg.v1";
+
+const RESOLUTIONS = [
+  { label: "720p (1280×720)", w: 1280, h: 720 },
+  { label: "1080p (1920×1080)", w: 1920, h: 1080 },
+  { label: "1440p (2560×1440)", w: 2560, h: 1440 },
+  { label: "4K (3840×2160)", w: 3840, h: 2160 },
+  { label: "Square (1080×1080)", w: 1080, h: 1080 },
+  { label: "Vertical (1080×1920)", w: 1080, h: 1920 },
+];
+
+function autoBitrateMbps(w: number, h: number, fps: number): number {
+  return Math.min(60, Math.max(2, Math.round((w * h * fps * 0.09) / 1e6)));
+}
 
 function loadStoredParams(): Record<string, ParamValues> {
   try {
@@ -20,10 +44,39 @@ function loadStoredParams(): Record<string, ParamValues> {
   }
 }
 
+function loadStoredBg(): BgSettings {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_BG) ?? "");
+    if (raw && typeof raw.mode === "number" && Array.isArray(raw.color)) return raw;
+  } catch {
+    // fall through
+  }
+  return { mode: BG_PRESET, color: [0, 0, 0] };
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const v = parseInt(hex.slice(1), 16);
+  return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
+}
+
+function rgbToHex([r, g, b]: [number, number, number]): string {
+  const c = (x: number) =>
+    Math.round(x * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
+
 function fmt(t: number): string {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+interface ExportProgress {
+  done: number;
+  total: number;
+  startedAt: number;
 }
 
 export default function App() {
@@ -35,12 +88,16 @@ export default function App() {
     () => localStorage.getItem(LS_PRESET) ?? presets[0].id,
   );
   const preset = presetById(presetId);
+  const presetIdRef = useRef(presetId);
   const paramsByPresetRef = useRef<Record<string, ParamValues>>(loadStoredParams());
   const activeParamsRef = useRef<ParamValues>({
     ...defaultParams(preset),
     ...paramsByPresetRef.current[preset.id],
   });
   const [params, setParams] = useState<ParamValues>(activeParamsRef.current);
+
+  const [bg, setBg] = useState<BgSettings>(loadStoredBg);
+  const bgRef = useRef(bg);
 
   const [playback, setPlayback] = useState<PlaybackState>({
     playing: false,
@@ -54,6 +111,17 @@ export default function App() {
   const [showPanel, setShowPanel] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const seekingRef = useRef(false);
+
+  // Export dialog state
+  const [showExport, setShowExport] = useState(false);
+  const [resIdx, setResIdx] = useState(1);
+  const [fps, setFps] = useState(60);
+  const [autoRate, setAutoRate] = useState(true);
+  const [manualMbps, setManualMbps] = useState(12);
+  const [exporting, setExporting] = useState<ExportProgress | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportDone, setExportDone] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // One-time init: engine, renderer, frame loop
   useEffect(() => {
@@ -81,6 +149,7 @@ export default function App() {
         return;
       }
       renderer.setPreset(presetById(localStorage.getItem(LS_PRESET) ?? presets[0].id));
+      renderer.setBackground(bgRef.current);
       rendererRef.current = renderer;
       setRendererKind(renderer.kind);
 
@@ -110,7 +179,7 @@ export default function App() {
         }
         raf = requestAnimationFrame(loop);
         // rAF starves in hidden/occluded tabs; keep rendering (throttled by
-        // the browser to ~1fps) so captures and background use stay live
+        // the browser to ~1fps) so background use and captures stay live
         fallback = setTimeout(() => {
           cancelAnimationFrame(raf);
           loop(performance.now());
@@ -133,6 +202,7 @@ export default function App() {
   const switchPreset = useCallback((id: string) => {
     const next = presetById(id);
     setPresetId(next.id);
+    presetIdRef.current = next.id;
     localStorage.setItem(LS_PRESET, next.id);
     activeParamsRef.current = {
       ...defaultParams(next),
@@ -158,6 +228,13 @@ export default function App() {
     delete paramsByPresetRef.current[presetId];
     localStorage.setItem(LS_PARAMS, JSON.stringify(paramsByPresetRef.current));
   }, [presetId]);
+
+  const updateBg = useCallback((next: BgSettings) => {
+    setBg(next);
+    bgRef.current = next;
+    rendererRef.current?.setBackground(next);
+    localStorage.setItem(LS_BG, JSON.stringify(next));
+  }, []);
 
   const loadFile = useCallback(async (file: File) => {
     try {
@@ -194,6 +271,88 @@ export default function App() {
     [loadFile],
   );
 
+  const runExport = useCallback(async () => {
+    const engine = engineRef.current!;
+    const buf = engine.audioBuffer;
+    if (!buf) return;
+    const res = RESOLUTIONS[resIdx];
+    const mbps = autoRate ? autoBitrateMbps(res.w, res.h, fps) : manualMbps;
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setExportError(null);
+    setExportDone(null);
+    setExporting({ done: 0, total: 1, startedAt: performance.now() });
+    try {
+      const result = await exportVideo(buf, {
+        width: res.w,
+        height: res.h,
+        fps,
+        bitrate: mbps * 1e6,
+        preset: presetById(presetIdRef.current),
+        params: activeParamsRef.current,
+        bg: bgRef.current,
+        signal: ac.signal,
+        onProgress: (done, total) =>
+          setExporting((p) => (p ? { ...p, done, total } : p)),
+      });
+      const name = (engine.state.trackName ?? "visualization")
+        .replace(/\.[a-z0-9]+$/i, "")
+        .replace(/[^\w\- ]+/g, "")
+        .trim();
+      saveBlob(result.blob, `${name || "visualization"}.mp4`);
+      setExportDone(
+        `${(result.blob.size / 1e6).toFixed(1)} MB MP4 (H.264 + ${result.audioCodec.toUpperCase()}) saved`,
+      );
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        setExportError((e as Error).message);
+      }
+    } finally {
+      setExporting(null);
+      abortRef.current = null;
+    }
+  }, [resIdx, fps, autoRate, manualMbps]);
+
+  // Dev-only E2E hook: run a tiny export from the console/test driver
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as unknown as { __runExport: unknown }).__runExport = async (
+      opts: Partial<{ width: number; height: number; fps: number }> = {},
+    ) => {
+      const buf = engineRef.current?.audioBuffer;
+      if (!buf) throw new Error("no track loaded");
+      const t0 = performance.now();
+      const result = await exportVideo(buf, {
+        width: opts.width ?? 320,
+        height: opts.height ?? 180,
+        fps: opts.fps ?? 30,
+        bitrate: 1_000_000,
+        preset: presetById(presetIdRef.current),
+        params: activeParamsRef.current,
+        bg: bgRef.current,
+      });
+      const info = {
+        bytes: result.blob.size,
+        ms: Math.round(performance.now() - t0),
+        audioCodec: result.audioCodec,
+        seconds: result.seconds,
+      };
+      (window as unknown as { __lastExport: unknown }).__lastExport = info;
+      (window as unknown as { __lastExportBlob: Blob }).__lastExportBlob = result.blob;
+      return info;
+    };
+  }, []);
+
+  const res = RESOLUTIONS[resIdx];
+  const effectiveMbps = autoRate ? autoBitrateMbps(res.w, res.h, fps) : manualMbps;
+  const exportPct = exporting
+    ? Math.round((exporting.done / Math.max(1, exporting.total)) * 100)
+    : 0;
+  const exportSpeed =
+    exporting && exporting.done > 0
+      ? (exporting.done / ((performance.now() - exporting.startedAt) / 1000)).toFixed(0)
+      : null;
+
   return (
     <div
       className={`app ${dragOver ? "drag-over" : ""}`}
@@ -204,7 +363,10 @@ export default function App() {
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
     >
-      <canvas ref={canvasRef} className="viz-canvas" />
+      <canvas
+        ref={canvasRef}
+        className={`viz-canvas ${bg.mode === BG_TRANSPARENT ? "transparent" : ""}`}
+      />
 
       <div className="hud top-left">
         <div className="row">
@@ -238,6 +400,14 @@ export default function App() {
               </option>
             ))}
           </select>
+          <button
+            className="btn"
+            disabled={!playback.trackName}
+            title={playback.trackName ? "Export MP4" : "Load a track first"}
+            onClick={() => setShowExport(true)}
+          >
+            Export
+          </button>
           <button className="btn" onClick={() => setShowPanel((v) => !v)}>
             {showPanel ? "Hide params" : "Params"}
           </button>
@@ -358,6 +528,155 @@ export default function App() {
               </span>
             </label>
           ))}
+
+          <div className="panel-head bg-head">
+            <span className="panel-title">Background</span>
+          </div>
+          <div className="bg-row">
+            <select
+              className="preset-select"
+              value={bg.mode}
+              onChange={(e) =>
+                updateBg({ ...bg, mode: Number(e.target.value) as BgMode })
+              }
+            >
+              <option value={BG_PRESET}>Preset (animated)</option>
+              <option value={BG_SOLID}>Solid color</option>
+              <option value={BG_TRANSPARENT}>Transparent</option>
+            </select>
+            {bg.mode === BG_SOLID && (
+              <input
+                type="color"
+                className="bg-color"
+                value={rgbToHex(bg.color)}
+                onChange={(e) => updateBg({ ...bg, color: hexToRgb(e.target.value) })}
+                title="Background color"
+              />
+            )}
+          </div>
+          {bg.mode === BG_SOLID && (
+            <div className="bg-swatches">
+              {["#000000", "#ffffff", "#00b140", "#ff00ff"].map((hex) => (
+                <button
+                  key={hex}
+                  className="swatch"
+                  style={{ background: hex }}
+                  title={hex}
+                  onClick={() => updateBg({ ...bg, color: hexToRgb(hex) })}
+                />
+              ))}
+            </div>
+          )}
+          {bg.mode === BG_TRANSPARENT && (
+            <div className="hint">
+              MP4 exports have no alpha channel — transparent renders over
+              black. For editor keying, use Solid green/magenta.
+            </div>
+          )}
+        </div>
+      )}
+
+      {showExport && (
+        <div className="modal-backdrop" onClick={() => !exporting && setShowExport(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-head">
+              <span className="panel-title">Export MP4</span>
+              <button
+                className="btn small"
+                disabled={!!exporting}
+                onClick={() => setShowExport(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <label className="field">
+              <span>Resolution</span>
+              <select
+                className="preset-select"
+                value={resIdx}
+                disabled={!!exporting}
+                onChange={(e) => setResIdx(Number(e.target.value))}
+              >
+                {RESOLUTIONS.map((r, i) => (
+                  <option key={r.label} value={i}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="field">
+              <span>Frame rate</span>
+              <select
+                className="preset-select"
+                value={fps}
+                disabled={!!exporting}
+                onChange={(e) => setFps(Number(e.target.value))}
+              >
+                <option value={30}>30 fps</option>
+                <option value={60}>60 fps</option>
+              </select>
+            </label>
+
+            <label className="field">
+              <span>Bitrate</span>
+              <span className="bitrate-controls">
+                <label className="inline">
+                  <input
+                    type="checkbox"
+                    checked={autoRate}
+                    disabled={!!exporting}
+                    onChange={(e) => setAutoRate(e.target.checked)}
+                  />
+                  Auto
+                </label>
+                {!autoRate && (
+                  <input
+                    type="range"
+                    min={2}
+                    max={60}
+                    step={1}
+                    value={manualMbps}
+                    disabled={!!exporting}
+                    onChange={(e) => setManualMbps(Number(e.target.value))}
+                  />
+                )}
+                <span className="param-value">{effectiveMbps} Mbps</span>
+              </span>
+            </label>
+
+            <div className="hint">
+              Uses the current preset, parameters and background — what you
+              see live is what renders. Sync is sample-exact (offline render).
+              {bg.mode === BG_TRANSPARENT &&
+                " Transparent background renders over black in MP4."}
+            </div>
+
+            {exporting ? (
+              <>
+                <div className="progress">
+                  <div className="progress-fill" style={{ width: `${exportPct}%` }} />
+                </div>
+                <div className="export-status">
+                  {exportPct}% — frame {exporting.done}/{exporting.total}
+                  {exportSpeed ? ` (${exportSpeed} fps)` : ""}
+                  <button
+                    className="btn small danger"
+                    onClick={() => abortRef.current?.abort()}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button className="btn primary" onClick={() => void runExport()}>
+                Export {res.w}×{res.h} @ {fps} fps
+              </button>
+            )}
+            {exportError && <div className="error">{exportError}</div>}
+            {exportDone && <div className="success">{exportDone}</div>}
+          </div>
         </div>
       )}
     </div>

@@ -43,6 +43,13 @@ body,
   display: block;
 }
 
+/* Checkerboard shows through transparent pixels in transparent bg mode */
+.viz-canvas.transparent {
+  background:
+    repeating-conic-gradient(#1c1e26 0% 25%, #2a2d38 0% 50%)
+    0 0 / 28px 28px;
+}
+
 .hud {
   position: absolute;
   background: rgba(12, 14, 22, 0.72);
@@ -210,4 +217,140 @@ body,
   text-align: right;
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
+}
+
+.bg-head {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 10px;
+}
+
+.bg-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.bg-color {
+  width: 34px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+
+.bg-swatches {
+  display: flex;
+  gap: 6px;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+}
+
+.hint {
+  font-size: 11px;
+  opacity: 0.65;
+  line-height: 1.35;
+}
+
+.success {
+  color: #7ee29b;
+  font-size: 12px;
+}
+
+/* Export modal */
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.modal {
+  width: 360px;
+  background: rgba(16, 18, 26, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.field .preset-select {
+  width: 100%;
+}
+
+.bitrate-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bitrate-controls input[type="range"] {
+  flex: 1;
+  accent-color: #7ab8ff;
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.btn.primary {
+  background: #1d4ed8;
+  border-color: #3b6ef0;
+  font-weight: 600;
+  padding: 8px;
+}
+
+.btn.primary:hover {
+  background: #2558e8;
+}
+
+.btn.danger {
+  border-color: rgba(255, 120, 120, 0.5);
+  color: #ff9f9f;
+}
+
+.progress {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1d4ed8, #7ab8ff);
+  transition: width 0.2s;
+}
+
+.export-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  opacity: 0.9;
 }
