@@ -53,11 +53,28 @@ fn preset(uv: vec2f) -> vec4f {
   col += hsl2rgb(barHue, 0.3, 0.9) * smoothstep(0.005, 0.0, abs(r - pkR)) * 0.8
        * step(0.5, param(6));
 
-  // Core disc: waveform-textured, rms-breathing
-  let coreR = inner * 0.72;
-  let wob = waveAt(fract(a / TAU + 0.5)) * 0.02 * (1.0 + u.rms * 2.0);
-  let core = smoothstep(coreR + wob + 0.004, coreR + wob - 0.004, r);
-  col = mix(col, hsl2rgb(hue + 30.0, 0.7, 0.12 + u.rms * 0.45 + u.beatIntensity * 0.2), core);
+  // Core disc: bass breathes it, beats kick it, band-driven harmonics
+  // undulate the edge (smooth shapes, punchy amplitudes — reactive without
+  // the per-frame spikes raw waveform sampling caused)
+  // Geometry rides only slow signals — fast bands jitter, energy glides
+  let pump = 1.0 + u.energy * 0.08 + u.beatIntensity * 0.04;
+  let coreR = inner * 0.70 * pump;
+  // One slow-rotating dominant mode, amplitude on the slow energy envelope:
+  // quiet = near-circle, loud passage = gentle tri-lobe swell. Secondary
+  // mode adds subtle detail. Hard clamp keeps the core inside the bar ring.
+  let spin = u.time * (0.25 + u.energy * 0.35);
+  let amp = inner * (0.03 + u.energy * 0.11);
+  var wob = sin(a * 3.0 + spin) * amp
+          + sin(a * 6.0 - spin * 0.7 + 1.3) * amp * 0.35;
+  let lim = inner * 0.14;
+  wob = clamp(wob, -lim, lim);
+  let core = smoothstep(coreR + wob + 0.005, coreR + wob - 0.005, r);
+  let coreL = 0.12 + u.energy * 0.35 + u.beatIntensity * 0.10;
+  col = mix(col, hsl2rgb(hue + 30.0, 0.75, coreL), core);
+  // Thin waveform detail ring inside the core: fast micro-motion reads as
+  // "alive" on a hairline without deforming the silhouette
+  let wr = coreR * 0.55 + waveAt(fract(a / TAU + 0.5)) * 0.02;
+  col += hsl2rgb(hue + 50.0, 0.6, 0.65) * smoothstep(0.004, 0.0, abs(r - wr)) * core * 0.5;
 
   // Vignette
   col *= 1.0 - r * r * 0.5;

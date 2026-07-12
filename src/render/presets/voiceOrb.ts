@@ -26,17 +26,25 @@ fn preset(uv: vec2f) -> vec4f {
   let p = centered(uv);
   let r = length(p);
   let a = atan2(p.y, p.x);
-  let xs = abs(fract(a / TAU + 0.5) * 2.0 - 1.0);
 
-  // Speech level: blend of instantaneous loudness and the slow envelope.
-  let level = clamp(mix(u.energy, u.rms, 0.6) * (0.6 + response * 1.4), 0.0, 1.0);
+  // Speech level: mostly the slow envelope, a touch of instantaneous —
+  // keeps the orb's size calm instead of pumping on every syllable.
+  let level = clamp(mix(u.energy, u.rms, 0.3) * (0.6 + response * 1.4), 0.0, 1.0);
   // Idle breathing keeps the orb alive during pauses, fades out when talking
   let idle = (1.0 - smoothstep(0.03, 0.12, level)) * sin(u.time * 1.3) * 0.012;
 
-  // Formant wobble: voice energy lives in the mid log-bins (~200 Hz - 3 kHz,
-  // roughly bins 0.28..0.62 of our 30 Hz..16 kHz log axis)
-  let formant = binAt(0.28 + xs * 0.34);
-  let disp = (formant - 0.25) * wobble * 0.05 * (0.3 + level);
+  // Surface wobble: three slowly-rotating sinusoidal modes whose amplitudes
+  // track wide formant-band averages (~200 Hz - 3 kHz). The shape itself is
+  // always smooth — voice only modulates how much each mode swells, so the
+  // edge undulates organically instead of twitching per-bin.
+  let f1 = (binAt(0.32) + binAt(0.36) + binAt(0.40)) / 3.0;
+  let f2 = (binAt(0.44) + binAt(0.48) + binAt(0.52)) / 3.0;
+  let f3 = (binAt(0.55) + binAt(0.58) + binAt(0.61)) / 3.0;
+  let m1 = sin(a * 3.0 + u.time * 0.6);
+  let m2 = sin(a * 5.0 - u.time * 0.8 + 1.7);
+  let m3 = sin(a * 8.0 + u.time * 1.1 + 4.1);
+  let disp = (m1 * f1 * 1.0 + m2 * f2 * 0.7 + m3 * f3 * 0.45)
+           * wobble * 0.030 * (0.25 + level * 0.75);
 
   let radius = size * (1.0 + level * 0.85) + idle;
   let edge = radius + disp;
