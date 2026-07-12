@@ -7,16 +7,27 @@ import { Canvas2DRenderer } from "./render/canvas2dRenderer";
 import { WebGPURenderer } from "./render/webgpuRenderer";
 import {
   BG_PRESET,
-  BG_SOLID,
   BG_TRANSPARENT,
   defaultParams,
-  type BgMode,
   type BgSettings,
   type ParamValues,
   type Renderer,
 } from "./render/types";
 import { presets, presetById } from "./render/presets";
 import { exportVideo, saveBlob } from "./export/videoExporter";
+import { PlayerBar } from "./ui/PlayerBar";
+import { PresetStrip } from "./ui/PresetStrip";
+import { ParamsPanel } from "./ui/ParamsPanel";
+import { EmptyState } from "./ui/EmptyState";
+import { Slider } from "./ui/Slider";
+import {
+  IconExport,
+  IconFolder,
+  IconFullscreen,
+  IconHelp,
+  IconMusic,
+  IconSettings,
+} from "./ui/Icons";
 import "./App.css";
 
 const LS_PRESET = "viz.activePreset";
@@ -30,6 +41,17 @@ const RESOLUTIONS = [
   { label: "4K (3840×2160)", w: 3840, h: 2160 },
   { label: "Square (1080×1080)", w: 1080, h: 1080 },
   { label: "Vertical (1080×1920)", w: 1080, h: 1920 },
+];
+
+const SHORTCUTS: Array<[string, string]> = [
+  ["Space", "Play / pause"],
+  ["← / →", "Seek 5 s"],
+  ["↑ / ↓", "Volume"],
+  ["M", "Mute"],
+  ["L", "Loop"],
+  ["[ / ]", "Previous / next preset"],
+  ["G", "Settings panel"],
+  ["F", "Fullscreen"],
 ];
 
 function autoBitrateMbps(w: number, h: number, fps: number): number {
@@ -54,25 +76,6 @@ function loadStoredBg(): BgSettings {
   return { mode: BG_PRESET, color: [0, 0, 0] };
 }
 
-function hexToRgb(hex: string): [number, number, number] {
-  const v = parseInt(hex.slice(1), 16);
-  return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
-}
-
-function rgbToHex([r, g, b]: [number, number, number]): string {
-  const c = (x: number) =>
-    Math.round(x * 255)
-      .toString(16)
-      .padStart(2, "0");
-  return `#${c(r)}${c(g)}${c(b)}`;
-}
-
-function fmt(t: number): string {
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
 interface ExportProgress {
   done: number;
   total: number;
@@ -81,6 +84,7 @@ interface ExportProgress {
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const engineRef = useRef<AudioEngine | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
 
@@ -108,9 +112,28 @@ export default function App() {
   });
   const [rendererKind, setRendererKind] = useState<string>("…");
   const [dragOver, setDragOver] = useState(false);
-  const [showPanel, setShowPanel] = useState(true);
+  const [showPanel, setShowPanelState] = useState(
+    () => localStorage.getItem("viz.panelOpen") === "1",
+  );
+  const setShowPanel = useCallback((v: boolean | ((p: boolean) => boolean)) => {
+    setShowPanelState((prev) => {
+      const next = typeof v === "function" ? v(prev) : v;
+      localStorage.setItem("viz.panelOpen", next ? "1" : "0");
+      return next;
+    });
+  }, []);
+  const [showHelp, setShowHelp] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const volumeRef = useRef({ volume: 1, muted: false });
   const seekingRef = useRef(false);
+
+  // Chrome auto-hide (video-player style)
+  const [chromeIdle, setChromeIdle] = useState(false);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const playingRef = useRef(false);
+  playingRef.current = playback.playing;
 
   // Export dialog state
   const [showExport, setShowExport] = useState(false);
@@ -122,6 +145,8 @@ export default function App() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportDone, setExportDone] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const exportOpenRef = useRef(false);
+  exportOpenRef.current = showExport;
 
   // One-time init: engine, renderer, frame loop
   useEffect(() => {
@@ -199,6 +224,25 @@ export default function App() {
     };
   }, []);
 
+  // Auto-hide chrome while playing and idle
+  const pokeChrome = useCallback(() => {
+    setChromeIdle(false);
+    clearTimeout(idleTimer.current);
+    idleTimer.current = setTimeout(() => {
+      if (playingRef.current && !exportOpenRef.current) setChromeIdle(true);
+    }, 3000);
+  }, []);
+
+  useEffect(() => {
+    pokeChrome();
+    return () => clearTimeout(idleTimer.current);
+  }, [pokeChrome]);
+
+  // Re-arm the idle timer when playback starts (e.g. started via keyboard)
+  useEffect(() => {
+    if (playback.playing) pokeChrome();
+  }, [playback.playing, pokeChrome]);
+
   const switchPreset = useCallback((id: string) => {
     const next = presetById(id);
     setPresetId(next.id);
@@ -236,6 +280,13 @@ export default function App() {
     localStorage.setItem(LS_BG, JSON.stringify(next));
   }, []);
 
+  const applyVolume = useCallback((v: number, m: boolean) => {
+    volumeRef.current = { volume: v, muted: m };
+    setVolume(v);
+    setMuted(m);
+    engineRef.current?.setVolume(m ? 0 : v);
+  }, []);
+
   const loadFile = useCallback(async (file: File) => {
     try {
       setError(null);
@@ -260,6 +311,73 @@ export default function App() {
     if (engine.playing) engine.pause();
     else await engine.play();
   }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void document.documentElement.requestFullscreen();
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      const engine = engineRef.current;
+      if (!engine) return;
+      const step = (d: number) => {
+        const i = presets.findIndex((p) => p.id === presetIdRef.current);
+        switchPreset(presets[(i + d + presets.length) % presets.length].id);
+      };
+      switch (e.key) {
+        case " ":
+          e.preventDefault();
+          void togglePlay();
+          break;
+        case "ArrowLeft":
+          engine.seek(engine.currentTime - 5);
+          break;
+        case "ArrowRight":
+          engine.seek(engine.currentTime + 5);
+          break;
+        case "ArrowUp": {
+          e.preventDefault();
+          const v = Math.min(1, volumeRef.current.volume + 0.05);
+          applyVolume(v, false);
+          break;
+        }
+        case "ArrowDown": {
+          e.preventDefault();
+          const v = Math.max(0, volumeRef.current.volume - 0.05);
+          applyVolume(v, false);
+          break;
+        }
+        case "m":
+        case "M":
+          applyVolume(volumeRef.current.volume, !volumeRef.current.muted);
+          break;
+        case "l":
+        case "L":
+          engine.loop = !engine.loop;
+          break;
+        case "[":
+          step(-1);
+          break;
+        case "]":
+          step(1);
+          break;
+        case "g":
+        case "G":
+          setShowPanel((v) => !v);
+          break;
+        case "f":
+        case "F":
+          toggleFullscreen();
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [applyVolume, switchPreset, toggleFullscreen, togglePlay]);
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -353,9 +471,13 @@ export default function App() {
       ? (exporting.done / ((performance.now() - exporting.startedAt) / 1000)).toFixed(0)
       : null;
 
+  const idle = chromeIdle && playback.playing && !showExport && !showHelp;
+
   return (
     <div
-      className={`app ${dragOver ? "drag-over" : ""}`}
+      className={`app ${dragOver ? "drag-over" : ""} ${idle ? "idle" : ""}`}
+      onMouseMove={pokeChrome}
+      onPointerDown={pokeChrome}
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -366,223 +488,154 @@ export default function App() {
       <canvas
         ref={canvasRef}
         className={`viz-canvas ${bg.mode === BG_TRANSPARENT ? "transparent" : ""}`}
+        onClick={() => playback.trackName && void togglePlay()}
+        onDoubleClick={toggleFullscreen}
       />
 
-      <div className="hud top-left">
-        <div className="row">
-          <label className="btn">
-            Open file
-            <input
-              type="file"
-              accept="audio/*,.mp3,.flac,.wav,.ogg,.m4a"
-              hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void loadFile(f);
-                e.target.value = "";
-              }}
-            />
-          </label>
-          <select
-            className="preset-select demo-select"
-            value=""
-            title="Load a synthesized demo track"
-            onChange={(e) => {
-              if (e.target.value) void loadDemo(e.target.value);
-            }}
-          >
-            <option value="" disabled>
-              Demo track…
-            </option>
-            {demos.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-          <button
-            className="btn"
-            disabled={!playback.trackName}
-            title={playback.trackName ? "Export MP4" : "Load a track first"}
-            onClick={() => setShowExport(true)}
-          >
-            Export
-          </button>
-          <button className="btn" onClick={() => setShowPanel((v) => !v)}>
-            {showPanel ? "Hide params" : "Params"}
-          </button>
-        </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*,.mp3,.flac,.wav,.ogg,.m4a"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void loadFile(f);
+          e.target.value = "";
+        }}
+      />
 
-        <div className="row">
-          <select
-            className="preset-select"
-            value={presetId}
-            onChange={(e) => switchPreset(e.target.value)}
-            title="Visual preset"
-          >
-            {presets.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <button
-            className="btn"
-            title="Previous preset"
-            onClick={() => {
-              const i = presets.findIndex((p) => p.id === presetId);
-              switchPreset(presets[(i - 1 + presets.length) % presets.length].id);
-            }}
-          >
-            ◀
-          </button>
-          <button
-            className="btn"
-            title="Next preset"
-            onClick={() => {
-              const i = presets.findIndex((p) => p.id === presetId);
-              switchPreset(presets[(i + 1) % presets.length].id);
-            }}
-          >
-            ▶
-          </button>
+      {dragOver && (
+        <div className="drop-overlay">
+          <IconMusic size={44} />
+          <span>Drop to play</span>
         </div>
+      )}
 
-        <div className="row transport">
+      {!playback.trackName && !dragOver && (
+        <EmptyState
+          demos={demos}
+          onOpenFile={() => fileInputRef.current?.click()}
+          onDemo={(id) => void loadDemo(id)}
+        />
+      )}
+
+      <header className="chrome top-bar">
+        <div className="top-left">
           <button
-            className="btn play"
-            disabled={!playback.trackName}
-            onClick={() => void togglePlay()}
+            className="ghost-btn"
+            title="Open an audio file"
+            onClick={() => fileInputRef.current?.click()}
           >
-            {playback.playing ? "❚❚" : "▶"}
+            <IconFolder size={16} />
+            Open
           </button>
-          <span className="time">{fmt(playback.time)}</span>
-          <input
-            type="range"
-            min={0}
-            max={playback.duration || 1}
-            step={0.01}
-            value={playback.time}
-            disabled={!playback.trackName}
-            onPointerDown={() => (seekingRef.current = true)}
-            onPointerUp={() => (seekingRef.current = false)}
-            onChange={(e) => {
-              const t = Number(e.target.value);
-              setPlayback((p) => ({ ...p, time: t }));
-              engineRef.current!.seek(t);
-            }}
-          />
-          <span className="time">{fmt(playback.duration)}</span>
-          <button
-            className={`btn loop ${playback.loop ? "toggled" : ""}`}
-            title={playback.loop ? "Loop on" : "Loop off"}
-            onClick={() => {
-              const engine = engineRef.current!;
-              engine.loop = !engine.loop;
-            }}
-          >
-            ⟳
-          </button>
-          <input
-            className="volume"
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            defaultValue={1}
-            title="Volume"
-            onChange={(e) => engineRef.current!.setVolume(Number(e.target.value))}
-          />
-        </div>
-
-        <div className="track-line">
-          <span className="badge">{rendererKind}</span>
-          <span className="track-name">
-            {playback.trackName ?? "Drop an audio file anywhere"}
-          </span>
-        </div>
-        {error && <div className="error">{error}</div>}
-      </div>
-
-      {showPanel && (
-        <div className="hud panel">
-          <div className="panel-head">
-            <span className="panel-title">{preset.name}</span>
-            <button className="btn small" onClick={resetParams} title="Reset to defaults">
-              Reset
+          <div className="menu-wrap">
+            <button className="ghost-btn" title="Synthesized demo tracks">
+              <IconMusic size={16} />
+              Demos
             </button>
-          </div>
-          {preset.params.map((p) => (
-            <label key={p.key} className="param">
-              <span>{p.label}</span>
-              <input
-                type="range"
-                min={p.min}
-                max={p.max}
-                step={p.step}
-                value={params[p.key] ?? p.default}
-                onChange={(e) => setParam(p.key, Number(e.target.value))}
-              />
-              <span className="param-value">
-                {(params[p.key] ?? p.default).toFixed(p.step < 1 ? 2 : 0)}
-              </span>
-            </label>
-          ))}
-
-          <div className="panel-head bg-head">
-            <span className="panel-title">Background</span>
-          </div>
-          <div className="bg-row">
-            <select
-              className="preset-select"
-              value={bg.mode}
-              onChange={(e) =>
-                updateBg({ ...bg, mode: Number(e.target.value) as BgMode })
-              }
-            >
-              <option value={BG_PRESET}>Preset (animated)</option>
-              <option value={BG_SOLID}>Solid color</option>
-              <option value={BG_TRANSPARENT}>Transparent</option>
-            </select>
-            {bg.mode === BG_SOLID && (
-              <input
-                type="color"
-                className="bg-color"
-                value={rgbToHex(bg.color)}
-                onChange={(e) => updateBg({ ...bg, color: hexToRgb(e.target.value) })}
-                title="Background color"
-              />
-            )}
-          </div>
-          {bg.mode === BG_SOLID && (
-            <div className="bg-swatches">
-              {["#000000", "#ffffff", "#00b140", "#ff00ff"].map((hex) => (
-                <button
-                  key={hex}
-                  className="swatch"
-                  style={{ background: hex }}
-                  title={hex}
-                  onClick={() => updateBg({ ...bg, color: hexToRgb(hex) })}
-                />
+            <div className="menu">
+              {demos.map((d) => (
+                <button key={d.id} className="menu-item" onClick={() => void loadDemo(d.id)}>
+                  {d.name}
+                </button>
               ))}
             </div>
-          )}
-          {bg.mode === BG_TRANSPARENT && (
-            <div className="hint">
-              MP4 exports have no alpha channel — transparent renders over
-              black. For editor keying, use Solid green/magenta.
+          </div>
+        </div>
+        <div className="top-right">
+          <button
+            className="ghost-btn accent"
+            disabled={!playback.trackName}
+            title={playback.trackName ? "Export MP4 video" : "Load a track first"}
+            onClick={() => setShowExport(true)}
+          >
+            <IconExport size={16} />
+            Export
+          </button>
+          <button
+            className={`icon-btn ${showPanel ? "active" : ""}`}
+            title="Visual settings (G)"
+            onClick={() => setShowPanel((v) => !v)}
+          >
+            <IconSettings size={18} />
+          </button>
+          <button
+            className="icon-btn"
+            title="Keyboard shortcuts"
+            onClick={() => setShowHelp((v) => !v)}
+          >
+            <IconHelp size={18} />
+          </button>
+          <button className="icon-btn" title="Fullscreen (F)" onClick={toggleFullscreen}>
+            <IconFullscreen size={18} />
+          </button>
+        </div>
+      </header>
+
+      <PresetStrip presets={presets} activeId={presetId} onSwitch={switchPreset} />
+
+      {showPanel && (
+        <ParamsPanel
+          preset={preset}
+          params={params}
+          onParam={setParam}
+          onReset={resetParams}
+          bg={bg}
+          onBg={updateBg}
+          rendererKind={rendererKind}
+          onClose={() => setShowPanel(false)}
+        />
+      )}
+
+      <PlayerBar
+        playback={playback}
+        volume={volume}
+        muted={muted}
+        onTogglePlay={() => void togglePlay()}
+        onSeekStart={() => (seekingRef.current = true)}
+        onSeekEnd={(t) => {
+          seekingRef.current = false;
+          engineRef.current!.seek(t);
+        }}
+        onToggleLoop={() => {
+          const engine = engineRef.current!;
+          engine.loop = !engine.loop;
+        }}
+        onVolume={(v) => applyVolume(v, false)}
+        onToggleMute={() => applyVolume(volume, !muted)}
+      />
+
+      {error && <div className="toast error-toast">{error}</div>}
+
+      {showHelp && (
+        <div className="modal-backdrop" onClick={() => setShowHelp(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-header">
+              <span className="panel-heading">Keyboard shortcuts</span>
+              <button className="icon-btn subtle" onClick={() => setShowHelp(false)}>
+                ✕
+              </button>
             </div>
-          )}
+            <div className="shortcut-list">
+              {SHORTCUTS.map(([key, desc]) => (
+                <div key={key} className="shortcut-row">
+                  <kbd>{key}</kbd>
+                  <span>{desc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
       {showExport && (
         <div className="modal-backdrop" onClick={() => !exporting && setShowExport(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-head">
-              <span className="panel-title">Export MP4</span>
+            <div className="panel-header">
+              <span className="panel-heading">Export video</span>
               <button
-                className="btn small"
+                className="icon-btn subtle"
                 disabled={!!exporting}
                 onClick={() => setShowExport(false)}
               >
@@ -593,7 +646,7 @@ export default function App() {
             <label className="field">
               <span>Resolution</span>
               <select
-                className="preset-select"
+                className="select"
                 value={resIdx}
                 disabled={!!exporting}
                 onChange={(e) => setResIdx(Number(e.target.value))}
@@ -609,7 +662,7 @@ export default function App() {
             <label className="field">
               <span>Frame rate</span>
               <select
-                className="preset-select"
+                className="select"
                 value={fps}
                 disabled={!!exporting}
                 onChange={(e) => setFps(Number(e.target.value))}
@@ -619,9 +672,9 @@ export default function App() {
               </select>
             </label>
 
-            <label className="field">
+            <div className="field">
               <span>Bitrate</span>
-              <span className="bitrate-controls">
+              <div className="bitrate-controls">
                 <label className="inline">
                   <input
                     type="checkbox"
@@ -632,26 +685,25 @@ export default function App() {
                   Auto
                 </label>
                 {!autoRate && (
-                  <input
-                    type="range"
+                  <Slider
                     min={2}
                     max={60}
                     step={1}
                     value={manualMbps}
                     disabled={!!exporting}
-                    onChange={(e) => setManualMbps(Number(e.target.value))}
+                    onChange={setManualMbps}
                   />
                 )}
-                <span className="param-value">{effectiveMbps} Mbps</span>
-              </span>
-            </label>
-
-            <div className="hint">
-              Uses the current preset, parameters and background — what you
-              see live is what renders. Sync is sample-exact (offline render).
-              {bg.mode === BG_TRANSPARENT &&
-                " Transparent background renders over black in MP4."}
+                <span className="row-value">{effectiveMbps} Mbps</span>
+              </div>
             </div>
+
+            <p className="section-hint">
+              Renders the current preset, parameters and background — what you
+              see live is what you get. Sync is sample-exact.
+              {bg.mode === BG_TRANSPARENT &&
+                " Transparent background becomes black in MP4."}
+            </p>
 
             {exporting ? (
               <>
@@ -659,23 +711,23 @@ export default function App() {
                   <div className="progress-fill" style={{ width: `${exportPct}%` }} />
                 </div>
                 <div className="export-status">
-                  {exportPct}% — frame {exporting.done}/{exporting.total}
-                  {exportSpeed ? ` (${exportSpeed} fps)` : ""}
-                  <button
-                    className="btn small danger"
-                    onClick={() => abortRef.current?.abort()}
-                  >
+                  <span>
+                    {exportPct}% — frame {exporting.done}/{exporting.total}
+                    {exportSpeed ? ` · ${exportSpeed} fps` : ""}
+                  </span>
+                  <button className="text-btn danger" onClick={() => abortRef.current?.abort()}>
                     Cancel
                   </button>
                 </div>
               </>
             ) : (
-              <button className="btn primary" onClick={() => void runExport()}>
+              <button className="btn-primary wide" onClick={() => void runExport()}>
+                <IconExport size={16} />
                 Export {res.w}×{res.h} @ {fps} fps
               </button>
             )}
-            {exportError && <div className="error">{exportError}</div>}
-            {exportDone && <div className="success">{exportDone}</div>}
+            {exportError && <div className="toast-inline error">{exportError}</div>}
+            {exportDone && <div className="toast-inline success">{exportDone}</div>}
           </div>
         </div>
       )}
