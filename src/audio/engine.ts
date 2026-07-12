@@ -177,4 +177,11 @@ export class AudioEngine {
   private emit(): void {
     this.onStateChange?.(this.state);
   }
+
+  /** Stop playback and release the AudioContext (unmount cleanup). */
+  dispose(): void {
+    this.stopSource();
+    this._playing = false;
+    void this.ctx.close().catch(() => undefined);
+  }
 }

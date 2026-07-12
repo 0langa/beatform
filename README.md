@@ -1,14 +1,18 @@
 # Audio Visualizer
 
-Desktop music visualizer. Tauri 2 + React + TypeScript, WebGPU rendering (Canvas2D fallback), Rust core.
+Desktop music visualizer. Tauri 2 + React + TypeScript, WebGPU rendering (Canvas2D fallback), Rust core. v0.9.0.
 
 ## Features
 
-- Local file playback (mp3/flac/wav/ogg/m4a) via Web Audio — drag & drop or file picker
-- Log-spaced spectrum analysis, asymmetric smoothing, peak hold, band energies, spectral-flux beat detection
-- 9 WebGPU shader presets with live-tweakable parameters (persisted per preset):
-  Spectrum Bars, Radial Burst, Oscilloscope, Starfield Warp, Tunnel,
-  Kaleido Nebula, Metaballs, LED Matrix, Voice Orb (voiceover/narration mode)
+- Local file playback (mp3/flac/wav/ogg/m4a) via Web Audio — drag & drop or file picker; gapless loop toggle
+- Log-spaced spectrum analysis, asymmetric smoothing, peak hold, band energies, spectral-flux beat detection, slow energy envelope, phase-locked waveform
+- **10 visual modes** (WebGPU shader presets): Spectrum Bars, Radial Burst,
+  Oscilloscope, Starfield Warp, Tunnel, Kaleido Nebula, Metaballs,
+  LED Matrix, Voice Orb (narration mode), and **Builder** — compose your own
+  from six toggleable layers
+- Every mode: 4 factory **styles**, curated params + full **Advanced** section
+  (~150 knobs app-wide), plain-language **hint** for every setting (tooltip +
+  live hint bar), all persisted per mode
 - Background system on every preset: preset-animated, any solid color
   (incl. chroma green/magenta swatches), or transparent (luma alpha,
   checkerboard preview)
@@ -17,6 +21,8 @@ Desktop music visualizer. Tauri 2 + React + TypeScript, WebGPU rendering (Canvas
   sync by construction, 720p→4K / 30/60 fps / auto or manual bitrate.
   Design: [docs/EXPORT-DESIGN.md](docs/EXPORT-DESIGN.md); live skew ≤ ~30 ms
   constant, export drift-free
+- Product chrome: auto-hides while playing, keyboard shortcuts (press ?),
+  hover-scrub seek bar, onboarding empty state, GPU-loss auto-recovery
 - Three synthesized demo tracks (120 BPM house / 174 BPM DnB / 70 BPM ambient)
   for instant cross-style testing without files
 

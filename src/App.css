@@ -1028,6 +1028,13 @@ kbd {
   color: var(--text);
 }
 
+.about-line {
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  padding-top: 2px;
+}
+
 /* ---------- toasts ---------- */
 
 .toast {

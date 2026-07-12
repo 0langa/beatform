@@ -179,6 +179,10 @@ export class WebGPURenderer implements Renderer {
   private paramsData = new Float32Array(MAX_PARAMS);
   private waveData = new Float32Array(WAVE_POINTS);
 
+  /** Fires if the GPU device dies (driver reset, TDR) — host may recreate. */
+  onDeviceLost: ((reason: string) => void) | null = null;
+  private disposed = false;
+
   static async create(
     canvas: HTMLCanvasElement | OffscreenCanvas,
   ): Promise<WebGPURenderer> {
@@ -186,7 +190,13 @@ export class WebGPURenderer implements Renderer {
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error("No WebGPU adapter");
     const device = await adapter.requestDevice();
-    return new WebGPURenderer(canvas, device);
+    const renderer = new WebGPURenderer(canvas, device);
+    void device.lost.then((info) => {
+      if (renderer.disposed) return;
+      console.error("[webgpu] device lost:", info.reason, info.message);
+      renderer.onDeviceLost?.(info.message);
+    });
+    return renderer;
   }
 
   private constructor(canvas: HTMLCanvasElement | OffscreenCanvas, device: GPUDevice) {
@@ -353,6 +363,7 @@ export class WebGPURenderer implements Renderer {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.uniformBuf.destroy();
     this.paramsBuf.destroy();
     this.waveBuf.destroy();

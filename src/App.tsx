@@ -30,9 +30,12 @@ import {
 } from "./ui/Icons";
 import "./App.css";
 
+const APP_VERSION = "0.9.0";
+
 const LS_PRESET = "viz.activePreset";
 const LS_PARAMS = "viz.params.v1";
 const LS_BG = "viz.bg.v1";
+const LS_VOLUME = "viz.volume";
 
 const RESOLUTIONS = [
   { label: "720p (1280×720)", w: 1280, h: 720 },
@@ -124,10 +127,18 @@ export default function App() {
   }, []);
   const [showHelp, setShowHelp] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [volume, setVolume] = useState(1);
+  const [volume, setVolume] = useState(() => {
+    const v = Number(localStorage.getItem(LS_VOLUME));
+    return Number.isFinite(v) && v >= 0 && v <= 1 && localStorage.getItem(LS_VOLUME) !== null
+      ? v
+      : 1;
+  });
   const [muted, setMuted] = useState(false);
   const volumeRef = useRef({ volume: 1, muted: false });
+  volumeRef.current.volume = volume;
+  volumeRef.current.muted = muted;
   const seekingRef = useRef(false);
+  const dragDepthRef = useRef(0);
 
   // Chrome auto-hide (video-player style)
   const [chromeIdle, setChromeIdle] = useState(false);
@@ -148,10 +159,11 @@ export default function App() {
   const exportOpenRef = useRef(false);
   exportOpenRef.current = showExport;
 
-  // One-time init: engine, renderer, frame loop
+  // One-time init: engine, renderer (with GPU-loss recovery), frame loop
   useEffect(() => {
     const engine = new AudioEngine();
     engineRef.current = engine;
+    engine.setVolume(volumeRef.current.muted ? 0 : volumeRef.current.volume);
     engine.onStateChange = (s) => {
       if (!seekingRef.current) setPlayback(s);
     };
@@ -161,11 +173,21 @@ export default function App() {
     let raf = 0;
     let ro: ResizeObserver | null = null;
     let stopFallback: (() => void) | undefined;
+    let gpuRetries = 0;
 
-    (async () => {
+    const installRenderer = async () => {
       let renderer: Renderer;
       try {
-        renderer = await WebGPURenderer.create(canvas);
+        const gpu = await WebGPURenderer.create(canvas);
+        gpu.onDeviceLost = () => {
+          // Driver reset / TDR: rebuild the renderer once, fall back after 2
+          if (disposed) return;
+          rendererRef.current = null;
+          gpu.dispose();
+          gpuRetries++;
+          void installRenderer();
+        };
+        renderer = gpuRetries < 2 ? gpu : new Canvas2DRenderer(canvas);
       } catch {
         renderer = new Canvas2DRenderer(canvas);
       }
@@ -173,18 +195,23 @@ export default function App() {
         renderer.dispose();
         return;
       }
-      renderer.setPreset(presetById(localStorage.getItem(LS_PRESET) ?? presets[0].id));
+      renderer.setPreset(presetById(presetIdRef.current));
       renderer.setBackground(bgRef.current);
+      const r = canvas.getBoundingClientRect();
+      renderer.resize(r.width, r.height, window.devicePixelRatio);
       rendererRef.current = renderer;
       setRendererKind(renderer.kind);
+    };
+
+    (async () => {
+      await installRenderer();
+      if (disposed) return;
 
       ro = new ResizeObserver(() => {
         const r = canvas.getBoundingClientRect();
-        renderer.resize(r.width, r.height, window.devicePixelRatio);
+        rendererRef.current?.resize(r.width, r.height, window.devicePixelRatio);
       });
       ro.observe(canvas);
-      const r = canvas.getBoundingClientRect();
-      renderer.resize(r.width, r.height, window.devicePixelRatio);
 
       let lastUiUpdate = 0;
       let fallback: ReturnType<typeof setTimeout> | undefined;
@@ -193,7 +220,7 @@ export default function App() {
         clearTimeout(fallback);
         const t = tMs / 1000;
         const features = analyzer.update(t);
-        renderer.render(features, t, activeParamsRef.current);
+        rendererRef.current?.render(features, t, activeParamsRef.current);
         // E2E probe: lets tooling confirm the render loop is alive
         (window as unknown as { __vizFrames: number }).__vizFrames =
           ((window as unknown as { __vizFrames: number }).__vizFrames ?? 0) + 1;
@@ -221,7 +248,10 @@ export default function App() {
       ro?.disconnect();
       rendererRef.current?.dispose();
       rendererRef.current = null;
+      engine.dispose();
+      engineRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-hide chrome while playing and idle
@@ -296,6 +326,7 @@ export default function App() {
     setVolume(v);
     setMuted(m);
     engineRef.current?.setVolume(m ? 0 : v);
+    localStorage.setItem(LS_VOLUME, String(v));
   }, []);
 
   const loadFile = useCallback(async (file: File) => {
@@ -309,12 +340,17 @@ export default function App() {
   }, []);
 
   const loadDemo = useCallback(async (id: string) => {
-    const demo = demos.find((d) => d.id === id);
-    if (!demo) return;
-    const engine = engineRef.current!;
-    const buf = await demo.render(engine.ctx.sampleRate);
-    engine.loadBuffer(buf, `Demo: ${demo.name}`);
-    await engine.play();
+    try {
+      setError(null);
+      const demo = demos.find((d) => d.id === id);
+      if (!demo) return;
+      const engine = engineRef.current!;
+      const buf = await demo.render(engine.ctx.sampleRate);
+      engine.loadBuffer(buf, `Demo: ${demo.name}`);
+      await engine.play();
+    } catch (e) {
+      setError(`Demo failed: ${(e as Error).message}`);
+    }
   }, []);
 
   const togglePlay = useCallback(async () => {
@@ -383,6 +419,10 @@ export default function App() {
         case "f":
         case "F":
           toggleFullscreen();
+          break;
+        case "Escape":
+          setShowHelp(false);
+          if (!abortRef.current) setShowExport(false);
           break;
       }
     };
@@ -489,12 +529,20 @@ export default function App() {
       className={`app ${dragOver ? "drag-over" : ""} ${idle ? "idle" : ""}`}
       onMouseMove={pokeChrome}
       onPointerDown={pokeChrome}
-      onDragOver={(e) => {
+      onDragOver={(e) => e.preventDefault()}
+      onDragEnter={(e) => {
         e.preventDefault();
+        dragDepthRef.current++;
         setDragOver(true);
       }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={onDrop}
+      onDragLeave={() => {
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) setDragOver(false);
+      }}
+      onDrop={(e) => {
+        dragDepthRef.current = 0;
+        onDrop(e);
+      }}
     >
       <canvas
         ref={canvasRef}
@@ -637,6 +685,7 @@ export default function App() {
                 </div>
               ))}
             </div>
+            <div className="about-line">Audio Visualizer v{APP_VERSION}</div>
           </div>
         </div>
       )}
