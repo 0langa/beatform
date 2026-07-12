@@ -175,6 +175,12 @@ export class WebGPURenderer implements Renderer {
   private constructor(canvas: HTMLCanvasElement, device: GPUDevice) {
     this.canvas = canvas;
     this.device = device;
+    // Surface GPU validation failures loudly; __gpuErrors is an E2E probe
+    device.addEventListener("uncapturederror", (e) => {
+      console.error("[webgpu]", (e as GPUUncapturedErrorEvent).error.message);
+      const g = globalThis as unknown as { __gpuErrors: number };
+      g.__gpuErrors = (g.__gpuErrors ?? 0) + 1;
+    });
     const context = canvas.getContext("webgpu");
     if (!context) throw new Error("No webgpu canvas context");
     this.context = context;

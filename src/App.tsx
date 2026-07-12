@@ -66,6 +66,7 @@ export default function App() {
     let disposed = false;
     let raf = 0;
     let ro: ResizeObserver | null = null;
+    let stopFallback: (() => void) | undefined;
 
     (async () => {
       let renderer: Renderer;
@@ -91,23 +92,36 @@ export default function App() {
       renderer.resize(r.width, r.height, window.devicePixelRatio);
 
       let lastUiUpdate = 0;
+      let fallback: ReturnType<typeof setTimeout> | undefined;
       const loop = (tMs: number) => {
         if (disposed) return;
+        clearTimeout(fallback);
         const t = tMs / 1000;
         const features = analyzer.update(t);
         renderer.render(features, t, activeParamsRef.current);
+        // E2E probe: lets tooling confirm the render loop is alive
+        (window as unknown as { __vizFrames: number }).__vizFrames =
+          ((window as unknown as { __vizFrames: number }).__vizFrames ?? 0) + 1;
         // Throttled transport refresh while playing
         if (engine.playing && t - lastUiUpdate > 0.25 && !seekingRef.current) {
           lastUiUpdate = t;
           setPlayback(engine.state);
         }
         raf = requestAnimationFrame(loop);
+        // rAF starves in hidden/occluded tabs; keep rendering (throttled by
+        // the browser to ~1fps) so captures and background use stay live
+        fallback = setTimeout(() => {
+          cancelAnimationFrame(raf);
+          loop(performance.now());
+        }, 300);
       };
       raf = requestAnimationFrame(loop);
+      stopFallback = () => clearTimeout(fallback);
     })();
 
     return () => {
       disposed = true;
+      stopFallback?.();
       cancelAnimationFrame(raf);
       ro?.disconnect();
       rendererRef.current?.dispose();
