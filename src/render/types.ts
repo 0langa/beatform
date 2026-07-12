@@ -12,11 +12,25 @@ export interface ParamSpec {
   max: number;
   step: number;
   default: number;
+  /** One-line, user-facing: what turning this knob visibly does. */
+  hint?: string;
+}
+
+/** A factory look for a preset: named partial parameter override. */
+export interface StyleDef {
+  id: string;
+  name: string;
+  /** Keys not listed fall back to spec defaults. */
+  values: Partial<ParamValues>;
 }
 
 export interface PresetDef {
   id: string;
   name: string;
+  /** One-line description of the visual mode, shown in the settings panel. */
+  description?: string;
+  /** Factory looks — applied as defaults + values. First entry ≙ defaults. */
+  styles?: StyleDef[];
   params: ParamSpec[];
   /**
    * Expert knobs: every internal constant worth touching. Rendered collapsed

@@ -273,6 +273,17 @@ export default function App() {
     localStorage.setItem(LS_PARAMS, JSON.stringify(paramsByPresetRef.current));
   }, [presetId]);
 
+  const applyStyle = useCallback(
+    (values: Partial<ParamValues>) => {
+      const next = { ...defaultParams(presetById(presetId)), ...values } as ParamValues;
+      activeParamsRef.current = next;
+      setParams(next);
+      paramsByPresetRef.current[presetId] = next;
+      localStorage.setItem(LS_PARAMS, JSON.stringify(paramsByPresetRef.current));
+    },
+    [presetId],
+  );
+
   const updateBg = useCallback((next: BgSettings) => {
     setBg(next);
     bgRef.current = next;
@@ -580,6 +591,7 @@ export default function App() {
           preset={preset}
           params={params}
           onParam={setParam}
+          onApplyStyle={applyStyle}
           onReset={resetParams}
           bg={bg}
           onBg={updateBg}

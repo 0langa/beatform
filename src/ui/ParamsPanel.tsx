@@ -6,7 +6,7 @@ import type {
   ParamValues,
   PresetDef,
 } from "../render/types";
-import { BG_PRESET, BG_SOLID, BG_TRANSPARENT } from "../render/types";
+import { BG_PRESET, BG_SOLID, BG_TRANSPARENT, defaultParams } from "../render/types";
 import { Slider } from "./Slider";
 import { IconChevronRight, IconClose } from "./Icons";
 
@@ -23,21 +23,27 @@ function rgbToHex([r, g, b]: [number, number, number]): string {
   return `#${c(r)}${c(g)}${c(b)}`;
 }
 
-const BG_OPTIONS: Array<{ mode: BgMode; label: string }> = [
-  { mode: BG_PRESET, label: "Animated" },
-  { mode: BG_SOLID, label: "Solid" },
-  { mode: BG_TRANSPARENT, label: "Transparent" },
+const BG_OPTIONS: Array<{ mode: BgMode; label: string; hint: string }> = [
+  { mode: BG_PRESET, label: "Animated", hint: "The visual's own moving background" },
+  { mode: BG_SOLID, label: "Solid", hint: "Flat color behind the visual — pick any, or chroma green/magenta for keying" },
+  { mode: BG_TRANSPARENT, label: "Transparent", hint: "See-through background (checkerboard preview); MP4 exports render it black" },
 ];
 
 function ParamRow(props: {
   spec: ParamSpec;
   value: number;
   onChange: (v: number) => void;
+  onHint: (hint: string | null) => void;
 }) {
   const { spec: p, value } = props;
   const isToggle = p.step === 1 && p.min === 0 && p.max === 1;
+  const hintProps = {
+    title: p.hint,
+    onPointerEnter: () => props.onHint(p.hint ?? null),
+    onPointerLeave: () => props.onHint(null),
+  };
   return isToggle ? (
-    <label className="row toggle-row">
+    <label className="row toggle-row" {...hintProps}>
       <span className="row-label">{p.label}</span>
       <button
         className={`switch ${value > 0.5 ? "on" : ""}`}
@@ -49,7 +55,7 @@ function ParamRow(props: {
       </button>
     </label>
   ) : (
-    <label className="row param-row">
+    <label className="row param-row" {...hintProps}>
       <span className="row-label">{p.label}</span>
       <Slider min={p.min} max={p.max} step={p.step} value={value} onChange={props.onChange} />
       <span className="row-value">{value.toFixed(p.step < 1 ? 2 : 0)}</span>
@@ -57,11 +63,12 @@ function ParamRow(props: {
   );
 }
 
-/** Right-hand settings panel: active preset parameters + background. */
+/** Right-hand settings panel: styles, preset parameters, background. */
 export function ParamsPanel(props: {
   preset: PresetDef;
   params: ParamValues;
   onParam: (key: string, value: number) => void;
+  onApplyStyle: (values: Partial<ParamValues>) => void;
   onReset: () => void;
   bg: BgSettings;
   onBg: (bg: BgSettings) => void;
@@ -71,6 +78,7 @@ export function ParamsPanel(props: {
   const [showAdvanced, setShowAdvanced] = useState(
     () => localStorage.getItem("viz.advancedOpen") === "1",
   );
+  const [hint, setHint] = useState<string | null>(null);
   const toggleAdvanced = () => {
     setShowAdvanced((v) => {
       localStorage.setItem("viz.advancedOpen", v ? "0" : "1");
@@ -81,6 +89,13 @@ export function ParamsPanel(props: {
   const changedCount = advanced.filter(
     (p) => (props.params[p.key] ?? p.default) !== p.default,
   ).length;
+
+  // A style is "active" when current params exactly equal defaults + values
+  const defaults = defaultParams(props.preset);
+  const activeStyleId = (props.preset.styles ?? []).find((s) => {
+    const merged = { ...defaults, ...s.values };
+    return Object.keys(merged).every((k) => (props.params[k] ?? defaults[k]) === merged[k]);
+  })?.id;
 
   return (
     <aside className="chrome params-panel">
@@ -95,16 +110,41 @@ export function ParamsPanel(props: {
         <section className="panel-section">
           <div className="section-head">
             <span className="section-title">{props.preset.name}</span>
-            <button className="text-btn" onClick={props.onReset}>
+            <button
+              className="text-btn"
+              onClick={props.onReset}
+              title="Back to factory defaults (all settings incl. advanced)"
+            >
               Reset
             </button>
           </div>
+          {props.preset.description && (
+            <p className="preset-desc">{props.preset.description}</p>
+          )}
+
+          {(props.preset.styles?.length ?? 0) > 0 && (
+            <div className="style-chips">
+              {props.preset.styles!.map((s) => (
+                <button
+                  key={s.id}
+                  className={`style-chip ${s.id === activeStyleId ? "active" : ""}`}
+                  title={`Apply the "${s.name}" look`}
+                  onClick={() => props.onApplyStyle(s.values)}
+                >
+                  {s.name}
+                </button>
+              ))}
+              {!activeStyleId && <span className="style-custom">Custom</span>}
+            </div>
+          )}
+
           {props.preset.params.map((p) => (
             <ParamRow
               key={p.key}
               spec={p}
               value={props.params[p.key] ?? p.default}
               onChange={(v) => props.onParam(p.key, v)}
+              onHint={setHint}
             />
           ))}
 
@@ -113,6 +153,7 @@ export function ParamsPanel(props: {
               <button
                 className={`advanced-toggle ${showAdvanced ? "open" : ""}`}
                 onClick={toggleAdvanced}
+                title="Expert knobs — every internal constant of this visual"
               >
                 <IconChevronRight size={13} />
                 Advanced
@@ -128,6 +169,7 @@ export function ParamsPanel(props: {
                       spec={p}
                       value={props.params[p.key] ?? p.default}
                       onChange={(v) => props.onParam(p.key, v)}
+                      onHint={setHint}
                     />
                   ))}
                 </div>
@@ -145,6 +187,9 @@ export function ParamsPanel(props: {
               <button
                 key={o.mode}
                 className={`segment ${props.bg.mode === o.mode ? "active" : ""}`}
+                title={o.hint}
+                onPointerEnter={() => setHint(o.hint)}
+                onPointerLeave={() => setHint(null)}
                 onClick={() => props.onBg({ ...props.bg, mode: o.mode })}
               >
                 {o.label}
@@ -187,7 +232,9 @@ export function ParamsPanel(props: {
         <span className="renderer-badge" title="Active render backend">
           {props.rendererKind}
         </span>
-        <span className="footer-hint">Params saved per preset</span>
+        <span className={`footer-hint ${hint ? "is-hint" : ""}`}>
+          {hint ?? "Hover a setting to see what it does"}
+        </span>
       </div>
     </aside>
   );
