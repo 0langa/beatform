@@ -6,7 +6,11 @@ Desktop music visualizer. Tauri 2 + React + TypeScript, WebGPU rendering (Canvas
 
 - Local file playback (mp3/flac/wav/ogg/m4a) via Web Audio — drag & drop or file picker
 - Log-spaced spectrum analysis, asymmetric smoothing, peak hold, band energies, spectral-flux beat detection
-- WebGPU fragment-shader presets with live-tweakable parameters
+- 8 WebGPU shader presets with live-tweakable parameters (persisted per preset):
+  Spectrum Bars, Radial Burst, Oscilloscope, Starfield Warp, Tunnel,
+  Kaleido Nebula, Metaballs, LED Matrix
+- Deterministic offline analysis path (own FFT) — foundation for frame-perfect
+  MP4 export, see [docs/EXPORT-DESIGN.md](docs/EXPORT-DESIGN.md)
 - Synthesized demo track for instant testing without files
 
 ## Architecture
@@ -14,24 +18,30 @@ Desktop music visualizer. Tauri 2 + React + TypeScript, WebGPU rendering (Canvas
 ```
 src/
   audio/
-    engine.ts      AudioContext graph, decoded-buffer playback, seek/pause/volume
-    features.ts    AnalyserNode -> AudioFeatures (log bins, peaks, bands, beat)
-    types.ts       AudioFeatures — the audio->render contract
-    demoTrack.ts   OfflineAudioContext demo synth
+    engine.ts          AudioContext graph, decoded-buffer playback, seek/volume
+    featurePipeline.ts source-agnostic spectrum->AudioFeatures (deterministic)
+    realtimeSource.ts  AnalyserNode driver (live playback)
+    offlineSource.ts   AudioBuffer driver at fixed fps (MP4 export path)
+    dsp/fft.ts         own real FFT (AnalyserNode is realtime-only)
+    types.ts           AudioFeatures — the audio->render contract
+    demoTrack.ts       OfflineAudioContext demo synth
   render/
-    types.ts       Renderer + Preset interfaces, param schemas (serializable)
-    webgpuRenderer.ts   fullscreen-triangle pass, preset WGSL compiled in
+    types.ts           Renderer + Preset interfaces, param schemas (serializable)
+    webgpuRenderer.ts  fullscreen-triangle pass, shared WGSL header/ABI
+                       (uniforms, bins/peaks/waveform buffers, hsl/noise/fbm)
     canvas2dRenderer.ts fallback renderer, same interface
-    presets/
-      spectrumBars.ts   default preset (WGSL fragment + param defs)
-  App.tsx          transport UI, drag&drop, auto-generated param panel
-src-tauri/         Rust shell — native capabilities land here (library scan,
-                   system-audio loopback, decode offload) without touching the
-                   render or audio contracts
+    presets/           one file per visual; index.ts is the registry
+  App.tsx              transport UI, preset picker, auto-generated param panel
+docs/EXPORT-DESIGN.md  offline-rendered, frame-perfect MP4 export design
+src-tauri/             Rust shell — native capabilities land here (library scan,
+                       system-audio loopback, ffmpeg fallback) without touching
+                       the render or audio contracts
 ```
 
-Design rule: renderers consume only `AudioFeatures`; presets declare params as
-schema. New visuals = new preset file. New audio sources = engine change only.
+Design rules: renderers consume only `AudioFeatures`; presets declare params
+as schema and stay pure functions of (features, time, params) — purity is
+what makes offline export output identical to the live view. New visual =
+one preset file + registry entry.
 
 ## Dev
 

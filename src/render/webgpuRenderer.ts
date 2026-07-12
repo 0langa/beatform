@@ -2,14 +2,21 @@ import type { AudioFeatures } from "../audio/types";
 import type { ParamValues, PresetDef, Renderer } from "./types";
 
 const MAX_PARAMS = 16;
+/** Downsampled waveform points exposed to shaders */
+const WAVE_POINTS = 512;
+/** Uniform struct size in bytes (12 x 4) */
+const UNIFORM_SIZE = 48;
 
 /**
  * WebGPU renderer. Fullscreen-triangle pass; the active preset supplies the
- * fragment logic as WGSL. Spectrum data reaches the GPU as storage buffers,
- * scalar features as one uniform struct — presets read both through a fixed
- * header so every preset sees the same ABI.
+ * fragment logic as WGSL. Spectrum/waveform data reach the GPU as storage
+ * buffers, scalar features as one uniform struct — presets read both through
+ * this fixed header so every preset sees the same ABI, plus a small shared
+ * helper library (hsl2rgb, hashes, value noise, fbm).
  */
 const HEADER = /* wgsl */ `
+const TAU: f32 = 6.28318530718;
+
 struct Uniforms {
   time: f32,
   beatIntensity: f32,
@@ -19,13 +26,96 @@ struct Uniforms {
   treble: f32,
   binCount: u32,
   aspect: f32,
+  waveCount: u32,
+  progress: f32,
+  _pad0: f32,
+  _pad1: f32,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> bins: array<f32>;
 @group(0) @binding(2) var<storage, read> peaks: array<f32>;
 @group(0) @binding(3) var<storage, read> params: array<f32>;
+@group(0) @binding(4) var<storage, read> waveform: array<f32>;
 
 fn param(i: u32) -> f32 { return params[i]; }
+
+/** Spectrum sampled at x in 0..1 (nearest bin) */
+fn binAt(x: f32) -> f32 {
+  let n = f32(u.binCount);
+  return bins[u32(clamp(x, 0.0, 0.999) * n)];
+}
+
+fn peakAt(x: f32) -> f32 {
+  let n = f32(u.binCount);
+  return peaks[u32(clamp(x, 0.0, 0.999) * n)];
+}
+
+/** Waveform sampled at x in 0..1, linear interpolation, -1..1 */
+fn waveAt(x: f32) -> f32 {
+  let n = f32(u.waveCount);
+  let fi = clamp(x, 0.0, 0.999) * (n - 1.0);
+  let i = u32(fi);
+  let fr = fract(fi);
+  return mix(waveform[i], waveform[min(i + 1u, u.waveCount - 1u)], fr);
+}
+
+fn hsl2rgb(h: f32, s: f32, l: f32) -> vec3f {
+  let c = (1.0 - abs(2.0 * l - 1.0)) * s;
+  let hp = fract(h / 360.0) * 6.0;
+  let x = c * (1.0 - abs(hp % 2.0 - 1.0));
+  var rgb = vec3f(0.0);
+  if (hp < 1.0) { rgb = vec3f(c, x, 0.0); }
+  else if (hp < 2.0) { rgb = vec3f(x, c, 0.0); }
+  else if (hp < 3.0) { rgb = vec3f(0.0, c, x); }
+  else if (hp < 4.0) { rgb = vec3f(0.0, x, c); }
+  else if (hp < 5.0) { rgb = vec3f(x, 0.0, c); }
+  else { rgb = vec3f(c, 0.0, x); }
+  return rgb + vec3f(l - c * 0.5);
+}
+
+fn hash21(p: vec2f) -> f32 {
+  var q = fract(p * vec2f(123.34, 345.45));
+  q += dot(q, q + 34.345);
+  return fract(q.x * q.y);
+}
+
+fn hash11(p: f32) -> f32 {
+  return fract(sin(p * 127.1) * 43758.5453);
+}
+
+fn noise2(p: vec2f) -> f32 {
+  let i = floor(p);
+  let f = fract(p);
+  let s = f * f * (3.0 - 2.0 * f);
+  let a = hash21(i);
+  let b = hash21(i + vec2f(1.0, 0.0));
+  let c = hash21(i + vec2f(0.0, 1.0));
+  let d = hash21(i + vec2f(1.0, 1.0));
+  return mix(mix(a, b, s.x), mix(c, d, s.x), s.y);
+}
+
+fn fbm(pIn: vec2f) -> f32 {
+  var p = pIn;
+  var v = 0.0;
+  var amp = 0.5;
+  for (var i = 0; i < 5; i++) {
+    v += amp * noise2(p);
+    p = p * 2.03 + vec2f(11.7, 5.3);
+    amp *= 0.5;
+  }
+  return v;
+}
+
+fn rot2(a: f32) -> mat2x2f {
+  let c = cos(a);
+  let s = sin(a);
+  return mat2x2f(c, -s, s, c);
+}
+
+/** uv centered at 0, x corrected for aspect ratio */
+fn centered(uv: vec2f) -> vec2f {
+  return vec2f((uv.x - 0.5) * u.aspect, uv.y - 0.5);
+}
 
 struct VSOut {
   @builtin(position) pos: vec4f,
@@ -58,17 +148,21 @@ export class WebGPURenderer implements Renderer {
 
   private pipeline: GPURenderPipeline | null = null;
   private bindGroup: GPUBindGroup | null = null;
+  private bindLayout: GPUBindGroupLayout;
+  private pipelineLayout: GPUPipelineLayout;
   private uniformBuf: GPUBuffer;
   private binsBuf: GPUBuffer | null = null;
   private peaksBuf: GPUBuffer | null = null;
   private paramsBuf: GPUBuffer;
+  private waveBuf: GPUBuffer;
   private binCapacity = 0;
 
   private preset: PresetDef | null = null;
-  private uniformData = new ArrayBuffer(32);
+  private uniformData = new ArrayBuffer(UNIFORM_SIZE);
   private uniformF32 = new Float32Array(this.uniformData);
   private uniformU32 = new Uint32Array(this.uniformData);
   private paramsData = new Float32Array(MAX_PARAMS);
+  private waveData = new Float32Array(WAVE_POINTS);
 
   static async create(canvas: HTMLCanvasElement): Promise<WebGPURenderer> {
     if (!navigator.gpu) throw new Error("WebGPU not available");
@@ -91,12 +185,32 @@ export class WebGPURenderer implements Renderer {
       alphaMode: "opaque",
     });
     this.uniformBuf = device.createBuffer({
-      size: this.uniformData.byteLength,
+      size: UNIFORM_SIZE,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.paramsBuf = device.createBuffer({
       size: MAX_PARAMS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.waveBuf = device.createBuffer({
+      size: WAVE_POINTS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    // Explicit layout: presets bind the full ABI even for buffers they don't
+    // reference ("auto" layout would strip unused bindings and break the
+    // shared bind group).
+    const storage = { type: "read-only-storage" as const };
+    this.bindLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: storage },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: storage },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: storage },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: storage },
+      ],
+    });
+    this.pipelineLayout = device.createPipelineLayout({
+      bindGroupLayouts: [this.bindLayout],
     });
   }
 
@@ -105,8 +219,16 @@ export class WebGPURenderer implements Renderer {
     const module = this.device.createShaderModule({
       code: HEADER + preset.wgsl,
     });
+    // Surface WGSL mistakes during preset development
+    void module.getCompilationInfo().then((info) => {
+      for (const m of info.messages) {
+        if (m.type === "error") {
+          console.error(`[preset ${preset.id}] ${m.lineNum}:${m.linePos} ${m.message}`);
+        }
+      }
+    });
     this.pipeline = this.device.createRenderPipeline({
-      layout: "auto",
+      layout: this.pipelineLayout,
       vertex: { module, entryPoint: "vs_main" },
       fragment: {
         module,
@@ -139,9 +261,22 @@ export class WebGPURenderer implements Renderer {
     this.uniformF32[5] = f.treble;
     this.uniformU32[6] = f.bins.length;
     this.uniformF32[7] = this.canvas.width / Math.max(1, this.canvas.height);
+    this.uniformU32[8] = WAVE_POINTS;
+    this.uniformF32[9] = f.duration > 0 ? f.time / f.duration : 0;
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniformData);
     this.device.queue.writeBuffer(this.binsBuf!, 0, f.bins);
     this.device.queue.writeBuffer(this.peaksBuf!, 0, f.peaks);
+
+    // Downsample waveform to a fixed-size buffer (chunk means)
+    const src = f.waveform;
+    const chunk = Math.max(1, Math.floor(src.length / WAVE_POINTS));
+    for (let i = 0; i < WAVE_POINTS; i++) {
+      let s = 0;
+      const base = Math.min(src.length - chunk, i * chunk);
+      for (let j = 0; j < chunk; j++) s += src[base + j];
+      this.waveData[i] = s / chunk;
+    }
+    this.device.queue.writeBuffer(this.waveBuf, 0, this.waveData);
 
     this.paramsData.fill(0);
     this.preset.params.forEach((p, i) => {
@@ -170,6 +305,7 @@ export class WebGPURenderer implements Renderer {
   dispose(): void {
     this.uniformBuf.destroy();
     this.paramsBuf.destroy();
+    this.waveBuf.destroy();
     this.binsBuf?.destroy();
     this.peaksBuf?.destroy();
     this.device.destroy();
@@ -195,12 +331,13 @@ export class WebGPURenderer implements Renderer {
   private getBindGroup(): GPUBindGroup {
     if (!this.bindGroup) {
       this.bindGroup = this.device.createBindGroup({
-        layout: this.pipeline!.getBindGroupLayout(0),
+        layout: this.bindLayout,
         entries: [
           { binding: 0, resource: { buffer: this.uniformBuf } },
           { binding: 1, resource: { buffer: this.binsBuf! } },
           { binding: 2, resource: { buffer: this.peaksBuf! } },
           { binding: 3, resource: { buffer: this.paramsBuf } },
+          { binding: 4, resource: { buffer: this.waveBuf } },
         ],
       });
     }

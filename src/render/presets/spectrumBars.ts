@@ -1,9 +1,9 @@
 import type { PresetDef } from "../types";
 
 /**
- * Default preset: log-spectrum bars with glow, peak caps, beat-driven
- * background pulse and vignette. Pure fragment-shader preset — the whole
- * screen is computed from features + params, milkdrop-style.
+ * Log-spectrum bars with glow, peak caps, beat-driven background pulse and
+ * vignette. Pure fragment-shader preset — the whole screen is computed from
+ * features + params, milkdrop-style.
  */
 export const spectrumBars: PresetDef = {
   id: "spectrum-bars",
@@ -17,20 +17,6 @@ export const spectrumBars: PresetDef = {
     { key: "mirror", label: "Mirror", min: 0, max: 1, step: 1, default: 0 },
   ],
   wgsl: /* wgsl */ `
-fn hsl2rgb(h: f32, s: f32, l: f32) -> vec3f {
-  let c = (1.0 - abs(2.0 * l - 1.0)) * s;
-  let hp = fract(h / 360.0) * 6.0;
-  let x = c * (1.0 - abs(hp % 2.0 - 1.0));
-  var rgb = vec3f(0.0);
-  if (hp < 1.0) { rgb = vec3f(c, x, 0.0); }
-  else if (hp < 2.0) { rgb = vec3f(x, c, 0.0); }
-  else if (hp < 3.0) { rgb = vec3f(0.0, c, x); }
-  else if (hp < 4.0) { rgb = vec3f(0.0, x, c); }
-  else if (hp < 5.0) { rgb = vec3f(x, 0.0, c); }
-  else { rgb = vec3f(c, 0.0, x); }
-  return rgb + vec3f(l - c * 0.5);
-}
-
 fn preset(uvIn: vec2f) -> vec4f {
   let hue = param(0); let hueSpread = param(1); let glow = param(2);
   let barGap = param(3); let beatZoom = param(4); let mirror = param(5);

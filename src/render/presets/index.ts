@@ -1,0 +1,25 @@
+import type { PresetDef } from "../types";
+import { spectrumBars } from "./spectrumBars";
+import { radialBurst } from "./radialBurst";
+import { oscilloscope } from "./oscilloscope";
+import { starfield } from "./starfield";
+import { tunnelRings } from "./tunnelRings";
+import { nebula } from "./nebula";
+import { metaballs } from "./metaballs";
+import { ledMatrix } from "./ledMatrix";
+
+/** Registry: adding a preset = write the file, add it here. */
+export const presets: PresetDef[] = [
+  spectrumBars,
+  radialBurst,
+  oscilloscope,
+  starfield,
+  tunnelRings,
+  nebula,
+  metaballs,
+  ledMatrix,
+];
+
+export function presetById(id: string): PresetDef {
+  return presets.find((p) => p.id === id) ?? presets[0];
+}

@@ -145,10 +145,36 @@ body,
   gap: 6px;
 }
 
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
 .panel-title {
   font-size: 13px;
   font-weight: 600;
-  margin-bottom: 4px;
+}
+
+.btn.small {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.preset-select {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: inherit;
+  padding: 5px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.preset-select option {
+  background: #14161f;
 }
 
 .param {

@@ -1,10 +1,9 @@
 import type { AudioFeatures } from "./types";
-import type { AudioEngine } from "./engine";
 
-const MIN_FREQ = 30;
-const MAX_FREQ = 16000;
-const MIN_DB = -90;
-const MAX_DB = -22;
+export const MIN_FREQ = 30;
+export const MAX_FREQ = 16000;
+export const MIN_DB = -90;
+export const MAX_DB = -22;
 
 /** Frames of spectral-flux history for the adaptive beat threshold (~0.7 s at 60 fps). */
 const FLUX_WINDOW = 43;
@@ -13,19 +12,46 @@ const BEAT_REFRACTORY = 0.14;
 /** beatIntensity halves roughly every 90 ms. */
 const BEAT_DECAY = 8;
 
+export interface PipelineConfig {
+  sampleRate: number;
+  /** FFT bin count (fftSize / 2) */
+  fftBins: number;
+  /** Output spectrum bins (log-spaced) */
+  binCount?: number;
+  /** Time-domain samples exposed as features.waveform */
+  waveformLength: number;
+}
+
+export interface PipelineInput {
+  /** dB magnitudes per FFT bin (AnalyserNode or RealFFT output) */
+  magDb: Float32Array;
+  /** Time-domain samples, -1..1 */
+  waveform: Float32Array;
+  /** Playback position, seconds */
+  time: number;
+  /** Seconds since previous frame — pass exactly 1/fps for offline rendering */
+  dt: number;
+  playing: boolean;
+  duration: number;
+}
+
 /**
- * Turns raw AnalyserNode data into renderer-ready AudioFeatures:
+ * Source-agnostic feature extraction. Consumes raw spectrum + waveform frames
+ * and produces renderer-ready AudioFeatures:
  *  - log-spaced bins (linear FFT bins misrepresent hearing: bass would get
  *    2 bars, treble 90% of the screen)
  *  - asymmetric EMA smoothing (fast attack, slow release) + peak hold
  *  - band energies and spectral-flux beat detection on the low end
+ *
+ * Deterministic: state depends only on the sequence of update() inputs, so
+ * the offline (export) path replays a track frame-by-frame and gets identical
+ * visuals for identical audio.
  */
-export class FeatureExtractor {
+export class FeaturePipeline {
   readonly binCount: number;
+  readonly features: AudioFeatures;
 
-  private engine: AudioEngine;
-  private freqData: Float32Array;
-  private timeData: Float32Array;
+  private mag: Float32Array;
   private prevMag: Float32Array;
   /** [start, end) FFT-bin range per output bin, geometrically spaced */
   private ranges: Array<[number, number]>;
@@ -35,19 +61,15 @@ export class FeatureExtractor {
 
   private fluxHistory: number[] = [];
   private lastBeatAt = -Infinity;
-  private lastFrameAt: number | null = null;
+  private clock = 0;
 
-  readonly features: AudioFeatures;
-
-  constructor(engine: AudioEngine, binCount = 96) {
-    this.engine = engine;
-    this.binCount = binCount;
-    const fftBins = engine.analyser.frequencyBinCount;
-    this.freqData = new Float32Array(fftBins);
-    this.timeData = new Float32Array(engine.analyser.fftSize);
+  constructor(config: PipelineConfig) {
+    this.binCount = config.binCount ?? 96;
+    const fftBins = config.fftBins;
+    this.mag = new Float32Array(fftBins);
     this.prevMag = new Float32Array(fftBins);
 
-    const nyquist = engine.ctx.sampleRate / 2;
+    const nyquist = config.sampleRate / 2;
     const hzPerBin = nyquist / fftBins;
     const toBin = (hz: number) =>
       Math.max(0, Math.min(fftBins - 1, Math.round(hz / hzPerBin)));
@@ -55,9 +77,9 @@ export class FeatureExtractor {
     // Geometric frequency edges -> FFT bin ranges, each at least 1 bin wide.
     this.ranges = [];
     const ratio = MAX_FREQ / MIN_FREQ;
-    for (let i = 0; i < binCount; i++) {
-      const f0 = MIN_FREQ * Math.pow(ratio, i / binCount);
-      const f1 = MIN_FREQ * Math.pow(ratio, (i + 1) / binCount);
+    for (let i = 0; i < this.binCount; i++) {
+      const f0 = MIN_FREQ * Math.pow(ratio, i / this.binCount);
+      const f1 = MIN_FREQ * Math.pow(ratio, (i + 1) / this.binCount);
       const b0 = toBin(f0);
       const b1 = Math.max(b0 + 1, toBin(f1));
       this.ranges.push([b0, b1]);
@@ -67,9 +89,9 @@ export class FeatureExtractor {
     this.trebleRange = [toBin(2000), toBin(16000)];
 
     this.features = {
-      bins: new Float32Array(binCount),
-      peaks: new Float32Array(binCount),
-      waveform: new Float32Array(this.timeData.length),
+      bins: new Float32Array(this.binCount),
+      peaks: new Float32Array(this.binCount),
+      waveform: new Float32Array(config.waveformLength),
       rms: 0,
       bass: 0,
       mid: 0,
@@ -81,19 +103,15 @@ export class FeatureExtractor {
     };
   }
 
-  /** Call once per animation frame. Mutates and returns this.features. */
-  update(now: number): AudioFeatures {
-    const dt = this.lastFrameAt === null ? 1 / 60 : Math.min(0.1, now - this.lastFrameAt);
-    this.lastFrameAt = now;
-
+  update(input: PipelineInput): AudioFeatures {
     const f = this.features;
-    this.engine.analyser.getFloatFrequencyData(this.freqData);
-    this.engine.analyser.getFloatTimeDomainData(this.timeData);
+    const dt = Math.min(0.1, Math.max(0.0001, input.dt));
+    this.clock += dt;
 
     // dB -> 0..1 magnitudes
-    const mag = this.freqData;
+    const mag = this.mag;
     for (let i = 0; i < mag.length; i++) {
-      const db = mag[i];
+      const db = input.magDb[i];
       mag[i] = db === -Infinity ? 0 : clamp01((db - MIN_DB) / (MAX_DB - MIN_DB));
     }
 
@@ -110,10 +128,10 @@ export class FeatureExtractor {
       f.peaks[i] = Math.max(f.peaks[i] - gravity, f.bins[i]);
     }
 
-    f.waveform.set(this.timeData);
+    f.waveform.set(input.waveform.subarray(0, f.waveform.length));
     let sum = 0;
-    for (let i = 0; i < this.timeData.length; i++) sum += this.timeData[i] ** 2;
-    f.rms = clamp01(Math.sqrt(sum / this.timeData.length) * 2.5);
+    for (let i = 0; i < input.waveform.length; i++) sum += input.waveform[i] ** 2;
+    f.rms = clamp01(Math.sqrt(sum / input.waveform.length) * 2.5);
 
     f.bass = bandMean(mag, this.bassRange);
     f.mid = bandMean(mag, this.midRange);
@@ -136,18 +154,18 @@ export class FeatureExtractor {
     if (
       this.fluxHistory.length >= 12 &&
       flux > mean * 1.6 + 0.012 &&
-      now - this.lastBeatAt > BEAT_REFRACTORY &&
-      this.engine.playing
+      this.clock - this.lastBeatAt > BEAT_REFRACTORY &&
+      input.playing
     ) {
       f.beat = true;
-      this.lastBeatAt = now;
+      this.lastBeatAt = this.clock;
       f.beatIntensity = 1;
     } else {
       f.beatIntensity *= Math.exp(-dt * BEAT_DECAY);
     }
 
-    f.time = this.engine.currentTime;
-    f.duration = this.engine.duration;
+    f.time = input.time;
+    f.duration = input.duration;
     return f;
   }
 }

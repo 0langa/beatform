@@ -1,15 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioEngine } from "./audio/engine";
-import { FeatureExtractor } from "./audio/features";
+import { RealtimeAnalyzer } from "./audio/realtimeSource";
 import { renderDemoTrack } from "./audio/demoTrack";
 import type { PlaybackState } from "./audio/types";
 import { Canvas2DRenderer } from "./render/canvas2dRenderer";
 import { WebGPURenderer } from "./render/webgpuRenderer";
 import { defaultParams, type ParamValues, type Renderer } from "./render/types";
-import { spectrumBars } from "./render/presets/spectrumBars";
+import { presets, presetById } from "./render/presets";
 import "./App.css";
 
-const preset = spectrumBars;
+const LS_PRESET = "viz.activePreset";
+const LS_PARAMS = "viz.params.v1";
+
+function loadStoredParams(): Record<string, ParamValues> {
+  try {
+    return JSON.parse(localStorage.getItem(LS_PARAMS) ?? "{}");
+  } catch {
+    return {};
+  }
+}
 
 function fmt(t: number): string {
   const m = Math.floor(t / 60);
@@ -21,7 +30,17 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<AudioEngine | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
-  const paramsRef = useRef<ParamValues>(defaultParams(preset));
+
+  const [presetId, setPresetId] = useState<string>(
+    () => localStorage.getItem(LS_PRESET) ?? presets[0].id,
+  );
+  const preset = presetById(presetId);
+  const paramsByPresetRef = useRef<Record<string, ParamValues>>(loadStoredParams());
+  const activeParamsRef = useRef<ParamValues>({
+    ...defaultParams(preset),
+    ...paramsByPresetRef.current[preset.id],
+  });
+  const [params, setParams] = useState<ParamValues>(activeParamsRef.current);
 
   const [playback, setPlayback] = useState<PlaybackState>({
     playing: false,
@@ -30,7 +49,6 @@ export default function App() {
     trackName: null,
   });
   const [rendererKind, setRendererKind] = useState<string>("…");
-  const [params, setParams] = useState<ParamValues>(paramsRef.current);
   const [dragOver, setDragOver] = useState(false);
   const [showPanel, setShowPanel] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +61,7 @@ export default function App() {
     engine.onStateChange = (s) => {
       if (!seekingRef.current) setPlayback(s);
     };
-    const extractor = new FeatureExtractor(engine);
+    const analyzer = new RealtimeAnalyzer(engine);
     const canvas = canvasRef.current!;
     let disposed = false;
     let raf = 0;
@@ -60,7 +78,7 @@ export default function App() {
         renderer.dispose();
         return;
       }
-      renderer.setPreset(preset);
+      renderer.setPreset(presetById(localStorage.getItem(LS_PRESET) ?? presets[0].id));
       rendererRef.current = renderer;
       setRendererKind(renderer.kind);
 
@@ -76,8 +94,8 @@ export default function App() {
       const loop = (tMs: number) => {
         if (disposed) return;
         const t = tMs / 1000;
-        const features = extractor.update(t);
-        renderer.render(features, t, paramsRef.current);
+        const features = analyzer.update(t);
+        renderer.render(features, t, activeParamsRef.current);
         // Throttled transport refresh while playing
         if (engine.playing && t - lastUiUpdate > 0.25 && !seekingRef.current) {
           lastUiUpdate = t;
@@ -96,6 +114,35 @@ export default function App() {
       rendererRef.current = null;
     };
   }, []);
+
+  const switchPreset = useCallback((id: string) => {
+    const next = presetById(id);
+    setPresetId(next.id);
+    localStorage.setItem(LS_PRESET, next.id);
+    activeParamsRef.current = {
+      ...defaultParams(next),
+      ...paramsByPresetRef.current[next.id],
+    };
+    setParams(activeParamsRef.current);
+    rendererRef.current?.setPreset(next);
+  }, []);
+
+  const setParam = useCallback(
+    (key: string, value: number) => {
+      activeParamsRef.current = { ...activeParamsRef.current, [key]: value };
+      setParams(activeParamsRef.current);
+      paramsByPresetRef.current[presetId] = activeParamsRef.current;
+      localStorage.setItem(LS_PARAMS, JSON.stringify(paramsByPresetRef.current));
+    },
+    [presetId],
+  );
+
+  const resetParams = useCallback(() => {
+    activeParamsRef.current = defaultParams(presetById(presetId));
+    setParams(activeParamsRef.current);
+    delete paramsByPresetRef.current[presetId];
+    localStorage.setItem(LS_PARAMS, JSON.stringify(paramsByPresetRef.current));
+  }, [presetId]);
 
   const loadFile = useCallback(async (file: File) => {
     try {
@@ -130,11 +177,6 @@ export default function App() {
     [loadFile],
   );
 
-  const setParam = useCallback((key: string, value: number) => {
-    paramsRef.current = { ...paramsRef.current, [key]: value };
-    setParams(paramsRef.current);
-  }, []);
-
   return (
     <div
       className={`app ${dragOver ? "drag-over" : ""}`}
@@ -167,6 +209,41 @@ export default function App() {
           </button>
           <button className="btn" onClick={() => setShowPanel((v) => !v)}>
             {showPanel ? "Hide params" : "Params"}
+          </button>
+        </div>
+
+        <div className="row">
+          <select
+            className="preset-select"
+            value={presetId}
+            onChange={(e) => switchPreset(e.target.value)}
+            title="Visual preset"
+          >
+            {presets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button
+            className="btn"
+            title="Previous preset"
+            onClick={() => {
+              const i = presets.findIndex((p) => p.id === presetId);
+              switchPreset(presets[(i - 1 + presets.length) % presets.length].id);
+            }}
+          >
+            ◀
+          </button>
+          <button
+            className="btn"
+            title="Next preset"
+            onClick={() => {
+              const i = presets.findIndex((p) => p.id === presetId);
+              switchPreset(presets[(i + 1) % presets.length].id);
+            }}
+          >
+            ▶
           </button>
         </div>
 
@@ -218,7 +295,12 @@ export default function App() {
 
       {showPanel && (
         <div className="hud panel">
-          <div className="panel-title">{preset.name}</div>
+          <div className="panel-head">
+            <span className="panel-title">{preset.name}</span>
+            <button className="btn small" onClick={resetParams} title="Reset to defaults">
+              Reset
+            </button>
+          </div>
           {preset.params.map((p) => (
             <label key={p.key} className="param">
               <span>{p.label}</span>
