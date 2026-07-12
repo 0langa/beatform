@@ -47,6 +47,7 @@ export default function App() {
     time: 0,
     duration: 0,
     trackName: null,
+    loop: false,
   });
   const [rendererKind, setRendererKind] = useState<string>("…");
   const [dragOver, setDragOver] = useState(false);
@@ -302,6 +303,16 @@ export default function App() {
             }}
           />
           <span className="time">{fmt(playback.duration)}</span>
+          <button
+            className={`btn loop ${playback.loop ? "toggled" : ""}`}
+            title={playback.loop ? "Loop on" : "Loop off"}
+            onClick={() => {
+              const engine = engineRef.current!;
+              engine.loop = !engine.loop;
+            }}
+          >
+            ⟳
+          </button>
           <input
             className="volume"
             type="range"

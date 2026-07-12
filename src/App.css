@@ -91,6 +91,18 @@ body,
   text-align: center;
 }
 
+.btn.loop {
+  padding: 5px 9px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.btn.toggled {
+  background: rgba(122, 184, 255, 0.25);
+  border-color: #7ab8ff;
+  color: #bcdcff;
+}
+
 .transport input[type="range"] {
   flex: 1;
   accent-color: #7ab8ff;

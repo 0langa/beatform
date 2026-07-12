@@ -24,6 +24,7 @@ export class AudioEngine {
   private offset = 0;
   private _playing = false;
   private _trackName: string | null = null;
+  private _loop = false;
 
   onStateChange: ((s: PlaybackState) => void) | null = null;
   onEnded: (() => void) | null = null;
@@ -98,6 +99,17 @@ export class AudioEngine {
     return this._playing;
   }
 
+  get loop(): boolean {
+    return this._loop;
+  }
+
+  /** Gapless: toggles AudioBufferSourceNode.loop, live on a playing source. */
+  set loop(v: boolean) {
+    this._loop = v;
+    if (this.source) this.source.loop = v;
+    this.emit();
+  }
+
   get duration(): number {
     return this.buffer?.duration ?? 0;
   }
@@ -105,10 +117,9 @@ export class AudioEngine {
   get currentTime(): number {
     if (!this.buffer) return 0;
     if (!this._playing) return this.offset;
-    return Math.min(
-      this.offset + (this.ctx.currentTime - this.startedAt),
-      this.buffer.duration,
-    );
+    const raw = this.offset + (this.ctx.currentTime - this.startedAt);
+    if (this._loop) return raw % this.buffer.duration;
+    return Math.min(raw, this.buffer.duration);
   }
 
   get state(): PlaybackState {
@@ -117,6 +128,7 @@ export class AudioEngine {
       time: this.currentTime,
       duration: this.duration,
       trackName: this._trackName,
+      loop: this._loop,
     };
   }
 
@@ -124,6 +136,7 @@ export class AudioEngine {
     if (!this.buffer) return;
     const src = this.ctx.createBufferSource();
     src.buffer = this.buffer;
+    src.loop = this._loop;
     src.connect(this.gain);
     src.onended = () => {
       // Fires for natural end only; stopSource() detaches first otherwise.

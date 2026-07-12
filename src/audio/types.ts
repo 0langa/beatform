@@ -33,4 +33,5 @@ export interface PlaybackState {
   time: number;
   duration: number;
   trackName: string | null;
+  loop: boolean;
 }
