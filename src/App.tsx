@@ -176,21 +176,33 @@ export default function App() {
       return getEngine().state;
     };
     (window as unknown as { __runExport: unknown }).__runExport = async (
-      opts: Partial<{ width: number; height: number; fps: number }> = {},
+      opts: Partial<{ width: number; height: number; fps: number; withOverlay: boolean }> = {},
     ) => {
       const buf = getEngine().audioBuffer;
       if (!buf) throw new Error("no track loaded");
       const s = store();
+      const w = opts.width ?? 320;
+      const h = opts.height ?? 180;
+      // Optional test overlay: verifies the texture path end-to-end
+      let overlay: ImageBitmap | undefined;
+      if (opts.withOverlay) {
+        const oc = new OffscreenCanvas(w, h);
+        const c2d = oc.getContext("2d")!;
+        c2d.fillStyle = "rgba(255,40,40,0.9)";
+        c2d.fillRect(w * 0.25, h * 0.4, w * 0.5, h * 0.2);
+        overlay = oc.transferToImageBitmap();
+      }
       const t0 = performance.now();
       const result = await exportVideo(buf, {
-        width: opts.width ?? 320,
-        height: opts.height ?? 180,
+        width: w,
+        height: h,
         fps: opts.fps ?? 30,
         bitrate: 1_000_000,
         presetId: s.presetId,
         params: s.activeParams,
         bg: s.bg,
         sync: s.sync,
+        overlay,
       });
       const info = {
         bytes: result.bytes,

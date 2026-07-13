@@ -34,6 +34,8 @@ export interface ExportJob {
   bg: BgSettings;
   /** Sync-source selection — same values as the live view for WYSIWYG */
   sync?: SyncSettings;
+  /** Pre-rasterized overlay (text/logo), premultiplied, at output size. */
+  overlay?: ImageBitmap;
   mode: "buffer" | "stream";
 }
 
@@ -158,6 +160,7 @@ export async function runExportJob(
   try {
     renderer.setPreset(presetById(job.presetId));
     renderer.setBackground(job.bg);
+    renderer.setOverlay(job.overlay ?? null);
     renderer.resize(job.width, job.height, 1);
 
     // --- Audio lane: feed the whole buffer in planar chunks

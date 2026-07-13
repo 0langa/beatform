@@ -12,6 +12,7 @@ export class Canvas2DRenderer implements Renderer {
   private ctx: CanvasRenderingContext2D;
   private canvas: HTMLCanvasElement;
   private bg: BgSettings = { mode: 0, color: [0, 0, 0] };
+  private overlay: ImageBitmap | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -26,6 +27,10 @@ export class Canvas2DRenderer implements Renderer {
 
   setBackground(bg: BgSettings): void {
     this.bg = bg;
+  }
+
+  setOverlay(source: ImageBitmap | null): void {
+    this.overlay = source;
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -70,6 +75,8 @@ export class Canvas2DRenderer implements Renderer {
         ctx.fillRect(i * bw + (bw * gap) / 2, H - pk - 2, bw * (1 - gap), 2);
       }
     }
+
+    if (this.overlay) ctx.drawImage(this.overlay, 0, 0, W, H);
   }
 
   dispose(): void {

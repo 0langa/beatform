@@ -79,6 +79,12 @@ export interface Renderer {
   resize(width: number, height: number, dpr: number): void;
   setPreset(preset: PresetDef): void;
   setBackground(bg: BgSettings): void;
+  /**
+   * Overlay layer (text/logo/album art), premultiplied alpha, composited
+   * source-over on top of preset + background. null clears it. The bitmap is
+   * rasterized by the host at output resolution; renderers only display it.
+   */
+  setOverlay(source: ImageBitmap | null): void;
   dispose(): void;
 }
 

@@ -24,6 +24,8 @@ export interface ExportOptions {
   bg: BgSettings;
   /** Sync-source selection — same values as the live view for WYSIWYG */
   sync?: SyncSettings;
+  /** Pre-rasterized overlay (text/logo) at output size. */
+  overlay?: ImageBitmap;
   /** Desktop: stream the file here instead of building a Blob. */
   streamToPath?: string;
   onProgress?: (framesDone: number, framesTotal: number) => void;
@@ -108,6 +110,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     params: o.params,
     bg: o.bg,
     sync: o.sync,
+    overlay: o.overlay,
     mode: o.streamToPath ? "stream" : "buffer",
   };
 
@@ -197,10 +200,9 @@ function runInWorker(
       }
     };
 
-    worker.postMessage(
-      { type: "start", job },
-      job.pcm.channels.map((c) => c.buffer),
-    );
+    const transfers: Transferable[] = job.pcm.channels.map((c) => c.buffer);
+    if (job.overlay) transfers.push(job.overlay);
+    worker.postMessage({ type: "start", job }, transfers);
   }).finally(() => {
     o.signal?.removeEventListener("abort", onAbort);
     worker.terminate();

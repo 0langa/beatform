@@ -42,6 +42,8 @@ struct Uniforms {
 @group(0) @binding(2) var<storage, read> peaks: array<f32>;
 @group(0) @binding(3) var<storage, read> params: array<f32>;
 @group(0) @binding(4) var<storage, read> waveform: array<f32>;
+@group(0) @binding(5) var overlayTex: texture_2d<f32>;
+@group(0) @binding(6) var overlaySmp: sampler;
 
 fn param(i: u32) -> f32 { return params[i]; }
 
@@ -152,6 +154,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
       out = vec4f(out.rgb, a); // premultiplied alpha
     }
   }
+  // Overlay (text/logo layers): premultiplied source-over on top of
+  // everything. The default is a 1x1 transparent texture — a no-op.
+  let ov = textureSampleLevel(overlayTex, overlaySmp, in.uv, 0.0);
+  out = vec4f(ov.rgb + out.rgb * (1.0 - ov.a), min(1.0, ov.a + out.a * (1.0 - ov.a)));
   return out;
 }
 `;
@@ -175,6 +181,10 @@ export class WebGPURenderer implements Renderer {
   private paramsBuf: GPUBuffer;
   private waveBuf: GPUBuffer;
   private binCapacity = 0;
+  /** 1x1 transparent stand-in bound when no overlay is set. */
+  private emptyOverlay: GPUTexture;
+  private overlayTexture: GPUTexture | null = null;
+  private overlaySampler: GPUSampler;
 
   private preset: PresetDef | null = null;
   private uniformData = new ArrayBuffer(UNIFORM_SIZE);
@@ -233,6 +243,23 @@ export class WebGPURenderer implements Renderer {
       size: WAVE_POINTS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
+    this.emptyOverlay = device.createTexture({
+      size: [1, 1],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    device.queue.writeTexture(
+      { texture: this.emptyOverlay },
+      new Uint8Array([0, 0, 0, 0]),
+      { bytesPerRow: 4 },
+      [1, 1],
+    );
+    this.overlaySampler = device.createSampler({
+      magFilter: "linear",
+      minFilter: "linear",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+    });
     // Explicit layout: presets bind the full ABI even for buffers they don't
     // reference ("auto" layout would strip unused bindings and break the
     // shared bind group).
@@ -244,6 +271,8 @@ export class WebGPURenderer implements Renderer {
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: storage },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: storage },
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: storage },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 6, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
       ],
     });
     this.pipelineLayout = device.createPipelineLayout({
@@ -253,6 +282,27 @@ export class WebGPURenderer implements Renderer {
 
   setBackground(bg: BgSettings): void {
     this.bg = bg;
+  }
+
+  setOverlay(source: ImageBitmap | null): void {
+    this.overlayTexture?.destroy();
+    this.overlayTexture = null;
+    if (source) {
+      this.overlayTexture = this.device.createTexture({
+        size: [source.width, source.height],
+        format: "rgba8unorm",
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.device.queue.copyExternalImageToTexture(
+        { source },
+        { texture: this.overlayTexture, premultipliedAlpha: true },
+        [source.width, source.height],
+      );
+    }
+    this.bindGroup = null; // rebind with the new texture view
   }
 
   /** Resolves when all submitted GPU work has executed (export frame sync). */
@@ -374,6 +424,8 @@ export class WebGPURenderer implements Renderer {
     this.waveBuf.destroy();
     this.binsBuf?.destroy();
     this.peaksBuf?.destroy();
+    this.overlayTexture?.destroy();
+    this.emptyOverlay.destroy();
     this.device.destroy();
   }
 
@@ -404,6 +456,11 @@ export class WebGPURenderer implements Renderer {
           { binding: 2, resource: { buffer: this.peaksBuf! } },
           { binding: 3, resource: { buffer: this.paramsBuf } },
           { binding: 4, resource: { buffer: this.waveBuf } },
+          {
+            binding: 5,
+            resource: (this.overlayTexture ?? this.emptyOverlay).createView(),
+          },
+          { binding: 6, resource: this.overlaySampler },
         ],
       });
     }
