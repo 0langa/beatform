@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { SyncMode, SyncSettings } from "../audio/types";
 import type { BgMode, BgSettings, ParamSpec, ParamValues, PresetDef } from "../render/types";
 import { BG_PRESET, BG_SOLID, BG_TRANSPARENT, defaultParams } from "../render/types";
+import type { UserPreset } from "../state/userPresets";
 import { Slider } from "./Slider";
 import { IconChevronRight, IconClose } from "./Icons";
 
@@ -108,11 +109,20 @@ export function ParamsPanel(props: {
   onSync: (sync: SyncSettings) => void;
   rendererKind: string;
   onClose: () => void;
+  /** Saved user looks for THIS visual mode (already filtered by caller). */
+  userPresets: UserPreset[];
+  onSaveUserPreset: (name: string) => void;
+  onApplyUserPreset: (id: string) => void;
+  onDeleteUserPreset: (id: string) => void;
+  onExportUserPreset: (id: string) => void;
+  onImportUserPreset: () => void;
 }) {
   const [showAdvanced, setShowAdvanced] = useState(
     () => localStorage.getItem("viz.advancedOpen") === "1",
   );
   const [hint, setHint] = useState<string | null>(null);
+  const [savingLook, setSavingLook] = useState(false);
+  const [lookName, setLookName] = useState("");
   const toggleAdvanced = () => {
     setShowAdvanced((v) => {
       localStorage.setItem("viz.advancedOpen", v ? "0" : "1");
@@ -169,6 +179,84 @@ export function ParamsPanel(props: {
               {!activeStyleId && <span className="style-custom">Custom</span>}
             </div>
           )}
+
+          <div className="user-presets">
+            {props.userPresets.length > 0 && (
+              <div className="style-chips">
+                {props.userPresets.map((p) => (
+                  <span key={p.id} className="user-chip-wrap">
+                    <button
+                      className="style-chip user"
+                      title={`Apply your "${p.name}" look`}
+                      onClick={() => props.onApplyUserPreset(p.id)}
+                    >
+                      {p.name}
+                    </button>
+                    <button
+                      className="chip-x"
+                      title={`Delete "${p.name}"`}
+                      onClick={() => props.onDeleteUserPreset(p.id)}
+                    >
+                      ✕
+                    </button>
+                    <button
+                      className="chip-x"
+                      title={`Export "${p.name}" as .avpreset file`}
+                      onClick={() => props.onExportUserPreset(p.id)}
+                    >
+                      ↗
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {savingLook ? (
+              <form
+                className="save-look-row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  props.onSaveUserPreset(lookName);
+                  setLookName("");
+                  setSavingLook(false);
+                }}
+              >
+                <input
+                  className="look-name-input"
+                  autoFocus
+                  placeholder="Name this look…"
+                  value={lookName}
+                  maxLength={32}
+                  onChange={(e) => setLookName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setSavingLook(false);
+                      setLookName("");
+                    }
+                  }}
+                />
+                <button type="submit" className="text-btn" disabled={!lookName.trim()}>
+                  Save
+                </button>
+              </form>
+            ) : (
+              <div className="save-look-row">
+                <button
+                  className="text-btn"
+                  title="Save the current settings as a named look for this visual"
+                  onClick={() => setSavingLook(true)}
+                >
+                  + Save look
+                </button>
+                <button
+                  className="text-btn"
+                  title="Import a .avpreset look file"
+                  onClick={props.onImportUserPreset}
+                >
+                  Import…
+                </button>
+              </div>
+            )}
+          </div>
 
           {props.preset.params.map((p) => (
             <ParamRow

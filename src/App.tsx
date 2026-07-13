@@ -3,6 +3,7 @@ import { demos } from "./audio/demoTrack";
 import { BG_TRANSPARENT } from "./render/types";
 import { presets, presetById } from "./render/presets";
 import { exportVideo } from "./export/videoExporter";
+import { APP_VERSION } from "./version";
 import { getEngine } from "./state/services";
 import { autoBitrateMbps, RESOLUTIONS, useVizStore } from "./state/store";
 import { PlayerBar } from "./ui/PlayerBar";
@@ -20,8 +21,6 @@ import {
 } from "./ui/Icons";
 import "./App.css";
 
-const APP_VERSION = "1.2.0";
-
 const SHORTCUTS: Array<[string, string]> = [
   ["Space", "Play / pause"],
   ["← / →", "Seek 5 s"],
@@ -31,6 +30,8 @@ const SHORTCUTS: Array<[string, string]> = [
   ["[ / ]", "Previous / next preset"],
   ["G", "Settings panel"],
   ["F", "Fullscreen"],
+  ["Ctrl+S", "Save project"],
+  ["Ctrl+O", "Open project"],
 ];
 
 function toggleFullscreen(): void {
@@ -63,6 +64,8 @@ export default function App() {
   const showHelp = useVizStore((s) => s.showHelp);
   const showExport = useVizStore((s) => s.showExport);
   const error = useVizStore((s) => s.error);
+  const notice = useVizStore((s) => s.notice);
+  const userPresets = useVizStore((s) => s.userPresets);
   const exportSettings = useVizStore((s) => s.exportSettings);
   const exporting = useVizStore((s) => s.exporting);
   const exportError = useVizStore((s) => s.exportError);
@@ -86,6 +89,16 @@ export default function App() {
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
       const s = store();
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === "s" || e.key === "S") {
+          e.preventDefault();
+          void s.saveProject();
+        } else if (e.key === "o" || e.key === "O") {
+          e.preventDefault();
+          void s.openProject();
+        }
+        return;
+      }
       switch (e.key) {
         case " ":
           e.preventDefault();
@@ -150,6 +163,8 @@ export default function App() {
   // Dev-only E2E hooks: file loading + tiny export from the test driver
   useEffect(() => {
     if (!import.meta.env.DEV) return;
+    // The app's store instance (HMR-safe), for state assertions in E2E runs
+    (window as unknown as { __store: unknown }).__store = useVizStore;
     (window as unknown as { __loadFile: unknown }).__loadFile = async (
       url: string,
       name: string,
@@ -284,6 +299,20 @@ export default function App() {
               ))}
             </div>
           </div>
+          <div className="menu-wrap">
+            <button className="ghost-btn" title="Save or load the whole setup as a file">
+              <IconSettings size={16} />
+              Project
+            </button>
+            <div className="menu">
+              <button className="menu-item" onClick={() => void store().saveProject()}>
+                Save project… <kbd className="menu-kbd">Ctrl+S</kbd>
+              </button>
+              <button className="menu-item" onClick={() => void store().openProject()}>
+                Open project… <kbd className="menu-kbd">Ctrl+O</kbd>
+              </button>
+            </div>
+          </div>
         </div>
         <div className="top-right">
           <button
@@ -334,6 +363,12 @@ export default function App() {
           onSync={(next) => store().setSync(next)}
           rendererKind={rendererKind}
           onClose={() => store().setShowPanel(false)}
+          userPresets={userPresets.filter((p) => p.presetId === presetId)}
+          onSaveUserPreset={(name) => store().saveUserPreset(name)}
+          onApplyUserPreset={(id) => store().applyUserPreset(id)}
+          onDeleteUserPreset={(id) => store().deleteUserPreset(id)}
+          onExportUserPreset={(id) => void store().exportUserPreset(id)}
+          onImportUserPreset={() => void store().importUserPreset()}
         />
       )}
 
@@ -350,6 +385,7 @@ export default function App() {
       />
 
       {error && <div className="toast error-toast">{error}</div>}
+      {notice && !error && <div className="toast notice-toast">{notice}</div>}
 
       {showHelp && (
         <div className="modal-backdrop" onClick={() => store().setShowHelp(false)}>
