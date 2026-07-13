@@ -5,6 +5,7 @@ import { presets, presetById } from "./render/presets";
 import { exportVideo } from "./export/videoExporter";
 import { APP_VERSION } from "./version";
 import { getEngine } from "./state/services";
+import { rasterizeOverlay } from "./render/overlay";
 import { autoBitrateMbps, RESOLUTIONS, useVizStore } from "./state/store";
 import { PlayerBar } from "./ui/PlayerBar";
 import { PresetStrip } from "./ui/PresetStrip";
@@ -66,6 +67,9 @@ export default function App() {
   const error = useVizStore((s) => s.error);
   const notice = useVizStore((s) => s.notice);
   const userPresets = useVizStore((s) => s.userPresets);
+  const overlayLayers = useVizStore((s) => s.overlayLayers);
+  const assets = useVizStore((s) => s.assets);
+  const coverArt = useVizStore((s) => s.coverArt);
   const exportSettings = useVizStore((s) => s.exportSettings);
   const exporting = useVizStore((s) => s.exporting);
   const exportError = useVizStore((s) => s.exportError);
@@ -183,7 +187,8 @@ export default function App() {
       const s = store();
       const w = opts.width ?? 320;
       const h = opts.height ?? 180;
-      // Optional test overlay: verifies the texture path end-to-end
+      // Overlay: the document's real layers (mirrors store.runExport), or a
+      // synthetic test box when withOverlay is forced.
       let overlay: ImageBitmap | undefined;
       if (opts.withOverlay) {
         const oc = new OffscreenCanvas(w, h);
@@ -191,6 +196,9 @@ export default function App() {
         c2d.fillStyle = "rgba(255,40,40,0.9)";
         c2d.fillRect(w * 0.25, h * 0.4, w * 0.5, h * 0.2);
         overlay = oc.transferToImageBitmap();
+      } else {
+        overlay =
+          (await rasterizeOverlay(s.overlayLayers, s.assets, w, h, s.trackMeta)) ?? undefined;
       }
       const t0 = performance.now();
       const result = await exportVideo(buf, {
@@ -381,6 +389,14 @@ export default function App() {
           onDeleteUserPreset={(id) => store().deleteUserPreset(id)}
           onExportUserPreset={(id) => void store().exportUserPreset(id)}
           onImportUserPreset={() => void store().importUserPreset()}
+          overlayLayers={overlayLayers}
+          assets={assets}
+          hasCoverArt={!!coverArt}
+          onAddTextLayer={() => store().addTextLayer()}
+          onAddImageLayer={() => void store().addImageLayer()}
+          onAddAlbumArtLayer={() => store().addAlbumArtLayer()}
+          onUpdateLayer={(id, patch) => store().updateOverlayLayer(id, patch)}
+          onRemoveLayer={(id) => store().removeOverlayLayer(id)}
         />
       )}
 

@@ -3,7 +3,9 @@ import type { SyncMode, SyncSettings } from "../audio/types";
 import type { BgMode, BgSettings, ParamSpec, ParamValues, PresetDef } from "../render/types";
 import { BG_PRESET, BG_SOLID, BG_TRANSPARENT, defaultParams } from "../render/types";
 import type { UserPreset } from "../state/userPresets";
+import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
 import { Slider } from "./Slider";
+import { LayersPanel } from "./LayersPanel";
 import { IconChevronRight, IconClose } from "./Icons";
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -116,6 +118,14 @@ export function ParamsPanel(props: {
   onDeleteUserPreset: (id: string) => void;
   onExportUserPreset: (id: string) => void;
   onImportUserPreset: () => void;
+  overlayLayers: OverlayLayer[];
+  assets: Record<string, OverlayAsset>;
+  hasCoverArt: boolean;
+  onAddTextLayer: () => void;
+  onAddImageLayer: () => void;
+  onAddAlbumArtLayer: () => void;
+  onUpdateLayer: (id: string, patch: Partial<TextLayer> | Partial<ImageLayer>) => void;
+  onRemoveLayer: (id: string) => void;
 }) {
   const [showAdvanced, setShowAdvanced] = useState(
     () => localStorage.getItem("viz.advancedOpen") === "1",
@@ -386,6 +396,17 @@ export function ParamsPanel(props: {
             </p>
           )}
         </section>
+
+        <LayersPanel
+          layers={props.overlayLayers}
+          assets={props.assets}
+          hasCoverArt={props.hasCoverArt}
+          onAddText={props.onAddTextLayer}
+          onAddImage={props.onAddImageLayer}
+          onAddAlbumArt={props.onAddAlbumArtLayer}
+          onUpdate={props.onUpdateLayer}
+          onRemove={props.onRemoveLayer}
+        />
       </div>
 
       <div className="panel-footer">

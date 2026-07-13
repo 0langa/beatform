@@ -21,6 +21,8 @@ export interface ServiceHooks {
   isSeeking(): boolean;
   onPlayback(s: PlaybackState): void;
   onRendererChanged(kind: Renderer["kind"], warning: string | null): void;
+  /** Canvas pixel size changed — overlays re-rasterize at the new size. */
+  onResize?(width: number, height: number): void;
 }
 
 let engine: AudioEngine | null = null;
@@ -103,6 +105,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     ro = new ResizeObserver(() => {
       const r = canvas.getBoundingClientRect();
       renderer?.resize(r.width, r.height, window.devicePixelRatio);
+      hooks.onResize?.(canvas.width, canvas.height);
     });
     ro.observe(canvas);
 

@@ -8,7 +8,26 @@ import { presetById, presets } from "../render/presets";
 import { exportVideo } from "../export/videoExporter";
 import { APP_VERSION } from "../version";
 import { getAnalyzer, getEngine, getRenderer, initServices } from "./services";
-import { downloadBlob, isTauri, openTextFile, pickSavePath, saveTextFile } from "./platform";
+import {
+  bytesToDataUrl,
+  downloadBlob,
+  isTauri,
+  openImageFile,
+  openTextFile,
+  pickSavePath,
+  saveTextFile,
+} from "./platform";
+import {
+  defaultImageLayer,
+  defaultTextLayer,
+  pruneBitmapCache,
+  rasterizeOverlay,
+  type ImageLayer,
+  type OverlayAsset,
+  type OverlayLayer,
+  type OverlayMeta,
+  type TextLayer,
+} from "../render/overlay";
 import {
   parseProject,
   PROJECT_EXTENSION,
@@ -28,12 +47,14 @@ import {
 } from "./userPresets";
 import {
   loadStoredBg,
+  loadStoredOverlay,
   loadStoredPanelOpen,
   loadStoredParams,
   loadStoredPresetId,
   loadStoredSync,
   loadStoredVolume,
   saveStoredBg,
+  saveStoredOverlay,
   saveStoredPanelOpen,
   saveStoredParams,
   saveStoredPresetId,
@@ -79,6 +100,8 @@ interface DocumentSlice {
   paramsByPreset: Record<string, ParamValues>;
   syncByPreset: Record<string, SyncSettings>;
   bg: BgSettings;
+  overlayLayers: OverlayLayer[];
+  assets: Record<string, OverlayAsset>;
 }
 
 /** Session/UI state: ephemeral, never saved into projects. */
@@ -101,6 +124,10 @@ interface SessionSlice {
   /** Transient positive feedback (project saved, preset imported, …). */
   notice: string | null;
   userPresets: UserPreset[];
+  /** Track metadata for {title}/{artist} overlay templates. */
+  trackMeta: OverlayMeta;
+  /** Cover art extracted from the loaded file's tags (session-only). */
+  coverArt: string | null;
   exportSettings: ExportSettings;
   exporting: ExportProgress | null;
   exportError: string | null;
@@ -141,6 +168,13 @@ interface Actions {
   deleteUserPreset(id: string): void;
   exportUserPreset(id: string): Promise<void>;
   importUserPreset(): Promise<void>;
+  addTextLayer(): void;
+  addImageLayer(): Promise<void>;
+  addAlbumArtLayer(): void;
+  updateOverlayLayer(id: string, patch: Partial<TextLayer> | Partial<ImageLayer>): void;
+  removeOverlayLayer(id: string): void;
+  /** Re-rasterize the overlay at the live canvas size (debounced). */
+  refreshOverlay(): void;
 }
 
 export type VizState = DocumentSlice & SessionSlice & Actions;
@@ -150,6 +184,11 @@ let idleTimer: ReturnType<typeof setTimeout> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let exportAbort: AbortController | null = null;
 let exportStartedAt = 0;
+/** Live canvas — overlay rasters at its pixel size. Set by initApp. */
+let liveCanvas: HTMLCanvasElement | null = null;
+let overlayTimer: ReturnType<typeof setTimeout> | undefined;
+/** Monotonic token: only the newest raster result gets applied. */
+let overlayToken = 0;
 
 function resolveParams(presetId: string, overrides: Record<string, ParamValues>): ParamValues {
   const preset = presetById(presetId);
@@ -162,6 +201,17 @@ const initialPresetId = (() => {
 })();
 const initialParams = loadStoredParams();
 const initialSync = loadStoredSync();
+const initialOverlay = loadStoredOverlay();
+
+/** "Artist - Title.mp3" → meta; otherwise the basename becomes the title. */
+function metaFromFilename(name: string): OverlayMeta {
+  const base = name.replace(/\.[a-z0-9]+$/i, "").trim();
+  const dash = base.indexOf(" - ");
+  if (dash > 0) {
+    return { artist: base.slice(0, dash).trim(), title: base.slice(dash + 3).trim() };
+  }
+  return { title: base, artist: "" };
+}
 
 export const useVizStore = create<VizState>((set, get) => {
   const flashNotice = (notice: string) => {
@@ -176,6 +226,8 @@ export const useVizStore = create<VizState>((set, get) => {
     paramsByPreset: initialParams,
     syncByPreset: initialSync,
     bg: loadStoredBg(),
+    overlayLayers: initialOverlay.layers,
+    assets: initialOverlay.assets,
 
     // --- session ---
     activeParams: resolveParams(initialPresetId, initialParams),
@@ -193,6 +245,8 @@ export const useVizStore = create<VizState>((set, get) => {
     error: null,
     notice: null,
     userPresets: loadUserPresets(),
+    trackMeta: { title: "", artist: "" },
+    coverArt: null,
     exportSettings: { resIdx: 1, fps: 60, autoRate: true, manualMbps: 12 },
     exporting: null,
     exportError: null,
@@ -200,6 +254,7 @@ export const useVizStore = create<VizState>((set, get) => {
 
     // --- actions ---
     initApp(canvas) {
+      liveCanvas = canvas;
       const dispose = initServices(canvas, {
         getPreset: () => presetById(get().presetId),
         getParams: () => get().activeParams,
@@ -207,12 +262,18 @@ export const useVizStore = create<VizState>((set, get) => {
         getSync: () => get().sync,
         isSeeking: () => get().seeking,
         onPlayback: (playback) => set({ playback }),
-        onRendererChanged: (kind, warning) => set({ rendererKind: kind, error: warning }),
+        onRendererChanged: (kind, warning) => {
+          set({ rendererKind: kind, error: warning });
+          get().refreshOverlay(); // new renderer starts without an overlay bound
+        },
+        onResize: () => get().refreshOverlay(),
       });
       getEngine().setVolume(get().muted ? 0 : get().volume);
       get().pokeChrome();
       return () => {
         clearTimeout(idleTimer);
+        clearTimeout(overlayTimer);
+        liveCanvas = null;
         dispose();
       };
     },
@@ -280,6 +341,23 @@ export const useVizStore = create<VizState>((set, get) => {
         set({ error: null });
         await getEngine().loadFile(file);
         await getEngine().play();
+        // Tag metadata (title/artist/cover) — best effort, never blocks playback
+        let meta = metaFromFilename(file.name);
+        let coverArt: string | null = null;
+        try {
+          const mm = await import("music-metadata");
+          const tags = await mm.parseBlob(file, { duration: false });
+          meta = {
+            title: tags.common.title?.trim() || meta.title,
+            artist: tags.common.artist?.trim() || meta.artist,
+          };
+          const pic = tags.common.picture?.[0];
+          if (pic) coverArt = bytesToDataUrl(pic.data, pic.format || "image/jpeg");
+        } catch {
+          // unreadable tags — filename fallback stands
+        }
+        set({ trackMeta: meta, coverArt });
+        get().refreshOverlay();
       } catch (e) {
         set({ error: `Could not decode "${file.name}" (${(e as Error).message})` });
       }
@@ -294,6 +372,8 @@ export const useVizStore = create<VizState>((set, get) => {
         const buf = await demo.render(engine.ctx.sampleRate);
         engine.loadBuffer(buf, `Demo: ${demo.name}`);
         await engine.play();
+        set({ trackMeta: { title: demo.name, artist: "" }, coverArt: null });
+        get().refreshOverlay();
       } catch (e) {
         set({ error: `Demo failed: ${(e as Error).message}` });
       }
@@ -389,6 +469,15 @@ export const useVizStore = create<VizState>((set, get) => {
         exporting: { done: 0, total: 1, speed: null },
       });
       try {
+        // Same rasterizer as the live view, at export resolution — WYSIWYG
+        const overlay =
+          (await rasterizeOverlay(
+            get().overlayLayers,
+            get().assets,
+            res.w,
+            res.h,
+            get().trackMeta,
+          )) ?? undefined;
         const result = await exportVideo(buf, {
           width: res.w,
           height: res.h,
@@ -398,6 +487,7 @@ export const useVizStore = create<VizState>((set, get) => {
           params: get().activeParams,
           bg: get().bg,
           sync: get().sync,
+          overlay,
           // Desktop: stream straight to the picked file (flat memory);
           // browser dev falls back to an in-memory blob + download.
           streamToPath: savePath ?? undefined,
@@ -442,6 +532,8 @@ export const useVizStore = create<VizState>((set, get) => {
         paramsByPreset: s.paramsByPreset,
         syncByPreset: s.syncByPreset,
         bg: s.bg,
+        overlayLayers: s.overlayLayers,
+        assets: s.assets,
       };
       try {
         const saved = await saveTextFile(
@@ -482,6 +574,8 @@ export const useVizStore = create<VizState>((set, get) => {
         paramsByPreset: doc.paramsByPreset,
         syncByPreset: doc.syncByPreset,
         bg: doc.bg,
+        overlayLayers: doc.overlayLayers,
+        assets: doc.assets,
         activeParams,
         sync,
       });
@@ -489,9 +583,12 @@ export const useVizStore = create<VizState>((set, get) => {
       saveStoredParams(doc.paramsByPreset);
       saveStoredSync(doc.syncByPreset);
       saveStoredBg(doc.bg);
+      saveStoredOverlay(doc.overlayLayers, doc.assets);
+      pruneBitmapCache(new Set(Object.keys(doc.assets)));
       getRenderer()?.setPreset(preset);
       getRenderer()?.setBackground(doc.bg);
       getAnalyzer().setSync(sync);
+      get().refreshOverlay();
     },
 
     saveUserPreset(name) {
@@ -548,6 +645,102 @@ export const useVizStore = create<VizState>((set, get) => {
       } catch (e) {
         set({ error: `Could not export look: ${(e as Error).message}` });
       }
+    },
+
+    addTextLayer() {
+      const overlayLayers = [...get().overlayLayers, defaultTextLayer()];
+      set({ overlayLayers });
+      saveStoredOverlay(overlayLayers, get().assets);
+      get().refreshOverlay();
+    },
+
+    async addImageLayer() {
+      try {
+        const picked = await openImageFile();
+        if (!picked) return;
+        const asset: OverlayAsset = {
+          id: `as-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          name: picked.name,
+          dataUrl: picked.dataUrl,
+        };
+        const assets = { ...get().assets, [asset.id]: asset };
+        const overlayLayers = [...get().overlayLayers, defaultImageLayer(asset.id)];
+        set({ assets, overlayLayers });
+        saveStoredOverlay(overlayLayers, assets);
+        get().refreshOverlay();
+      } catch (e) {
+        set({ error: `Could not add image: ${(e as Error).message}` });
+      }
+    },
+
+    addAlbumArtLayer() {
+      const cover = get().coverArt;
+      if (!cover) {
+        set({ error: "The loaded track has no embedded cover art" });
+        return;
+      }
+      const asset: OverlayAsset = {
+        id: `as-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        name: "Album art",
+        dataUrl: cover,
+      };
+      const assets = { ...get().assets, [asset.id]: asset };
+      const layer = { ...defaultImageLayer(asset.id), anchor: "cc" as const, size: 0.4 };
+      const overlayLayers = [...get().overlayLayers, layer];
+      set({ assets, overlayLayers });
+      saveStoredOverlay(overlayLayers, assets);
+      get().refreshOverlay();
+    },
+
+    updateOverlayLayer(id, patch) {
+      const overlayLayers = get().overlayLayers.map((l) =>
+        l.id === id ? ({ ...l, ...patch } as OverlayLayer) : l,
+      );
+      set({ overlayLayers });
+      saveStoredOverlay(overlayLayers, get().assets);
+      get().refreshOverlay();
+    },
+
+    removeOverlayLayer(id) {
+      const removed = get().overlayLayers.find((l) => l.id === id);
+      const overlayLayers = get().overlayLayers.filter((l) => l.id !== id);
+      // Drop the asset too if no other layer references it
+      let assets = get().assets;
+      if (removed?.type === "image") {
+        const stillUsed = overlayLayers.some(
+          (l) => l.type === "image" && l.assetId === removed.assetId,
+        );
+        if (!stillUsed) {
+          assets = { ...assets };
+          delete assets[removed.assetId];
+          pruneBitmapCache(new Set(Object.keys(assets)));
+        }
+      }
+      set({ overlayLayers, assets });
+      saveStoredOverlay(overlayLayers, assets);
+      get().refreshOverlay();
+    },
+
+    refreshOverlay() {
+      // Debounced (resize storms) + token-guarded (async raster races)
+      clearTimeout(overlayTimer);
+      overlayTimer = setTimeout(async () => {
+        const token = ++overlayToken;
+        const canvas = liveCanvas;
+        if (!canvas) return;
+        try {
+          const bitmap = await rasterizeOverlay(
+            get().overlayLayers,
+            get().assets,
+            canvas.width,
+            canvas.height,
+            get().trackMeta,
+          );
+          if (token === overlayToken) getRenderer()?.setOverlay(bitmap);
+        } catch (e) {
+          console.error("[overlay]", e);
+        }
+      }, 60);
     },
 
     async importUserPreset() {

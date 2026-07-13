@@ -1,6 +1,8 @@
 import type { SyncSettings } from "../audio/types";
 import type { BgSettings, ParamValues } from "../render/types";
 import { BG_PRESET } from "../render/types";
+import type { OverlayAsset, OverlayLayer } from "../render/overlay";
+import { validAssets, validLayers } from "./project";
 
 /**
  * localStorage persistence for the current session. Keys and formats are the
@@ -66,6 +68,26 @@ export function loadStoredVolume(): number {
 
 export function saveStoredVolume(v: number): void {
   localStorage.setItem(LS_VOLUME, String(v));
+}
+
+const LS_OVERLAY = "viz.overlay.v1";
+
+export interface StoredOverlay {
+  layers: OverlayLayer[];
+  assets: Record<string, OverlayAsset>;
+}
+
+export function loadStoredOverlay(): StoredOverlay {
+  const raw = readJson<{ layers?: unknown; assets?: unknown } | null>(LS_OVERLAY, null);
+  const assets = validAssets(raw?.assets);
+  return { layers: validLayers(raw?.layers, assets), assets };
+}
+
+export function saveStoredOverlay(
+  layers: OverlayLayer[],
+  assets: Record<string, OverlayAsset>,
+): void {
+  localStorage.setItem(LS_OVERLAY, JSON.stringify({ layers, assets }));
 }
 
 export function loadStoredPanelOpen(): boolean {

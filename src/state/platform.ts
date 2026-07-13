@@ -95,6 +95,59 @@ export async function openTextFile(
   });
 }
 
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg"];
+
+const MIME_BY_EXT: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+};
+
+/** Pick an image and return it as a data URL (embeds into projects). */
+export async function openImageFile(): Promise<{ name: string; dataUrl: string } | null> {
+  if (isTauri()) {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const { readFile } = await import("@tauri-apps/plugin-fs");
+    const path = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }],
+    });
+    if (typeof path !== "string") return null;
+    const bytes = await readFile(path);
+    const name = path.split(/[\\/]/).pop() ?? path;
+    const ext = name.split(".").pop()?.toLowerCase() ?? "png";
+    return { name, dataUrl: bytesToDataUrl(bytes, MIME_BY_EXT[ext] ?? "image/png") };
+  }
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = IMAGE_EXTENSIONS.map((e) => `.${e}`).join(",");
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return resolve(null);
+      const reader = new FileReader();
+      reader.onload = () => resolve({ name: file.name, dataUrl: reader.result as string });
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    };
+    input.oncancel = () => resolve(null);
+    input.click();
+  });
+}
+
+export function bytesToDataUrl(bytes: Uint8Array, mime: string): string {
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return `data:${mime};base64,${btoa(bin)}`;
+}
+
 export function downloadBlob(blob: Blob, name: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
