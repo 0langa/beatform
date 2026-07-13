@@ -31,10 +31,10 @@ export class AudioEngine {
 
   constructor() {
     this.ctx = new AudioContext();
+    // The analyser is a time-domain tap only (fftSize = window length);
+    // RealtimeAnalyzer runs its own FFT so live matches offline export.
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 4096;
-    // Light native smoothing; FeatureExtractor applies its own asymmetric EMA.
-    this.analyser.smoothingTimeConstant = 0.5;
     this.gain = this.ctx.createGain();
     this.gain.connect(this.ctx.destination);
     this.gain.connect(this.analyser);

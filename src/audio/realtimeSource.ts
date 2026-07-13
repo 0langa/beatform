@@ -1,29 +1,39 @@
 import type { AudioEngine } from "./engine";
 import type { AudioFeatures, SyncSettings } from "./types";
 import { FeaturePipeline } from "./featurePipeline";
+import { RealFFT } from "./dsp/fft";
 
 /**
- * Realtime analysis source: pulls AnalyserNode data each animation frame and
- * feeds the shared FeaturePipeline. Counterpart of OfflineAnalyzer (export).
+ * Realtime analysis source: pulls the most recent fftSize time-domain samples
+ * from the AnalyserNode each animation frame and runs the SAME RealFFT (Hann
+ * window) the offline export path uses. Counterpart of OfflineAnalyzer.
+ *
+ * The AnalyserNode is used only as a time-domain tap — not for its frequency
+ * data. Its Blackman window and native smoothingTimeConstant would make live
+ * spectra differ from offline ones; doing the FFT ourselves makes live and
+ * export pixels come from identical math (WYSIWYG), the only remaining
+ * difference being frame timing (live dt varies, offline dt = 1/fps).
  */
 export class RealtimeAnalyzer {
   private engine: AudioEngine;
   private pipeline: FeaturePipeline;
+  private fft: RealFFT;
   private magDb: Float32Array;
   private timeData: Float32Array;
   private lastFrameAt: number | null = null;
 
   constructor(engine: AudioEngine, binCount = 96) {
     this.engine = engine;
-    const fftBins = engine.analyser.frequencyBinCount;
-    this.magDb = new Float32Array(fftBins);
-    this.timeData = new Float32Array(engine.analyser.fftSize);
+    const fftSize = engine.analyser.fftSize;
+    this.fft = new RealFFT(fftSize);
+    this.magDb = new Float32Array(fftSize / 2);
+    this.timeData = new Float32Array(fftSize);
     this.pipeline = new FeaturePipeline({
       sampleRate: engine.ctx.sampleRate,
-      fftBins,
+      fftBins: fftSize / 2,
       binCount,
       // 3/4 window: the rest is trigger-search headroom (see FeaturePipeline)
-      waveformLength: Math.floor((engine.analyser.fftSize * 3) / 4),
+      waveformLength: Math.floor((fftSize * 3) / 4),
     });
   }
 
@@ -36,8 +46,8 @@ export class RealtimeAnalyzer {
   update(now: number): AudioFeatures {
     const dt = this.lastFrameAt === null ? 1 / 60 : now - this.lastFrameAt;
     this.lastFrameAt = now;
-    this.engine.analyser.getFloatFrequencyData(this.magDb);
     this.engine.analyser.getFloatTimeDomainData(this.timeData);
+    this.fft.magnitudesDb(this.timeData, this.magDb);
     return this.pipeline.update({
       magDb: this.magDb,
       waveform: this.timeData,

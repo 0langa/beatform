@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OfflineAnalyzer } from "./offlineSource";
+import type { PcmData } from "./types";
 
 const SAMPLE_RATE = 48000;
 const DURATION = 2;
@@ -13,7 +14,7 @@ const FPS = 60;
  * log-magnitude flux: long low-level tails oscillate audibly on the dB scale
  * and legitimately re-trigger it.
  */
-function makeTestBuffer(): AudioBuffer {
+function makeTestBuffer(): PcmData {
   const length = SAMPLE_RATE * DURATION;
   const data = new Float32Array(length);
   for (let i = 0; i < length; i++) {
@@ -24,14 +25,7 @@ function makeTestBuffer(): AudioBuffer {
       data[i] += 0.9 * Math.sin(2 * Math.PI * 100 * sinceKick) * Math.exp(-sinceKick * 80);
     }
   }
-  const stub = {
-    sampleRate: SAMPLE_RATE,
-    duration: DURATION,
-    length,
-    numberOfChannels: 1,
-    getChannelData: (_ch: number) => data,
-  };
-  return stub as unknown as AudioBuffer;
+  return { sampleRate: SAMPLE_RATE, duration: DURATION, length, channels: [data] };
 }
 
 function collectTrace(analyzer: OfflineAnalyzer): {

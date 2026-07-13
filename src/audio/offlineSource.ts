@@ -1,16 +1,31 @@
-import type { AudioFeatures, SyncSettings } from "./types";
+import type { AudioFeatures, PcmData, SyncSettings } from "./types";
 import { FeaturePipeline } from "./featurePipeline";
 import { RealFFT } from "./dsp/fft";
 
 const FFT_SIZE = 4096;
 
+/** Extract plain PCM from a decoded AudioBuffer (main thread only). */
+export function pcmFromAudioBuffer(buffer: AudioBuffer): PcmData {
+  const channels: Float32Array[] = [];
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    channels.push(buffer.getChannelData(ch));
+  }
+  return {
+    sampleRate: buffer.sampleRate,
+    length: buffer.length,
+    duration: buffer.duration,
+    channels,
+  };
+}
+
 /**
- * Offline analysis source for export rendering: walks a decoded AudioBuffer
+ * Offline analysis source for export rendering: walks decoded PCM
  * frame-by-frame at a fixed fps and produces the exact same AudioFeatures the
  * realtime path would — but deterministically, decoupled from wall-clock.
  *
  * Frame N covers t = N / fps. The FFT window is the FFT_SIZE samples ending
- * at t (mirrors AnalyserNode, which reports the most recent fftSize samples).
+ * at t (mirrors the realtime path, which analyzes the most recent fftSize
+ * samples from the AnalyserNode tap).
  *
  * This is the sync backbone of MP4 export: video frame timestamps and audio
  * sample positions both derive from the same decoded buffer, so drift is
@@ -29,20 +44,19 @@ export class OfflineAnalyzer {
   private nextFrame = 0;
   private duration: number;
 
-  constructor(buffer: AudioBuffer, fps: number, binCount = 96, sync?: SyncSettings) {
+  constructor(pcm: PcmData, fps: number, binCount = 96, sync?: SyncSettings) {
     this.fps = fps;
-    this.sampleRate = buffer.sampleRate;
-    this.duration = buffer.duration;
-    this.frameCount = Math.ceil(buffer.duration * fps);
+    this.sampleRate = pcm.sampleRate;
+    this.duration = pcm.duration;
+    this.frameCount = Math.ceil(pcm.duration * fps);
 
     // Mono mixdown once up front
-    this.mono = new Float32Array(buffer.length);
-    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-      const data = buffer.getChannelData(ch);
+    this.mono = new Float32Array(pcm.length);
+    for (const data of pcm.channels) {
       for (let i = 0; i < data.length; i++) this.mono[i] += data[i];
     }
-    if (buffer.numberOfChannels > 1) {
-      const g = 1 / buffer.numberOfChannels;
+    if (pcm.channels.length > 1) {
+      const g = 1 / pcm.channels.length;
       for (let i = 0; i < this.mono.length; i++) this.mono[i] *= g;
     }
 
@@ -50,7 +64,7 @@ export class OfflineAnalyzer {
     this.magDb = new Float32Array(FFT_SIZE / 2);
     this.windowBuf = new Float32Array(FFT_SIZE);
     this.pipeline = new FeaturePipeline({
-      sampleRate: buffer.sampleRate,
+      sampleRate: pcm.sampleRate,
       fftBins: FFT_SIZE / 2,
       binCount,
       // 3/4 window: the rest is trigger-search headroom (see FeaturePipeline)

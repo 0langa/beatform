@@ -187,19 +187,19 @@ export default function App() {
         height: opts.height ?? 180,
         fps: opts.fps ?? 30,
         bitrate: 1_000_000,
-        preset: presetById(s.presetId),
+        presetId: s.presetId,
         params: s.activeParams,
         bg: s.bg,
         sync: s.sync,
       });
       const info = {
-        bytes: result.blob.size,
+        bytes: result.bytes,
         ms: Math.round(performance.now() - t0),
         audioCodec: result.audioCodec,
         seconds: result.seconds,
       };
       (window as unknown as { __lastExport: unknown }).__lastExport = info;
-      (window as unknown as { __lastExportBlob: Blob }).__lastExportBlob = result.blob;
+      (window as unknown as { __lastExportBlob: Blob | undefined }).__lastExportBlob = result.blob;
       return info;
     };
   }, [store]);

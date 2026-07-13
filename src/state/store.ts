@@ -8,14 +8,7 @@ import { presetById, presets } from "../render/presets";
 import { exportVideo } from "../export/videoExporter";
 import { APP_VERSION } from "../version";
 import { getAnalyzer, getEngine, getRenderer, initServices } from "./services";
-import {
-  downloadBlob,
-  isTauri,
-  openTextFile,
-  pickSavePath,
-  saveTextFile,
-  writeBinaryToPath,
-} from "./platform";
+import { downloadBlob, isTauri, openTextFile, pickSavePath, saveTextFile } from "./platform";
 import {
   parseProject,
   PROJECT_EXTENSION,
@@ -401,10 +394,13 @@ export const useVizStore = create<VizState>((set, get) => {
           height: res.h,
           fps,
           bitrate: mbps * 1e6,
-          preset: presetById(get().presetId),
+          presetId: get().presetId,
           params: get().activeParams,
           bg: get().bg,
           sync: get().sync,
+          // Desktop: stream straight to the picked file (flat memory);
+          // browser dev falls back to an in-memory blob + download.
+          streamToPath: savePath ?? undefined,
           signal: ac.signal,
           onProgress: (done, total) => {
             const elapsed = (performance.now() - exportStartedAt) / 1000;
@@ -417,10 +413,9 @@ export const useVizStore = create<VizState>((set, get) => {
             });
           },
         });
-        if (savePath) await writeBinaryToPath(savePath, result.blob);
-        else downloadBlob(result.blob, fileName);
+        if (result.blob) downloadBlob(result.blob, fileName);
         set({
-          exportDone: `${(result.blob.size / 1e6).toFixed(1)} MB MP4 (H.264 + ${result.audioCodec.toUpperCase()}) saved${savePath ? ` to ${savePath}` : ""}`,
+          exportDone: `${(result.bytes / 1e6).toFixed(1)} MB MP4 (H.264 + ${result.audioCodec.toUpperCase()}) saved${savePath ? ` to ${savePath}` : ""}`,
         });
       } catch (e) {
         if ((e as Error).name !== "AbortError") {

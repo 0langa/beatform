@@ -55,3 +55,17 @@ export interface PlaybackState {
   trackName: string | null;
   loop: boolean;
 }
+
+/**
+ * Decoded PCM as plain data — the worker-transferable stand-in for
+ * AudioBuffer (which cannot cross thread boundaries). Channels are
+ * per-channel sample arrays of identical length.
+ */
+export interface PcmData {
+  sampleRate: number;
+  /** Samples per channel. */
+  length: number;
+  /** Seconds; length / sampleRate. */
+  duration: number;
+  channels: Float32Array[];
+}
