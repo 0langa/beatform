@@ -1,6 +1,6 @@
 # Audio Visualizer
 
-Desktop music visualizer. Tauri 2 + React + TypeScript, WebGPU rendering (Canvas2D fallback), Rust core. v1.5.0.
+Desktop music visualizer. Tauri 2 + React + TypeScript, WebGPU rendering (Canvas2D fallback), Rust core. v1.7.0.
 
 Free and open source. Built to become a professional-grade tool for producers and artists — local-first, no cloud rendering, no watermarks, no subscriptions.
 
@@ -29,6 +29,14 @@ Free and open source. Built to become a professional-grade tool for producers an
   seamless loop (tail crossfades into the head — invisible loop point)
 - **Loudness meter**: momentary LUFS (ITU-R BS.1770) live readout; stereo
   width feature for presets
+- **Musical analysis on every track** (background worker): BPM + beat grid
+  (visuals get beat/bar phase), kick/snare/hat onset classes as sync
+  sources, key detection (Krumhansl), section boundaries as seek-bar ticks
+- **Modulation matrix**: route any audio feature (drums, bands, width,
+  beat phase...) to any knob of the active visual — applied identically in
+  exports
+- **Smooth curve toggle**: spline-connected spectrum (Catmull-Rom through
+  the bins) instead of hard-edged bars, across all visuals
 - Sync-source system: choose what visuals react to (kicks, energy, bass,
   melody, voice, treble) + smoothing, per mode
 - Background system on every preset: preset-animated, any solid color
@@ -103,8 +111,7 @@ CI runs typecheck, lint, format check, tests and build on every push/PR.
 ## Roadmap (next)
 
 - Producer basics, remaining: video/image backgrounds, preset thumbnails
-- Musical sync: BPM/beat-grid tracking, kick/snare/hat onset classes,
-  key detection, stem import as sync sources, modulation matrix
+- Musical sync, remaining: stem import as additional sync sources
 - Timeline: scenes, keyframes, automation, undo/redo
 - Visual ceiling: multi-pass render graph, real bloom/post stack, compute
   particles, 3D camera scenes, custom WGSL preset SDK
