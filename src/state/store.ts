@@ -13,6 +13,7 @@ import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { KeyEstimate } from "../audio/analysis/keyDetect";
 import { newRouteId, type ModRoute, type ModSource } from "./modMatrix";
 import { clearHistory, historyDepths, popRedo, popUndo, pushHistory } from "./history";
+import type { Scene, Timeline } from "./timeline";
 import {
   bytesToDataUrl,
   downloadBlob,
@@ -55,7 +56,9 @@ import {
   loadStoredAspect,
   loadStoredBg,
   loadStoredMods,
+  loadStoredTimeline,
   saveStoredMods,
+  saveStoredTimeline,
   loadStoredOverlay,
   loadStoredPanelOpen,
   loadStoredParams,
@@ -128,6 +131,7 @@ interface DocumentSlice {
   modsByPreset: Record<string, ModRoute[]>;
   /** Spline-connected spectrum sampling (no hard bin corners), all visuals. */
   smoothSpectrum: boolean;
+  timeline: Timeline;
 }
 
 /** Session/UI state: ephemeral, never saved into projects. */
@@ -185,6 +189,7 @@ interface Actions {
   setBg(bg: BgSettings): void;
   setAspect(aspect: Aspect): void;
   setSmoothSpectrum(v: boolean): void;
+  setTimeline(timeline: Timeline): void;
   setSync(sync: SyncSettings): void;
   loadFile(file: File): Promise<void>;
   loadDemo(id: string): Promise<void>;
@@ -208,6 +213,8 @@ interface Actions {
   applyDocument(doc: ProjectDocument): void;
   undo(): void;
   redo(): void;
+  /** Playback crossed into a scene — switch visuals WITHOUT recording history. */
+  applyScene(scene: Scene): void;
   saveUserPreset(name: string): void;
   applyUserPreset(id: string): void;
   deleteUserPreset(id: string): void;
@@ -284,6 +291,7 @@ export const useVizStore = create<VizState>((set, get) => {
     aspect: s.aspect,
     modsByPreset: s.modsByPreset,
     smoothSpectrum: s.smoothSpectrum,
+    timeline: s.timeline,
   });
 
   /** Record the current document before a mutation (gesture-grouped). */
@@ -304,6 +312,7 @@ export const useVizStore = create<VizState>((set, get) => {
     aspect: loadStoredAspect(),
     modsByPreset: initialMods,
     smoothSpectrum: localStorage.getItem("viz.smoothSpectrum") === "1",
+    timeline: loadStoredTimeline(),
 
     // --- session ---
     activeParams: resolveParams(initialPresetId, initialParams),
@@ -352,6 +361,8 @@ export const useVizStore = create<VizState>((set, get) => {
         getPreset: () => presetById(get().presetId),
         getParams: () => get().activeParams,
         getMods: () => get().activeMods,
+        getTimeline: () => get().timeline,
+        onSceneChange: (scene) => get().applyScene(scene),
         getBackground: () => get().bg,
         getSync: () => get().sync,
         isSeeking: () => get().seeking,
@@ -435,6 +446,25 @@ export const useVizStore = create<VizState>((set, get) => {
       set({ smoothSpectrum: v });
       localStorage.setItem("viz.smoothSpectrum", v ? "1" : "0");
       getRenderer()?.setSmoothSpectrum(v);
+    },
+
+    setTimeline(timeline) {
+      record("timeline");
+      set({ timeline });
+      saveStoredTimeline(timeline);
+    },
+
+    applyScene(scene) {
+      const next = presetById(scene.presetId);
+      const state = get();
+      if (state.presetId === next.id) return;
+      const activeParams = resolveParams(next.id, state.paramsByPreset);
+      const sync = state.syncByPreset[next.id] ?? { ...DEFAULT_SYNC };
+      const activeMods = state.modsByPreset[next.id] ?? [];
+      set({ presetId: next.id, activeParams, activeMods, sync });
+      getRenderer()?.setPreset(next);
+      if (scene.bg) getRenderer()?.setBackground(scene.bg);
+      getAnalyzer().setSync(sync);
     },
 
     setAspect(aspect) {
@@ -631,6 +661,7 @@ export const useVizStore = create<VizState>((set, get) => {
           beatGrid: get().beatGrid ?? undefined,
           mods: get().activeMods,
           smoothSpectrum: get().smoothSpectrum,
+          timeline: get().timeline.enabled ? get().timeline : undefined,
           // Desktop: stream straight to the picked file (flat memory);
           // browser dev falls back to an in-memory blob + download.
           streamToPath: savePath ?? undefined,
@@ -700,6 +731,7 @@ export const useVizStore = create<VizState>((set, get) => {
         aspect: s.aspect,
         modsByPreset: s.modsByPreset,
         smoothSpectrum: s.smoothSpectrum,
+        timeline: s.timeline,
       };
       try {
         const saved = await saveTextFile(
@@ -747,6 +779,7 @@ export const useVizStore = create<VizState>((set, get) => {
         aspect: doc.aspect,
         modsByPreset: doc.modsByPreset,
         smoothSpectrum: doc.smoothSpectrum,
+        timeline: doc.timeline,
         activeParams,
         activeMods: doc.modsByPreset[preset.id] ?? [],
         sync,
@@ -758,6 +791,7 @@ export const useVizStore = create<VizState>((set, get) => {
       saveStoredOverlay(doc.overlayLayers, doc.assets);
       saveStoredAspect(doc.aspect);
       saveStoredMods(doc.modsByPreset);
+      saveStoredTimeline(doc.timeline);
       localStorage.setItem("viz.smoothSpectrum", doc.smoothSpectrum ? "1" : "0");
       getRenderer()?.setSmoothSpectrum(doc.smoothSpectrum);
       pruneBitmapCache(new Set(Object.keys(doc.assets)));

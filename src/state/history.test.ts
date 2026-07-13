@@ -14,6 +14,7 @@ function doc(marker: number): ProjectDocument {
     aspect: "free",
     modsByPreset: {},
     smoothSpectrum: false,
+    timeline: { enabled: false, scenes: [], lanes: [] },
   };
 }
 

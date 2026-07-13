@@ -4,6 +4,7 @@ import { Canvas2DRenderer } from "../render/canvas2dRenderer";
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { BgSettings, ParamValues, PresetDef, Renderer } from "../render/types";
 import { applyMods, type ModRoute } from "./modMatrix";
+import { evalTimeline, type Scene, type Timeline } from "./timeline";
 import type { PlaybackState, SyncSettings } from "../audio/types";
 
 /**
@@ -18,6 +19,9 @@ export interface ServiceHooks {
   getParams(): ParamValues;
   /** Modulation routes for the active preset (empty array = none). */
   getMods(): ModRoute[];
+  getTimeline(): Timeline;
+  /** The timeline crossed into a scene needing a different preset/bg. */
+  onSceneChange(scene: Scene): void;
   getBackground(): BgSettings;
   getSync(): SyncSettings;
   /** True while the user drags the seek bar — playback pushes pause then. */
@@ -128,11 +132,18 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       clearTimeout(fallback);
       const t = tMs / 1000;
       const features = ana.update(t);
-      renderer?.render(
-        features,
-        t,
-        applyMods(hooks.getPreset(), hooks.getParams(), hooks.getMods(), features),
-      );
+      // Timeline: scenes pick the preset/background; automation overrides
+      // params. Evaluated at PLAYBACK time (deterministic), then mods stack.
+      const frame = evalTimeline(hooks.getTimeline(), eng.currentTime);
+      const preset = hooks.getPreset();
+      if (frame.scene && frame.scene.presetId !== preset.id) {
+        hooks.onSceneChange(frame.scene);
+      }
+      let params = hooks.getParams();
+      if (frame.scene?.params || Object.keys(frame.automation).length > 0) {
+        params = { ...params, ...frame.scene?.params, ...frame.automation };
+      }
+      renderer?.render(features, t, applyMods(preset, params, hooks.getMods(), features));
       // E2E probe: lets tooling confirm the render loop is alive
       (window as unknown as { __vizFrames: number }).__vizFrames =
         ((window as unknown as { __vizFrames: number }).__vizFrames ?? 0) + 1;

@@ -4,6 +4,7 @@ import { BG_PRESET } from "../render/types";
 import type { OverlayAsset, OverlayLayer } from "../render/overlay";
 import { validAspect, validAssets, validLayers, type Aspect } from "./project";
 import { validModsByPreset, type ModRoute } from "./modMatrix";
+import { validTimeline, type Timeline } from "./timeline";
 
 /**
  * localStorage persistence for the current session. Keys and formats are the
@@ -93,6 +94,15 @@ export function saveStoredOverlay(
 
 const LS_ASPECT = "viz.aspect.v1";
 const LS_MODS = "viz.mods.v1";
+const LS_TIMELINE = "viz.timeline.v1";
+
+export function loadStoredTimeline(): Timeline {
+  return validTimeline(readJson(LS_TIMELINE, null));
+}
+
+export function saveStoredTimeline(timeline: Timeline): void {
+  localStorage.setItem(LS_TIMELINE, JSON.stringify(timeline));
+}
 
 export function loadStoredMods(): Record<string, ModRoute[]> {
   return validModsByPreset(readJson(LS_MODS, {}));

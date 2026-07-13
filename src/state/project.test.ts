@@ -49,6 +49,19 @@ const doc: ProjectDocument = {
     [presets[2].id]: [{ id: "mr-1", source: "kick", param: "intensity", amount: 0.6 }],
   },
   smoothSpectrum: true,
+  timeline: {
+    enabled: true,
+    scenes: [{ id: "sc-1", name: "Drop", presetId: presets[1].id, start: 30 }],
+    lanes: [
+      {
+        param: "hue",
+        keyframes: [
+          { t: 0, value: 100, curve: "linear" as const },
+          { t: 10, value: 200, curve: "smooth" as const },
+        ],
+      },
+    ],
+  },
 };
 
 describe("project files (.avproj)", () => {
@@ -60,7 +73,7 @@ describe("project files (.avproj)", () => {
   it("stamps metadata", () => {
     const file = JSON.parse(serializeProject(doc, "1.2.0"));
     expect(file.kind).toBe("avproj");
-    expect(file.schemaVersion).toBe(3);
+    expect(file.schemaVersion).toBe(4);
     expect(file.appVersion).toBe("1.2.0");
     expect(typeof file.savedAt).toBe("string");
   });
@@ -87,6 +100,7 @@ describe("project files (.avproj)", () => {
     delete file.document.assets;
     delete file.document.aspect;
     delete file.document.modsByPreset;
+    delete file.document.timeline;
     const parsed = parseProject(JSON.stringify(file));
     expect(parsed.overlayLayers).toEqual([]);
     expect(parsed.assets).toEqual({});

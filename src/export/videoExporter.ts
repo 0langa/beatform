@@ -4,6 +4,7 @@ import type { BgSettings, ParamValues } from "../render/types";
 import { runExportJob, type ExportCoreResult, type ExportJob } from "./exportCore";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { ModRoute } from "../state/modMatrix";
+import type { Timeline } from "../state/timeline";
 
 /**
  * Main-thread export API. Spawns the export worker (UI stays fluid), falls
@@ -38,6 +39,8 @@ export interface ExportOptions {
   mods?: ModRoute[];
   /** Spline-connected spectrum sampling toggle. */
   smoothSpectrum?: boolean;
+  /** Timeline in TRACK time; segment exports shift it automatically. */
+  timeline?: Timeline;
   /** Desktop: stream the file here instead of building a Blob. */
   streamToPath?: string;
   onProgress?: (framesDone: number, framesTotal: number) => void;
@@ -137,6 +140,20 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     overlay: o.overlay,
     mods: o.mods,
     smoothSpectrum: o.smoothSpectrum,
+    timeline:
+      o.timeline && o.segment
+        ? {
+            ...o.timeline,
+            scenes: o.timeline.scenes.map((s) => ({
+              ...s,
+              start: s.start - o.segment!.start,
+            })),
+            lanes: o.timeline.lanes.map((l) => ({
+              ...l,
+              keyframes: l.keyframes.map((k) => ({ ...k, t: k.t - o.segment!.start })),
+            })),
+          }
+        : o.timeline,
     loopCrossfadeSec: o.loopCrossfadeSec,
     beatGrid:
       o.beatGrid && o.segment

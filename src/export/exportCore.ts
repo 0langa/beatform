@@ -5,6 +5,7 @@ import type { PcmData, SyncSettings } from "../audio/types";
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { BgSettings, ParamValues } from "../render/types";
 import { applyMods, type ModRoute } from "../state/modMatrix";
+import { evalTimeline, type Timeline } from "../state/timeline";
 import { presetById } from "../render/presets";
 
 /**
@@ -44,6 +45,8 @@ export interface ExportJob {
   mods?: ModRoute[];
   /** Spline-connected spectrum sampling toggle (matches the live view). */
   smoothSpectrum?: boolean;
+  /** Timeline (already shifted for segments) — scenes + automation. */
+  timeline?: Timeline;
   /**
    * Seamless-loop crossfade (seconds). The final crossfade window blends
    * into the FIRST frames/samples, so the last frame ≈ frame 0 and the loop
@@ -217,6 +220,7 @@ export async function runExportJob(
     }
 
     // --- Video lane: deterministic frame walk
+    let currentPresetId = job.presetId;
     const analyzer = new OfflineAnalyzer(pcm, job.fps, 96, job.sync, job.beatGrid ?? null);
     const total = analyzer.frameCount;
     // Loop mode: keep the first K rendered frames; blend them into the last K
@@ -231,10 +235,25 @@ export async function runExportJob(
       if (encoderError) throw encoderError;
 
       const features = analyzer.nextFrameFeatures();
+      const t = n / job.fps;
+      const tf = job.timeline ? evalTimeline(job.timeline, t) : { scene: null, automation: {} };
+      let framePresetId = job.presetId;
+      let frameParams = job.params;
+      if (tf.scene) {
+        framePresetId = tf.scene.presetId;
+        if (tf.scene.bg) renderer.setBackground(tf.scene.bg);
+      }
+      if (framePresetId !== currentPresetId) {
+        renderer.setPreset(presetById(framePresetId));
+        currentPresetId = framePresetId;
+      }
+      if (tf.scene?.params || Object.keys(tf.automation).length > 0) {
+        frameParams = { ...frameParams, ...tf.scene?.params, ...tf.automation };
+      }
       renderer.render(
         features,
-        n / job.fps,
-        applyMods(presetById(job.presetId), job.params, job.mods ?? [], features),
+        t,
+        applyMods(presetById(framePresetId), frameParams, job.mods ?? [], features),
       );
       // Ensure the GPU finished before snapshotting the canvas
       await renderer.gpuDone();

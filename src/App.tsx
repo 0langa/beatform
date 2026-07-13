@@ -237,6 +237,7 @@ export default function App() {
         beatGrid: s.beatGrid ?? undefined,
         mods: s.activeMods,
         smoothSpectrum: s.smoothSpectrum,
+        timeline: s.timeline.enabled ? s.timeline : undefined,
       });
       const info = {
         bytes: result.bytes,

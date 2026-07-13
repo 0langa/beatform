@@ -4,6 +4,7 @@ import { BG_PRESET, BG_SOLID, BG_TRANSPARENT } from "../render/types";
 import { presets } from "../render/presets";
 import type { OverlayAsset, OverlayLayer, OverlayAnchor } from "../render/overlay";
 import { validModsByPreset, type ModRoute } from "./modMatrix";
+import { validTimeline, type Timeline } from "./timeline";
 
 /**
  * .avproj — the project file format. Versioned JSON around the store's
@@ -14,10 +15,10 @@ import { validModsByPreset, type ModRoute } from "./modMatrix";
  *    a file from a newer app with more presets still opens).
  *
  * History: v1 = preset/params/sync/bg · v2 (+) overlay layers + assets ·
- * v3 (+) modulation-matrix routes
+ * v3 (+) modulation-matrix routes · v4 (+) timeline (scenes + automation)
  */
 
-export const PROJECT_VERSION = 3;
+export const PROJECT_VERSION = 4;
 export const PROJECT_EXTENSION = "avproj";
 
 /** Frame aspect: "free" fills the window; fixed ratios letterbox the stage. */
@@ -40,6 +41,7 @@ export interface ProjectDocument {
   aspect: Aspect;
   modsByPreset: Record<string, ModRoute[]>;
   smoothSpectrum: boolean;
+  timeline: Timeline;
 }
 
 export interface ProjectFile {
@@ -102,6 +104,7 @@ export function parseProject(json: string): ProjectDocument {
     aspect: validAspect(doc.aspect),
     modsByPreset: validModsByPreset(doc.modsByPreset),
     smoothSpectrum: doc.smoothSpectrum === true,
+    timeline: validTimeline(doc.timeline),
   };
 }
 
@@ -234,7 +237,7 @@ export function validLayers(v: unknown, assets: Record<string, OverlayAsset>): O
   return out;
 }
 
-function validBg(v: unknown): BgSettings {
+export function validBg(v: unknown): BgSettings {
   const bg = v as Partial<BgSettings>;
   const validMode = bg?.mode === BG_PRESET || bg?.mode === BG_SOLID || bg?.mode === BG_TRANSPARENT;
   const validColor =
