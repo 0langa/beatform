@@ -1,6 +1,6 @@
 import type { AudioFeatures } from "../audio/types";
 import { allParams } from "./types";
-import type { BgSettings, ParamValues, PresetDef, Renderer } from "./types";
+import type { BgSettings, ParamValues, PresetDef, Renderer, TransitionState } from "./types";
 
 const MAX_PARAMS = 48;
 /** Downsampled waveform points exposed to shaders */
@@ -200,6 +200,35 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 }
 `;
 
+const BLEND_WGSL = /* wgsl */ `
+struct BlendU { mixv: f32, _p0: f32, _p1: f32, _p2: f32 }
+@group(0) @binding(0) var fromTex: texture_2d<f32>;
+@group(0) @binding(1) var toTex: texture_2d<f32>;
+@group(0) @binding(2) var smp: sampler;
+@group(0) @binding(3) var<uniform> bu: BlendU;
+
+struct VSOut {
+  @builtin(position) pos: vec4f,
+  @location(0) uv: vec2f,
+}
+
+@vertex
+fn vs_main(@builtin(vertex_index) vi: u32) -> VSOut {
+  var pos = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  var out: VSOut;
+  out.pos = vec4f(pos[vi], 0.0, 1.0);
+  out.uv = vec2f(pos[vi].x * 0.5 + 0.5, 1.0 - (pos[vi].y * 0.5 + 0.5));
+  return out;
+}
+
+@fragment
+fn fs_main(in: VSOut) -> @location(0) vec4f {
+  let a = textureSampleLevel(fromTex, smp, in.uv, 0.0);
+  let b = textureSampleLevel(toTex, smp, in.uv, 0.0);
+  return mix(a, b, bu.mixv);
+}
+`;
+
 export class WebGPURenderer implements Renderer {
   readonly kind = "webgpu" as const;
 
@@ -224,6 +253,21 @@ export class WebGPURenderer implements Renderer {
   private emptyOverlay: GPUTexture;
   private overlayTexture: GPUTexture | null = null;
   private overlaySampler: GPUSampler;
+
+  // Crossfade machinery: a second compiled preset + params, two offscreen
+  // targets and a static blend pass (the render graph's first citizen).
+  private transitionPreset: PresetDef | null = null;
+  private transitionPipeline: GPURenderPipeline | null = null;
+  private transitionPipelineFor: string | null = null;
+  private transitionParamsBuf: GPUBuffer;
+  private transitionBindGroup: GPUBindGroup | null = null;
+  private transitionParamsData = new Float32Array(MAX_PARAMS);
+  private fadeTexA: GPUTexture | null = null;
+  private fadeTexB: GPUTexture | null = null;
+  private fadeSize: [number, number] = [0, 0];
+  private blendPipeline: GPURenderPipeline | null = null;
+  private blendUniform: GPUBuffer;
+  private blendBindGroup: GPUBindGroup | null = null;
 
   private preset: PresetDef | null = null;
   private uniformData = new ArrayBuffer(UNIFORM_SIZE);
@@ -299,6 +343,14 @@ export class WebGPURenderer implements Renderer {
       addressModeU: "clamp-to-edge",
       addressModeV: "clamp-to-edge",
     });
+    this.transitionParamsBuf = device.createBuffer({
+      size: MAX_PARAMS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.blendUniform = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
     // Explicit layout: presets bind the full ABI even for buffers they don't
     // reference ("auto" layout would strip unused bindings and break the
     // shared bind group).
@@ -327,6 +379,58 @@ export class WebGPURenderer implements Renderer {
     this.smoothBins = v;
   }
 
+  setTransitionPreset(preset: PresetDef | null): void {
+    this.transitionPreset = preset;
+    if (!preset) {
+      this.transitionPipeline = null;
+      this.transitionPipelineFor = null;
+      return;
+    }
+    if (this.transitionPipelineFor === preset.id) return; // cached
+    const specs = allParams(preset);
+    const accessors = specs
+      .map((p, i) => `fn P_${p.key}() -> f32 { return params[${i}u]; }`)
+      .join("\n");
+    const module = this.device.createShaderModule({
+      code: HEADER + accessors + "\n" + preset.wgsl,
+    });
+    this.transitionPipeline = this.device.createRenderPipeline({
+      layout: this.pipelineLayout,
+      vertex: { module, entryPoint: "vs_main" },
+      fragment: { module, entryPoint: "fs_main", targets: [{ format: this.format }] },
+      primitive: { topology: "triangle-list" },
+    });
+    this.transitionPipelineFor = preset.id;
+    this.transitionBindGroup = null;
+  }
+
+  private ensureFadeTargets(): void {
+    const w = Math.max(1, this.canvas.width);
+    const h = Math.max(1, this.canvas.height);
+    if (this.fadeTexA && this.fadeSize[0] === w && this.fadeSize[1] === h) return;
+    this.fadeTexA?.destroy();
+    this.fadeTexB?.destroy();
+    const make = () =>
+      this.device.createTexture({
+        size: [w, h],
+        format: this.format,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+    this.fadeTexA = make();
+    this.fadeTexB = make();
+    this.fadeSize = [w, h];
+    this.blendBindGroup = null;
+    if (!this.blendPipeline) {
+      const module = this.device.createShaderModule({ code: BLEND_WGSL });
+      this.blendPipeline = this.device.createRenderPipeline({
+        layout: "auto",
+        vertex: { module, entryPoint: "vs_main" },
+        fragment: { module, entryPoint: "fs_main", targets: [{ format: this.format }] },
+        primitive: { topology: "triangle-list" },
+      });
+    }
+  }
+
   setOverlay(source: ImageBitmap | null): void {
     this.overlayTexture?.destroy();
     this.overlayTexture = null;
@@ -346,6 +450,7 @@ export class WebGPURenderer implements Renderer {
       );
     }
     this.bindGroup = null; // rebind with the new texture view
+    this.transitionBindGroup = null;
   }
 
   /** Resolves when all submitted GPU work has executed (export frame sync). */
@@ -397,7 +502,7 @@ export class WebGPURenderer implements Renderer {
     }
   }
 
-  render(f: AudioFeatures, time: number, params: ParamValues): void {
+  render(f: AudioFeatures, time: number, params: ParamValues, transition?: TransitionState): void {
     if (!this.pipeline || !this.preset) return;
     this.ensureBinBuffers(f.bins.length);
 
@@ -449,23 +554,98 @@ export class WebGPURenderer implements Renderer {
     });
     this.device.queue.writeBuffer(this.paramsBuf, 0, this.paramsData);
 
-    const encoder = this.device.createCommandEncoder();
     const clearA = this.bg.mode === 2 ? 0 : 1;
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: this.context.getCurrentTexture().createView(),
-          loadOp: "clear",
-          clearValue: { r: 0, g: 0, b: 0, a: clearA },
-          storeOp: "store",
-        },
-      ],
-    });
-    pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, this.getBindGroup());
-    pass.draw(3);
-    pass.end();
+    const fading = !!(transition && this.transitionPipeline && this.transitionPreset);
+    if (fading) {
+      // Outgoing setup's params into the second storage buffer
+      this.transitionParamsData.fill(0);
+      allParams(this.transitionPreset!).forEach((p, i) => {
+        if (i < MAX_PARAMS) this.transitionParamsData[i] = transition!.params[p.key] ?? p.default;
+      });
+      this.device.queue.writeBuffer(this.transitionParamsBuf, 0, this.transitionParamsData);
+      this.device.queue.writeBuffer(
+        this.blendUniform,
+        0,
+        new Float32Array([transition!.mix, 0, 0, 0]),
+      );
+      this.ensureFadeTargets();
+    }
+
+    const encoder = this.device.createCommandEncoder();
+    const drawPass = (
+      pipeline: GPURenderPipeline,
+      bindGroup: GPUBindGroup,
+      view: GPUTextureView,
+    ) => {
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [
+          { view, loadOp: "clear", clearValue: { r: 0, g: 0, b: 0, a: clearA }, storeOp: "store" },
+        ],
+      });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(3);
+      pass.end();
+    };
+
+    if (!fading) {
+      drawPass(this.pipeline, this.getBindGroup(), this.context.getCurrentTexture().createView());
+    } else {
+      // Incoming (active) → A, outgoing → B, then blend to the canvas
+      drawPass(this.pipeline, this.getBindGroup(), this.fadeTexA!.createView());
+      drawPass(
+        this.transitionPipeline!,
+        this.getTransitionBindGroup(),
+        this.fadeTexB!.createView(),
+      );
+      if (!this.blendBindGroup) {
+        this.blendBindGroup = this.device.createBindGroup({
+          layout: this.blendPipeline!.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: this.fadeTexB!.createView() },
+            { binding: 1, resource: this.fadeTexA!.createView() },
+            { binding: 2, resource: this.overlaySampler },
+            { binding: 3, resource: { buffer: this.blendUniform } },
+          ],
+        });
+      }
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: this.context.getCurrentTexture().createView(),
+            loadOp: "clear",
+            clearValue: { r: 0, g: 0, b: 0, a: clearA },
+            storeOp: "store",
+          },
+        ],
+      });
+      pass.setPipeline(this.blendPipeline!);
+      pass.setBindGroup(0, this.blendBindGroup);
+      pass.draw(3);
+      pass.end();
+    }
     this.device.queue.submit([encoder.finish()]);
+  }
+
+  private getTransitionBindGroup(): GPUBindGroup {
+    if (!this.transitionBindGroup) {
+      this.transitionBindGroup = this.device.createBindGroup({
+        layout: this.bindLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.uniformBuf } },
+          { binding: 1, resource: { buffer: this.binsBuf! } },
+          { binding: 2, resource: { buffer: this.peaksBuf! } },
+          { binding: 3, resource: { buffer: this.transitionParamsBuf } },
+          { binding: 4, resource: { buffer: this.waveBuf } },
+          {
+            binding: 5,
+            resource: (this.overlayTexture ?? this.emptyOverlay).createView(),
+          },
+          { binding: 6, resource: this.overlaySampler },
+        ],
+      });
+    }
+    return this.transitionBindGroup;
   }
 
   dispose(): void {
@@ -477,6 +657,10 @@ export class WebGPURenderer implements Renderer {
     this.peaksBuf?.destroy();
     this.overlayTexture?.destroy();
     this.emptyOverlay.destroy();
+    this.transitionParamsBuf.destroy();
+    this.blendUniform.destroy();
+    this.fadeTexA?.destroy();
+    this.fadeTexB?.destroy();
     this.device.destroy();
   }
 
@@ -495,6 +679,7 @@ export class WebGPURenderer implements Renderer {
     });
     this.binCapacity = count;
     this.bindGroup = null;
+    this.transitionBindGroup = null;
   }
 
   private getBindGroup(): GPUBindGroup {

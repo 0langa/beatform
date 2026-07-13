@@ -4,6 +4,7 @@ import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { PcmData, SyncSettings } from "../audio/types";
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { BgSettings, ParamValues } from "../render/types";
+import { defaultParams } from "../render/types";
 import { applyMods, type ModRoute } from "../state/modMatrix";
 import { evalTimeline, type Timeline } from "../state/timeline";
 import { presetById } from "../render/presets";
@@ -47,6 +48,8 @@ export interface ExportJob {
   smoothSpectrum?: boolean;
   /** Timeline (already shifted for segments) — scenes + automation. */
   timeline?: Timeline;
+  /** Per-preset param overrides — scene switches resolve their own base. */
+  paramsByPreset?: Record<string, ParamValues>;
   /**
    * Seamless-loop crossfade (seconds). The final crossfade window blends
    * into the FIRST frames/samples, so the last frame ≈ frame 0 and the loop
@@ -221,6 +224,11 @@ export async function runExportJob(
 
     // --- Video lane: deterministic frame walk
     let currentPresetId = job.presetId;
+    let fadeFromId: string | null = null;
+    const baseFor = (pid: string): ParamValues =>
+      pid === job.presetId
+        ? job.params
+        : { ...defaultParams(presetById(pid)), ...job.paramsByPreset?.[pid] };
     const analyzer = new OfflineAnalyzer(pcm, job.fps, 96, job.sync, job.beatGrid ?? null);
     const total = analyzer.frameCount;
     // Loop mode: keep the first K rendered frames; blend them into the last K
@@ -236,7 +244,9 @@ export async function runExportJob(
 
       const features = analyzer.nextFrameFeatures();
       const t = n / job.fps;
-      const tf = job.timeline ? evalTimeline(job.timeline, t) : { scene: null, automation: {} };
+      const tf = job.timeline
+        ? evalTimeline(job.timeline, t)
+        : { scene: null, prevScene: null, mix: 1, automation: {} };
       let framePresetId = job.presetId;
       let frameParams = job.params;
       if (tf.scene) {
@@ -247,13 +257,29 @@ export async function runExportJob(
         renderer.setPreset(presetById(framePresetId));
         currentPresetId = framePresetId;
       }
+      frameParams = baseFor(framePresetId);
       if (tf.scene?.params || Object.keys(tf.automation).length > 0) {
         frameParams = { ...frameParams, ...tf.scene?.params, ...tf.automation };
+      }
+      let transition: { params: ParamValues; mix: number } | undefined;
+      if (tf.prevScene) {
+        if (fadeFromId !== tf.prevScene.presetId) {
+          renderer.setTransitionPreset(presetById(tf.prevScene.presetId));
+          fadeFromId = tf.prevScene.presetId;
+        }
+        transition = {
+          params: { ...baseFor(tf.prevScene.presetId), ...tf.prevScene.params, ...tf.automation },
+          mix: tf.mix,
+        };
+      } else if (fadeFromId !== null) {
+        renderer.setTransitionPreset(null);
+        fadeFromId = null;
       }
       renderer.render(
         features,
         t,
         applyMods(presetById(framePresetId), frameParams, job.mods ?? [], features),
+        transition,
       );
       // Ensure the GPU finished before snapshotting the canvas
       await renderer.gpuDone();

@@ -368,6 +368,7 @@ export const useVizStore = create<VizState>((set, get) => {
         getParams: () => get().activeParams,
         getMods: () => get().activeMods,
         getTimeline: () => get().timeline,
+        getParamsFor: (presetId) => resolveParams(presetId, get().paramsByPreset),
         onSceneChange: (scene) => get().applyScene(scene),
         getBackground: () => get().bg,
         getSync: () => get().sync,
@@ -673,6 +674,7 @@ export const useVizStore = create<VizState>((set, get) => {
           mods: get().activeMods,
           smoothSpectrum: get().smoothSpectrum,
           timeline: get().timeline.enabled ? get().timeline : undefined,
+          paramsByPreset: get().paramsByPreset,
           // Desktop: stream straight to the picked file (flat memory);
           // browser dev falls back to an in-memory blob + download.
           streamToPath: savePath ?? undefined,

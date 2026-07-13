@@ -5,6 +5,7 @@ import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { BgSettings, ParamValues, PresetDef, Renderer } from "../render/types";
 import { applyMods, type ModRoute } from "./modMatrix";
 import { evalTimeline, type Scene, type Timeline } from "./timeline";
+import { presetById } from "../render/presets";
 import type { PlaybackState, SyncSettings } from "../audio/types";
 
 /**
@@ -20,6 +21,8 @@ export interface ServiceHooks {
   /** Modulation routes for the active preset (empty array = none). */
   getMods(): ModRoute[];
   getTimeline(): Timeline;
+  /** Resolved params (defaults + overrides) for ANY preset — crossfades. */
+  getParamsFor(presetId: string): ParamValues;
   /** The timeline crossed into a scene needing a different preset/bg. */
   onSceneChange(scene: Scene): void;
   getBackground(): BgSettings;
@@ -127,6 +130,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     ro.observe(canvas);
 
     let lastUiUpdate = 0;
+    let fadeFromId: string | null = null;
     const loop = (tMs: number) => {
       if (disposed) return;
       clearTimeout(fallback);
@@ -143,7 +147,31 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       if (frame.scene?.params || Object.keys(frame.automation).length > 0) {
         params = { ...params, ...frame.scene?.params, ...frame.automation };
       }
-      renderer?.render(features, t, applyMods(preset, params, hooks.getMods(), features));
+      // Crossfade: keep the outgoing preset compiled while inside the window
+      let transition: { params: ParamValues; mix: number } | undefined;
+      if (frame.prevScene) {
+        if (fadeFromId !== frame.prevScene.presetId) {
+          renderer?.setTransitionPreset(presetById(frame.prevScene.presetId));
+          fadeFromId = frame.prevScene.presetId;
+        }
+        transition = {
+          params: {
+            ...hooks.getParamsFor(frame.prevScene.presetId),
+            ...frame.prevScene.params,
+            ...frame.automation,
+          },
+          mix: frame.mix,
+        };
+      } else if (fadeFromId !== null) {
+        renderer?.setTransitionPreset(null);
+        fadeFromId = null;
+      }
+      renderer?.render(
+        features,
+        t,
+        applyMods(preset, params, hooks.getMods(), features),
+        transition,
+      );
       // E2E probe: lets tooling confirm the render loop is alive
       (window as unknown as { __vizFrames: number }).__vizFrames =
         ((window as unknown as { __vizFrames: number }).__vizFrames ?? 0) + 1;

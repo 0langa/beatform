@@ -73,9 +73,22 @@ export interface BgSettings {
   color: [number, number, number];
 }
 
+/** Crossfade input: the outgoing setup's params and the 0..1 blend. */
+export interface TransitionState {
+  params: ParamValues;
+  mix: number;
+}
+
 export interface Renderer {
   readonly kind: "webgpu" | "canvas2d";
-  render(features: AudioFeatures, time: number, params: ParamValues): void;
+  render(
+    features: AudioFeatures,
+    time: number,
+    params: ParamValues,
+    transition?: TransitionState,
+  ): void;
+  /** Outgoing preset for crossfades (compiled+cached); null clears. */
+  setTransitionPreset(preset: PresetDef | null): void;
   resize(width: number, height: number, dpr: number): void;
   setPreset(preset: PresetDef): void;
   setBackground(bg: BgSettings): void;

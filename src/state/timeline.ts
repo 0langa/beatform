@@ -34,6 +34,8 @@ export interface Scene {
   presetId: string;
   /** Seconds — the scene runs from here until the next scene's start. */
   start: number;
+  /** Crossfade from the previous setup over this many seconds (0 = cut). */
+  fadeSec?: number;
   /** Sparse param overrides on top of the document's per-preset params. */
   params?: ParamValues;
   bg?: BgSettings;
@@ -54,6 +56,10 @@ export function newSceneId(): string {
 export interface TimelineFrame {
   /** null = before the first scene / no scenes → document base setup. */
   scene: Scene | null;
+  /** During a crossfade: the setup being faded FROM (null otherwise). */
+  prevScene: Scene | null;
+  /** 0..1 blend toward `scene` (1 = fully arrived; no fade → always 1). */
+  mix: number;
   /** Automation values at t, by param key. */
   automation: ParamValues;
 }
@@ -85,11 +91,26 @@ export function laneValue(lane: AutomationLane, t: number): number | null {
 
 /** Evaluate the whole timeline at time t. Pure and allocation-light. */
 export function evalTimeline(timeline: Timeline, t: number): TimelineFrame {
-  if (!timeline.enabled) return { scene: null, automation: {} };
+  if (!timeline.enabled) return { scene: null, prevScene: null, mix: 1, automation: {} };
 
   let scene: Scene | null = null;
+  let prev: Scene | null = null;
   for (const s of timeline.scenes) {
-    if (s.start <= t && (scene === null || s.start >= scene.start)) scene = s;
+    if (s.start <= t && (scene === null || s.start >= scene.start)) {
+      prev = scene;
+      scene = s;
+    }
+  }
+
+  // Crossfade window right after the active scene's start. Only between two
+  // real scenes — the first scene hard-cuts from the base setup.
+  let prevScene: Scene | null = null;
+  let mix = 1;
+  const fade = scene?.fadeSec ?? 0;
+  if (scene && prev && fade > 0 && t < scene.start + fade) {
+    const f = Math.min(1, Math.max(0, (t - scene.start) / fade));
+    mix = f * f * (3 - 2 * f); // smoothstep — eased in both directions
+    prevScene = prev;
   }
 
   const automation: ParamValues = {};
@@ -97,7 +118,7 @@ export function evalTimeline(timeline: Timeline, t: number): TimelineFrame {
     const v = laneValue(lane, t);
     if (v !== null) automation[lane.param] = v;
   }
-  return { scene, automation };
+  return { scene, prevScene, mix, automation };
 }
 
 /** Validation for project files / storage. */
@@ -128,6 +149,10 @@ export function validTimeline(v: unknown): Timeline {
           name: typeof s.name === "string" ? s.name.slice(0, 60) : "Scene",
           presetId: s.presetId,
           start: s.start,
+          fadeSec:
+            typeof s.fadeSec === "number" && Number.isFinite(s.fadeSec) && s.fadeSec > 0
+              ? Math.min(8, s.fadeSec)
+              : undefined,
           params: Object.keys(params).length > 0 ? params : undefined,
           bg: s.bg ? validBg(s.bg) : undefined,
         });

@@ -41,6 +41,8 @@ export interface ExportOptions {
   smoothSpectrum?: boolean;
   /** Timeline in TRACK time; segment exports shift it automatically. */
   timeline?: Timeline;
+  /** Per-preset param overrides for scene base resolution. */
+  paramsByPreset?: Record<string, ParamValues>;
   /** Desktop: stream the file here instead of building a Blob. */
   streamToPath?: string;
   onProgress?: (framesDone: number, framesTotal: number) => void;
@@ -140,6 +142,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     overlay: o.overlay,
     mods: o.mods,
     smoothSpectrum: o.smoothSpectrum,
+    paramsByPreset: o.paramsByPreset,
     timeline:
       o.timeline && o.segment
         ? {

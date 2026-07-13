@@ -405,6 +405,23 @@ export function TimelinePanel(props: {
                   ))}
                 </select>
                 <span className="row-value">@ {s.start.toFixed(2)}s</span>
+                <label className="inline" title="Crossfade from the previous scene (0 = hard cut)">
+                  Fade
+                  <input
+                    type="range"
+                    min={0}
+                    max={4}
+                    step={0.25}
+                    value={s.fadeSec ?? 0}
+                    onChange={(e) => {
+                      const fadeSec = Number(e.target.value) || undefined;
+                      update({
+                        scenes: timeline.scenes.map((x) => (x.id === s.id ? { ...x, fadeSec } : x)),
+                      });
+                    }}
+                  />
+                  <span className="row-value">{(s.fadeSec ?? 0).toFixed(2)}s</span>
+                </label>
                 <button className="text-btn danger" onClick={() => removeScene(s.id)}>
                   Delete scene
                 </button>

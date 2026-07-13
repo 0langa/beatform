@@ -38,6 +38,10 @@ export class Canvas2DRenderer implements Renderer {
     this.smooth = v;
   }
 
+  setTransitionPreset(_preset: PresetDef | null): void {
+    // Fallback renderer hard-cuts between scenes.
+  }
+
   resize(width: number, height: number, dpr: number): void {
     const w = Math.max(1, Math.floor(width * dpr));
     const h = Math.max(1, Math.floor(height * dpr));

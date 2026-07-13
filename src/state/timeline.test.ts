@@ -65,7 +65,40 @@ describe("timeline evaluation", () => {
 
   it("disabled timeline evaluates to nothing", () => {
     const off = { ...timeline, enabled: false };
-    expect(evalTimeline(off, 35)).toEqual({ scene: null, automation: {} });
+    expect(evalTimeline(off, 35)).toEqual({
+      scene: null,
+      prevScene: null,
+      mix: 1,
+      automation: {},
+    });
+  });
+
+  it("crossfade: mix ramps smoothly and prevScene is the outgoing scene", () => {
+    const tl: Timeline = {
+      enabled: true,
+      scenes: [
+        { id: "a", name: "A", presetId: P0, start: 0 },
+        { id: "b", name: "B", presetId: P1, start: 10, fadeSec: 2 },
+      ],
+      lanes: [],
+    };
+    const before = evalTimeline(tl, 9.9);
+    expect(before.scene?.id).toBe("a");
+    expect(before.prevScene).toBeNull();
+    const mid = evalTimeline(tl, 11);
+    expect(mid.scene?.id).toBe("b");
+    expect(mid.prevScene?.id).toBe("a");
+    expect(mid.mix).toBeCloseTo(0.5, 5); // smoothstep(0.5) = 0.5
+    const early = evalTimeline(tl, 10.2);
+    expect(early.mix).toBeLessThan(0.2);
+    const after = evalTimeline(tl, 12.5);
+    expect(after.prevScene).toBeNull();
+    expect(after.mix).toBe(1);
+  });
+
+  it("no fadeSec means hard cut (no prevScene ever)", () => {
+    expect(evalTimeline(timeline, 30.1).prevScene).toBeNull();
+    expect(evalTimeline(timeline, 30.1).mix).toBe(1);
   });
 
   it("automation values land keyed by param", () => {
