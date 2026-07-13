@@ -76,7 +76,7 @@ fn preset(uv: vec2f) -> vec4f {
   col += hsl2rgb(cellHue, 0.6, P_unlitLevel()) * mask * P_dim() * (1.0 - lit);
   // Lit LEDs, brighter near the top of the column's level
   let hot = P_litLevel() + P_hotBoost() * smoothstep(level - 2.0, level, cy + 0.5)
-          + u.beatIntensity * P_beatBoost();
+          + u.driveBeat * P_beatBoost();
   col += hsl2rgb(cellHue, 0.9, hot) * mask * lit;
 
   // Peak-hold dot (toggleable)

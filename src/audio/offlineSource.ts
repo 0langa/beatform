@@ -1,4 +1,4 @@
-import type { AudioFeatures } from "./types";
+import type { AudioFeatures, SyncSettings } from "./types";
 import { FeaturePipeline } from "./featurePipeline";
 import { RealFFT } from "./dsp/fft";
 
@@ -29,7 +29,7 @@ export class OfflineAnalyzer {
   private nextFrame = 0;
   private duration: number;
 
-  constructor(buffer: AudioBuffer, fps: number, binCount = 96) {
+  constructor(buffer: AudioBuffer, fps: number, binCount = 96, sync?: SyncSettings) {
     this.fps = fps;
     this.sampleRate = buffer.sampleRate;
     this.duration = buffer.duration;
@@ -56,6 +56,7 @@ export class OfflineAnalyzer {
       // 3/4 window: the rest is trigger-search headroom (see FeaturePipeline)
       waveformLength: Math.floor((FFT_SIZE * 3) / 4),
     });
+    if (sync) this.pipeline.setSync(sync);
   }
 
   /** Sequential frame analysis (pipeline smoothing/beat state is stateful). */

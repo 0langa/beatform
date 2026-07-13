@@ -696,6 +696,16 @@ button:disabled {
   left: 17px;
 }
 
+.sync-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  margin-bottom: 10px;
+}
+
 /* segmented control */
 .segmented {
   display: flex;

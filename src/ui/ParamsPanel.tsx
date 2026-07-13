@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { SyncMode, SyncSettings } from "../audio/types";
 import type {
   BgMode,
   BgSettings,
@@ -22,6 +23,15 @@ function rgbToHex([r, g, b]: [number, number, number]): string {
       .padStart(2, "0");
   return `#${c(r)}${c(g)}${c(b)}`;
 }
+
+const SYNC_OPTIONS: Array<{ mode: SyncMode; label: string; hint: string }> = [
+  { mode: "kick", label: "Kicks", hint: "Follow the drums: pulses fire on kick/snare hits, motion glides with loudness" },
+  { mode: "energy", label: "Energy", hint: "Follow overall loudness — the smoothest, most forgiving option" },
+  { mode: "bass", label: "Bass", hint: "Follow the low end — basslines and subs drive the visuals" },
+  { mode: "melody", label: "Melody", hint: "Follow the mids (~150 Hz–2 kHz) where melodies and chords live" },
+  { mode: "voice", label: "Voice", hint: "Follow the vocal range (~300 Hz–3.4 kHz) — speech and singing" },
+  { mode: "treble", label: "Treble", hint: "Follow hi-hats, cymbals and sparkle" },
+];
 
 const BG_OPTIONS: Array<{ mode: BgMode; label: string; hint: string }> = [
   { mode: BG_PRESET, label: "Animated", hint: "The visual's own moving background" },
@@ -72,6 +82,8 @@ export function ParamsPanel(props: {
   onReset: () => void;
   bg: BgSettings;
   onBg: (bg: BgSettings) => void;
+  sync: SyncSettings;
+  onSync: (sync: SyncSettings) => void;
   rendererKind: string;
   onClose: () => void;
 }) {
@@ -176,6 +188,45 @@ export function ParamsPanel(props: {
               )}
             </>
           )}
+        </section>
+
+        <section className="panel-section">
+          <div className="section-head">
+            <span className="section-title">Sync</span>
+          </div>
+          <div className="sync-grid">
+            {SYNC_OPTIONS.map((o) => (
+              <button
+                key={o.mode}
+                className={`segment ${props.sync.mode === o.mode ? "active" : ""}`}
+                title={o.hint}
+                onPointerEnter={() => setHint(o.hint)}
+                onPointerLeave={() => setHint(null)}
+                onClick={() => props.onSync({ ...props.sync, mode: o.mode })}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <label
+            className="row param-row"
+            title="0 = punchy and instant, 1 = long smooth glides"
+            onPointerEnter={() => setHint("How smoothly the visuals follow the source — 0 = punchy, 1 = long glides")}
+            onPointerLeave={() => setHint(null)}
+          >
+            <span className="row-label">Smoothing</span>
+            <Slider
+              min={0}
+              max={1}
+              step={0.01}
+              value={props.sync.smooth}
+              onChange={(v) => props.onSync({ ...props.sync, smooth: v })}
+            />
+            <span className="row-value">{props.sync.smooth.toFixed(2)}</span>
+          </label>
+          <p className="section-hint">
+            What this visual reacts to. Saved per mode; exports use it too.
+          </p>
         </section>
 
         <section className="panel-section">

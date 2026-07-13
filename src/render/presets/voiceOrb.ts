@@ -49,7 +49,7 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Speech level: mostly the slow envelope, a touch of instantaneous —
   // keeps the orb's size calm instead of pumping on every syllable.
-  let level = clamp(mix(u.energy, u.rms, P_rmsBlend()) * (0.6 + P_response() * 1.4), 0.0, 1.0);
+  let level = clamp(mix(u.drive, u.rms, P_rmsBlend()) * (0.6 + P_response() * 1.4), 0.0, 1.0);
   // Idle breathing keeps the orb alive during pauses, fades out when talking
   let idle = (1.0 - smoothstep(0.03, 0.12, level)) * sin(u.time * 1.3) * P_idleBreath();
 

@@ -1,5 +1,5 @@
 import type { AudioEngine } from "./engine";
-import type { AudioFeatures } from "./types";
+import type { AudioFeatures, SyncSettings } from "./types";
 import { FeaturePipeline } from "./featurePipeline";
 
 /**
@@ -25,6 +25,11 @@ export class RealtimeAnalyzer {
       // 3/4 window: the rest is trigger-search headroom (see FeaturePipeline)
       waveformLength: Math.floor((engine.analyser.fftSize * 3) / 4),
     });
+  }
+
+  /** Choose what the visuals follow. */
+  setSync(sync: SyncSettings): void {
+    this.pipeline.setSync(sync);
   }
 
   /** Call once per animation frame with a seconds timestamp. */

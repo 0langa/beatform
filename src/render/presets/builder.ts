@@ -59,7 +59,7 @@ export const builder: PresetDef = {
     { key: "orbWobble", label: "Orb: wobble", min: 0, max: 1, step: 0.02, default: 0.4, hint: "Organic edge undulation" },
     { key: "starDensity", label: "Stars: density", min: 2, max: 14, step: 0.5, default: 6, hint: "How many stars" },
     { key: "starSpeed", label: "Stars: speed", min: 0.02, max: 1.2, step: 0.02, default: 0.3, hint: "Base drift speed (energy accelerates it)" },
-    { key: "starStreak", label: "Stars: streak", min: 0, max: 1, step: 0.01, default: 0.4, hint: "Stars stretch into trails at speed" },
+    { key: "starStreak", label: "Stars: scatter", min: 0, max: 1, step: 0.01, default: 0.4, hint: "Each beat kicks particles in their own direction" },
     { key: "vignette", label: "Vignette", min: 0, max: 1.2, step: 0.05, default: 0.5, hint: "Darkening toward the screen corners" },
   ],
   wgsl: /* wgsl */ `
@@ -70,26 +70,39 @@ fn preset(uv: vec2f) -> vec4f {
 
   // --- Background wash + beat pulse
   var col = hsl2rgb(P_hue() + 40.0, 0.5, 0.05 + u.bass * 0.04) * (1.0 - r * 0.8) * P_bgGlow() * 2.0;
-  col += hsl2rgb(P_hue(), 0.7, 0.5) * u.beatIntensity * P_beatFlash() * (1.0 - r);
+  col += hsl2rgb(P_hue(), 0.7, 0.5) * u.driveBeat * P_beatFlash() * (1.0 - r);
 
-  // --- Stars (behind everything else)
+  // --- Particles (behind everything else): same recipe as the Particles
+  // mode — per-particle wander + beat scatter, crisp cores, drifting field
   if (P_stars() > 0.5) {
-    let spd = P_starSpeed() * (0.3 + u.energy * 0.9);
+    let pp = vec2f(uv.x * u.aspect, uv.y);
+    let spd = P_starSpeed() * (0.3 + u.drive * 0.9);
     for (var l = 0; l < 2; l++) {
       let fl = f32(l);
-      let z = 0.35 / max(r, 1e-3) + u.time * spd * (1.0 + fl * 0.7) * 4.0;
-      let q = vec2f((a / TAU + 0.5) * (56.0 + fl * 28.0), z * P_starDensity());
-      let cell = floor(q);
-      let f = fract(q) - 0.5;
-      let h1 = hash21(cell + fl * 77.3);
-      if (h1 > 0.7) {
-        let h2 = hash21(cell + fl * 77.3 + 31.7);
-        let off = (vec2f(h1, h2) - 0.5) * 0.6;
-        let stretch = 1.0 + P_starStreak() * spd * 9.0;
-        let dv = vec2f((f.x - off.x) * 1.4, (f.y - off.y) / stretch);
-        let fade = smoothstep(0.02, 0.2, r) * (1.0 - fl * 0.25);
-        col += hsl2rgb(P_hue() + (h2 - 0.5) * P_hueSpread(), 0.45, 0.8)
-             * exp(-dot(dv, dv) * 95.0) * fade * 0.8;
+      let n = P_starDensity() * (1.0 + fl * 0.4);
+      let q = pp * n - vec2f(0.0, -u.time * spd * n * 0.1); // gentle upward drift
+      let base = floor(q);
+      let f = q - base;
+      for (var dy = -1; dy <= 1; dy++) {
+        for (var dx = -1; dx <= 1; dx++) {
+          let cell = base + vec2f(f32(dx), f32(dy));
+          let h1 = hash21(cell + fl * 77.3);
+          if (h1 > 0.65) { continue; }
+          let h2 = hash21(cell + fl * 77.3 + 31.7);
+          let h3 = hash21(cell + fl * 77.3 + 63.1);
+          let ph = h2 * TAU;
+          let wob = vec2f(sin(u.time * 0.4 * (0.5 + h2) + ph),
+                          cos(u.time * 0.4 * (0.7 + h3) + ph * 1.7)) * 0.3;
+          let scat = normalize(vec2f(h2 - 0.5, h3 - 0.5) + 1e-4)
+                   * u.driveBeat * P_starStreak() * 0.5;
+          let d = f - (vec2f(f32(dx), f32(dy)) + 0.5 + wob + scat);
+          let s = 0.14 * (0.5 + h1) * (1.0 - fl * 0.25);
+          let dist = length(d);
+          let core = smoothstep(s * 0.38, s * 0.16, dist);
+          let halo = exp(-dot(d, d) / max(s * s * 0.5, 1e-5)) * 0.15;
+          col += hsl2rgb(P_hue() + (h2 - 0.5) * P_hueSpread(), 0.5, 0.8)
+               * (core + halo) * (1.0 - fl * 0.3) * 0.8;
+        }
       }
     }
   }
@@ -135,7 +148,7 @@ fn preset(uv: vec2f) -> vec4f {
   // --- Waveform circle
   if (P_waveCircle() > 0.5) {
     let wv = waveAt(fract(a / TAU + 0.5));
-    let cr = P_circleR() + wv * P_circleAmp() * (0.5 + u.energy * 1.2);
+    let cr = P_circleR() + wv * P_circleAmp() * (0.5 + u.drive * 1.2);
     let d = abs(r - cr);
     let cHue = P_hue() + 30.0 + wv * 25.0;
     col += hsl2rgb(cHue, 0.7, 0.55) * smoothstep(0.004, 0.0008, d) * 0.7;
@@ -144,7 +157,7 @@ fn preset(uv: vec2f) -> vec4f {
 
   // --- Orb core
   if (P_orb() > 0.5) {
-    let level = clamp(u.energy * 1.6, 0.0, 1.0);
+    let level = clamp(u.drive * 1.6, 0.0, 1.0);
     let spin = u.time * 0.35;
     let amp = P_orbSize() * P_orbWobble() * (0.1 + level * 0.35);
     let wob = sin(a * 3.0 + spin) * amp + sin(a * 6.0 - spin * 0.8 + 1.5) * amp * 0.4;
@@ -158,7 +171,7 @@ fn preset(uv: vec2f) -> vec4f {
   // --- Horizontal wave line (topmost)
   if (P_waveLine() > 0.5) {
     let w = (waveAt(uv.x) * 0.5 + waveAt(uv.x + 0.008) * 0.3 + waveAt(uv.x - 0.008) * 0.2)
-          / (0.35 + u.energy * 1.2);
+          / (0.35 + u.drive * 1.2);
     let y = P_lineY() + clamp(w * P_lineAmp(), -0.4, 0.4);
     let d = abs(uv.y - y);
     let lHue = P_hue() + w * 30.0;

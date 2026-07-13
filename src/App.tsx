@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioEngine } from "./audio/engine";
 import { RealtimeAnalyzer } from "./audio/realtimeSource";
 import { demos } from "./audio/demoTrack";
-import type { PlaybackState } from "./audio/types";
+import { DEFAULT_SYNC } from "./audio/types";
+import type { PlaybackState, SyncSettings } from "./audio/types";
 import { Canvas2DRenderer } from "./render/canvas2dRenderer";
 import { WebGPURenderer } from "./render/webgpuRenderer";
 import {
@@ -36,6 +37,15 @@ const LS_PRESET = "viz.activePreset";
 const LS_PARAMS = "viz.params.v1";
 const LS_BG = "viz.bg.v1";
 const LS_VOLUME = "viz.volume";
+const LS_SYNC = "viz.sync.v1";
+
+function loadStoredSync(): Record<string, SyncSettings> {
+  try {
+    return JSON.parse(localStorage.getItem(LS_SYNC) ?? "{}");
+  } catch {
+    return {};
+  }
+}
 
 const RESOLUTIONS = [
   { label: "720p (1280×720)", w: 1280, h: 720 },
@@ -106,6 +116,14 @@ export default function App() {
   const [bg, setBg] = useState<BgSettings>(loadStoredBg);
   const bgRef = useRef(bg);
 
+  const syncByPresetRef = useRef<Record<string, SyncSettings>>(loadStoredSync());
+  const [sync, setSyncState] = useState<SyncSettings>(
+    () => syncByPresetRef.current[presetId] ?? { ...DEFAULT_SYNC },
+  );
+  const syncRef = useRef(sync);
+  syncRef.current = sync;
+  const analyzerRef = useRef<RealtimeAnalyzer | null>(null);
+
   const [playback, setPlayback] = useState<PlaybackState>({
     playing: false,
     time: 0,
@@ -168,6 +186,8 @@ export default function App() {
       if (!seekingRef.current) setPlayback(s);
     };
     const analyzer = new RealtimeAnalyzer(engine);
+    analyzer.setSync(syncRef.current);
+    analyzerRef.current = analyzer;
     const canvas = canvasRef.current!;
     let disposed = false;
     let raf = 0;
@@ -289,6 +309,16 @@ export default function App() {
     };
     setParams(activeParamsRef.current);
     rendererRef.current?.setPreset(next);
+    const nextSync = syncByPresetRef.current[next.id] ?? { ...DEFAULT_SYNC };
+    setSyncState(nextSync);
+    analyzerRef.current?.setSync(nextSync);
+  }, []);
+
+  const updateSync = useCallback((next: SyncSettings) => {
+    setSyncState(next);
+    analyzerRef.current?.setSync(next);
+    syncByPresetRef.current[presetIdRef.current] = next;
+    localStorage.setItem(LS_SYNC, JSON.stringify(syncByPresetRef.current));
   }, []);
 
   const setParam = useCallback(
@@ -470,6 +500,7 @@ export default function App() {
         preset: presetById(presetIdRef.current),
         params: activeParamsRef.current,
         bg: bgRef.current,
+        sync: syncRef.current,
         signal: ac.signal,
         onProgress: (done, total) =>
           setExporting((p) => (p ? { ...p, done, total } : p)),
@@ -533,6 +564,7 @@ export default function App() {
         preset: presetById(presetIdRef.current),
         params: activeParamsRef.current,
         bg: bgRef.current,
+        sync: syncRef.current,
       });
       const info = {
         bytes: result.blob.size,
@@ -677,6 +709,8 @@ export default function App() {
           onReset={resetParams}
           bg={bg}
           onBg={updateBg}
+          sync={sync}
+          onSync={updateSync}
           rendererKind={rendererKind}
           onClose={() => setShowPanel(false)}
         />

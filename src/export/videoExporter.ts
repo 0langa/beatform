@@ -1,5 +1,6 @@
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
 import { OfflineAnalyzer } from "../audio/offlineSource";
+import type { SyncSettings } from "../audio/types";
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { BgSettings, ParamValues, PresetDef } from "../render/types";
 
@@ -22,6 +23,8 @@ export interface ExportOptions {
   preset: PresetDef;
   params: ParamValues;
   bg: BgSettings;
+  /** Sync-source selection — same values as the live view for WYSIWYG */
+  sync?: SyncSettings;
   onProgress?: (framesDone: number, framesTotal: number) => void;
   signal?: AbortSignal;
 }
@@ -150,7 +153,7 @@ export async function exportVideo(
     }
 
     // --- Video lane: deterministic frame walk
-    const analyzer = new OfflineAnalyzer(audio, o.fps);
+    const analyzer = new OfflineAnalyzer(audio, o.fps, 96, o.sync);
     const total = analyzer.frameCount;
     for (let n = 0; n < total; n++) {
       abort();

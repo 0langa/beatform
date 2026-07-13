@@ -14,6 +14,15 @@ export interface AudioFeatures {
   rms: number;
   /** Slow loudness envelope (~1s), 0..1 — drives calm/idle motion */
   energy: number;
+  /** Voice band (~300-3400 Hz) energy 0..1 */
+  voice: number;
+  /**
+   * The user-selected sync source as one smooth scalar 0..1 — presets use
+   * this as their PRIMARY reactive input (default: energy).
+   */
+  drive: number;
+  /** Onset pulse (1 on hit, exponential decay) of the selected sync source */
+  driveBeat: number;
   /** Band energies 0..1 */
   bass: number;
   mid: number;
@@ -27,6 +36,17 @@ export interface AudioFeatures {
   /** Track duration, seconds (0 when nothing loaded) */
   duration: number;
 }
+
+/** What the visuals react to — the primary sync source. */
+export type SyncMode = "energy" | "bass" | "kick" | "melody" | "voice" | "treble";
+
+export interface SyncSettings {
+  mode: SyncMode;
+  /** 0 = instant/punchy, 1 = very smooth */
+  smooth: number;
+}
+
+export const DEFAULT_SYNC: SyncSettings = { mode: "kick", smooth: 0.5 };
 
 export interface PlaybackState {
   playing: boolean;

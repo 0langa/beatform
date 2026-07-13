@@ -52,7 +52,7 @@ fn calmWave(x: f32, calm: f32) -> f32 {
 fn preset(uv: vec2f) -> vec4f {
   // Auto-gain: normalize display height against the slow envelope, so quiet
   // and loud passages fill a similar, stable portion of the screen.
-  let gain = P_gain() / (P_agFloor() + u.energy * P_agRange());
+  let gain = P_gain() / (P_agFloor() + u.drive * P_agRange());
 
   // Background: near-black, subtle bass tint, faint grid
   var col = hsl2rgb(P_hue() + 40.0, 0.4, P_bgLevel() + u.bass * 0.02);
@@ -88,7 +88,7 @@ fn preset(uv: vec2f) -> vec4f {
   }
 
   // Gentle beat lift (no strobe)
-  col *= 1.0 + u.beatIntensity * P_beatLift();
+  col *= 1.0 + u.driveBeat * P_beatLift();
 
   let d2 = distance(uv, vec2f(0.5));
   col *= 1.0 - d2 * d2 * P_vignette();

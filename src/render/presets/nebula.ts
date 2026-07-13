@@ -55,9 +55,9 @@ fn preset(uv: vec2f) -> vec4f {
   // decays (1 -> 0 maps to radius 0 -> edge). Makes the sync unmistakable
   // without changing the nebula's character between beats.
   let rp = length(p);
-  if (u.beatIntensity > 0.01 && rp > 1e-4) {
-    let rippleR = (1.0 - u.beatIntensity) * 1.1;
-    let wave = exp(-abs(rp - rippleR) * P_rippleWidth()) * u.beatIntensity * P_beatRipple();
+  if (u.driveBeat > 0.01 && rp > 1e-4) {
+    let rippleR = (1.0 - u.driveBeat) * 1.1;
+    let wave = exp(-abs(rp - rippleR) * P_rippleWidth()) * u.driveBeat * P_beatRipple();
     p += (p / rp) * wave * P_rippleWarp();
   }
 
@@ -81,10 +81,10 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Beat bloom from center + bright rim tracing the ripple front
   let r2 = length(p);
-  col += hsl2rgb(P_hue(), 0.8, 0.55) * u.beatIntensity * P_beatBloom() * exp(-r2 * 3.0);
-  if (u.beatIntensity > 0.01) {
-    let rippleR2 = (1.0 - u.beatIntensity) * 1.1;
-    let rim = exp(-abs(rp - rippleR2) * 20.0) * u.beatIntensity * P_beatRipple();
+  col += hsl2rgb(P_hue(), 0.8, 0.55) * u.driveBeat * P_beatBloom() * exp(-r2 * 3.0);
+  if (u.driveBeat > 0.01) {
+    let rippleR2 = (1.0 - u.driveBeat) * 1.1;
+    let rim = exp(-abs(rp - rippleR2) * 20.0) * u.driveBeat * P_beatRipple();
     col += hsl2rgb(P_hue() + 40.0, 0.7, 0.6) * rim * 0.5;
   }
 

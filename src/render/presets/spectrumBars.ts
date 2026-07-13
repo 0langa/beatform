@@ -39,7 +39,7 @@ export const spectrumBars: PresetDef = {
   wgsl: /* wgsl */ `
 fn preset(uvIn: vec2f) -> vec4f {
   // Beat zoom: scale around center
-  var uv = (uvIn - 0.5) / (1.0 + u.beatIntensity * P_beatZoom()) + 0.5;
+  var uv = (uvIn - 0.5) / (1.0 + u.driveBeat * P_beatZoom()) + 0.5;
 
   // Optional mirror around center column
   var x = uv.x;
@@ -56,7 +56,7 @@ fn preset(uvIn: vec2f) -> vec4f {
   let d = distance(uv, vec2f(0.5, 0.55));
   let bgHue = P_hue() + 40.0;
   var col = hsl2rgb(bgHue, 0.5, P_bgLevel() + u.bass * P_bgBassGlow()) * (1.0 - d * 0.9);
-  col += hsl2rgb(P_hue(), 0.7, 0.5) * u.beatIntensity * P_beatFlash() * (1.0 - d);
+  col += hsl2rgb(P_hue(), 0.7, 0.5) * u.driveBeat * P_beatFlash() * (1.0 - d);
 
   let y = 1.0 - uv.y; // bars grow from bottom
   let barH = v * P_barHeight();
@@ -66,7 +66,7 @@ fn preset(uvIn: vec2f) -> vec4f {
   // Bar body with vertical gradient
   if (y < barH) {
     let g = y / max(barH, 0.001);
-    col = hsl2rgb(barHue, P_barSat(), 0.35 + g * P_barLift() + u.beatIntensity * P_beatBright()) * gapMask
+    col = hsl2rgb(barHue, P_barSat(), 0.35 + g * P_barLift() + u.driveBeat * P_beatBright()) * gapMask
         + col * (1.0 - gapMask);
   } else {
     // Glow above the bar

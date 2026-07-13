@@ -26,16 +26,16 @@ export const starfield: PresetDef = {
     { key: "hue", label: "Hue", min: 0, max: 360, step: 1, default: 210, hint: "Base particle color" },
     { key: "density", label: "Density", min: 4, max: 24, step: 1, default: 10, hint: "How many particles fill the screen" },
     { key: "size", label: "Particle size", min: 0.05, max: 0.4, step: 0.01, default: 0.15, hint: "Base size of each particle" },
-    { key: "speed", label: "Motion", min: 0, max: 1.5, step: 0.05, default: 0.35, hint: "Drift speed — loudness accelerates it smoothly" },
+    { key: "speed", label: "Motion", min: 0, max: 1.5, step: 0.05, default: 0.2, hint: "Drift speed — loudness accelerates it smoothly" },
     { key: "direction", label: "Direction", min: 0, max: 360, step: 5, default: 90, hint: "Drift direction in degrees (90 = up, 270 = down)" },
-    { key: "beatDance", label: "Beat dance", min: 0, max: 1, step: 0.01, default: 0.5, hint: "Each beat kicks every particle in its own direction" },
+    { key: "beatDance", label: "Beat dance", min: 0, max: 1, step: 0.01, default: 0.35, hint: "Each beat kicks every particle in its own direction" },
     { key: "sizePulse", label: "Size pulse", min: 0, max: 2, step: 0.05, default: 0.8, hint: "Particles grow with their band: bass, mids or treble" },
     { key: "fly", label: "Fly mode", min: 0, max: 1, step: 1, default: 0, hint: "Particles fly toward you instead of drifting — speed rides the music" },
   ],
   advanced: [
-    { key: "energyDrive", label: "Energy drive", min: 0, max: 2, step: 0.05, default: 0.8, hint: "How much track loudness speeds up the drift" },
+    { key: "energyDrive", label: "Sync drive", min: 0, max: 2, step: 0.05, default: 0.6, hint: "How much the sync source speeds up the drift" },
     { key: "wander", label: "Wander", min: 0, max: 1, step: 0.02, default: 0.5, hint: "How far particles roam around their home position" },
-    { key: "wanderSpeed", label: "Wander speed", min: 0, max: 2, step: 0.05, default: 0.6, hint: "How fast the roaming motion is" },
+    { key: "wanderSpeed", label: "Wander speed", min: 0, max: 2, step: 0.05, default: 0.35, hint: "How fast the roaming motion is" },
     { key: "fill", label: "Fill", min: 0.2, max: 1, step: 0.02, default: 0.7, hint: "Fraction of grid cells that contain a particle" },
     { key: "layers", label: "Layers", min: 1, max: 3, step: 1, default: 3, hint: "Parallax depth layers" },
     { key: "parallax", label: "Parallax", min: 0, max: 1, step: 0.02, default: 0.5, hint: "Speed difference between layers" },
@@ -54,11 +54,11 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Background wash + beat pulse
   var col = hsl2rgb(P_hue() + 30.0, 0.5, P_bgLevel()) * (1.0 + u.bass * 0.5);
-  col += hsl2rgb(P_hue(), 0.7, 0.4) * u.beatIntensity * P_beatFlash();
+  col += hsl2rgb(P_hue(), 0.7, 0.4) * u.driveBeat * P_beatFlash();
 
   // Speed rides the slow energy envelope; beats add a punchy kick
-  let baseSpd = P_speed() * (0.35 + u.energy * P_energyDrive())
-              * (1.0 + u.beatIntensity * P_beatDance() * 0.8);
+  let baseSpd = P_speed() * (0.35 + u.drive * P_energyDrive())
+              * (1.0 + u.driveBeat * P_beatDance() * 0.8);
   let ang = radians(P_direction());
   let dirv = vec2f(cos(ang), -sin(ang)); // screen y grows downward; flip so 90deg = up
 
@@ -91,7 +91,7 @@ fn preset(uv: vec2f) -> vec4f {
           cos(u.time * P_wanderSpeed() * (0.7 + h3) + ph * 1.7),
         ) * P_wander() * 0.25;
         let scat = normalize(vec2f(h2 - 0.5, h3 - 0.5) + 1e-4)
-                 * u.beatIntensity * P_beatDance() * 0.4;
+                 * u.driveBeat * P_beatDance() * 0.4;
         let d = f - (vec2f(0.5) + wob + scat);
         var band = u.bass;
         if (h3 < 0.3333) { band = u.mid; }
@@ -141,7 +141,7 @@ fn preset(uv: vec2f) -> vec4f {
 
         // Beat scatter: every particle kicks along its own direction
         let scatDir = normalize(vec2f(h2 - 0.5, h3 - 0.5) + 1e-4);
-        let scat = scatDir * u.beatIntensity * P_beatDance() * 0.6;
+        let scat = scatDir * u.driveBeat * P_beatDance() * 0.6;
 
         let pos = vec2f(f32(dx), f32(dy)) + 0.5 + wob + scat;
         let d = f - pos;

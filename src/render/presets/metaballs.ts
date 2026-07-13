@@ -25,9 +25,10 @@ export const metaballs: PresetDef = {
   advanced: [
     { key: "orbitX", label: "Orbit width", min: 0.1, max: 0.5, step: 0.01, default: 0.28, hint: "Horizontal travel range of the blobs" },
     { key: "orbitY", label: "Orbit height", min: 0.1, max: 0.5, step: 0.01, default: 0.24, hint: "Vertical travel range of the blobs" },
-    { key: "radiusFloor", label: "Size floor", min: 0.1, max: 1.5, step: 0.05, default: 0.55, hint: "Blob size in silence" },
-    { key: "radiusBand", label: "Band swell", min: 0, max: 2.5, step: 0.05, default: 1.1, hint: "How much each blob grows with its band (bass/mid/treble)" },
-    { key: "beatSwell", label: "Beat swell", min: 0, max: 0.6, step: 0.02, default: 0.15, hint: "All blobs puff briefly on beats" },
+    { key: "radiusFloor", label: "Size floor", min: 0.1, max: 1.5, step: 0.05, default: 0.5, hint: "Blob size in silence" },
+    { key: "energyGrow", label: "Energy growth", min: 0, max: 2, step: 0.05, default: 0.7, hint: "All blobs swell smoothly with track loudness — the main sync" },
+    { key: "radiusBand", label: "Band swell", min: 0, max: 2.5, step: 0.05, default: 0.45, hint: "Per-blob extra growth from its band (bass/mid/treble)" },
+    { key: "beatSwell", label: "Beat swell", min: 0, max: 0.6, step: 0.02, default: 0.2, hint: "All blobs pump together on every beat" },
     { key: "rimStart", label: "Rim start", min: 0.2, max: 1, step: 0.02, default: 0.55, hint: "How far outside the surface the glow rim begins" },
     { key: "innerGrad", label: "Inner gradient", min: 0, max: 1, step: 0.02, default: 0.35, hint: "Brightness build-up toward blob centers" },
     { key: "hueField", label: "Hue per blob", min: 0, max: 60, step: 1, default: 24, hint: "Color difference between individual blobs" },
@@ -55,7 +56,10 @@ fn preset(uv: vec2f) -> vec4f {
       sin(t + ph) * (P_orbitX() + h * 0.1) * u.aspect * 0.8,
       cos(t * 1.31 + ph * 1.7) * (P_orbitY() + h * 0.08),
     );
-    let rad = P_size() * (P_radiusFloor() + band * P_radiusBand() + u.beatIntensity * P_beatSwell());
+    // Size = calm floor + smooth energy breathing (primary sync) + a gentle
+    // per-band accent + a synchronized beat gulp across all blobs
+    let rad = P_size() * (P_radiusFloor() + u.drive * P_energyGrow()
+            + band * P_radiusBand() + u.driveBeat * P_beatSwell());
     let d2 = dot(p - pos, p - pos);
     let contrib = rad * rad / (d2 + 1e-5);
     field += contrib;
@@ -74,7 +78,7 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Blob body with inner gradient
   let inner = clamp((field - P_threshold()) * 0.35, 0.0, P_innerGrad() + 0.1);
-  col = mix(col, hsl2rgb(localHue, 0.85, 0.42 + inner + u.beatIntensity * P_beatBright()), surface);
+  col = mix(col, hsl2rgb(localHue, 0.85, 0.42 + inner + u.driveBeat * P_beatBright()), surface);
   // Rim glow
   col += hsl2rgb(localHue + 30.0, 0.9, 0.55) * rim * (0.4 + P_glow() * 0.9);
 

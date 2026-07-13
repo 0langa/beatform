@@ -5,8 +5,8 @@ import type { BgSettings, ParamValues, PresetDef, Renderer } from "./types";
 const MAX_PARAMS = 48;
 /** Downsampled waveform points exposed to shaders */
 const WAVE_POINTS = 512;
-/** Uniform struct size in bytes (12 x 4 scalars + vec4 bgColor) */
-const UNIFORM_SIZE = 64;
+/** Uniform struct size in bytes (scalars + vec4 bgColor + sync block) */
+const UNIFORM_SIZE = 80;
 
 /**
  * WebGPU renderer. Fullscreen-triangle pass; the active preset supplies the
@@ -32,6 +32,10 @@ struct Uniforms {
   energy: f32,
   bgMode: u32,
   bgColor: vec4f,
+  drive: f32,
+  driveBeat: f32,
+  voice: f32,
+  _pad2: f32,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> bins: array<f32>;
@@ -322,6 +326,9 @@ export class WebGPURenderer implements Renderer {
     this.uniformF32[13] = this.bg.color[1];
     this.uniformF32[14] = this.bg.color[2];
     this.uniformF32[15] = 1;
+    this.uniformF32[16] = f.drive;
+    this.uniformF32[17] = f.driveBeat;
+    this.uniformF32[18] = f.voice;
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniformData);
     this.device.queue.writeBuffer(this.binsBuf!, 0, f.bins);
     this.device.queue.writeBuffer(this.peaksBuf!, 0, f.peaks);

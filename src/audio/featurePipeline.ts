@@ -1,4 +1,5 @@
-import type { AudioFeatures } from "./types";
+import type { AudioFeatures, SyncMode, SyncSettings } from "./types";
+import { DEFAULT_SYNC } from "./types";
 
 export const MIN_FREQ = 30;
 export const MAX_FREQ = 16000;
@@ -58,10 +59,19 @@ export class FeaturePipeline {
   private bassRange: [number, number];
   private midRange: [number, number];
   private trebleRange: [number, number];
+  private voiceRange: [number, number];
 
   private fluxHistory: number[] = [];
   private lastBeatAt = -Infinity;
   private clock = 0;
+
+  // Sync-source state: a second onset detector over the selected band and
+  // an independently smoothed drive scalar
+  private sync: SyncSettings = { ...DEFAULT_SYNC };
+  private syncFluxHistory: number[] = [];
+  private lastSyncBeatAt = -Infinity;
+  private syncBeatIntensity = 0;
+  private driveValue = 0;
 
   constructor(config: PipelineConfig) {
     this.binCount = config.binCount ?? 96;
@@ -87,6 +97,7 @@ export class FeaturePipeline {
     this.bassRange = [toBin(30), toBin(150)];
     this.midRange = [toBin(150), toBin(2000)];
     this.trebleRange = [toBin(2000), toBin(16000)];
+    this.voiceRange = [toBin(300), toBin(3400)];
 
     this.features = {
       bins: new Float32Array(this.binCount),
@@ -94,6 +105,9 @@ export class FeaturePipeline {
       waveform: new Float32Array(config.waveformLength),
       rms: 0,
       energy: 0,
+      voice: 0,
+      drive: 0,
+      driveBeat: 0,
       bass: 0,
       mid: 0,
       treble: 0,
@@ -163,7 +177,6 @@ export class FeaturePipeline {
       const d = mag[b] - this.prevMag[b];
       if (d > 0) flux += d;
     }
-    this.prevMag.set(mag);
     this.fluxHistory.push(flux);
     if (this.fluxHistory.length > FLUX_WINDOW) this.fluxHistory.shift();
     const mean =
@@ -183,9 +196,95 @@ export class FeaturePipeline {
       f.beatIntensity *= Math.exp(-dt * BEAT_DECAY);
     }
 
+    f.voice = bandMean(mag, this.voiceRange);
+
+    this.updateSync(f, mag, dt, input.playing);
+    // Both onset detectors diff against the previous frame — update it last
+    this.prevMag.set(mag);
+
     f.time = input.time;
     f.duration = input.duration;
     return f;
+  }
+
+  /** Choose what the visuals follow. Safe to call any time. */
+  setSync(sync: SyncSettings): void {
+    if (sync.mode !== this.sync.mode) {
+      this.syncFluxHistory.length = 0;
+      this.syncBeatIntensity = 0;
+    }
+    this.sync = { ...sync };
+  }
+
+  private syncBand(mode: SyncMode): [number, number] {
+    switch (mode) {
+      case "melody":
+        return this.midRange;
+      case "voice":
+        return this.voiceRange;
+      case "treble":
+        return this.trebleRange;
+      default:
+        return this.bassRange; // energy/bass/kick pulse on the low end
+    }
+  }
+
+  private updateSync(f: AudioFeatures, mag: Float32Array, dt: number, playing: boolean): void {
+    const { mode, smooth } = this.sync;
+
+    // Raw drive value for the selected source
+    let raw: number;
+    switch (mode) {
+      case "bass":
+        raw = f.bass;
+        break;
+      case "melody":
+        raw = f.mid;
+        break;
+      case "voice":
+        raw = f.voice;
+        break;
+      case "treble":
+        raw = f.treble;
+        break;
+      case "kick":
+      case "energy":
+      default:
+        raw = f.energy;
+        break;
+    }
+
+    // Smoothing knob: 0 = snappy (fast attack/release), 1 = long glide
+    const attack = 1 - Math.exp(-dt * (30 - smooth * 26));
+    const release = 1 - Math.exp(-dt * (10 - smooth * 8.5));
+    this.driveValue += (raw - this.driveValue) * (raw > this.driveValue ? attack : release);
+    f.drive = this.driveValue;
+
+    // Onset pulse over the selected band (spectral flux, adaptive threshold)
+    const [lo, hi] = this.syncBand(mode);
+    let flux = 0;
+    for (let b = lo; b < hi; b++) {
+      const d = mag[b] - this.prevMag[b];
+      if (d > 0) flux += d;
+    }
+    this.syncFluxHistory.push(flux);
+    if (this.syncFluxHistory.length > FLUX_WINDOW) this.syncFluxHistory.shift();
+    const mean =
+      this.syncFluxHistory.reduce((a, b) => a + b, 0) /
+      Math.max(1, this.syncFluxHistory.length);
+
+    if (
+      this.syncFluxHistory.length >= 12 &&
+      flux > mean * 1.6 + 0.012 &&
+      this.clock - this.lastSyncBeatAt > BEAT_REFRACTORY &&
+      playing
+    ) {
+      this.lastSyncBeatAt = this.clock;
+      this.syncBeatIntensity = 1;
+    } else {
+      this.syncBeatIntensity *= Math.exp(-dt * BEAT_DECAY);
+    }
+    f.driveBeat = this.syncBeatIntensity;
   }
 }
 
