@@ -12,12 +12,6 @@ export default tseslint.config(
     plugins: { "react-hooks": reactHooks },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      // The compiler-powered rules flag App.tsx's ref-driven render loop.
-      // Kept at warn until the state-store refactor rebuilds that component;
-      // re-elevate to error afterwards.
-      "react-hooks/refs": "warn",
-      "react-hooks/set-state-in-effect": "warn",
-      "react-hooks/purity": "warn",
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
