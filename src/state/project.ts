@@ -121,7 +121,16 @@ function validParamsByPreset(v: unknown): Record<string, ParamValues> {
   return out;
 }
 
-const SYNC_MODES = new Set(["energy", "bass", "kick", "melody", "voice", "treble"]);
+const SYNC_MODES = new Set([
+  "energy",
+  "bass",
+  "kick",
+  "melody",
+  "voice",
+  "treble",
+  "snare",
+  "hats",
+]);
 
 function validSyncByPreset(v: unknown): Record<string, SyncSettings> {
   if (typeof v !== "object" || v === null) return {};

@@ -68,10 +68,18 @@ export class FeaturePipeline {
   private midRange: [number, number];
   private trebleRange: [number, number];
   private voiceRange: [number, number];
+  private kickRange: [number, number];
+  private snareRange: [number, number];
+  private hatRange: [number, number];
 
   private fluxHistory: number[] = [];
   private lastBeatAt = -Infinity;
   private clock = 0;
+
+  // Onset-class detectors: independent flux trackers per drum band
+  private kickDet = new OnsetClassDetector();
+  private snareDet = new OnsetClassDetector();
+  private hatDet = new OnsetClassDetector();
 
   // Sync-source state: a second onset detector over the selected band and
   // an independently smoothed drive scalar
@@ -105,6 +113,9 @@ export class FeaturePipeline {
     this.midRange = [toBin(150), toBin(2000)];
     this.trebleRange = [toBin(2000), toBin(16000)];
     this.voiceRange = [toBin(300), toBin(3400)];
+    this.kickRange = [toBin(40), toBin(120)];
+    this.snareRange = [toBin(180), toBin(2500)];
+    this.hatRange = [toBin(5000), toBin(15000)];
 
     this.features = {
       bins: new Float32Array(this.binCount),
@@ -120,6 +131,9 @@ export class FeaturePipeline {
       treble: 0,
       width: 0,
       lufs: -70,
+      kick: 0,
+      snare: 0,
+      hat: 0,
       bpm: 0,
       beatPhase: 0,
       barPhase: 0,
@@ -209,6 +223,17 @@ export class FeaturePipeline {
 
     f.voice = bandMean(mag, this.voiceRange);
 
+    f.kick = this.kickDet.update(mag, this.prevMag, this.kickRange, dt, this.clock, input.playing);
+    f.snare = this.snareDet.update(
+      mag,
+      this.prevMag,
+      this.snareRange,
+      dt,
+      this.clock,
+      input.playing,
+    );
+    f.hat = this.hatDet.update(mag, this.prevMag, this.hatRange, dt, this.clock, input.playing);
+
     this.updateSync(f, mag, dt, input.playing);
     // Both onset detectors diff against the previous frame — update it last
     this.prevMag.set(mag);
@@ -244,6 +269,10 @@ export class FeaturePipeline {
         return this.voiceRange;
       case "treble":
         return this.trebleRange;
+      case "snare":
+        return this.snareRange;
+      case "hats":
+        return this.hatRange;
       default:
         return this.bassRange; // energy/bass/kick pulse on the low end
     }
@@ -266,6 +295,12 @@ export class FeaturePipeline {
         break;
       case "treble":
         raw = f.treble;
+        break;
+      case "snare":
+        raw = f.snare;
+        break;
+      case "hats":
+        raw = f.hat;
         break;
       case "kick":
       case "energy":
@@ -316,4 +351,46 @@ function bandMean(mag: Float32Array, [b0, b1]: [number, number]): number {
   const n = Math.max(1, b1 - b0);
   for (let b = b0; b < b1; b++) s += mag[b];
   return clamp01((s / n) * 1.6);
+}
+
+/**
+ * One drum-band onset detector: positive spectral flux over a band with an
+ * adaptive threshold (like the main beat detector, tighter refractory), and
+ * a decaying 0..1 pulse envelope as output. Deterministic.
+ */
+class OnsetClassDetector {
+  private history: number[] = [];
+  private lastAt = -Infinity;
+  private envelope = 0;
+
+  update(
+    mag: Float32Array,
+    prevMag: Float32Array,
+    [lo, hi]: [number, number],
+    dt: number,
+    clock: number,
+    playing: boolean,
+  ): number {
+    let flux = 0;
+    for (let b = lo; b < hi; b++) {
+      const d = mag[b] - prevMag[b];
+      if (d > 0) flux += d;
+    }
+    this.history.push(flux);
+    if (this.history.length > FLUX_WINDOW) this.history.shift();
+    const mean = this.history.reduce((a, b) => a + b, 0) / Math.max(1, this.history.length);
+
+    if (
+      playing &&
+      this.history.length >= 12 &&
+      flux > mean * 1.7 + 0.01 &&
+      clock - this.lastAt > 0.06
+    ) {
+      this.lastAt = clock;
+      this.envelope = 1;
+    } else {
+      this.envelope *= Math.exp(-dt * 10);
+    }
+    return this.envelope;
+  }
 }

@@ -31,6 +31,10 @@ export interface AudioFeatures {
   width: number;
   /** Momentary loudness, LUFS (BS.1770 400 ms window); -70 floor */
   lufs: number;
+  /** Drum-class onset pulses (1 on hit, fast decay), 0..1 */
+  kick: number;
+  snare: number;
+  hat: number;
   /** Detected tempo (0 until track analysis lands) */
   bpm: number;
   /** 0..1 position within the current beat (0 until analysis lands) */
@@ -48,7 +52,8 @@ export interface AudioFeatures {
 }
 
 /** What the visuals react to — the primary sync source. */
-export type SyncMode = "energy" | "bass" | "kick" | "melody" | "voice" | "treble";
+export type SyncMode =
+  "energy" | "bass" | "kick" | "melody" | "voice" | "treble" | "snare" | "hats";
 
 export interface SyncSettings {
   mode: SyncMode;

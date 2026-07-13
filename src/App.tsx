@@ -73,6 +73,7 @@ export default function App() {
   const aspect = useVizStore((s) => s.aspect);
   const lufs = useVizStore((s) => s.lufs);
   const beatGrid = useVizStore((s) => s.beatGrid);
+  const trackKey = useVizStore((s) => s.trackKey);
   const exportSettings = useVizStore((s) => s.exportSettings);
   const exporting = useVizStore((s) => s.exporting);
   const exportError = useVizStore((s) => s.exportError);
@@ -412,6 +413,7 @@ export default function App() {
           onAspect={(a) => store().setAspect(a)}
           lufs={lufs}
           bpm={beatGrid ? beatGrid.bpm : null}
+          keyName={trackKey ? trackKey.name : null}
           userPresets={userPresets.filter((p) => p.presetId === presetId)}
           onSaveUserPreset={(name) => store().saveUserPreset(name)}
           onApplyUserPreset={(id) => store().applyUserPreset(id)}

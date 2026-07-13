@@ -49,6 +49,8 @@ const SYNC_OPTIONS: Array<{ mode: SyncMode; label: string; hint: string }> = [
     hint: "Follow the vocal range (~300 Hz–3.4 kHz) — speech and singing",
   },
   { mode: "treble", label: "Treble", hint: "Follow hi-hats, cymbals and sparkle" },
+  { mode: "snare", label: "Snare", hint: "Pulse on snare/clap hits (150 Hz-2.5 kHz transients)" },
+  { mode: "hats", label: "Hats", hint: "Pulse on hi-hat hits (5 kHz+ transients)" },
 ];
 
 const BG_OPTIONS: Array<{ mode: BgMode; label: string; hint: string }> = [
@@ -125,6 +127,8 @@ export function ParamsPanel(props: {
   lufs: number | null;
   /** Detected tempo; null while unanalyzed. */
   bpm: number | null;
+  /** Detected key name (e.g. "A minor"); null while unanalyzed/atonal. */
+  keyName: string | null;
   overlayLayers: OverlayLayer[];
   assets: Record<string, OverlayAsset>;
   hasCoverArt: boolean;
@@ -446,6 +450,11 @@ export function ParamsPanel(props: {
         {props.bpm !== null && props.bpm > 0 && (
           <span className="renderer-badge" title="Detected tempo (beat grid)">
             {props.bpm.toFixed(props.bpm % 1 === 0 ? 0 : 1)} BPM
+          </span>
+        )}
+        {props.keyName && (
+          <span className="renderer-badge" title="Detected musical key (Krumhansl profile match)">
+            {props.keyName}
           </span>
         )}
         {props.lufs !== null && (

@@ -143,6 +143,47 @@ describe("FeaturePipeline", () => {
     expect(f.treble).toBe(0);
   });
 
+  it("classifies drum-band onsets independently (kick vs hat)", () => {
+    const p = makePipeline();
+    let kickAtKick = 0;
+    let hatAtKick = 0;
+    let hatAtHat = 0;
+    let kickAtHat = 0;
+    for (let i = 0; i < 180; i++) {
+      const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+      if (i === 60) fillBand(magDb, 45, 110, MAX_DB); // kick hit
+      if (i === 120) fillBand(magDb, 6000, 12000, MAX_DB); // hat hit
+      const f = p.update(makeInput({ magDb, time: i * DT }));
+      if (i === 60) {
+        kickAtKick = f.kick;
+        hatAtKick = f.hat;
+      }
+      if (i === 120) {
+        hatAtHat = f.hat;
+        kickAtHat = f.kick;
+      }
+    }
+    expect(kickAtKick).toBe(1);
+    expect(hatAtKick).toBeLessThan(0.1);
+    expect(hatAtHat).toBe(1);
+    expect(kickAtHat).toBeLessThan(0.1);
+  });
+
+  it("onset-class pulses decay between hits", () => {
+    const p = makePipeline();
+    let peak = 0;
+    let after = 0;
+    for (let i = 0; i < 90; i++) {
+      const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+      if (i === 30) fillBand(magDb, 45, 110, MAX_DB);
+      const f = p.update(makeInput({ magDb, time: i * DT }));
+      if (i === 30) peak = f.kick;
+      if (i === 60) after = f.kick;
+    }
+    expect(peak).toBe(1);
+    expect(after).toBeLessThan(0.05);
+  });
+
   it("is deterministic: identical input sequences produce identical features", () => {
     const runs: number[][] = [];
     for (let run = 0; run < 2; run++) {

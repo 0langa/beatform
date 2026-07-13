@@ -10,6 +10,7 @@ import { APP_VERSION } from "../version";
 import { getAnalyzer, getEngine, getRenderer, initServices, remeasure } from "./services";
 import { analyzeTrack } from "../audio/analysis/trackAnalysis";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
+import type { KeyEstimate } from "../audio/analysis/keyDetect";
 import {
   bytesToDataUrl,
   downloadBlob,
@@ -152,6 +153,8 @@ interface SessionSlice {
   stereoWidth: number;
   /** Track beat grid; null before analysis lands. */
   beatGrid: BeatGrid | null;
+  /** Detected musical key; null before analysis / for atonal tracks. */
+  trackKey: KeyEstimate | null;
   analyzing: boolean;
   exportSettings: ExportSettings;
   exporting: ExportProgress | null;
@@ -281,6 +284,7 @@ export const useVizStore = create<VizState>((set, get) => {
     lufs: null,
     stereoWidth: 0,
     beatGrid: null,
+    trackKey: null,
     analyzing: false,
     exportSettings: {
       resIdx: 1,
@@ -802,12 +806,12 @@ export const useVizStore = create<VizState>((set, get) => {
       const buf = getEngine().audioBuffer;
       if (!buf) return;
       const id = ++analysisId;
-      set({ beatGrid: null, analyzing: true });
+      set({ beatGrid: null, trackKey: null, analyzing: true });
       getAnalyzer().setBeatGrid(null);
       const { result } = analyzeTrack(buf);
-      void result.then((grid) => {
+      void result.then(({ grid, key }) => {
         if (id !== analysisId) return; // a newer track superseded this job
-        set({ beatGrid: grid, analyzing: false });
+        set({ beatGrid: grid, trackKey: key, analyzing: false });
         getAnalyzer().setBeatGrid(grid);
       });
     },
