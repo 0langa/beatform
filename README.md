@@ -1,6 +1,6 @@
 # Audio Visualizer
 
-Desktop music visualizer. Tauri 2 + React + TypeScript, WebGPU rendering (Canvas2D fallback), Rust core. v1.3.0.
+Desktop music visualizer. Tauri 2 + React + TypeScript, WebGPU rendering (Canvas2D fallback), Rust core. v1.5.0.
 
 Free and open source. Built to become a professional-grade tool for producers and artists — local-first, no cloud rendering, no watermarks, no subscriptions.
 
@@ -18,7 +18,17 @@ Free and open source. Built to become a professional-grade tool for producers an
 - **User looks**: save your own named looks per visual mode, share them as
   `.avpreset` files (import/export)
 - **Project files**: save/open the whole setup (preset, params, sync,
-  background) as versioned `.avproj` files — Ctrl+S / Ctrl+O, native dialogs
+  background, layers) as versioned `.avproj` files — Ctrl+S / Ctrl+O,
+  native dialogs
+- **Overlay layers**: text with `{title}`/`{artist}` auto-fill from tags,
+  logos/images, one-click album art — anchored, resolution-independent,
+  rendered into exports identically
+- **Frame aspects** (Fill / 16:9 / 9:16 / 1:1) with letterboxed preview and
+  aspect-matched export resolutions up to vertical 4K
+- **Spotify Canvas mode**: pick any 3-8 s segment, export a 1080×1920
+  seamless loop (tail crossfades into the head — invisible loop point)
+- **Loudness meter**: momentary LUFS (ITU-R BS.1770) live readout; stereo
+  width feature for presets
 - Sync-source system: choose what visuals react to (kicks, energy, bass,
   melody, voice, treble) + smoothing, per mode
 - Background system on every preset: preset-animated, any solid color
@@ -92,9 +102,7 @@ CI runs typecheck, lint, format check, tests and build on every push/PR.
 
 ## Roadmap (next)
 
-- Producer basics: text/title layers, logo & album-art import, video/image
-  backgrounds, multi-aspect projects (16:9 / 9:16 / 1:1), Spotify-Canvas
-  perfect-loop export, stereo features + LUFS metering
+- Producer basics, remaining: video/image backgrounds, preset thumbnails
 - Musical sync: BPM/beat-grid tracking, kick/snare/hat onset classes,
   key detection, stem import as sync sources, modulation matrix
 - Timeline: scenes, keyframes, automation, undo/redo
