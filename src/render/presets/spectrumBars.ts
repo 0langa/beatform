@@ -190,8 +190,13 @@ fn preset(uvIn: vec2f) -> vec4f {
   let fi = clamp(x * n, 0.0, n - 0.001);
   let i = u32(fi);
   let inBar = fract(fi);
-  let v = bins[i];
-  let pk = peaks[i];
+  var v = bins[i];
+  var pk = peaks[i];
+  if (u.smoothBins > 0.5) {
+    // Smooth mode: continuous spline silhouette instead of discrete bars
+    v = binAt(x);
+    pk = peakAt(x);
+  }
 
   // Background: dark radial wash breathing with bass + beat flash
   let d = distance(uv, vec2f(0.5, 0.55));
@@ -201,7 +206,8 @@ fn preset(uvIn: vec2f) -> vec4f {
 
   let y = 1.0 - uv.y; // bars grow from bottom
   let barH = v * P_barHeight();
-  let gapMask = step(P_barGap() * 0.5, inBar) * step(inBar, 1.0 - P_barGap() * 0.5);
+  var gapMask = step(P_barGap() * 0.5, inBar) * step(inBar, 1.0 - P_barGap() * 0.5);
+  if (u.smoothBins > 0.5) { gapMask = 1.0; }
   let barHue = P_hue() + (fi / n) * P_hueSpread();
 
   // Bar body with vertical gradient

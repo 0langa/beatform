@@ -75,6 +75,7 @@ export default function App() {
   const beatGrid = useVizStore((s) => s.beatGrid);
   const trackKey = useVizStore((s) => s.trackKey);
   const activeMods = useVizStore((s) => s.activeMods);
+  const smoothSpectrum = useVizStore((s) => s.smoothSpectrum);
   const exportSettings = useVizStore((s) => s.exportSettings);
   const exporting = useVizStore((s) => s.exporting);
   const exportError = useVizStore((s) => s.exportError);
@@ -224,6 +225,9 @@ export default function App() {
         overlay,
         segment: opts.canvasLoop,
         loopCrossfadeSec: opts.canvasLoop ? 0.5 : undefined,
+        beatGrid: s.beatGrid ?? undefined,
+        mods: s.activeMods,
+        smoothSpectrum: s.smoothSpectrum,
       });
       const info = {
         bytes: result.bytes,
@@ -429,6 +433,8 @@ export default function App() {
           onAddAlbumArtLayer={() => store().addAlbumArtLayer()}
           onUpdateLayer={(id, patch) => store().updateOverlayLayer(id, patch)}
           onRemoveLayer={(id) => store().removeOverlayLayer(id)}
+          smoothSpectrum={smoothSpectrum}
+          onSmoothSpectrum={(v) => store().setSmoothSpectrum(v)}
           mods={activeMods}
           onAddMod={(source, param) => store().addModRoute(source, param)}
           onUpdateMod={(id, patch) => store().updateModRoute(id, patch)}

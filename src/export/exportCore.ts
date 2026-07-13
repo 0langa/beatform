@@ -42,6 +42,8 @@ export interface ExportJob {
   beatGrid?: BeatGrid;
   /** Modulation routes for the preset — applied per frame like the live view. */
   mods?: ModRoute[];
+  /** Spline-connected spectrum sampling toggle (matches the live view). */
+  smoothSpectrum?: boolean;
   /**
    * Seamless-loop crossfade (seconds). The final crossfade window blends
    * into the FIRST frames/samples, so the last frame ≈ frame 0 and the loop
@@ -175,6 +177,7 @@ export async function runExportJob(
     renderer.setPreset(presetById(job.presetId));
     renderer.setBackground(job.bg);
     renderer.setOverlay(job.overlay ?? null);
+    renderer.setSmoothSpectrum(job.smoothSpectrum === true);
     renderer.resize(job.width, job.height, 1);
 
     // Loop mode: crossfade the tail into the head so sample/frame N-1

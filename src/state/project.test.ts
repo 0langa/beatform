@@ -48,6 +48,7 @@ const doc: ProjectDocument = {
   modsByPreset: {
     [presets[2].id]: [{ id: "mr-1", source: "kick", param: "intensity", amount: 0.6 }],
   },
+  smoothSpectrum: true,
 };
 
 describe("project files (.avproj)", () => {

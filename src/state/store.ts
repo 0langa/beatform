@@ -125,6 +125,8 @@ interface DocumentSlice {
   assets: Record<string, OverlayAsset>;
   aspect: Aspect;
   modsByPreset: Record<string, ModRoute[]>;
+  /** Spline-connected spectrum sampling (no hard bin corners), all visuals. */
+  smoothSpectrum: boolean;
 }
 
 /** Session/UI state: ephemeral, never saved into projects. */
@@ -177,6 +179,7 @@ interface Actions {
   resetParams(): void;
   setBg(bg: BgSettings): void;
   setAspect(aspect: Aspect): void;
+  setSmoothSpectrum(v: boolean): void;
   setSync(sync: SyncSettings): void;
   loadFile(file: File): Promise<void>;
   loadDemo(id: string): Promise<void>;
@@ -273,6 +276,7 @@ export const useVizStore = create<VizState>((set, get) => {
     assets: initialOverlay.assets,
     aspect: loadStoredAspect(),
     modsByPreset: initialMods,
+    smoothSpectrum: localStorage.getItem("viz.smoothSpectrum") === "1",
 
     // --- session ---
     activeParams: resolveParams(initialPresetId, initialParams),
@@ -324,6 +328,7 @@ export const useVizStore = create<VizState>((set, get) => {
         onPlayback: (playback) => set({ playback }),
         onRendererChanged: (kind, warning) => {
           set({ rendererKind: kind, error: warning });
+          getRenderer()?.setSmoothSpectrum(get().smoothSpectrum);
           get().refreshOverlay(); // new renderer starts without an overlay bound
         },
         onResize: () => get().refreshOverlay(),
@@ -388,6 +393,12 @@ export const useVizStore = create<VizState>((set, get) => {
       set({ bg });
       saveStoredBg(bg);
       getRenderer()?.setBackground(bg);
+    },
+
+    setSmoothSpectrum(v) {
+      set({ smoothSpectrum: v });
+      localStorage.setItem("viz.smoothSpectrum", v ? "1" : "0");
+      getRenderer()?.setSmoothSpectrum(v);
     },
 
     setAspect(aspect) {
@@ -581,6 +592,7 @@ export const useVizStore = create<VizState>((set, get) => {
           loopCrossfadeSec: canvasMode ? 0.5 : undefined,
           beatGrid: get().beatGrid ?? undefined,
           mods: get().activeMods,
+          smoothSpectrum: get().smoothSpectrum,
           // Desktop: stream straight to the picked file (flat memory);
           // browser dev falls back to an in-memory blob + download.
           streamToPath: savePath ?? undefined,
@@ -629,6 +641,7 @@ export const useVizStore = create<VizState>((set, get) => {
         assets: s.assets,
         aspect: s.aspect,
         modsByPreset: s.modsByPreset,
+        smoothSpectrum: s.smoothSpectrum,
       };
       try {
         const saved = await saveTextFile(
@@ -673,6 +686,7 @@ export const useVizStore = create<VizState>((set, get) => {
         assets: doc.assets,
         aspect: doc.aspect,
         modsByPreset: doc.modsByPreset,
+        smoothSpectrum: doc.smoothSpectrum,
         activeParams,
         activeMods: doc.modsByPreset[preset.id] ?? [],
         sync,
@@ -684,6 +698,8 @@ export const useVizStore = create<VizState>((set, get) => {
       saveStoredOverlay(doc.overlayLayers, doc.assets);
       saveStoredAspect(doc.aspect);
       saveStoredMods(doc.modsByPreset);
+      localStorage.setItem("viz.smoothSpectrum", doc.smoothSpectrum ? "1" : "0");
+      getRenderer()?.setSmoothSpectrum(doc.smoothSpectrum);
       pruneBitmapCache(new Set(Object.keys(doc.assets)));
       getRenderer()?.setPreset(preset);
       getRenderer()?.setBackground(doc.bg);

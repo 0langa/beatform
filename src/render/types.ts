@@ -85,6 +85,8 @@ export interface Renderer {
    * rasterized by the host at output resolution; renderers only display it.
    */
   setOverlay(source: ImageBitmap | null): void;
+  /** Global smooth-spectrum toggle: spline-connected bins, no hard corners. */
+  setSmoothSpectrum(v: boolean): void;
   dispose(): void;
 }
 

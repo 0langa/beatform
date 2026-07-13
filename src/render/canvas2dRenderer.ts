@@ -13,6 +13,7 @@ export class Canvas2DRenderer implements Renderer {
   private canvas: HTMLCanvasElement;
   private bg: BgSettings = { mode: 0, color: [0, 0, 0] };
   private overlay: ImageBitmap | null = null;
+  private smooth = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -31,6 +32,10 @@ export class Canvas2DRenderer implements Renderer {
 
   setOverlay(source: ImageBitmap | null): void {
     this.overlay = source;
+  }
+
+  setSmoothSpectrum(v: boolean): void {
+    this.smooth = v;
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -63,6 +68,30 @@ export class Canvas2DRenderer implements Renderer {
 
     const n = f.bins.length;
     const bw = W / n;
+    if (this.smooth) {
+      // Smooth silhouette: one filled path through the bin tops
+      ctx.beginPath();
+      ctx.moveTo(0, H);
+      for (let i = 0; i < n; i++) {
+        const x = (i + 0.5) * bw;
+        const y = H - f.bins[i] * H * 0.92;
+        if (i === 0) ctx.lineTo(x, y);
+        else {
+          const px = (i - 0.5) * bw;
+          const py = H - f.bins[i - 1] * H * 0.92;
+          ctx.quadraticCurveTo(px, py, (px + x) / 2, (py + y) / 2);
+        }
+      }
+      ctx.lineTo(W, H);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, 0, W, 0);
+      grad.addColorStop(0, `hsl(${hue} 85% ${45 + f.beatIntensity * 8}%)`);
+      grad.addColorStop(1, `hsl(${hue + hueSpread} 85% ${45 + f.beatIntensity * 8}%)`);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      if (this.overlay) ctx.drawImage(this.overlay, 0, 0, W, H);
+      return;
+    }
     for (let i = 0; i < n; i++) {
       const v = f.bins[i];
       const h = v * H * 0.92;

@@ -36,6 +36,8 @@ export interface ExportOptions {
   beatGrid?: BeatGrid;
   /** Modulation routes for the active preset. */
   mods?: ModRoute[];
+  /** Spline-connected spectrum sampling toggle. */
+  smoothSpectrum?: boolean;
   /** Desktop: stream the file here instead of building a Blob. */
   streamToPath?: string;
   onProgress?: (framesDone: number, framesTotal: number) => void;
@@ -134,6 +136,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     sync: o.sync,
     overlay: o.overlay,
     mods: o.mods,
+    smoothSpectrum: o.smoothSpectrum,
     loopCrossfadeSec: o.loopCrossfadeSec,
     beatGrid:
       o.beatGrid && o.segment

@@ -139,6 +139,8 @@ export function ParamsPanel(props: {
   onAddAlbumArtLayer: () => void;
   onUpdateLayer: (id: string, patch: Partial<TextLayer> | Partial<ImageLayer>) => void;
   onRemoveLayer: (id: string) => void;
+  smoothSpectrum: boolean;
+  onSmoothSpectrum: (v: boolean) => void;
   mods: ModRoute[];
   onAddMod: (source: ModSource, param: string) => void;
   onUpdateMod: (id: string, patch: Partial<ModRoute>) => void;
@@ -360,6 +362,24 @@ export function ParamsPanel(props: {
               onChange={(v) => props.onSync({ ...props.sync, smooth: v })}
             />
             <span className="row-value">{props.sync.smooth.toFixed(2)}</span>
+          </label>
+          <label
+            className="row toggle-row"
+            title="Connect the spectrum with smooth splines instead of hard-edged bins"
+            onPointerEnter={() =>
+              setHint("Spline-smoothed spectrum: curves instead of corners, in every visual")
+            }
+            onPointerLeave={() => setHint(null)}
+          >
+            <span className="row-label">Smooth curve</span>
+            <button
+              className={`switch ${props.smoothSpectrum ? "on" : ""}`}
+              role="switch"
+              aria-checked={props.smoothSpectrum}
+              onClick={() => props.onSmoothSpectrum(!props.smoothSpectrum)}
+            >
+              <span className="knob" />
+            </button>
           </label>
           <p className="section-hint">
             What this visual reacts to. Saved per mode; exports use it too.

@@ -42,7 +42,7 @@ struct Uniforms {
   kick: f32,
   snare: f32,
   hat: f32,
-  _pad3: f32,
+  smoothBins: f32,
   _pad4: f32,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -55,15 +55,45 @@ struct Uniforms {
 
 fn param(i: u32) -> f32 { return params[i]; }
 
-/** Spectrum sampled at x in 0..1 (nearest bin) */
+fn catmullRom(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
+  let t2 = t * t;
+  let t3 = t2 * t;
+  return max(0.0, 0.5 * ((2.0 * p1) + (-p0 + p2) * t
+    + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+    + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3));
+}
+
+/** Spectrum sampled at x in 0..1. With the global smooth-spectrum toggle a
+ * Catmull-Rom spline runs through the bins (no staircase corners);
+ * otherwise nearest-bin, the classic look. */
 fn binAt(x: f32) -> f32 {
   let n = f32(u.binCount);
-  return bins[u32(clamp(x, 0.0, 0.999) * n)];
+  if (u.smoothBins < 0.5) {
+    return bins[u32(clamp(x, 0.0, 0.999) * n)];
+  }
+  let fi = clamp(x, 0.0, 0.999) * n - 0.5;
+  let i = floor(fi);
+  let t = fi - i;
+  let i0 = u32(clamp(i - 1.0, 0.0, n - 1.0));
+  let i1 = u32(clamp(i, 0.0, n - 1.0));
+  let i2 = u32(clamp(i + 1.0, 0.0, n - 1.0));
+  let i3 = u32(clamp(i + 2.0, 0.0, n - 1.0));
+  return catmullRom(bins[i0], bins[i1], bins[i2], bins[i3], t);
 }
 
 fn peakAt(x: f32) -> f32 {
   let n = f32(u.binCount);
-  return peaks[u32(clamp(x, 0.0, 0.999) * n)];
+  if (u.smoothBins < 0.5) {
+    return peaks[u32(clamp(x, 0.0, 0.999) * n)];
+  }
+  let fi = clamp(x, 0.0, 0.999) * n - 0.5;
+  let i = floor(fi);
+  let t = fi - i;
+  let i0 = u32(clamp(i - 1.0, 0.0, n - 1.0));
+  let i1 = u32(clamp(i, 0.0, n - 1.0));
+  let i2 = u32(clamp(i + 1.0, 0.0, n - 1.0));
+  let i3 = u32(clamp(i + 2.0, 0.0, n - 1.0));
+  return catmullRom(peaks[i0], peaks[i1], peaks[i2], peaks[i3], t);
 }
 
 /** Waveform sampled at x in 0..1, linear interpolation, -1..1 */
@@ -178,6 +208,7 @@ export class WebGPURenderer implements Renderer {
   private format: GPUTextureFormat;
   private canvas: HTMLCanvasElement | OffscreenCanvas;
   private bg: BgSettings = { mode: 0, color: [0, 0, 0] };
+  private smoothBins = false;
 
   private pipeline: GPURenderPipeline | null = null;
   private bindGroup: GPUBindGroup | null = null;
@@ -292,6 +323,10 @@ export class WebGPURenderer implements Renderer {
     this.bg = bg;
   }
 
+  setSmoothSpectrum(v: boolean): void {
+    this.smoothBins = v;
+  }
+
   setOverlay(source: ImageBitmap | null): void {
     this.overlayTexture?.destroy();
     this.overlayTexture = null;
@@ -392,6 +427,7 @@ export class WebGPURenderer implements Renderer {
     this.uniformF32[23] = f.kick;
     this.uniformF32[24] = f.snare;
     this.uniformF32[25] = f.hat;
+    this.uniformF32[26] = this.smoothBins ? 1 : 0;
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniformData);
     this.device.queue.writeBuffer(this.binsBuf!, 0, f.bins);
     this.device.queue.writeBuffer(this.peaksBuf!, 0, f.peaks);

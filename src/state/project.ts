@@ -39,6 +39,7 @@ export interface ProjectDocument {
   assets: Record<string, OverlayAsset>;
   aspect: Aspect;
   modsByPreset: Record<string, ModRoute[]>;
+  smoothSpectrum: boolean;
 }
 
 export interface ProjectFile {
@@ -100,6 +101,7 @@ export function parseProject(json: string): ProjectDocument {
     assets,
     aspect: validAspect(doc.aspect),
     modsByPreset: validModsByPreset(doc.modsByPreset),
+    smoothSpectrum: doc.smoothSpectrum === true,
   };
 }
 
