@@ -1286,3 +1286,213 @@ kbd {
   border-radius: 1px;
   pointer-events: none;
 }
+
+/* ---------- timeline panel ---------- */
+
+.timeline-panel {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 74px;
+  background: var(--glass-heavy);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tl-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tl-enable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.tl-add-lane {
+  max-width: 170px;
+  font-size: 11.5px;
+  padding: 4px 6px;
+}
+
+.tl-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tl-zoom input {
+  width: 90px;
+}
+
+.tl-spacer {
+  flex: 1;
+}
+
+.tl-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-top: 1px solid var(--border);
+}
+
+.tl-lanes {
+  position: relative;
+  min-height: 96px;
+}
+
+.tl-ruler {
+  position: relative;
+  height: 20px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+
+.tl-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+.tl-tick span {
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  white-space: nowrap;
+}
+
+.tl-tick-beat {
+  top: 14px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tl-tick-bar {
+  top: 9px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.tl-section-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 180, 80, 0.8);
+}
+
+.tl-wave {
+  display: block;
+  height: 36px;
+}
+
+.tl-scene-lane {
+  position: relative;
+  height: 26px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.tl-scene {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: rgba(59, 130, 246, 0.3);
+  border: 1px solid rgba(106, 168, 255, 0.5);
+  border-radius: 5px;
+  overflow: hidden;
+  cursor: grab;
+  font-size: 10.5px;
+  padding: 2px 6px;
+  color: #dce9ff;
+  white-space: nowrap;
+}
+
+.tl-scene.selected {
+  background: rgba(59, 130, 246, 0.55);
+  border-color: rgba(160, 200, 255, 0.9);
+}
+
+.tl-empty-hint {
+  position: absolute;
+  left: 10px;
+  top: 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.tl-lane-row {
+  position: relative;
+  height: 34px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tl-lane-area {
+  position: absolute;
+  inset: 0;
+}
+
+.tl-lane-label {
+  position: sticky;
+  left: 4px;
+  top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-faint);
+  background: rgba(12, 14, 20, 0.8);
+  border-radius: 4px;
+  padding: 1px 5px;
+  pointer-events: auto;
+  width: fit-content;
+}
+
+.tl-key {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--accent);
+  border: 1px solid #fff3;
+  cursor: grab;
+  z-index: 2;
+}
+
+.tl-key-hold {
+  border-radius: 2px;
+}
+
+.tl-key-smooth {
+  background: #9d7bff;
+}
+
+.tl-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: #fff;
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.tl-scene-editor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}

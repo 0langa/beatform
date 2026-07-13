@@ -170,6 +170,9 @@ interface SessionSlice {
   trackKey: KeyEstimate | null;
   /** Section boundaries (seconds) — seek-bar markers, future scene seeds. */
   sections: number[];
+  /** Downsampled |peak| envelope of the loaded track (timeline overview). */
+  waveformOverview: Float32Array | null;
+  showTimeline: boolean;
   analyzing: boolean;
   undoDepth: number;
   redoDepth: number;
@@ -190,6 +193,7 @@ interface Actions {
   setAspect(aspect: Aspect): void;
   setSmoothSpectrum(v: boolean): void;
   setTimeline(timeline: Timeline): void;
+  setShowTimeline(v: boolean): void;
   setSync(sync: SyncSettings): void;
   loadFile(file: File): Promise<void>;
   loadDemo(id: string): Promise<void>;
@@ -338,6 +342,8 @@ export const useVizStore = create<VizState>((set, get) => {
     beatGrid: null,
     trackKey: null,
     sections: [],
+    waveformOverview: null,
+    showTimeline: localStorage.getItem("viz.timelineOpen") === "1",
     analyzing: false,
     undoDepth: 0,
     redoDepth: 0,
@@ -452,6 +458,11 @@ export const useVizStore = create<VizState>((set, get) => {
       record("timeline");
       set({ timeline });
       saveStoredTimeline(timeline);
+    },
+
+    setShowTimeline(v) {
+      set({ showTimeline: v });
+      localStorage.setItem("viz.timelineOpen", v ? "1" : "0");
     },
 
     applyScene(scene) {
@@ -940,6 +951,23 @@ export const useVizStore = create<VizState>((set, get) => {
     analyzeCurrentTrack() {
       const buf = getEngine().audioBuffer;
       if (!buf) return;
+      // Peak-envelope overview for the timeline (cheap; ~4k buckets)
+      {
+        const data = buf.getChannelData(0);
+        const buckets = 4096;
+        const overview = new Float32Array(buckets);
+        const per = Math.max(1, Math.floor(data.length / buckets));
+        for (let b = 0; b < buckets; b++) {
+          let peak = 0;
+          const base = b * per;
+          for (let i = 0; i < per && base + i < data.length; i++) {
+            const v = Math.abs(data[base + i]);
+            if (v > peak) peak = v;
+          }
+          overview[b] = peak;
+        }
+        set({ waveformOverview: overview });
+      }
       const id = ++analysisId;
       set({ beatGrid: null, trackKey: null, sections: [], analyzing: true });
       getAnalyzer().setBeatGrid(null);

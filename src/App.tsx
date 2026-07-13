@@ -8,6 +8,7 @@ import { getEngine } from "./state/services";
 import { rasterizeOverlay } from "./render/overlay";
 import { autoBitrateMbps, RESOLUTIONS, resolutionsForAspect, useVizStore } from "./state/store";
 import { PlayerBar } from "./ui/PlayerBar";
+import { TimelinePanel } from "./ui/TimelinePanel";
 import { PresetStrip } from "./ui/PresetStrip";
 import { ParamsPanel } from "./ui/ParamsPanel";
 import { EmptyState } from "./ui/EmptyState";
@@ -34,6 +35,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ["Ctrl+S", "Save project"],
   ["Ctrl+O", "Open project"],
   ["Ctrl+Z / Ctrl+Y", "Undo / redo"],
+  ["T", "Timeline panel"],
 ];
 
 function toggleFullscreen(): void {
@@ -78,6 +80,9 @@ export default function App() {
   const activeMods = useVizStore((s) => s.activeMods);
   const smoothSpectrum = useVizStore((s) => s.smoothSpectrum);
   const sections = useVizStore((s) => s.sections);
+  const timeline = useVizStore((s) => s.timeline);
+  const showTimeline = useVizStore((s) => s.showTimeline);
+  const waveformOverview = useVizStore((s) => s.waveformOverview);
   const exportSettings = useVizStore((s) => s.exportSettings);
   const exporting = useVizStore((s) => s.exporting);
   const exportError = useVizStore((s) => s.exportError);
@@ -158,6 +163,10 @@ export default function App() {
         case "f":
         case "F":
           toggleFullscreen();
+          break;
+        case "t":
+        case "T":
+          s.setShowTimeline(!s.showTimeline);
           break;
         case "Escape":
           s.setShowHelp(false);
@@ -449,6 +458,23 @@ export default function App() {
           onAddMod={(source, param) => store().addModRoute(source, param)}
           onUpdateMod={(id, patch) => store().updateModRoute(id, patch)}
           onRemoveMod={(id) => store().removeModRoute(id)}
+        />
+      )}
+
+      {showTimeline && (
+        <TimelinePanel
+          timeline={timeline}
+          duration={playback.duration}
+          time={playback.time}
+          beatGrid={beatGrid}
+          sections={sections}
+          waveform={waveformOverview}
+          activePreset={preset}
+          presets={[...presets]}
+          activeParams={params}
+          onChange={(tl) => store().setTimeline(tl)}
+          onSeek={(t) => store().seekEnd(t)}
+          onClose={() => store().setShowTimeline(false)}
         />
       )}
 
