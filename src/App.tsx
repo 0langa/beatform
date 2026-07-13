@@ -33,6 +33,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ["F", "Fullscreen"],
   ["Ctrl+S", "Save project"],
   ["Ctrl+O", "Open project"],
+  ["Ctrl+Z / Ctrl+Y", "Undo / redo"],
 ];
 
 function toggleFullscreen(): void {
@@ -107,6 +108,13 @@ export default function App() {
         } else if (e.key === "o" || e.key === "O") {
           e.preventDefault();
           void s.openProject();
+        } else if (e.key === "z" || e.key === "Z") {
+          e.preventDefault();
+          if (e.shiftKey) s.redo();
+          else s.undo();
+        } else if (e.key === "y" || e.key === "Y") {
+          e.preventDefault();
+          s.redo();
         }
         return;
       }

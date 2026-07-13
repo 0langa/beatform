@@ -12,6 +12,7 @@ import { analyzeTrack } from "../audio/analysis/trackAnalysis";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { KeyEstimate } from "../audio/analysis/keyDetect";
 import { newRouteId, type ModRoute, type ModSource } from "./modMatrix";
+import { clearHistory, historyDepths, popRedo, popUndo, pushHistory } from "./history";
 import {
   bytesToDataUrl,
   downloadBlob,
@@ -166,6 +167,8 @@ interface SessionSlice {
   /** Section boundaries (seconds) — seek-bar markers, future scene seeds. */
   sections: number[];
   analyzing: boolean;
+  undoDepth: number;
+  redoDepth: number;
   exportSettings: ExportSettings;
   exporting: ExportProgress | null;
   exportError: string | null;
@@ -203,6 +206,8 @@ interface Actions {
   saveProject(): Promise<void>;
   openProject(): Promise<void>;
   applyDocument(doc: ProjectDocument): void;
+  undo(): void;
+  redo(): void;
   saveUserPreset(name: string): void;
   applyUserPreset(id: string): void;
   deleteUserPreset(id: string): void;
@@ -268,6 +273,26 @@ export const useVizStore = create<VizState>((set, get) => {
     noticeTimer = setTimeout(() => set({ notice: null }), 4000);
   };
 
+  /** Current document slice as a ProjectDocument (history + save share it). */
+  const docOf = (s: VizState): ProjectDocument => ({
+    presetId: s.presetId,
+    paramsByPreset: s.paramsByPreset,
+    syncByPreset: s.syncByPreset,
+    bg: s.bg,
+    overlayLayers: s.overlayLayers,
+    assets: s.assets,
+    aspect: s.aspect,
+    modsByPreset: s.modsByPreset,
+    smoothSpectrum: s.smoothSpectrum,
+  });
+
+  /** Record the current document before a mutation (gesture-grouped). */
+  const record = (key: string) => {
+    pushHistory(docOf(get()), key);
+    const d = historyDepths();
+    set({ undoDepth: d.undo, redoDepth: d.redo });
+  };
+
   return {
     // --- document ---
     presetId: initialPresetId,
@@ -305,6 +330,8 @@ export const useVizStore = create<VizState>((set, get) => {
     trackKey: null,
     sections: [],
     analyzing: false,
+    undoDepth: 0,
+    redoDepth: 0,
     exportSettings: {
       resIdx: 1,
       fps: 60,
@@ -348,6 +375,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     switchPreset(id) {
+      record("preset");
       const next = presetById(id);
       const state = get();
       const activeParams = resolveParams(next.id, state.paramsByPreset);
@@ -365,6 +393,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     setParam(key, value) {
+      record(`param:${key}`);
       const state = get();
       const activeParams = { ...state.activeParams, [key]: value };
       const paramsByPreset = { ...state.paramsByPreset, [state.presetId]: activeParams };
@@ -373,6 +402,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     applyStyle(values) {
+      record("style");
       const state = get();
       // Style values are Partial — the defaults spread guarantees every key
       const activeParams = {
@@ -385,6 +415,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     resetParams() {
+      record("reset");
       const state = get();
       const paramsByPreset = { ...state.paramsByPreset };
       delete paramsByPreset[state.presetId];
@@ -393,18 +424,21 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     setBg(bg) {
+      record("bg");
       set({ bg });
       saveStoredBg(bg);
       getRenderer()?.setBackground(bg);
     },
 
     setSmoothSpectrum(v) {
+      record("smooth");
       set({ smoothSpectrum: v });
       localStorage.setItem("viz.smoothSpectrum", v ? "1" : "0");
       getRenderer()?.setSmoothSpectrum(v);
     },
 
     setAspect(aspect) {
+      record("aspect");
       set({ aspect });
       saveStoredAspect(aspect);
       // Keep the export resolution consistent with the frame
@@ -418,6 +452,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     setSync(sync) {
+      record("sync");
       const state = get();
       const syncByPreset = { ...state.syncByPreset, [state.presetId]: sync };
       set({ sync, syncByPreset });
@@ -633,6 +668,26 @@ export const useVizStore = create<VizState>((set, get) => {
       set({ error });
     },
 
+    undo() {
+      const snapshot = popUndo(docOf(get()));
+      if (snapshot) {
+        get().applyDocument(snapshot);
+        flashNotice("Undone");
+      }
+      const d = historyDepths();
+      set({ undoDepth: d.undo, redoDepth: d.redo });
+    },
+
+    redo() {
+      const snapshot = popRedo(docOf(get()));
+      if (snapshot) {
+        get().applyDocument(snapshot);
+        flashNotice("Redone");
+      }
+      const d = historyDepths();
+      set({ undoDepth: d.undo, redoDepth: d.redo });
+    },
+
     async saveProject() {
       const s = get();
       const doc: ProjectDocument = {
@@ -664,7 +719,9 @@ export const useVizStore = create<VizState>((set, get) => {
           { name: "Audio Visualizer project", extensions: [PROJECT_EXTENSION] },
         ]);
         if (!picked) return;
+        clearHistory();
         get().applyDocument(parseProject(picked.contents));
+        set({ undoDepth: 0, redoDepth: 0 });
         flashNotice(`Project "${picked.name}" loaded`);
       } catch (e) {
         set({
@@ -729,6 +786,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     applyUserPreset(id) {
+      record("look");
       const s = get();
       const preset = s.userPresets.find((p) => p.id === id);
       if (!preset) return;
@@ -767,6 +825,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     addTextLayer() {
+      record("layer-add");
       const overlayLayers = [...get().overlayLayers, defaultTextLayer()];
       set({ overlayLayers });
       saveStoredOverlay(overlayLayers, get().assets);
@@ -777,6 +836,7 @@ export const useVizStore = create<VizState>((set, get) => {
       try {
         const picked = await openImageFile();
         if (!picked) return;
+        record("layer-add");
         const asset: OverlayAsset = {
           id: `as-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
           name: picked.name,
@@ -793,6 +853,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     addAlbumArtLayer() {
+      record("layer-add");
       const cover = get().coverArt;
       if (!cover) {
         set({ error: "The loaded track has no embedded cover art" });
@@ -812,6 +873,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     updateOverlayLayer(id, patch) {
+      record(`layer:${id}:${Object.keys(patch).join(",")}`);
       const overlayLayers = get().overlayLayers.map((l) =>
         l.id === id ? ({ ...l, ...patch } as OverlayLayer) : l,
       );
@@ -821,6 +883,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     removeOverlayLayer(id) {
+      record("layer-remove");
       const removed = get().overlayLayers.find((l) => l.id === id);
       const overlayLayers = get().overlayLayers.filter((l) => l.id !== id);
       // Drop the asset too if no other layer references it
@@ -855,6 +918,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     addModRoute(source, param) {
+      record("mod-add");
       const s = get();
       const route: ModRoute = { id: newRouteId(), source, param, amount: 0.5 };
       const activeMods = [...s.activeMods, route];
@@ -864,6 +928,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     updateModRoute(id, patch) {
+      record(`mod:${id}:${Object.keys(patch).join(",")}`);
       const s = get();
       const activeMods = s.activeMods.map((r) => (r.id === id ? { ...r, ...patch } : r));
       const modsByPreset = { ...s.modsByPreset, [s.presetId]: activeMods };
@@ -872,6 +937,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     removeModRoute(id) {
+      record("mod-remove");
       const s = get();
       const activeMods = s.activeMods.filter((r) => r.id !== id);
       const modsByPreset = { ...s.modsByPreset };
