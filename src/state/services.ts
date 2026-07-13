@@ -29,6 +29,13 @@ let engine: AudioEngine | null = null;
 let analyzer: RealtimeAnalyzer | null = null;
 let renderer: Renderer | null = null;
 let disposeLoop: (() => void) | null = null;
+let measure: (() => void) | null = null;
+
+/** Force a size re-measure now (aspect changes shouldn't wait for the
+ * ResizeObserver, which doesn't fire in hidden tabs). */
+export function remeasure(): void {
+  measure?.();
+}
 
 export function getEngine(): AudioEngine {
   if (!engine) throw new Error("services not initialized");
@@ -102,11 +109,12 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     await installRenderer();
     if (disposed) return;
 
-    ro = new ResizeObserver(() => {
+    measure = () => {
       const r = canvas.getBoundingClientRect();
       renderer?.resize(r.width, r.height, window.devicePixelRatio);
       hooks.onResize?.(canvas.width, canvas.height);
-    });
+    };
+    ro = new ResizeObserver(measure);
     ro.observe(canvas);
 
     let lastUiUpdate = 0;
@@ -147,6 +155,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     clearTimeout(fallback);
     cancelAnimationFrame(raf);
     ro?.disconnect();
+    measure = null;
   };
 
   return () => {

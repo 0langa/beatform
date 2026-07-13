@@ -44,6 +44,7 @@ const doc: ProjectDocument = {
     },
   ],
   assets: { "as-1": { id: "as-1", name: "logo.png", dataUrl: PIXEL } },
+  aspect: "9:16",
 };
 
 describe("project files (.avproj)", () => {
@@ -80,9 +81,11 @@ describe("project files (.avproj)", () => {
     file.schemaVersion = 1;
     delete file.document.overlayLayers;
     delete file.document.assets;
+    delete file.document.aspect;
     const parsed = parseProject(JSON.stringify(file));
     expect(parsed.overlayLayers).toEqual([]);
     expect(parsed.assets).toEqual({});
+    expect(parsed.aspect).toBe("free"); // v1 default
     expect(parsed.presetId).toBe(doc.presetId);
   });
 

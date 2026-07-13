@@ -6,7 +6,7 @@ import { exportVideo } from "./export/videoExporter";
 import { APP_VERSION } from "./version";
 import { getEngine } from "./state/services";
 import { rasterizeOverlay } from "./render/overlay";
-import { autoBitrateMbps, RESOLUTIONS, useVizStore } from "./state/store";
+import { autoBitrateMbps, RESOLUTIONS, resolutionsForAspect, useVizStore } from "./state/store";
 import { PlayerBar } from "./ui/PlayerBar";
 import { PresetStrip } from "./ui/PresetStrip";
 import { ParamsPanel } from "./ui/ParamsPanel";
@@ -70,6 +70,7 @@ export default function App() {
   const overlayLayers = useVizStore((s) => s.overlayLayers);
   const assets = useVizStore((s) => s.assets);
   const coverArt = useVizStore((s) => s.coverArt);
+  const aspect = useVizStore((s) => s.aspect);
   const exportSettings = useVizStore((s) => s.exportSettings);
   const exporting = useVizStore((s) => s.exporting);
   const exportError = useVizStore((s) => s.exportError);
@@ -180,7 +181,13 @@ export default function App() {
       return getEngine().state;
     };
     (window as unknown as { __runExport: unknown }).__runExport = async (
-      opts: Partial<{ width: number; height: number; fps: number; withOverlay: boolean }> = {},
+      opts: Partial<{
+        width: number;
+        height: number;
+        fps: number;
+        withOverlay: boolean;
+        canvasLoop: { start: number; duration: number };
+      }> = {},
     ) => {
       const buf = getEngine().audioBuffer;
       if (!buf) throw new Error("no track loaded");
@@ -211,6 +218,8 @@ export default function App() {
         bg: s.bg,
         sync: s.sync,
         overlay,
+        segment: opts.canvasLoop,
+        loopCrossfadeSec: opts.canvasLoop ? 0.5 : undefined,
       });
       const info = {
         bytes: result.bytes,
@@ -224,10 +233,13 @@ export default function App() {
     };
   }, [store]);
 
-  const res = RESOLUTIONS[exportSettings.resIdx];
+  const canvasMode = exportSettings.mode === "canvas";
+  const res = canvasMode ? { w: 1080, h: 1920 } : RESOLUTIONS[exportSettings.resIdx];
+  const effFps = canvasMode ? 30 : exportSettings.fps;
   const effectiveMbps = exportSettings.autoRate
-    ? autoBitrateMbps(res.w, res.h, exportSettings.fps)
+    ? autoBitrateMbps(res.w, res.h, effFps)
     : exportSettings.manualMbps;
+  const canvasMaxStart = Math.max(0, playback.duration - exportSettings.canvasDuration);
   const exportPct = exporting
     ? Math.round((exporting.done / Math.max(1, exporting.total)) * 100)
     : 0;
@@ -258,12 +270,23 @@ export default function App() {
         if (file) void store().loadFile(file);
       }}
     >
-      <canvas
-        ref={canvasRef}
-        className={`viz-canvas ${bg.mode === BG_TRANSPARENT ? "transparent" : ""}`}
-        onClick={() => playback.trackName && void store().togglePlay()}
-        onDoubleClick={toggleFullscreen}
-      />
+      <div className="stage">
+        <canvas
+          ref={canvasRef}
+          className={`viz-canvas ${bg.mode === BG_TRANSPARENT ? "transparent" : ""} ${
+            aspect !== "free" ? "fixed-aspect" : ""
+          }`}
+          style={
+            aspect !== "free"
+              ? ({
+                  "--ar": aspect === "16:9" ? "1.77778" : aspect === "9:16" ? "0.5625" : "1",
+                } as React.CSSProperties)
+              : undefined
+          }
+          onClick={() => playback.trackName && void store().togglePlay()}
+          onDoubleClick={toggleFullscreen}
+        />
+      </div>
 
       <input
         ref={fileInputRef}
@@ -383,6 +406,8 @@ export default function App() {
           onSync={(next) => store().setSync(next)}
           rendererKind={rendererKind}
           onClose={() => store().setShowPanel(false)}
+          aspect={aspect}
+          onAspect={(a) => store().setAspect(a)}
           userPresets={userPresets.filter((p) => p.presetId === presetId)}
           onSaveUserPreset={(name) => store().saveUserPreset(name)}
           onApplyUserPreset={(id) => store().applyUserPreset(id)}
@@ -451,34 +476,97 @@ export default function App() {
               </button>
             </div>
 
-            <label className="field">
-              <span>Resolution</span>
-              <select
-                className="select"
-                value={exportSettings.resIdx}
-                disabled={!!exporting}
-                onChange={(e) => store().setExportSettings({ resIdx: Number(e.target.value) })}
-              >
-                {RESOLUTIONS.map((r, i) => (
-                  <option key={r.label} value={i}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="field">
+              <span>Type</span>
+              <div className="segmented">
+                <button
+                  className={`segment ${!canvasMode ? "active" : ""}`}
+                  disabled={!!exporting}
+                  title="Export the whole track as a video"
+                  onClick={() => store().setExportSettings({ mode: "video" })}
+                >
+                  Video
+                </button>
+                <button
+                  className={`segment ${canvasMode ? "active" : ""}`}
+                  disabled={!!exporting}
+                  title="3-8 s seamless loop at 1080×1920 — Spotify Canvas spec"
+                  onClick={() => store().setExportSettings({ mode: "canvas" })}
+                >
+                  Canvas loop
+                </button>
+              </div>
+            </div>
 
-            <label className="field">
-              <span>Frame rate</span>
-              <select
-                className="select"
-                value={exportSettings.fps}
-                disabled={!!exporting}
-                onChange={(e) => store().setExportSettings({ fps: Number(e.target.value) })}
-              >
-                <option value={30}>30 fps</option>
-                <option value={60}>60 fps</option>
-              </select>
-            </label>
+            {!canvasMode && (
+              <label className="field">
+                <span>Resolution</span>
+                <select
+                  className="select"
+                  value={exportSettings.resIdx}
+                  disabled={!!exporting}
+                  onChange={(e) => store().setExportSettings({ resIdx: Number(e.target.value) })}
+                >
+                  {resolutionsForAspect(aspect).map((i) => (
+                    <option key={RESOLUTIONS[i].label} value={i}>
+                      {RESOLUTIONS[i].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {!canvasMode && (
+              <label className="field">
+                <span>Frame rate</span>
+                <select
+                  className="select"
+                  value={exportSettings.fps}
+                  disabled={!!exporting}
+                  onChange={(e) => store().setExportSettings({ fps: Number(e.target.value) })}
+                >
+                  <option value={30}>30 fps</option>
+                  <option value={60}>60 fps</option>
+                </select>
+              </label>
+            )}
+
+            {canvasMode && (
+              <>
+                <label className="field">
+                  <span>Loop length</span>
+                  <select
+                    className="select"
+                    value={exportSettings.canvasDuration}
+                    disabled={!!exporting}
+                    onChange={(e) =>
+                      store().setExportSettings({ canvasDuration: Number(e.target.value) })
+                    }
+                  >
+                    {[3, 4, 5, 6, 7, 8].map((d) => (
+                      <option key={d} value={d}>
+                        {d} s
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="field">
+                  <span>Starts at {exportSettings.canvasStart.toFixed(1)} s</span>
+                  <Slider
+                    min={0}
+                    max={Math.max(0.1, canvasMaxStart)}
+                    step={0.1}
+                    value={Math.min(exportSettings.canvasStart, canvasMaxStart)}
+                    disabled={!!exporting}
+                    onChange={(v) => store().setExportSettings({ canvasStart: v })}
+                  />
+                </div>
+                <p className="section-hint">
+                  1080×1920 (9:16) at 30 fps. The last half second crossfades into the first — the
+                  loop point is seamless. Spotify Canvas accepts 3-8 s.
+                </p>
+              </>
+            )}
 
             <div className="field">
               <span>Bitrate</span>
@@ -530,7 +618,7 @@ export default function App() {
             ) : (
               <button className="btn-primary wide" onClick={() => void store().runExport()}>
                 <IconExport size={16} />
-                Export {res.w}×{res.h} @ {exportSettings.fps} fps
+                Export {res.w}×{res.h} @ {effFps} fps
               </button>
             )}
             {exportError && <div className="toast-inline error">{exportError}</div>}

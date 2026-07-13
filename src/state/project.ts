@@ -18,6 +18,16 @@ import type { OverlayAsset, OverlayLayer, OverlayAnchor } from "../render/overla
 export const PROJECT_VERSION = 2;
 export const PROJECT_EXTENSION = "avproj";
 
+/** Frame aspect: "free" fills the window; fixed ratios letterbox the stage. */
+export type Aspect = "free" | "16:9" | "9:16" | "1:1";
+
+export const ASPECTS: Array<{ id: Aspect; label: string; hint: string }> = [
+  { id: "free", label: "Fill", hint: "Use the whole window" },
+  { id: "16:9", label: "16:9", hint: "YouTube / landscape video" },
+  { id: "9:16", label: "9:16", hint: "Reels, Shorts, Spotify Canvas" },
+  { id: "1:1", label: "1:1", hint: "Square posts" },
+];
+
 export interface ProjectDocument {
   presetId: string;
   paramsByPreset: Record<string, ParamValues>;
@@ -25,6 +35,7 @@ export interface ProjectDocument {
   bg: BgSettings;
   overlayLayers: OverlayLayer[];
   assets: Record<string, OverlayAsset>;
+  aspect: Aspect;
 }
 
 export interface ProjectFile {
@@ -84,7 +95,12 @@ export function parseProject(json: string): ProjectDocument {
     bg: validBg(doc.bg),
     overlayLayers: validLayers(doc.overlayLayers, assets),
     assets,
+    aspect: validAspect(doc.aspect),
   };
+}
+
+export function validAspect(v: unknown): Aspect {
+  return v === "16:9" || v === "9:16" || v === "1:1" ? v : "free";
 }
 
 function validPresetId(v: unknown): string {

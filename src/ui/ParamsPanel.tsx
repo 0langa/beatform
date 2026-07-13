@@ -3,6 +3,7 @@ import type { SyncMode, SyncSettings } from "../audio/types";
 import type { BgMode, BgSettings, ParamSpec, ParamValues, PresetDef } from "../render/types";
 import { BG_PRESET, BG_SOLID, BG_TRANSPARENT, defaultParams } from "../render/types";
 import type { UserPreset } from "../state/userPresets";
+import { ASPECTS, type Aspect } from "../state/project";
 import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
 import { Slider } from "./Slider";
 import { LayersPanel } from "./LayersPanel";
@@ -118,6 +119,8 @@ export function ParamsPanel(props: {
   onDeleteUserPreset: (id: string) => void;
   onExportUserPreset: (id: string) => void;
   onImportUserPreset: () => void;
+  aspect: Aspect;
+  onAspect: (a: Aspect) => void;
   overlayLayers: OverlayLayer[];
   assets: Record<string, OverlayAsset>;
   hasCoverArt: boolean;
@@ -346,6 +349,29 @@ export function ParamsPanel(props: {
           </label>
           <p className="section-hint">
             What this visual reacts to. Saved per mode; exports use it too.
+          </p>
+        </section>
+
+        <section className="panel-section">
+          <div className="section-head">
+            <span className="section-title">Frame</span>
+          </div>
+          <div className="segmented">
+            {ASPECTS.map((a) => (
+              <button
+                key={a.id}
+                className={`segment ${props.aspect === a.id ? "active" : ""}`}
+                title={a.hint}
+                onPointerEnter={() => setHint(a.hint)}
+                onPointerLeave={() => setHint(null)}
+                onClick={() => props.onAspect(a.id)}
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
+          <p className="section-hint">
+            Frame shape for preview and export — 9:16 for Canvas/Shorts, 1:1 for posts.
           </p>
         </section>
 

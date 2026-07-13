@@ -26,6 +26,10 @@ export interface ExportOptions {
   sync?: SyncSettings;
   /** Pre-rasterized overlay (text/logo) at output size. */
   overlay?: ImageBitmap;
+  /** Export only this slice of the track (seconds). Canvas loop mode. */
+  segment?: { start: number; duration: number };
+  /** Seamless-loop crossfade in seconds (blends tail into head). */
+  loopCrossfadeSec?: number;
   /** Desktop: stream the file here instead of building a Blob. */
   streamToPath?: string;
   onProgress?: (framesDone: number, framesTotal: number) => void;
@@ -98,10 +102,22 @@ function toResult(core: ExportCoreResult): ExportResult {
 }
 
 export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise<ExportResult> {
-  const pcm = pcmFromAudioBuffer(audio);
+  const full = pcmFromAudioBuffer(audio);
+  // Segment slice (Canvas loop mode) — and always COPY: transferring the
+  // engine's live channel data to the worker would detach it.
+  const s0 = o.segment ? Math.max(0, Math.floor(o.segment.start * full.sampleRate)) : 0;
+  const s1 = o.segment
+    ? Math.min(full.length, s0 + Math.floor(o.segment.duration * full.sampleRate))
+    : full.length;
+  const channels = full.channels.slice(0, 2).map((c) => c.slice(s0, s1));
+  const pcm = {
+    sampleRate: full.sampleRate,
+    length: s1 - s0,
+    duration: (s1 - s0) / full.sampleRate,
+    channels,
+  };
   const job: ExportJob = {
-    // Copies: transferring the engine's live channel data would detach it
-    pcm: { ...pcm, channels: pcm.channels.slice(0, 2).map((c) => c.slice()) },
+    pcm,
     width: o.width,
     height: o.height,
     fps: o.fps,
@@ -111,6 +127,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     bg: o.bg,
     sync: o.sync,
     overlay: o.overlay,
+    loopCrossfadeSec: o.loopCrossfadeSec,
     mode: o.streamToPath ? "stream" : "buffer",
   };
 

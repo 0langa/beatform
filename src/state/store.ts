@@ -7,7 +7,7 @@ import { defaultParams } from "../render/types";
 import { presetById, presets } from "../render/presets";
 import { exportVideo } from "../export/videoExporter";
 import { APP_VERSION } from "../version";
-import { getAnalyzer, getEngine, getRenderer, initServices } from "./services";
+import { getAnalyzer, getEngine, getRenderer, initServices, remeasure } from "./services";
 import {
   bytesToDataUrl,
   downloadBlob,
@@ -33,6 +33,7 @@ import {
   PROJECT_EXTENSION,
   ProjectParseError,
   serializeProject,
+  type Aspect,
   type ProjectDocument,
 } from "./project";
 import {
@@ -46,6 +47,7 @@ import {
   type UserPreset,
 } from "./userPresets";
 import {
+  loadStoredAspect,
   loadStoredBg,
   loadStoredOverlay,
   loadStoredPanelOpen,
@@ -53,6 +55,7 @@ import {
   loadStoredPresetId,
   loadStoredSync,
   loadStoredVolume,
+  saveStoredAspect,
   saveStoredBg,
   saveStoredOverlay,
   saveStoredPanelOpen,
@@ -63,13 +66,21 @@ import {
 } from "./persistence";
 
 export const RESOLUTIONS = [
-  { label: "720p (1280×720)", w: 1280, h: 720 },
-  { label: "1080p (1920×1080)", w: 1920, h: 1080 },
-  { label: "1440p (2560×1440)", w: 2560, h: 1440 },
-  { label: "4K (3840×2160)", w: 3840, h: 2160 },
-  { label: "Square (1080×1080)", w: 1080, h: 1080 },
-  { label: "Vertical (1080×1920)", w: 1080, h: 1920 },
-];
+  { label: "720p (1280×720)", w: 1280, h: 720, aspect: "16:9" },
+  { label: "1080p (1920×1080)", w: 1920, h: 1080, aspect: "16:9" },
+  { label: "1440p (2560×1440)", w: 2560, h: 1440, aspect: "16:9" },
+  { label: "4K (3840×2160)", w: 3840, h: 2160, aspect: "16:9" },
+  { label: "Square (1080×1080)", w: 1080, h: 1080, aspect: "1:1" },
+  { label: "Vertical (1080×1920)", w: 1080, h: 1920, aspect: "9:16" },
+  { label: "Vertical 4K (2160×3840)", w: 2160, h: 3840, aspect: "9:16" },
+] as const;
+
+/** Resolution indices offered for a frame aspect ("free" offers all). */
+export function resolutionsForAspect(aspect: Aspect): number[] {
+  const all = RESOLUTIONS.map((_, i) => i);
+  if (aspect === "free") return all;
+  return all.filter((i) => RESOLUTIONS[i].aspect === aspect);
+}
 
 export function autoBitrateMbps(w: number, h: number, fps: number): number {
   return Math.min(60, Math.max(2, Math.round((w * h * fps * 0.09) / 1e6)));
@@ -87,6 +98,10 @@ export interface ExportSettings {
   fps: number;
   autoRate: boolean;
   manualMbps: number;
+  /** "video" = whole track; "canvas" = 3-8 s seamless loop (Spotify Canvas). */
+  mode: "video" | "canvas";
+  canvasStart: number;
+  canvasDuration: number;
 }
 
 /**
@@ -102,6 +117,7 @@ interface DocumentSlice {
   bg: BgSettings;
   overlayLayers: OverlayLayer[];
   assets: Record<string, OverlayAsset>;
+  aspect: Aspect;
 }
 
 /** Session/UI state: ephemeral, never saved into projects. */
@@ -142,6 +158,7 @@ interface Actions {
   applyStyle(values: Partial<ParamValues>): void;
   resetParams(): void;
   setBg(bg: BgSettings): void;
+  setAspect(aspect: Aspect): void;
   setSync(sync: SyncSettings): void;
   loadFile(file: File): Promise<void>;
   loadDemo(id: string): Promise<void>;
@@ -228,6 +245,7 @@ export const useVizStore = create<VizState>((set, get) => {
     bg: loadStoredBg(),
     overlayLayers: initialOverlay.layers,
     assets: initialOverlay.assets,
+    aspect: loadStoredAspect(),
 
     // --- session ---
     activeParams: resolveParams(initialPresetId, initialParams),
@@ -247,7 +265,15 @@ export const useVizStore = create<VizState>((set, get) => {
     userPresets: loadUserPresets(),
     trackMeta: { title: "", artist: "" },
     coverArt: null,
-    exportSettings: { resIdx: 1, fps: 60, autoRate: true, manualMbps: 12 },
+    exportSettings: {
+      resIdx: 1,
+      fps: 60,
+      autoRate: true,
+      manualMbps: 12,
+      mode: "video" as const,
+      canvasStart: 0,
+      canvasDuration: 6,
+    },
     exporting: null,
     exportError: null,
     exportDone: null,
@@ -326,6 +352,19 @@ export const useVizStore = create<VizState>((set, get) => {
       set({ bg });
       saveStoredBg(bg);
       getRenderer()?.setBackground(bg);
+    },
+
+    setAspect(aspect) {
+      set({ aspect });
+      saveStoredAspect(aspect);
+      // Keep the export resolution consistent with the frame
+      const allowed = resolutionsForAspect(aspect);
+      if (!allowed.includes(get().exportSettings.resIdx)) {
+        get().setExportSettings({ resIdx: allowed[allowed.length > 1 ? 1 : 0] });
+      }
+      // Re-measure after the CSS class lands (don't wait for ResizeObserver;
+      // it never fires in hidden tabs). The measure also refreshes overlays.
+      setTimeout(remeasure, 50);
     },
 
     setSync(sync) {
@@ -445,14 +484,26 @@ export const useVizStore = create<VizState>((set, get) => {
       const engine = getEngine();
       const buf = engine.audioBuffer;
       if (!buf) return;
-      const { resIdx, fps, autoRate, manualMbps } = get().exportSettings;
-      const res = RESOLUTIONS[resIdx];
-      const mbps = autoRate ? autoBitrateMbps(res.w, res.h, fps) : manualMbps;
+      const settings = get().exportSettings;
+      const canvasMode = settings.mode === "canvas";
+      // Canvas loops are fixed to the Spotify spec: 9:16, 30 fps, 3-8 s
+      const res = canvasMode ? { w: 1080, h: 1920 } : RESOLUTIONS[settings.resIdx];
+      const fps = canvasMode ? 30 : settings.fps;
+      const mbps = settings.autoRate ? autoBitrateMbps(res.w, res.h, fps) : settings.manualMbps;
+      const segment = canvasMode
+        ? {
+            start: Math.max(
+              0,
+              Math.min(settings.canvasStart, buf.duration - settings.canvasDuration),
+            ),
+            duration: Math.min(settings.canvasDuration, buf.duration),
+          }
+        : undefined;
       const trackName = (engine.state.trackName ?? "visualization")
         .replace(/\.[a-z0-9]+$/i, "")
         .replace(/[^\w\- ]+/g, "")
         .trim();
-      const fileName = `${trackName || "visualization"}.mp4`;
+      const fileName = `${trackName || "visualization"}${canvasMode ? "-canvas" : ""}.mp4`;
       // Desktop: pick the destination BEFORE rendering — a cancelled dialog
       // after a long 4K render would throw the work away.
       let savePath: string | null = null;
@@ -488,6 +539,8 @@ export const useVizStore = create<VizState>((set, get) => {
           bg: get().bg,
           sync: get().sync,
           overlay,
+          segment,
+          loopCrossfadeSec: canvasMode ? 0.5 : undefined,
           // Desktop: stream straight to the picked file (flat memory);
           // browser dev falls back to an in-memory blob + download.
           streamToPath: savePath ?? undefined,
@@ -534,6 +587,7 @@ export const useVizStore = create<VizState>((set, get) => {
         bg: s.bg,
         overlayLayers: s.overlayLayers,
         assets: s.assets,
+        aspect: s.aspect,
       };
       try {
         const saved = await saveTextFile(
@@ -576,6 +630,7 @@ export const useVizStore = create<VizState>((set, get) => {
         bg: doc.bg,
         overlayLayers: doc.overlayLayers,
         assets: doc.assets,
+        aspect: doc.aspect,
         activeParams,
         sync,
       });
@@ -584,6 +639,7 @@ export const useVizStore = create<VizState>((set, get) => {
       saveStoredSync(doc.syncByPreset);
       saveStoredBg(doc.bg);
       saveStoredOverlay(doc.overlayLayers, doc.assets);
+      saveStoredAspect(doc.aspect);
       pruneBitmapCache(new Set(Object.keys(doc.assets)));
       getRenderer()?.setPreset(preset);
       getRenderer()?.setBackground(doc.bg);

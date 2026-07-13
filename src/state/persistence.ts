@@ -2,7 +2,7 @@ import type { SyncSettings } from "../audio/types";
 import type { BgSettings, ParamValues } from "../render/types";
 import { BG_PRESET } from "../render/types";
 import type { OverlayAsset, OverlayLayer } from "../render/overlay";
-import { validAssets, validLayers } from "./project";
+import { validAspect, validAssets, validLayers, type Aspect } from "./project";
 
 /**
  * localStorage persistence for the current session. Keys and formats are the
@@ -88,6 +88,16 @@ export function saveStoredOverlay(
   assets: Record<string, OverlayAsset>,
 ): void {
   localStorage.setItem(LS_OVERLAY, JSON.stringify({ layers, assets }));
+}
+
+const LS_ASPECT = "viz.aspect.v1";
+
+export function loadStoredAspect(): Aspect {
+  return validAspect(localStorage.getItem(LS_ASPECT));
+}
+
+export function saveStoredAspect(aspect: Aspect): void {
+  localStorage.setItem(LS_ASPECT, aspect);
 }
 
 export function loadStoredPanelOpen(): boolean {

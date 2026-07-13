@@ -36,6 +36,12 @@ export interface ExportJob {
   sync?: SyncSettings;
   /** Pre-rasterized overlay (text/logo), premultiplied, at output size. */
   overlay?: ImageBitmap;
+  /**
+   * Seamless-loop crossfade (seconds). The final crossfade window blends
+   * into the FIRST frames/samples, so the last frame ≈ frame 0 and the loop
+   * point is invisible — Spotify Canvas mode. 0/undefined = off.
+   */
+  loopCrossfadeSec?: number;
   mode: "buffer" | "stream";
 }
 
@@ -150,6 +156,8 @@ export async function runExportJob(
   audioEncoder.configure(audioCodec === "aac" ? aacConfig : opusConfig);
 
   const canvas = new OffscreenCanvas(job.width, job.height);
+  // Loop mode holds the first K frames to blend into the last K (see below)
+  const headFrames: ImageBitmap[] = [];
   let renderer: WebGPURenderer;
   try {
     renderer = await WebGPURenderer.create(canvas);
@@ -162,6 +170,21 @@ export async function runExportJob(
     renderer.setBackground(job.bg);
     renderer.setOverlay(job.overlay ?? null);
     renderer.resize(job.width, job.height, 1);
+
+    // Loop mode: crossfade the tail into the head so sample/frame N-1
+    // lands back exactly where sample/frame 0 started.
+    const xfadeSamples = job.loopCrossfadeSec
+      ? Math.min(Math.floor(job.loopCrossfadeSec * sampleRate), Math.floor(pcm.length / 2))
+      : 0;
+    if (xfadeSamples > 0) {
+      for (const data of pcm.channels.slice(0, channels)) {
+        const start = pcm.length - xfadeSamples;
+        for (let i = 0; i < xfadeSamples; i++) {
+          const a = (i + 1) / xfadeSamples;
+          data[start + i] = data[start + i] * (1 - a) + data[i] * a;
+        }
+      }
+    }
 
     // --- Audio lane: feed the whole buffer in planar chunks
     const CHUNK = 16384;
@@ -187,6 +210,13 @@ export async function runExportJob(
     // --- Video lane: deterministic frame walk
     const analyzer = new OfflineAnalyzer(pcm, job.fps, 96, job.sync);
     const total = analyzer.frameCount;
+    // Loop mode: keep the first K rendered frames; blend them into the last K
+    const xfadeFrames = job.loopCrossfadeSec
+      ? Math.min(Math.round(job.loopCrossfadeSec * job.fps), Math.floor(total / 2))
+      : 0;
+    const blendCanvas = xfadeFrames > 0 ? new OffscreenCanvas(job.width, job.height) : null;
+    const blendCtx = blendCanvas?.getContext("2d") ?? null;
+
     for (let n = 0; n < total; n++) {
       abort();
       if (encoderError) throw encoderError;
@@ -196,7 +226,23 @@ export async function runExportJob(
       // Ensure the GPU finished before snapshotting the canvas
       await renderer.gpuDone();
 
-      const frame = new VideoFrame(canvas, {
+      let source: OffscreenCanvas = canvas;
+      if (xfadeFrames > 0) {
+        if (n < xfadeFrames) {
+          headFrames.push(await createImageBitmap(canvas));
+        }
+        const tailIndex = n - (total - xfadeFrames);
+        if (tailIndex >= 0 && blendCtx && blendCanvas) {
+          const alpha = (tailIndex + 1) / xfadeFrames;
+          blendCtx.globalAlpha = 1;
+          blendCtx.drawImage(canvas, 0, 0);
+          blendCtx.globalAlpha = alpha;
+          blendCtx.drawImage(headFrames[tailIndex], 0, 0);
+          source = blendCanvas;
+        }
+      }
+
+      const frame = new VideoFrame(source, {
         timestamp: Math.round((n * 1e6) / job.fps),
         duration: Math.round(1e6 / job.fps),
       });
@@ -237,6 +283,7 @@ export async function runExportJob(
     } catch {
       // already closed
     }
+    headFrames.forEach((b) => b.close());
     renderer.dispose();
   }
 }
