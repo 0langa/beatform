@@ -30,7 +30,7 @@ import {
 } from "./ui/Icons";
 import "./App.css";
 
-const APP_VERSION = "0.9.0";
+const APP_VERSION = "1.0.0";
 
 const LS_PRESET = "viz.activePreset";
 const LS_PARAMS = "viz.params.v1";
@@ -201,6 +201,11 @@ export default function App() {
       renderer.resize(r.width, r.height, window.devicePixelRatio);
       rendererRef.current = renderer;
       setRendererKind(renderer.kind);
+      if (renderer.kind === "canvas2d") {
+        setError(
+          "WebGPU unavailable — using simplified rendering (spectrum bars only). Update your graphics driver or WebView2 runtime for full visuals.",
+        );
+      }
     };
 
     (async () => {
@@ -360,8 +365,13 @@ export default function App() {
   }, []);
 
   const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void document.documentElement.requestFullscreen();
+    // Rejections are expected where the Fullscreen API is policy-blocked
+    // (embedded webviews) — treat as a no-op, not an error.
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => undefined);
+    } else {
+      document.documentElement.requestFullscreen().catch(() => undefined);
+    }
   }, []);
 
   // Keyboard shortcuts
@@ -482,7 +492,31 @@ export default function App() {
     }
   }, [resIdx, fps, autoRate, manualMbps]);
 
-  // Dev-only E2E hook: run a tiny export from the console/test driver
+  // Surface anything that slipped past local error handling
+  useEffect(() => {
+    const onRejection = (e: PromiseRejectionEvent) => {
+      console.error("[unhandled]", e.reason);
+      setError(`Unexpected error: ${e.reason?.message ?? String(e.reason)}`);
+    };
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => window.removeEventListener("unhandledrejection", onRejection);
+  }, []);
+
+  // Dev-only E2E hooks: file loading + tiny export from the test driver
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as unknown as { __loadFile: unknown }).__loadFile = async (
+      url: string,
+      name: string,
+    ) => {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`fetch ${url}: ${r.status}`);
+      const buf = await r.arrayBuffer();
+      await loadFile(new File([buf], name));
+      return engineRef.current?.state;
+    };
+  }, [loadFile]);
+
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     (window as unknown as { __runExport: unknown }).__runExport = async (

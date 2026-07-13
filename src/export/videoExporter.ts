@@ -116,7 +116,12 @@ export async function exportVideo(
   audioEncoder.configure(audioCodec === "aac" ? aacConfig : opusConfig);
 
   const canvas = new OffscreenCanvas(o.width, o.height);
-  const renderer = await WebGPURenderer.create(canvas);
+  let renderer: WebGPURenderer;
+  try {
+    renderer = await WebGPURenderer.create(canvas);
+  } catch {
+    throw new Error("Export requires WebGPU, which is unavailable on this system");
+  }
 
   try {
     renderer.setPreset(o.preset);
