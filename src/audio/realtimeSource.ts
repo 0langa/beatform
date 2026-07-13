@@ -2,6 +2,8 @@ import type { AudioEngine } from "./engine";
 import type { AudioFeatures, SyncSettings } from "./types";
 import { FeaturePipeline } from "./featurePipeline";
 import { RealFFT } from "./dsp/fft";
+import { LoudnessMeter } from "./dsp/lufs";
+import { stereoWidth } from "./dsp/stereo";
 
 /**
  * Realtime analysis source: pulls the most recent fftSize time-domain samples
@@ -20,6 +22,9 @@ export class RealtimeAnalyzer {
   private fft: RealFFT;
   private magDb: Float32Array;
   private timeData: Float32Array;
+  private timeL: Float32Array;
+  private timeR: Float32Array;
+  private meter: LoudnessMeter;
   private lastFrameAt: number | null = null;
 
   constructor(engine: AudioEngine, binCount = 96) {
@@ -28,6 +33,9 @@ export class RealtimeAnalyzer {
     this.fft = new RealFFT(fftSize);
     this.magDb = new Float32Array(fftSize / 2);
     this.timeData = new Float32Array(fftSize);
+    this.timeL = new Float32Array(fftSize);
+    this.timeR = new Float32Array(fftSize);
+    this.meter = new LoudnessMeter(engine.ctx.sampleRate, 2);
     this.pipeline = new FeaturePipeline({
       sampleRate: engine.ctx.sampleRate,
       fftBins: fftSize / 2,
@@ -47,7 +55,19 @@ export class RealtimeAnalyzer {
     const dt = this.lastFrameAt === null ? 1 / 60 : now - this.lastFrameAt;
     this.lastFrameAt = now;
     this.engine.analyser.getFloatTimeDomainData(this.timeData);
+    this.engine.analyserL.getFloatTimeDomainData(this.timeL);
+    this.engine.analyserR.getFloatTimeDomainData(this.timeR);
     this.fft.magnitudesDb(this.timeData, this.magDb);
+    // Feed the loudness meter only the NEW samples since last frame (the
+    // analyser exposes a sliding window; overlap would double-count)
+    const fresh = Math.min(
+      this.timeL.length,
+      Math.max(1, Math.round(dt * this.engine.ctx.sampleRate)),
+    );
+    this.meter.process([
+      this.timeL.subarray(this.timeL.length - fresh),
+      this.timeR.subarray(this.timeR.length - fresh),
+    ]);
     return this.pipeline.update({
       magDb: this.magDb,
       waveform: this.timeData,
@@ -55,6 +75,8 @@ export class RealtimeAnalyzer {
       dt,
       playing: this.engine.playing,
       duration: this.engine.duration,
+      width: stereoWidth(this.timeL, this.timeR),
+      lufs: this.engine.playing ? this.meter.momentary : undefined,
     });
   }
 }

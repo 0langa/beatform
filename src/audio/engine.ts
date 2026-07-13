@@ -14,6 +14,9 @@ import type { PlaybackState } from "./types";
 export class AudioEngine {
   readonly ctx: AudioContext;
   readonly analyser: AnalyserNode;
+  /** Per-channel taps for stereo features (width) and loudness metering. */
+  readonly analyserL: AnalyserNode;
+  readonly analyserR: AnalyserNode;
   private gain: GainNode;
   private source: AudioBufferSourceNode | null = null;
   private buffer: AudioBuffer | null = null;
@@ -35,9 +38,17 @@ export class AudioEngine {
     // RealtimeAnalyzer runs its own FFT so live matches offline export.
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 4096;
+    this.analyserL = this.ctx.createAnalyser();
+    this.analyserR = this.ctx.createAnalyser();
+    this.analyserL.fftSize = 4096;
+    this.analyserR.fftSize = 4096;
     this.gain = this.ctx.createGain();
     this.gain.connect(this.ctx.destination);
     this.gain.connect(this.analyser);
+    const splitter = this.ctx.createChannelSplitter(2);
+    this.gain.connect(splitter);
+    splitter.connect(this.analyserL, 0);
+    splitter.connect(this.analyserR, 1);
   }
 
   async loadFile(file: File): Promise<void> {

@@ -34,6 +34,10 @@ export interface PipelineInput {
   dt: number;
   playing: boolean;
   duration: number;
+  /** Raw stereo width for this frame (undefined = keep previous). */
+  width?: number;
+  /** Momentary LUFS for this frame (undefined = keep previous). */
+  lufs?: number;
 }
 
 /**
@@ -110,6 +114,8 @@ export class FeaturePipeline {
       bass: 0,
       mid: 0,
       treble: 0,
+      width: 0,
+      lufs: -70,
       beat: false,
       beatIntensity: 0,
       time: 0,
@@ -199,6 +205,12 @@ export class FeaturePipeline {
     this.updateSync(f, mag, dt, input.playing);
     // Both onset detectors diff against the previous frame — update it last
     this.prevMag.set(mag);
+
+    if (input.width !== undefined) {
+      // Smooth like the bins: widths jump frame to frame, visuals shouldn't
+      f.width += (input.width - f.width) * (1 - Math.exp(-dt * 8));
+    }
+    if (input.lufs !== undefined) f.lufs = input.lufs;
 
     f.time = input.time;
     f.duration = input.duration;

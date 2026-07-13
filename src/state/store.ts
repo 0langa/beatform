@@ -144,6 +144,10 @@ interface SessionSlice {
   trackMeta: OverlayMeta;
   /** Cover art extracted from the loaded file's tags (session-only). */
   coverArt: string | null;
+  /** Momentary loudness readout (LUFS), null before playback. */
+  lufs: number | null;
+  /** Smoothed stereo width readout 0..1. */
+  stereoWidth: number;
   exportSettings: ExportSettings;
   exporting: ExportProgress | null;
   exportError: string | null;
@@ -265,6 +269,8 @@ export const useVizStore = create<VizState>((set, get) => {
     userPresets: loadUserPresets(),
     trackMeta: { title: "", artist: "" },
     coverArt: null,
+    lufs: null,
+    stereoWidth: 0,
     exportSettings: {
       resIdx: 1,
       fps: 60,
@@ -293,6 +299,7 @@ export const useVizStore = create<VizState>((set, get) => {
           get().refreshOverlay(); // new renderer starts without an overlay bound
         },
         onResize: () => get().refreshOverlay(),
+        onMeter: (lufs, stereoWidth) => set({ lufs, stereoWidth }),
       });
       getEngine().setVolume(get().muted ? 0 : get().volume);
       get().pokeChrome();

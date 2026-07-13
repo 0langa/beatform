@@ -121,6 +121,8 @@ export function ParamsPanel(props: {
   onImportUserPreset: () => void;
   aspect: Aspect;
   onAspect: (a: Aspect) => void;
+  /** Momentary loudness readout; null before playback. */
+  lufs: number | null;
   overlayLayers: OverlayLayer[];
   assets: Record<string, OverlayAsset>;
   hasCoverArt: boolean;
@@ -439,6 +441,14 @@ export function ParamsPanel(props: {
         <span className="renderer-badge" title="Active render backend">
           {props.rendererKind}
         </span>
+        {props.lufs !== null && (
+          <span
+            className="renderer-badge"
+            title="Momentary loudness (BS.1770). Streaming targets sit around -14 LUFS."
+          >
+            {props.lufs <= -70 ? "−∞" : props.lufs.toFixed(1)} LUFS
+          </span>
+        )}
         <span className={`footer-hint ${hint ? "is-hint" : ""}`}>
           {hint ?? "Hover a setting to see what it does"}
         </span>

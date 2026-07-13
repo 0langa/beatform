@@ -23,6 +23,8 @@ export interface ServiceHooks {
   onRendererChanged(kind: Renderer["kind"], warning: string | null): void;
   /** Canvas pixel size changed — overlays re-rasterize at the new size. */
   onResize?(width: number, height: number): void;
+  /** Throttled loudness/width readout for meters (~4 Hz while playing). */
+  onMeter?(lufs: number, width: number): void;
 }
 
 let engine: AudioEngine | null = null;
@@ -131,6 +133,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       if (eng.playing && t - lastUiUpdate > 0.25 && !hooks.isSeeking()) {
         lastUiUpdate = t;
         hooks.onPlayback(eng.state);
+        hooks.onMeter?.(features.lufs, features.width);
       }
       raf = requestAnimationFrame(loop);
       // rAF starves in hidden/occluded tabs; keep rendering (throttled by

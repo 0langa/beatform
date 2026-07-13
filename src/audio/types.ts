@@ -27,6 +27,10 @@ export interface AudioFeatures {
   bass: number;
   mid: number;
   treble: number;
+  /** Stereo width 0 (mono) .. 1 (wide/anti-phase), smoothed */
+  width: number;
+  /** Momentary loudness, LUFS (BS.1770 400 ms window); -70 floor */
+  lufs: number;
   /** True exactly on onset frames */
   beat: boolean;
   /** 1 on beat, exponential decay after — drive pulses with this */

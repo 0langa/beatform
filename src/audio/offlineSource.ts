@@ -1,6 +1,8 @@
 import type { AudioFeatures, PcmData, SyncSettings } from "./types";
 import { FeaturePipeline } from "./featurePipeline";
 import { RealFFT } from "./dsp/fft";
+import { LoudnessMeter } from "./dsp/lufs";
+import { stereoWidth } from "./dsp/stereo";
 
 const FFT_SIZE = 4096;
 
@@ -36,6 +38,10 @@ export class OfflineAnalyzer {
   readonly fps: number;
 
   private mono: Float32Array;
+  private left: Float32Array;
+  private right: Float32Array;
+  private meter: LoudnessMeter;
+  private meterFed = 0;
   private sampleRate: number;
   private fft: RealFFT;
   private pipeline: FeaturePipeline;
@@ -59,6 +65,9 @@ export class OfflineAnalyzer {
       const g = 1 / pcm.channels.length;
       for (let i = 0; i < this.mono.length; i++) this.mono[i] *= g;
     }
+    this.left = pcm.channels[0];
+    this.right = pcm.channels[1] ?? pcm.channels[0];
+    this.meter = new LoudnessMeter(pcm.sampleRate, 2);
 
     this.fft = new RealFFT(FFT_SIZE);
     this.magDb = new Float32Array(FFT_SIZE / 2);
@@ -82,6 +91,14 @@ export class OfflineAnalyzer {
     this.windowBuf.fill(0);
     this.windowBuf.set(this.mono.subarray(start, end), FFT_SIZE - (end - start));
     this.fft.magnitudesDb(this.windowBuf, this.magDb);
+    // Meter gets the contiguous new samples up to this frame's end
+    if (end > this.meterFed) {
+      this.meter.process([
+        this.left.subarray(this.meterFed, end),
+        this.right.subarray(this.meterFed, end),
+      ]);
+      this.meterFed = end;
+    }
     return this.pipeline.update({
       magDb: this.magDb,
       waveform: this.windowBuf,
@@ -89,6 +106,8 @@ export class OfflineAnalyzer {
       dt: 1 / this.fps,
       playing: true,
       duration: this.duration,
+      width: stereoWidth(this.left.subarray(start, end), this.right.subarray(start, end)),
+      lufs: this.meter.momentary,
     });
   }
 }

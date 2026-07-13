@@ -35,7 +35,7 @@ struct Uniforms {
   drive: f32,
   driveBeat: f32,
   voice: f32,
-  _pad2: f32,
+  width: f32,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> bins: array<f32>;
@@ -377,6 +377,7 @@ export class WebGPURenderer implements Renderer {
     this.uniformF32[16] = f.drive;
     this.uniformF32[17] = f.driveBeat;
     this.uniformF32[18] = f.voice;
+    this.uniformF32[19] = f.width;
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniformData);
     this.device.queue.writeBuffer(this.binsBuf!, 0, f.bins);
     this.device.queue.writeBuffer(this.peaksBuf!, 0, f.peaks);

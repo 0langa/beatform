@@ -71,6 +71,7 @@ export default function App() {
   const assets = useVizStore((s) => s.assets);
   const coverArt = useVizStore((s) => s.coverArt);
   const aspect = useVizStore((s) => s.aspect);
+  const lufs = useVizStore((s) => s.lufs);
   const exportSettings = useVizStore((s) => s.exportSettings);
   const exporting = useVizStore((s) => s.exporting);
   const exportError = useVizStore((s) => s.exportError);
@@ -408,6 +409,7 @@ export default function App() {
           onClose={() => store().setShowPanel(false)}
           aspect={aspect}
           onAspect={(a) => store().setAspect(a)}
+          lufs={lufs}
           userPresets={userPresets.filter((p) => p.presetId === presetId)}
           onSaveUserPreset={(name) => store().saveUserPreset(name)}
           onApplyUserPreset={(id) => store().applyUserPreset(id)}
