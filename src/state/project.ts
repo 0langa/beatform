@@ -116,7 +116,7 @@ function validPresetId(v: unknown): string {
   return typeof v === "string" && presets.some((p) => p.id === v) ? v : presets[0].id;
 }
 
-function validParamsByPreset(v: unknown): Record<string, ParamValues> {
+export function validParamsByPreset(v: unknown): Record<string, ParamValues> {
   if (typeof v !== "object" || v === null) return {};
   const out: Record<string, ParamValues> = {};
   for (const [presetId, params] of Object.entries(v)) {
@@ -141,7 +141,7 @@ const SYNC_MODES = new Set([
   "hats",
 ]);
 
-function validSyncByPreset(v: unknown): Record<string, SyncSettings> {
+export function validSyncByPreset(v: unknown): Record<string, SyncSettings> {
   if (typeof v !== "object" || v === null) return {};
   const out: Record<string, SyncSettings> = {};
   for (const [presetId, sync] of Object.entries(v)) {
@@ -184,7 +184,7 @@ export function validAssets(v: unknown): Record<string, OverlayAsset> {
 }
 
 function validColor(v: unknown): [number, number, number] {
-  if (Array.isArray(v) && v.length === 3 && v.every((c) => typeof c === "number")) {
+  if (Array.isArray(v) && v.length === 3 && v.every((c) => Number.isFinite(c))) {
     return v.map((c) => Math.min(1, Math.max(0, c))) as [number, number, number];
   }
   return [1, 1, 1];

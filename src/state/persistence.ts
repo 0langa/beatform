@@ -1,8 +1,15 @@
 import type { SyncSettings } from "../audio/types";
 import type { BgSettings, ParamValues } from "../render/types";
-import { BG_PRESET } from "../render/types";
 import type { OverlayAsset, OverlayLayer } from "../render/overlay";
-import { validAspect, validAssets, validLayers, type Aspect } from "./project";
+import {
+  validAspect,
+  validAssets,
+  validBg,
+  validLayers,
+  validParamsByPreset,
+  validSyncByPreset,
+  type Aspect,
+} from "./project";
 import { validModsByPreset, type ModRoute } from "./modMatrix";
 import { validTimeline, type Timeline } from "./timeline";
 
@@ -37,7 +44,9 @@ export function saveStoredPresetId(id: string): void {
 }
 
 export function loadStoredParams(): Record<string, ParamValues> {
-  return readJson(LS_PARAMS, {});
+  // Validate like the .avproj path: a corrupt/format-shifted cache must not
+  // put a non-finite value into a Float32 uniform (NaN corrupts the visual).
+  return validParamsByPreset(readJson(LS_PARAMS, {}));
 }
 
 export function saveStoredParams(params: Record<string, ParamValues>): void {
@@ -45,7 +54,7 @@ export function saveStoredParams(params: Record<string, ParamValues>): void {
 }
 
 export function loadStoredSync(): Record<string, SyncSettings> {
-  return readJson(LS_SYNC, {});
+  return validSyncByPreset(readJson(LS_SYNC, {}));
 }
 
 export function saveStoredSync(sync: Record<string, SyncSettings>): void {
@@ -53,9 +62,9 @@ export function saveStoredSync(sync: Record<string, SyncSettings>): void {
 }
 
 export function loadStoredBg(): BgSettings {
-  const raw = readJson<BgSettings | null>(LS_BG, null);
-  if (raw && typeof raw.mode === "number" && Array.isArray(raw.color)) return raw;
-  return { mode: BG_PRESET, color: [0, 0, 0] };
+  // validBg checks color length/finiteness and clamps — a length-1 or
+  // string-element cached color would otherwise write NaN into the uniform.
+  return validBg(readJson<unknown>(LS_BG, null));
 }
 
 export function saveStoredBg(bg: BgSettings): void {

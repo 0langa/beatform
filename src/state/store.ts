@@ -1032,7 +1032,11 @@ export const useVizStore = create<VizState>((set, get) => {
             canvas.height,
             get().trackMeta,
           );
-          if (token === overlayToken) getRenderer()?.setOverlay(bitmap);
+          if (token === overlayToken) {
+            getRenderer()?.setOverlay(bitmap); // takes ownership (closes it)
+          } else {
+            bitmap?.close(); // superseded by a newer raster — release it
+          }
         } catch (e) {
           console.error("[overlay]", e);
         }

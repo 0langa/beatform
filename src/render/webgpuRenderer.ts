@@ -448,6 +448,10 @@ export class WebGPURenderer implements Renderer {
         { texture: this.overlayTexture, premultipliedAlpha: true },
         [source.width, source.height],
       );
+      // The copy snapshots the source synchronously; WebGPU does not retain
+      // the bitmap. Release it now — the store rasterizes a fresh overlay on
+      // every debounced change, so without this each one leaks until GC.
+      source.close();
     }
     this.bindGroup = null; // rebind with the new texture view
     this.transitionBindGroup = null;
