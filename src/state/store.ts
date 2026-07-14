@@ -317,6 +317,27 @@ export const useVizStore = create<VizState>((set, get) => {
     scheduleAutosave();
   };
 
+  /**
+   * Decode the track's cover art and hand it to the renderer so presets can
+   * sample it (coverSample()/hasCover()). Race-guarded: a decode that finishes
+   * after the track changed is dropped instead of overwriting the new cover.
+   */
+  const applyCoverArt = () => {
+    const cover = get().coverArt;
+    if (!cover) {
+      getRenderer()?.setCoverArt(null);
+      return;
+    }
+    void fetch(cover)
+      .then((r) => r.blob())
+      .then((b) => createImageBitmap(b))
+      .then((bmp) => {
+        if (get().coverArt === cover) getRenderer()?.setCoverArt(bmp);
+        else bmp.close();
+      })
+      .catch(() => getRenderer()?.setCoverArt(null));
+  };
+
   /** Crash-safe project autosave (desktop), debounced past edit bursts. */
   const scheduleAutosave = () => {
     clearTimeout(autosaveTimer);
@@ -410,6 +431,7 @@ export const useVizStore = create<VizState>((set, get) => {
           getRenderer()?.setSmoothSpectrum(get().smoothSpectrum);
           getRenderer()?.setPost(get().post);
           getRenderer()?.setMotion(get().motion);
+          applyCoverArt(); // new renderer starts without a cover bound
           get().refreshOverlay(); // new renderer starts without an overlay bound
         },
         onResize: () => get().refreshOverlay(),
@@ -559,6 +581,7 @@ export const useVizStore = create<VizState>((set, get) => {
           // unreadable tags — filename fallback stands
         }
         set({ trackMeta: meta, coverArt });
+        applyCoverArt();
         get().refreshOverlay();
         get().analyzeCurrentTrack();
       } catch (e) {
@@ -576,6 +599,7 @@ export const useVizStore = create<VizState>((set, get) => {
         engine.loadBuffer(buf, `Demo: ${demo.name}`);
         await engine.play();
         set({ trackMeta: { title: demo.name, artist: "" }, coverArt: null });
+        applyCoverArt();
         get().refreshOverlay();
         get().analyzeCurrentTrack();
       } catch (e) {
@@ -711,6 +735,7 @@ export const useVizStore = create<VizState>((set, get) => {
           smoothSpectrum: get().smoothSpectrum,
           post: get().post,
           motion: get().motion,
+          coverArt: get().coverArt ?? undefined,
           timeline: get().timeline.enabled ? get().timeline : undefined,
           paramsByPreset: get().paramsByPreset,
           modsByPreset: get().modsByPreset,

@@ -76,6 +76,15 @@ export const bassCircle: PresetDef = {
       default: 0.8,
       hint: "Brightness of the circle's glowing rim",
     },
+    {
+      key: "cover",
+      label: "Cover art",
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 1,
+      hint: "Show the track's embedded cover art inside the circle (falls back to a plain fill)",
+    },
   ],
   advanced: [
     {
@@ -169,6 +178,24 @@ export const bassCircle: PresetDef = {
       hint: "How hard beats brighten the particles",
     },
     {
+      key: "coverMix",
+      label: "Cover blend",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.9,
+      hint: "How strongly the cover art replaces the circle's fill",
+    },
+    {
+      key: "coverBright",
+      label: "Cover brightness",
+      min: 0.1,
+      max: 2,
+      step: 0.05,
+      default: 0.85,
+      hint: "Brightness of the cover art inside the circle",
+    },
+    {
       key: "vignette",
       label: "Vignette",
       min: 0,
@@ -240,9 +267,16 @@ fn preset(uv: vec2f) -> vec4f {
   col += hsl2rgb(barHue, 0.95, 0.6) * exp(-max(r - (barInner + barLen), 0.0) * 22.0)
        * v * P_barGlow() * step(barInner + barLen, r);
 
-  // --- Centre circle: cool dark fill + a bright glowing rim (over particles) ---
+  // --- Centre circle: cover art (or a cool dark fill) + a bright glowing rim ---
   let inner = smoothstep(circleR, circleR - 0.02, r);
-  col = mix(col, hsl2rgb(P_hue(), 0.5, 0.04 + u.drive * 0.07), inner);
+  var fill = hsl2rgb(P_hue(), 0.5, 0.04 + u.drive * 0.07);
+  if (P_cover() > 0.5 && hasCover()) {
+    // Map the disc to the image (0..1), so the art fills the circle.
+    let cuv = vec2f(c.x / circleR, -c.y / circleR) * 0.5 + vec2f(0.5);
+    let art = coverSample(cuv).rgb * P_coverBright();
+    fill = mix(fill, art, P_coverMix());
+  }
+  col = mix(col, fill, inner);
   let rim = exp(-abs(r - circleR) * 90.0);
   col += hsl2rgb(P_hue(), 0.9, 0.65) * rim * P_rimBright() * (0.7 + u.drive * 0.6 + u.driveBeat * 0.5);
   col += hsl2rgb(P_hue() + 20.0, 0.8, 0.5) * smoothstep(circleR, 0.0, r) * (0.08 + u.drive * 0.3) * inner;

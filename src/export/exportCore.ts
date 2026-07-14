@@ -50,6 +50,8 @@ export interface ExportJob {
   post?: PostSettings;
   /** Global motion masters (rotation/pulse/detail) — matches the live view. */
   motion?: MotionSettings;
+  /** Track cover art as a data URL, for presets that sample it (coverSample()). */
+  coverArt?: string;
   /** Timeline (already shifted for segments) — scenes + automation. */
   timeline?: Timeline;
   /** Per-preset param overrides — scene switches resolve their own base. */
@@ -220,6 +222,16 @@ export async function runExportJob(
     renderer.setSmoothSpectrum(job.smoothSpectrum === true);
     if (job.post) renderer.setPost(job.post);
     if (job.motion) renderer.setMotion(job.motion);
+    // Cover art for presets that sample it — decoded here so the export matches
+    // the live view. A missing/broken cover just leaves hasCover() false.
+    if (job.coverArt) {
+      try {
+        const blob = await (await fetch(job.coverArt)).blob();
+        renderer.setCoverArt(await createImageBitmap(blob));
+      } catch {
+        // no cover — presets fall back to their plain fill
+      }
+    }
     renderer.resize(job.width, job.height, 1);
 
     // Loop mode: crossfade the tail into the head so sample/frame N-1

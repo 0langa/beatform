@@ -44,6 +44,8 @@ export interface ExportOptions {
   post?: PostSettings;
   /** Global motion masters (rotation/pulse/detail). */
   motion?: MotionSettings;
+  /** Track cover art (data URL) for presets that sample it. */
+  coverArt?: string;
   /** Timeline in TRACK time; segment exports shift it automatically. */
   timeline?: Timeline;
   /** Per-preset param overrides for scene base resolution. */
@@ -154,6 +156,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     smoothSpectrum: o.smoothSpectrum,
     post: o.post,
     motion: o.motion,
+    coverArt: o.coverArt,
     paramsByPreset: o.paramsByPreset,
     modsByPreset: o.modsByPreset,
     timeline:

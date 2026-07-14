@@ -42,6 +42,10 @@ export class Canvas2DRenderer implements Renderer {
     // Fallback renderer approximates spectrum-bars only; motion masters no-op.
   }
 
+  setCoverArt(): void {
+    // Fallback renderer has no preset that samples cover art.
+  }
+
   setTransitionPreset(_preset: PresetDef | null): void {
     // Fallback renderer hard-cuts between scenes.
   }

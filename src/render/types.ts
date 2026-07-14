@@ -176,6 +176,11 @@ export interface Renderer {
    * rasterized by the host at output resolution; renderers only display it.
    */
   setOverlay(source: ImageBitmap | null): void;
+  /**
+   * The track's embedded cover art, for presets that sample it (coverSample()).
+   * null clears it, making hasCover() false.
+   */
+  setCoverArt(source: ImageBitmap | null): void;
   /** Global smooth-spectrum toggle: spline-connected bins, no hard corners. */
   setSmoothSpectrum(v: boolean): void;
   /** Global motion masters (rotation / pulse / detail), applied across modes. */

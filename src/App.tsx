@@ -251,6 +251,7 @@ export default function App() {
         smoothSpectrum: s.smoothSpectrum,
         post: opts.post ?? s.post,
         motion: s.motion,
+        coverArt: s.coverArt ?? undefined,
         timeline: s.timeline.enabled ? s.timeline : undefined,
         paramsByPreset: s.paramsByPreset,
         modsByPreset: s.modsByPreset,

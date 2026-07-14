@@ -198,8 +198,17 @@ struct Uniforms {
 @group(0) @binding(5) var overlayTex: texture_2d<f32>;
 @group(0) @binding(6) var overlaySmp: sampler;
 @group(0) @binding(7) var feedbackTex: texture_2d<f32>;
+@group(0) @binding(8) var coverTex: texture_2d<f32>;
 
 fn param(i: u32) -> f32 { return params[i]; }
+
+/** The track's embedded cover art. uv is 0..1 across the image. hasCover() is
+ * false when the track has none (a 1x1 stand-in is bound), so presets can fall
+ * back to a plain fill. */
+fn coverSample(uv: vec2f) -> vec4f {
+  return textureSampleLevel(coverTex, overlaySmp, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0);
+}
+fn hasCover() -> bool { return textureDimensions(coverTex).x > 1u; }
 
 /** Previous frame's raw visual (HDR), for trails/feedback. A preset that
  * calls this opts into the feedback path: its output is captured and fed back
@@ -830,6 +839,9 @@ export class WebGPURenderer implements Renderer {
   private emptyOverlay: GPUTexture;
   private overlayTexture: GPUTexture | null = null;
   private overlaySampler: GPUSampler;
+  /** 1x1 stand-in bound when the track has no cover art (hasCover() = false). */
+  private emptyCover: GPUTexture;
+  private coverTexture: GPUTexture | null = null;
 
   // Crossfade machinery: a second compiled preset + params, two offscreen
   // targets and a static blend pass (the render graph's first citizen).
@@ -983,6 +995,17 @@ export class WebGPURenderer implements Renderer {
       { bytesPerRow: 4 },
       [1, 1],
     );
+    this.emptyCover = device.createTexture({
+      size: [1, 1],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    device.queue.writeTexture(
+      { texture: this.emptyCover },
+      new Uint8Array([0, 0, 0, 0]),
+      { bytesPerRow: 4 },
+      [1, 1],
+    );
     this.overlaySampler = device.createSampler({
       magFilter: "linear",
       minFilter: "linear",
@@ -1048,6 +1071,7 @@ export class WebGPURenderer implements Renderer {
         { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
         { binding: 6, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
         { binding: 7, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 8, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
       ],
     });
     this.pipelineLayout = device.createPipelineLayout({
@@ -1261,6 +1285,7 @@ export class WebGPURenderer implements Renderer {
           { binding: 5, resource: (this.overlayTexture ?? this.emptyOverlay).createView() },
           { binding: 6, resource: this.overlaySampler },
           { binding: 7, resource: this.visTex!.createView() },
+          { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
         ],
       });
     }
@@ -1618,6 +1643,32 @@ export class WebGPURenderer implements Renderer {
     this.compositeBind = null; // composite pass also samples the overlay
   }
 
+  setCoverArt(source: ImageBitmap | null): void {
+    this.coverTexture?.destroy();
+    this.coverTexture = null;
+    if (source) {
+      this.coverTexture = this.device.createTexture({
+        size: [source.width, source.height],
+        format: "rgba8unorm",
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.device.queue.copyExternalImageToTexture(
+        { source },
+        { texture: this.coverTexture, premultipliedAlpha: true },
+        [source.width, source.height],
+      );
+      // The copy snapshots the bitmap synchronously; release it (same reason as
+      // setOverlay — the host decodes a fresh one on every track change).
+      source.close();
+    }
+    this.bindGroup = null;
+    this.transitionBindGroup = null;
+    this.compositeBind = null;
+  }
+
   /** Resolves when all submitted GPU work has executed (export frame sync). */
   gpuDone(): Promise<undefined> {
     return this.device.queue.onSubmittedWorkDone();
@@ -1867,6 +1918,7 @@ export class WebGPURenderer implements Renderer {
           // Feedback is paused during crossfades: bind the empty history so a
           // transition preset's feedbackSample() reads black.
           { binding: 7, resource: this.emptyFeedback.createView() },
+          { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
         ],
       });
     }
@@ -1882,6 +1934,8 @@ export class WebGPURenderer implements Renderer {
     this.peaksBuf?.destroy();
     this.overlayTexture?.destroy();
     this.emptyOverlay.destroy();
+    this.coverTexture?.destroy();
+    this.emptyCover.destroy();
     this.transitionParamsBuf.destroy();
     this.blendUniform.destroy();
     this.fadeTexA?.destroy();
@@ -1943,6 +1997,7 @@ export class WebGPURenderer implements Renderer {
               : this.emptyFeedback
             ).createView(),
           },
+          { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
         ],
       });
     }
