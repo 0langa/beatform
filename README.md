@@ -68,6 +68,12 @@ Free and open source. Built to become a professional-grade tool for producers an
   Design: [docs/EXPORT-DESIGN.md](docs/EXPORT-DESIGN.md)
 - **PNG sequence export** with alpha — numbered frames into a folder, keeping
   transparency for compositing in Premiere/Resolve/After Effects
+- **Batch render**: drop in 20 tracks, get 20 titled videos — one per track,
+  unattended. Each title comes from that file's own **ID3 tags**, so there is no
+  spreadsheet and no retyping; anything untagged falls back to the filename and
+  is flagged so you can fix it in place. Everything else (preset, layers,
+  timeline, post, loudness) is whatever you have set up. One job at a time, and
+  a file that fails costs that one video rather than the night
 - **Loudness normalization** on export: match the audio to −14 LUFS (streaming),
   −16 (podcast) or −23 (EBU R128), measured per ITU-R BS.1770-4 and held under a
   −1 dBTP ceiling by a look-ahead true-peak limiter, so nothing clips when a
