@@ -13,6 +13,7 @@ import { particleFlow } from "./particleFlow";
 import { spectrumScape } from "./spectrumScape";
 import { aurora } from "./aurora";
 import { synthwave } from "./synthwave";
+import { bassCircle } from "./bassCircle";
 import { builder } from "./builder";
 
 /** Registry: adding a preset = write the file, add it here. */
@@ -31,6 +32,7 @@ export const presets: PresetDef[] = [
   spectrumScape,
   aurora,
   synthwave,
+  bassCircle,
   builder,
 ];
 
