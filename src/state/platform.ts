@@ -53,6 +53,14 @@ export async function saveBinaryFile(
 
 /** Tauri only: choose a save destination without writing yet (pick before a
  * long render). Returns the path, null on cancel. */
+/** Tauri only: choose an existing folder (PNG sequence destination). Returns
+ * the path, null on cancel. */
+export async function pickFolder(title: string): Promise<string | null> {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const path = await open({ multiple: false, directory: true, title });
+  return typeof path === "string" ? path : null;
+}
+
 export async function pickSavePath(
   defaultName: string,
   filters: FileFilter[],

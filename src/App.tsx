@@ -582,6 +582,35 @@ export default function App() {
               </div>
             </div>
 
+            <div className="field">
+              <span>Format</span>
+              <div className="segmented">
+                <button
+                  className={`segment ${exportSettings.format !== "png" ? "active" : ""}`}
+                  disabled={!!exporting}
+                  title="One .mp4 file: H.264 video + audio"
+                  onClick={() => store().setExportSettings({ format: "mp4" })}
+                >
+                  MP4
+                </button>
+                <button
+                  className={`segment ${exportSettings.format === "png" ? "active" : ""}`}
+                  disabled={!!exporting}
+                  title="A folder of numbered PNG frames — keeps transparency (set Background to Transparent). No audio; for editors."
+                  onClick={() => store().setExportSettings({ format: "png" })}
+                >
+                  PNG frames
+                </button>
+              </div>
+            </div>
+
+            {exportSettings.format === "png" && (
+              <p className="section-hint">
+                Writes numbered PNG frames into a folder you pick — no audio track. Set Background
+                to <strong>Transparent</strong> to keep alpha for compositing.
+              </p>
+            )}
+
             {!canvasMode && (
               <label className="field">
                 <span>Resolution</span>
@@ -652,31 +681,33 @@ export default function App() {
               </>
             )}
 
-            <div className="field">
-              <span>Bitrate</span>
-              <div className="bitrate-controls">
-                <label className="inline">
-                  <input
-                    type="checkbox"
-                    checked={exportSettings.autoRate}
-                    disabled={!!exporting}
-                    onChange={(e) => store().setExportSettings({ autoRate: e.target.checked })}
-                  />
-                  Auto
-                </label>
-                {!exportSettings.autoRate && (
-                  <Slider
-                    min={2}
-                    max={60}
-                    step={1}
-                    value={exportSettings.manualMbps}
-                    disabled={!!exporting}
-                    onChange={(v) => store().setExportSettings({ manualMbps: v })}
-                  />
-                )}
-                <span className="row-value">{effectiveMbps} Mbps</span>
+            {exportSettings.format !== "png" && (
+              <div className="field">
+                <span>Bitrate</span>
+                <div className="bitrate-controls">
+                  <label className="inline">
+                    <input
+                      type="checkbox"
+                      checked={exportSettings.autoRate}
+                      disabled={!!exporting}
+                      onChange={(e) => store().setExportSettings({ autoRate: e.target.checked })}
+                    />
+                    Auto
+                  </label>
+                  {!exportSettings.autoRate && (
+                    <Slider
+                      min={2}
+                      max={60}
+                      step={1}
+                      value={exportSettings.manualMbps}
+                      disabled={!!exporting}
+                      onChange={(v) => store().setExportSettings({ manualMbps: v })}
+                    />
+                  )}
+                  <span className="row-value">{effectiveMbps} Mbps</span>
+                </div>
               </div>
-            </div>
+            )}
 
             <p className="section-hint">
               Renders the current preset, parameters and background — what you see live is what you

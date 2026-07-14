@@ -21,6 +21,7 @@ import {
   isTauri,
   openImageFile,
   openTextFile,
+  pickFolder,
   pickSavePath,
   saveTextFile,
   writeAutosave,
@@ -118,6 +119,11 @@ export interface ExportSettings {
   mode: "video" | "canvas";
   canvasStart: number;
   canvasDuration: number;
+  /**
+   * "mp4" = H.264 + audio in one file. "png" = PNG image sequence into a
+   * folder, keeping alpha when the background is Transparent (for editors).
+   */
+  format: "mp4" | "png";
 }
 
 /**
@@ -400,6 +406,7 @@ export const useVizStore = create<VizState>((set, get) => {
       mode: "video" as const,
       canvasStart: 0,
       canvasDuration: 6,
+      format: "mp4" as const,
     },
     exporting: null,
     exportError: null,
@@ -692,13 +699,26 @@ export const useVizStore = create<VizState>((set, get) => {
         .replace(/\.[a-z0-9]+$/i, "")
         .replace(/[^\w\- ]+/g, "")
         .trim();
-      const fileName = `${trackName || "visualization"}${canvasMode ? "-canvas" : ""}.mp4`;
+      const baseName = `${trackName || "visualization"}${canvasMode ? "-canvas" : ""}`;
+      const fileName = `${baseName}.mp4`;
+      const pngMode = settings.format === "png";
       // Desktop: pick the destination BEFORE rendering — a cancelled dialog
       // after a long 4K render would throw the work away.
       let savePath: string | null = null;
+      let pngDir: string | null = null;
       if (isTauri()) {
-        savePath = await pickSavePath(fileName, [{ name: "MP4 video", extensions: ["mp4"] }]);
-        if (!savePath) return;
+        if (pngMode) {
+          const dir = await pickFolder("Choose a folder for the PNG sequence");
+          if (!dir) return;
+          // Keep each run in its own subfolder so sequences never interleave.
+          pngDir = `${dir}/${baseName}_frames`;
+        } else {
+          savePath = await pickSavePath(fileName, [{ name: "MP4 video", extensions: ["mp4"] }]);
+          if (!savePath) return;
+        }
+      } else if (pngMode) {
+        set({ exportError: "PNG sequence export needs the desktop app (it writes a folder)" });
+        return;
       }
       const ac = new AbortController();
       exportAbort = ac;
@@ -742,6 +762,7 @@ export const useVizStore = create<VizState>((set, get) => {
           // Desktop: stream straight to the picked file (flat memory);
           // browser dev falls back to an in-memory blob + download.
           streamToPath: savePath ?? undefined,
+          pngDir: pngDir ?? undefined,
           signal: ac.signal,
           onProgress: (done, total) => {
             const elapsed = (performance.now() - exportStartedAt) / 1000;
