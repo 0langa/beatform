@@ -12,6 +12,7 @@ import { runExportJob, type ExportJob } from "./exportCore";
  *  in:  { type: "abort" }                   — cancel
  *  out: { type: "progress", done, total }
  *  out: { type: "chunk", data, position }   — stream mode file chunks
+ *  out: { type: "frame", data, index }      — png mode: one encoded PNG/frame
  *  out: { type: "done", result }            — buffer transferred out if present
  *  out: { type: "error", message, name }
  */
@@ -41,6 +42,10 @@ async function run(job: ExportJob): Promise<void> {
         // Copy out of the muxer's internal chunk buffer before transferring
         const copy = new Uint8Array(data);
         self.postMessage({ type: "chunk", data: copy, position }, [copy.buffer]);
+      },
+      onFrame: (data, index) => {
+        // Already a fresh array per frame — transfer it straight out.
+        self.postMessage({ type: "frame", data, index }, [data.buffer]);
       },
     });
     if (result.buffer) {

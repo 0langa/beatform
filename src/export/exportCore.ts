@@ -64,7 +64,13 @@ export interface ExportJob {
    * point is invisible — Spotify Canvas mode. 0/undefined = off.
    */
   loopCrossfadeSec?: number;
-  mode: "buffer" | "stream";
+  /**
+   * "buffer" = in-memory fastStart MP4, "stream" = fragmented MP4 to disk,
+   * "png" = PNG image sequence (one file per frame, alpha preserved when the
+   * background is transparent). PNG mode encodes no audio and no video codec —
+   * it emits frames through hooks.onFrame.
+   */
+  mode: "buffer" | "stream" | "png";
 }
 
 export interface ExportCoreResult {
@@ -79,6 +85,8 @@ export interface ExportCoreHooks {
   onProgress?: (framesDone: number, framesTotal: number) => void;
   /** "stream" mode: sequential-position file chunks (fragmented MP4). */
   onChunk?: (data: Uint8Array, position: number) => void;
+  /** "png" mode: one encoded PNG per frame, in order (index is 0-based). */
+  onFrame?: (data: Uint8Array, index: number) => void;
   signal?: AbortSignal;
 }
 
@@ -102,6 +110,8 @@ export async function runExportJob(
   const pcm = job.pcm;
   const channels = Math.min(2, pcm.channels.length) as 1 | 2;
   const sampleRate = pcm.sampleRate;
+  // PNG sequence: no muxer, no codecs, no audio — just rendered frames out.
+  const isPng = job.mode === "png";
 
   // --- Audio codec probe: AAC preferred, Opus fallback
   const aacConfig: AudioEncoderConfig = {
@@ -117,48 +127,11 @@ export async function runExportJob(
     bitrate: 192_000,
   };
   let audioCodec: "aac" | "opus" = "aac";
-  try {
-    if (!(await AudioEncoder.isConfigSupported(aacConfig)).supported) {
-      audioCodec = "opus";
-    }
-  } catch {
-    audioCodec = "opus";
-  }
-  if (audioCodec === "opus" && !(await AudioEncoder.isConfigSupported(opusConfig)).supported) {
-    throw new Error("No supported audio encoder (tried AAC, Opus)");
-  }
-
-  const videoConfig: VideoEncoderConfig = {
-    codec: h264Codec(job.width, job.height, job.fps),
-    width: job.width,
-    height: job.height,
-    bitrate: job.bitrate,
-    framerate: job.fps,
-    latencyMode: "quality",
-    avc: { format: "avc" },
-  };
-  const vSupport = await VideoEncoder.isConfigSupported(videoConfig);
-  if (!vSupport.supported) {
-    throw new Error(`H.264 encode not supported for ${job.width}x${job.height}@${job.fps}`);
-  }
-
   let bytesOut = 0;
-  const bufferTarget = job.mode === "buffer" ? new ArrayBufferTarget() : null;
-  const muxer = new Muxer({
-    target:
-      bufferTarget ??
-      new StreamTarget({
-        chunked: true, // batch tiny writes into ~16 MB chunks
-        onData: (data, position) => {
-          bytesOut = Math.max(bytesOut, position + data.length);
-          hooks.onChunk?.(data, position);
-        },
-      }),
-    video: { codec: "avc", width: job.width, height: job.height },
-    audio: { codec: audioCodec, sampleRate, numberOfChannels: channels },
-    // Streaming writes fragmented MP4: strictly forward, memory stays flat.
-    fastStart: bufferTarget ? "in-memory" : "fragmented",
-  });
+  let bufferTarget: ArrayBufferTarget | null = null;
+  let muxer: Muxer<ArrayBufferTarget | StreamTarget> | null = null;
+  let videoEncoder: VideoEncoder | null = null;
+  let audioEncoder: AudioEncoder | null = null;
 
   // Encoder callbacks run async — capture errors, surface them in the loop.
   // errorWaiters lets a parked backpressure wait bail immediately when an
@@ -170,16 +143,61 @@ export async function runExportJob(
     encoderError = e;
     for (const w of errorWaiters) w(e);
   };
-  const videoEncoder = new VideoEncoder({
-    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-    error: onEncoderError,
-  });
-  videoEncoder.configure(videoConfig);
-  const audioEncoder = new AudioEncoder({
-    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
-    error: onEncoderError,
-  });
-  audioEncoder.configure(audioCodec === "aac" ? aacConfig : opusConfig);
+
+  if (!isPng) {
+    try {
+      if (!(await AudioEncoder.isConfigSupported(aacConfig)).supported) {
+        audioCodec = "opus";
+      }
+    } catch {
+      audioCodec = "opus";
+    }
+    if (audioCodec === "opus" && !(await AudioEncoder.isConfigSupported(opusConfig)).supported) {
+      throw new Error("No supported audio encoder (tried AAC, Opus)");
+    }
+
+    const videoConfig: VideoEncoderConfig = {
+      codec: h264Codec(job.width, job.height, job.fps),
+      width: job.width,
+      height: job.height,
+      bitrate: job.bitrate,
+      framerate: job.fps,
+      latencyMode: "quality",
+      avc: { format: "avc" },
+    };
+    const vSupport = await VideoEncoder.isConfigSupported(videoConfig);
+    if (!vSupport.supported) {
+      throw new Error(`H.264 encode not supported for ${job.width}x${job.height}@${job.fps}`);
+    }
+
+    bufferTarget = job.mode === "buffer" ? new ArrayBufferTarget() : null;
+    muxer = new Muxer({
+      target:
+        bufferTarget ??
+        new StreamTarget({
+          chunked: true, // batch tiny writes into ~16 MB chunks
+          onData: (data, position) => {
+            bytesOut = Math.max(bytesOut, position + data.length);
+            hooks.onChunk?.(data, position);
+          },
+        }),
+      video: { codec: "avc", width: job.width, height: job.height },
+      audio: { codec: audioCodec, sampleRate, numberOfChannels: channels },
+      // Streaming writes fragmented MP4: strictly forward, memory stays flat.
+      fastStart: bufferTarget ? "in-memory" : "fragmented",
+    });
+
+    videoEncoder = new VideoEncoder({
+      output: (chunk, meta) => muxer!.addVideoChunk(chunk, meta),
+      error: onEncoderError,
+    });
+    videoEncoder.configure(videoConfig);
+    audioEncoder = new AudioEncoder({
+      output: (chunk, meta) => muxer!.addAudioChunk(chunk, meta),
+      error: onEncoderError,
+    });
+    audioEncoder.configure(audioCodec === "aac" ? aacConfig : opusConfig);
+  }
 
   // Backpressure wait that cannot deadlock: settles on drain, encoder error,
   // or user abort — whichever comes first — and always removes its listeners.
@@ -249,10 +267,11 @@ export async function runExportJob(
       }
     }
 
-    // --- Audio lane: feed the whole buffer in planar chunks
+    // --- Audio lane: feed the whole buffer in planar chunks (MP4 only — a PNG
+    // sequence carries no audio; the user keeps the original track).
     const CHUNK = 16384;
     const planar = new Float32Array(CHUNK * channels);
-    for (let pos = 0; pos < pcm.length; pos += CHUNK) {
+    for (let pos = 0; audioEncoder && pos < pcm.length; pos += CHUNK) {
       abort();
       const frames = Math.min(CHUNK, pcm.length - pos);
       for (let ch = 0; ch < channels; ch++) {
@@ -345,25 +364,36 @@ export async function runExportJob(
         }
       }
 
-      const frame = new VideoFrame(source, {
-        timestamp: Math.round((n * 1e6) / job.fps),
-        duration: Math.round(1e6 / job.fps),
-      });
-      videoEncoder.encode(frame, { keyFrame: n % (job.fps * 2) === 0 });
-      frame.close();
+      if (isPng) {
+        // PNG sequence: snapshot the canvas straight to a file. Alpha survives
+        // when the background is transparent (the context is premultiplied).
+        const blob = await source.convertToBlob({ type: "image/png" });
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        bytesOut += bytes.length;
+        hooks.onFrame?.(bytes, n);
+      } else {
+        const frame = new VideoFrame(source, {
+          timestamp: Math.round((n * 1e6) / job.fps),
+          duration: Math.round(1e6 / job.fps),
+        });
+        videoEncoder!.encode(frame, { keyFrame: n % (job.fps * 2) === 0 });
+        frame.close();
+      }
 
       // Backpressure: don't let the encode queue grow unbounded
-      if (videoEncoder.encodeQueueSize > QUEUE_MAX) await waitForDrain(videoEncoder);
+      if (videoEncoder && videoEncoder.encodeQueueSize > QUEUE_MAX) {
+        await waitForDrain(videoEncoder);
+      }
       // No timer-based yield here: gpuDone() above already yields the event
       // loop every frame (timers are throttled to 1s in hidden tabs and
       // would stall exports; GPU-completion promises are not).
       if (n % 10 === 0) hooks.onProgress?.(n, total);
     }
 
-    await videoEncoder.flush();
-    await audioEncoder.flush();
+    if (videoEncoder) await videoEncoder.flush();
+    if (audioEncoder) await audioEncoder.flush();
     if (encoderError) throw encoderError;
-    muxer.finalize();
+    muxer?.finalize();
     hooks.onProgress?.(analyzer.frameCount, analyzer.frameCount);
 
     if (bufferTarget) {
@@ -377,8 +407,8 @@ export async function runExportJob(
     return { bytes: bytesOut, seconds: pcm.duration, audioCodec };
   } finally {
     try {
-      if (videoEncoder.state !== "closed") videoEncoder.close();
-      if (audioEncoder.state !== "closed") audioEncoder.close();
+      if (videoEncoder && videoEncoder.state !== "closed") videoEncoder.close();
+      if (audioEncoder && audioEncoder.state !== "closed") audioEncoder.close();
     } catch {
       // already closed
     }

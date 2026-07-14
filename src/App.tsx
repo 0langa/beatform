@@ -213,6 +213,8 @@ export default function App() {
         withOverlay: boolean;
         canvasLoop: { start: number; duration: number };
         post: import("./render/types").PostSettings;
+        /** Render a PNG sequence instead of MP4; frames are counted, not written. */
+        png: boolean;
       }> = {},
     ) => {
       const buf = getEngine().audioBuffer;
@@ -234,7 +236,22 @@ export default function App() {
           (await rasterizeOverlay(s.overlayLayers, s.assets, w, h, s.trackMeta)) ?? undefined;
       }
       const t0 = performance.now();
+      // PNG probe: collect frame sizes instead of writing files (no desktop fs
+      // in a browser); lets the harness verify the sequence path end-to-end.
+      const pngFrames: number[] = [];
       const result = await exportVideo(buf, {
+        onPngFrame: opts.png
+          ? (data, index) => {
+              pngFrames.push(data.length);
+              // Keep frame 0 around so tooling can decode + inspect it.
+              if (index === 0) {
+                (window as unknown as { __lastPngFrame: Blob }).__lastPngFrame = new Blob(
+                  [data.slice()],
+                  { type: "image/png" },
+                );
+              }
+            }
+          : undefined,
         width: w,
         height: h,
         fps: opts.fps ?? 30,
@@ -261,6 +278,7 @@ export default function App() {
         ms: Math.round(performance.now() - t0),
         audioCodec: result.audioCodec,
         seconds: result.seconds,
+        ...(opts.png ? { pngFrames: pngFrames.length, pngBytes: pngFrames } : {}),
       };
       (window as unknown as { __lastExport: unknown }).__lastExport = info;
       (window as unknown as { __lastExportBlob: Blob | undefined }).__lastExportBlob = result.blob;

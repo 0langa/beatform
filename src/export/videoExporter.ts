@@ -54,6 +54,17 @@ export interface ExportOptions {
   modsByPreset?: Record<string, ModRoute[]>;
   /** Desktop: stream the file here instead of building a Blob. */
   streamToPath?: string;
+  /**
+   * Desktop: write a PNG image sequence into this folder instead of an MP4
+   * (frame_00001.png ...). Keeps alpha when the background is transparent —
+   * the editorial hand-off. No audio is written; keep the original track.
+   */
+  pngDir?: string;
+  /**
+   * Receive each encoded PNG instead of (or as well as) writing to pngDir —
+   * for callers without desktop fs access. Setting either selects PNG mode.
+   */
+  onPngFrame?: (data: Uint8Array, index: number) => void;
   onProgress?: (framesDone: number, framesTotal: number) => void;
   signal?: AbortSignal;
 }
@@ -71,6 +82,49 @@ interface FileWriter {
   close(): Promise<void>;
   /** Best-effort cleanup of a partial file after abort/failure. */
   discard(): Promise<void>;
+}
+
+/**
+ * Writes a PNG image sequence into a folder, one file per frame. Writes are
+ * serialized through a promise chain (same shape as the MP4 writer) so frames
+ * land in order and a failure surfaces on close().
+ */
+interface SequenceWriter {
+  write(data: Uint8Array, index: number): void;
+  close(): Promise<void>;
+  discard(): Promise<void>;
+}
+
+async function createPngSequenceWriter(dir: string): Promise<SequenceWriter> {
+  const { writeFile, mkdir } = await import("@tauri-apps/plugin-fs");
+  await mkdir(dir, { recursive: true }).catch(() => undefined);
+  let queue: Promise<void> = Promise.resolve();
+  let failed: Error | null = null;
+  const written: string[] = [];
+  return {
+    write(data, index) {
+      queue = queue.then(async () => {
+        if (failed) return;
+        const name = `frame_${String(index + 1).padStart(5, "0")}.png`;
+        const path = `${dir}/${name}`;
+        try {
+          await writeFile(path, data);
+          written.push(path);
+        } catch (e) {
+          failed = e as Error;
+        }
+      });
+    },
+    async close() {
+      await queue;
+      if (failed) throw failed;
+    },
+    async discard() {
+      await queue.catch(() => undefined);
+      const { remove } = await import("@tauri-apps/plugin-fs");
+      for (const p of written) await remove(p).catch(() => undefined);
+    },
+  };
 }
 
 async function createTauriWriter(path: string): Promise<FileWriter> {
@@ -124,6 +178,7 @@ function toResult(core: ExportCoreResult): ExportResult {
 }
 
 export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise<ExportResult> {
+  const isPng = !!(o.pngDir || o.onPngFrame);
   const full = pcmFromAudioBuffer(audio);
   // Segment slice (Canvas loop mode). Always COPY: transferring the engine's
   // live channel data to the worker would detach it. buildPcm() is called
@@ -175,32 +230,42 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
       o.beatGrid && o.segment
         ? { ...o.beatGrid, beatTimes: o.beatGrid.beatTimes.map((t) => t - o.segment!.start) }
         : o.beatGrid,
-    mode: o.streamToPath ? "stream" : "buffer",
+    mode: isPng ? "png" : o.streamToPath ? "stream" : "buffer",
   });
 
-  const writer = o.streamToPath ? await createTauriWriter(o.streamToPath) : null;
+  const writer = o.streamToPath && !isPng ? await createTauriWriter(o.streamToPath) : null;
+  const pngWriter = o.pngDir ? await createPngSequenceWriter(o.pngDir) : null;
+  // Frames go to the folder writer and/or the caller's sink.
+  const onFrame = isPng
+    ? (data: Uint8Array, index: number) => {
+        pngWriter?.write(data, index);
+        o.onPngFrame?.(data, index);
+      }
+    : undefined;
   try {
     let result: ExportCoreResult;
     if (typeof Worker === "undefined") {
-      result = await runInline(buildJob(buildPcm()), o, writer);
+      result = await runInline(buildJob(buildPcm()), o, writer, onFrame);
     } else {
       try {
-        result = await runInWorker(buildJob(buildPcm()), o, writer);
+        result = await runInWorker(buildJob(buildPcm()), o, writer, onFrame);
       } catch (e) {
         // A worker may lack WebGPU where the main thread has it (older
         // WebView2). The worker run transferred (detached) its job's PCM, so
         // the inline fallback gets a FRESH job with fresh copies.
         if ((e as Error).message.startsWith("__fallback__")) {
-          result = await runInline(buildJob(buildPcm()), o, writer);
+          result = await runInline(buildJob(buildPcm()), o, writer, onFrame);
         } else {
           throw e;
         }
       }
     }
     await writer?.close();
+    await pngWriter?.close();
     return toResult(result);
   } catch (e) {
     await writer?.discard();
+    await pngWriter?.discard();
     throw e;
   }
 }
@@ -209,11 +274,13 @@ async function runInline(
   job: ExportJob,
   o: ExportOptions,
   writer: FileWriter | null,
+  onFrame: ((data: Uint8Array, index: number) => void) | undefined,
 ): Promise<ExportCoreResult> {
   return runExportJob(job, {
     signal: o.signal,
     onProgress: o.onProgress,
     onChunk: writer ? (data, position) => writer.write(data, position) : undefined,
+    onFrame,
   });
 }
 
@@ -221,6 +288,7 @@ function runInWorker(
   job: ExportJob,
   o: ExportOptions,
   writer: FileWriter | null,
+  onFrame: ((data: Uint8Array, index: number) => void) | undefined,
 ): Promise<ExportCoreResult> {
   const worker = new Worker(new URL("./exportWorker.ts", import.meta.url), {
     type: "module",
@@ -238,6 +306,7 @@ function runInWorker(
       e: MessageEvent<
         | { type: "progress"; done: number; total: number }
         | { type: "chunk"; data: Uint8Array; position: number }
+        | { type: "frame"; data: Uint8Array; index: number }
         | { type: "done"; result: ExportCoreResult }
         | { type: "error"; message: string; name: string }
       >,
@@ -249,6 +318,9 @@ function runInWorker(
           break;
         case "chunk":
           writer?.write(msg.data, msg.position);
+          break;
+        case "frame":
+          onFrame?.(msg.data, msg.index);
           break;
         case "done":
           resolve(msg.result);
