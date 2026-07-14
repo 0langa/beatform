@@ -2,6 +2,7 @@ import type { AudioFeatures } from "../audio/types";
 import { allParams, DEFAULT_POST } from "./types";
 import type {
   BgSettings,
+  Mesh3DSpec,
   ParamValues,
   ParticleSpec,
   PostSettings,
@@ -571,6 +572,220 @@ fn fs_draw(in: VOut) -> @location(0) vec4f {
 }
 `;
 
+/** Mesh-3D uniform: mat4 viewProj (64) + 12 scalar lanes (48) = 112 bytes. */
+const MESH3D_UNIFORM_SIZE = 112;
+
+/**
+ * 3D pass: a depth-tested grid of instanced columns whose heights follow the
+ * spectrum, lit by one directional light and viewed through a perspective
+ * camera. Bar heights are read from the shared bins storage buffer in the
+ * vertex stage; the camera's viewProj is computed on the CPU from params so it
+ * is keyframeable. Draws into visTex (light-over-black) -> composite -> post.
+ */
+const MESH3D_WGSL = /* wgsl */ `
+struct M3U {
+  viewProj: mat4x4f,
+  grid: f32, spacing: f32, barWidth: f32, heightScale: f32,
+  hue: f32, hueRange: f32, light: f32, emissive: f32,
+  binCount: f32, time: f32, bass: f32, floorLevel: f32,
+}
+@group(0) @binding(0) var<uniform> m: M3U;
+@group(0) @binding(1) var<storage, read> bins: array<f32>;
+
+fn hsl2rgb(h: f32, s: f32, l: f32) -> vec3f {
+  let c = (1.0 - abs(2.0 * l - 1.0)) * s;
+  let hp = fract(h / 360.0) * 6.0;
+  let x = c * (1.0 - abs(hp % 2.0 - 1.0));
+  var rgb = vec3f(0.0);
+  if (hp < 1.0) { rgb = vec3f(c, x, 0.0); }
+  else if (hp < 2.0) { rgb = vec3f(x, c, 0.0); }
+  else if (hp < 3.0) { rgb = vec3f(0.0, c, x); }
+  else if (hp < 4.0) { rgb = vec3f(0.0, x, c); }
+  else if (hp < 5.0) { rgb = vec3f(x, 0.0, c); }
+  else { rgb = vec3f(c, 0.0, x); }
+  return rgb + vec3f(l - c * 0.5);
+}
+
+struct VOut {
+  @builtin(position) pos: vec4f,
+  @location(0) normal: vec3f,
+  @location(1) shade: vec3f,
+  @location(2) height: f32,
+}
+
+@vertex
+fn vs_mesh(
+  @location(0) inPos: vec3f,
+  @location(1) inNormal: vec3f,
+  @builtin(instance_index) ii: u32,
+) -> VOut {
+  let g = u32(m.grid);
+  let col = f32(ii % g);
+  let row = f32(ii / g);
+  let half = (m.grid - 1.0) * 0.5;
+  let dx = col - half;
+  let dz = row - half;
+  // Radial index into the spectrum -> concentric rings pulse with frequency.
+  let r = length(vec2f(dx, dz)) / max(m.grid * 0.5, 1.0);
+  let bi = u32(clamp(r, 0.0, 0.999) * m.binCount);
+  let h = bins[bi] * m.heightScale + 0.03;
+  // Axis-only scale + translate => axis-aligned normals pass through.
+  let world = vec3f(
+    inPos.x * m.barWidth + dx * m.spacing,
+    inPos.y * h + m.floorLevel,
+    inPos.z * m.barWidth + dz * m.spacing,
+  );
+  var out: VOut;
+  out.pos = m.viewProj * vec4f(world, 1.0);
+  out.normal = inNormal;
+  out.shade = hsl2rgb(m.hue + r * m.hueRange + h * 24.0, 0.85, 0.55);
+  out.height = h;
+  return out;
+}
+
+@fragment
+fn fs_mesh(in: VOut) -> @location(0) vec4f {
+  let n = normalize(in.normal);
+  let lightDir = normalize(vec3f(0.4, 0.9, 0.3));
+  let diff = max(dot(n, lightDir), 0.0);
+  let lit = in.shade * (0.25 + diff * m.light);
+  // Emissive rises with height so tall bars glow (bloom picks them up).
+  let emis = in.shade * clamp(in.height, 0.0, 3.0) * m.emissive;
+  return vec4f(lit + emis, 1.0);
+}
+`;
+
+/** 36-vertex unit column (x,z in -0.5..0.5, y in 0..1), pos + normal, for
+ * instanced 3D bars. Culling is disabled so winding order doesn't matter. */
+function cubeColumnVerts(): Float32Array {
+  const faces: Array<{ n: [number, number, number]; q: Array<[number, number, number]> }> = [
+    {
+      n: [0, 1, 0],
+      q: [
+        [-0.5, 1, -0.5],
+        [0.5, 1, -0.5],
+        [0.5, 1, 0.5],
+        [-0.5, 1, 0.5],
+      ],
+    },
+    {
+      n: [0, -1, 0],
+      q: [
+        [-0.5, 0, 0.5],
+        [0.5, 0, 0.5],
+        [0.5, 0, -0.5],
+        [-0.5, 0, -0.5],
+      ],
+    },
+    {
+      n: [0, 0, 1],
+      q: [
+        [-0.5, 0, 0.5],
+        [-0.5, 1, 0.5],
+        [0.5, 1, 0.5],
+        [0.5, 0, 0.5],
+      ],
+    },
+    {
+      n: [0, 0, -1],
+      q: [
+        [0.5, 0, -0.5],
+        [0.5, 1, -0.5],
+        [-0.5, 1, -0.5],
+        [-0.5, 0, -0.5],
+      ],
+    },
+    {
+      n: [1, 0, 0],
+      q: [
+        [0.5, 0, 0.5],
+        [0.5, 1, 0.5],
+        [0.5, 1, -0.5],
+        [0.5, 0, -0.5],
+      ],
+    },
+    {
+      n: [-1, 0, 0],
+      q: [
+        [-0.5, 0, -0.5],
+        [-0.5, 1, -0.5],
+        [-0.5, 1, 0.5],
+        [-0.5, 0, 0.5],
+      ],
+    },
+  ];
+  const out: number[] = [];
+  for (const f of faces) {
+    const [a, b, c, d] = f.q;
+    for (const v of [a, b, c, a, c, d]) out.push(v[0], v[1], v[2], f.n[0], f.n[1], f.n[2]);
+  }
+  return new Float32Array(out);
+}
+
+// Column-major 4x4 helpers (WGSL mat4x4f is column-major; WebGPU depth is 0..1).
+function mat4Perspective(fovY: number, aspect: number, near: number, far: number): Float32Array {
+  const f = 1 / Math.tan(fovY / 2);
+  const nf = 1 / (near - far);
+  const m = new Float32Array(16);
+  m[0] = f / aspect;
+  m[5] = f;
+  m[10] = far * nf;
+  m[11] = -1;
+  m[14] = far * near * nf;
+  return m;
+}
+function mat4LookAt(
+  eye: [number, number, number],
+  center: [number, number, number],
+  up: [number, number, number],
+): Float32Array {
+  const sub = (a: number[], b: number[]) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const norm = (v: number[]) => {
+    const l = Math.hypot(v[0], v[1], v[2]) || 1;
+    return [v[0] / l, v[1] / l, v[2] / l];
+  };
+  const cross = (a: number[], b: number[]) => [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+  const dot = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const z = norm(sub(eye, center));
+  const x = norm(cross(up, z));
+  const y = cross(z, x);
+  const m = new Float32Array(16);
+  m[0] = x[0];
+  m[1] = y[0];
+  m[2] = z[0];
+  m[3] = 0;
+  m[4] = x[1];
+  m[5] = y[1];
+  m[6] = z[1];
+  m[7] = 0;
+  m[8] = x[2];
+  m[9] = y[2];
+  m[10] = z[2];
+  m[11] = 0;
+  m[12] = -dot(x, eye);
+  m[13] = -dot(y, eye);
+  m[14] = -dot(z, eye);
+  m[15] = 1;
+  return m;
+}
+function mat4Mul(a: Float32Array, b: Float32Array): Float32Array {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      o[c * 4 + r] =
+        a[r] * b[c * 4] +
+        a[4 + r] * b[c * 4 + 1] +
+        a[8 + r] * b[c * 4 + 2] +
+        a[12 + r] * b[c * 4 + 3];
+    }
+  }
+  return o;
+}
+
 /** A preset opts into the feedback/trails path by referencing the ABI helper. */
 function usesFeedback(preset: PresetDef): boolean {
   return preset.wgsl.includes("feedbackSample");
@@ -671,6 +886,19 @@ export class WebGPURenderer implements Renderer {
   private particleDrawBind: GPUBindGroup | null = null;
   private simStepsDone = 0;
   private particleInitPending = false;
+
+  // 3D pass: depth-tested instanced column grid through a perspective camera.
+  // Active only for presets with a `mesh3d` spec.
+  private mesh3dSpec: Mesh3DSpec | null = null;
+  private mesh3dUniform: GPUBuffer;
+  private mesh3dData = new ArrayBuffer(MESH3D_UNIFORM_SIZE);
+  private mesh3dF32 = new Float32Array(this.mesh3dData);
+  private cubeBuf: GPUBuffer;
+  private mesh3dPipeline: GPURenderPipeline | null = null;
+  private mesh3dLayout: GPUBindGroupLayout;
+  private mesh3dBind: GPUBindGroup | null = null;
+  private depthTex: GPUTexture | null = null;
+  private depthSize: [number, number] = [0, 0];
 
   private preset: PresetDef | null = null;
   private uniformData = new ArrayBuffer(UNIFORM_SIZE);
@@ -830,6 +1058,27 @@ export class WebGPURenderer implements Renderer {
           visibility: GPUShaderStage.VERTEX,
           buffer: { type: "read-only-storage" },
         },
+      ],
+    });
+    // 3D pass: camera/params uniform + a static cube column vertex buffer.
+    this.mesh3dUniform = device.createBuffer({
+      size: MESH3D_UNIFORM_SIZE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    const cube = cubeColumnVerts();
+    this.cubeBuf = device.createBuffer({
+      size: cube.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(this.cubeBuf, 0, cube);
+    this.mesh3dLayout = device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+          buffer: { type: "uniform" },
+        },
+        { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
       ],
     });
   }
@@ -1206,6 +1455,119 @@ export class WebGPURenderer implements Renderer {
     pass.end();
   }
 
+  private ensureMesh3dPipeline(): void {
+    if (this.mesh3dPipeline) return;
+    const module = this.device.createShaderModule({ code: MESH3D_WGSL });
+    this.mesh3dPipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.mesh3dLayout] }),
+      vertex: {
+        module,
+        entryPoint: "vs_mesh",
+        buffers: [
+          {
+            arrayStride: 24,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+            ],
+          },
+        ],
+      },
+      fragment: { module, entryPoint: "fs_mesh", targets: [{ format: SCENE_FORMAT }] },
+      primitive: { topology: "triangle-list", cullMode: "none" },
+      depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
+    });
+  }
+
+  private ensureDepth(w: number, h: number): void {
+    if (this.depthTex && this.depthSize[0] === w && this.depthSize[1] === h) return;
+    this.depthTex?.destroy();
+    this.depthTex = this.device.createTexture({
+      size: [w, h],
+      format: "depth24plus",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.depthSize = [w, h];
+  }
+
+  /** Draw the instanced 3D bar grid into visTex (depth-tested). */
+  private renderMesh3d(
+    encoder: GPUCommandEncoder,
+    time: number,
+    f: AudioFeatures,
+    params: ParamValues,
+  ): void {
+    this.ensureMesh3dPipeline();
+    const w = Math.max(1, this.canvas.width);
+    const h = Math.max(1, this.canvas.height);
+    this.ensureDepth(w, h);
+
+    const deg = Math.PI / 180;
+    const g = (k: string, d: number) => params[k] ?? d;
+    const yaw = (g("camYaw", 30) + time * g("camSpin", 12)) * deg;
+    const pitch = g("camPitch", 32) * deg;
+    const dist = g("camDist", 15);
+    const fov = g("fov", 50) * deg;
+    const targetY = g("targetY", 1);
+    const cp = Math.cos(pitch);
+    const eye: [number, number, number] = [
+      Math.sin(yaw) * cp * dist,
+      Math.sin(pitch) * dist + targetY,
+      Math.cos(yaw) * cp * dist,
+    ];
+    const proj = mat4Perspective(fov, w / h, 0.1, 100);
+    const view = mat4LookAt(eye, [0, targetY, 0], [0, 1, 0]);
+    const vp = mat4Mul(proj, view);
+
+    const F = this.mesh3dF32;
+    F.set(vp, 0);
+    F[16] = this.mesh3dSpec!.grid;
+    F[17] = g("spacing", 0.6);
+    F[18] = g("barWidth", 0.42);
+    F[19] = g("heightScale", 6);
+    F[20] = g("hue", 200);
+    F[21] = g("hueRange", 120);
+    F[22] = g("light", 0.9);
+    F[23] = g("emissive", 0.5);
+    F[24] = f.bins.length;
+    F[25] = time;
+    F[26] = f.bass;
+    F[27] = 0;
+    this.device.queue.writeBuffer(this.mesh3dUniform, 0, this.mesh3dData);
+
+    if (!this.mesh3dBind) {
+      this.mesh3dBind = this.device.createBindGroup({
+        layout: this.mesh3dLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.mesh3dUniform } },
+          { binding: 1, resource: { buffer: this.binsBuf! } },
+        ],
+      });
+    }
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: this.visTex!.createView(),
+          loadOp: "clear",
+          clearValue: { r: 0, g: 0, b: 0, a: 0 },
+          storeOp: "store",
+        },
+      ],
+      depthStencilAttachment: {
+        view: this.depthTex!.createView(),
+        depthClearValue: 1,
+        depthLoadOp: "clear",
+        depthStoreOp: "store",
+      },
+    });
+    pass.setPipeline(this.mesh3dPipeline!);
+    pass.setVertexBuffer(0, this.cubeBuf);
+    pass.setBindGroup(0, this.mesh3dBind);
+    const grid = this.mesh3dSpec!.grid;
+    pass.draw(36, grid * grid);
+    pass.end();
+  }
+
   setOverlay(source: ImageBitmap | null): void {
     this.overlayTexture?.destroy();
     this.overlayTexture = null;
@@ -1251,6 +1613,8 @@ export class WebGPURenderer implements Renderer {
       this.particleInitPending = true;
       this.simStepsDone = 0;
     }
+    // 3D preset marker (camera + grid params drive it via the normal params).
+    this.mesh3dSpec = preset.mesh3d ?? null;
     // Generate named accessors (P_<key>) for every param in ABI order so
     // preset WGSL never touches raw indices.
     const specs = allParams(preset);
@@ -1327,12 +1691,13 @@ export class WebGPURenderer implements Renderer {
     // Feedback path is active only when the preset opts in AND we're not
     // mid-crossfade (feedback pauses during transitions). fs_main branches on
     // this: 1 => emit raw visual for the composite pass, 0 => inline composite.
-    // Particle presets take a dedicated compute+draw path and ignore the
+    // Particle and 3D presets take dedicated draw paths and ignore the
     // fragment/feedback/crossfade machinery (they cut, not crossfade).
     const particlesActive = !!this.particleSpec;
-    const fading =
-      !particlesActive && !!(transition && this.transitionPipeline && this.transitionPreset);
-    const useFeedback = !particlesActive && this.presetUsesFeedback && !fading;
+    const mesh3dActive = !!this.mesh3dSpec;
+    const special = particlesActive || mesh3dActive;
+    const fading = !special && !!(transition && this.transitionPipeline && this.transitionPreset);
+    const useFeedback = !special && this.presetUsesFeedback && !fading;
     this.uniformF32[27] = useFeedback ? 1 : 0;
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniformData);
     this.device.queue.writeBuffer(this.binsBuf!, 0, f.bins);
@@ -1372,7 +1737,7 @@ export class WebGPURenderer implements Renderer {
     }
     this.ensureGraphTargets();
     // Particles + feedback both draw into visTex, then composite -> sceneTex.
-    if (useFeedback || particlesActive) this.ensureFeedbackTargets();
+    if (useFeedback || particlesActive || mesh3dActive) this.ensureFeedbackTargets();
     const scene = this.sceneTex!.createView();
 
     const encoder = this.device.createCommandEncoder();
@@ -1395,6 +1760,10 @@ export class WebGPURenderer implements Renderer {
     if (particlesActive) {
       // Sim + additive draw into visTex, then the shared composite -> sceneTex.
       this.renderParticles(encoder, time, f, params);
+      drawPass(this.compositePipeline!, this.getCompositeBindGroup(), scene);
+    } else if (mesh3dActive) {
+      // Depth-tested 3D bar grid into visTex, then the shared composite.
+      this.renderMesh3d(encoder, time, f, params);
       drawPass(this.compositePipeline!, this.getCompositeBindGroup(), scene);
     } else if (useFeedback) {
       // Fresh history holds garbage / a previous preset's trails — clear it
@@ -1498,6 +1867,9 @@ export class WebGPURenderer implements Renderer {
     this.histTex?.destroy();
     this.particleUniform.destroy();
     this.particleBuf?.destroy();
+    this.mesh3dUniform.destroy();
+    this.cubeBuf.destroy();
+    this.depthTex?.destroy();
     this.device.destroy();
   }
 
@@ -1517,6 +1889,7 @@ export class WebGPURenderer implements Renderer {
     this.binCapacity = count;
     this.bindGroup = null;
     this.transitionBindGroup = null;
+    this.mesh3dBind = null; // references binsBuf
   }
 
   private getBindGroup(): GPUBindGroup {

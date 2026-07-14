@@ -57,11 +57,23 @@ export interface PresetDef {
    * no RNG — so exports are bit-reproducible and preview tracks them closely.
    */
   particles?: ParticleSpec;
+  /**
+   * Marks a 3D preset: the renderer draws a depth-tested, instanced mesh grid
+   * through a perspective camera (bypassing the fragment `wgsl` path). Bar
+   * heights follow the spectrum; camera params (orbit/pitch/distance/fov) are
+   * regular params so they are keyframeable via automation + modulation.
+   */
+  mesh3d?: Mesh3DSpec;
 }
 
 export interface ParticleSpec {
   /** Simulated + drawable particle count (GPU instances). */
   count: number;
+}
+
+export interface Mesh3DSpec {
+  /** Grid is `grid` x `grid` instanced columns (grid² draw instances). */
+  grid: number;
 }
 
 export type ParamValues = Record<string, number>;
