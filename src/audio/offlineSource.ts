@@ -42,6 +42,7 @@ export class OfflineAnalyzer {
   private left: Float32Array;
   private right: Float32Array;
   private meter: LoudnessMeter;
+  private meterChannels = 2;
   private meterFed = 0;
   private sampleRate: number;
   private fft: RealFFT;
@@ -77,7 +78,12 @@ export class OfflineAnalyzer {
     }
     this.left = pcm.channels[0];
     this.right = pcm.channels[1] ?? pcm.channels[0];
-    this.meter = new LoudnessMeter(pcm.sampleRate, 2);
+    // Meter with the REAL channel count. A mono track measured as one channel
+    // matches the realtime path (whose ChannelSplitter feeds a SILENT right
+    // for mono) and the BS.1770 mono convention — aliasing ch0 as a phantom
+    // second channel would over-read by +3 LU and break preview==export.
+    this.meterChannels = Math.min(2, pcm.channels.length);
+    this.meter = new LoudnessMeter(pcm.sampleRate, this.meterChannels);
 
     this.fft = new RealFFT(FFT_SIZE);
     this.magDb = new Float32Array(FFT_SIZE / 2);
@@ -103,10 +109,11 @@ export class OfflineAnalyzer {
     this.fft.magnitudesDb(this.windowBuf, this.magDb);
     // Meter gets the contiguous new samples up to this frame's end
     if (end > this.meterFed) {
-      this.meter.process([
-        this.left.subarray(this.meterFed, end),
-        this.right.subarray(this.meterFed, end),
-      ]);
+      const ch =
+        this.meterChannels === 1
+          ? [this.left.subarray(this.meterFed, end)]
+          : [this.left.subarray(this.meterFed, end), this.right.subarray(this.meterFed, end)];
+      this.meter.process(ch);
       this.meterFed = end;
     }
     return this.pipeline.update({

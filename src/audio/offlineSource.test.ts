@@ -42,10 +42,44 @@ function collectTrace(analyzer: OfflineAnalyzer): {
   return { beatFrames, trace };
 }
 
+/** Constant-amplitude sine PcmData with the given channel count. */
+function toneBuffer(channels: number): PcmData {
+  const length = SAMPLE_RATE * DURATION;
+  const ch: Float32Array[] = [];
+  for (let c = 0; c < channels; c++) {
+    const data = new Float32Array(length);
+    for (let i = 0; i < length; i++)
+      data[i] = 0.5 * Math.sin((2 * Math.PI * 997 * i) / SAMPLE_RATE);
+    ch.push(data);
+  }
+  return { sampleRate: SAMPLE_RATE, duration: DURATION, length, channels: ch };
+}
+
+function finalLufs(pcm: PcmData): number {
+  const a = new OfflineAnalyzer(pcm, FPS);
+  let lufs = -70;
+  for (let n = 0; n < a.frameCount; n++) lufs = a.nextFrameFeatures().lufs;
+  return lufs;
+}
+
 describe("OfflineAnalyzer", () => {
   it("computes the expected frame count", () => {
     const analyzer = new OfflineAnalyzer(makeTestBuffer(), FPS);
     expect(analyzer.frameCount).toBe(DURATION * FPS);
+  });
+
+  it("measures mono LUFS as one channel (no phantom +3 LU over-read)", () => {
+    // A mono tone and a dual-mono (identical L=R) tone must read the SAME
+    // loudness: the realtime path feeds a SILENT right for mono, so offline
+    // must not alias ch0 as a second channel (that would add +3.01 LU).
+    const mono = finalLufs(toneBuffer(1));
+    const dualMono = finalLufs(toneBuffer(2));
+    // Stereo with two equal channels is genuinely +3 LU louder than mono
+    expect(dualMono - mono).toBeGreaterThan(2.5);
+    expect(dualMono - mono).toBeLessThan(3.5);
+    // A -6 dBFS 997 Hz tone (amplitude 0.5) reads ≈ -9 LUFS mono
+    expect(mono).toBeGreaterThan(-10);
+    expect(mono).toBeLessThan(-8);
   });
 
   it("detects each kick once, within 3 frames of its onset", () => {

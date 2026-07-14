@@ -6,8 +6,18 @@ export const MAX_FREQ = 16000;
 export const MIN_DB = -90;
 export const MAX_DB = -22;
 
-/** Frames of spectral-flux history for the adaptive beat threshold (~0.7 s at 60 fps). */
-const FLUX_WINDOW = 43;
+/**
+ * Adaptive beat threshold windows, in SECONDS (not frames) so detection is
+ * frame-rate independent — a 30 fps export must fire beats on the same track
+ * moments as a 60 fps preview (WYSIWYG). The values equal the old 60 fps
+ * frame counts (43 and 12 frames), so 60 fps behaviour is unchanged.
+ */
+const FLUX_WINDOW_SEC = 43 / 60; // ~0.717 s of flux history for the mean
+const WARMUP_SEC = 12 / 60; // ~0.2 s before the detector may fire
+/** Flux-history ring size for the current frame interval. */
+function fluxWindowFrames(dt: number): number {
+  return Math.max(4, Math.round(FLUX_WINDOW_SEC / Math.max(1e-4, dt)));
+}
 /** Minimum seconds between detected beats. */
 const BEAT_REFRACTORY = 0.14;
 /** beatIntensity halves roughly every 90 ms. */
@@ -204,12 +214,13 @@ export class FeaturePipeline {
       if (d > 0) flux += d;
     }
     this.fluxHistory.push(flux);
-    if (this.fluxHistory.length > FLUX_WINDOW) this.fluxHistory.shift();
+    const win = fluxWindowFrames(dt);
+    while (this.fluxHistory.length > win) this.fluxHistory.shift();
     const mean = this.fluxHistory.reduce((a, b) => a + b, 0) / Math.max(1, this.fluxHistory.length);
 
     f.beat = false;
     if (
-      this.fluxHistory.length >= 12 &&
+      this.clock >= WARMUP_SEC &&
       flux > mean * 1.6 + 0.012 &&
       this.clock - this.lastBeatAt > BEAT_REFRACTORY &&
       input.playing
@@ -323,12 +334,13 @@ export class FeaturePipeline {
       if (d > 0) flux += d;
     }
     this.syncFluxHistory.push(flux);
-    if (this.syncFluxHistory.length > FLUX_WINDOW) this.syncFluxHistory.shift();
+    const win = fluxWindowFrames(dt);
+    while (this.syncFluxHistory.length > win) this.syncFluxHistory.shift();
     const mean =
       this.syncFluxHistory.reduce((a, b) => a + b, 0) / Math.max(1, this.syncFluxHistory.length);
 
     if (
-      this.syncFluxHistory.length >= 12 &&
+      this.clock >= WARMUP_SEC &&
       flux > mean * 1.6 + 0.012 &&
       this.clock - this.lastSyncBeatAt > BEAT_REFRACTORY &&
       playing
@@ -377,15 +389,11 @@ class OnsetClassDetector {
       if (d > 0) flux += d;
     }
     this.history.push(flux);
-    if (this.history.length > FLUX_WINDOW) this.history.shift();
+    const win = fluxWindowFrames(dt);
+    while (this.history.length > win) this.history.shift();
     const mean = this.history.reduce((a, b) => a + b, 0) / Math.max(1, this.history.length);
 
-    if (
-      playing &&
-      this.history.length >= 12 &&
-      flux > mean * 1.7 + 0.01 &&
-      clock - this.lastAt > 0.06
-    ) {
+    if (playing && clock >= WARMUP_SEC && flux > mean * 1.7 + 0.01 && clock - this.lastAt > 0.06) {
       this.lastAt = clock;
       this.envelope = 1;
     } else {

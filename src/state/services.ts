@@ -78,6 +78,11 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
   let ro: ResizeObserver | null = null;
   let fallback: ReturnType<typeof setTimeout> | undefined;
   let gpuRetries = 0;
+  // The frame loop caches which preset/transition it last pushed to the
+  // renderer. When the renderer is REPLACED (device-loss rebuild), those
+  // caches are stale — the loop wires this up to clear them so the next
+  // frame re-issues setPreset/setTransitionPreset onto the fresh renderer.
+  let resyncRenderer: () => void = () => {};
 
   const installRenderer = async () => {
     let next: Renderer;
@@ -104,6 +109,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     const r = canvas.getBoundingClientRect();
     next.resize(r.width, r.height, window.devicePixelRatio);
     renderer = next;
+    resyncRenderer(); // a rebuilt renderer must re-receive preset/transition
     hooks.onRendererChanged(
       next.kind,
       next.kind === "canvas2d"
@@ -127,6 +133,10 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     let lastUiUpdate = 0;
     let currentPresetId: string | null = null;
     let fadeFromId: string | null = null;
+    resyncRenderer = () => {
+      currentPresetId = null;
+      fadeFromId = null;
+    };
     const loop = (tMs: number) => {
       if (disposed) return;
       clearTimeout(fallback);

@@ -154,22 +154,50 @@ export async function runExportJob(
     fastStart: bufferTarget ? "in-memory" : "fragmented",
   });
 
-  // Encoder callbacks run async — capture errors, surface them in the loop
+  // Encoder callbacks run async — capture errors, surface them in the loop.
+  // errorWaiters lets a parked backpressure wait bail immediately when an
+  // encoder fails (a failed encoder emits no further "dequeue" events, so a
+  // plain dequeue-wait would hang forever).
   let encoderError: Error | null = null;
+  const errorWaiters = new Set<(e: Error) => void>();
+  const onEncoderError = (e: Error) => {
+    encoderError = e;
+    for (const w of errorWaiters) w(e);
+  };
   const videoEncoder = new VideoEncoder({
     output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-    error: (e) => {
-      encoderError = e;
-    },
+    error: onEncoderError,
   });
   videoEncoder.configure(videoConfig);
   const audioEncoder = new AudioEncoder({
     output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
-    error: (e) => {
-      encoderError = e;
-    },
+    error: onEncoderError,
   });
   audioEncoder.configure(audioCodec === "aac" ? aacConfig : opusConfig);
+
+  // Backpressure wait that cannot deadlock: settles on drain, encoder error,
+  // or user abort — whichever comes first — and always removes its listeners.
+  const QUEUE_MAX = 8;
+  const waitForDrain = (encoder: VideoEncoder | AudioEncoder): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      if (encoderError) return reject(encoderError);
+      if (hooks.signal?.aborted) return reject(new DOMException("Export cancelled", "AbortError"));
+      const finish = (fn: () => void) => {
+        encoder.removeEventListener("dequeue", onDequeue);
+        hooks.signal?.removeEventListener("abort", onAbort);
+        errorWaiters.delete(onErr);
+        fn();
+      };
+      const onDequeue = () => {
+        if (encoder.encodeQueueSize <= QUEUE_MAX) finish(resolve);
+      };
+      const onAbort = () =>
+        finish(() => reject(new DOMException("Export cancelled", "AbortError")));
+      const onErr = (e: Error) => finish(() => reject(e));
+      encoder.addEventListener("dequeue", onDequeue);
+      hooks.signal?.addEventListener("abort", onAbort, { once: true });
+      errorWaiters.add(onErr);
+    });
 
   const canvas = new OffscreenCanvas(job.width, job.height);
   // Loop mode holds the first K frames to blend into the last K (see below)
@@ -222,6 +250,10 @@ export async function runExportJob(
       });
       audioEncoder.encode(data);
       data.close();
+      // Backpressure the audio lane too: without it the whole track is queued
+      // synchronously ahead of the first video frame, and peak memory scales
+      // with track length — the opposite of the flat-memory guarantee.
+      if (audioEncoder.encodeQueueSize > QUEUE_MAX) await waitForDrain(audioEncoder);
     }
 
     // --- Video lane: deterministic frame walk. Per-frame preset/params/mods/
@@ -303,11 +335,7 @@ export async function runExportJob(
       frame.close();
 
       // Backpressure: don't let the encode queue grow unbounded
-      if (videoEncoder.encodeQueueSize > 8) {
-        await new Promise<void>((r) =>
-          videoEncoder.addEventListener("dequeue", () => r(), { once: true }),
-        );
-      }
+      if (videoEncoder.encodeQueueSize > QUEUE_MAX) await waitForDrain(videoEncoder);
       // No timer-based yield here: gpuDone() above already yields the event
       // loop every frame (timers are throttled to 1s in hidden tabs and
       // would stall exports; GPU-completion promises are not).

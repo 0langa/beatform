@@ -93,12 +93,19 @@ export function laneValue(lane: AutomationLane, t: number): number | null {
 export function evalTimeline(timeline: Timeline, t: number): TimelineFrame {
   if (!timeline.enabled) return { scene: null, prevScene: null, mix: 1, automation: {} };
 
+  // Order-independent: the active scene is the latest one starting at or
+  // before t; prev is the latest one strictly before the active scene's
+  // start. Scanning by time (not array order) means an unsorted scenes[]
+  // (append-on-add, or a scene dragged past a neighbour) still resolves the
+  // right crossfade source — and matches what the editor draws.
   let scene: Scene | null = null;
-  let prev: Scene | null = null;
   for (const s of timeline.scenes) {
-    if (s.start <= t && (scene === null || s.start >= scene.start)) {
-      prev = scene;
-      scene = s;
+    if (s.start <= t && (scene === null || s.start > scene.start)) scene = s;
+  }
+  let prev: Scene | null = null;
+  if (scene) {
+    for (const s of timeline.scenes) {
+      if (s.start < scene.start && (prev === null || s.start > prev.start)) prev = s;
     }
   }
 

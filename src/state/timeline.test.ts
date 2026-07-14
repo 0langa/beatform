@@ -101,6 +101,25 @@ describe("timeline evaluation", () => {
     expect(evalTimeline(timeline, 30.1).mix).toBe(1);
   });
 
+  it("resolves the crossfade source by START TIME, not array order (unsorted scenes)", () => {
+    // Scenes appended out of order (add C@20, then B@15) — array is [C, B].
+    const unsorted: Timeline = {
+      enabled: true,
+      scenes: [
+        { id: "c", name: "C", presetId: P0, start: 20, fadeSec: 2 },
+        { id: "b", name: "B", presetId: P1, start: 15 },
+      ],
+      lanes: [],
+    };
+    const rf = evalTimeline(unsorted, 21); // inside C's fade window
+    expect(rf.scene?.id).toBe("c");
+    // prev must be B (the true predecessor), not null — the fade crossfades
+    // FROM B even though B appears after C in the array.
+    expect(rf.prevScene?.id).toBe("b");
+    expect(rf.mix).toBeGreaterThan(0);
+    expect(rf.mix).toBeLessThan(1);
+  });
+
   it("automation values land keyed by param", () => {
     expect(evalTimeline(timeline, 5).automation.hue).toBeCloseTo(150, 5);
   });

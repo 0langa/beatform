@@ -38,6 +38,38 @@ function fillBand(magDb: Float32Array, loHz: number, hiHz: number, db: number): 
   for (let b = hzToBin(loHz); b <= hzToBin(hiHz); b++) magDb[b] = db;
 }
 
+/** Beat times (s) for a kick-every-0.5s signal run at a given fps. */
+function beatTimesAtFps(fps: number, seconds: number): number[] {
+  const p = makePipeline();
+  const dt = 1 / fps;
+  const beats: number[] = [];
+  const frames = Math.round(seconds * fps);
+  for (let n = 0; n < frames; n++) {
+    const t = n / fps;
+    const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    // A kick lands on the first frame at/after each 0.5 s boundary
+    const sinceKick = t % 0.5;
+    if (sinceKick < dt) fillBand(magDb, 40, 140, MAX_DB);
+    const f = p.update(makeInput({ magDb, time: t, dt }));
+    if (f.beat) beats.push(t);
+  }
+  return beats;
+}
+
+describe("FeaturePipeline fps-independence (WYSIWYG)", () => {
+  it("fires beats at the same track times at 60 and 30 fps", () => {
+    const at60 = beatTimesAtFps(60, 4);
+    const at30 = beatTimesAtFps(30, 4);
+    expect(at60.length).toBeGreaterThanOrEqual(6);
+    // Same count, and each 30 fps beat is within ~1.5 frames of its 60 fps twin
+    expect(Math.abs(at60.length - at30.length)).toBeLessThanOrEqual(1);
+    const pairs = Math.min(at60.length, at30.length);
+    for (let i = 0; i < pairs; i++) {
+      expect(Math.abs(at60[i] - at30[i])).toBeLessThan(0.05);
+    }
+  });
+});
+
 describe("FeaturePipeline", () => {
   it("maps MIN_DB to 0 and MAX_DB to saturated bins", () => {
     const p = makePipeline();
