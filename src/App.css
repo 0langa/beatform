@@ -1496,3 +1496,39 @@ kbd {
   align-items: center;
   gap: 10px;
 }
+
+/* ---------- batch queue ---------- */
+
+/* Modifier, not a new modal: the base .modal is 380px and shared with Help,
+   but a track table with editable titles needs the room. */
+.modal.wide {
+  width: 720px;
+}
+
+.batch-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.batch-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The badge is accent-only by default; a finished/failed job needs to read as
+   itself from across the room at 3am. */
+.renderer-badge.ok {
+  color: var(--ok);
+  background: rgba(126, 226, 155, 0.13);
+}
+
+.renderer-badge.danger {
+  color: var(--danger);
+  background: rgba(255, 143, 143, 0.13);
+}

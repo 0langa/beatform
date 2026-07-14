@@ -6,6 +6,9 @@ import { exportVideo } from "./export/videoExporter";
 import { APP_VERSION } from "./version";
 import { getEngine } from "./state/services";
 import { rasterizeOverlay } from "./render/overlay";
+import { BatchPanel } from "./ui/BatchPanel";
+import { expandJobs } from "./state/batch";
+import { runBatch } from "./state/batchRunner";
 // Used only by the dev-only E2E hooks below; both modules already ship as part
 // of the audio engine and exporter, so this costs the bundle nothing.
 import { integratedLufs } from "./audio/dsp/lufs";
@@ -24,6 +27,7 @@ import { ParamsPanel } from "./ui/ParamsPanel";
 import { EmptyState } from "./ui/EmptyState";
 import { Slider } from "./ui/Slider";
 import {
+  IconBatch,
   IconExport,
   IconFolder,
   IconFullscreen,
@@ -46,6 +50,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ["Ctrl+O", "Open project"],
   ["Ctrl+Z / Ctrl+Y", "Undo / redo"],
   ["T", "Timeline panel"],
+  ["B", "Batch render"],
 ];
 
 function toggleFullscreen(): void {
@@ -99,6 +104,9 @@ export default function App() {
   const exporting = useVizStore((s) => s.exporting);
   const exportError = useVizStore((s) => s.exportError);
   const exportDone = useVizStore((s) => s.exportDone);
+  const batch = useVizStore((s) => s.batch);
+  const batchStatus = useVizStore((s) => s.batchStatus);
+  const showBatch = useVizStore((s) => s.showBatch);
 
   const store = useVizStore.getState; // stable accessor for actions/handlers
 
@@ -180,9 +188,15 @@ export default function App() {
         case "T":
           s.setShowTimeline(!s.showTimeline);
           break;
+        case "b":
+        case "B":
+          s.setShowBatch(!s.showBatch);
+          break;
         case "Escape":
           s.setShowHelp(false);
           if (!s.exporting) s.setShowExport(false);
+          // Never let Escape dismiss a running queue out from under itself.
+          if (s.batchStatus !== "running") s.setShowBatch(false);
           break;
       }
     };
@@ -323,6 +337,79 @@ export default function App() {
       (window as unknown as { __lastExportBlob: Blob | undefined }).__lastExportBlob = result.blob;
       return info;
     };
+
+    // Drives the REAL batch runner without a filesystem: jobs render to blobs
+    // instead of streaming to disk, so the loop (per-track decode + analysis,
+    // per-job isolation, abort, ordering) can be exercised in browser dev.
+    (window as unknown as { __runBatch: unknown }).__runBatch = async (
+      files: File[],
+      opts: { width?: number; height?: number; fps?: number; failOn?: number } = {},
+    ) => {
+      // Start clean: addBatchTracks appends (as it should for the real UI),
+      // which would silently carry tracks over between probe runs.
+      for (const t of store().batch?.tracks ?? []) store().removeBatchTrack(t.id);
+      await store().addBatchTracks(files);
+      // Re-read AFTER the await: store() is a snapshot and zustand replaces the
+      // state object on set, so the pre-await one never sees the new tracks.
+      const s = store();
+      const tracks = s.batch?.tracks ?? [];
+      const fmt = {
+        id: "probe",
+        label: "probe",
+        w: opts.width ?? 192,
+        h: opts.height ?? 108,
+        fps: opts.fps ?? 30,
+        mbps: 1,
+        format: "mp4" as const,
+      };
+      const run = {
+        doc: {
+          presetId: s.presetId,
+          paramsByPreset: s.paramsByPreset,
+          syncByPreset: s.syncByPreset,
+          bg: s.bg,
+          overlayLayers: s.overlayLayers,
+          assets: s.assets,
+          aspect: s.aspect,
+          modsByPreset: s.modsByPreset,
+          smoothSpectrum: s.smoothSpectrum,
+          timeline: s.timeline,
+          post: s.post,
+          motion: s.motion,
+        },
+        tracks,
+        formats: [fmt],
+        outDir: "/probe",
+        startedAt: performance.now(),
+        jobs: [],
+      } as unknown as import("./state/batch").BatchRun;
+      run.jobs = expandJobs(run.tracks, run.formats, run.outDir);
+
+      const events: string[] = [];
+      const statuses: Record<string, unknown> = {};
+      let n = 0;
+      await runBatch(run, {
+        streamPathFor: () => undefined, // blob mode: no fs needed
+        onJobStart: (id) => {
+          events.push(`start:${id}`);
+          // Simulate a mid-run failure to prove isolation, if asked.
+          if (opts.failOn != null && n === opts.failOn) throw new Error("probe: injected");
+          n++;
+        },
+        onJobUpdate: (id, st) => {
+          statuses[id] = st;
+          if (st.k !== "running") events.push(`${st.k}:${id}`);
+        },
+        shouldStop: () => false,
+      });
+      return {
+        jobs: run.jobs.map((j) => ({
+          out: j.outPath,
+          status: statuses[j.id] ?? j.status,
+        })),
+        events,
+      };
+    };
   }, [store]);
 
   const canvasMode = exportSettings.mode === "canvas";
@@ -460,6 +547,13 @@ export default function App() {
             Export
           </button>
           <button
+            className={`icon-btn ${showBatch ? "active" : ""}`}
+            title="Batch render — one video per track (B)"
+            onClick={() => store().setShowBatch(!showBatch)}
+          >
+            <IconBatch size={18} />
+          </button>
+          <button
             className={`icon-btn ${showPanel ? "active" : ""}`}
             title="Visual settings (G)"
             onClick={() => store().setShowPanel((v) => !v)}
@@ -583,6 +677,24 @@ export default function App() {
             <div className="about-line">Audio Visualizer v{APP_VERSION}</div>
           </div>
         </div>
+      )}
+
+      {showBatch && (
+        <BatchPanel
+          run={batch}
+          status={batchStatus}
+          overlayLayers={overlayLayers}
+          aspect={aspect}
+          formatLabel={RESOLUTIONS[exportSettings.resIdx].label}
+          onAddTracks={(files) => void store().addBatchTracks(files)}
+          onRemoveTrack={(id) => store().removeBatchTrack(id)}
+          onRetitle={(id, title) => store().setBatchTrackMeta(id, { title })}
+          onStart={() => void store().startBatch()}
+          onSkipJob={() => store().skipCurrentBatchJob()}
+          onCancel={() => store().cancelBatch()}
+          onRetryFailed={() => void store().retryFailedBatch()}
+          onClose={() => store().setShowBatch(false)}
+        />
       )}
 
       {showExport && (

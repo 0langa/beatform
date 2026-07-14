@@ -110,6 +110,17 @@ export const IconFullscreen = ({ size }: IconProps) =>
     </>,
   );
 
+/** Stacked sheets — a queue of tracks, one video each. */
+export const IconBatch = ({ size }: IconProps) =>
+  svg(
+    size,
+    <>
+      <path d="M12 3l9 5-9 5-9-5 9-5z" />
+      <path d="M3 13l9 5 9-5" />
+      <path d="M3 17.5l9 5 9-5" />
+    </>,
+  );
+
 export const IconChevronLeft = ({ size }: IconProps) => svg(size, <path d="M15 18l-6-6 6-6" />);
 
 export const IconChevronRight = ({ size }: IconProps) => svg(size, <path d="M9 6l6 6-6 6" />);

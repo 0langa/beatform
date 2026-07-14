@@ -1,6 +1,18 @@
 import { create } from "zustand";
 import type { PlaybackState, SyncSettings } from "../audio/types";
 import { DEFAULT_SYNC } from "../audio/types";
+import { buildExportOptions } from "../export/buildExportOptions";
+import { readTrackMeta } from "../audio/trackMeta";
+import {
+  expandJobs,
+  isRunComplete,
+  newBatchId,
+  retryFailed,
+  type BatchRun,
+  type BatchTrack,
+} from "./batch";
+import { runBatch } from "./batchRunner";
+import type { FormatPreset } from "../export/buildExportOptions";
 import { demos } from "../audio/demoTrack";
 import type { BgSettings, ParamValues } from "../render/types";
 import { defaultParams } from "../render/types";
@@ -16,7 +28,6 @@ import { clearHistory, historyDepths, popRedo, popUndo, pushHistory } from "./hi
 import type { Timeline } from "./timeline";
 import type { MotionSettings, PostSettings } from "../render/types";
 import {
-  bytesToDataUrl,
   downloadBlob,
   isTauri,
   openImageFile,
@@ -209,6 +220,10 @@ interface SessionSlice {
   exporting: ExportProgress | null;
   exportError: string | null;
   exportDone: string | null;
+  /** Batch render: setup + in-flight run. Null until the panel is opened. */
+  batch: BatchRun | null;
+  batchStatus: "idle" | "running" | "done";
+  showBatch: boolean;
 }
 
 interface Actions {
@@ -242,6 +257,14 @@ interface Actions {
   setExportSettings(patch: Partial<ExportSettings>): void;
   runExport(): Promise<void>;
   cancelExport(): void;
+  setShowBatch(open: boolean): void;
+  addBatchTracks(files: File[]): Promise<void>;
+  removeBatchTrack(id: string): void;
+  setBatchTrackMeta(id: string, meta: Partial<OverlayMeta>): void;
+  startBatch(): Promise<void>;
+  skipCurrentBatchJob(): void;
+  cancelBatch(): void;
+  retryFailedBatch(): Promise<void>;
   setError(message: string | null): void;
   saveProject(): Promise<void>;
   openProject(): Promise<void>;
@@ -273,6 +296,9 @@ export type VizState = DocumentSlice & SessionSlice & Actions;
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let exportAbort: AbortController | null = null;
+/** Stops the whole batch; separate from the per-job controller so that
+ * skipping one job never ends the night. */
+let batchAbort: AbortController | null = null;
 let exportStartedAt = 0;
 /** Live canvas — overlay rasters at its pixel size. Set by initApp. */
 let liveCanvas: HTMLCanvasElement | null = null;
@@ -296,16 +322,6 @@ const initialParams = loadStoredParams();
 const initialSync = loadStoredSync();
 const initialOverlay = loadStoredOverlay();
 const initialMods = loadStoredMods();
-
-/** "Artist - Title.mp3" → meta; otherwise the basename becomes the title. */
-function metaFromFilename(name: string): OverlayMeta {
-  const base = name.replace(/\.[a-z0-9]+$/i, "").trim();
-  const dash = base.indexOf(" - ");
-  if (dash > 0) {
-    return { artist: base.slice(0, dash).trim(), title: base.slice(dash + 3).trim() };
-  }
-  return { title: base, artist: "" };
-}
 
 export const useVizStore = create<VizState>((set, get) => {
   const flashNotice = (notice: string) => {
@@ -425,6 +441,9 @@ export const useVizStore = create<VizState>((set, get) => {
       loudnessTarget: null,
       truePeakDb: -1,
     },
+    batch: null,
+    batchStatus: "idle" as const,
+    showBatch: false,
     exporting: null,
     exportError: null,
     exportDone: null,
@@ -589,21 +608,9 @@ export const useVizStore = create<VizState>((set, get) => {
         set({ error: null });
         await getEngine().loadFile(file);
         await getEngine().play();
-        // Tag metadata (title/artist/cover) — best effort, never blocks playback
-        let meta = metaFromFilename(file.name);
-        let coverArt: string | null = null;
-        try {
-          const mm = await import("music-metadata");
-          const tags = await mm.parseBlob(file, { duration: false });
-          meta = {
-            title: tags.common.title?.trim() || meta.title,
-            artist: tags.common.artist?.trim() || meta.artist,
-          };
-          const pic = tags.common.picture?.[0];
-          if (pic) coverArt = bytesToDataUrl(pic.data, pic.format || "image/jpeg");
-        } catch {
-          // unreadable tags — filename fallback stands
-        }
+        // Tag metadata (title/artist/cover) — best effort, never blocks
+        // playback, so no duration scan here. Shared with the batch queue.
+        const { meta, coverArt } = await readTrackMeta(file, file.name);
         set({ trackMeta: meta, coverArt });
         applyCoverArt();
         get().refreshOverlay();
@@ -697,6 +704,12 @@ export const useVizStore = create<VizState>((set, get) => {
       const engine = getEngine();
       const buf = engine.audioBuffer;
       if (!buf) return;
+      // Re-entrancy guard. The UI hides the Export button while `exporting` is
+      // set, but that is not a guarantee: a batch clears `exporting` between
+      // jobs while it decodes the next track, and a second export starting
+      // there would overwrite the shared abort controller and break cancel for
+      // the run that is already going.
+      if (get().exporting || get().batchStatus === "running") return;
       const settings = get().exportSettings;
       const canvasMode = settings.mode === "canvas";
       // Canvas loops are fixed to the Spotify spec: 9:16, 30 fps, 3-8 s
@@ -755,48 +768,54 @@ export const useVizStore = create<VizState>((set, get) => {
             res.h,
             get().trackMeta,
           )) ?? undefined;
-        const result = await exportVideo(buf, {
-          width: res.w,
-          height: res.h,
-          fps,
-          bitrate: mbps * 1e6,
-          presetId: get().presetId,
-          params: get().activeParams,
-          bg: get().bg,
-          sync: get().sync,
-          overlay,
-          segment,
-          loopCrossfadeSec: canvasMode ? 0.5 : undefined,
-          beatGrid: get().beatGrid ?? undefined,
-          mods: get().activeMods,
-          smoothSpectrum: get().smoothSpectrum,
-          post: get().post,
-          motion: get().motion,
-          coverArt: get().coverArt ?? undefined,
-          timeline: get().timeline.enabled ? get().timeline : undefined,
-          paramsByPreset: get().paramsByPreset,
-          modsByPreset: get().modsByPreset,
-          // Desktop: stream straight to the picked file (flat memory);
-          // browser dev falls back to an in-memory blob + download.
-          streamToPath: savePath ?? undefined,
-          pngDir: pngDir ?? undefined,
-          // A PNG sequence carries no audio, so there is nothing to normalize.
-          loudness:
-            settings.loudnessTarget != null && settings.format !== "png"
-              ? { targetLufs: settings.loudnessTarget, truePeakDb: settings.truePeakDb }
-              : undefined,
-          signal: ac.signal,
-          onProgress: (done, total) => {
-            const elapsed = (performance.now() - exportStartedAt) / 1000;
-            set({
-              exporting: {
-                done,
-                total,
-                speed: done > 0 && elapsed > 0 ? done / elapsed : null,
+        // Everything the document contributes is resolved by the shared
+        // builder, so the batch runner and this path cannot drift apart.
+        const result = await exportVideo(
+          buf,
+          buildExportOptions(
+            docOf(get()),
+            {
+              id: "live",
+              label: "Export",
+              w: res.w,
+              h: res.h,
+              fps,
+              mbps,
+              format: "mp4",
+            },
+            {
+              name: engine.state.trackName ?? "visualization",
+              meta: get().trackMeta,
+              coverArt: get().coverArt,
+              beatGrid: get().beatGrid,
+            },
+            overlay,
+            {
+              // Desktop: stream straight to the picked file (flat memory);
+              // browser dev falls back to an in-memory blob + download.
+              streamToPath: savePath ?? undefined,
+              pngDir: pngDir ?? undefined,
+              segment,
+              loopCrossfadeSec: canvasMode ? 0.5 : undefined,
+              // A PNG sequence carries no audio — nothing to normalize.
+              loudness:
+                settings.loudnessTarget != null && settings.format !== "png"
+                  ? { targetLufs: settings.loudnessTarget, truePeakDb: settings.truePeakDb }
+                  : undefined,
+              signal: ac.signal,
+              onProgress: (done, total) => {
+                const elapsed = (performance.now() - exportStartedAt) / 1000;
+                set({
+                  exporting: {
+                    done,
+                    total,
+                    speed: done > 0 && elapsed > 0 ? done / elapsed : null,
+                  },
+                });
               },
-            });
-          },
-        });
+            },
+          ),
+        );
         if (result.blob) downloadBlob(result.blob, fileName);
         set({
           exportDone: `${(result.bytes / 1e6).toFixed(1)} MB MP4 (H.264 + ${result.audioCodec.toUpperCase()}) saved${savePath ? ` to ${savePath}` : ""}`,
@@ -813,6 +832,173 @@ export const useVizStore = create<VizState>((set, get) => {
 
     cancelExport() {
       exportAbort?.abort();
+    },
+
+    setShowBatch(open) {
+      set({ showBatch: open });
+    },
+
+    async addBatchTracks(files) {
+      // Reading each file's own tags IS the feature: no spreadsheet, no data
+      // source, no manual titling. duration:true here (and only here) — the
+      // queue needs it for its estimate and pays the VBR scan cost off the
+      // interactive path.
+      const added: BatchTrack[] = [];
+      for (const file of files) {
+        const { meta, fromTags, coverArt, duration } = await readTrackMeta(file, file.name, {
+          duration: true,
+        });
+        added.push({ id: newBatchId(), file, meta, metaFromTags: fromTags, coverArt, duration });
+      }
+      const cur = get().batch;
+      set({
+        batch: {
+          doc: docOf(get()),
+          formats: cur?.formats ?? [],
+          outDir: cur?.outDir ?? "",
+          startedAt: 0,
+          tracks: [...(cur?.tracks ?? []), ...added],
+          jobs: [],
+        },
+        batchStatus: "idle",
+      });
+    },
+
+    removeBatchTrack(id) {
+      const b = get().batch;
+      if (!b) return;
+      set({ batch: { ...b, tracks: b.tracks.filter((t) => t.id !== id) } });
+    },
+
+    setBatchTrackMeta(id, meta) {
+      const b = get().batch;
+      if (!b) return;
+      set({
+        batch: {
+          ...b,
+          tracks: b.tracks.map((t) => (t.id === id ? { ...t, meta: { ...t.meta, ...meta } } : t)),
+        },
+      });
+    },
+
+    async startBatch() {
+      const b = get().batch;
+      if (!b || b.tracks.length === 0 || get().batchStatus === "running") return;
+      if (!isTauri()) {
+        set({ exportError: "Batch render needs the desktop app (it writes files to a folder)" });
+        return;
+      }
+      const outDir = await pickFolder("Choose a folder for the rendered videos");
+      if (!outDir) return;
+
+      // The format the export panel is currently set to — one output shape in
+      // this version; the model already fans out to several.
+      const settings = get().exportSettings;
+      const res = RESOLUTIONS[settings.resIdx];
+      const fmt: FormatPreset = {
+        id: "primary",
+        label: res.label,
+        w: res.w,
+        h: res.h,
+        fps: settings.fps,
+        mbps: settings.autoRate ? autoBitrateMbps(res.w, res.h, settings.fps) : settings.manualMbps,
+        format: "mp4",
+      };
+
+      // Freeze the template NOW: the run renders what it started with, not
+      // whatever gets edited at 2am. Also makes a retry reproduce the original.
+      const run: BatchRun = {
+        doc: docOf(get()),
+        tracks: b.tracks,
+        formats: [fmt],
+        outDir,
+        startedAt: performance.now(),
+        jobs: [],
+      };
+      run.jobs = expandJobs(run.tracks, run.formats, outDir);
+
+      const ac = new AbortController();
+      batchAbort = ac;
+      set({ batch: run, batchStatus: "running", exportError: null });
+      try {
+        await runBatch(run, {
+          onJobStart: (_id, jobAc) => {
+            // Reuse the single-export controller so the existing Cancel path
+            // means "skip this job" for free.
+            exportAbort = jobAc;
+          },
+          onJobUpdate: (id, status) => {
+            const cur = get().batch;
+            if (!cur) return;
+            const jobs = cur.jobs.map((j) => (j.id === id ? { ...j, status } : j));
+            set({ batch: { ...cur, jobs } });
+            // Mirror into `exporting` so the rest of the app already knows a
+            // render is in flight: the Export button is conditionally rendered
+            // on !exporting, and runExport has no re-entrancy guard, so
+            // without this a click mid-batch would start a second export and
+            // clobber the shared abort controller.
+            set({
+              exporting:
+                status.k === "running"
+                  ? { done: status.done, total: Math.max(1, status.total), speed: status.fps }
+                  : null,
+            });
+          },
+          shouldStop: () => ac.signal.aborted,
+        });
+      } finally {
+        exportAbort = null;
+        batchAbort = null;
+        const cur = get().batch;
+        set({
+          exporting: null,
+          batchStatus: cur && isRunComplete(cur) ? "done" : "idle",
+        });
+      }
+    },
+
+    skipCurrentBatchJob() {
+      // Aborts only the in-flight job; the loop moves to the next one.
+      exportAbort?.abort();
+    },
+
+    cancelBatch() {
+      batchAbort?.abort();
+      exportAbort?.abort();
+    },
+
+    async retryFailedBatch() {
+      const b = get().batch;
+      if (!b || get().batchStatus === "running") return;
+      const again = retryFailed(b, performance.now());
+      if (again.jobs.length === 0) return;
+      const ac = new AbortController();
+      batchAbort = ac;
+      set({ batch: again, batchStatus: "running", exportError: null });
+      try {
+        await runBatch(again, {
+          onJobStart: (_id, jobAc) => {
+            exportAbort = jobAc;
+          },
+          onJobUpdate: (id, status) => {
+            const cur = get().batch;
+            if (!cur) return;
+            set({
+              batch: { ...cur, jobs: cur.jobs.map((j) => (j.id === id ? { ...j, status } : j)) },
+              exporting:
+                status.k === "running"
+                  ? { done: status.done, total: Math.max(1, status.total), speed: status.fps }
+                  : null,
+            });
+          },
+          shouldStop: () => ac.signal.aborted,
+        });
+      } finally {
+        exportAbort = null;
+        batchAbort = null;
+        const cur = get().batch;
+        set({ exporting: null, batchStatus: cur && isRunComplete(cur) ? "done" : "idle" });
+      }
     },
 
     setError(error) {
@@ -1178,5 +1364,8 @@ export const useVizStore = create<VizState>((set, get) => {
 
 /** True while an export is running — guards Escape-to-close and modal close. */
 export function isExporting(): boolean {
-  return useVizStore.getState().exporting !== null;
+  const s = useVizStore.getState();
+  // batchStatus matters on its own: `exporting` goes null between jobs while
+  // the next track decodes, and a batch is still very much exporting there.
+  return s.exporting !== null || s.batchStatus === "running";
 }
