@@ -26,3 +26,6 @@ public/testdata/
 
 # private planning docs
 /ROADMAP.md
+
+# local agent memory (recall plugin)
+/.recall/
