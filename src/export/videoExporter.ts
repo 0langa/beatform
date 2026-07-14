@@ -193,6 +193,10 @@ function toResult(core: ExportCoreResult): ExportResult {
 }
 
 export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise<ExportResult> {
+  // An already-aborted signal must not start work: runInWorker only listens for
+  // a future "abort" event, which never fires for a signal aborted before the
+  // call, so the whole job would render and only then be thrown away.
+  if (o.signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
   const isPng = !!(o.pngDir || o.onPngFrame);
   const full = pcmFromAudioBuffer(audio);
   // Segment slice (Canvas loop mode). Always COPY: transferring the engine's
@@ -310,13 +314,23 @@ function runInWorker(
     type: "module",
   });
   const onAbort = () => worker.postMessage({ type: "abort" });
+  // Falling back means re-running the whole job inline, over a file the worker
+  // may already have written into. Once a single byte is out, a failure is a
+  // real failure — retrying would append a second pass onto the first one's
+  // bytes (the writer only truncates at open()) and hand back a corrupt file.
+  let wroteAnything = false;
 
   return new Promise<ExportCoreResult>((resolve, reject) => {
     o.signal?.addEventListener("abort", onAbort);
 
     worker.onerror = () => {
-      // Worker script failed to load/start — retry inline.
-      reject(new Error("__fallback__ worker failed to start"));
+      // Fires for any uncaught worker error, including one 90% into a job —
+      // only a start-up failure is safe to retry inline.
+      reject(
+        wroteAnything
+          ? new Error("Export worker crashed mid-render")
+          : new Error("__fallback__ worker failed to start"),
+      );
     };
     worker.onmessage = (
       e: MessageEvent<
@@ -333,9 +347,11 @@ function runInWorker(
           o.onProgress?.(msg.done, msg.total);
           break;
         case "chunk":
+          wroteAnything = true;
           writer?.write(msg.data, msg.position);
           break;
         case "frame":
+          wroteAnything = true;
           onFrame?.(msg.data, msg.index);
           break;
         case "done":
@@ -344,10 +360,16 @@ function runInWorker(
         case "error":
           if (msg.name === "AbortError") {
             reject(new DOMException(msg.message, "AbortError"));
-          } else if (msg.message.includes("requires WebGPU")) {
+          } else if (msg.name === "GpuInitError" && !wroteAnything) {
+            // No GPU in the worker at all — the inline path may still have one.
             reject(new Error("__fallback__ no WebGPU in worker"));
           } else {
-            reject(new Error(msg.message));
+            // Keep the name: it is what lets callers tell a cancel from a
+            // device loss from a disk failure. Dropping it made every
+            // downstream classification dead code on the path that runs.
+            const err = new Error(msg.message);
+            err.name = msg.name;
+            reject(err);
           }
           break;
       }

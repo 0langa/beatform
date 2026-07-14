@@ -37,6 +37,25 @@ let analyzer: RealtimeAnalyzer | null = null;
 let renderer: Renderer | null = null;
 let disposeLoop: (() => void) | null = null;
 let measure: (() => void) | null = null;
+let liveRenderPaused = false;
+
+/**
+ * How long a rebuilt renderer must survive before its device loss is written
+ * off as a one-off and the retry budget is handed back.
+ */
+const GPU_HEALTHY_MS = 60_000;
+
+/**
+ * Stop the live preview from drawing without tearing down the loop.
+ *
+ * A batch render wants the whole GPU: the preview would otherwise keep
+ * submitting work for a canvas nobody is watching, competing with the export
+ * for the device. The rAF loop keeps running (transport and metering still
+ * update) — only the draw is skipped.
+ */
+export function setLiveRenderPaused(paused: boolean): void {
+  liveRenderPaused = paused;
+}
 
 /** Force a size re-measure now (aspect changes shouldn't wait for the
  * ResizeObserver, which doesn't fire in hidden tabs). */
@@ -78,6 +97,8 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
   let ro: ResizeObserver | null = null;
   let fallback: ReturnType<typeof setTimeout> | undefined;
   let gpuRetries = 0;
+  /** When the current renderer was installed — drives the retry-budget reset. */
+  let installedAt = 0;
   // The frame loop caches which preset/transition it last pushed to the
   // renderer. When the renderer is REPLACED (device-loss rebuild), those
   // caches are stale — the loop wires this up to clear them so the next
@@ -97,6 +118,11 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         void installRenderer();
       };
       next = gpuRetries < 2 ? gpu : new Canvas2DRenderer(canvas);
+      // The budget is meant to catch a device that keeps dying, not to count
+      // losses forever: unreset, two unrelated TDRs hours apart would strand
+      // the user on Canvas2D for the rest of the session. Once a rebuilt
+      // renderer has held up for a while, the trouble is over — forget it.
+      installedAt = performance.now();
     } catch {
       next = new Canvas2DRenderer(canvas);
     }
@@ -142,10 +168,33 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       clearTimeout(fallback);
       const t = tMs / 1000; // wall-clock, ONLY for the analyzer's dt/metering
       const features = ana.update(t);
+      // A WebGPU renderer that has survived this long is healthy; give the
+      // retry budget back so a later, unrelated device loss still gets its
+      // rebuild. Only counts while actually on WebGPU — once we're on the
+      // Canvas2D fallback there is no device left to lose, so a reset there
+      // would mean nothing.
+      if (
+        gpuRetries > 0 &&
+        installedAt > 0 &&
+        tMs - installedAt > GPU_HEALTHY_MS &&
+        renderer?.kind === "webgpu"
+      ) {
+        gpuRetries = 0;
+      }
       // Track time drives everything rendered — u.time, timeline, automation —
       // so preview matches the deterministic export frame-for-frame and idle
       // motion freezes when paused (u.time = eng.currentTime, not wall clock).
       const trackTime = eng.currentTime;
+      if (liveRenderPaused) {
+        // Skip the draw, keep the loop: a paused preview must still refresh
+        // the transport below, and the caches stay valid for when it resumes.
+        raf = requestAnimationFrame(loop);
+        if (eng.playing && t - lastUiUpdate > 0.25 && !hooks.isSeeking()) {
+          lastUiUpdate = t;
+          hooks.onPlayback(eng.state);
+        }
+        return;
+      }
       const rf = resolveActiveFrame(hooks.getFrameInput(), trackTime);
       if (rf.presetId !== currentPresetId) {
         renderer?.setPreset(presetById(rf.presetId));

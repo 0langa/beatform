@@ -175,6 +175,11 @@ export async function runExportJob(
     encoderError = e;
     for (const w of errorWaiters) w(e);
   };
+  // Device loss (driver reset / TDR) is silent otherwise: gpuDone() resolves
+  // rather than rejects on a lost device, so every subsequent frame renders as
+  // black and the export "succeeds" — a valid-looking file with no picture in
+  // it. That is worse than failing, so treat it exactly like an encoder error.
+  let deviceLost: Error | null = null;
 
   if (!isPng) {
     try {
@@ -261,9 +266,24 @@ export async function runExportJob(
   let renderer: WebGPURenderer;
   try {
     renderer = await WebGPURenderer.create(canvas);
-  } catch {
-    throw new Error("Export requires WebGPU, which is unavailable on this system");
+  } catch (e) {
+    // Keep the cause: this fires both when the system genuinely has no WebGPU
+    // and when a device is transiently unavailable (e.g. just after a driver
+    // reset). Reporting the second as the first turns "try again" into a
+    // permanent capability claim. (Assigned rather than passed to the
+    // constructor — `cause` is ES2022 and this project targets ES2020.)
+    const err = new Error("Export requires WebGPU, which is unavailable on this system");
+    err.name = "GpuInitError";
+    (err as Error & { cause?: unknown }).cause = e;
+    throw err;
   }
+
+  renderer.onDeviceLost = (reason: string) => {
+    const err = new Error(`GPU device lost during export: ${reason}`);
+    err.name = "GpuDeviceLostError";
+    deviceLost = err;
+    for (const w of errorWaiters) w(err);
+  };
 
   try {
     renderer.setPreset(presetById(job.presetId));
@@ -398,6 +418,7 @@ export async function runExportJob(
     for (let n = 0; n < total; n++) {
       abort();
       if (encoderError) throw encoderError;
+      if (deviceLost) throw deviceLost;
 
       const features = analyzer.nextFrameFeatures();
       const t = n / job.fps;
@@ -426,6 +447,9 @@ export async function runExportJob(
       );
       // Ensure the GPU finished before snapshotting the canvas
       await renderer.gpuDone();
+      // gpuDone() resolves on a lost device instead of rejecting, so without
+      // this the snapshot below would quietly capture a black frame.
+      if (deviceLost) throw deviceLost;
 
       let source: OffscreenCanvas = canvas;
       if (xfadeFrames > 0) {
@@ -472,6 +496,8 @@ export async function runExportJob(
     if (videoEncoder) await videoEncoder.flush();
     if (audioEncoder) await audioEncoder.flush();
     if (encoderError) throw encoderError;
+    // Last gate before the file is declared good.
+    if (deviceLost) throw deviceLost;
     muxer?.finalize();
     hooks.onProgress?.(analyzer.frameCount, analyzer.frameCount);
 
@@ -493,6 +519,14 @@ export async function runExportJob(
       // already closed
     }
     headFrames.forEach((b) => b.close());
-    renderer.dispose();
+    // Never let teardown throw: this runs on the failure path too, and a
+    // dispose() that throws on an already-lost device would replace the real
+    // error with a confusing one — and skip the rest of the cleanup.
+    try {
+      renderer.onDeviceLost = null;
+      renderer.dispose();
+    } catch {
+      // device already gone
+    }
   }
 }
