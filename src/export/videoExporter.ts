@@ -43,6 +43,8 @@ export interface ExportOptions {
   timeline?: Timeline;
   /** Per-preset param overrides for scene base resolution. */
   paramsByPreset?: Record<string, ParamValues>;
+  /** Per-preset mod routes for scene mod resolution. */
+  modsByPreset?: Record<string, ModRoute[]>;
   /** Desktop: stream the file here instead of building a Blob. */
   streamToPath?: string;
   onProgress?: (framesDone: number, framesTotal: number) => void;
@@ -143,6 +145,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     mods: o.mods,
     smoothSpectrum: o.smoothSpectrum,
     paramsByPreset: o.paramsByPreset,
+    modsByPreset: o.modsByPreset,
     timeline:
       o.timeline && o.segment
         ? {

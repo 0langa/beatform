@@ -13,7 +13,7 @@ import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { KeyEstimate } from "../audio/analysis/keyDetect";
 import { newRouteId, type ModRoute, type ModSource } from "./modMatrix";
 import { clearHistory, historyDepths, popRedo, popUndo, pushHistory } from "./history";
-import type { Scene, Timeline } from "./timeline";
+import type { Timeline } from "./timeline";
 import {
   bytesToDataUrl,
   downloadBlob,
@@ -218,8 +218,6 @@ interface Actions {
   applyDocument(doc: ProjectDocument): void;
   undo(): void;
   redo(): void;
-  /** Playback crossed into a scene — switch visuals WITHOUT recording history. */
-  applyScene(scene: Scene): void;
   saveUserPreset(name: string): void;
   applyUserPreset(id: string): void;
   deleteUserPreset(id: string): void;
@@ -378,11 +376,18 @@ export const useVizStore = create<VizState>((set, get) => {
       liveCanvas = canvas;
       const dispose = initServices(canvas, {
         getPreset: () => presetById(get().presetId),
-        getParams: () => get().activeParams,
-        getMods: () => get().activeMods,
-        getTimeline: () => get().timeline,
-        getParamsFor: (presetId) => resolveParams(presetId, get().paramsByPreset),
-        onSceneChange: (scene) => get().applyScene(scene),
+        getFrameInput: () => {
+          const s = get();
+          return {
+            timeline: s.timeline,
+            basePresetId: s.presetId,
+            baseParams: s.activeParams,
+            baseMods: s.activeMods,
+            baseBg: s.bg,
+            paramsByPreset: s.paramsByPreset,
+            modsByPreset: s.modsByPreset,
+          };
+        },
         getBackground: () => get().bg,
         getSync: () => get().sync,
         isSeeking: () => get().seeking,
@@ -477,19 +482,6 @@ export const useVizStore = create<VizState>((set, get) => {
     setShowTimeline(v) {
       set({ showTimeline: v });
       localStorage.setItem("viz.timelineOpen", v ? "1" : "0");
-    },
-
-    applyScene(scene) {
-      const next = presetById(scene.presetId);
-      const state = get();
-      if (state.presetId === next.id) return;
-      const activeParams = resolveParams(next.id, state.paramsByPreset);
-      const sync = state.syncByPreset[next.id] ?? { ...DEFAULT_SYNC };
-      const activeMods = state.modsByPreset[next.id] ?? [];
-      set({ presetId: next.id, activeParams, activeMods, sync });
-      getRenderer()?.setPreset(next);
-      if (scene.bg) getRenderer()?.setBackground(scene.bg);
-      getAnalyzer().setSync(sync);
     },
 
     setAspect(aspect) {
@@ -688,6 +680,7 @@ export const useVizStore = create<VizState>((set, get) => {
           smoothSpectrum: get().smoothSpectrum,
           timeline: get().timeline.enabled ? get().timeline : undefined,
           paramsByPreset: get().paramsByPreset,
+          modsByPreset: get().modsByPreset,
           // Desktop: stream straight to the picked file (flat memory);
           // browser dev falls back to an in-memory blob + download.
           streamToPath: savePath ?? undefined,

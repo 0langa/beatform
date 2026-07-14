@@ -3,8 +3,8 @@ import { RealtimeAnalyzer } from "../audio/realtimeSource";
 import { Canvas2DRenderer } from "../render/canvas2dRenderer";
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { BgSettings, ParamValues, PresetDef, Renderer } from "../render/types";
-import { applyMods, type ModRoute } from "./modMatrix";
-import { evalTimeline, type Scene, type Timeline } from "./timeline";
+import { applyMods } from "./modMatrix";
+import { resolveActiveFrame, type FrameResolveInput } from "./frameResolve";
 import { presetById } from "../render/presets";
 import type { PlaybackState, SyncSettings } from "../audio/types";
 
@@ -16,15 +16,10 @@ import type { PlaybackState, SyncSettings } from "../audio/types";
  * one-directional (store -> services).
  */
 export interface ServiceHooks {
+  /** Base preset — the renderer's initial target before the loop runs. */
   getPreset(): PresetDef;
-  getParams(): ParamValues;
-  /** Modulation routes for the active preset (empty array = none). */
-  getMods(): ModRoute[];
-  getTimeline(): Timeline;
-  /** Resolved params (defaults + overrides) for ANY preset — crossfades. */
-  getParamsFor(presetId: string): ParamValues;
-  /** The timeline crossed into a scene needing a different preset/bg. */
-  onSceneChange(scene: Scene): void;
+  /** Everything resolveActiveFrame needs, rebuilt from the store per frame. */
+  getFrameInput(): FrameResolveInput;
   getBackground(): BgSettings;
   getSync(): SyncSettings;
   /** True while the user drags the seek bar — playback pushes pause then. */
@@ -130,46 +125,39 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     ro.observe(canvas);
 
     let lastUiUpdate = 0;
+    let currentPresetId: string | null = null;
     let fadeFromId: string | null = null;
     const loop = (tMs: number) => {
       if (disposed) return;
       clearTimeout(fallback);
-      const t = tMs / 1000;
+      const t = tMs / 1000; // wall-clock, ONLY for the analyzer's dt/metering
       const features = ana.update(t);
-      // Timeline: scenes pick the preset/background; automation overrides
-      // params. Evaluated at PLAYBACK time (deterministic), then mods stack.
-      const frame = evalTimeline(hooks.getTimeline(), eng.currentTime);
-      const preset = hooks.getPreset();
-      if (frame.scene && frame.scene.presetId !== preset.id) {
-        hooks.onSceneChange(frame.scene);
+      // Track time drives everything rendered — u.time, timeline, automation —
+      // so preview matches the deterministic export frame-for-frame and idle
+      // motion freezes when paused (u.time = eng.currentTime, not wall clock).
+      const trackTime = eng.currentTime;
+      const rf = resolveActiveFrame(hooks.getFrameInput(), trackTime);
+      if (rf.presetId !== currentPresetId) {
+        renderer?.setPreset(presetById(rf.presetId));
+        currentPresetId = rf.presetId;
       }
-      let params = hooks.getParams();
-      if (frame.scene?.params || Object.keys(frame.automation).length > 0) {
-        params = { ...params, ...frame.scene?.params, ...frame.automation };
-      }
+      renderer?.setBackground(rf.bg);
       // Crossfade: keep the outgoing preset compiled while inside the window
       let transition: { params: ParamValues; mix: number } | undefined;
-      if (frame.prevScene) {
-        if (fadeFromId !== frame.prevScene.presetId) {
-          renderer?.setTransitionPreset(presetById(frame.prevScene.presetId));
-          fadeFromId = frame.prevScene.presetId;
+      if (rf.prev) {
+        if (fadeFromId !== rf.prev.presetId) {
+          renderer?.setTransitionPreset(presetById(rf.prev.presetId));
+          fadeFromId = rf.prev.presetId;
         }
-        transition = {
-          params: {
-            ...hooks.getParamsFor(frame.prevScene.presetId),
-            ...frame.prevScene.params,
-            ...frame.automation,
-          },
-          mix: frame.mix,
-        };
+        transition = { params: rf.prev.params, mix: rf.mix };
       } else if (fadeFromId !== null) {
         renderer?.setTransitionPreset(null);
         fadeFromId = null;
       }
       renderer?.render(
         features,
-        t,
-        applyMods(preset, params, hooks.getMods(), features),
+        trackTime,
+        applyMods(presetById(rf.presetId), rf.params, rf.mods, features),
         transition,
       );
       // E2E probe: lets tooling confirm the render loop is alive

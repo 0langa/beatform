@@ -248,6 +248,7 @@ export default function App() {
         smoothSpectrum: s.smoothSpectrum,
         timeline: s.timeline.enabled ? s.timeline : undefined,
         paramsByPreset: s.paramsByPreset,
+        modsByPreset: s.modsByPreset,
       });
       const info = {
         bytes: result.bytes,
