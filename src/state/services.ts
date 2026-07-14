@@ -117,7 +117,15 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         gpuRetries++;
         void installRenderer();
       };
-      next = gpuRetries < 2 ? gpu : new Canvas2DRenderer(canvas);
+      if (gpuRetries < 2) {
+        next = gpu;
+      } else {
+        // Out of retries: hand back the device we just created rather than
+        // leaking it for the life of the process.
+        gpu.onDeviceLost = null;
+        gpu.dispose();
+        next = new Canvas2DRenderer(canvas);
+      }
       // The budget is meant to catch a device that keeps dying, not to count
       // losses forever: unreset, two unrelated TDRs hours apart would strand
       // the user on Canvas2D for the rest of the session. Once a rebuilt
@@ -189,6 +197,14 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         // Skip the draw, keep the loop: a paused preview must still refresh
         // the transport below, and the caches stay valid for when it resumes.
         raf = requestAnimationFrame(loop);
+        // Re-arm the starvation fallback too. The loop clears it on entry, and
+        // rAF does not fire in a hidden window — so without this, pausing for a
+        // batch in a backgrounded window kills the loop for good, and the
+        // preview never comes back even after the batch finishes.
+        fallback = setTimeout(() => {
+          cancelAnimationFrame(raf);
+          loop(performance.now());
+        }, 300);
         if (eng.playing && t - lastUiUpdate > 0.25 && !hooks.isSeeking()) {
           lastUiUpdate = t;
           hooks.onPlayback(eng.state);

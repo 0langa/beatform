@@ -8,6 +8,7 @@ import {
   isRunComplete,
   newBatchId,
   retryFailed,
+  takenPaths,
   type BatchRun,
   type BatchTrack,
 } from "./batch";
@@ -265,6 +266,7 @@ interface Actions {
   skipCurrentBatchJob(): void;
   cancelBatch(): void;
   retryFailedBatch(): Promise<void>;
+  dismissBatch(): void;
   setError(message: string | null): void;
   saveProject(): Promise<void>;
   openProject(): Promise<void>;
@@ -299,6 +301,8 @@ let exportAbort: AbortController | null = null;
 /** Stops the whole batch; separate from the per-job controller so that
  * skipping one job never ends the night. */
 let batchAbort: AbortController | null = null;
+/** Claimed synchronously by startBatch, before the folder dialog awaits. */
+let batchStarting = false;
 let exportStartedAt = 0;
 /** Live canvas — overlay rasters at its pixel size. Set by initApp. */
 let liveCanvas: HTMLCanvasElement | null = null;
@@ -839,6 +843,11 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     async addBatchTracks(files) {
+      // Guard BOTH ends. Reading tags takes seconds per file (a VBR scan), and
+      // a run can start inside that window — writing a pre-await snapshot then
+      // would blank the live run's jobs and flip batchStatus back to "idle",
+      // which in turn defeats every other guard in this file.
+      if (get().batchStatus === "running") return;
       // Reading each file's own tags IS the feature: no spreadsheet, no data
       // source, no manual titling. duration:true here (and only here) — the
       // queue needs it for its estimate and pays the VBR scan cost off the
@@ -850,6 +859,8 @@ export const useVizStore = create<VizState>((set, get) => {
         });
         added.push({ id: newBatchId(), file, meta, metaFromTags: fromTags, coverArt, duration });
       }
+      // Re-read after the awaits, and bail if a run began while we scanned.
+      if (get().batchStatus === "running") return;
       const cur = get().batch;
       set({
         batch: {
@@ -866,7 +877,7 @@ export const useVizStore = create<VizState>((set, get) => {
 
     removeBatchTrack(id) {
       const b = get().batch;
-      if (!b) return;
+      if (!b || get().batchStatus === "running") return;
       set({ batch: { ...b, tracks: b.tracks.filter((t) => t.id !== id) } });
     },
 
@@ -883,12 +894,21 @@ export const useVizStore = create<VizState>((set, get) => {
 
     async startBatch() {
       const b = get().batch;
-      if (!b || b.tracks.length === 0 || get().batchStatus === "running") return;
+      if (!b || b.tracks.length === 0 || get().batchStatus === "running" || batchStarting) return;
       if (!isTauri()) {
         set({ exportError: "Batch render needs the desktop app (it writes files to a folder)" });
         return;
       }
-      const outDir = await pickFolder("Choose a folder for the rendered videos");
+      // batchStatus does not become "running" until after the folder dialog, so
+      // a double-click on Start would otherwise pass this guard twice and launch
+      // two runs writing to the same paths. Claim the slot synchronously.
+      batchStarting = true;
+      let outDir: string | null = null;
+      try {
+        outDir = await pickFolder("Choose a folder for the rendered videos");
+      } finally {
+        if (!outDir) batchStarting = false;
+      }
       if (!outDir) return;
 
       // The format the export panel is currently set to — one output shape in
@@ -912,10 +932,22 @@ export const useVizStore = create<VizState>((set, get) => {
         tracks: b.tracks,
         formats: [fmt],
         outDir,
-        startedAt: performance.now(),
+        // Date.now, not performance.now: the panel's countdown ticks on Date.now
+        // and prints a finish time, and mixing the two epochs makes elapsed
+        // (and therefore every ETA) meaningless.
+        startedAt: Date.now(),
+        // Freeze the loudness target with the doc — the batch must deliver what
+        // the export panel promises, not silently encode at source level.
+        loudness:
+          settings.loudnessTarget != null
+            ? { targetLufs: settings.loudnessTarget, truePeakDb: settings.truePeakDb }
+            : undefined,
         jobs: [],
       };
-      run.jobs = expandJobs(run.tracks, run.formats, outDir);
+      // Never overwrite a video an earlier (stopped) run already finished into
+      // this folder: those names are spoken for.
+      const alreadyDone = get().batch ? takenPaths(get().batch!) : new Set<string>();
+      run.jobs = expandJobs(run.tracks, run.formats, outDir, alreadyDone);
 
       const ac = new AbortController();
       batchAbort = ac;
@@ -949,12 +981,18 @@ export const useVizStore = create<VizState>((set, get) => {
       } finally {
         exportAbort = null;
         batchAbort = null;
+        batchStarting = false;
         const cur = get().batch;
         set({
           exporting: null,
           batchStatus: cur && isRunComplete(cur) ? "done" : "idle",
         });
       }
+    },
+
+    dismissBatch() {
+      if (get().batchStatus === "running") return;
+      set({ batch: null, batchStatus: "idle" });
     },
 
     skipCurrentBatchJob() {
@@ -970,7 +1008,7 @@ export const useVizStore = create<VizState>((set, get) => {
     async retryFailedBatch() {
       const b = get().batch;
       if (!b || get().batchStatus === "running") return;
-      const again = retryFailed(b, performance.now());
+      const again = retryFailed(b, Date.now());
       if (again.jobs.length === 0) return;
       const ac = new AbortController();
       batchAbort = ac;

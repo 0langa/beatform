@@ -67,8 +67,10 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
         grid = (await result).grid;
       } catch (e) {
         // A file that cannot be decoded fails its jobs and nothing else.
-        const { kind, message } = classifyError(e);
-        for (const job of jobs) hooks.onJobUpdate(job.id, { k: "failed", kind, message });
+        const c = classifyError(e);
+        for (const job of jobs) {
+          hooks.onJobUpdate(job.id, c ? { k: "failed", ...c } : { k: "skipped" });
+        }
         continue;
       }
 
@@ -79,6 +81,13 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
 
         const ac = new AbortController();
         hooks.onJobStart(job.id, ac);
+        // Skip can be pressed during the decode/analysis window above, before
+        // this job's controller existed — honour it rather than rendering the
+        // track the user just asked to pass over.
+        if (ac.signal.aborted) {
+          hooks.onJobUpdate(job.id, { k: "skipped" });
+          continue;
+        }
         hooks.onJobUpdate(job.id, {
           k: "running",
           done: 0,
@@ -114,6 +123,9 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
               overlay,
               {
                 streamToPath: hooks.streamPathFor ? hooks.streamPathFor(job.outPath) : job.outPath,
+                // Frozen with the doc at Start. Without this the batch quietly
+                // ignored the loudness target the export panel was showing.
+                loudness: run.loudness,
                 signal: ac.signal,
                 onProgress: (done, total) => {
                   const secs = (performance.now() - startedAt) / 1000;
@@ -134,8 +146,9 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
           });
         } catch (e) {
           // Deliberately swallowed: one job's failure is one job's failure.
-          const { kind, message } = classifyError(e);
-          hooks.onJobUpdate(job.id, { k: "failed", kind, message });
+          // An abort means the user hit Skip — record that, not a red error.
+          const c = classifyError(e);
+          hooks.onJobUpdate(job.id, c ? { k: "failed", ...c } : { k: "skipped" });
         } finally {
           // 20 full-res bitmaps would otherwise pile up over a night. close()
           // on an already-detached bitmap is a no-op, so this is safe even

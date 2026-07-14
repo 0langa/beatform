@@ -25,13 +25,19 @@ export interface BatchTrack {
   duration: number | null;
 }
 
-export type FailKind = "input" | "gpu" | "disk" | "stalled" | "cancelled" | "unknown";
+export type FailKind = "input" | "gpu" | "disk" | "unknown";
 
 export type JobStatus =
   | { k: "queued" }
   | { k: "running"; done: number; total: number; fps: number | null }
   | { k: "done"; bytes: number; path: string }
-  | { k: "failed"; kind: FailKind; message: string };
+  | { k: "failed"; kind: FailKind; message: string }
+  /**
+   * The user asked for this one to be skipped. Distinct from "failed": nothing
+   * went wrong, so it must not show up red, and "Retry failed" must not quietly
+   * render the track they deliberately passed over.
+   */
+  | { k: "skipped" };
 
 export interface BatchJob {
   id: string;
@@ -53,15 +59,34 @@ export interface BatchRun {
   formats: FormatPreset[];
   jobs: BatchJob[];
   outDir: string;
+  /**
+   * Wall-clock start (Date.now, NOT performance.now). The panel's countdown
+   * ticks on Date.now and reports a finish time, so both ends must share one
+   * epoch — mixing them silently yields an elapsed of ~55 years.
+   */
   startedAt: number;
+  /** Loudness target, frozen with the doc. Undefined = encode at source level. */
+  loudness?: { targetLufs: number; truePeakDb: number };
 }
 
-/** Strip an extension and anything a filesystem would object to. */
+/**
+ * Strip an extension and the characters a filename cannot contain.
+ *
+ * Deliberately NOT `[^\w\- ]`, which is what the single-export path uses: \w is
+ * ASCII-only, so that rule deletes every CJK/Cyrillic/accented character. A
+ * batch of Japanese titles would each sanitise to empty and pile up as
+ * "visualization.mp4", "visualization (2).mp4" — every filename useless and the
+ * mapping back to the tracks lost. The filesystem has no such objection.
+ */
+/** The characters Windows refuses in a filename. Everything else is fair
+ * game — including CJK, Cyrillic and accents. */
+const ILLEGAL_IN_FILENAME = ["<", ">", ":", '"', "/", "\\", "|", "?", "*"];
+
 export function safeName(name: string): string {
-  const base = name
-    .replace(/\.[a-z0-9]+$/i, "")
-    .replace(/[^\w\- ]+/g, "")
-    .trim();
+  let base = name.replace(/\.[a-z0-9]+$/i, "");
+  for (const ch of ILLEGAL_IN_FILENAME) base = base.split(ch).join("");
+  // Windows also rejects a trailing dot or space.
+  base = base.replace(/[. ]+$/, "").trim();
   return base || "visualization";
 }
 
@@ -106,10 +131,11 @@ export function expandJobs(
 export interface BatchStats {
   done: number;
   failed: number;
+  skipped: number;
   total: number;
   framesDone: number;
   framesTotal: number;
-  /** Milliseconds left, or null until at least one job has finished. */
+  /** Milliseconds left, or null when it cannot honestly be estimated. */
   etaMs: number | null;
 }
 
@@ -124,19 +150,36 @@ export interface BatchStats {
 export function runStats(run: BatchRun, nowMs: number): BatchStats {
   let done = 0;
   let failed = 0;
+  let skipped = 0;
   let framesDone = 0;
   let framesTotal = 0;
   let finishedFrames = 0;
+  // A job whose duration could not be read has no frame count, so no honest
+  // share of the bar. Track that separately rather than folding it in as 0:
+  // counting it as zero-length makes the run look further along than it is,
+  // and lets framesDone overshoot framesTotal once it actually renders.
+  let unknown = 0;
   for (const j of run.jobs) {
-    framesTotal += j.totalFrames ?? 0;
+    if (j.totalFrames == null) unknown++;
+    else framesTotal += j.totalFrames;
+
     if (j.status.k === "done") {
       done++;
       framesDone += j.totalFrames ?? 0;
-      finishedFrames += j.totalFrames ?? 0;
+      // Rate comes only from jobs that both finished AND had a known length.
+      if (j.totalFrames != null) finishedFrames += j.totalFrames;
     } else if (j.status.k === "failed") {
       failed++;
+      // Its frames will never be rendered — drop them from the outstanding
+      // work, or the bar can never reach 100% and the ETA counts ghost frames.
+      if (j.totalFrames != null) framesTotal -= j.totalFrames;
+    } else if (j.status.k === "skipped") {
+      skipped++;
+      if (j.totalFrames != null) framesTotal -= j.totalFrames;
     } else if (j.status.k === "running") {
-      framesDone += j.status.done;
+      // Clamp: a job's reported progress can exceed the duration-derived
+      // estimate by a frame or two, and a bar over 100% reads as a bug.
+      framesDone += Math.min(j.status.done, j.totalFrames ?? j.status.done);
     }
   }
   const elapsed = nowMs - run.startedAt;
@@ -145,40 +188,90 @@ export function runStats(run: BatchRun, nowMs: number): BatchStats {
   return {
     done,
     failed,
+    skipped,
     total: run.jobs.length,
-    framesDone,
+    framesDone: Math.min(framesDone, framesTotal),
     framesTotal,
-    etaMs: rate && rate > 0 ? Math.round(remaining / rate) : null,
+    // No estimate while any queued job's length is unknown — "0m left" with a
+    // track still rendering is worse than admitting we don't know.
+    etaMs: rate && rate > 0 && unknown === 0 ? Math.round(remaining / rate) : null,
   };
 }
 
 /** True once no job can still make progress. */
 export function isRunComplete(run: BatchRun): boolean {
-  return run.jobs.every((j) => j.status.k === "done" || j.status.k === "failed");
+  return (
+    run.jobs.length > 0 &&
+    run.jobs.every(
+      (j) => j.status.k === "done" || j.status.k === "failed" || j.status.k === "skipped",
+    )
+  );
+}
+
+/** Output paths already written by this run — never overwrite a finished video. */
+export function takenPaths(run: BatchRun): Set<string> {
+  const taken = new Set<string>();
+  for (const j of run.jobs) {
+    if (j.status.k === "done") taken.add(j.outPath.split("/").pop()!.toLowerCase());
+  }
+  return taken;
 }
 
 /**
- * A new run containing only the failed jobs, against the SAME frozen document
- * — a retry must reproduce the original attempt, not silently adopt whatever
- * the template looks like now.
+ * Re-queue the failed jobs, KEEPING the completed ones so the report still
+ * tells the truth about what was rendered. Same frozen document: a retry
+ * reproduces the original attempt rather than adopting a newer template.
+ *
+ * Skipped jobs are left alone — the user passed over those on purpose.
+ *
+ * Output paths are re-derived from the tracks' CURRENT titles, because the
+ * usual reason to retry is that you just fixed a title; writing the new title
+ * into the old filename would be its own small betrayal. Paths already written
+ * by this run are excluded so a retry can never clobber a finished video.
  */
 export function retryFailed(run: BatchRun, nowMs: number): BatchRun {
   const failed = run.jobs.filter((j) => j.status.k === "failed");
+  if (failed.length === 0) return run;
+  const taken = takenPaths(run);
+  const byId = new Map(run.tracks.map((t) => [t.id, t]));
+  const requeued = failed.map((j) => {
+    const track = byId.get(j.trackId);
+    const fmt = run.formats.find((f) => f.id === j.formatId);
+    let outPath = j.outPath;
+    if (track && fmt) {
+      const stem = safeName(track.meta.title || track.file.name);
+      const withFmt = run.formats.length > 1 ? `${stem}_${fmt.w}x${fmt.h}` : stem;
+      let name = `${withFmt}.mp4`;
+      let n = 2;
+      while (taken.has(name.toLowerCase())) name = `${withFmt} (${n++}).mp4`;
+      taken.add(name.toLowerCase());
+      outPath = `${run.outDir}/${name}`;
+    }
+    return { ...j, outPath, status: { k: "queued" } as JobStatus };
+  });
+  const requeuedIds = new Set(requeued.map((j) => j.id));
   return {
     ...run,
     startedAt: nowMs,
-    jobs: failed.map((j) => ({ ...j, status: { k: "queued" } as JobStatus })),
+    // Keep every other job exactly as it was; only the failures re-run.
+    jobs: run.jobs.map((j) => (requeuedIds.has(j.id) ? requeued.find((r) => r.id === j.id)! : j)),
   };
 }
 
-/** Classify a thrown export error into something a user can act on. */
-export function classifyError(e: unknown): { kind: FailKind; message: string } {
+/**
+ * Classify a thrown export error into something a user can act on.
+ *
+ * Returns null for an abort — that is not a failure, it is the user getting
+ * what they asked for, and showing it red next to real failures (and then
+ * re-rendering it under "Retry failed") would be a lie about what happened.
+ */
+export function classifyError(e: unknown): { kind: FailKind; message: string } | null {
   const err = e as Error;
   const name = err?.name ?? "";
   const message = err?.message ?? String(e);
-  if (name === "AbortError") return { kind: "cancelled", message: "Cancelled" };
+  if (name === "AbortError") return null;
   if (name === "GpuDeviceLostError" || name === "GpuInitError") return { kind: "gpu", message };
-  if (/no space|ENOSPC|disk/i.test(message)) return { kind: "disk", message };
+  if (/no space|ENOSPC|disk full|stalled/i.test(message)) return { kind: "disk", message };
   if (/decode|empty|unsupported/i.test(message)) return { kind: "input", message };
   return { kind: "unknown", message };
 }

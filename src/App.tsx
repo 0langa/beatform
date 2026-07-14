@@ -190,7 +190,9 @@ export default function App() {
           break;
         case "b":
         case "B":
-          s.setShowBatch(!s.showBatch);
+          // Same guard the ✕, Escape and the backdrop enforce: a running queue
+          // must not be dismissable behind the user's back.
+          if (!(s.showBatch && s.batchStatus === "running")) s.setShowBatch(!s.showBatch);
           break;
         case "Escape":
           s.setShowHelp(false);
@@ -549,6 +551,7 @@ export default function App() {
           <button
             className={`icon-btn ${showBatch ? "active" : ""}`}
             title="Batch render — one video per track (B)"
+            disabled={showBatch && batchStatus === "running"}
             onClick={() => store().setShowBatch(!showBatch)}
           >
             <IconBatch size={18} />
@@ -693,6 +696,7 @@ export default function App() {
           onSkipJob={() => store().skipCurrentBatchJob()}
           onCancel={() => store().cancelBatch()}
           onRetryFailed={() => void store().retryFailedBatch()}
+          onNewBatch={() => store().dismissBatch()}
           onClose={() => store().setShowBatch(false)}
         />
       )}

@@ -25,6 +25,8 @@ export interface BatchPanelProps {
   onSkipJob(): void;
   onCancel(): void;
   onRetryFailed(): void;
+  /** Clear the finished run so another batch can be set up. */
+  onNewBatch(): void;
   onClose(): void;
 }
 
@@ -88,7 +90,9 @@ export function BatchPanel(props: BatchPanelProps) {
     const untagged = tracks.filter((t) => !t.metaFromTags).length;
     if (untagged > 0) {
       warnings.push(
-        `${untagged} of ${tracks.length} track${untagged === 1 ? " has" : "s have"} no title tag — the filename was used. Edit any title below.`,
+        `${untagged} of ${tracks.length} track${tracks.length === 1 ? "" : "s"} ${
+          untagged === 1 ? "has" : "have"
+        } no title tag — the filename was used. Edit any title below.`,
       );
     }
   }
@@ -167,13 +171,22 @@ export function BatchPanel(props: BatchPanelProps) {
         {status === "done" && stats && (
           <div className="export-status">
             <span>
-              {stats.done} done{stats.failed > 0 ? ` · ${stats.failed} failed` : ""}
+              {stats.done} done
+              {stats.failed > 0 ? ` · ${stats.failed} failed` : ""}
+              {stats.skipped > 0 ? ` · ${stats.skipped} skipped` : ""}
             </span>
-            {stats.failed > 0 && (
-              <button className="text-btn" onClick={props.onRetryFailed}>
-                Retry {stats.failed} failed
+            <span className="save-look-row" style={{ margin: 0 }}>
+              {stats.failed > 0 && (
+                <button className="text-btn" onClick={props.onRetryFailed}>
+                  Retry {stats.failed} failed
+                </button>
+              )}
+              {/* Without this the panel is a dead end — the only way to run a
+                  second batch was to restart the app. */}
+              <button className="text-btn" onClick={props.onNewBatch}>
+                New batch
               </button>
-            )}
+            </span>
           </div>
         )}
 
@@ -193,6 +206,8 @@ export function BatchPanel(props: BatchPanelProps) {
                   <input
                     className="look-name-input"
                     value={t.meta.title}
+                    // Editable while idle or after a run (so a failed track can
+                    // be retitled and retried), locked only while rendering.
                     disabled={running}
                     // Filename-guessed titles read dim + italic, so the three
                     // that need fixing are obvious at a glance among twenty.
@@ -207,6 +222,7 @@ export function BatchPanel(props: BatchPanelProps) {
                       {st.kind}
                     </span>
                   )}
+                  {st?.k === "skipped" && <span className="batch-meta">skipped</span>}
                   {st?.k === "running" && (
                     <span className="batch-meta">
                       {st.total > 0 ? Math.round((st.done / st.total) * 100) : 0}%
