@@ -118,20 +118,23 @@ function toResult(core: ExportCoreResult): ExportResult {
 
 export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise<ExportResult> {
   const full = pcmFromAudioBuffer(audio);
-  // Segment slice (Canvas loop mode) — and always COPY: transferring the
-  // engine's live channel data to the worker would detach it.
+  // Segment slice (Canvas loop mode). Always COPY: transferring the engine's
+  // live channel data to the worker would detach it. buildPcm() is called
+  // per-attempt so the worker path and any inline fallback each get their own
+  // fresh, transferable copy (the worker transfer neuters the buffers).
   const s0 = o.segment ? Math.max(0, Math.floor(o.segment.start * full.sampleRate)) : 0;
   const s1 = o.segment
     ? Math.min(full.length, s0 + Math.floor(o.segment.duration * full.sampleRate))
     : full.length;
-  const channels = full.channels.slice(0, 2).map((c) => c.slice(s0, s1));
-  const pcm = {
+  if (s1 - s0 <= 0) throw new Error("Nothing to export: the audio segment is empty");
+  const buildPcm = () => ({
     sampleRate: full.sampleRate,
     length: s1 - s0,
     duration: (s1 - s0) / full.sampleRate,
-    channels,
-  };
-  const job: ExportJob = {
+    channels: full.channels.slice(0, 2).map((c) => c.slice(s0, s1)),
+  });
+
+  const buildJob = (pcm: ExportJob["pcm"]): ExportJob => ({
     pcm,
     width: o.width,
     height: o.height,
@@ -150,10 +153,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
       o.timeline && o.segment
         ? {
             ...o.timeline,
-            scenes: o.timeline.scenes.map((s) => ({
-              ...s,
-              start: s.start - o.segment!.start,
-            })),
+            scenes: o.timeline.scenes.map((s) => ({ ...s, start: s.start - o.segment!.start })),
             lanes: o.timeline.lanes.map((l) => ({
               ...l,
               keyframes: l.keyframes.map((k) => ({ ...k, t: k.t - o.segment!.start })),
@@ -163,27 +163,25 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     loopCrossfadeSec: o.loopCrossfadeSec,
     beatGrid:
       o.beatGrid && o.segment
-        ? {
-            ...o.beatGrid,
-            beatTimes: o.beatGrid.beatTimes.map((t) => t - o.segment!.start),
-          }
+        ? { ...o.beatGrid, beatTimes: o.beatGrid.beatTimes.map((t) => t - o.segment!.start) }
         : o.beatGrid,
     mode: o.streamToPath ? "stream" : "buffer",
-  };
+  });
 
   const writer = o.streamToPath ? await createTauriWriter(o.streamToPath) : null;
   try {
     let result: ExportCoreResult;
     if (typeof Worker === "undefined") {
-      result = await runInline(job, o, writer);
+      result = await runInline(buildJob(buildPcm()), o, writer);
     } else {
       try {
-        result = await runInWorker(job, o, writer);
+        result = await runInWorker(buildJob(buildPcm()), o, writer);
       } catch (e) {
         // A worker may lack WebGPU where the main thread has it (older
-        // WebView2). Everything else is a real failure.
+        // WebView2). The worker run transferred (detached) its job's PCM, so
+        // the inline fallback gets a FRESH job with fresh copies.
         if ((e as Error).message.startsWith("__fallback__")) {
-          result = await runInline(job, o, writer);
+          result = await runInline(buildJob(buildPcm()), o, writer);
         } else {
           throw e;
         }
@@ -257,8 +255,10 @@ function runInWorker(
       }
     };
 
+    // Transfer only the big PCM buffers. The overlay ImageBitmap is left OUT
+    // of the transfer list so it is structured-CLONED to the worker and the
+    // main-thread copy survives for a possible inline fallback.
     const transfers: Transferable[] = job.pcm.channels.map((c) => c.buffer);
-    if (job.overlay) transfers.push(job.overlay);
     worker.postMessage({ type: "start", job }, transfers);
   }).finally(() => {
     o.signal?.removeEventListener("abort", onAbort);
