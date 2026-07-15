@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { demos } from "./audio/demoTrack";
-import { BG_TRANSPARENT } from "./render/types";
+import { BG_TRANSPARENT, DEFAULT_POST } from "./render/types";
 import { presets, presetById } from "./render/presets";
 import { exportVideo } from "./export/videoExporter";
 import { APP_VERSION } from "./version";
@@ -300,7 +300,11 @@ export default function App() {
         beatGrid: s.beatGrid ?? undefined,
         mods: s.activeMods,
         smoothSpectrum: s.smoothSpectrum,
-        post: opts.post ?? s.post,
+        // Merge onto DEFAULT_POST. A partial post object is a trap: `exposure`
+        // is a MULTIPLY (1 = neutral), so omitting it lands 0 in the uniform
+        // and every frame renders solid black — which silently turned a whole
+        // regression baseline into hashes of black frames.
+        post: opts.post ? { ...DEFAULT_POST, ...opts.post } : s.post,
         motion: s.motion,
         coverArt: s.coverArt ?? undefined,
         timeline: s.timeline.enabled ? s.timeline : undefined,

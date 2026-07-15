@@ -271,8 +271,11 @@ fn preset(uv: vec2f) -> vec4f {
   let inner = smoothstep(circleR, circleR - 0.02, r);
   var fill = hsl2rgb(P_hue(), 0.5, 0.04 + u.drive * 0.07);
   if (P_cover() > 0.5 && hasCover()) {
-    // Map the disc to the image (0..1), so the art fills the circle.
-    let cuv = vec2f(c.x / circleR, -c.y / circleR) * 0.5 + vec2f(0.5);
+    // Map the disc to the image (0..1), so the art fills the circle. No flip on
+    // y: uv already arrives top-down from the vertex stage, so centered()'s y
+    // grows downward exactly like the texture's v does. Negating it here hung
+    // the cover upside down.
+    let cuv = vec2f(c.x / circleR, c.y / circleR) * 0.5 + vec2f(0.5);
     let art = coverSample(cuv).rgb * P_coverBright();
     fill = mix(fill, art, P_coverMix());
   }
