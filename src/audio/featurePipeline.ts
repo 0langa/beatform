@@ -1,5 +1,5 @@
 import type { AudioFeatures, SyncMode, SyncSettings } from "./types";
-import { DEFAULT_SYNC } from "./types";
+import { DEFAULT_SYNC, sanitizeSync } from "./types";
 
 export const MIN_FREQ = 30;
 export const MAX_FREQ = 16000;
@@ -263,13 +263,15 @@ export class FeaturePipeline {
     return f;
   }
 
-  /** Choose what the visuals follow. Safe to call any time. */
+  /** Choose what the visuals follow. Safe to call any time, with any input —
+   * malformed settings are coerced rather than allowed to NaN the drive EMA. */
   setSync(sync: SyncSettings): void {
-    if (sync.mode !== this.sync.mode) {
+    const safe = sanitizeSync(sync);
+    if (safe.mode !== this.sync.mode) {
       this.syncFluxHistory.length = 0;
       this.syncBeatIntensity = 0;
     }
-    this.sync = { ...sync };
+    this.sync = safe;
   }
 
   private syncBand(mode: SyncMode): [number, number] {

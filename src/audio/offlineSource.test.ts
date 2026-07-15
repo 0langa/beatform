@@ -86,14 +86,15 @@ describe("OfflineAnalyzer", () => {
     const analyzer = new OfflineAnalyzer(makeTestBuffer(), FPS);
     const { beatFrames } = collectTrace(analyzer);
     // Kicks land at t = 0, 0.5, 1.0, 1.5 → frames 0, 30, 60, 90. Frame N's
-    // window is the audio ENDING at t = N/fps, so a kick starting exactly at
-    // frame N first contributes energy to frame N+1. The t=0 kick falls inside
-    // the detector warmup (~12 frames of flux history) and is not detectable.
+    // window ends at t + ANALYSIS_LOOKAHEAD, so a kick starting exactly at
+    // frame N fires IN frame N (see offlineSource.ts — pulses must land in
+    // the frame where the transient is heard, not one later). The t=0 kick
+    // falls inside the detector warmup (~12 frames) and is not detectable.
     const kicks = [30, 60, 90];
     expect(beatFrames.length).toBe(kicks.length);
     for (let i = 0; i < kicks.length; i++) {
-      expect(beatFrames[i]).toBeGreaterThan(kicks[i]);
-      expect(beatFrames[i]).toBeLessThanOrEqual(kicks[i] + 3);
+      expect(beatFrames[i]).toBeGreaterThanOrEqual(kicks[i]);
+      expect(beatFrames[i]).toBeLessThanOrEqual(kicks[i] + 2);
     }
   });
 

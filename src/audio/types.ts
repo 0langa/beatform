@@ -68,6 +68,36 @@ export interface SyncSettings {
 
 export const DEFAULT_SYNC: SyncSettings = { mode: "kick", smooth: 0.5 };
 
+const SYNC_MODES: readonly SyncMode[] = [
+  "energy",
+  "bass",
+  "kick",
+  "melody",
+  "voice",
+  "treble",
+  "snare",
+  "hats",
+];
+
+/**
+ * Coerce untrusted sync settings (imported .avpreset / .avproj, localStorage)
+ * into a safe shape. An out-of-range or missing `smooth` fed the drive EMA a
+ * NaN/negative coefficient — and a NaN drive self-propagates forever, killing
+ * visuals until restart. Every path into the pipeline goes through this.
+ */
+export function sanitizeSync(v: unknown): SyncSettings {
+  const p = (typeof v === "object" && v !== null ? v : {}) as Partial<SyncSettings>;
+  const clamp01 = (n: unknown, fallback: number) =>
+    typeof n === "number" && Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
+  const smooth = clamp01(p.smooth, DEFAULT_SYNC.smooth);
+  return {
+    mode: SYNC_MODES.includes(p.mode as SyncMode) ? (p.mode as SyncMode) : DEFAULT_SYNC.mode,
+    smooth,
+    ...(p.attack !== undefined ? { attack: clamp01(p.attack, smooth) } : {}),
+    ...(p.release !== undefined ? { release: clamp01(p.release, smooth) } : {}),
+  };
+}
+
 export interface PlaybackState {
   playing: boolean;
   time: number;

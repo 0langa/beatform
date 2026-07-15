@@ -20,6 +20,8 @@ export class AudioEngine {
   private gain: GainNode;
   private source: AudioBufferSourceNode | null = null;
   private buffer: AudioBuffer | null = null;
+  /** Monotonic load counter: a slow decode must not clobber a newer load. */
+  private loadGen = 0;
 
   /** ctx.currentTime at which playback of current segment began */
   private startedAt = 0;
@@ -57,8 +59,14 @@ export class AudioEngine {
   }
 
   async loadArrayBuffer(data: ArrayBuffer, name: string): Promise<void> {
+    const gen = ++this.loadGen;
+    const buffer = await this.ctx.decodeAudioData(data);
+    // Two overlapping loads race their decodes: whichever resolves LAST used
+    // to win, so a slow first drop could clobber a quick second one. Only the
+    // newest load may commit.
+    if (gen !== this.loadGen) return;
     this.stopSource();
-    this.buffer = await this.ctx.decodeAudioData(data);
+    this.buffer = buffer;
     this._trackName = name;
     this.offset = 0;
     this._playing = false;
@@ -67,6 +75,7 @@ export class AudioEngine {
 
   /** Load an already-synthesized buffer (demo track). */
   loadBuffer(buffer: AudioBuffer, name: string): void {
+    this.loadGen++; // supersede any decode still in flight
     this.stopSource();
     this.buffer = buffer;
     this._trackName = name;
@@ -128,6 +137,16 @@ export class AudioEngine {
   /** Decoded track, if any — the export pipeline's input. */
   get audioBuffer(): AudioBuffer | null {
     return this.buffer;
+  }
+
+  /**
+   * Seconds between the graph head (what ctx.currentTime and the analysers
+   * describe) and the speakers. Visuals presented "now" should show the
+   * track at currentTime minus this, or they lead the audible sound.
+   */
+  get outputLatency(): number {
+    const out = this.ctx.outputLatency;
+    return this.ctx.baseLatency + (Number.isFinite(out) ? out : 0);
   }
 
   get currentTime(): number {

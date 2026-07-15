@@ -57,8 +57,14 @@ export class RealtimeAnalyzer {
     this.grid = grid;
   }
 
-  /** Call once per animation frame with a seconds timestamp. */
-  update(now: number): AudioFeatures {
+  /**
+   * Call once per animation frame. `now` is a wall-clock seconds timestamp
+   * (drives dt only); `trackTime` is the track position the visuals present
+   * this frame — the caller passes the output-latency-compensated clock so
+   * grid phase and f.time align with what the ears hear (defaults to the
+   * engine's raw clock).
+   */
+  update(now: number, trackTime = this.engine.currentTime): AudioFeatures {
     const dt = this.lastFrameAt === null ? 1 / 60 : now - this.lastFrameAt;
     this.lastFrameAt = now;
     this.engine.analyser.getFloatTimeDomainData(this.timeData);
@@ -78,15 +84,13 @@ export class RealtimeAnalyzer {
     return this.pipeline.update({
       magDb: this.magDb,
       waveform: this.timeData,
-      time: this.engine.currentTime,
+      time: trackTime,
       dt,
       playing: this.engine.playing,
       duration: this.engine.duration,
       width: stereoWidth(this.timeL, this.timeR),
       lufs: this.engine.playing ? this.meter.momentary : undefined,
-      ...(this.grid
-        ? { bpm: this.grid.bpm, ...gridPhase(this.grid, this.engine.currentTime) }
-        : {}),
+      ...(this.grid ? { bpm: this.grid.bpm, ...gridPhase(this.grid, trackTime) } : {}),
     });
   }
 }

@@ -26,6 +26,15 @@ const FFT_SIZE = 2048;
 const HOP = 512;
 const MIN_BPM = 60;
 const MAX_BPM = 200;
+/**
+ * Envelope frames are timestamped at the analysis window START, but a
+ * transient only drives the flux once it has slid ~0.7 windows in (the Hann
+ * edge suppresses it before that). Measured on synthetic kick tracks at
+ * 90/120/174 BPM: beats reported 27-36 ms early, mean ~-30 ms at 48 kHz =
+ * 0.7 * FFT_SIZE / sampleRate. Shifting the reported beat times by that
+ * constant puts the grid on the audible transients.
+ */
+const ONSET_LATENCY_WINDOWS = 0.7;
 
 /** Onset-strength envelope via log-magnitude spectral flux. */
 export function onsetEnvelope(
@@ -218,6 +227,8 @@ export function analyzeBeatGrid(pcm: PcmData): BeatGrid {
   const { env, hopSec } = onsetEnvelope(mono, pcm.sampleRate);
   const bpm = estimateTempo(env, hopSec);
   const beatTimes = trackBeats(env, hopSec, bpm);
+  const shift = (ONSET_LATENCY_WINDOWS * FFT_SIZE) / pcm.sampleRate;
+  for (let i = 0; i < beatTimes.length; i++) beatTimes[i] += shift;
   return { bpm: Math.round(bpm * 10) / 10, beatTimes, hopSec };
 }
 

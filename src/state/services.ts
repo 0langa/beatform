@@ -97,6 +97,36 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
   let ro: ResizeObserver | null = null;
   let fallback: ReturnType<typeof setTimeout> | undefined;
   let gpuRetries = 0;
+  /** Sibling canvas the 2D fallback draws on when the original is unusable. */
+  let fallbackCanvas: HTMLCanvasElement | null = null;
+
+  /**
+   * Build the Canvas2D fallback. A canvas that has ever been configured for
+   * WebGPU can never hand out a 2D context again (context mode is permanent),
+   * so after a device loss the fallback must draw on a FRESH canvas layered
+   * exactly over the original — constructing it on the WebGPU-claimed canvas
+   * throws, and used to leave a permanent black screen with no warning.
+   */
+  const make2dRenderer = (): Renderer => {
+    try {
+      return new Canvas2DRenderer(canvas);
+    } catch {
+      if (!fallbackCanvas) {
+        const fresh = document.createElement("canvas");
+        fresh.style.cssText = "position:absolute;inset:0;width:100%;height:100%;";
+        const parent = canvas.parentElement;
+        if (parent && getComputedStyle(parent).position === "static") {
+          parent.style.position = "relative";
+        }
+        canvas.insertAdjacentElement("afterend", fresh);
+        // The dead WebGPU canvas would otherwise sit on top showing its last
+        // frame (or garbage) — hide it; the fallback path is terminal.
+        canvas.style.visibility = "hidden";
+        fallbackCanvas = fresh;
+      }
+      return new Canvas2DRenderer(fallbackCanvas);
+    }
+  };
   /** When the current renderer was installed — drives the retry-budget reset. */
   let installedAt = 0;
   // The frame loop caches which preset/transition it last pushed to the
@@ -115,7 +145,14 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         renderer = null;
         gpu.dispose();
         gpuRetries++;
-        void installRenderer();
+        void installRenderer().catch(() => {
+          // Even the fallback failed — surface it instead of dying silently
+          // in a floating promise with the canvas frozen black.
+          hooks.onRendererChanged(
+            "canvas2d",
+            "Rendering failed after a GPU reset — restart the app to recover.",
+          );
+        });
       };
       if (gpuRetries < 2) {
         next = gpu;
@@ -124,7 +161,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         // leaking it for the life of the process.
         gpu.onDeviceLost = null;
         gpu.dispose();
-        next = new Canvas2DRenderer(canvas);
+        next = make2dRenderer();
       }
       // The budget is meant to catch a device that keeps dying, not to count
       // losses forever: unreset, two unrelated TDRs hours apart would strand
@@ -132,7 +169,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       // renderer has held up for a while, the trouble is over — forget it.
       installedAt = performance.now();
     } catch {
-      next = new Canvas2DRenderer(canvas);
+      next = make2dRenderer();
     }
     if (disposed) {
       next.dispose();
@@ -165,6 +202,8 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     ro.observe(canvas);
 
     let lastUiUpdate = 0;
+    /** Smoothed output latency (s); <0 = not sampled yet. */
+    let latency = -1;
     let currentPresetId: string | null = null;
     let fadeFromId: string | null = null;
     resyncRenderer = () => {
@@ -175,7 +214,18 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       if (disposed) return;
       clearTimeout(fallback);
       const t = tMs / 1000; // wall-clock, ONLY for the analyzer's dt/metering
-      const features = ana.update(t);
+      // Present what the ears hear: the engine clock and the analyser tap
+      // both run ahead of the speakers by the output latency. Smoothed (the
+      // browser re-estimates it live and small jumps would judder u.time)
+      // and applied only while playing — paused frames must sit exactly on
+      // the seek position.
+      if (eng.playing) {
+        const lat = eng.outputLatency;
+        latency = latency < 0 ? lat : latency + (lat - latency) * 0.05;
+      }
+      const compensated =
+        eng.playing && latency > 0 ? Math.max(0, eng.currentTime - latency) : eng.currentTime;
+      const features = ana.update(t, compensated);
       // A WebGPU renderer that has survived this long is healthy; give the
       // retry budget back so a later, unrelated device loss still gets its
       // rebuild. Only counts while actually on WebGPU — once we're on the
@@ -191,8 +241,8 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       }
       // Track time drives everything rendered — u.time, timeline, automation —
       // so preview matches the deterministic export frame-for-frame and idle
-      // motion freezes when paused (u.time = eng.currentTime, not wall clock).
-      const trackTime = eng.currentTime;
+      // motion freezes when paused (track time, not wall clock).
+      const trackTime = compensated;
       if (liveRenderPaused) {
         // Skip the draw, keep the loop: a paused preview must still refresh
         // the transport below, and the caches stay valid for when it resumes.
@@ -275,6 +325,9 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     disposeLoop = null;
     renderer?.dispose();
     renderer = null;
+    fallbackCanvas?.remove();
+    fallbackCanvas = null;
+    canvas.style.visibility = "";
     analyzer = null;
     eng.dispose();
     if (engine === eng) engine = null;

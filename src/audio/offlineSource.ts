@@ -7,6 +7,18 @@ import { gridPhase, type BeatGrid } from "./analysis/beatGrid";
 
 const FFT_SIZE = 4096;
 
+/**
+ * Analysis lookahead, seconds. The FFT window ends at t + LOOKAHEAD instead
+ * of t: a transient landing exactly on a frame's timestamp has zero Hann
+ * weight in a window ending at t, so every beat/onset pulse fired one full
+ * frame late (measured: exactly +33 ms at 30 fps, +17 ms at 60 fps on
+ * synthetic kicks). One 60 fps frame of lookahead lands the pulse in the
+ * frame where the transient is heard. The live path needs no counterpart:
+ * its analyser taps the audio graph ahead of the speakers by the output
+ * latency, which plays the same role.
+ */
+const ANALYSIS_LOOKAHEAD = 1 / 60;
+
 /** Extract plain PCM from a decoded AudioBuffer (main thread only). */
 export function pcmFromAudioBuffer(buffer: AudioBuffer): PcmData {
   const channels: Float32Array[] = [];
@@ -102,19 +114,24 @@ export class OfflineAnalyzer {
   nextFrameFeatures(): AudioFeatures {
     const n = this.nextFrame++;
     const t = n / this.fps;
-    const end = Math.min(this.mono.length, Math.round(t * this.sampleRate));
+    const end = Math.min(this.mono.length, Math.round((t + ANALYSIS_LOOKAHEAD) * this.sampleRate));
     const start = Math.max(0, end - FFT_SIZE);
     this.windowBuf.fill(0);
     this.windowBuf.set(this.mono.subarray(start, end), FFT_SIZE - (end - start));
     this.fft.magnitudesDb(this.windowBuf, this.magDb);
-    // Meter gets the contiguous new samples up to this frame's end
-    if (end > this.meterFed) {
+    // Meter gets the contiguous new samples up to this frame's true end —
+    // loudness stays on the un-shifted timeline, only analysis looks ahead
+    const meterEnd = Math.min(this.mono.length, Math.round(t * this.sampleRate));
+    if (meterEnd > this.meterFed) {
       const ch =
         this.meterChannels === 1
-          ? [this.left.subarray(this.meterFed, end)]
-          : [this.left.subarray(this.meterFed, end), this.right.subarray(this.meterFed, end)];
+          ? [this.left.subarray(this.meterFed, meterEnd)]
+          : [
+              this.left.subarray(this.meterFed, meterEnd),
+              this.right.subarray(this.meterFed, meterEnd),
+            ];
       this.meter.process(ch);
-      this.meterFed = end;
+      this.meterFed = meterEnd;
     }
     return this.pipeline.update({
       magDb: this.magDb,
