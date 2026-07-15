@@ -14,6 +14,8 @@ import type { OverlayLayer } from "../render/overlay";
 export interface BatchPanelProps {
   run: BatchRun | null;
   status: "idle" | "running" | "done";
+  /** Files still being tag-scanned (0 = idle) — the scan takes seconds/file. */
+  scanning: number;
   /** Document layers, for the pre-flight checks. */
   overlayLayers: OverlayLayer[];
   aspect: string;
@@ -101,7 +103,13 @@ export function BatchPanel(props: BatchPanelProps) {
 
   return (
     <div className="modal-backdrop" onClick={() => !running && props.onClose()}>
-      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal wide"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Batch render"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="panel-header">
           <span className="panel-heading">Batch render</span>
           <button
@@ -115,11 +123,18 @@ export function BatchPanel(props: BatchPanelProps) {
           </button>
         </div>
 
-        {tracks.length === 0 && (
+        {tracks.length === 0 && props.scanning === 0 && (
           <p className="section-hint">
             Drop in a folder of tracks and render one video per track, unattended. Titles come from
             each file's own tags — no spreadsheet, no retyping. Everything else (preset, layers,
             timeline, post) is whatever you have set up right now.
+          </p>
+        )}
+
+        {props.scanning > 0 && (
+          <p className="section-hint">
+            Reading tags… {props.scanning} file{props.scanning === 1 ? "" : "s"} left. Titles and
+            durations appear when the scan finishes.
           </p>
         )}
 

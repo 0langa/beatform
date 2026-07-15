@@ -106,6 +106,7 @@ export default function App() {
   const exportDone = useVizStore((s) => s.exportDone);
   const batch = useVizStore((s) => s.batch);
   const batchStatus = useVizStore((s) => s.batchStatus);
+  const batchScanning = useVizStore((s) => s.batchScanning);
   const showBatch = useVizStore((s) => s.showBatch);
 
   const store = useVizStore.getState; // stable accessor for actions/handlers
@@ -451,8 +452,16 @@ export default function App() {
         e.preventDefault();
         dragDepthRef.current = 0;
         store().setDragOver(false);
-        const file = e.dataTransfer.files[0];
-        if (file) void store().loadFile(file);
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length === 0) return;
+        // With the batch panel open, dropped tracks QUEUE — the panel says
+        // "drop in a folder of tracks", and replacing the live track with
+        // files[0] while ignoring the rest betrayed exactly that promise.
+        if (store().showBatch) {
+          void store().addBatchTracks(files);
+        } else {
+          void store().loadFile(files[0]);
+        }
       }}
     >
       <div className="stage">
@@ -488,7 +497,7 @@ export default function App() {
       {dragOver && (
         <div className="drop-overlay">
           <IconMusic size={44} />
-          <span>Drop to play</span>
+          <span>{showBatch ? "Drop to add to the batch queue" : "Drop to play"}</span>
         </div>
       )}
 
@@ -545,8 +554,14 @@ export default function App() {
         <div className="top-right">
           <button
             className="ghost-btn accent"
-            disabled={!playback.trackName}
-            title={playback.trackName ? "Export MP4 video" : "Load a track first"}
+            disabled={!playback.trackName || batchStatus === "running"}
+            title={
+              batchStatus === "running"
+                ? "Batch render in progress"
+                : playback.trackName
+                  ? "Export MP4 video"
+                  : "Load a track first"
+            }
             onClick={() => store().setShowExport(true)}
           >
             <IconExport size={16} />
@@ -666,7 +681,13 @@ export default function App() {
 
       {showHelp && (
         <div className="modal-backdrop" onClick={() => store().setShowHelp(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Keyboard shortcuts"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="panel-header">
               <span className="panel-heading">Keyboard shortcuts</span>
               <button className="icon-btn subtle" onClick={() => store().setShowHelp(false)}>
@@ -690,6 +711,7 @@ export default function App() {
         <BatchPanel
           run={batch}
           status={batchStatus}
+          scanning={batchScanning}
           overlayLayers={overlayLayers}
           aspect={aspect}
           formatLabel={RESOLUTIONS[exportSettings.resIdx].label}
@@ -707,7 +729,13 @@ export default function App() {
 
       {showExport && (
         <div className="modal-backdrop" onClick={() => !exporting && store().setShowExport(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Export video"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="panel-header">
               <span className="panel-heading">Export video</span>
               <button
@@ -857,7 +885,11 @@ export default function App() {
                   </select>
                 </label>
                 <div className="field">
-                  <span>Starts at {exportSettings.canvasStart.toFixed(1)} s</span>
+                  {/* Show the CLAMPED value — the label must match what the
+                      slider shows and what the export actually uses. */}
+                  <span>
+                    Starts at {Math.min(exportSettings.canvasStart, canvasMaxStart).toFixed(1)} s
+                  </span>
                   <Slider
                     min={0}
                     max={Math.max(0.1, canvasMaxStart)}

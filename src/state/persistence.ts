@@ -100,7 +100,15 @@ export function saveStoredOverlay(
   layers: OverlayLayer[],
   assets: Record<string, OverlayAsset>,
 ): void {
-  localStorage.setItem(LS_OVERLAY, JSON.stringify({ layers, assets }));
+  // Best-effort: image assets are multi-MB data URLs and can blow the
+  // localStorage quota. A failed persist must not throw out of the store
+  // action — the layer would exist in state but never draw (the trailing
+  // refreshOverlay() call would be skipped).
+  try {
+    localStorage.setItem(LS_OVERLAY, JSON.stringify({ layers, assets }));
+  } catch (e) {
+    console.warn("[persist] overlay too large for localStorage; session-only", e);
+  }
 }
 
 const LS_ASPECT = "viz.aspect.v1";

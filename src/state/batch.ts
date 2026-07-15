@@ -65,6 +65,13 @@ export interface BatchRun {
    * epoch — mixing them silently yields an elapsed of ~55 years.
    */
   startedAt: number;
+  /**
+   * Frames already finished when startedAt was (re)stamped — set by retry so
+   * the rate counts only frames rendered SINCE the retry began. Without it a
+   * retry divides hours of finished frames by seconds of elapsed time and
+   * every ETA reads ~0.
+   */
+  preDoneFrames?: number;
   /** Loudness target, frozen with the doc. Undefined = encode at source level. */
   loudness?: { targetLufs: number; truePeakDb: number };
 }
@@ -183,7 +190,8 @@ export function runStats(run: BatchRun, nowMs: number): BatchStats {
     }
   }
   const elapsed = nowMs - run.startedAt;
-  const rate = finishedFrames > 0 && elapsed > 0 ? finishedFrames / elapsed : null;
+  const freshFrames = finishedFrames - (run.preDoneFrames ?? 0);
+  const rate = freshFrames > 0 && elapsed > 0 ? freshFrames / elapsed : null;
   const remaining = Math.max(0, framesTotal - framesDone);
   return {
     done,
@@ -250,9 +258,16 @@ export function retryFailed(run: BatchRun, nowMs: number): BatchRun {
     return { ...j, outPath, status: { k: "queued" } as JobStatus };
   });
   const requeuedIds = new Set(requeued.map((j) => j.id));
+  // Frames finished before this retry: excluded from the retry's rate so the
+  // ETA reflects rendering speed since NOW, not old-work / new-elapsed.
+  let preDoneFrames = 0;
+  for (const j of run.jobs) {
+    if (j.status.k === "done" && j.totalFrames != null) preDoneFrames += j.totalFrames;
+  }
   return {
     ...run,
     startedAt: nowMs,
+    preDoneFrames,
     // Keep every other job exactly as it was; only the failures re-run.
     jobs: run.jobs.map((j) => (requeuedIds.has(j.id) ? requeued.find((r) => r.id === j.id)! : j)),
   };

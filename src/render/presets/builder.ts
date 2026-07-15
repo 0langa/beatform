@@ -339,16 +339,24 @@ fn preset(uv: vec2f) -> vec4f {
     }
   }
 
-  // --- Bottom spectrum bars
+  // --- Bottom spectrum bars (same sampling as Spectrum Bars: honors the
+  // Motion->Detail master and the global Smooth-spectrum toggle)
   if (P_bars() > 0.5) {
-    let n = f32(u.binCount);
+    let n = round(mix(8.0, f32(u.binCount), u.detail));
     let fi = clamp(uv.x * n, 0.0, n - 0.001);
     let i = u32(fi);
     let inBar = fract(fi);
-    let v = bins[i];
+    let barCenter = (f32(i) + 0.5) / n;
+    var v = binAt(barCenter);
+    var pk = peakAt(barCenter);
+    var gapMask = step(P_barsGap() * 0.5, inBar) * step(inBar, 1.0 - P_barsGap() * 0.5);
+    if (u.smoothBins > 0.5) {
+      v = binAt(uv.x);
+      pk = peakAt(uv.x);
+      gapMask = 1.0;
+    }
     let y = 1.0 - uv.y;
     let barH = v * P_barsHeight();
-    let gapMask = step(P_barsGap() * 0.5, inBar) * step(inBar, 1.0 - P_barsGap() * 0.5);
     let bHue = P_hue() + (fi / n) * P_hueSpread();
     if (y < barH) {
       let g = y / max(barH, 0.001);
@@ -357,7 +365,7 @@ fn preset(uv: vec2f) -> vec4f {
       col += hsl2rgb(bHue, 0.9, 0.5) * exp(-(y - barH) * 12.0) * P_barsGlow() * v * gapMask;
     }
     if (P_barsPeaks() > 0.5) {
-      let capD = abs(y - peaks[i] * P_barsHeight());
+      let capD = abs(y - pk * P_barsHeight());
       col += hsl2rgb(bHue, 0.3, 0.9) * smoothstep(0.005, 0.0, capD) * gapMask * 0.8;
     }
   }

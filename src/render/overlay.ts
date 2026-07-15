@@ -99,17 +99,27 @@ export function defaultImageLayer(assetId: string): ImageLayer {
 }
 
 // Decoded-bitmap cache so re-rasterizing on resize doesn't re-decode assets.
-const bitmapCache = new Map<string, Promise<ImageBitmap>>();
+// Keyed by asset id AND the dataUrl that was decoded: a loaded project can
+// reuse an id with different image bytes (save-as + edit, templates), and an
+// id-only cache would keep serving the stale bitmap — in exports too.
+const bitmapCache = new Map<string, { url: string; bmp: Promise<ImageBitmap> }>();
 
 function assetBitmap(asset: OverlayAsset): Promise<ImageBitmap> {
   let hit = bitmapCache.get(asset.id);
-  if (!hit) {
-    hit = fetch(asset.dataUrl)
+  if (!hit || hit.url !== asset.dataUrl) {
+    const bmp = fetch(asset.dataUrl)
       .then((r) => r.blob())
       .then((b) => createImageBitmap(b));
-    bitmapCache.set(asset.id, hit);
+    const entry = { url: asset.dataUrl, bmp };
+    // A failed decode must not poison the id for the whole session — evict so
+    // the next rasterize retries instead of silently never drawing the layer.
+    bmp.catch(() => {
+      if (bitmapCache.get(asset.id) === entry) bitmapCache.delete(asset.id);
+    });
+    bitmapCache.set(asset.id, entry);
+    hit = entry;
   }
-  return hit;
+  return hit.bmp;
 }
 
 /** Drop cached decodes for assets that no longer exist. */

@@ -37,7 +37,18 @@ export function TimelinePanel(props: {
   const [selectedScene, setSelectedScene] = useState<string | null>(null);
   const [drag, setDrag] = useState<
     | { kind: "scene"; id: string }
-    | { kind: "key"; lane: number; index: number; spec: { min: number; max: number } }
+    | {
+        kind: "key";
+        lane: number;
+        index: number;
+        spec: { min: number; max: number };
+        /** Screen position at pointerdown — a "drag" that never moved is a
+         * click (pointer capture retargets real click events away from the
+         * dot, so the tap gesture must be reconstructed here). */
+        downX: number;
+        downY: number;
+        moved: boolean;
+      }
     | null
   >(null);
 
@@ -155,11 +166,18 @@ export function TimelinePanel(props: {
     update({ lanes: timeline.lanes.map((l, i) => (i === index ? lane : l)) });
   };
 
-  const laneSpec = (lane: AutomationLane) =>
-    allParams(props.activePreset).find((p) => p.key === lane.param) ?? {
-      min: 0,
-      max: 1,
-    };
+  // Resolve the param's real range. Lanes outlive preset switches, so a lane
+  // whose param is not on the ACTIVE preset must still find its spec — the
+  // old {0,1} fallback silently rescaled (corrupted) keyframe values on drag.
+  const laneSpec = (lane: AutomationLane) => {
+    const own = allParams(props.activePreset).find((p) => p.key === lane.param);
+    if (own) return own;
+    for (const p of props.presets) {
+      const spec = allParams(p).find((s) => s.key === lane.param);
+      if (spec) return spec;
+    }
+    return { min: 0, max: 1 };
+  };
 
   const onLanePointer = (
     e: React.PointerEvent<HTMLDivElement>,
@@ -189,12 +207,20 @@ export function TimelinePanel(props: {
   };
 
   const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    // Keyframes are moved IN PLACE during the drag (so drag.index stays valid
-    // even when a keyframe crosses a neighbor in time); sort once on release.
     if (drag?.kind === "key") {
-      const lane = timeline.lanes[drag.lane];
-      if (lane) {
-        setLane(drag.lane, { ...lane, keyframes: [...lane.keyframes].sort((a, b) => a.t - b.t) });
+      if (!drag.moved) {
+        // The pointer never really moved: this was a TAP on the dot. Pointer
+        // capture retargets the browser's click/contextmenu to the scroll
+        // container, so the "click a dot to cycle its curve" gesture is
+        // reconstructed from the capture stream instead.
+        cycleCurve(drag.lane, drag.index);
+      } else {
+        // Keyframes are moved IN PLACE during the drag (so drag.index stays
+        // valid even when one crosses a neighbor); sort once on release.
+        const lane = timeline.lanes[drag.lane];
+        if (lane) {
+          setLane(drag.lane, { ...lane, keyframes: [...lane.keyframes].sort((a, b) => a.t - b.t) });
+        }
       }
     }
     try {
@@ -216,6 +242,9 @@ export function TimelinePanel(props: {
         scenes: timeline.scenes.map((s) => (s.id === drag.id ? { ...s, start: t } : s)),
       });
     } else {
+      // Ignore sub-3px jitter so a tap stays a tap (see endDrag).
+      if (!drag.moved && Math.hypot(e.clientX - drag.downX, e.clientY - drag.downY) < 3) return;
+      if (!drag.moved) setDrag({ ...drag, moved: true });
       const lane = timeline.lanes[drag.lane];
       const row = scrollRef.current!.querySelectorAll(".tl-lane-row")[drag.lane];
       const rowRect = (row as HTMLElement).getBoundingClientRect();
@@ -345,6 +374,7 @@ export function TimelinePanel(props: {
                   style={{ left: xOf(s.start), width: Math.max(8, xOf(end - s.start)) }}
                   title={`${s.name} — drag to move (snaps to beats)`}
                   onPointerDown={(e) => {
+                    if (e.button !== 0) return; // only the primary button drags
                     e.preventDefault();
                     setSelectedScene(s.id);
                     beginDrag(e, { kind: "scene", id: s.id });
@@ -382,16 +412,25 @@ export function TimelinePanel(props: {
                         onPointerDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          beginDrag(e, { kind: "key", lane: li, index: ki, spec });
+                          // Right-button = remove, handled HERE because the
+                          // pointer capture below retargets click/contextmenu
+                          // to the scroll container (they never reach the dot).
+                          if (e.button === 2) {
+                            removeKeyframe(li, ki);
+                            return;
+                          }
+                          if (e.button !== 0) return;
+                          beginDrag(e, {
+                            kind: "key",
+                            lane: li,
+                            index: ki,
+                            spec,
+                            downX: e.clientX,
+                            downY: e.clientY,
+                            moved: false,
+                          });
                         }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          cycleCurve(li, ki);
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          removeKeyframe(li, ki);
-                        }}
+                        onContextMenu={(e) => e.preventDefault()}
                       />
                     );
                   })}

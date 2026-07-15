@@ -29,7 +29,10 @@ const POST_UNIFORM_SIZE = 32;
 const PARTICLE_UNIFORM_SIZE = 96;
 /** Fixed particle simulation rate. Steps are keyed to track time
  * (target = floor(time * SIM_FPS)) so the sim speed is frame-rate independent
- * and exports are bit-reproducible regardless of output fps. */
+ * and exports are bit-reproducible run-to-run AT A GIVEN fps. (Not across
+ * fps: the per-frame uniform write shares one pu.time across that frame's
+ * catch-up steps, so a 30 fps and a 60 fps export sim slightly different
+ * flow-field inputs — PNG-hash baselines are only comparable at equal fps.) */
 const SIM_FPS = 60;
 const PARTICLE_DT = 1 / SIM_FPS;
 /** Live-safety cap on catch-up steps per frame (never hit during export). */
@@ -285,6 +288,20 @@ fn hsl2rgb(h: f32, s: f32, l: f32) -> vec3f {
   else { rgb = vec3f(c, 0.0, x); }
   return rgb + vec3f(l - c * 0.5);
 }
+
+/** Tempo-locked pulse: 1.0 exactly on every beat-grid beat, exponentially
+ * decaying toward 0 before the next (sharp ~4 = soft swell, ~8 = punchy).
+ * Falls back to the flux-driven driveBeat pulse when the track has no beat
+ * grid yet (u.bpm == 0), so one call stays musical either way. */
+fn gridPulse(sharp: f32) -> f32 {
+  if (u.bpm < 1.0) { return u.driveBeat; }
+  return max(exp(-u.beatPhase * sharp) - 0.018, 0.0) / 0.982;
+}
+
+/** Continuous beat counter within the bar: 0..4, advancing 1.0 per grid
+ * beat. fract() of integer multiples gives tempo-locked scroll/travel that
+ * stays continuous across the bar wrap. 0 when the track has no grid. */
+fn beatRamp() -> f32 { return u.barPhase * 4.0; }
 
 fn hash21(p: vec2f) -> f32 {
   var q = fract(p * vec2f(123.34, 345.45));
@@ -1444,14 +1461,22 @@ export class WebGPURenderer implements Renderer {
     this.ensureParticlePipelines();
 
     // Advance the sim to floor(time * SIM_FPS) total steps. A backwards jump
-    // or a large gap (seek) re-seeds and snaps — export runs forward from 0 so
-    // this never triggers there, keeping exports bit-reproducible.
+    // or a multi-second gap (seek) re-seeds and snaps — export runs forward
+    // from 0 so this never triggers there, keeping exports bit-reproducible.
     const target = Math.floor(time * SIM_FPS);
     let steps = target - this.simStepsDone;
-    if (this.particleInitPending || steps < 0 || steps > MAX_SIM_CATCHUP * 4) {
+    if (this.particleInitPending || steps < 0 || steps > SIM_FPS * 2) {
       this.initParticles(count);
       this.simStepsDone = target;
       steps = 0;
+    } else if (steps > MAX_SIM_CATCHUP) {
+      // Starved frames (hidden window rendering at ~1-3 fps): run the cap's
+      // worth and FORGIVE the deficit. Letting it accumulate used to trip the
+      // reseed above about once a second — a stuttering respawn disc in the
+      // exact background-capture case the frame loop keeps alive for.
+      // Continuity beats wall-clock lockstep in a live preview.
+      this.simStepsDone = target - MAX_SIM_CATCHUP;
+      steps = MAX_SIM_CATCHUP;
     }
     steps = Math.min(steps, MAX_SIM_CATCHUP);
 
@@ -1973,6 +1998,7 @@ export class WebGPURenderer implements Renderer {
     this.bindGroup = null;
     this.transitionBindGroup = null;
     this.mesh3dBind = null; // references binsBuf
+    this.compositeBind = null; // also holds binsBuf/peaksBuf at bindings 1/2
   }
 
   private getBindGroup(): GPUBindGroup {

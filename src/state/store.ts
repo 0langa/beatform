@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { PlaybackState, SyncSettings } from "../audio/types";
-import { DEFAULT_SYNC } from "../audio/types";
+import { DEFAULT_SYNC, sanitizeSync } from "../audio/types";
 import { buildExportOptions } from "../export/buildExportOptions";
 import { readTrackMeta } from "../audio/trackMeta";
 import {
@@ -8,6 +8,7 @@ import {
   isRunComplete,
   newBatchId,
   retryFailed,
+  safeName,
   takenPaths,
   type BatchRun,
   type BatchTrack,
@@ -109,6 +110,17 @@ export function resolutionsForAspect(aspect: Aspect): number[] {
   const all = RESOLUTIONS.map((_, i) => i);
   if (aspect === "free") return all;
   return all.filter((i) => RESOLUTIONS[i].aspect === aspect);
+}
+
+/**
+ * resIdx if it is valid for the aspect, else the aspect's preferred default.
+ * Every path that changes aspect OR resIdx-out-from-under-the-aspect must go
+ * through this (setAspect, store init, applyDocument) — otherwise the export
+ * Resolution select renders blank and the export contradicts the frame.
+ */
+export function reconciledResIdx(aspect: Aspect, resIdx: number): number {
+  const allowed = resolutionsForAspect(aspect);
+  return allowed.includes(resIdx) ? resIdx : allowed[allowed.length > 1 ? 1 : 0];
 }
 
 export function autoBitrateMbps(w: number, h: number, fps: number): number {
@@ -224,6 +236,9 @@ interface SessionSlice {
   /** Batch render: setup + in-flight run. Null until the panel is opened. */
   batch: BatchRun | null;
   batchStatus: "idle" | "running" | "done";
+  /** Files still being tag-scanned by addBatchTracks (0 = not scanning). The
+   * scan takes seconds per file and the panel must not look dead meanwhile. */
+  batchScanning: number;
   showBatch: boolean;
 }
 
@@ -303,7 +318,13 @@ let exportAbort: AbortController | null = null;
 let batchAbort: AbortController | null = null;
 /** Claimed synchronously by startBatch, before the folder dialog awaits. */
 let batchStarting = false;
+/** Synchronous claim for runExport — set before its dialog awaits, so a
+ * double-click cannot launch two exports sharing one abort controller. */
+let exportStarting = false;
 let exportStartedAt = 0;
+/** Monotonic track-load counter: a slow decode/tag-scan must not write its
+ * metadata (or trigger analysis) over a newer load's. */
+let trackLoadGen = 0;
 /** Live canvas — overlay rasters at its pixel size. Set by initApp. */
 let liveCanvas: HTMLCanvasElement | null = null;
 let overlayTimer: ReturnType<typeof setTimeout> | undefined;
@@ -351,11 +372,28 @@ export const useVizStore = create<VizState>((set, get) => {
   });
 
   /** Record the current document before a mutation (gesture-grouped). */
+  /** While true, record() is a no-op — used to make compound actions one
+   * undo step instead of one per inner action. */
+  let recordSuspended = false;
+
   const record = (key: string) => {
+    if (recordSuspended) return;
     pushHistory(docOf(get()), key);
     const d = historyDepths();
     set({ undoDepth: d.undo, redoDepth: d.redo });
     scheduleAutosave();
+  };
+
+  /** Record ONE history entry for `key`, then run `fn` with inner record()
+   * calls suppressed — a compound action must cost exactly one Ctrl+Z. */
+  const asOneGesture = (key: string, fn: () => void) => {
+    record(key);
+    recordSuspended = true;
+    try {
+      fn();
+    } finally {
+      recordSuspended = false;
+    }
   };
 
   /**
@@ -376,7 +414,11 @@ export const useVizStore = create<VizState>((set, get) => {
         if (get().coverArt === cover) getRenderer()?.setCoverArt(bmp);
         else bmp.close();
       })
-      .catch(() => getRenderer()?.setCoverArt(null));
+      .catch(() => {
+        // Same race guard as success: a stale decode failure (slow corrupt
+        // art from the PREVIOUS track) must not wipe the current track's cover
+        if (get().coverArt === cover) getRenderer()?.setCoverArt(null);
+      });
   };
 
   /** Crash-safe project autosave (desktop), debounced past edit bursts. */
@@ -434,7 +476,9 @@ export const useVizStore = create<VizState>((set, get) => {
     undoDepth: 0,
     redoDepth: 0,
     exportSettings: {
-      resIdx: 1,
+      // The aspect persists across launches; the resolution must match it or
+      // the export select renders blank and exports the wrong shape.
+      resIdx: reconciledResIdx(loadStoredAspect(), 1),
       fps: 60,
       autoRate: true,
       manualMbps: 12,
@@ -447,6 +491,7 @@ export const useVizStore = create<VizState>((set, get) => {
     },
     batch: null,
     batchStatus: "idle" as const,
+    batchScanning: 0,
     showBatch: false,
     exporting: null,
     exportError: null,
@@ -589,16 +634,19 @@ export const useVizStore = create<VizState>((set, get) => {
       set({ aspect });
       saveStoredAspect(aspect);
       // Keep the export resolution consistent with the frame
-      const allowed = resolutionsForAspect(aspect);
-      if (!allowed.includes(get().exportSettings.resIdx)) {
-        get().setExportSettings({ resIdx: allowed[allowed.length > 1 ? 1 : 0] });
+      const resIdx = reconciledResIdx(aspect, get().exportSettings.resIdx);
+      if (resIdx !== get().exportSettings.resIdx) {
+        get().setExportSettings({ resIdx });
       }
       // Re-measure after the CSS class lands (don't wait for ResizeObserver;
       // it never fires in hidden tabs). The measure also refreshes overlays.
       setTimeout(remeasure, 50);
     },
 
-    setSync(sync) {
+    setSync(syncIn) {
+      // Coerce here too, not just in the pipeline: imported presets/projects
+      // route through this action, and the UI reads `sync` back for sliders.
+      const sync = sanitizeSync(syncIn);
       record("sync");
       const state = get();
       const syncByPreset = { ...state.syncByPreset, [state.presetId]: sync };
@@ -608,29 +656,38 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     async loadFile(file) {
+      // Guard BOTH ends: decode + tag scan take seconds, and a second drop in
+      // that window used to let whichever finished LAST own the metadata,
+      // cover art and beat grid (baked into exports). Only the newest wins.
+      const gen = ++trackLoadGen;
       try {
         set({ error: null });
         await getEngine().loadFile(file);
+        if (gen !== trackLoadGen) return;
         await getEngine().play();
         // Tag metadata (title/artist/cover) — best effort, never blocks
         // playback, so no duration scan here. Shared with the batch queue.
         const { meta, coverArt } = await readTrackMeta(file, file.name);
+        if (gen !== trackLoadGen) return;
         set({ trackMeta: meta, coverArt });
         applyCoverArt();
         get().refreshOverlay();
         get().analyzeCurrentTrack();
       } catch (e) {
+        if (gen !== trackLoadGen) return;
         set({ error: `Could not decode "${file.name}" (${(e as Error).message})` });
       }
     },
 
     async loadDemo(id) {
+      const gen = ++trackLoadGen;
       try {
         set({ error: null });
         const demo = demos.find((d) => d.id === id);
         if (!demo) return;
         const engine = getEngine();
         const buf = await demo.render(engine.ctx.sampleRate);
+        if (gen !== trackLoadGen) return;
         engine.loadBuffer(buf, `Demo: ${demo.name}`);
         await engine.play();
         set({ trackMeta: { title: demo.name, artist: "" }, coverArt: null });
@@ -638,6 +695,7 @@ export const useVizStore = create<VizState>((set, get) => {
         get().refreshOverlay();
         get().analyzeCurrentTrack();
       } catch (e) {
+        if (gen !== trackLoadGen) return;
         set({ error: `Demo failed: ${(e as Error).message}` });
       }
     },
@@ -713,7 +771,11 @@ export const useVizStore = create<VizState>((set, get) => {
       // jobs while it decodes the next track, and a second export starting
       // there would overwrite the shared abort controller and break cancel for
       // the run that is already going.
-      if (get().exporting || get().batchStatus === "running") return;
+      if (get().exporting || get().batchStatus === "running" || exportStarting) return;
+      // `exporting` is only set AFTER the native save dialog below — claim the
+      // slot synchronously so a double-click cannot pass the guard twice and
+      // clobber the shared abort controller (same hole startBatch had).
+      exportStarting = true;
       const settings = get().exportSettings;
       const canvasMode = settings.mode === "canvas";
       // Canvas loops are fixed to the Spotify spec: 9:16, 30 fps, 3-8 s
@@ -729,11 +791,9 @@ export const useVizStore = create<VizState>((set, get) => {
             duration: Math.min(settings.canvasDuration, buf.duration),
           }
         : undefined;
-      const trackName = (engine.state.trackName ?? "visualization")
-        .replace(/\.[a-z0-9]+$/i, "")
-        .replace(/[^\w\- ]+/g, "")
-        .trim();
-      const baseName = `${trackName || "visualization"}${canvasMode ? "-canvas" : ""}`;
+      // Same filename rules as the batch queue — the old \w-based sanitizer
+      // silently destroyed every non-ASCII title ("夜に駆ける" -> "").
+      const baseName = `${safeName(engine.state.trackName ?? "visualization")}${canvasMode ? "-canvas" : ""}`;
       const fileName = `${baseName}.mp4`;
       const pngMode = settings.format === "png";
       // Desktop: pick the destination BEFORE rendering — a cancelled dialog
@@ -743,15 +803,22 @@ export const useVizStore = create<VizState>((set, get) => {
       if (isTauri()) {
         if (pngMode) {
           const dir = await pickFolder("Choose a folder for the PNG sequence");
-          if (!dir) return;
+          if (!dir) {
+            exportStarting = false;
+            return;
+          }
           // Keep each run in its own subfolder so sequences never interleave.
           pngDir = `${dir}/${baseName}_frames`;
         } else {
           savePath = await pickSavePath(fileName, [{ name: "MP4 video", extensions: ["mp4"] }]);
-          if (!savePath) return;
+          if (!savePath) {
+            exportStarting = false;
+            return;
+          }
         }
       } else if (pngMode) {
         set({ exportError: "PNG sequence export needs the desktop app (it writes a folder)" });
+        exportStarting = false;
         return;
       }
       const ac = new AbortController();
@@ -822,7 +889,9 @@ export const useVizStore = create<VizState>((set, get) => {
         );
         if (result.blob) downloadBlob(result.blob, fileName);
         set({
-          exportDone: `${(result.bytes / 1e6).toFixed(1)} MB MP4 (H.264 + ${result.audioCodec.toUpperCase()}) saved${savePath ? ` to ${savePath}` : ""}`,
+          exportDone: pngDir
+            ? `${(result.bytes / 1e6).toFixed(1)} MB PNG sequence saved to ${pngDir}`
+            : `${(result.bytes / 1e6).toFixed(1)} MB MP4 (H.264 + ${result.audioCodec.toUpperCase()}) saved${savePath ? ` to ${savePath}` : ""}`,
         });
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
@@ -831,6 +900,7 @@ export const useVizStore = create<VizState>((set, get) => {
       } finally {
         set({ exporting: null });
         exportAbort = null;
+        exportStarting = false;
       }
     },
 
@@ -853,11 +923,17 @@ export const useVizStore = create<VizState>((set, get) => {
       // queue needs it for its estimate and pays the VBR scan cost off the
       // interactive path.
       const added: BatchTrack[] = [];
-      for (const file of files) {
-        const { meta, fromTags, coverArt, duration } = await readTrackMeta(file, file.name, {
-          duration: true,
-        });
-        added.push({ id: newBatchId(), file, meta, metaFromTags: fromTags, coverArt, duration });
+      try {
+        set({ batchScanning: files.length });
+        for (const file of files) {
+          const { meta, fromTags, coverArt, duration } = await readTrackMeta(file, file.name, {
+            duration: true,
+          });
+          added.push({ id: newBatchId(), file, meta, metaFromTags: fromTags, coverArt, duration });
+          set({ batchScanning: files.length - added.length });
+        }
+      } finally {
+        set({ batchScanning: 0 });
       }
       // Re-read after the awaits, and bail if a run began while we scanned.
       if (get().batchStatus === "running") return;
@@ -869,7 +945,11 @@ export const useVizStore = create<VizState>((set, get) => {
           outDir: cur?.outDir ?? "",
           startedAt: 0,
           tracks: [...(cur?.tracks ?? []), ...added],
-          jobs: [],
+          // KEEP the previous run's job records: takenPaths() reads them so a
+          // later Start into the same folder never overwrites a video an
+          // earlier run already finished. Wiping them here re-armed exactly
+          // that overwrite.
+          jobs: cur?.jobs ?? [],
         },
         batchStatus: "idle",
       });
@@ -925,11 +1005,19 @@ export const useVizStore = create<VizState>((set, get) => {
         format: "mp4",
       };
 
+      // Re-read after the folder dialog: a tag scan (addBatchTracks) may have
+      // committed more tracks while it was open, and freezing the pre-dialog
+      // snapshot would silently drop them from the run AND the panel.
+      const tracks = get().batch?.tracks ?? b.tracks;
+      if (tracks.length === 0) {
+        batchStarting = false;
+        return;
+      }
       // Freeze the template NOW: the run renders what it started with, not
       // whatever gets edited at 2am. Also makes a retry reproduce the original.
       const run: BatchRun = {
         doc: docOf(get()),
-        tracks: b.tracks,
+        tracks,
         formats: [fmt],
         outDir,
         // Date.now, not performance.now: the panel's countdown ticks on Date.now
@@ -1097,8 +1185,11 @@ export const useVizStore = create<VizState>((set, get) => {
           { name: "Audio Visualizer project", extensions: [PROJECT_EXTENSION] },
         ]);
         if (!picked) return;
+        // Parse BEFORE clearing history: a corrupt file must not cost the
+        // session's undo stack when nothing gets loaded.
+        const doc = parseProject(picked.contents);
         clearHistory();
-        get().applyDocument(parseProject(picked.contents));
+        get().applyDocument(doc);
         set({ undoDepth: 0, redoDepth: 0 });
         flashNotice(`Project "${picked.name}" loaded`);
       } catch (e) {
@@ -1114,8 +1205,14 @@ export const useVizStore = create<VizState>((set, get) => {
     applyDocument(doc) {
       const preset = presetById(doc.presetId);
       const activeParams = resolveParams(preset.id, doc.paramsByPreset);
-      const sync = doc.syncByPreset[preset.id] ?? { ...DEFAULT_SYNC };
+      const sync = sanitizeSync(doc.syncByPreset[preset.id] ?? { ...DEFAULT_SYNC });
       set({
+        // Keep the export resolution consistent with the incoming aspect
+        // (covers project-open AND undo/redo of aspect changes).
+        exportSettings: {
+          ...get().exportSettings,
+          resIdx: reconciledResIdx(doc.aspect, get().exportSettings.resIdx),
+        },
         presetId: preset.id,
         paramsByPreset: doc.paramsByPreset,
         syncByPreset: doc.syncByPreset,
@@ -1151,6 +1248,9 @@ export const useVizStore = create<VizState>((set, get) => {
       getRenderer()?.setBackground(doc.bg);
       getAnalyzer().setSync(sync);
       get().refreshOverlay();
+      // Covers undo/redo/project-open: without this the autosave file kept
+      // the PRE-undo document until the next ordinary edit.
+      scheduleAutosave();
     },
 
     saveUserPreset(name) {
@@ -1172,20 +1272,23 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     applyUserPreset(id) {
-      record("look");
       const s = get();
       const preset = s.userPresets.find((p) => p.id === id);
-      if (!preset) return;
-      if (preset.presetId !== s.presetId) get().switchPreset(preset.presetId);
-      const state = get();
-      const activeParams = {
-        ...defaultParams(presetById(state.presetId)),
-        ...preset.params,
-      };
-      const paramsByPreset = { ...state.paramsByPreset, [state.presetId]: activeParams };
-      set({ activeParams, paramsByPreset });
-      saveStoredParams(paramsByPreset);
-      if (preset.sync) get().setSync({ ...preset.sync });
+      if (!preset) return; // nothing applied -> nothing recorded
+      // One gesture: switchPreset + params + setSync used to push up to three
+      // history entries, so one Ctrl+Z stepped through half-applied states.
+      asOneGesture("look", () => {
+        if (preset.presetId !== get().presetId) get().switchPreset(preset.presetId);
+        const state = get();
+        const activeParams = {
+          ...defaultParams(presetById(state.presetId)),
+          ...preset.params,
+        };
+        const paramsByPreset = { ...state.paramsByPreset, [state.presetId]: activeParams };
+        set({ activeParams, paramsByPreset });
+        saveStoredParams(paramsByPreset);
+        if (preset.sync) get().setSync({ ...preset.sync });
+      });
     },
 
     deleteUserPreset(id) {
@@ -1239,12 +1342,14 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     addAlbumArtLayer() {
-      record("layer-add");
       const cover = get().coverArt;
       if (!cover) {
+        // Validate BEFORE recording: a junk history entry whose undo visibly
+        // does nothing ("Undone" flashes, nothing changes) erodes trust.
         set({ error: "The loaded track has no embedded cover art" });
         return;
       }
+      record("layer-add");
       const asset: OverlayAsset = {
         id: `as-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
         name: "Album art",

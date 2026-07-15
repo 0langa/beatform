@@ -928,6 +928,10 @@ button:disabled {
 .modal {
   width: 380px;
   max-width: calc(100vw - 40px);
+  /* Tall content (canvas mode + loudness hints) must scroll, not clip the
+     header X and Export button off a short window with no way to reach them */
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
   background: var(--glass-heavy);
   backdrop-filter: blur(20px);
   border: 1px solid var(--border-strong);
@@ -1294,6 +1298,8 @@ kbd {
   left: 10px;
   right: 10px;
   bottom: 74px;
+  max-height: 264px;
+  overflow-y: auto;
   background: var(--glass-heavy);
   backdrop-filter: blur(18px);
   border: 1px solid var(--border);
@@ -1303,6 +1309,13 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* With the timeline open, lift the settings panel above it — the timeline is
+   opaque and otherwise buries the panel footer (meters, hints) with no way to
+   scroll it into view. */
+.app:has(.timeline-panel) .params-panel {
+  bottom: 348px;
 }
 
 .tl-toolbar {

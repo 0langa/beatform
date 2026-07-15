@@ -31,6 +31,9 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   setOverlay(source: ImageBitmap | null): void {
+    // Ownership transfer (same contract as the WebGPU renderer): release the
+    // bitmap being replaced, or every debounced overlay refresh leaks one.
+    if (this.overlay && this.overlay !== source) this.overlay.close();
     this.overlay = source;
   }
 
@@ -42,8 +45,10 @@ export class Canvas2DRenderer implements Renderer {
     // Fallback renderer approximates spectrum-bars only; motion masters no-op.
   }
 
-  setCoverArt(): void {
-    // Fallback renderer has no preset that samples cover art.
+  setCoverArt(source: ImageBitmap | null): void {
+    // Fallback renderer has no preset that samples cover art — but the host
+    // hands over ownership, so the bitmap still must be released.
+    source?.close();
   }
 
   setTransitionPreset(_preset: PresetDef | null): void {
@@ -125,6 +130,7 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   dispose(): void {
-    // nothing to release
+    this.overlay?.close();
+    this.overlay = null;
   }
 }

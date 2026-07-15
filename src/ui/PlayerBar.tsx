@@ -71,7 +71,29 @@ export function PlayerBar(props: {
           props.onSeekEnd(timeAt(e.clientX));
           setDragT(null);
         }}
+        onPointerCancel={(e) => {
+          // Touch-scroll takeover / pen interruption: without this the app
+          // wedges in "seeking" state and the transport freezes for good.
+          if (dragT === null) return;
+          e.currentTarget.releasePointerCapture(e.pointerId);
+          props.onSeekEnd(dragT);
+          setDragT(null);
+        }}
         onPointerLeave={() => setHoverT(null)}
+        tabIndex={enabled ? 0 : -1}
+        onKeyDown={(e) => {
+          if (!enabled) return;
+          if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            e.preventDefault();
+            const step = e.shiftKey ? 10 : 5;
+            props.onSeekEnd(
+              Math.max(
+                0,
+                Math.min(playback.duration, playback.time + (e.key === "ArrowLeft" ? -step : step)),
+              ),
+            );
+          }
+        }}
       >
         <div className="seek-track">
           <div className="seek-fill" style={{ width: `${pct}%` }} />
