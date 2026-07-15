@@ -15,6 +15,25 @@ export const ledMatrix: PresetDef = {
     { id: "cyan", name: "Cyan Wall", values: { hueLow: 190, hueHigh: 210 } },
     { id: "purple", name: "Purple Rain", values: { hueShift: 250 } },
     { id: "bigpixel", name: "Big Pixels", values: { cols: 24, rows: 12, gap: 0.28, rounded: 0 } },
+    {
+      id: "amber",
+      name: "Amber Meter",
+      values: { hueLow: 45, hueHigh: 10, gradStart: 0.5, gradEnd: 0.95, bassGlow: 0.16 },
+    },
+    {
+      id: "terminal",
+      name: "Terminal",
+      values: {
+        hueLow: 120,
+        hueHigh: 95,
+        cols: 64,
+        rows: 32,
+        gap: 0.1,
+        rounded: 0,
+        dim: 0.2,
+        bassGlow: 0.05,
+      },
+    },
   ],
   params: [
     {
@@ -155,6 +174,15 @@ export const ledMatrix: PresetDef = {
       hint: "All lit LEDs brighten on beats",
     },
     {
+      key: "bassGlow",
+      label: "Bass backlight",
+      min: 0,
+      max: 0.5,
+      step: 0.01,
+      default: 0.1,
+      hint: "Panel background breathes with the bass",
+    },
+    {
       key: "peakBright",
       label: "Peak brightness",
       min: 0.3,
@@ -209,6 +237,9 @@ fn preset(uv: vec2f) -> vec4f {
   let mask = ledCell(vec2f(lx, ly), P_gap(), P_rounded());
 
   var col = vec3f(0.008, 0.01, 0.012); // panel background
+  // Panel backlight breathes with the bass — the wall reads the music even
+  // between columns, without touching the LED look itself.
+  col += hsl2rgb(P_hueLow() + P_hueShift(), 0.8, 0.3) * u.bass * P_bassGlow();
   // Unlit LEDs faintly visible
   col += hsl2rgb(cellHue, 0.6, P_unlitLevel()) * mask * P_dim() * (1.0 - lit);
   // Lit LEDs, brighter near the top of the column's level
@@ -216,10 +247,15 @@ fn preset(uv: vec2f) -> vec4f {
           + u.driveBeat * P_beatBoost();
   col += hsl2rgb(cellHue, 0.9, hot) * mask * lit;
 
-  // Peak-hold dot (toggleable)
+  // Peak-hold dot (toggleable) — takes the column gradient's color at its
+  // own height, so it follows Cyan Wall/Purple Rain instead of staying the
+  // default red (the old code misused hueShift as an absolute hue).
   let pkRow = floor(pk * rows);
   if (cy == pkRow && pk > 0.02 && P_peaks() > 0.5) {
-    col += hsl2rgb(P_hueShift() + 10.0, 0.4, P_peakBright()) * mask;
+    let pkFrac = (pkRow + 0.5) / rows;
+    let pkHue = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), pkFrac))
+              + P_hueShift();
+    col += hsl2rgb(pkHue, 0.55, P_peakBright()) * mask;
   }
 
   // Subtle screen curvature vignette

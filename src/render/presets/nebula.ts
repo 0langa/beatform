@@ -15,6 +15,34 @@ export const nebula: PresetDef = {
     { id: "aurora", name: "Aurora", values: { hue: 140, kaleido: 0, flow: 0.2, hueRange: 60 } },
     { id: "ink", name: "Ink", values: { hue: 220, contrast: 0.8, sparkle: 0.2, saturation: 0.45 } },
     { id: "prism", name: "Prism Eight", values: { kaleido: 8, hueRange: 240, sparkle: 0.7 } },
+    {
+      id: "ultraviolet",
+      name: "Ultraviolet",
+      values: {
+        hue: 265,
+        hueRange: 40,
+        kaleido: 0,
+        scale: 1.6,
+        contrast: 0.7,
+        flow: 0.08,
+        driveGlow: 0.22,
+        beatRipple: 0.8,
+      },
+    },
+    {
+      id: "solar",
+      name: "Solar Flare",
+      values: {
+        hue: 25,
+        hueRange: 55,
+        kaleido: 4,
+        scale: 3.2,
+        flow: 0.3,
+        sparkle: 0.85,
+        contrast: 0.35,
+        beatBloom: 0.35,
+      },
+    },
   ],
   params: [
     { key: "hue", label: "Hue", min: 0, max: 360, step: 1, default: 300, hint: "Base cloud color" },
@@ -174,6 +202,15 @@ export const nebula: PresetDef = {
       hint: "Center brightness flash on beats",
     },
     {
+      key: "driveGlow",
+      label: "Drive glow",
+      min: 0,
+      max: 0.5,
+      step: 0.02,
+      default: 0.12,
+      hint: "Clouds brighten with the sync source (Sync panel)",
+    },
+    {
       key: "vignette",
       label: "Vignette",
       min: 0,
@@ -218,7 +255,10 @@ fn preset(uv: vec2f) -> vec4f {
   let v = pow(clamp(n, 0.0, 1.0), sharp);
 
   let nebHue = P_hue() + n * P_hueRange() + u.mid * P_midHueShift();
-  var col = hsl2rgb(nebHue, P_saturation(), v * (P_brightFloor() + u.bass * P_bassBright()) + 0.02);
+  // Clouds glow with the user's chosen sync source (the only preset that
+  // ignored u.drive — switching Sync mode changed nothing here but pulses).
+  let lift = P_brightFloor() + u.bass * P_bassBright() + u.drive * P_driveGlow();
+  var col = hsl2rgb(nebHue, P_saturation(), v * lift + 0.02);
 
   // Treble sparkle grain
   let g = pow(noise2(q * P_sparkleScale() + vec2f(t * 6.0, -t * 4.0)), P_sparkleSharp());

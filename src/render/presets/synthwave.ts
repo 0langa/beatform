@@ -13,16 +13,48 @@ export const synthwave: PresetDef = {
   styles: [
     { id: "sunset", name: "Sunset", values: {} },
     { id: "miami", name: "Miami", values: { hue: 320, gridHue: 190 } },
-    { id: "toxic", name: "Toxic", values: { hue: 90, gridHue: 140, speed: 1.6 } },
+    {
+      id: "toxic",
+      name: "Toxic",
+      values: { hue: 90, gridHue: 140, speed: 2, beatPulse: 0.7, mountains: 0.5 },
+    },
     {
       id: "vapor",
       name: "Vapor",
-      values: { hue: 285, gridHue: 300, sunR: 0.34, speed: 0.5, sunRays: 0.5 },
+      values: { hue: 285, gridHue: 300, sunR: 0.34, speed: 0.5, sunRays: 0.5, gridLock: 0 },
     },
     {
       id: "outrun",
       name: "Outrun",
       values: { hue: 12, gridHue: 285, mountains: 0.6, stars: 1, react: 1.2, beatPulse: 0.8 },
+    },
+    {
+      id: "midnight",
+      name: "Midnight Drive",
+      values: {
+        hue: 230,
+        gridHue: 205,
+        sunY: 0.2,
+        sunR: 0.22,
+        mountains: 0.55,
+        speed: 0.7,
+        gridGlow: 0.8,
+        scan: 0.3,
+      },
+    },
+    {
+      id: "gold",
+      name: "Golden Hour",
+      values: {
+        hue: 42,
+        gridHue: 35,
+        sunR: 0.36,
+        sunRays: 0.65,
+        scan: 0.85,
+        mountains: 0.45,
+        gridGlow: 1.2,
+        beatPulse: 0.35,
+      },
     },
   ],
   params: [
@@ -145,6 +177,15 @@ export const synthwave: PresetDef = {
       default: 0.6,
       hint: "Strength of the horizontal bands across the sun",
     },
+    {
+      key: "gridLock",
+      label: "Beat-locked grid",
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 1,
+      hint: "Grid lines cross exactly on the beat (needs the track's beat grid; off = free speed)",
+    },
   ],
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
@@ -152,13 +193,24 @@ fn preset(uv: vec2f) -> vec4f {
   let cx = (uv.x - 0.5) * u.aspect;
   let horizon = 0.5;
   let drive = clamp(u.drive, 0.0, 1.5);
-  let pulse = 1.0 + u.driveBeat * P_beatPulse() * u.pulse;
+  // Pump on the tempo grid when the track has one (gridPulse falls back to
+  // the flux pulse when it doesn't); flux onsets still add on top via max.
+  let pulse = 1.0 + max(u.driveBeat, gridPulse(6.0)) * P_beatPulse() * u.pulse;
 
   if (uv.y > horizon) {
     // --- Floor: perspective grid receding to the horizon.
     let fy = uv.y - horizon;                 // 0 at horizon .. 0.5 at bottom
     let persp = 0.16 / max(fy, 0.004);
-    let gz = persp - u.time * P_speed() * 2.0;
+    // Beat-locked scroll: exactly round(speed) grid lines cross per beat,
+    // riding the real beat grid (rubato and all). Continuous across the bar
+    // wrap because 4 beats always advance an integer number of cells. Falls
+    // back to free time-scroll when the track has no grid (u.bpm == 0) —
+    // at 120 BPM both modes move at the same average rate.
+    var scroll = u.time * P_speed() * 2.0;
+    if (P_gridLock() > 0.5 && u.bpm > 0.5) {
+      scroll = beatRamp() * max(1.0, round(P_speed()));
+    }
+    let gz = persp - scroll;
     let gx = cx * persp * P_gridScale();
     let lz = abs(fract(gz) - 0.5);
     let lx = abs(fract(gx) - 0.5);

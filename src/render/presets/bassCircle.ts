@@ -28,6 +28,33 @@ export const bassCircle: PresetDef = {
       name: "Mono",
       values: { hueSpread: 0, particles: 0.6, barLen: 0.3, rimBright: 1.1 },
     },
+    {
+      id: "ocean",
+      name: "Ocean",
+      values: {
+        hue: 200,
+        hueSpread: 55,
+        particles: 1.2,
+        partFloat: 0.6,
+        beatPump: 0.12,
+        pump: 0.5,
+        barGlow: 0.8,
+      },
+    },
+    {
+      id: "gold",
+      name: "Gold Rush",
+      values: {
+        hue: 42,
+        hueSpread: 25,
+        symmetry: 2,
+        spin: 0.15,
+        rimBright: 1.3,
+        beatBurst: 0.9,
+        particles: 1.4,
+        partDensity: 9,
+      },
+    },
   ],
   params: [
     { key: "hue", label: "Hue", min: 0, max: 360, step: 1, default: 280, hint: "Base color" },
@@ -213,14 +240,18 @@ fn preset(uv: vec2f) -> vec4f {
   var col = vec3f(0.0);
 
   // Whole assembly pumps with the sync source (Motion->Pulse scales it).
-  let pump = 1.0 + (u.drive * P_pump() + u.driveBeat * P_beatPump()) * u.pulse;
+  // The beat part rides the tempo grid when the track has one — the pump
+  // lands on every metronome beat, not only on flux spikes — and max() lets
+  // strong off-grid hits still punch through.
+  let beatP = max(u.driveBeat, gridPulse(7.0));
+  let pump = 1.0 + (u.drive * P_pump() + beatP * P_beatPump()) * u.pulse;
   let circleR = P_radius() * pump;
 
   // --- Background bokeh particles: each drifts along its own slow path and
   // twinkles, independent of the circle (the classic floating-dust layer).
   // Drawn first so the ring + circle sit on top. ---
   if (P_particles() > 0.01) {
-    let beat = 0.5 + u.driveBeat * P_beatBurst() * 0.7;
+    let beat = 0.5 + beatP * P_beatBurst() * 0.7;
     for (var l = 0; l < 2; l++) {
       let fl = f32(l);
       let scale = P_partDensity() * (1.0 + fl * 0.7);
@@ -281,7 +312,7 @@ fn preset(uv: vec2f) -> vec4f {
   }
   col = mix(col, fill, inner);
   let rim = exp(-abs(r - circleR) * 90.0);
-  col += hsl2rgb(P_hue(), 0.9, 0.65) * rim * P_rimBright() * (0.7 + u.drive * 0.6 + u.driveBeat * 0.5);
+  col += hsl2rgb(P_hue(), 0.9, 0.65) * rim * P_rimBright() * (0.7 + u.drive * 0.6 + beatP * 0.5);
   col += hsl2rgb(P_hue() + 20.0, 0.8, 0.5) * smoothstep(circleR, 0.0, r) * (0.08 + u.drive * 0.3) * inner;
 
   col *= 1.0 - r * r * P_vignette();

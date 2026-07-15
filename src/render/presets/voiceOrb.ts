@@ -17,6 +17,16 @@ export const voiceOrb: PresetDef = {
     { id: "warm", name: "Warm Host", values: { hue: 25, sparkle: 0.35 } },
     { id: "midnight", name: "Midnight", values: { hue: 260, sparkle: 0.8, rimGlow: 0.5 } },
     { id: "minimal", name: "Minimal", values: { ring: 0, sparkle: 0.1, wobble: 0.25 } },
+    {
+      id: "broadcast",
+      name: "Broadcast",
+      values: { hue: 0, sparkle: 0.25, wobble: 0.35, voiceFocus: 0.9, response: 0.75, rmsBlend: 0.5 },
+    },
+    {
+      id: "forest",
+      name: "Forest",
+      values: { hue: 140, sparkle: 0.4, wobble: 0.7, size: 0.19, ring: 1 },
+    },
   ],
   params: [
     { key: "hue", label: "Hue", min: 0, max: 360, step: 1, default: 195, hint: "Orb color" },
@@ -75,6 +85,15 @@ export const voiceOrb: PresetDef = {
       step: 0.02,
       default: 0.3,
       hint: "0 = slow smooth breathing, 1 = reacts to every syllable",
+    },
+    {
+      key: "voiceFocus",
+      label: "Voice focus",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.5,
+      hint: "Weights the speech band (300-3400 Hz) over overall loudness — music moves the orb less, voices more",
     },
     {
       key: "growth",
@@ -201,8 +220,12 @@ fn preset(uv: vec2f) -> vec4f {
   let a = atan2(p.y, p.x);
 
   // Speech level: mostly the slow envelope, a touch of instantaneous —
-  // keeps the orb's size calm instead of pumping on every syllable.
-  let level = clamp(mix(u.drive, u.rms, P_rmsBlend()) * (0.6 + P_response() * 1.4), 0.0, 1.0);
+  // keeps the orb's size calm instead of pumping on every syllable. u.voice
+  // (the dedicated 300-3400 Hz band) anchors it to actual speech energy, so
+  // music bleed (bass, cymbals) moves the orb far less than a voice does.
+  let raw = mix(u.drive, u.rms, P_rmsBlend());
+  let speech = mix(raw, u.voice, P_voiceFocus());
+  let level = clamp(speech * (0.6 + P_response() * 1.4), 0.0, 1.0);
   // Idle breathing keeps the orb alive during pauses, fades out when talking
   let idle = (1.0 - smoothstep(0.03, 0.12, level)) * sin(u.time * 1.3) * P_idleBreath();
 

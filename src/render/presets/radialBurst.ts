@@ -14,6 +14,16 @@ export const radialBurst: PresetDef = {
     { id: "solar", name: "Solar", values: { hue: 30, hueSpread: 50 } },
     { id: "emerald", name: "Emerald", values: { hue: 140, hueSpread: 80, glow: 0.7 } },
     { id: "kaleido", name: "Kaleido Six", values: { symmetry: 6, rotSpeed: 0.3, hueSpread: 200 } },
+    {
+      id: "crimson",
+      name: "Crimson Bloom",
+      values: { hue: 350, hueSpread: 35, innerRadius: 0.24, glow: 0.85, rotSpeed: -0.08 },
+    },
+    {
+      id: "arctic",
+      name: "Arctic Halo",
+      values: { hue: 195, hueSpread: 45, symmetry: 4, rotSpeed: 0.06, glow: 0.4, innerRadius: 0.14 },
+    },
   ],
   params: [
     {
@@ -221,7 +231,10 @@ export const radialBurst: PresetDef = {
 fn preset(uv: vec2f) -> vec4f {
   let p = centered(uv);
   let r = length(p);
-  var a = atan2(p.y, p.x) + (u.time * P_rotSpeed() * TAU * 0.1 + u.driveBeat * 0.12) * u.spin;
+  // Beat kicks ride the tempo grid when the track has one (gridPulse falls
+  // back to the flux pulse when it doesn't); real onsets still win via max.
+  let beatP = max(u.driveBeat, gridPulse(7.0));
+  var a = atan2(p.y, p.x) + (u.time * P_rotSpeed() * TAU * 0.1 + beatP * 0.12) * u.spin;
 
   // Fold into symmetric segments, mirrored inside each for seamless wrap
   let sym = max(1.0, P_symmetry());
@@ -230,7 +243,7 @@ fn preset(uv: vec2f) -> vec4f {
   let v = binAt(xs);
   let pk = peakAt(xs);
 
-  let inner = P_innerRadius() * (1.0 + (u.bass * P_ringBreathe() + u.driveBeat * 0.06) * u.pulse);
+  let inner = P_innerRadius() * (1.0 + (u.bass * P_ringBreathe() + beatP * 0.06) * u.pulse);
   let len = v * P_barLen();
   let barHue = P_hue() + xs * P_hueSpread();
 
@@ -255,7 +268,7 @@ fn preset(uv: vec2f) -> vec4f {
   // Core disc: geometry rides only slow signals — fast bands jitter,
   // energy glides. One slow-rotating dominant mode; amplitude on the slow
   // envelope; hard clamp keeps the core inside the bar ring.
-  let pump = 1.0 + (u.drive * P_corePump() + u.driveBeat * P_coreBeat()) * u.pulse;
+  let pump = 1.0 + (u.drive * P_corePump() + beatP * P_coreBeat()) * u.pulse;
   let coreR = inner * P_coreSize() * pump;
   let spin = u.time * (P_spinBase() + u.drive * P_spinEnergy()) * u.spin;
   let amp = inner * (P_wobBase() + u.drive * P_wobAmp());
@@ -264,7 +277,7 @@ fn preset(uv: vec2f) -> vec4f {
   let lim = inner * P_wobClamp();
   wob = clamp(wob, -lim, lim);
   let core = smoothstep(coreR + wob + 0.005, coreR + wob - 0.005, r);
-  let coreL = 0.12 + u.drive * P_coreBright() + u.driveBeat * P_beatBloom();
+  let coreL = 0.12 + u.drive * P_coreBright() + beatP * P_beatBloom();
   col = mix(col, hsl2rgb(P_hue() + 30.0, 0.75, coreL), core);
 
   // Thin waveform detail ring inside the core: fast micro-motion reads as

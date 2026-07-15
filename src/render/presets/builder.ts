@@ -28,6 +28,53 @@ export const builder: PresetDef = {
       name: "Minimal Line",
       values: { bars: 0, waveLine: 1, hueSpread: 0, bgGlow: 0.12, lineGlow: 0.7 },
     },
+    {
+      id: "pulse",
+      name: "Pulse Chamber",
+      values: {
+        bars: 0,
+        waveLine: 0,
+        rings: 1,
+        radial: 1,
+        orb: 1,
+        hue: 330,
+        hueSpread: 60,
+        beatFlash: 0.22,
+        orbSize: 0.11,
+        radialR: 0.26,
+      },
+    },
+    {
+      id: "nightclub",
+      name: "Nightclub",
+      values: {
+        rings: 1,
+        stars: 1,
+        hue: 200,
+        hueSpread: 130,
+        beatFlash: 0.3,
+        barsGlow: 0.7,
+        bgGlow: 0.45,
+        starStreak: 0.8,
+      },
+    },
+    {
+      id: "solarCore",
+      name: "Solar Core",
+      values: {
+        bars: 0,
+        waveLine: 0,
+        orb: 1,
+        waveCircle: 1,
+        rings: 1,
+        hue: 40,
+        hueSpread: 30,
+        orbBeat: 0.4,
+        ringEnd: 0.7,
+        circleR: 0.34,
+        bgGlow: 0.25,
+      },
+    },
   ],
   params: [
     {
@@ -119,6 +166,15 @@ export const builder: PresetDef = {
       step: 1,
       default: 0,
       hint: "Drifting starfield behind everything",
+    },
+    {
+      key: "rings",
+      label: "Layer: Pulse rings",
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 0,
+      hint: "A ring launches from the center on every beat and rides the tempo grid",
     },
   ],
   advanced: [
@@ -285,6 +341,51 @@ export const builder: PresetDef = {
       hint: "Each beat kicks particles in their own direction",
     },
     {
+      key: "ringStart",
+      label: "Rings: launch radius",
+      min: 0.02,
+      max: 0.4,
+      step: 0.01,
+      default: 0.1,
+      hint: "Where each pulse ring is born",
+    },
+    {
+      key: "ringEnd",
+      label: "Rings: reach",
+      min: 0.3,
+      max: 1.2,
+      step: 0.02,
+      default: 0.85,
+      hint: "How far a ring travels before the next beat",
+    },
+    {
+      key: "ringSharp",
+      label: "Rings: sharpness",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.5,
+      hint: "Thin crisp rings vs wide soft waves",
+    },
+    {
+      key: "ringBright",
+      label: "Rings: brightness",
+      min: 0,
+      max: 1.5,
+      step: 0.05,
+      default: 0.8,
+      hint: "Intensity of the pulse rings",
+    },
+    {
+      key: "orbBeat",
+      label: "Orb: beat kick",
+      min: 0,
+      max: 0.6,
+      step: 0.02,
+      default: 0.25,
+      hint: "Extra orb swell on each beat (tempo-locked when the track has a grid)",
+    },
+    {
       key: "vignette",
       label: "Vignette",
       min: 0,
@@ -300,9 +401,10 @@ fn preset(uv: vec2f) -> vec4f {
   let r = length(p);
   let a = atan2(p.y, p.x);
 
-  // --- Background wash + beat pulse
+  // --- Background wash + beat pulse (tempo-true when the track has a grid)
+  let beatP = max(u.driveBeat, gridPulse(6.0));
   var col = hsl2rgb(P_hue() + 40.0, 0.5, 0.05 + u.bass * 0.04) * (1.0 - r * 0.8) * P_bgGlow() * 2.0;
-  col += hsl2rgb(P_hue(), 0.7, 0.5) * u.driveBeat * P_beatFlash() * (1.0 - r);
+  col += hsl2rgb(P_hue(), 0.7, 0.5) * beatP * P_beatFlash() * (1.0 - r);
 
   // --- Particles (behind everything else): same recipe as the Particles
   // mode — per-particle wander + beat scatter, crisp cores, drifting field
@@ -385,6 +487,25 @@ fn preset(uv: vec2f) -> vec4f {
          * step(inner + len, r);
   }
 
+  // --- Tempo pulse rings: born at the center on every beat, arriving at
+  // full reach exactly as the next beat lands (beatPhase). Falls back to the
+  // flux pulse's decay when the track has no grid yet.
+  if (P_rings() > 0.5) {
+    var pt = 1.0 - u.driveBeat;
+    var amp = u.driveBeat;
+    if (u.bpm > 0.5) {
+      pt = u.beatPhase;
+      amp = max(exp(-u.beatPhase * 2.5) - 0.08, 0.0) / 0.92;
+    }
+    if (amp > 0.005) {
+      let ringR = mix(P_ringStart(), P_ringEnd(), pt);
+      let d = abs(r - ringR);
+      let ringHue = P_hue() + 15.0 + pt * P_hueSpread() * 0.3;
+      col += hsl2rgb(ringHue, 0.8, 0.55)
+           * exp(-d * (30.0 + P_ringSharp() * 90.0)) * amp * P_ringBright();
+    }
+  }
+
   // --- Waveform circle
   if (P_waveCircle() > 0.5) {
     let wv = waveAt(fract(a / TAU + 0.5));
@@ -397,7 +518,7 @@ fn preset(uv: vec2f) -> vec4f {
 
   // --- Orb core
   if (P_orb() > 0.5) {
-    let level = clamp(u.drive * 1.6, 0.0, 1.0);
+    let level = clamp(u.drive * 1.6 + gridPulse(7.0) * P_orbBeat(), 0.0, 1.0);
     let spin = u.time * 0.35;
     let amp = P_orbSize() * P_orbWobble() * (0.1 + level * 0.35);
     let wob = sin(a * 3.0 + spin) * amp + sin(a * 6.0 - spin * 0.8 + 1.5) * amp * 0.4;

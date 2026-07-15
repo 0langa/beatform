@@ -24,6 +24,34 @@ export const tunnelRings: PresetDef = {
       name: "Inferno",
       values: { hue: 0, hueSpread: 30, speed: 0.3, beatPulse: 0.9 },
     },
+    {
+      id: "hyper",
+      name: "Hyperdrive",
+      values: {
+        hue: 265,
+        hueSpread: 80,
+        speed: 0.55,
+        rings: 11,
+        spokes: 20,
+        beatSpeed: 0.22,
+        beatPulse: 0.9,
+        fogFar: 1.0,
+      },
+    },
+    {
+      id: "pearl",
+      name: "Pearl",
+      values: {
+        hue: 210,
+        hueSpread: 15,
+        tileSat: 0.15,
+        checker: 0.12,
+        groutLevel: 0.3,
+        centerGlow: 0.35,
+        beatPulse: 0.5,
+        tileLevel: 0.14,
+      },
+    },
   ],
   params: [
     { key: "hue", label: "Hue", min: 0, max: 360, step: 1, default: 15, hint: "Base tunnel color" },
@@ -207,9 +235,11 @@ fn preset(uv: vec2f) -> vec4f {
   let r = length(p) + 1e-3;
   let a = atan2(p.y, p.x);
 
-  // Depth: cruise on the slow envelope, brief kick on beats
+  // Depth: cruise on the slow envelope, brief kick on beats (metronome-true
+  // when the track has a grid; flux-only when it doesn't)
+  let kickP = max(u.driveBeat, gridPulse(6.0));
   let spd = P_speed() * (P_cruiseFloor() + u.drive * P_cruiseEnergy())
-          * (1.0 + u.driveBeat * P_beatSpeed() * u.pulse);
+          * (1.0 + kickP * P_beatSpeed() * u.pulse);
   let z = 0.30 / r + u.time * spd * 5.0;
 
   // Tile grid in (depth, angle)
@@ -241,11 +271,19 @@ fn preset(uv: vec2f) -> vec4f {
   let line = max(lz, la);
   tile = mix(tile, hsl2rgb(rowHue + 30.0, 0.5, 0.75), line * P_groutLevel());
 
-  // Beat pulse: one ring of light per beat, traveling smoothly from the
-  // viewer into the tunnel as the beat decays — legible sync, no flashing
-  if (u.driveBeat > 0.01) {
-    let pulseR = mix(0.72, 0.04, 1.0 - u.driveBeat);
-    let pulse = exp(-abs(r - pulseR) * P_pulseWidth()) * u.driveBeat * P_beatPulse();
+  // Beat pulse: one ring of light per beat, traveling from the viewer into
+  // the depth. With a beat grid it rides beatPhase — launched ON the beat,
+  // arriving as the next one lands, a perfectly periodic train. Without a
+  // grid it follows the flux pulse's decay, as before.
+  var pt = 1.0 - u.driveBeat; // ring travel 0 (launch) -> 1 (gone)
+  var amp = u.driveBeat;
+  if (u.bpm > 0.5) {
+    pt = u.beatPhase;
+    amp = max(exp(-u.beatPhase * 3.0) - 0.05, 0.0) / 0.95;
+  }
+  if (amp > 0.01) {
+    let pulseR = mix(0.72, 0.04, pt);
+    let pulse = exp(-abs(r - pulseR) * P_pulseWidth()) * amp * P_beatPulse();
     tile += hsl2rgb(rowHue + 40.0, 0.6, 0.55) * pulse;
   }
 
