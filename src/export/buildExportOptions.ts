@@ -7,6 +7,7 @@ import type { ProjectDocument } from "../state/project";
 import type { ExportOptions } from "./videoExporter";
 import type { LoudnessJob } from "./exportCore";
 import type { VideoCodecId } from "./codecProbe";
+import type { StemEntry } from "../audio/stems";
 
 /**
  * The single place a ProjectDocument becomes an ExportOptions.
@@ -48,6 +49,9 @@ export interface TrackInput {
   /** Cover art as a data URL, for presets that sample it (e.g. Bass Circle). */
   coverArt: string | null;
   beatGrid: BeatGrid | null;
+  /** Imported stems (session-scoped, like the beat grid). Omitted by the
+   * batch queue — stem routes then read 0 and are silently inert. */
+  stems?: StemEntry[];
 }
 
 /** Destination + lifecycle, supplied by the caller. */
@@ -115,6 +119,7 @@ export function buildExportOptions(
           }
         : undefined,
     beatGrid: track.beatGrid ?? undefined,
+    stems: track.stems,
     streamToPath: io.streamToPath,
     pngDir: io.pngDir,
     onPngFrame: io.onPngFrame,

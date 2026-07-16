@@ -22,6 +22,14 @@ import { demos } from "../audio/demoTrack";
 import { BG_IMAGE, type BgSettings, type ParamValues } from "../render/types";
 import { bakeBackgroundBitmap } from "../render/bgImage";
 import { renderPresetThumbnails } from "../render/thumbnails";
+import {
+  analyzeStem,
+  MAX_STEMS,
+  STEM_SLOTS,
+  stemValuesAt,
+  type StemEntry,
+  type StemSlot,
+} from "../audio/stems";
 import { defaultParams } from "../render/types";
 import { presetById, presets } from "../render/presets";
 import { exportVideo } from "../export/videoExporter";
@@ -273,6 +281,10 @@ interface SessionSlice {
   liveInputActive: boolean;
   /** presetId -> PNG data URL, generated lazily after first paint. */
   presetThumbs: Record<string, string> | null;
+  /** Imported stems (analysis-only, session-scoped like the track). */
+  stems: StemEntry[];
+  /** Stem currently being analyzed (its file name), null when idle. */
+  stemAnalyzing: string | null;
 }
 
 interface Actions {
@@ -306,6 +318,9 @@ interface Actions {
   toggleLiveInput(): Promise<void>;
   /** Kick off (once) the lazy thumbnail render for the preset strip. */
   loadPresetThumbnails(): void;
+  /** Import a stem file (analysis-only mod source). Max 4. */
+  addStem(file: File): Promise<void>;
+  removeStem(slot: StemSlot): void;
   pickLibraryFolder(): Promise<void>;
   playLibraryTrack(path: string): Promise<void>;
   /** Auto-advance hook — called by the engine's natural-end callback. */
@@ -608,6 +623,8 @@ export const useVizStore = create<VizState>((set, get) => {
     libraryAutoAdvance: true,
     liveInputActive: false,
     presetThumbs: null,
+    stems: [],
+    stemAnalyzing: null,
     showBatch: false,
     exporting: null,
     exportError: null,
@@ -645,6 +662,7 @@ export const useVizStore = create<VizState>((set, get) => {
         },
         onResize: () => get().refreshOverlay(),
         onMeter: (lufs, stereoWidth) => set({ lufs, stereoWidth }),
+        getStemValues: (t) => stemValuesAt(get().stems, t),
       });
       getEngine().setVolume(get().muted ? 0 : get().volume);
       // Library auto-advance: when a library track finishes naturally, play
@@ -942,6 +960,34 @@ export const useVizStore = create<VizState>((set, get) => {
       });
     },
 
+    async addStem(file) {
+      const s = get();
+      if (s.stems.length >= MAX_STEMS) {
+        set({ error: `Up to ${MAX_STEMS} stems — remove one first` });
+        return;
+      }
+      if (s.stemAnalyzing) return; // one analysis at a time
+      const slot = STEM_SLOTS.find((sl) => !s.stems.some((e) => e.slot === sl));
+      if (!slot) return;
+      set({ stemAnalyzing: file.name, error: null });
+      try {
+        // Decode on the ENGINE's context: a fresh OfflineAudioContext would
+        // resample and shift every FFT bin (the batch learned this once).
+        const buf = await getEngine().ctx.decodeAudioData(await file.arrayBuffer());
+        const analysis = await analyzeStem(pcmFromAudioBuffer(buf), file.name);
+        set({ stems: [...get().stems, { slot, analysis }] });
+        flashNotice(`Stem "${analysis.name}" ready — route it in Modulation`);
+      } catch (e) {
+        set({ error: `Could not analyze stem "${file.name}" (${(e as Error).message})` });
+      } finally {
+        set({ stemAnalyzing: null });
+      }
+    },
+
+    removeStem(slot) {
+      set({ stems: get().stems.filter((e) => e.slot !== slot) });
+    },
+
     async pickLibraryFolder() {
       if (!isTauri()) {
         set({ error: "The music library needs the desktop app (it scans a folder)" });
@@ -1237,6 +1283,7 @@ export const useVizStore = create<VizState>((set, get) => {
               meta: get().trackMeta,
               coverArt: get().coverArt,
               beatGrid: get().beatGrid,
+              stems: get().stems,
             },
             overlay,
             {

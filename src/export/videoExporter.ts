@@ -10,6 +10,7 @@ import {
 } from "./exportCore";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { VideoCodecId } from "./codecProbe";
+import type { StemEntry } from "../audio/stems";
 import type { ModRoute } from "../state/modMatrix";
 import type { Timeline } from "../state/timeline";
 import type { MotionSettings, PostSettings } from "../render/types";
@@ -34,6 +35,8 @@ export interface ExportOptions {
   codec?: VideoCodecId;
   /** Image background asset + baked-look params (bg.mode 3). */
   bgImage?: { dataUrl: string; dim: number; blur: number };
+  /** Imported stems' envelope timelines (mod-matrix stem sources). */
+  stems?: StemEntry[];
   presetId: string;
   params: ParamValues;
   bg: BgSettings;
@@ -238,6 +241,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     motion: o.motion,
     coverArt: o.coverArt,
     bgImage: o.bgImage,
+    stems: o.stems,
     paramsByPreset: o.paramsByPreset,
     modsByPreset: o.modsByPreset,
     timeline:

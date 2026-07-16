@@ -35,7 +35,13 @@ export type ModSource =
   | "hat"
   | "width"
   | "beatPhase"
-  | "barPhase";
+  | "barPhase"
+  // Stem sources: envelope timelines of imported sidecar tracks, sampled at
+  // track time ("stem1:kick"). Valid ids are produced by src/audio/stems.ts.
+  | `stem${1 | 2 | 3 | 4}:${"energy" | "bass" | "mid" | "treble" | "kick" | "snare" | "hat"}`;
+
+/** Stem-source ids ("stem1:kick"). Kept in lockstep with stems.ts keys. */
+const STEM_SOURCE_RE = /^stem[1-4]:(energy|bass|mid|treble|kick|snare|hat)$/;
 
 export const MOD_SOURCES: Array<{ id: ModSource; label: string }> = [
   { id: "drive", label: "Drive" },
@@ -54,14 +60,23 @@ export const MOD_SOURCES: Array<{ id: ModSource; label: string }> = [
   { id: "barPhase", label: "Bar phase" },
 ];
 
-const SOURCE_IDS = new Set(MOD_SOURCES.map((s) => s.id));
+const SOURCE_IDS = new Set<string>(MOD_SOURCES.map((s) => s.id));
+
+function isValidSource(v: string): boolean {
+  return SOURCE_IDS.has(v) || STEM_SOURCE_RE.test(v);
+}
 
 export function newRouteId(): string {
   return `mr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function sourceValue(features: AudioFeatures, source: ModSource): number {
-  return features[source];
+export function sourceValue(
+  features: AudioFeatures,
+  source: ModSource,
+  stems?: Record<string, number>,
+): number {
+  if (source.startsWith("stem")) return stems?.[source] ?? 0;
+  return features[source as keyof AudioFeatures & ModSource] as number;
 }
 
 /**
@@ -74,6 +89,9 @@ export function applyMods(
   base: ParamValues,
   routes: ModRoute[],
   features: AudioFeatures,
+  /** Per-frame stem envelope values ("stem1:kick" -> 0..1); a route to a
+   * stem that isn't loaded reads 0 — silently inert, never an error. */
+  stems?: Record<string, number>,
 ): ParamValues {
   if (routes.length === 0) return base;
   const specs = allParams(preset);
@@ -81,7 +99,7 @@ export function applyMods(
   for (const route of routes) {
     const spec = specs.find((s) => s.key === route.param);
     if (!spec) continue; // route to a param this preset doesn't have — skip
-    const value = sourceValue(features, route.source);
+    const value = sourceValue(features, route.source, stems);
     const range = spec.max - spec.min;
     const next = (out[route.param] ?? spec.default) + value * route.amount * range;
     out[route.param] = Math.min(spec.max, Math.max(spec.min, next));
@@ -100,7 +118,7 @@ export function validModRoutes(v: unknown): ModRoute[] {
       r !== null &&
       typeof r.id === "string" &&
       typeof r.source === "string" &&
-      SOURCE_IDS.has(r.source as ModSource) &&
+      isValidSource(r.source) &&
       typeof r.param === "string" &&
       r.param.length > 0 &&
       typeof r.amount === "number" &&

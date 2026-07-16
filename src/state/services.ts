@@ -30,6 +30,8 @@ export interface ServiceHooks {
   onResize?(width: number, height: number): void;
   /** Throttled loudness/width readout for meters (~4 Hz while playing). */
   onMeter?(lufs: number, width: number): void;
+  /** Stem envelope values at track time t (mod-matrix stem sources). */
+  getStemValues?(t: number): Record<string, number> | undefined;
 }
 
 let engine: AudioEngine | null = null;
@@ -282,7 +284,13 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       renderer?.render(
         features,
         trackTime,
-        applyMods(presetById(rf.presetId), rf.params, rf.mods, features),
+        applyMods(
+          presetById(rf.presetId),
+          rf.params,
+          rf.mods,
+          features,
+          hooks.getStemValues?.(trackTime),
+        ),
         transition,
       );
       // E2E probe: lets tooling confirm the render loop is alive

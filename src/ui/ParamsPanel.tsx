@@ -24,6 +24,7 @@ import { FACTORY_THEMES } from "../state/factoryThemes";
 import type { ThemeMeta } from "../state/themes";
 import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
 import { MOD_SOURCES, type ModRoute, type ModSource } from "../state/modMatrix";
+import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../audio/stems";
 import { allParams } from "../render/types";
 import { Slider } from "./Slider";
 import { LayersPanel } from "./LayersPanel";
@@ -234,6 +235,11 @@ export function ParamsPanel(props: {
   motion: MotionSettings;
   onMotion: (patch: Partial<MotionSettings>) => void;
   mods: ModRoute[];
+  /** Imported stems (analysis-only modulation sources). */
+  stems: StemEntry[];
+  stemAnalyzing: string | null;
+  onAddStem: (file: File) => void;
+  onRemoveStem: (slot: StemSlot) => void;
   onAddMod: (source: ModSource, param: string) => void;
   onUpdateMod: (id: string, patch: Partial<ModRoute>) => void;
   onRemoveMod: (id: string) => void;
@@ -699,6 +705,47 @@ export function ParamsPanel(props: {
               the glow. Applied in exports identically.
             </p>
           )}
+          <div className="save-look-row">
+            {props.stems.map((st) => (
+              <span key={st.slot} className="user-chip-wrap">
+                <span
+                  className="style-chip user"
+                  title="Imported stem — its bands appear as modulation sources"
+                >
+                  {st.analysis.name}
+                </span>
+                <button
+                  className="chip-x"
+                  title="Remove this stem (routes to it go inert)"
+                  onClick={() => props.onRemoveStem(st.slot)}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+            {props.stemAnalyzing ? (
+              <span className="section-hint">Analyzing {props.stemAnalyzing}…</span>
+            ) : (
+              props.stems.length < MAX_STEMS && (
+                <label
+                  className="text-btn"
+                  title="Import a stem (drums/bass/vocals bounced from 0:00) — analyzed once, never played; its bands become modulation sources"
+                >
+                  + Add stem…
+                  <input
+                    type="file"
+                    accept="audio/*,.mp3,.flac,.wav,.ogg,.m4a"
+                    hidden
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) props.onAddStem(f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              )
+            )}
+          </div>
           {props.mods.map((r) => (
             <div key={r.id} className="mod-row">
               <select
@@ -712,6 +759,13 @@ export function ParamsPanel(props: {
                     {s.label}
                   </option>
                 ))}
+                {props.stems.map((st) =>
+                  STEM_TRACK_KEYS.map((k) => (
+                    <option key={`${st.slot}:${k}`} value={`${st.slot}:${k}`}>
+                      {st.analysis.name}: {k}
+                    </option>
+                  )),
+                )}
               </select>
               <span className="mod-arrow">→</span>
               <select

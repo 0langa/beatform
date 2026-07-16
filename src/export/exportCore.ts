@@ -12,6 +12,7 @@ import { resolveActiveFrame } from "../state/frameResolve";
 import { presetById } from "../render/presets";
 import { codecConfigExtras, codecString, MUXER_CODEC, type VideoCodecId } from "./codecProbe";
 import { bakeBackgroundBitmap } from "../render/bgImage";
+import { stemValuesAt, type StemEntry } from "../audio/stems";
 
 /**
  * Offline MP4 export — the design in docs/EXPORT-DESIGN.md, realized.
@@ -61,6 +62,8 @@ export interface ExportJob {
   /** Image background (bg.mode 3): the asset + baked-look parameters. The
    * core bakes with the same shared function as the live view. */
   bgImage?: { dataUrl: string; dim: number; blur: number };
+  /** Imported stems' envelope timelines — mod-matrix stem sources. */
+  stems?: StemEntry[];
   /** Timeline (already shifted for segments) — scenes + automation. */
   timeline?: Timeline;
   /** Per-preset param overrides — scene switches resolve their own base. */
@@ -458,7 +461,13 @@ export async function runExportJob(
       renderer.render(
         features,
         t,
-        applyMods(presetById(rf.presetId), rf.params, rf.mods, features),
+        applyMods(
+          presetById(rf.presetId),
+          rf.params,
+          rf.mods,
+          features,
+          job.stems ? stemValuesAt(job.stems, t) : undefined,
+        ),
         transition,
       );
       // Ensure the GPU finished before snapshotting the canvas

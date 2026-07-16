@@ -123,6 +123,8 @@ export default function App() {
   const libraryAutoAdvance = useVizStore((s) => s.libraryAutoAdvance);
   const liveInputActive = useVizStore((s) => s.liveInputActive);
   const presetThumbs = useVizStore((s) => s.presetThumbs);
+  const stems = useVizStore((s) => s.stems);
+  const stemAnalyzing = useVizStore((s) => s.stemAnalyzing);
   const showBatch = useVizStore((s) => s.showBatch);
 
   const store = useVizStore.getState; // stable accessor for actions/handlers
@@ -334,6 +336,7 @@ export default function App() {
         segment: opts.canvasLoop,
         loopCrossfadeSec: opts.canvasLoop ? 0.5 : undefined,
         beatGrid: s.beatGrid ?? undefined,
+        stems: s.stems,
         mods: s.activeMods,
         smoothSpectrum: s.smoothSpectrum,
         // Merge onto DEFAULT_POST. A partial post object is a trap: `exposure`
@@ -728,6 +731,10 @@ export default function App() {
           motion={motion}
           onMotion={(patch) => store().setMotion(patch)}
           mods={activeMods}
+          stems={stems}
+          stemAnalyzing={stemAnalyzing}
+          onAddStem={(f) => void store().addStem(f)}
+          onRemoveStem={(slot) => store().removeStem(slot)}
           onAddMod={(source, param) => store().addModRoute(source, param)}
           onUpdateMod={(id, patch) => store().updateModRoute(id, patch)}
           onRemoveMod={(id) => store().removeModRoute(id)}
