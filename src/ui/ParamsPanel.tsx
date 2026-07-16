@@ -18,7 +18,9 @@ import {
   defaultParams,
 } from "../render/types";
 import type { UserPreset } from "../state/userPresets";
-import { ASPECTS, type Aspect } from "../state/project";
+import { ASPECTS, type Aspect, type ProjectDocument } from "../state/project";
+import { FACTORY_THEMES } from "../state/factoryThemes";
+import type { ThemeMeta } from "../state/themes";
 import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
 import { MOD_SOURCES, type ModRoute, type ModSource } from "../state/modMatrix";
 import { allParams } from "../render/types";
@@ -197,6 +199,10 @@ export function ParamsPanel(props: {
   onDeleteUserPreset: (id: string) => void;
   onExportUserPreset: (id: string) => void;
   onImportUserPreset: () => void;
+  /** Apply a factory template's full document. */
+  onApplyTheme: (document: ProjectDocument, name: string) => void;
+  /** Save the whole current setup as a shareable .avtheme file. */
+  onExportTheme: (meta: ThemeMeta) => void;
   aspect: Aspect;
   onAspect: (a: Aspect) => void;
   /** Momentary loudness readout; null before playback. */
@@ -230,6 +236,9 @@ export function ParamsPanel(props: {
   const [hint, setHint] = useState<string | null>(null);
   const [savingLook, setSavingLook] = useState(false);
   const [lookName, setLookName] = useState("");
+  const [savingTheme, setSavingTheme] = useState(false);
+  const [themeName, setThemeName] = useState("");
+  const [themeAuthor, setThemeAuthor] = useState("");
   const toggleAdvanced = () => {
     setShowAdvanced((v) => {
       localStorage.setItem("viz.advancedOpen", v ? "0" : "1");
@@ -408,6 +417,75 @@ export function ParamsPanel(props: {
                 </div>
               )}
             </>
+          )}
+        </section>
+
+        <section className="panel-section">
+          <div className="section-head">
+            <span className="section-title">Templates</span>
+          </div>
+          <p className="section-hint">
+            Complete looks — visual, colors, sync, post — in one click. Drop any .avtheme file onto
+            the window to import; save yours to share.
+          </p>
+          <div className="style-chips">
+            {FACTORY_THEMES.map((t) => (
+              <button
+                key={t.meta.name}
+                className="style-chip"
+                title={`${t.meta.description ?? ""}${t.meta.bpmHint ? ` (~${t.meta.bpmHint[0]}-${t.meta.bpmHint[1]} BPM)` : ""}`}
+                onClick={() => props.onApplyTheme(t.document, t.meta.name)}
+              >
+                {t.meta.name}
+              </button>
+            ))}
+          </div>
+          {savingTheme ? (
+            <form
+              className="save-look-row"
+              onSubmit={(e) => {
+                e.preventDefault();
+                props.onExportTheme({
+                  name: themeName.trim(),
+                  author: themeAuthor.trim() || "anonymous",
+                  license: "CC0-1.0",
+                });
+                setSavingTheme(false);
+                setThemeName("");
+              }}
+            >
+              <input
+                className="look-name-input"
+                autoFocus
+                placeholder="Template name…"
+                value={themeName}
+                maxLength={80}
+                onChange={(e) => setThemeName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setSavingTheme(false);
+                }}
+              />
+              <input
+                className="look-name-input"
+                placeholder="Your name…"
+                value={themeAuthor}
+                maxLength={60}
+                onChange={(e) => setThemeAuthor(e.target.value)}
+              />
+              <button type="submit" className="text-btn" disabled={!themeName.trim()}>
+                Save
+              </button>
+            </form>
+          ) : (
+            <div className="save-look-row">
+              <button
+                className="text-btn"
+                title="Save EVERYTHING currently set up (visual, layers, timeline, post) as a shareable .avtheme file (CC0)"
+                onClick={() => setSavingTheme(true)}
+              >
+                + Save as template…
+              </button>
+            </div>
           )}
         </section>
 

@@ -97,6 +97,15 @@ export function parseProject(json: string): ProjectDocument {
   if (typeof doc !== "object" || doc === null) {
     throw new ProjectParseError("Project has no document");
   }
+  return validateDocument(doc);
+}
+
+/**
+ * Field-by-field validation + defaulting of an untrusted document. This IS
+ * the migration path: older schemas simply lack fields and the validators
+ * default them. Shared by .avproj projects and .avtheme templates.
+ */
+export function validateDocument(doc: Partial<ProjectDocument>): ProjectDocument {
   const assets = validAssets(doc.assets);
   return {
     presetId: validPresetId(doc.presetId),

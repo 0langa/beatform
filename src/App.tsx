@@ -479,6 +479,13 @@ export default function App() {
         store().setDragOver(false);
         const files = Array.from(e.dataTransfer.files);
         if (files.length === 0) return;
+        // Templates import by drag, from anywhere (Explorer, a GitHub
+        // download, Discord) — the whole ecosystem loop in one gesture.
+        const theme = files.find((f) => f.name.toLowerCase().endsWith(".avtheme"));
+        if (theme) {
+          void theme.text().then((t) => store().importThemeText(t));
+          return;
+        }
         // With the batch panel open, dropped tracks QUEUE — the panel says
         // "drop in a folder of tracks", and replacing the live track with
         // files[0] while ignoring the rest betrayed exactly that promise.
@@ -678,6 +685,8 @@ export default function App() {
           bpm={beatGrid ? beatGrid.bpm : null}
           keyName={trackKey ? trackKey.name : null}
           userPresets={userPresets.filter((p) => p.presetId === presetId)}
+          onApplyTheme={(document, name) => store().applyTheme(document, name)}
+          onExportTheme={(meta) => void store().exportCurrentTheme(meta)}
           onSaveUserPreset={(name) => store().saveUserPreset(name)}
           onApplyUserPreset={(id) => store().applyUserPreset(id)}
           onDeleteUserPreset={(id) => store().deleteUserPreset(id)}

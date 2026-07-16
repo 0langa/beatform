@@ -71,6 +71,7 @@ import {
   type Aspect,
   type ProjectDocument,
 } from "./project";
+import { parseTheme, serializeTheme, ThemeParseError, type ThemeMeta } from "./themes";
 import {
   loadUserPresets,
   newUserPresetId,
@@ -288,6 +289,12 @@ interface Actions {
   loadFile(file: File): Promise<void>;
   loadDemo(id: string): Promise<void>;
   setShowLibrary(open: boolean): void;
+  /** Apply a template's document (factory pack or parsed .avtheme). */
+  applyTheme(document: ProjectDocument, name: string): void;
+  /** Parse + apply an .avtheme file's text (drag-import). */
+  importThemeText(contents: string): void;
+  /** Save the current setup as a shareable .avtheme file. */
+  exportCurrentTheme(meta: ThemeMeta): Promise<void>;
   toggleLiveInput(): Promise<void>;
   pickLibraryFolder(): Promise<void>;
   playLibraryTrack(path: string): Promise<void>;
@@ -908,6 +915,41 @@ export const useVizStore = create<VizState>((set, get) => {
 
     setLibraryAutoAdvance(v) {
       set({ libraryAutoAdvance: v });
+    },
+
+    applyTheme(document, name) {
+      // ONE history entry: Ctrl+Z restores the entire previous setup.
+      record("theme");
+      get().applyDocument(document);
+      flashNotice(`Template "${name}" applied`);
+    },
+
+    importThemeText(contents) {
+      try {
+        const { meta, document } = parseTheme(contents);
+        get().applyTheme(document, meta.name);
+        if (meta.author !== "unknown") flashNotice(`"${meta.name}" by ${meta.author} applied`);
+      } catch (e) {
+        set({
+          error:
+            e instanceof ThemeParseError
+              ? `Could not import template: ${e.message}`
+              : `Could not import template: ${(e as Error).message}`,
+        });
+      }
+    },
+
+    async exportCurrentTheme(meta) {
+      try {
+        const path = await saveTextFile(
+          `${safeName(meta.name)}.avtheme`,
+          serializeTheme(docOf(get()), meta, APP_VERSION),
+          [{ name: "Audio Visualizer template", extensions: ["avtheme"] }],
+        );
+        if (path) flashNotice(`Template "${meta.name}" saved — share the file anywhere`);
+      } catch (e) {
+        set({ error: `Could not save template: ${(e as Error).message}` });
+      }
     },
 
     seekStart() {
