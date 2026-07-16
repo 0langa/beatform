@@ -19,7 +19,8 @@ import { runBatch } from "./batchRunner";
 import type { FormatPreset } from "../export/buildExportOptions";
 import { probeCodecs, type CodecSupport, type VideoCodecId } from "../export/codecProbe";
 import { demos } from "../audio/demoTrack";
-import type { BgSettings, ParamValues } from "../render/types";
+import { BG_IMAGE, type BgSettings, type ParamValues } from "../render/types";
+import { bakeBackgroundBitmap } from "../render/bgImage";
 import { defaultParams } from "../render/types";
 import { presetById, presets } from "../render/presets";
 import { exportVideo } from "../export/videoExporter";
@@ -279,6 +280,10 @@ interface Actions {
   applyStyle(values: Partial<ParamValues>): void;
   resetParams(): void;
   setBg(bg: BgSettings): void;
+  /** Pick an image file as the background (switches bg.mode to image). */
+  pickBackgroundImage(): Promise<void>;
+  /** Use the loaded track's cover art as the background. */
+  useAlbumArtBackground(): void;
   setAspect(aspect: Aspect): void;
   setSmoothSpectrum(v: boolean): void;
   setTimeline(timeline: Timeline): void;
@@ -494,6 +499,30 @@ export const useVizStore = create<VizState>((set, get) => {
     }
   };
 
+  /**
+   * Bake + hand the image background to the renderer (or clear it). Token-
+   * guarded like applyCoverArt: a slow bake finishing after the bg changed
+   * again must not overwrite the newer image.
+   */
+  let bgImageToken = 0;
+  const applyBgImage = () => {
+    const token = ++bgImageToken;
+    const { bg, assets } = get();
+    const asset = bg.mode === BG_IMAGE && bg.image ? assets[bg.image.assetId] : undefined;
+    if (!asset || !bg.image) {
+      getRenderer()?.setBackgroundImage(null);
+      return;
+    }
+    void bakeBackgroundBitmap(asset.dataUrl, bg.image.blur, bg.image.dim)
+      .then((bmp) => {
+        if (token === bgImageToken) getRenderer()?.setBackgroundImage(bmp);
+        else bmp.close();
+      })
+      .catch(() => {
+        if (token === bgImageToken) getRenderer()?.setBackgroundImage(null);
+      });
+  };
+
   /** Crash-safe project autosave (desktop), debounced past edit bursts. */
   const scheduleAutosave = () => {
     clearTimeout(autosaveTimer);
@@ -605,6 +634,7 @@ export const useVizStore = create<VizState>((set, get) => {
           getRenderer()?.setPost(get().post);
           getRenderer()?.setMotion(get().motion);
           applyCoverArt(); // new renderer starts without a cover bound
+          applyBgImage(); // ...and without a background image
           get().refreshOverlay(); // new renderer starts without an overlay bound
         },
         onResize: () => get().refreshOverlay(),
@@ -677,6 +707,57 @@ export const useVizStore = create<VizState>((set, get) => {
       set({ bg });
       saveStoredBg(bg);
       getRenderer()?.setBackground(bg);
+      applyBgImage();
+    },
+
+    async pickBackgroundImage() {
+      const img = await openImageFile();
+      if (!img) return;
+      record("bg");
+      const asset: OverlayAsset = {
+        id: `as-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        name: img.name,
+        dataUrl: img.dataUrl,
+      };
+      const assets = { ...get().assets, [asset.id]: asset };
+      const prev = get().bg;
+      const bg: BgSettings = {
+        ...prev,
+        mode: BG_IMAGE,
+        image: { assetId: asset.id, dim: prev.image?.dim ?? 0.25, blur: prev.image?.blur ?? 0 },
+      };
+      set({ assets, bg });
+      saveStoredOverlay(get().overlayLayers, assets);
+      saveStoredBg(bg);
+      getRenderer()?.setBackground(bg);
+      applyBgImage();
+    },
+
+    useAlbumArtBackground() {
+      const cover = get().coverArt;
+      if (!cover) {
+        set({ error: "The loaded track has no embedded cover art" });
+        return;
+      }
+      record("bg");
+      const asset: OverlayAsset = {
+        id: `as-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        name: "Album art",
+        dataUrl: cover,
+      };
+      const assets = { ...get().assets, [asset.id]: asset };
+      const prev = get().bg;
+      const bg: BgSettings = {
+        ...prev,
+        mode: BG_IMAGE,
+        // Album art behind a visualizer usually wants softening by default
+        image: { assetId: asset.id, dim: prev.image?.dim ?? 0.35, blur: prev.image?.blur ?? 18 },
+      };
+      set({ assets, bg });
+      saveStoredOverlay(get().overlayLayers, assets);
+      saveStoredBg(bg);
+      getRenderer()?.setBackground(bg);
+      applyBgImage();
     },
 
     setSmoothSpectrum(v) {
@@ -1552,6 +1633,7 @@ export const useVizStore = create<VizState>((set, get) => {
       pruneBitmapCache(new Set(Object.keys(doc.assets)));
       getRenderer()?.setPreset(preset);
       getRenderer()?.setBackground(doc.bg);
+      applyBgImage();
       getAnalyzer().setSync(sync);
       get().refreshOverlay();
       // Covers undo/redo/project-open: without this the autosave file kept

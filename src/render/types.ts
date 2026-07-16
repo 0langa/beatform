@@ -90,16 +90,31 @@ export function allParams(preset: PresetDef): ParamSpec[] {
  *    (luma-keyed "over" composite — includes chroma green/magenta workflows)
  *  - transparent: luma-derived alpha; live preview shows checkerboard.
  *    H.264/MP4 cannot store alpha, so exports composite over black.
+ *  - image: a user image (or the track's album art) behind the visualization,
+ *    cover-fit, with blur/dim baked once on the CPU (deterministic).
  */
-export type BgMode = 0 | 1 | 2;
+export type BgMode = 0 | 1 | 2 | 3;
 export const BG_PRESET: BgMode = 0;
 export const BG_SOLID: BgMode = 1;
 export const BG_TRANSPARENT: BgMode = 2;
+export const BG_IMAGE: BgMode = 3;
+
+/** Image-background settings: which document asset, and the baked look. */
+export interface BgImage {
+  /** Key into the document's assets map (same store as overlay images). */
+  assetId: string;
+  /** Black overlay strength 0..0.9 — keeps the visualization readable. */
+  dim: number;
+  /** Gaussian blur radius in source pixels, 0..60. */
+  blur: number;
+}
 
 export interface BgSettings {
   mode: BgMode;
   /** 0..1 rgb, used by solid mode */
   color: [number, number, number];
+  /** Present when mode is image (kept while switching modes, for undo). */
+  image?: BgImage;
 }
 
 /** Post-processing settings — all-neutral defaults render identically to raw. */
@@ -181,6 +196,11 @@ export interface Renderer {
    * null clears it, making hasCover() false.
    */
   setCoverArt(source: ImageBitmap | null): void;
+  /**
+   * Baked background image (blur/dim already applied), cover-fit behind the
+   * visualization when bg.mode is image. Takes ownership; null clears it.
+   */
+  setBackgroundImage(source: ImageBitmap | null): void;
   /** Global smooth-spectrum toggle: spline-connected bins, no hard corners. */
   setSmoothSpectrum(v: boolean): void;
   /** Global motion masters (rotation / pulse / detail), applied across modes. */

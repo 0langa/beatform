@@ -32,6 +32,8 @@ export interface ExportOptions {
   bitrate: number;
   /** Video codec (default "h264"). Encode lane only — pixels are identical. */
   codec?: VideoCodecId;
+  /** Image background asset + baked-look params (bg.mode 3). */
+  bgImage?: { dataUrl: string; dim: number; blur: number };
   presetId: string;
   params: ParamValues;
   bg: BgSettings;
@@ -235,6 +237,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     post: o.post,
     motion: o.motion,
     coverArt: o.coverArt,
+    bgImage: o.bgImage,
     paramsByPreset: o.paramsByPreset,
     modsByPreset: o.modsByPreset,
     timeline:

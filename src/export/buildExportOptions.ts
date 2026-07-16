@@ -1,7 +1,7 @@
 import { DEFAULT_SYNC } from "../audio/types";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import { presetById } from "../render/presets";
-import { defaultParams, type ParamValues } from "../render/types";
+import { BG_IMAGE, defaultParams, type ParamValues } from "../render/types";
 import type { OverlayMeta } from "../render/overlay";
 import type { ProjectDocument } from "../state/project";
 import type { ExportOptions } from "./videoExporter";
@@ -104,6 +104,16 @@ export function buildExportOptions(
     timeline: doc.timeline.enabled ? doc.timeline : undefined,
     overlay,
     coverArt: track.coverArt ?? undefined,
+    // Image background: resolve the asset here (the export job carries the
+    // bytes; the core bakes with the same function as the live view).
+    bgImage:
+      doc.bg.mode === BG_IMAGE && doc.bg.image && doc.assets[doc.bg.image.assetId]
+        ? {
+            dataUrl: doc.assets[doc.bg.image.assetId].dataUrl,
+            dim: doc.bg.image.dim,
+            blur: doc.bg.image.blur,
+          }
+        : undefined,
     beatGrid: track.beatGrid ?? undefined,
     streamToPath: io.streamToPath,
     pngDir: io.pngDir,

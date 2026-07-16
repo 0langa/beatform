@@ -10,6 +10,7 @@ import type {
   PresetDef,
 } from "../render/types";
 import {
+  BG_IMAGE,
   BG_PRESET,
   BG_SOLID,
   BG_TRANSPARENT,
@@ -83,6 +84,11 @@ const BG_OPTIONS: Array<{ mode: BgMode; label: string; hint: string }> = [
     mode: BG_TRANSPARENT,
     label: "Transparent",
     hint: "See-through background (checkerboard preview); MP4 exports render it black",
+  },
+  {
+    mode: BG_IMAGE,
+    label: "Image",
+    hint: "Your artwork (or the album art) behind the visualization — cover-fit, with blur and dim",
   },
 ];
 
@@ -188,6 +194,8 @@ export function ParamsPanel(props: {
   onReset: () => void;
   bg: BgSettings;
   onBg: (bg: BgSettings) => void;
+  onPickBackgroundImage: () => void;
+  onUseAlbumArtBackground: () => void;
   sync: SyncSettings;
   onSync: (sync: SyncSettings) => void;
   rendererKind: string;
@@ -781,7 +789,10 @@ export function ParamsPanel(props: {
                 title={o.hint}
                 onPointerEnter={() => setHint(o.hint)}
                 onPointerLeave={() => setHint(null)}
-                onClick={() => props.onBg({ ...props.bg, mode: o.mode })}
+                onClick={() => {
+                  if (o.mode === BG_IMAGE && !props.bg.image) props.onPickBackgroundImage();
+                  else props.onBg({ ...props.bg, mode: o.mode });
+                }}
               >
                 {o.label}
               </button>
@@ -808,6 +819,60 @@ export function ParamsPanel(props: {
                 />
               ))}
             </div>
+          )}
+          {props.bg.mode === BG_IMAGE && props.bg.image && (
+            <>
+              <div className="save-look-row">
+                <button
+                  className="text-btn"
+                  title="Choose a different image file"
+                  onClick={props.onPickBackgroundImage}
+                >
+                  Choose image…
+                </button>
+                <button
+                  className="text-btn"
+                  disabled={!props.hasCoverArt}
+                  title={
+                    props.hasCoverArt
+                      ? "Use the loaded track's album art"
+                      : "The loaded track has no embedded cover art"
+                  }
+                  onClick={props.onUseAlbumArtBackground}
+                >
+                  Use album art
+                </button>
+              </div>
+              <label
+                className="row param-row"
+                title="Darken the image so the visualization stays readable"
+              >
+                <span className="row-label">Dim</span>
+                <Slider
+                  min={0}
+                  max={0.9}
+                  step={0.01}
+                  value={props.bg.image.dim}
+                  onChange={(dim) =>
+                    props.onBg({ ...props.bg, image: { ...props.bg.image!, dim } })
+                  }
+                />
+                <span className="row-value">{props.bg.image.dim.toFixed(2)}</span>
+              </label>
+              <label className="row param-row" title="Soften the image behind the visualization">
+                <span className="row-label">Blur</span>
+                <Slider
+                  min={0}
+                  max={60}
+                  step={1}
+                  value={props.bg.image.blur}
+                  onChange={(blur) =>
+                    props.onBg({ ...props.bg, image: { ...props.bg.image!, blur } })
+                  }
+                />
+                <span className="row-value">{props.bg.image.blur.toFixed(0)}</span>
+              </label>
+            </>
           )}
           {props.bg.mode === BG_TRANSPARENT && (
             <p className="section-hint">

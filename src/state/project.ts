@@ -1,6 +1,13 @@
 import type { SyncSettings } from "../audio/types";
 import type { BgSettings, MotionSettings, ParamValues, PostSettings } from "../render/types";
-import { BG_PRESET, BG_SOLID, BG_TRANSPARENT, DEFAULT_MOTION, DEFAULT_POST } from "../render/types";
+import {
+  BG_IMAGE,
+  BG_PRESET,
+  BG_SOLID,
+  BG_TRANSPARENT,
+  DEFAULT_MOTION,
+  DEFAULT_POST,
+} from "../render/types";
 import { presets } from "../render/presets";
 import type { OverlayAsset, OverlayLayer, OverlayAnchor } from "../render/overlay";
 import { validModsByPreset, type ModRoute } from "./modMatrix";
@@ -17,10 +24,11 @@ import { validTimeline, type Timeline } from "./timeline";
  * History: v1 = preset/params/sync/bg · v2 (+) overlay layers + assets ·
  * v3 (+) modulation-matrix routes · v4 (+) timeline (scenes + automation) ·
  * v5 (+) post-processing (bloom/tonemap/vignette/grain/chromatic) ·
- * v6 (+) global motion masters (rotation/pulse/detail)
+ * v6 (+) global motion masters (rotation/pulse/detail) ·
+ * v7 (+) image backgrounds (bg.mode 3 + bg.image asset ref/dim/blur)
  */
 
-export const PROJECT_VERSION = 6;
+export const PROJECT_VERSION = 7;
 export const PROJECT_EXTENSION = "avproj";
 
 /** Frame aspect: "free" fills the window; fixed ratios letterbox the stage. */
@@ -107,11 +115,17 @@ export function parseProject(json: string): ProjectDocument {
  */
 export function validateDocument(doc: Partial<ProjectDocument>): ProjectDocument {
   const assets = validAssets(doc.assets);
+  const bg = validBg(doc.bg);
+  // Image background referencing a missing asset degrades to the preset's
+  // own background instead of rendering a black hole.
+  if (bg.mode === BG_IMAGE && (!bg.image || !assets[bg.image.assetId])) {
+    bg.mode = BG_PRESET;
+  }
   return {
     presetId: validPresetId(doc.presetId),
     paramsByPreset: validParamsByPreset(doc.paramsByPreset),
     syncByPreset: validSyncByPreset(doc.syncByPreset),
-    bg: validBg(doc.bg),
+    bg,
     overlayLayers: validLayers(doc.overlayLayers, assets),
     assets,
     aspect: validAspect(doc.aspect),
@@ -288,15 +302,36 @@ export function validLayers(v: unknown, assets: Record<string, OverlayAsset>): O
 
 export function validBg(v: unknown): BgSettings {
   const bg = v as Partial<BgSettings>;
-  const validMode = bg?.mode === BG_PRESET || bg?.mode === BG_SOLID || bg?.mode === BG_TRANSPARENT;
+  const validMode =
+    bg?.mode === BG_PRESET ||
+    bg?.mode === BG_SOLID ||
+    bg?.mode === BG_TRANSPARENT ||
+    bg?.mode === BG_IMAGE;
   const validColor =
     Array.isArray(bg?.color) &&
     bg.color.length === 3 &&
     bg.color.every((c) => typeof c === "number" && Number.isFinite(c));
   if (validMode && validColor) {
+    const n = (x: unknown, def: number, lo: number, hi: number) =>
+      typeof x === "number" && Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : def;
+    const image =
+      typeof bg!.image === "object" &&
+      bg!.image !== null &&
+      typeof bg!.image.assetId === "string" &&
+      bg!.image.assetId.length > 0
+        ? {
+            assetId: bg!.image.assetId,
+            dim: n(bg!.image.dim, 0.25, 0, 0.9),
+            blur: n(bg!.image.blur, 0, 0, 60),
+          }
+        : undefined;
     return {
-      mode: bg.mode!,
-      color: bg.color!.map((c) => Math.min(1, Math.max(0, c))) as [number, number, number],
+      // Image mode without a usable image reference falls back to the
+      // preset's own background (the asset check happens in validateDocument,
+      // which can see the assets map).
+      mode: bg!.mode === BG_IMAGE && !image ? BG_PRESET : bg!.mode!,
+      color: bg!.color!.map((c) => Math.min(1, Math.max(0, c))) as [number, number, number],
+      ...(image ? { image } : {}),
     };
   }
   return { mode: BG_PRESET, color: [0, 0, 0] };

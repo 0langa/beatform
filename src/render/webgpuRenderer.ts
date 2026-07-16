@@ -202,6 +202,7 @@ struct Uniforms {
 @group(0) @binding(6) var overlaySmp: sampler;
 @group(0) @binding(7) var feedbackTex: texture_2d<f32>;
 @group(0) @binding(8) var coverTex: texture_2d<f32>;
+@group(0) @binding(9) var bgTex: texture_2d<f32>;
 
 fn param(i: u32) -> f32 { return params[i]; }
 
@@ -389,6 +390,19 @@ fn composite(color: vec4f, uv: vec2f) -> vec4f {
     let a = clamp(max(out.r, max(out.g, out.b)), 0.0, 1.0);
     if (u.bgMode == 1u) {
       out = vec4f(u.bgColor.rgb * (1.0 - a) + out.rgb, 1.0);
+    } else if (u.bgMode == 3u) {
+      // Image background, cover-fit: fill the frame, crop the excess.
+      // Blur/dim were baked into the bitmap on the CPU.
+      let dims = vec2f(textureDimensions(bgTex));
+      let texAspect = dims.x / max(dims.y, 1.0);
+      var buv = uv - 0.5;
+      if (texAspect > u.aspect) {
+        buv.x *= u.aspect / texAspect;
+      } else {
+        buv.y *= texAspect / u.aspect;
+      }
+      let bg = textureSampleLevel(bgTex, overlaySmp, buv + 0.5, 0.0);
+      out = vec4f(bg.rgb * (1.0 - a) + out.rgb, 1.0);
     } else {
       out = vec4f(out.rgb, a); // premultiplied alpha
     }
@@ -858,6 +872,8 @@ export class WebGPURenderer implements Renderer {
   private overlaySampler: GPUSampler;
   /** 1x1 stand-in bound when the track has no cover art (hasCover() = false). */
   private emptyCover: GPUTexture;
+  private emptyBg: GPUTexture;
+  private bgTexture: GPUTexture | null = null;
   private coverTexture: GPUTexture | null = null;
 
   // Crossfade machinery: a second compiled preset + params, two offscreen
@@ -1023,6 +1039,18 @@ export class WebGPURenderer implements Renderer {
       { bytesPerRow: 4 },
       [1, 1],
     );
+    // 1x1 black stand-in for the image background when none is set.
+    this.emptyBg = device.createTexture({
+      size: [1, 1],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    device.queue.writeTexture(
+      { texture: this.emptyBg },
+      new Uint8Array([0, 0, 0, 255]),
+      { bytesPerRow: 4 },
+      [1, 1],
+    );
     this.overlaySampler = device.createSampler({
       magFilter: "linear",
       minFilter: "linear",
@@ -1089,6 +1117,7 @@ export class WebGPURenderer implements Renderer {
         { binding: 6, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
         { binding: 7, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
         { binding: 8, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
       ],
     });
     this.pipelineLayout = device.createPipelineLayout({
@@ -1303,6 +1332,7 @@ export class WebGPURenderer implements Renderer {
           { binding: 6, resource: this.overlaySampler },
           { binding: 7, resource: this.visTex!.createView() },
           { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
+          { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
         ],
       });
     }
@@ -1694,6 +1724,30 @@ export class WebGPURenderer implements Renderer {
     this.compositeBind = null;
   }
 
+  setBackgroundImage(source: ImageBitmap | null): void {
+    this.bgTexture?.destroy();
+    this.bgTexture = null;
+    if (source) {
+      this.bgTexture = this.device.createTexture({
+        size: [source.width, source.height],
+        format: "rgba8unorm",
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.device.queue.copyExternalImageToTexture(
+        { source },
+        { texture: this.bgTexture, premultipliedAlpha: true },
+        [source.width, source.height],
+      );
+      source.close(); // ownership transfer, same contract as setCoverArt
+    }
+    this.bindGroup = null;
+    this.transitionBindGroup = null;
+    this.compositeBind = null;
+  }
+
   /** Resolves when all submitted GPU work has executed (export frame sync). */
   gpuDone(): Promise<undefined> {
     return this.device.queue.onSubmittedWorkDone();
@@ -1944,6 +1998,7 @@ export class WebGPURenderer implements Renderer {
           // transition preset's feedbackSample() reads black.
           { binding: 7, resource: this.emptyFeedback.createView() },
           { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
+          { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
         ],
       });
     }
@@ -1961,6 +2016,8 @@ export class WebGPURenderer implements Renderer {
     this.emptyOverlay.destroy();
     this.coverTexture?.destroy();
     this.emptyCover.destroy();
+    this.emptyBg.destroy();
+    this.bgTexture?.destroy();
     this.transitionParamsBuf.destroy();
     this.blendUniform.destroy();
     this.fadeTexA?.destroy();
@@ -2024,6 +2081,7 @@ export class WebGPURenderer implements Renderer {
             ).createView(),
           },
           { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
+          { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
         ],
       });
     }

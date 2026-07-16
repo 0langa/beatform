@@ -11,6 +11,7 @@ import type { Timeline } from "../state/timeline";
 import { resolveActiveFrame } from "../state/frameResolve";
 import { presetById } from "../render/presets";
 import { codecConfigExtras, codecString, MUXER_CODEC, type VideoCodecId } from "./codecProbe";
+import { bakeBackgroundBitmap } from "../render/bgImage";
 
 /**
  * Offline MP4 export — the design in docs/EXPORT-DESIGN.md, realized.
@@ -57,6 +58,9 @@ export interface ExportJob {
   motion?: MotionSettings;
   /** Track cover art as a data URL, for presets that sample it (coverSample()). */
   coverArt?: string;
+  /** Image background (bg.mode 3): the asset + baked-look parameters. The
+   * core bakes with the same shared function as the live view. */
+  bgImage?: { dataUrl: string; dim: number; blur: number };
   /** Timeline (already shifted for segments) — scenes + automation. */
   timeline?: Timeline;
   /** Per-preset param overrides — scene switches resolve their own base. */
@@ -301,6 +305,17 @@ export async function runExportJob(
         renderer.setCoverArt(await createImageBitmap(blob));
       } catch {
         // no cover — presets fall back to their plain fill
+      }
+    }
+    // Image background: same shared bake as the live view (WYSIWYG). A
+    // broken asset degrades to the preset background — never a black frame.
+    if (job.bgImage) {
+      try {
+        renderer.setBackgroundImage(
+          await bakeBackgroundBitmap(job.bgImage.dataUrl, job.bgImage.blur, job.bgImage.dim),
+        );
+      } catch {
+        renderer.setBackground({ ...job.bg, mode: 0 });
       }
     }
     renderer.resize(job.width, job.height, 1);

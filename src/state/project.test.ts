@@ -83,7 +83,7 @@ describe("project files (.avproj)", () => {
   it("stamps metadata", () => {
     const file = JSON.parse(serializeProject(doc, "1.2.0"));
     expect(file.kind).toBe("avproj");
-    expect(file.schemaVersion).toBe(6);
+    expect(file.schemaVersion).toBe(7);
     expect(file.appVersion).toBe("1.2.0");
     expect(typeof file.savedAt).toBe("string");
   });
@@ -180,5 +180,30 @@ describe("project files (.avproj)", () => {
     expect(parsed.paramsByPreset.ok).toEqual({ a: 1 }); // non-finite dropped
     expect(parsed.syncByPreset.ok).toEqual({ mode: "bass", smooth: 1 });
     expect(parsed.syncByPreset.bad).toBeUndefined();
+  });
+
+  it("v7: image background round-trips with clamped dim/blur", () => {
+    const file = JSON.parse(serializeProject(doc, "x"));
+    file.document.assets = {
+      "as-1": { id: "as-1", name: "bg", dataUrl: "data:image/png;base64,AA" },
+    };
+    file.document.bg = { mode: 3, color: [0, 0, 0], image: { assetId: "as-1", dim: 5, blur: -2 } };
+    const parsed = parseProject(JSON.stringify(file));
+    expect(parsed.bg.mode).toBe(3);
+    expect(parsed.bg.image).toEqual({ assetId: "as-1", dim: 0.9, blur: 0 }); // clamped
+  });
+
+  it("v7: image background with a missing asset degrades to the preset bg", () => {
+    const file = JSON.parse(serializeProject(doc, "x"));
+    file.document.bg = { mode: 3, color: [0, 0, 0], image: { assetId: "gone", dim: 0.2, blur: 4 } };
+    const parsed = parseProject(JSON.stringify(file));
+    expect(parsed.bg.mode).toBe(0); // no black hole
+  });
+
+  it("v7: image mode without any image reference degrades too", () => {
+    const file = JSON.parse(serializeProject(doc, "x"));
+    file.document.bg = { mode: 3, color: [0, 0, 0] };
+    const parsed = parseProject(JSON.stringify(file));
+    expect(parsed.bg.mode).toBe(0);
   });
 });

@@ -333,6 +333,14 @@ export default function App() {
         post: opts.post ? { ...DEFAULT_POST, ...opts.post } : s.post,
         motion: s.motion,
         coverArt: s.coverArt ?? undefined,
+        bgImage:
+          s.bg.mode === 3 && s.bg.image && s.assets[s.bg.image.assetId]
+            ? {
+                dataUrl: s.assets[s.bg.image.assetId].dataUrl,
+                dim: s.bg.image.dim,
+                blur: s.bg.image.blur,
+              }
+            : undefined,
         timeline: s.timeline.enabled ? s.timeline : undefined,
         paramsByPreset: s.paramsByPreset,
         modsByPreset: s.modsByPreset,
@@ -675,6 +683,8 @@ export default function App() {
           onReset={() => store().resetParams()}
           bg={bg}
           onBg={(next) => store().setBg(next)}
+          onPickBackgroundImage={() => void store().pickBackgroundImage()}
+          onUseAlbumArtBackground={() => store().useAlbumArtBackground()}
           sync={sync}
           onSync={(next) => store().setSync(next)}
           rendererKind={rendererKind}

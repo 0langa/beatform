@@ -13,6 +13,7 @@ export class Canvas2DRenderer implements Renderer {
   private canvas: HTMLCanvasElement;
   private bg: BgSettings = { mode: 0, color: [0, 0, 0] };
   private overlay: ImageBitmap | null = null;
+  private bgImage: ImageBitmap | null = null;
   private smooth = false;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -43,6 +44,11 @@ export class Canvas2DRenderer implements Renderer {
 
   setMotion(): void {
     // Fallback renderer approximates spectrum-bars only; motion masters no-op.
+  }
+
+  setBackgroundImage(source: ImageBitmap | null): void {
+    if (this.bgImage && this.bgImage !== source) this.bgImage.close();
+    this.bgImage = source;
   }
 
   setCoverArt(source: ImageBitmap | null): void {
@@ -78,9 +84,18 @@ export class Canvas2DRenderer implements Renderer {
 
     if (this.bg.mode === 2) {
       ctx.clearRect(0, 0, W, H);
-    } else if (this.bg.mode === 1) {
+    } else if (this.bg.mode === 3 && this.bgImage) {
+      // Cover-fit: fill the frame, crop the excess (blur/dim are pre-baked)
+      const img = this.bgImage;
+      const scale = Math.max(W / img.width, H / img.height);
+      const dw = img.width * scale;
+      const dh = img.height * scale;
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    } else if (this.bg.mode === 1 || this.bg.mode === 3) {
       const [br, bgc, bb] = this.bg.color;
-      ctx.fillStyle = `rgb(${br * 255} ${bgc * 255} ${bb * 255})`;
+      ctx.fillStyle = this.bg.mode === 3 ? "#000" : `rgb(${br * 255} ${bgc * 255} ${bb * 255})`;
       ctx.fillRect(0, 0, W, H);
     } else {
       ctx.fillStyle = `hsl(${hue + 40} 50% ${4 + f.beatIntensity * 6}%)`;
@@ -132,5 +147,7 @@ export class Canvas2DRenderer implements Renderer {
   dispose(): void {
     this.overlay?.close();
     this.overlay = null;
+    this.bgImage?.close();
+    this.bgImage = null;
   }
 }
