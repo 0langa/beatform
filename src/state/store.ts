@@ -3,6 +3,8 @@ import type { PlaybackState, SyncSettings } from "../audio/types";
 import { DEFAULT_SYNC, sanitizeSync } from "../audio/types";
 import { buildExportOptions } from "../export/buildExportOptions";
 import { readTrackMeta } from "../audio/trackMeta";
+import { pcmFromAudioBuffer } from "../audio/offlineSource";
+import { wavFromPcm } from "../audio/dsp/wav";
 import {
   expandJobs,
   isRunComplete,
@@ -37,6 +39,11 @@ import {
   openTextFile,
   pickFolder,
   pickSavePath,
+  proresAbort,
+  proresBegin,
+  proresFinish,
+  proresSetAudio,
+  proresWrite,
   readBinaryFromPath,
   saveTextFile,
   scanAudioLibrary,
@@ -155,7 +162,7 @@ export interface ExportSettings {
    * "mp4" = H.264 + audio in one file. "png" = PNG image sequence into a
    * folder, keeping alpha when the background is Transparent (for editors).
    */
-  format: "mp4" | "png";
+  format: "mp4" | "png" | "prores";
   /**
    * Integrated-loudness target for the exported audio (LUFS), or null to leave
    * the track at its own level. Off by default — silently changing someone's
@@ -1003,8 +1010,10 @@ export const useVizStore = create<VizState>((set, get) => {
       // Same filename rules as the batch queue — the old \w-based sanitizer
       // silently destroyed every non-ASCII title ("夜に駆ける" -> "").
       const baseName = `${safeName(engine.state.trackName ?? "visualization")}${canvasMode ? "-canvas" : ""}`;
-      const fileName = `${baseName}.mp4`;
-      const pngMode = settings.format === "png";
+      const pngMode = settings.format === "png" && !canvasMode;
+      // ProRes goes through the ffmpeg sidecar; canvas loops stay MP4.
+      const proresMode = settings.format === "prores" && !canvasMode;
+      const fileName = `${baseName}${proresMode ? ".mov" : ".mp4"}`;
       // Desktop: pick the destination BEFORE rendering — a cancelled dialog
       // after a long 4K render would throw the work away.
       let savePath: string | null = null;
@@ -1019,14 +1028,23 @@ export const useVizStore = create<VizState>((set, get) => {
           // Keep each run in its own subfolder so sequences never interleave.
           pngDir = `${dir}/${baseName}_frames`;
         } else {
-          savePath = await pickSavePath(fileName, [{ name: "MP4 video", extensions: ["mp4"] }]);
+          savePath = await pickSavePath(
+            fileName,
+            proresMode
+              ? [{ name: "QuickTime (ProRes)", extensions: ["mov"] }]
+              : [{ name: "MP4 video", extensions: ["mp4"] }],
+          );
           if (!savePath) {
             exportStarting = false;
             return;
           }
         }
-      } else if (pngMode) {
-        set({ exportError: "PNG sequence export needs the desktop app (it writes a folder)" });
+      } else if (pngMode || proresMode) {
+        set({
+          exportError: pngMode
+            ? "PNG sequence export needs the desktop app (it writes a folder)"
+            : "ProRes export needs the desktop app (it runs the bundled ffmpeg)",
+        });
         exportStarting = false;
         return;
       }
@@ -1038,7 +1056,19 @@ export const useVizStore = create<VizState>((set, get) => {
         exportDone: null,
         exporting: { done: 0, total: 1, speed: null },
       });
+      // ProRes: frames stream to the ffmpeg sidecar as they render; writes
+      // are chained so ordering is exact, and a dead sidecar aborts the
+      // render instead of piling frames into a rejected promise.
+      let proresChain = Promise.resolve();
+      // Object holder: assignments happen inside callbacks, which TS's flow
+      // analysis can't see on a plain let (it narrows the reads to null).
+      const proresFail: { err: Error | null } = { err: null };
       try {
+        if (proresMode && savePath) {
+          // Original (un-normalized) audio: a mezzanine keeps source levels.
+          await proresSetAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
+          await proresBegin(fps, savePath);
+        }
         // Same rasterizer as the live view, at export resolution — WYSIWYG
         const overlay =
           (await rasterizeOverlay(
@@ -1076,13 +1106,25 @@ export const useVizStore = create<VizState>((set, get) => {
             {
               // Desktop: stream straight to the picked file (flat memory);
               // browser dev falls back to an in-memory blob + download.
-              streamToPath: savePath ?? undefined,
+              // ProRes renders PNG frames into the sidecar instead.
+              streamToPath: proresMode ? undefined : (savePath ?? undefined),
               pngDir: pngDir ?? undefined,
+              onPngFrame: proresMode
+                ? (data) => {
+                    proresChain = proresChain
+                      .then(() => proresWrite(data))
+                      .catch((e: Error) => {
+                        proresFail.err ??= e;
+                        ac.abort(); // stop rendering — ffmpeg is gone
+                      });
+                  }
+                : undefined,
               segment,
               loopCrossfadeSec: canvasMode ? 0.5 : undefined,
-              // A PNG sequence carries no audio — nothing to normalize.
+              // Only MP4 normalizes: PNG carries no audio, and a ProRes
+              // mezzanine deliberately keeps the source levels.
               loudness:
-                settings.loudnessTarget != null && settings.format !== "png"
+                settings.loudnessTarget != null && settings.format === "mp4"
                   ? { targetLufs: settings.loudnessTarget, truePeakDb: settings.truePeakDb }
                   : undefined,
               signal: ac.signal,
@@ -1099,15 +1141,24 @@ export const useVizStore = create<VizState>((set, get) => {
             },
           ),
         );
-        if (result.blob) downloadBlob(result.blob, fileName);
-        set({
-          exportDone: pngDir
-            ? `${(result.bytes / 1e6).toFixed(1)} MB PNG sequence saved to ${pngDir}`
-            : `${(result.bytes / 1e6).toFixed(1)} MB MP4 (H.264 + ${result.audioCodec.toUpperCase()}) saved${savePath ? ` to ${savePath}` : ""}`,
-        });
+        if (proresMode) {
+          // All frames rendered — drain the pipe, close it, wait for ffmpeg.
+          await proresChain;
+          if (proresFail.err) throw proresFail.err;
+          await proresFinish();
+          set({ exportDone: `ProRes 4444 MOV (PCM audio) saved to ${savePath}` });
+        } else {
+          if (result.blob) downloadBlob(result.blob, fileName);
+          set({
+            exportDone: pngDir
+              ? `${(result.bytes / 1e6).toFixed(1)} MB PNG sequence saved to ${pngDir}`
+              : `${(result.bytes / 1e6).toFixed(1)} MB MP4 (H.264 + ${result.audioCodec.toUpperCase()}) saved${savePath ? ` to ${savePath}` : ""}`,
+          });
+        }
       } catch (e) {
+        if (proresMode) await proresAbort().catch(() => undefined);
         if ((e as Error).name !== "AbortError") {
-          set({ exportError: (e as Error).message });
+          set({ exportError: proresFail.err ? proresFail.err.message : (e as Error).message });
         }
       } finally {
         set({ exporting: null });

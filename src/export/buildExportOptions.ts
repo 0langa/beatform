@@ -54,6 +54,9 @@ export interface TrackInput {
 export interface ExportIo {
   streamToPath?: string;
   pngDir?: string;
+  /** Per-frame PNG sink (ProRes sidecar feed / browser probes). Setting it
+   * puts the core in PNG-frame mode, same as pngDir. */
+  onPngFrame?: (data: Uint8Array, index: number) => void;
   loudness?: LoudnessJob;
   segment?: { start: number; duration: number };
   loopCrossfadeSec?: number;
@@ -104,6 +107,7 @@ export function buildExportOptions(
     beatGrid: track.beatGrid ?? undefined,
     streamToPath: io.streamToPath,
     pngDir: io.pngDir,
+    onPngFrame: io.onPngFrame,
     loudness: io.loudness,
     segment: io.segment,
     loopCrossfadeSec: io.loopCrossfadeSec,

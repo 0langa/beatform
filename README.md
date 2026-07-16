@@ -69,6 +69,10 @@ Free and open source. Built to become a professional-grade tool for producers an
   pixels). Design: [docs/EXPORT-DESIGN.md](docs/EXPORT-DESIGN.md)
 - **PNG sequence export** with alpha — numbered frames into a folder, keeping
   transparency for compositing in Premiere/Resolve/After Effects
+- **ProRes 4444 export** (desktop): one .mov with alpha + untouched PCM audio —
+  the editorial mezzanine that drops straight into an NLE. Encoded by a bundled
+  LGPL ffmpeg sidecar (separate binary; see THIRD_PARTY_LICENSES.md); frames
+  stream from the renderer into ffmpeg, so memory stays flat
 - **Batch render**: drop in 20 tracks, get 20 titled videos — one per track,
   unattended. Each title comes from that file's own **ID3 tags**, so there is no
   spreadsheet and no retyping; anything untagged falls back to the filename and
@@ -136,9 +140,10 @@ document slice and is what `.avproj` serializes.
 
 ```
 npm install
+node scripts/fetch-ffmpeg.mjs  # one-time: ProRes sidecar (~110 MB, not in git)
 npm run dev          # browser dev at localhost:1420 (fastest iteration)
 npm run tauri dev    # full desktop shell
-npm run tauri build  # installer
+npm run tauri build  # installer (needs the ffmpeg sidecar fetched)
 npm test             # vitest (DSP, schemas, golden traces)
 npm run lint         # eslint
 npm run typecheck    # tsc --noEmit
@@ -151,7 +156,5 @@ CI runs typecheck, lint, format check, tests and build on every push/PR.
 - Producer basics, remaining: video/image backgrounds, preset thumbnails
 - Musical sync, remaining: stem import as additional sync sources
 - Visual ceiling, remaining: custom WGSL preset SDK (in-app editor)
-- Delivery, remaining: ProRes 4444 via ffmpeg sidecar (editorial alpha
-  round-trip)
 - Ecosystem (v3.0): .avtheme templates + gallery, CI-built installers,
   docs site

@@ -1,4 +1,5 @@
 mod loopback;
+mod prores;
 
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::tag::Accessor;
@@ -82,10 +83,16 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(loopback::LoopbackCtl::default())
+        .manage(prores::ProresState::default())
         .invoke_handler(tauri::generate_handler![
             scan_audio_library,
             loopback::start_loopback,
-            loopback::stop_loopback
+            loopback::stop_loopback,
+            prores::prores_set_audio,
+            prores::prores_begin,
+            prores::prores_write,
+            prores::prores_finish,
+            prores::prores_abort
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

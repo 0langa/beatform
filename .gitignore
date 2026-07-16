@@ -33,3 +33,6 @@ public/testdata/
 
 # local agent handoff records (agent-handoff plugin)
 /.handoff/
+
+# ffmpeg sidecar binary (LGPL, ~110 MB) — fetched by scripts/fetch-ffmpeg.mjs
+src-tauri/binaries/ffmpeg-*.exe

@@ -831,9 +831,9 @@ export default function App() {
               <span>Format</span>
               <div className="segmented">
                 <button
-                  className={`segment ${exportSettings.format !== "png" ? "active" : ""}`}
+                  className={`segment ${exportSettings.format === "mp4" ? "active" : ""}`}
                   disabled={!!exporting}
-                  title="One .mp4 file: H.264 video + audio"
+                  title="One .mp4 file: H.264/HEVC/AV1 video + audio"
                   onClick={() => store().setExportSettings({ format: "mp4" })}
                 >
                   MP4
@@ -846,6 +846,16 @@ export default function App() {
                 >
                   PNG frames
                 </button>
+                {isTauri() && (
+                  <button
+                    className={`segment ${exportSettings.format === "prores" ? "active" : ""}`}
+                    disabled={!!exporting}
+                    title="One .mov file: ProRes 4444 with alpha + PCM audio — drops straight into Premiere/Resolve/After Effects"
+                    onClick={() => store().setExportSettings({ format: "prores" })}
+                  >
+                    ProRes
+                  </button>
+                )}
               </div>
             </div>
 
@@ -856,7 +866,15 @@ export default function App() {
               </p>
             )}
 
-            {exportSettings.format !== "png" && (
+            {exportSettings.format === "prores" && (
+              <p className="section-hint">
+                ProRes 4444 (.mov) with alpha + untouched PCM audio — the editorial mezzanine.
+                Set Background to <strong>Transparent</strong> to keep alpha. Encoded by the
+                bundled ffmpeg (LGPL). Files are large by design.
+              </p>
+            )}
+
+            {exportSettings.format === "mp4" && (
               <label className="field">
                 <span>Loudness</span>
                 <select
@@ -880,7 +898,7 @@ export default function App() {
               </label>
             )}
 
-            {exportSettings.format !== "png" && exportSettings.loudnessTarget != null && (
+            {exportSettings.format === "mp4" && exportSettings.loudnessTarget != null && (
               <p className="section-hint">
                 Measures the track and matches it to {exportSettings.loudnessTarget} LUFS, holding
                 peaks under {exportSettings.truePeakDb} dBTP so nothing clips when a streaming
@@ -908,7 +926,7 @@ export default function App() {
               </label>
             )}
 
-            {!canvasMode && exportSettings.format !== "png" && codecChoices.length > 1 && (
+            {!canvasMode && exportSettings.format === "mp4" && codecChoices.length > 1 && (
               <label className="field">
                 <span>Codec</span>
                 <select
@@ -985,7 +1003,7 @@ export default function App() {
               </>
             )}
 
-            {exportSettings.format !== "png" && (
+            {exportSettings.format === "mp4" && (
               <div className="field">
                 <span>Bitrate</span>
                 <div className="bitrate-controls">

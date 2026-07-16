@@ -134,6 +134,36 @@ export async function stopLoopback(): Promise<void> {
   await invoke("stop_loopback");
 }
 
+// --- ProRes ffmpeg sidecar (desktop only) ---
+// The Rust side owns the process and builds all arguments; these wrappers
+// move bytes. Raw payloads (Uint8Array) skip JSON serialization entirely.
+
+export async function proresSetAudio(wav: Uint8Array): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("prores_set_audio", wav);
+}
+
+export async function proresBegin(fps: number, outPath: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("prores_begin", { fps, outPath });
+}
+
+export async function proresWrite(frame: Uint8Array): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("prores_write", frame);
+}
+
+/** Close the frame pipe, wait for ffmpeg, verify success. */
+export async function proresFinish(): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("prores_finish");
+}
+
+export async function proresAbort(): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("prores_abort");
+}
+
 /** Open a text file via dialog. Returns {name, contents}, null on cancel. */
 export async function openTextFile(
   filters: FileFilter[],
