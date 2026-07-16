@@ -506,6 +506,23 @@ button:disabled {
   }
 }
 
+/* Preset chips grow a small live-rendered preview above the label. */
+.chip.with-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px 5px;
+}
+.chip-thumb {
+  width: 72px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 5px;
+  display: block;
+  pointer-events: none;
+}
+
 /* ---------- library panel ---------- */
 
 .library-panel {

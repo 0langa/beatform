@@ -5,6 +5,8 @@ import { IconChevronLeft, IconChevronRight } from "./Icons";
 export function PresetStrip(props: {
   presets: PresetDef[];
   activeId: string;
+  /** presetId -> PNG data URL; null while thumbnails are still rendering. */
+  thumbs: Record<string, string> | null;
   onSwitch: (id: string) => void;
 }) {
   const idx = props.presets.findIndex((p) => p.id === props.activeId);
@@ -17,16 +19,21 @@ export function PresetStrip(props: {
         <IconChevronLeft size={16} />
       </button>
       <div className="chips">
-        {props.presets.map((p) => (
-          <button
-            key={p.id}
-            data-preset-id={p.id}
-            className={`chip ${p.id === props.activeId ? "active" : ""}`}
-            onClick={() => props.onSwitch(p.id)}
-          >
-            {p.name}
-          </button>
-        ))}
+        {props.presets.map((p) => {
+          const thumb = props.thumbs?.[p.id];
+          return (
+            <button
+              key={p.id}
+              data-preset-id={p.id}
+              className={`chip ${thumb ? "with-thumb" : ""} ${p.id === props.activeId ? "active" : ""}`}
+              title={p.description ?? p.name}
+              onClick={() => props.onSwitch(p.id)}
+            >
+              {thumb && <img className="chip-thumb" src={thumb} alt="" draggable={false} />}
+              <span>{p.name}</span>
+            </button>
+          );
+        })}
       </div>
       <button className="icon-btn subtle" title="Next preset (])" onClick={() => step(1)}>
         <IconChevronRight size={16} />

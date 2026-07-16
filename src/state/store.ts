@@ -21,6 +21,7 @@ import { probeCodecs, type CodecSupport, type VideoCodecId } from "../export/cod
 import { demos } from "../audio/demoTrack";
 import { BG_IMAGE, type BgSettings, type ParamValues } from "../render/types";
 import { bakeBackgroundBitmap } from "../render/bgImage";
+import { renderPresetThumbnails } from "../render/thumbnails";
 import { defaultParams } from "../render/types";
 import { presetById, presets } from "../render/presets";
 import { exportVideo } from "../export/videoExporter";
@@ -270,6 +271,8 @@ interface SessionSlice {
   libraryAutoAdvance: boolean;
   /** Analysers fed by live system audio (WASAPI loopback) instead of a track. */
   liveInputActive: boolean;
+  /** presetId -> PNG data URL, generated lazily after first paint. */
+  presetThumbs: Record<string, string> | null;
 }
 
 interface Actions {
@@ -301,6 +304,8 @@ interface Actions {
   /** Save the current setup as a shareable .avtheme file. */
   exportCurrentTheme(meta: ThemeMeta): Promise<void>;
   toggleLiveInput(): Promise<void>;
+  /** Kick off (once) the lazy thumbnail render for the preset strip. */
+  loadPresetThumbnails(): void;
   pickLibraryFolder(): Promise<void>;
   playLibraryTrack(path: string): Promise<void>;
   /** Auto-advance hook — called by the engine's natural-end callback. */
@@ -602,6 +607,7 @@ export const useVizStore = create<VizState>((set, get) => {
     libraryActivePath: null,
     libraryAutoAdvance: true,
     liveInputActive: false,
+    presetThumbs: null,
     showBatch: false,
     exporting: null,
     exportError: null,
@@ -927,6 +933,13 @@ export const useVizStore = create<VizState>((set, get) => {
 
     setShowLibrary(open) {
       set({ showLibrary: open });
+    },
+
+    loadPresetThumbnails() {
+      if (get().presetThumbs) return;
+      void renderPresetThumbnails().then((presetThumbs) => {
+        if (Object.keys(presetThumbs).length > 0) set({ presetThumbs });
+      });
     },
 
     async pickLibraryFolder() {

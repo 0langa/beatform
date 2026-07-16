@@ -122,6 +122,7 @@ export default function App() {
   const libraryActivePath = useVizStore((s) => s.libraryActivePath);
   const libraryAutoAdvance = useVizStore((s) => s.libraryAutoAdvance);
   const liveInputActive = useVizStore((s) => s.liveInputActive);
+  const presetThumbs = useVizStore((s) => s.presetThumbs);
   const showBatch = useVizStore((s) => s.showBatch);
 
   const store = useVizStore.getState; // stable accessor for actions/handlers
@@ -135,6 +136,15 @@ export default function App() {
   useEffect(() => {
     if (playback.playing) store().pokeChrome();
   }, [playback.playing, store]);
+
+  // Preset thumbnails render lazily on idle — startup paint stays instant.
+  useEffect(() => {
+    const kick = () => store().loadPresetThumbnails();
+    const idle = (window as unknown as { requestIdleCallback?: (cb: () => void) => number })
+      .requestIdleCallback;
+    if (idle) idle(kick);
+    else setTimeout(kick, 1200);
+  }, [store]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -657,6 +667,7 @@ export default function App() {
       <PresetStrip
         presets={presets}
         activeId={presetId}
+        thumbs={presetThumbs}
         onSwitch={(id) => store().switchPreset(id)}
       />
 
