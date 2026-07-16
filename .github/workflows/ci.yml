@@ -37,7 +37,9 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
-      # tauri's build script wants the frontend dist to exist
+      # tauri's build script validates externalBin + frontend dist at
+      # COMPILE time, so even `cargo test` needs both present
+      - run: node scripts/fetch-ffmpeg.mjs
       - run: npm run build
       - run: cargo test --lib
         working-directory: src-tauri
