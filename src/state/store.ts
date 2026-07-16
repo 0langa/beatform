@@ -19,9 +19,20 @@ import { runBatch } from "./batchRunner";
 import type { FormatPreset } from "../export/buildExportOptions";
 import { probeCodecs, type CodecSupport, type VideoCodecId } from "../export/codecProbe";
 import { demos } from "../audio/demoTrack";
-import { BG_IMAGE, type BgSettings, type ParamValues } from "../render/types";
+import { BG_IMAGE, type BgSettings, type ParamValues, type PresetDef } from "../render/types";
 import { bakeBackgroundBitmap } from "../render/bgImage";
 import { renderPresetThumbnails } from "../render/thumbnails";
+import {
+  customPresets,
+  newCustomPresetId,
+  parseCustomPreset,
+  registerCustomPreset,
+  serializeCustomPreset,
+  ShaderParseError,
+  unregisterCustomPreset,
+  validCustomPreset,
+} from "../render/presets/custom";
+import { WebGPURenderer } from "../render/webgpuRenderer";
 import {
   analyzeStem,
   MAX_STEMS,
@@ -106,6 +117,8 @@ import {
   loadStoredOverlay,
   loadStoredPanelOpen,
   loadStoredParams,
+  loadCustomPresets,
+  saveCustomPresets,
   loadStoredPresetId,
   loadStoredSync,
   loadStoredVolume,
@@ -283,6 +296,9 @@ interface SessionSlice {
   presetThumbs: Record<string, string> | null;
   /** Imported stems (analysis-only, session-scoped like the track). */
   stems: StemEntry[];
+  /** User-authored WGSL presets (mirrors the runtime registry). */
+  customDefs: PresetDef[];
+  showShaderEditor: boolean;
   /** Stem currently being analyzed (its file name), null when idle. */
   stemAnalyzing: string | null;
 }
@@ -320,6 +336,14 @@ interface Actions {
   loadPresetThumbnails(): void;
   /** Import a stem file (analysis-only mod source). Max 4. */
   addStem(file: File): Promise<void>;
+  setShowShaderEditor(open: boolean): void;
+  /** Compile-check a custom preset; [] = clean, else error strings. */
+  checkCustomPreset(def: PresetDef): Promise<string[]>;
+  /** Compile-check, register, persist and switch to a custom preset. */
+  saveCustomPreset(def: PresetDef): Promise<string[]>;
+  deleteCustomPreset(id: string): void;
+  exportCustomPreset(id: string): Promise<void>;
+  importCustomPresetText(contents: string): Promise<void>;
   removeStem(slot: StemSlot): void;
   pickLibraryFolder(): Promise<void>;
   playLibraryTrack(path: string): Promise<void>;
@@ -409,9 +433,18 @@ function resolveParams(presetId: string, overrides: Record<string, ParamValues>)
   return { ...defaultParams(preset), ...overrides[preset.id] };
 }
 
+// Custom WGSL presets must be registered before anything resolves preset
+// ids (initial state, validators) — otherwise a stored custom id would fall
+// back to the default mode on every launch.
+const initialCustomDefs = loadCustomPresets();
+for (const def of initialCustomDefs) registerCustomPreset(def);
+
 const initialPresetId = (() => {
   const stored = loadStoredPresetId();
-  return stored && presets.some((p) => p.id === stored) ? stored : presets[0].id;
+  return stored &&
+    (presets.some((p) => p.id === stored) || initialCustomDefs.some((d) => d.id === stored))
+    ? stored
+    : presets[0].id;
 })();
 const initialParams = loadStoredParams();
 const initialSync = loadStoredSync();
@@ -625,6 +658,8 @@ export const useVizStore = create<VizState>((set, get) => {
     presetThumbs: null,
     stems: [],
     stemAnalyzing: null,
+    customDefs: initialCustomDefs,
+    showShaderEditor: false,
     showBatch: false,
     exporting: null,
     exportError: null,
@@ -691,8 +726,9 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     stepPreset(delta) {
-      const i = presets.findIndex((p) => p.id === get().presetId);
-      get().switchPreset(presets[(i + delta + presets.length) % presets.length].id);
+      const all = [...presets, ...get().customDefs];
+      const i = all.findIndex((p) => p.id === get().presetId);
+      get().switchPreset(all[(i + delta + all.length) % all.length].id);
     },
 
     setParam(key, value) {
@@ -986,6 +1022,77 @@ export const useVizStore = create<VizState>((set, get) => {
 
     removeStem(slot) {
       set({ stems: get().stems.filter((e) => e.slot !== slot) });
+    },
+
+    setShowShaderEditor(open) {
+      set({ showShaderEditor: open });
+    },
+
+    async checkCustomPreset(def) {
+      const r = getRenderer();
+      if (!(r instanceof WebGPURenderer)) {
+        return ["Custom presets need the WebGPU renderer (Canvas2D fallback active)"];
+      }
+      return r.compilePresetCheck(def);
+    },
+
+    async saveCustomPreset(defIn) {
+      const def = validCustomPreset(defIn);
+      if (!def) return ["Preset failed validation (id/name/params/wgsl shape)"];
+      const errors = await get().checkCustomPreset(def);
+      if (errors.length > 0) return errors;
+      registerCustomPreset(def);
+      const customDefs = [...get().customDefs.filter((d) => d.id !== def.id), def];
+      set({ customDefs });
+      saveCustomPresets(customDefs);
+      get().switchPreset(def.id);
+      flashNotice(`Custom visual "${def.name}" saved`);
+      return [];
+    },
+
+    deleteCustomPreset(id) {
+      unregisterCustomPreset(id);
+      const customDefs = get().customDefs.filter((d) => d.id !== id);
+      set({ customDefs });
+      saveCustomPresets(customDefs);
+      // Never leave the app pointing at a deleted visual.
+      if (get().presetId === id) get().switchPreset(presets[0].id);
+    },
+
+    async exportCustomPreset(id) {
+      const def =
+        get().customDefs.find((d) => d.id === id) ?? customPresets().find((d) => d.id === id);
+      if (!def) return;
+      try {
+        const path = await saveTextFile(
+          `${safeName(def.name)}.avshader`,
+          serializeCustomPreset(def, APP_VERSION),
+          [{ name: "Beatform shader", extensions: ["avshader"] }],
+        );
+        if (path) flashNotice(`Shader "${def.name}" saved — share the file anywhere`);
+      } catch (e) {
+        set({ error: `Could not save shader: ${(e as Error).message}` });
+      }
+    },
+
+    async importCustomPresetText(contents) {
+      try {
+        const imported = parseCustomPreset(contents);
+        // Mint a fresh id — an import must never silently overwrite an
+        // existing custom visual that happens to share an id.
+        const def: PresetDef = { ...imported, id: newCustomPresetId() };
+        const errors = await get().saveCustomPreset(def);
+        if (errors.length > 0) {
+          set({ error: `Shader failed to compile: ${errors[0]}` });
+        }
+      } catch (e) {
+        set({
+          error:
+            e instanceof ShaderParseError
+              ? `Could not import shader: ${e.message}`
+              : `Could not import shader: ${(e as Error).message}`,
+        });
+      }
     },
 
     async pickLibraryFolder() {
@@ -1284,6 +1391,7 @@ export const useVizStore = create<VizState>((set, get) => {
               coverArt: get().coverArt,
               beatGrid: get().beatGrid,
               stems: get().stems,
+              customPresets: get().customDefs,
             },
             overlay,
             {

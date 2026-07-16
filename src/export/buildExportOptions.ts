@@ -1,7 +1,7 @@
 import { DEFAULT_SYNC } from "../audio/types";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import { presetById } from "../render/presets";
-import { BG_IMAGE, defaultParams, type ParamValues } from "../render/types";
+import { BG_IMAGE, defaultParams, type ParamValues, type PresetDef } from "../render/types";
 import type { OverlayMeta } from "../render/overlay";
 import type { ProjectDocument } from "../state/project";
 import type { ExportOptions } from "./videoExporter";
@@ -52,6 +52,8 @@ export interface TrackInput {
   /** Imported stems (session-scoped, like the beat grid). Omitted by the
    * batch queue — stem routes then read 0 and are silently inert. */
   stems?: StemEntry[];
+  /** User-authored WGSL presets the document may reference. */
+  customPresets?: PresetDef[];
 }
 
 /** Destination + lifecycle, supplied by the caller. */
@@ -120,6 +122,7 @@ export function buildExportOptions(
         : undefined,
     beatGrid: track.beatGrid ?? undefined,
     stems: track.stems,
+    customPresets: track.customPresets,
     streamToPath: io.streamToPath,
     pngDir: io.pngDir,
     onPngFrame: io.onPngFrame,

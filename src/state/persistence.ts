@@ -12,7 +12,8 @@ import {
 } from "./project";
 import { validModsByPreset, type ModRoute } from "./modMatrix";
 import { validPost, validMotion } from "./project";
-import type { MotionSettings, PostSettings } from "../render/types";
+import type { MotionSettings, PostSettings, PresetDef } from "../render/types";
+import { validCustomPreset } from "../render/presets/custom";
 import { validTimeline, type Timeline } from "./timeline";
 
 /**
@@ -108,6 +109,23 @@ export function saveStoredOverlay(
     localStorage.setItem(LS_OVERLAY, JSON.stringify({ layers, assets }));
   } catch (e) {
     console.warn("[persist] overlay too large for localStorage; session-only", e);
+  }
+}
+
+const LS_CUSTOM_PRESETS = "viz.customPresets.v1";
+
+/** Load user-authored WGSL presets (whitelist-validated). */
+export function loadCustomPresets(): PresetDef[] {
+  const raw = readJson<unknown>(LS_CUSTOM_PRESETS, null);
+  if (!Array.isArray(raw)) return [];
+  return raw.map(validCustomPreset).filter((d): d is PresetDef => d !== null);
+}
+
+export function saveCustomPresets(defs: PresetDef[]): void {
+  try {
+    localStorage.setItem(LS_CUSTOM_PRESETS, JSON.stringify(defs));
+  } catch (e) {
+    console.warn("[persist] custom presets too large for localStorage", e);
   }
 }
 

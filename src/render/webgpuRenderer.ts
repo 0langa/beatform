@@ -1753,6 +1753,31 @@ export class WebGPURenderer implements Renderer {
     return this.device.queue.onSubmittedWorkDone();
   }
 
+  /**
+   * Compile a preset's WGSL against the full ABI WITHOUT installing it —
+   * the editor's check step. Returns compiler errors ("line N: message",
+   * line numbers relative to the USER's code, header subtracted), empty
+   * when the shader is clean.
+   */
+  async compilePresetCheck(preset: PresetDef): Promise<string[]> {
+    const specs = allParams(preset);
+    if (specs.length > MAX_PARAMS) {
+      return [`too many params: ${specs.length} (max ${MAX_PARAMS})`];
+    }
+    const accessors = specs
+      .map((p, i) => `fn P_${p.key}() -> f32 { return params[${i}u]; }`)
+      .join("\n");
+    const prefix = HEADER + COMPOSITE_BODY + FS_MAIN + accessors + "\n";
+    const prefixLines = prefix.split("\n").length - 1;
+    this.device.pushErrorScope("validation");
+    const module = this.device.createShaderModule({ code: prefix + preset.wgsl });
+    const info = await module.getCompilationInfo();
+    await this.device.popErrorScope().catch(() => null);
+    return info.messages
+      .filter((m) => m.type === "error")
+      .map((m) => `line ${Math.max(1, m.lineNum - prefixLines)}: ${m.message}`);
+  }
+
   setPreset(preset: PresetDef): void {
     this.preset = preset;
     // Feedback is opt-in per preset (WGSL references feedbackSample). A new

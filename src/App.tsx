@@ -28,6 +28,7 @@ import { LibraryPanel } from "./ui/LibraryPanel";
 import { isTauri } from "./state/platform";
 import { TimelinePanel } from "./ui/TimelinePanel";
 import { PresetStrip } from "./ui/PresetStrip";
+import { ShaderEditor } from "./ui/ShaderEditor";
 import { ParamsPanel } from "./ui/ParamsPanel";
 import { EmptyState } from "./ui/EmptyState";
 import { Slider } from "./ui/Slider";
@@ -126,6 +127,9 @@ export default function App() {
   const stems = useVizStore((s) => s.stems);
   const stemAnalyzing = useVizStore((s) => s.stemAnalyzing);
   const showBatch = useVizStore((s) => s.showBatch);
+  const customDefs = useVizStore((s) => s.customDefs);
+  const showShaderEditor = useVizStore((s) => s.showShaderEditor);
+  const allPresets = [...presets, ...customDefs];
 
   const store = useVizStore.getState; // stable accessor for actions/handlers
 
@@ -337,6 +341,7 @@ export default function App() {
         loopCrossfadeSec: opts.canvasLoop ? 0.5 : undefined,
         beatGrid: s.beatGrid ?? undefined,
         stems: s.stems,
+        customPresets: s.customDefs,
         mods: s.activeMods,
         smoothSpectrum: s.smoothSpectrum,
         // Merge onto DEFAULT_POST. A partial post object is a trap: `exposure`
@@ -500,6 +505,12 @@ export default function App() {
         store().setDragOver(false);
         const files = Array.from(e.dataTransfer.files);
         if (files.length === 0) return;
+        // Shaders and templates import by drag, from anywhere.
+        const shader = files.find((f) => f.name.toLowerCase().endsWith(".avshader"));
+        if (shader) {
+          void shader.text().then((t) => store().importCustomPresetText(t));
+          return;
+        }
         // Templates import by drag, from anywhere (Explorer, a GitHub
         // download, Discord) — the whole ecosystem loop in one gesture.
         const theme = files.find((f) => f.name.toLowerCase().endsWith(".avtheme"));
@@ -668,10 +679,11 @@ export default function App() {
       </header>
 
       <PresetStrip
-        presets={presets}
+        presets={allPresets}
         activeId={presetId}
         thumbs={presetThumbs}
         onSwitch={(id) => store().switchPreset(id)}
+        onNewVisual={() => store().setShowShaderEditor(true)}
       />
 
       {showLibrary && (
@@ -750,7 +762,7 @@ export default function App() {
           sections={sections}
           waveform={waveformOverview}
           activePreset={preset}
-          presets={[...presets]}
+          presets={allPresets}
           activeParams={params}
           onChange={(tl) => store().setTimeline(tl)}
           onSeek={(t) => store().seekEnd(t)}
@@ -773,6 +785,17 @@ export default function App() {
 
       {error && <div className="toast error-toast">{error}</div>}
       {notice && !error && <div className="toast notice-toast">{notice}</div>}
+
+      {showShaderEditor && (
+        <ShaderEditor
+          customDefs={customDefs}
+          onSave={(def) => store().saveCustomPreset(def)}
+          onDelete={(id) => store().deleteCustomPreset(id)}
+          onExport={(id) => void store().exportCustomPreset(id)}
+          onImportFile={(f) => void f.text().then((t) => store().importCustomPresetText(t))}
+          onClose={() => store().setShowShaderEditor(false)}
+        />
+      )}
 
       {showHelp && (
         <div className="modal-backdrop" onClick={() => store().setShowHelp(false)}>

@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { customPresetById } from "./custom";
 import { spectrumBars } from "./spectrumBars";
 import { radialBurst } from "./radialBurst";
 import { oscilloscope } from "./oscilloscope";
@@ -37,5 +38,7 @@ export const presets: PresetDef[] = [
 ];
 
 export function presetById(id: string): PresetDef {
-  return presets.find((p) => p.id === id) ?? presets[0];
+  // Built-ins win; then the runtime registry of user-authored WGSL presets
+  // (custom ids are prefixed "custom-", so collisions cannot occur).
+  return presets.find((p) => p.id === id) ?? customPresetById(id) ?? presets[0];
 }

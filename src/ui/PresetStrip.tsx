@@ -8,6 +8,8 @@ export function PresetStrip(props: {
   /** presetId -> PNG data URL; null while thumbnails are still rendering. */
   thumbs: Record<string, string> | null;
   onSwitch: (id: string) => void;
+  /** Open the WGSL shader editor. */
+  onNewVisual: () => void;
 }) {
   const idx = props.presets.findIndex((p) => p.id === props.activeId);
   const step = (d: number) =>
@@ -34,6 +36,13 @@ export function PresetStrip(props: {
             </button>
           );
         })}
+        <button
+          className="chip chip-new"
+          title="Write your own visual in WGSL — the shader editor"
+          onClick={props.onNewVisual}
+        >
+          +
+        </button>
       </div>
       <button className="icon-btn subtle" title="Next preset (])" onClick={() => step(1)}>
         <IconChevronRight size={16} />

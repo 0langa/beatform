@@ -9,6 +9,7 @@ import {
   DEFAULT_POST,
 } from "../render/types";
 import { presets } from "../render/presets";
+import { customPresetById } from "../render/presets/custom";
 import type { OverlayAsset, OverlayLayer, OverlayAnchor } from "../render/overlay";
 import { validModsByPreset, type ModRoute } from "./modMatrix";
 import { validTimeline, type Timeline } from "./timeline";
@@ -169,7 +170,12 @@ export function validAspect(v: unknown): Aspect {
 }
 
 function validPresetId(v: unknown): string {
-  return typeof v === "string" && presets.some((p) => p.id === v) ? v : presets[0].id;
+  if (typeof v !== "string") return presets[0].id;
+  if (presets.some((p) => p.id === v)) return v;
+  // User-authored WGSL presets resolve through the runtime registry — a
+  // project referencing one the user deleted falls back to the default mode.
+  if (customPresetById(v)) return v;
+  return presets[0].id;
 }
 
 export function validParamsByPreset(v: unknown): Record<string, ParamValues> {

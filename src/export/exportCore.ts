@@ -5,7 +5,13 @@ import type { PcmData, SyncSettings } from "../audio/types";
 import { integratedLufs, normalizationGainDb } from "../audio/dsp/lufs";
 import { TruePeakLimiter } from "../audio/dsp/truepeak";
 import { WebGPURenderer } from "../render/webgpuRenderer";
-import type { BgSettings, MotionSettings, ParamValues, PostSettings } from "../render/types";
+import type {
+  BgSettings,
+  MotionSettings,
+  ParamValues,
+  PostSettings,
+  PresetDef,
+} from "../render/types";
 import { applyMods, type ModRoute } from "../state/modMatrix";
 import type { Timeline } from "../state/timeline";
 import { resolveActiveFrame } from "../state/frameResolve";
@@ -13,6 +19,7 @@ import { presetById } from "../render/presets";
 import { codecConfigExtras, codecString, MUXER_CODEC, type VideoCodecId } from "./codecProbe";
 import { bakeBackgroundBitmap } from "../render/bgImage";
 import { stemValuesAt, type StemEntry } from "../audio/stems";
+import { registerCustomPreset, validCustomPreset } from "../render/presets/custom";
 
 /**
  * Offline MP4 export — the design in docs/EXPORT-DESIGN.md, realized.
@@ -64,6 +71,9 @@ export interface ExportJob {
   bgImage?: { dataUrl: string; dim: number; blur: number };
   /** Imported stems' envelope timelines — mod-matrix stem sources. */
   stems?: StemEntry[];
+  /** User-authored WGSL presets — re-registered inside the worker so
+   * presetById() resolves them there too. */
+  customPresets?: PresetDef[];
   /** Timeline (already shifted for segments) — scenes + automation. */
   timeline?: Timeline;
   /** Per-preset param overrides — scene switches resolve their own base. */
@@ -142,6 +152,13 @@ export async function runExportJob(
     if (hooks.signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
   };
   abort();
+
+  // Custom WGSL presets: the worker is a fresh module instance with an empty
+  // registry — re-register (re-validated; a job is still untrusted input).
+  for (const raw of job.customPresets ?? []) {
+    const def = validCustomPreset(raw);
+    if (def) registerCustomPreset(def);
+  }
 
   const pcm = job.pcm;
   const channels = Math.min(2, pcm.channels.length) as 1 | 2;

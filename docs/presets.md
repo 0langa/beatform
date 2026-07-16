@@ -1,10 +1,18 @@
 # Preset SDK — add a visual mode
 
-A preset is one TypeScript file exporting a `PresetDef`, plus a registry
-line in `src/render/presets/index.ts`. The UI generates all controls from
-your parameter schema; the export pipeline runs your code unchanged. Full
-contribution workflow:
-[CONTRIBUTING.md](https://github.com/0langa/beatform/blob/main/CONTRIBUTING.md).
+Two ways in:
+
+- **In-app shader editor** (the `+` chip on the mode strip): write the WGSL,
+  add parameters (each becomes a `P_<key>()` accessor and an automatic
+  slider), hit _Compile_ — errors come back with line numbers. Custom
+  visuals persist, export exactly like built-ins, and share as one
+  `.avshader` file (drop one on the window to import). No build tools.
+- **A TypeScript preset file** in the repo: one file exporting a
+  `PresetDef` plus a registry line in `src/render/presets/index.ts` — the
+  path for contributing a built-in. Workflow:
+  [CONTRIBUTING.md](https://github.com/0langa/beatform/blob/main/CONTRIBUTING.md).
+
+Everything below applies to both.
 
 ## The two laws
 

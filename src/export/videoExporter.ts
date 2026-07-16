@@ -11,6 +11,7 @@ import {
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { VideoCodecId } from "./codecProbe";
 import type { StemEntry } from "../audio/stems";
+import type { PresetDef as PresetDefLike } from "../render/types";
 import type { ModRoute } from "../state/modMatrix";
 import type { Timeline } from "../state/timeline";
 import type { MotionSettings, PostSettings } from "../render/types";
@@ -37,6 +38,8 @@ export interface ExportOptions {
   bgImage?: { dataUrl: string; dim: number; blur: number };
   /** Imported stems' envelope timelines (mod-matrix stem sources). */
   stems?: StemEntry[];
+  /** User-authored WGSL presets (registered in the worker). */
+  customPresets?: PresetDefLike[];
   presetId: string;
   params: ParamValues;
   bg: BgSettings;
@@ -242,6 +245,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     coverArt: o.coverArt,
     bgImage: o.bgImage,
     stems: o.stems,
+    customPresets: o.customPresets,
     paramsByPreset: o.paramsByPreset,
     modsByPreset: o.modsByPreset,
     timeline:
