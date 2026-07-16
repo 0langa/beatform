@@ -916,6 +916,26 @@ export default function App() {
                     ProRes
                   </button>
                 )}
+                {isTauri() && (
+                  <button
+                    className={`segment ${exportSettings.format === "gif" ? "active" : ""}`}
+                    disabled={!!exporting}
+                    title="Animated .gif loop — no audio; pairs with Canvas loop mode for a seamless loop"
+                    onClick={() => store().setExportSettings({ format: "gif" })}
+                  >
+                    GIF
+                  </button>
+                )}
+                {isTauri() && (
+                  <button
+                    className={`segment ${exportSettings.format === "webp" ? "active" : ""}`}
+                    disabled={!!exporting}
+                    title="Animated .webp loop — much smaller than GIF, keeps alpha; no audio"
+                    onClick={() => store().setExportSettings({ format: "webp" })}
+                  >
+                    WebP
+                  </button>
+                )}
               </div>
             </div>
 
@@ -931,6 +951,16 @@ export default function App() {
                 ProRes 4444 (.mov) with alpha + untouched PCM audio — the editorial mezzanine. Set
                 Background to <strong>Transparent</strong> to keep alpha. Encoded by the bundled
                 ffmpeg (LGPL). Files are large by design.
+              </p>
+            )}
+
+            {(exportSettings.format === "gif" || exportSettings.format === "webp") && (
+              <p className="section-hint">
+                Animated {exportSettings.format === "gif" ? "GIF" : "WebP"} — no audio. Best with{" "}
+                <strong>Canvas loop</strong> mode (seamless loop) and a modest resolution;
+                full-track animations get very large.
+                {exportSettings.format === "webp" &&
+                  " WebP keeps alpha — set Background to Transparent for a transparent loop."}
               </p>
             )}
 

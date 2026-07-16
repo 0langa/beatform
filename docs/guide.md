@@ -70,6 +70,8 @@ removes it.
   Transparent) for compositing.
 - **ProRes 4444** — one `.mov` with alpha + untouched PCM audio, straight
   into Premiere/Resolve/AE. Encoded by the bundled LGPL ffmpeg.
+- **GIF / animated WebP** — loop files via the bundled ffmpeg, no audio.
+  Pair with Canvas loop mode for a seamless loop; WebP keeps alpha.
 - **Canvas loop** — a 3–8 s seamless loop at 1080×1920/30 for Spotify
   Canvas; the tail crossfades into the head.
 - **Batch** (**B**) — one video per dropped track, titled from each file's

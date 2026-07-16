@@ -61,6 +61,7 @@ import {
   pickFolder,
   pickSavePath,
   proresAbort,
+  animBegin,
   proresBegin,
   proresFinish,
   proresSetAudio,
@@ -185,8 +186,11 @@ export interface ExportSettings {
   /**
    * "mp4" = H.264 + audio in one file. "png" = PNG image sequence into a
    * folder, keeping alpha when the background is Transparent (for editors).
+   * "prores" = ProRes 4444 .mov via the ffmpeg sidecar. "gif"/"webp" =
+   * animated loop files via the same sidecar (no audio; pair with Canvas
+   * loop mode for seamless loops).
    */
-  format: "mp4" | "png" | "prores";
+  format: "mp4" | "png" | "prores" | "gif" | "webp";
   /**
    * Integrated-loudness target for the exported audio (LUFS), or null to leave
    * the track at its own level. Off by default — silently changing someone's
@@ -1302,9 +1306,14 @@ export const useVizStore = create<VizState>((set, get) => {
       const pngMode = settings.format === "png" && !canvasMode;
       // ProRes goes through the ffmpeg sidecar; canvas loops stay MP4.
       const proresMode = settings.format === "prores" && !canvasMode;
+      // GIF/WebP loops go through the same sidecar — allowed in canvas mode
+      // too (a seamless 3-8 s loop is the format's whole point).
+      const animFormat =
+        settings.format === "gif" || settings.format === "webp" ? settings.format : null;
       // VP9+alpha muxes into WebM (canvas loops force H.264, so never there).
       const webmMode = settings.format === "mp4" && settings.codec === "vp9a" && !canvasMode;
-      const fileName = `${baseName}${proresMode ? ".mov" : webmMode ? ".webm" : ".mp4"}`;
+      const ext = proresMode ? ".mov" : animFormat ? `.${animFormat}` : webmMode ? ".webm" : ".mp4";
+      const fileName = `${baseName}${ext}`;
       // Desktop: pick the destination BEFORE rendering — a cancelled dialog
       // after a long 4K render would throw the work away.
       let savePath: string | null = null;
@@ -1323,20 +1332,29 @@ export const useVizStore = create<VizState>((set, get) => {
             fileName,
             proresMode
               ? [{ name: "QuickTime (ProRes)", extensions: ["mov"] }]
-              : webmMode
-                ? [{ name: "WebM video", extensions: ["webm"] }]
-                : [{ name: "MP4 video", extensions: ["mp4"] }],
+              : animFormat
+                ? [
+                    {
+                      name: animFormat === "gif" ? "GIF animation" : "WebP animation",
+                      extensions: [animFormat],
+                    },
+                  ]
+                : webmMode
+                  ? [{ name: "WebM video", extensions: ["webm"] }]
+                  : [{ name: "MP4 video", extensions: ["mp4"] }],
           );
           if (!savePath) {
             exportStarting = false;
             return;
           }
         }
-      } else if (pngMode || proresMode) {
+      } else if (pngMode || proresMode || animFormat) {
         set({
           exportError: pngMode
             ? "PNG sequence export needs the desktop app (it writes a folder)"
-            : "ProRes export needs the desktop app (it runs the bundled ffmpeg)",
+            : animFormat
+              ? "GIF/WebP export needs the desktop app (it runs the bundled ffmpeg)"
+              : "ProRes export needs the desktop app (it runs the bundled ffmpeg)",
         });
         exportStarting = false;
         return;
@@ -1356,11 +1374,15 @@ export const useVizStore = create<VizState>((set, get) => {
       // Object holder: assignments happen inside callbacks, which TS's flow
       // analysis can't see on a plain let (it narrows the reads to null).
       const proresFail: { err: Error | null } = { err: null };
+      // GIF/WebP share the ProRes frame pipe (one sidecar session at a time).
+      const sidecarMode = proresMode || !!animFormat;
       try {
         if (proresMode && savePath) {
           // Original (un-normalized) audio: a mezzanine keeps source levels.
           await proresSetAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
           await proresBegin(fps, savePath);
+        } else if (animFormat && savePath) {
+          await animBegin(animFormat, fps, savePath);
         }
         // Same rasterizer as the live view, at export resolution — WYSIWYG
         const overlay =
@@ -1402,9 +1424,9 @@ export const useVizStore = create<VizState>((set, get) => {
               // Desktop: stream straight to the picked file (flat memory);
               // browser dev falls back to an in-memory blob + download.
               // ProRes renders PNG frames into the sidecar instead.
-              streamToPath: proresMode ? undefined : (savePath ?? undefined),
+              streamToPath: sidecarMode ? undefined : (savePath ?? undefined),
               pngDir: pngDir ?? undefined,
-              onPngFrame: proresMode
+              onPngFrame: sidecarMode
                 ? (data) => {
                     proresChain = proresChain
                       .then(() => proresWrite(data))
@@ -1436,12 +1458,16 @@ export const useVizStore = create<VizState>((set, get) => {
             },
           ),
         );
-        if (proresMode) {
+        if (sidecarMode) {
           // All frames rendered — drain the pipe, close it, wait for ffmpeg.
           await proresChain;
           if (proresFail.err) throw proresFail.err;
           await proresFinish();
-          set({ exportDone: `ProRes 4444 MOV (PCM audio) saved to ${savePath}` });
+          set({
+            exportDone: proresMode
+              ? `ProRes 4444 MOV (PCM audio) saved to ${savePath}`
+              : `${animFormat === "gif" ? "GIF" : "WebP"} loop saved to ${savePath}`,
+          });
         } else {
           if (result.blob) downloadBlob(result.blob, fileName);
           set({
@@ -1451,9 +1477,14 @@ export const useVizStore = create<VizState>((set, get) => {
           });
         }
       } catch (e) {
-        if (proresMode) await proresAbort().catch(() => undefined);
-        if ((e as Error).name !== "AbortError") {
-          set({ exportError: proresFail.err ? proresFail.err.message : (e as Error).message });
+        if (sidecarMode) await proresAbort().catch(() => undefined);
+        // A dead sidecar aborts the render, so the surfaced error arrives
+        // wearing an AbortError coat — check the sidecar failure FIRST or a
+        // mid-render ffmpeg death reads as a user cancel and shows nothing.
+        if (proresFail.err) {
+          set({ exportError: proresFail.err.message });
+        } else if ((e as Error).name !== "AbortError") {
+          set({ exportError: (e as Error).message });
         }
       } finally {
         set({ exporting: null });

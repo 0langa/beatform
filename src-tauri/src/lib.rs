@@ -90,6 +90,7 @@ pub fn run() {
             loopback::stop_loopback,
             prores::prores_set_audio,
             prores::prores_begin,
+            prores::anim_begin,
             prores::prores_write,
             prores::prores_finish,
             prores::prores_abort

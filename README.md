@@ -86,6 +86,9 @@ Free and open source. Built to become a professional-grade tool for producers an
   the editorial mezzanine that drops straight into an NLE. Encoded by a bundled
   LGPL ffmpeg sidecar (separate binary; see THIRD_PARTY_LICENSES.md); frames
   stream from the renderer into ffmpeg, so memory stays flat
+- **GIF / animated WebP export** (desktop): seamless loop files via the bundled
+  ffmpeg — GIF for anywhere, WebP for small files with alpha. Pairs with Canvas
+  loop mode
 - **Batch render**: drop in 20 tracks, get 20 titled videos — one per track,
   unattended. Each title comes from that file's own **ID3 tags**, so there is no
   spreadsheet and no retyping; anything untagged falls back to the filename and

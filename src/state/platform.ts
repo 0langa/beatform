@@ -146,6 +146,17 @@ export async function proresBegin(fps: number, outPath: string): Promise<void> {
   await invoke("prores_begin", { fps, outPath });
 }
 
+/** Begin a GIF/animated-WebP session (no audio). Frames flow through the
+ * same proresWrite/Finish/Abort — one sidecar session at a time. */
+export async function animBegin(
+  format: "gif" | "webp",
+  fps: number,
+  outPath: string,
+): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("anim_begin", { format, fps, outPath });
+}
+
 export async function proresWrite(frame: Uint8Array): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("prores_write", frame);
