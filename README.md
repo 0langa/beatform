@@ -8,6 +8,16 @@
   Desktop music visualizer — WebGPU rendering, deterministic exports, local-first.
 </p>
 
+<p align="center">
+  <a href="https://github.com/0langa/audio-visualizer/releases/latest"><b>Download</b></a>
+  ·
+  <a href="https://0langa.github.io/audio-visualizer/"><b>Docs</b></a>
+  ·
+  <a href="https://0langa.github.io/audio-visualizer/presets"><b>Add a visual mode</b></a>
+  ·
+  <a href="https://0langa.github.io/audio-visualizer/templates"><b>Templates</b></a>
+</p>
+
 Tauri 2 + React + TypeScript, WebGPU rendering (Canvas2D fallback), Rust core.
 
 Free and open source. Built to become a professional-grade tool for producers and artists — local-first, no cloud rendering, no watermarks, no subscriptions.
