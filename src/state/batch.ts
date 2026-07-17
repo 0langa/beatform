@@ -1,4 +1,5 @@
 import type { OverlayMeta } from "../render/overlay";
+import type { PresetDef } from "../render/types";
 import type { FormatPreset } from "../export/buildExportOptions";
 import type { ProjectDocument } from "./project";
 
@@ -74,6 +75,12 @@ export interface BatchRun {
   preDoneFrames?: number;
   /** Loudness target, frozen with the doc. Undefined = encode at source level. */
   loudness?: { targetLufs: number; truePeakDb: number };
+  /**
+   * User-authored WGSL presets, frozen with the doc. The doc only carries the
+   * custom preset's ID — without the defs riding along, the export worker's
+   * empty registry silently falls back to the default visual for every job.
+   */
+  customPresets?: PresetDef[];
 }
 
 /**
@@ -238,10 +245,17 @@ export function takenPaths(run: BatchRun): Set<string> {
  * into the old filename would be its own small betrayal. Paths already written
  * by this run are excluded so a retry can never clobber a finished video.
  */
-export function retryFailed(run: BatchRun, nowMs: number): BatchRun {
+export function retryFailed(
+  run: BatchRun,
+  nowMs: number,
+  /** Extra reserved names (files already on disk from OTHER runs into the
+   * same folder) — this run's own done files are excluded automatically. */
+  alsoTaken: ReadonlySet<string> = new Set(),
+): BatchRun {
   const failed = run.jobs.filter((j) => j.status.k === "failed");
   if (failed.length === 0) return run;
   const taken = takenPaths(run);
+  for (const n of alsoTaken) taken.add(n);
   const byId = new Map(run.tracks.map((t) => [t.id, t]));
   const requeued = failed.map((j) => {
     const track = byId.get(j.trackId);
@@ -288,6 +302,10 @@ export function classifyError(e: unknown): { kind: FailKind; message: string } |
   const message = err?.message ?? String(e);
   if (name === "AbortError") return null;
   if (name === "GpuDeviceLostError" || name === "GpuInitError") return { kind: "gpu", message };
+  // Codec preflights say "... encode not supported ..." (H.264/HEVC/AV1/VP9)
+  // — a machine capability, not a broken input file. The /unsupported/ input
+  // match below never catches the two-word form.
+  if (/encode not supported/i.test(message)) return { kind: "gpu", message };
   if (/no space|ENOSPC|disk full|stalled/i.test(message)) return { kind: "disk", message };
   if (/decode|empty|unsupported/i.test(message)) return { kind: "input", message };
   return { kind: "unknown", message };

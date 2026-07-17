@@ -17,7 +17,12 @@ import {
 } from "./batch";
 import { runBatch } from "./batchRunner";
 import type { FormatPreset } from "../export/buildExportOptions";
-import { probeCodecs, type CodecSupport, type VideoCodecId } from "../export/codecProbe";
+import {
+  CODEC_LABELS,
+  probeCodecs,
+  type CodecSupport,
+  type VideoCodecId,
+} from "../export/codecProbe";
 import { demos } from "../audio/demoTrack";
 import { BG_IMAGE, type BgSettings, type ParamValues, type PresetDef } from "../render/types";
 import { bakeBackgroundBitmap } from "../render/bgImage";
@@ -434,6 +439,8 @@ let analysisId = 0;
  * second click from running a second start path whose failure cleanup would
  * tear down the first click's worklet. */
 let liveToggling = false;
+/** Orders library clicks by CLICK time, not disk-read completion. */
+let libraryClickGen = 0;
 let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 function resolveParams(presetId: string, overrides: Record<string, ParamValues>): ParamValues {
@@ -536,6 +543,21 @@ export const useVizStore = create<VizState>((set, get) => {
    * auto-advance swaps buffers instead of paying disk + decode at the gap.
    * Decodes on the engine's own context — a fresh OfflineAudioContext would
    * resample and shift every FFT bin (the batch learned this the hard way). */
+  /** Lower-cased file names already present in a folder (desktop). Batch runs
+   * treat those as reserved so no run — this one, a retry, or one from a past
+   * session — ever overwrites a finished video. Errors degrade to "none". */
+  const fileNamesInDir = async (dir: string): Promise<Set<string>> => {
+    if (!isTauri()) return new Set();
+    try {
+      const { readDir } = await import("@tauri-apps/plugin-fs");
+      return new Set(
+        (await readDir(dir)).filter((e) => !e.isDirectory).map((e) => e.name.toLowerCase()),
+      );
+    } catch {
+      return new Set();
+    }
+  };
+
   const prefetchNextLibraryTrack = async () => {
     const s = get();
     if (!s.library || !s.libraryActivePath) return;
@@ -599,7 +621,15 @@ export const useVizStore = create<VizState>((set, get) => {
     presetId: initialPresetId,
     paramsByPreset: initialParams,
     syncByPreset: initialSync,
-    bg: loadStoredBg(),
+    // Belt for the quota split-brain: a stored image bg whose asset never made
+    // it into storage (multi-MB data URLs can fail to persist) must not boot
+    // the app into a black background — degrade to the preset background.
+    bg: (() => {
+      const bg = loadStoredBg();
+      return bg.mode === BG_IMAGE && (!bg.image || !initialOverlay.assets[bg.image.assetId])
+        ? { ...bg, mode: 0 }
+        : bg;
+    })(),
     overlayLayers: initialOverlay.layers,
     assets: initialOverlay.assets,
     aspect: loadStoredAspect(),
@@ -789,14 +819,23 @@ export const useVizStore = create<VizState>((set, get) => {
       };
       const assets = { ...get().assets, [asset.id]: asset };
       const prev = get().bg;
+      // Replacing the image orphans the old asset — a multi-MB data URL that
+      // would otherwise ride along in state, autosave, .avproj and storage
+      // forever. Drop it unless an overlay layer still uses it.
+      const prevId = prev.image?.assetId;
+      if (prevId && !get().overlayLayers.some((l) => "assetId" in l && l.assetId === prevId)) {
+        delete assets[prevId];
+      }
       const bg: BgSettings = {
         ...prev,
         mode: BG_IMAGE,
         image: { assetId: asset.id, dim: prev.image?.dim ?? 0.25, blur: prev.image?.blur ?? 0 },
       };
       set({ assets, bg });
-      saveStoredOverlay(get().overlayLayers, assets);
-      saveStoredBg(bg);
+      // Persist the bg REFERENCE only if the asset itself persisted — a saved
+      // mode-3 bg pointing at an asset that hit the quota boots into black.
+      if (saveStoredOverlay(get().overlayLayers, assets)) saveStoredBg(bg);
+      else flashNotice("Image too large to remember — background is session-only");
       getRenderer()?.setBackground(bg);
       applyBgImage();
     },
@@ -815,6 +854,11 @@ export const useVizStore = create<VizState>((set, get) => {
       };
       const assets = { ...get().assets, [asset.id]: asset };
       const prev = get().bg;
+      // Same orphan-GC as pickBackgroundImage.
+      const prevId = prev.image?.assetId;
+      if (prevId && !get().overlayLayers.some((l) => "assetId" in l && l.assetId === prevId)) {
+        delete assets[prevId];
+      }
       const bg: BgSettings = {
         ...prev,
         mode: BG_IMAGE,
@@ -822,8 +866,8 @@ export const useVizStore = create<VizState>((set, get) => {
         image: { assetId: asset.id, dim: prev.image?.dim ?? 0.35, blur: prev.image?.blur ?? 18 },
       };
       set({ assets, bg });
-      saveStoredOverlay(get().overlayLayers, assets);
-      saveStoredBg(bg);
+      if (saveStoredOverlay(get().overlayLayers, assets)) saveStoredBg(bg);
+      else flashNotice("Cover too large to remember — background is session-only");
       getRenderer()?.setBackground(bg);
       applyBgImage();
     },
@@ -1074,9 +1118,15 @@ export const useVizStore = create<VizState>((set, get) => {
       registerCustomPreset(def);
       const customDefs = [...get().customDefs.filter((d) => d.id !== def.id), def];
       set({ customDefs });
-      saveCustomPresets(customDefs);
+      // Quota failure must not hide behind a success toast — the shader would
+      // exist this session and silently vanish on restart.
+      const persisted = saveCustomPresets(customDefs);
       get().switchPreset(def.id);
-      flashNotice(`Custom visual "${def.name}" saved`);
+      flashNotice(
+        persisted
+          ? `Custom visual "${def.name}" saved`
+          : `"${def.name}" is active but too large to remember — export it as .avshader to keep it`,
+      );
       return [];
     },
 
@@ -1087,6 +1137,21 @@ export const useVizStore = create<VizState>((set, get) => {
       saveCustomPresets(customDefs);
       // Never leave the app pointing at a deleted visual.
       if (get().presetId === id) get().switchPreset(presets[0].id);
+      // Timeline scenes too: a scene keeping the dead id would silently
+      // render the default visual live AND in exports (and the next reload's
+      // validTimeline would drop the scene outright).
+      const tl = get().timeline;
+      if (tl.scenes.some((s) => s.presetId === id)) {
+        const repaired = {
+          ...tl,
+          scenes: tl.scenes.map((s) =>
+            s.presetId === id ? { ...s, presetId: get().presetId } : s,
+          ),
+        };
+        set({ timeline: repaired });
+        saveStoredTimeline(repaired);
+        flashNotice("Timeline scenes using the deleted visual now use the active one");
+      }
     },
 
     async exportCustomPreset(id) {
@@ -1148,15 +1213,23 @@ export const useVizStore = create<VizState>((set, get) => {
     async playLibraryTrack(path) {
       const entry = get().library?.tracks.find((t) => t.path === path);
       if (!entry) return;
+      // Claim the click BEFORE the disk read: without this, ordering was
+      // decided by read completion — a slow first click could beat a fast
+      // second one because loadFile's own generation was claimed too late.
+      const click = ++libraryClickGen;
       try {
         // Bytes -> File -> the ordinary loadFile path: decode, tags, cover
         // art, beat-grid analysis and generation guards all come for free.
         const bytes = await readBinaryFromPath(path);
+        if (click !== libraryClickGen) return; // a later click superseded us
+        const tgBefore = trackLoadGen;
         const file = new File([bytes as BlobPart], entry.fileName);
         await get().loadFile(file);
-        // Mark active only if this load actually won (loadFile is
-        // generation-guarded and returns silently when superseded).
-        if (getEngine().state.trackName === entry.fileName) {
+        // Mark active only if OUR load won: loadFile claims tgBefore+1
+        // synchronously, so any other claim since means we were superseded.
+        // (Comparing trackName to fileName here mismarked duplicates — two
+        // library entries can share a basename across subfolders.)
+        if (trackLoadGen === tgBefore + 1) {
           set({ libraryActivePath: path });
           void prefetchNextLibraryTrack();
         }
@@ -1294,7 +1367,14 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     setExportSettings(patch) {
-      set({ exportSettings: { ...get().exportSettings, ...patch } });
+      const next = { ...get().exportSettings, ...patch };
+      // Canvas loops upload as videos — PNG/ProRes make no sense there, and
+      // leaving them selected silently exported an MP4 while the panel still
+      // said PNG. Coerce so the UI always tells the truth.
+      if (next.mode === "canvas" && (next.format === "png" || next.format === "prores")) {
+        next.format = "mp4";
+      }
+      set({ exportSettings: next });
     },
 
     async runExport() {
@@ -1409,9 +1489,15 @@ export const useVizStore = create<VizState>((set, get) => {
       let proresChain = Promise.resolve();
       // Object holder: assignments happen inside callbacks, which TS's flow
       // analysis can't see on a plain let (it narrows the reads to null).
-      const proresFail: { err: Error | null } = { err: null };
+      // `unknown`, not Error: Tauri command rejections are raw strings.
+      const proresFail: { err: unknown } = { err: null };
       // GIF/WebP share the ProRes frame pipe (one sidecar session at a time).
       const sidecarMode = proresMode || !!animFormat;
+      // Tauri invoke() rejects with the Rust command's raw STRING, not an
+      // Error — reading .message off it yields undefined, which is what the
+      // export error toast used to show for every sidecar failure.
+      const errText = (x: unknown): string =>
+        x instanceof Error ? x.message : typeof x === "string" ? x : String(x);
       try {
         if (proresMode && savePath) {
           // Original (un-normalized) audio: a mezzanine keeps source levels.
@@ -1466,7 +1552,7 @@ export const useVizStore = create<VizState>((set, get) => {
                 ? (data) => {
                     proresChain = proresChain
                       .then(() => proresWrite(data))
-                      .catch((e: Error) => {
+                      .catch((e: unknown) => {
                         proresFail.err ??= e;
                         ac.abort(); // stop rendering — ffmpeg is gone
                       });
@@ -1497,7 +1583,7 @@ export const useVizStore = create<VizState>((set, get) => {
         if (sidecarMode) {
           // All frames rendered — drain the pipe, close it, wait for ffmpeg.
           await proresChain;
-          if (proresFail.err) throw proresFail.err;
+          if (proresFail.err != null) throw proresFail.err;
           await proresFinish();
           set({
             exportDone: proresMode
@@ -1509,7 +1595,11 @@ export const useVizStore = create<VizState>((set, get) => {
           set({
             exportDone: pngDir
               ? `${(result.bytes / 1e6).toFixed(1)} MB PNG sequence saved to ${pngDir}`
-              : `${(result.bytes / 1e6).toFixed(1)} MB MP4 (H.264 + ${result.audioCodec.toUpperCase()}) saved${savePath ? ` to ${savePath}` : ""}`,
+              : `${(result.bytes / 1e6).toFixed(1)} MB ${
+                  webmMode
+                    ? "WebM (VP9 + alpha"
+                    : `MP4 (${CODEC_LABELS[canvasMode ? "h264" : settings.codec].split(" ")[0]}`
+                } + ${result.audioCodec.toUpperCase()}) saved${savePath ? ` to ${savePath}` : ""}`,
           });
         }
       } catch (e) {
@@ -1517,10 +1607,10 @@ export const useVizStore = create<VizState>((set, get) => {
         // A dead sidecar aborts the render, so the surfaced error arrives
         // wearing an AbortError coat — check the sidecar failure FIRST or a
         // mid-render ffmpeg death reads as a user cancel and shows nothing.
-        if (proresFail.err) {
-          set({ exportError: proresFail.err.message });
-        } else if ((e as Error).name !== "AbortError") {
-          set({ exportError: (e as Error).message });
+        if (proresFail.err != null) {
+          set({ exportError: errText(proresFail.err) });
+        } else if ((e as Error)?.name !== "AbortError") {
+          set({ exportError: errText(e) });
         }
       } finally {
         set({ exporting: null });
@@ -1542,7 +1632,11 @@ export const useVizStore = create<VizState>((set, get) => {
       // a run can start inside that window — writing a pre-await snapshot then
       // would blank the live run's jobs and flip batchStatus back to "idle",
       // which in turn defeats every other guard in this file.
-      if (get().batchStatus === "running") return;
+      if (get().batchStatus === "running") {
+        // The drop overlay invites exactly this — say why nothing happened.
+        flashNotice("Batch is running — add tracks after it finishes");
+        return;
+      }
       // Reading each file's own tags IS the feature: no spreadsheet, no data
       // source, no manual titling. duration:true here (and only here) — the
       // queue needs it for its estimate and pays the VBR scan cost off the
@@ -1663,11 +1757,18 @@ export const useVizStore = create<VizState>((set, get) => {
           settings.loudnessTarget != null
             ? { targetLufs: settings.loudnessTarget, truePeakDb: settings.truePeakDb }
             : undefined,
+        // The frozen doc only carries a custom preset's ID — the defs must
+        // ride along or the export worker's empty registry silently renders
+        // the default visual for every job.
+        customPresets: get().customDefs,
         jobs: [],
       };
-      // Never overwrite a video an earlier (stopped) run already finished into
-      // this folder: those names are spoken for.
+      // Never overwrite a video an earlier run already finished into this
+      // folder. The previous run OBJECT only remembers one run back (and dies
+      // with the session), so the disk itself is the authority: every file
+      // already in the folder is a spoken-for name.
       const alreadyDone = get().batch ? takenPaths(get().batch!) : new Set<string>();
+      for (const n of await fileNamesInDir(outDir)) alreadyDone.add(n);
       run.jobs = expandJobs(run.tracks, run.formats, outDir, alreadyDone);
 
       const ac = new AbortController();
@@ -1734,7 +1835,9 @@ export const useVizStore = create<VizState>((set, get) => {
         set({ exportError: "Finish (or cancel) the running export before retrying the batch" });
         return;
       }
-      const again = retryFailed(b, Date.now());
+      // Retry names must also avoid files OTHER runs left in this folder —
+      // the run object only knows its own; the disk knows them all.
+      const again = retryFailed(b, Date.now(), await fileNamesInDir(b.outDir));
       if (again.jobs.length === 0) return;
       const ac = new AbortController();
       batchAbort = ac;

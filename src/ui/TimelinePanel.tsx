@@ -36,7 +36,17 @@ export function TimelinePanel(props: {
   const [zoom, setZoom] = useState(1);
   const [selectedScene, setSelectedScene] = useState<string | null>(null);
   const [drag, setDrag] = useState<
-    | { kind: "scene"; id: string }
+    | {
+        kind: "scene";
+        id: string;
+        /** Pointer-to-scene-start offset in seconds, captured at pointerdown —
+         * without it the block TELEPORTS its start to the cursor on the first
+         * move, so merely selecting a scene could shift it. */
+        grabOffsetSec: number;
+        downX: number;
+        downY: number;
+        moved: boolean;
+      }
     | {
         kind: "key";
         lane: number;
@@ -238,8 +248,15 @@ export function TimelinePanel(props: {
     const rect = scrollRef.current!.querySelector(".tl-lanes")!.getBoundingClientRect();
     const t = snap(tOf(e.clientX - rect.left));
     if (drag.kind === "scene") {
+      // Tap threshold + grab offset: a click selects, a real drag moves —
+      // and moves relative to where the block was grabbed, not its left edge.
+      if (!drag.moved && Math.hypot(e.clientX - drag.downX, e.clientY - drag.downY) < 3) return;
+      if (!drag.moved) setDrag({ ...drag, moved: true });
+      const start = snap(
+        Math.max(0, Math.min(duration, tOf(e.clientX - rect.left) - drag.grabOffsetSec)),
+      );
       update({
-        scenes: timeline.scenes.map((s) => (s.id === drag.id ? { ...s, start: t } : s)),
+        scenes: timeline.scenes.map((s) => (s.id === drag.id ? { ...s, start } : s)),
       });
     } else {
       // Ignore sub-3px jitter so a tap stays a tap (see endDrag).
@@ -377,7 +394,17 @@ export function TimelinePanel(props: {
                     if (e.button !== 0) return; // only the primary button drags
                     e.preventDefault();
                     setSelectedScene(s.id);
-                    beginDrag(e, { kind: "scene", id: s.id });
+                    const rect = scrollRef
+                      .current!.querySelector(".tl-lanes")!
+                      .getBoundingClientRect();
+                    beginDrag(e, {
+                      kind: "scene",
+                      id: s.id,
+                      grabOffsetSec: tOf(e.clientX - rect.left) - s.start,
+                      downX: e.clientX,
+                      downY: e.clientY,
+                      moved: false,
+                    });
                   }}
                 >
                   <span className="tl-scene-name">{s.name}</span>

@@ -119,6 +119,10 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
                 meta: track.meta,
                 coverArt: track.coverArt,
                 beatGrid: grid,
+                // Frozen with the run: without the defs, a custom-preset doc
+                // resolves to the default visual inside the worker's empty
+                // registry and every job silently renders the wrong thing.
+                customPresets: run.customPresets,
               },
               overlay,
               {

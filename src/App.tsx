@@ -900,8 +900,12 @@ export default function App() {
                 </button>
                 <button
                   className={`segment ${exportSettings.format === "png" ? "active" : ""}`}
-                  disabled={!!exporting}
-                  title="A folder of numbered PNG frames — keeps transparency (set Background to Transparent). No audio; for editors."
+                  disabled={!!exporting || canvasMode}
+                  title={
+                    canvasMode
+                      ? "Not available for Canvas loops (they upload as MP4)"
+                      : "A folder of numbered PNG frames — keeps transparency (set Background to Transparent). No audio; for editors."
+                  }
                   onClick={() => store().setExportSettings({ format: "png" })}
                 >
                   PNG frames
@@ -909,8 +913,12 @@ export default function App() {
                 {isTauri() && (
                   <button
                     className={`segment ${exportSettings.format === "prores" ? "active" : ""}`}
-                    disabled={!!exporting}
-                    title="One .mov file: ProRes 4444 with alpha + PCM audio — drops straight into Premiere/Resolve/After Effects"
+                    disabled={!!exporting || canvasMode}
+                    title={
+                      canvasMode
+                        ? "Not available for Canvas loops (they upload as MP4)"
+                        : "One .mov file: ProRes 4444 with alpha + PCM audio — drops straight into Premiere/Resolve/After Effects"
+                    }
                     onClick={() => store().setExportSettings({ format: "prores" })}
                   >
                     ProRes
@@ -1132,7 +1140,10 @@ export default function App() {
             <p className="section-hint">
               Renders the current preset, parameters and background — what you see live is what you
               get. Sync is sample-exact.
-              {bg.mode === BG_TRANSPARENT && " Transparent background becomes black in MP4."}
+              {bg.mode === BG_TRANSPARENT &&
+                exportSettings.format === "mp4" &&
+                exportSettings.codec !== "vp9a" &&
+                " Transparent background becomes black in MP4 — PNG frames, ProRes, WebP and VP9+alpha keep it."}
             </p>
 
             {exporting ? (

@@ -16,12 +16,13 @@ import type { PcmData, SyncSettings } from "../audio/types";
 import { integratedLufs, normalizationGainDb } from "../audio/dsp/lufs";
 import { TruePeakLimiter } from "../audio/dsp/truepeak";
 import { WebGPURenderer } from "../render/webgpuRenderer";
-import type {
-  BgSettings,
-  MotionSettings,
-  ParamValues,
-  PostSettings,
-  PresetDef,
+import {
+  BG_IMAGE,
+  type BgSettings,
+  type MotionSettings,
+  type ParamValues,
+  type PostSettings,
+  type PresetDef,
 } from "../render/types";
 import { applyMods, type ModRoute } from "../state/modMatrix";
 import type { Timeline } from "../state/timeline";
@@ -420,19 +421,26 @@ export async function runExportJob(
     }
     // Image background: same shared bake as the live view (WYSIWYG). A
     // broken asset degrades to the preset background — never a black frame.
+    // The flag matters: the frame loop calls setBackground(rf.bg) every frame,
+    // which would silently restore image mode (and its black frames) if the
+    // degrade were applied only once here.
+    let bgImageFailed = false;
     if (job.bgImage) {
       try {
         renderer.setBackgroundImage(
           await bakeBackgroundBitmap(job.bgImage.dataUrl, job.bgImage.blur, job.bgImage.dim),
         );
       } catch {
-        renderer.setBackground({ ...job.bg, mode: 0 });
+        bgImageFailed = true;
       }
     }
     renderer.resize(job.width, job.height, 1);
 
-    // Loop mode: crossfade the tail into the head so sample/frame N-1
-    // lands back exactly where sample/frame 0 started.
+    // Loop mode: crossfade the tail into the head. Denominator is N+1 so the
+    // LAST tail sample/frame approaches — but never equals — the first one:
+    // with /N the final blend hit alpha 1.0, making the last frame an exact
+    // copy of frame 0, and every loop played the seam twice (a visible 1-frame
+    // stutter at 30 fps).
     const xfadeSamples = job.loopCrossfadeSec
       ? Math.min(Math.floor(job.loopCrossfadeSec * sampleRate), Math.floor(pcm.length / 2))
       : 0;
@@ -440,7 +448,7 @@ export async function runExportJob(
       for (const data of pcm.channels.slice(0, channels)) {
         const start = pcm.length - xfadeSamples;
         for (let i = 0; i < xfadeSamples; i++) {
-          const a = (i + 1) / xfadeSamples;
+          const a = (i + 1) / (xfadeSamples + 1);
           data[start + i] = data[start + i] * (1 - a) + data[i] * a;
         }
       }
@@ -483,6 +491,9 @@ export async function runExportJob(
     }
     for (let pos = 0; (audioEncoder || webmAudio) && pos < pcm.length; pos += CHUNK) {
       abort();
+      // A dead audio encoder otherwise only surfaces as a cryptic
+      // InvalidStateError from the next encode() call — throw the real cause.
+      if (encoderError) throw encoderError;
       const frames = Math.min(CHUNK, pcm.length - pos);
       for (let ch = 0; ch < channels; ch++) {
         const src = pcm.channels[ch];
@@ -563,7 +574,12 @@ export async function runExportJob(
         renderer.setPreset(presetById(rf.presetId));
         currentPresetId = rf.presetId;
       }
-      renderer.setBackground(rf.bg);
+      // A failed background-image bake degrades to the preset background for
+      // EVERY frame — resolveActiveFrame keeps handing back image mode, and
+      // re-applying it verbatim would undo the degrade into black frames.
+      renderer.setBackground(
+        bgImageFailed && rf.bg.mode === BG_IMAGE ? { ...rf.bg, mode: 0 } : rf.bg,
+      );
       let transition: { params: ParamValues; mix: number } | undefined;
       if (rf.prev) {
         if (fadeFromId !== rf.prev.presetId) {
@@ -600,7 +616,14 @@ export async function runExportJob(
         }
         const tailIndex = n - (total - xfadeFrames);
         if (tailIndex >= 0 && blendCtx && blendCanvas) {
-          const alpha = (tailIndex + 1) / xfadeFrames;
+          // N+1 denominator: the last blended frame must approach frame 0,
+          // not BE frame 0 — /N ended at alpha 1.0 and every loop played the
+          // seam frame twice.
+          const alpha = (tailIndex + 1) / (xfadeFrames + 1);
+          // Clear first: the canvas persists across the whole window, and on
+          // transparent exports source-over compositing accumulated every
+          // prior tail frame into ghost trails.
+          blendCtx.clearRect(0, 0, blendCanvas.width, blendCanvas.height);
           blendCtx.globalAlpha = 1;
           blendCtx.drawImage(canvas, 0, 0);
           blendCtx.globalAlpha = alpha;

@@ -100,15 +100,19 @@ export function loadStoredOverlay(): StoredOverlay {
 export function saveStoredOverlay(
   layers: OverlayLayer[],
   assets: Record<string, OverlayAsset>,
-): void {
+): boolean {
   // Best-effort: image assets are multi-MB data URLs and can blow the
   // localStorage quota. A failed persist must not throw out of the store
   // action — the layer would exist in state but never draw (the trailing
-  // refreshOverlay() call would be skipped).
+  // refreshOverlay() call would be skipped). Callers that persist REFERENCES
+  // to these assets (the image background) must check the return value: a
+  // reference saved against an asset that wasn't boots into a black bg.
   try {
     localStorage.setItem(LS_OVERLAY, JSON.stringify({ layers, assets }));
+    return true;
   } catch (e) {
     console.warn("[persist] overlay too large for localStorage; session-only", e);
+    return false;
   }
 }
 
@@ -121,11 +125,13 @@ export function loadCustomPresets(): PresetDef[] {
   return raw.map(validCustomPreset).filter((d): d is PresetDef => d !== null);
 }
 
-export function saveCustomPresets(defs: PresetDef[]): void {
+export function saveCustomPresets(defs: PresetDef[]): boolean {
   try {
     localStorage.setItem(LS_CUSTOM_PRESETS, JSON.stringify(defs));
+    return true;
   } catch (e) {
     console.warn("[persist] custom presets too large for localStorage", e);
+    return false;
   }
 }
 

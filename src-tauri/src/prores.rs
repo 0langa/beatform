@@ -133,6 +133,14 @@ fn anim_args(format: &str, fps: u32, out: &str) -> Vec<String> {
     args
 }
 
+/// Case-insensitive extension check — Windows paths carry whatever case the
+/// save dialog produced ("OUT.MOV" is a valid .mov path).
+fn has_extension(path: &PathBuf, ext: &str) -> bool {
+    path.extension()
+        .map(|e| e.to_string_lossy().eq_ignore_ascii_case(ext))
+        .unwrap_or(false)
+}
+
 /// Shared spawn: pipe stdin, stderr to a log file, no console window.
 fn spawn_sidecar(args: Vec<String>) -> Result<(Child, PathBuf), String> {
     let log_path = temp_path("ffmpeg.log");
@@ -181,7 +189,7 @@ pub fn prores_begin(
         return Err(format!("Unreasonable fps: {fps}"));
     }
     let out = PathBuf::from(&out_path);
-    if !out.is_absolute() || out.extension().map(|e| e != "mov").unwrap_or(true) {
+    if !out.is_absolute() || !has_extension(&out, "mov") {
         return Err("Output must be an absolute .mov path".into());
     }
     let wav_path = state
@@ -191,11 +199,19 @@ pub fn prores_begin(
         .take()
         .ok_or("No audio staged — call prores_set_audio first")?;
 
-    let (mut child, log_path) = spawn_sidecar(prores_args(
+    // From here the staged WAV is this function's to clean up: a spawn
+    // failure must not leak it in %TEMP% (pending_wav was already taken).
+    let (mut child, log_path) = match spawn_sidecar(prores_args(
         fps,
         &wav_path.to_string_lossy(),
         &out.to_string_lossy(),
-    ))?;
+    )) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = std::fs::remove_file(&wav_path);
+            return Err(e);
+        }
+    };
     let stdin = child.stdin.take();
     *job_guard = Some(ProresJob {
         child,
@@ -227,7 +243,7 @@ pub fn anim_begin(
         return Err(format!("Unknown animation format: {format}"));
     }
     let out = PathBuf::from(&out_path);
-    if !out.is_absolute() || out.extension().map(|e| e != format.as_str()).unwrap_or(true) {
+    if !out.is_absolute() || !has_extension(&out, &format) {
         return Err(format!("Output must be an absolute .{format} path"));
     }
     let (mut child, log_path) = spawn_sidecar(anim_args(&format, fps, &out.to_string_lossy()))?;
