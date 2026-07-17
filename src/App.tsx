@@ -126,6 +126,8 @@ export default function App() {
   const presetThumbs = useVizStore((s) => s.presetThumbs);
   const stems = useVizStore((s) => s.stems);
   const stemAnalyzing = useVizStore((s) => s.stemAnalyzing);
+  const lyricFileName = useVizStore((s) => s.lyricFileName);
+  const lyricStyle = useVizStore((s) => s.lyricStyle);
   const showBatch = useVizStore((s) => s.showBatch);
   const customDefs = useVizStore((s) => s.customDefs);
   const showShaderEditor = useVizStore((s) => s.showShaderEditor);
@@ -341,6 +343,8 @@ export default function App() {
         loopCrossfadeSec: opts.canvasLoop ? 0.5 : undefined,
         beatGrid: s.beatGrid ?? undefined,
         stems: s.stems,
+        lyrics:
+          s.lyrics && s.lyricStyle.enabled ? { lines: s.lyrics, style: s.lyricStyle } : undefined,
         customPresets: s.customDefs,
         mods: s.activeMods,
         smoothSpectrum: s.smoothSpectrum,
@@ -518,13 +522,28 @@ export default function App() {
           void theme.text().then((t) => store().importThemeText(t));
           return;
         }
+        // Timed lyrics: drop an .lrc/.srt alone (attaches to the current
+        // track) or together with an audio file (applied AFTER the track
+        // loads — loading clears per-track lyrics, so order matters).
+        const lyricFile = files.find((f) => /\.(lrc|srt)$/i.test(f.name));
+        const rest = lyricFile ? files.filter((f) => f !== lyricFile) : files;
+        const applyLyrics = lyricFile
+          ? () => lyricFile.text().then((t) => store().loadLyricsText(lyricFile.name, t))
+          : null;
+        if (rest.length === 0) {
+          if (applyLyrics) void applyLyrics();
+          return;
+        }
         // With the batch panel open, dropped tracks QUEUE — the panel says
         // "drop in a folder of tracks", and replacing the live track with
         // files[0] while ignoring the rest betrayed exactly that promise.
         if (store().showBatch) {
-          void store().addBatchTracks(files);
+          void store().addBatchTracks(rest);
+          if (applyLyrics) void applyLyrics();
         } else {
-          void store().loadFile(files[0]);
+          void store()
+            .loadFile(rest[0])
+            .then(() => applyLyrics?.());
         }
       }}
     >
@@ -750,6 +769,11 @@ export default function App() {
           onAddMod={(source, param) => store().addModRoute(source, param)}
           onUpdateMod={(id, patch) => store().updateModRoute(id, patch)}
           onRemoveMod={(id) => store().removeModRoute(id)}
+          lyricFileName={lyricFileName}
+          lyricStyle={lyricStyle}
+          onImportLyrics={(f) => void f.text().then((t) => store().loadLyricsText(f.name, t))}
+          onClearLyrics={() => store().clearLyrics()}
+          onLyricStyle={(patch) => store().setLyricStyle(patch)}
         />
       )}
 

@@ -32,6 +32,9 @@ export interface ServiceHooks {
   onMeter?(lufs: number, width: number): void;
   /** Stem envelope values at track time t (mod-matrix stem sources). */
   getStemValues?(t: number): Record<string, number> | undefined;
+  /** Called once per rendered frame with track time — the store recomposes
+   * the lyric overlay when (and only when) the active line/fade step moves. */
+  onLyricTick?(t: number): void;
 }
 
 let engine: AudioEngine | null = null;
@@ -293,6 +296,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         ),
         transition,
       );
+      hooks.onLyricTick?.(trackTime);
       // E2E probe: lets tooling confirm the render loop is alive
       (window as unknown as { __vizFrames: number }).__vizFrames =
         ((window as unknown as { __vizFrames: number }).__vizFrames ?? 0) + 1;

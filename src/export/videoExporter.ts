@@ -11,6 +11,7 @@ import {
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { VideoCodecId } from "./codecProbe";
 import { shiftStemAnalysis, type StemEntry } from "../audio/stems";
+import type { LyricLine, LyricStyle } from "../state/lyrics";
 import type { PresetDef as PresetDefLike } from "../render/types";
 import type { ModRoute } from "../state/modMatrix";
 import type { Timeline } from "../state/timeline";
@@ -38,6 +39,9 @@ export interface ExportOptions {
   bgImage?: { dataUrl: string; dim: number; blur: number };
   /** Imported stems' envelope timelines (mod-matrix stem sources). */
   stems?: StemEntry[];
+  /** Timed lyrics + style — composited onto the overlay per line, exactly
+   * like the live view (same compose function, same frame keys). */
+  lyrics?: { lines: LyricLine[]; style: LyricStyle };
   /** User-authored WGSL presets (registered in the worker). */
   customPresets?: PresetDefLike[];
   presetId: string;
@@ -256,6 +260,19 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
             analysis: shiftStemAnalysis(s.analysis, o.segment!.start),
           }))
         : o.stems,
+    // Lyrics are timed in TRACK time; segment exports shift them like the
+    // beat grid and timeline so the right line shows over the right beat.
+    lyrics:
+      o.lyrics && o.segment
+        ? {
+            ...o.lyrics,
+            lines: o.lyrics.lines.map((l) => ({
+              ...l,
+              t: l.t - o.segment!.start,
+              end: l.end === null ? null : l.end - o.segment!.start,
+            })),
+          }
+        : o.lyrics,
     customPresets: o.customPresets,
     paramsByPreset: o.paramsByPreset,
     modsByPreset: o.modsByPreset,

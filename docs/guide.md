@@ -56,6 +56,14 @@ removes it.
   browser, a DAW — via native loopback. Analysis-only: nothing echoes back
   out. Play/pause stops listening.
 
+## Lyrics
+
+Drop an `.lrc` file (any lyrics site exports them) or `.srt` subtitles onto
+the window — the current line follows the music, karaoke-style, live and in
+every export. Position/size/color/fade in the panel's **Lyrics** section.
+Drop the lyrics together with the track or after it; they attach to the
+loaded track like stems do.
+
 ## Export
 
 - **MP4** — H.264 everywhere; **HEVC/AV1** where your GPU supports them

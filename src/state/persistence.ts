@@ -15,6 +15,7 @@ import { validPost, validMotion } from "./project";
 import type { MotionSettings, PostSettings, PresetDef } from "../render/types";
 import { validCustomPreset } from "../render/presets/custom";
 import { validTimeline, type Timeline } from "./timeline";
+import { DEFAULT_LYRIC_STYLE, type LyricStyle } from "./lyrics";
 
 /**
  * localStorage persistence for the current session. Keys and formats are the
@@ -133,6 +134,32 @@ export function saveCustomPresets(defs: PresetDef[]): boolean {
     console.warn("[persist] custom presets too large for localStorage", e);
     return false;
   }
+}
+
+const LS_LYRIC_STYLE = "viz.lyricStyle.v1";
+
+export function loadStoredLyricStyle(): LyricStyle {
+  const raw = readJson<Partial<LyricStyle> | null>(LS_LYRIC_STYLE, null);
+  const d = DEFAULT_LYRIC_STYLE;
+  if (typeof raw !== "object" || raw === null) return { ...d };
+  return {
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : d.enabled,
+    position: raw.position === "center" || raw.position === "top" ? raw.position : d.position,
+    size:
+      typeof raw.size === "number" && Number.isFinite(raw.size)
+        ? Math.min(2, Math.max(0.5, raw.size))
+        : d.size,
+    color:
+      typeof raw.color === "string" && /^#[0-9a-f]{3,8}$/i.test(raw.color) ? raw.color : d.color,
+    fadeSec:
+      typeof raw.fadeSec === "number" && Number.isFinite(raw.fadeSec)
+        ? Math.min(1, Math.max(0, raw.fadeSec))
+        : d.fadeSec,
+  };
+}
+
+export function saveStoredLyricStyle(style: LyricStyle): void {
+  localStorage.setItem(LS_LYRIC_STYLE, JSON.stringify(style));
 }
 
 const LS_ASPECT = "viz.aspect.v1";

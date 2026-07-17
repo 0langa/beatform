@@ -8,6 +8,7 @@ import type { ExportOptions } from "./videoExporter";
 import type { LoudnessJob } from "./exportCore";
 import type { VideoCodecId } from "./codecProbe";
 import type { StemEntry } from "../audio/stems";
+import type { LyricLine, LyricStyle } from "../state/lyrics";
 
 /**
  * The single place a ProjectDocument becomes an ExportOptions.
@@ -52,6 +53,9 @@ export interface TrackInput {
   /** Imported stems (session-scoped, like the beat grid). Omitted by the
    * batch queue — stem routes then read 0 and are silently inert. */
   stems?: StemEntry[];
+  /** Timed lyrics + style (session-scoped, like stems). Omitted by the
+   * batch queue — batch tracks have no imported lyrics. */
+  lyrics?: { lines: LyricLine[]; style: LyricStyle };
   /** User-authored WGSL presets the document may reference. */
   customPresets?: PresetDef[];
 }
@@ -122,6 +126,7 @@ export function buildExportOptions(
         : undefined,
     beatGrid: track.beatGrid ?? undefined,
     stems: track.stems,
+    lyrics: track.lyrics,
     customPresets: track.customPresets,
     streamToPath: io.streamToPath,
     pngDir: io.pngDir,

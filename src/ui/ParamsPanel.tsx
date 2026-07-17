@@ -25,6 +25,7 @@ import type { ThemeMeta } from "../state/themes";
 import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
 import { MOD_SOURCES, type ModRoute, type ModSource } from "../state/modMatrix";
 import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../audio/stems";
+import type { LyricStyle } from "../state/lyrics";
 import { allParams } from "../render/types";
 import { Slider } from "./Slider";
 import { LayersPanel } from "./LayersPanel";
@@ -243,6 +244,12 @@ export function ParamsPanel(props: {
   onAddMod: (source: ModSource, param: string) => void;
   onUpdateMod: (id: string, patch: Partial<ModRoute>) => void;
   onRemoveMod: (id: string) => void;
+  /** Timed lyrics: loaded file name (null = none) + display style. */
+  lyricFileName: string | null;
+  lyricStyle: LyricStyle;
+  onImportLyrics: (file: File) => void;
+  onClearLyrics: () => void;
+  onLyricStyle: (patch: Partial<LyricStyle>) => void;
 }) {
   const [showAdvanced, setShowAdvanced] = useState(
     () => localStorage.getItem("viz.advancedOpen") === "1",
@@ -693,6 +700,104 @@ export function ParamsPanel(props: {
           <p className="section-hint">
             What this visual reacts to. Saved per mode; exports use it too.
           </p>
+        </section>
+
+        <section className="panel-section">
+          <div className="section-head">
+            <span className="section-title">Lyrics</span>
+          </div>
+          <div className="save-look-row">
+            {props.lyricFileName ? (
+              <span className="user-chip-wrap">
+                <span className="style-chip user" title="Loaded timed lyrics">
+                  {props.lyricFileName}
+                </span>
+                <button className="chip-x" title="Remove lyrics" onClick={props.onClearLyrics}>
+                  ✕
+                </button>
+              </span>
+            ) : (
+              <label
+                className="text-btn"
+                title="Import timed lyrics (.lrc from any lyrics site, or .srt) — drawn as a karaoke overlay, identical in exports"
+              >
+                + Import lyrics…
+                <input
+                  type="file"
+                  accept=".lrc,.srt"
+                  hidden
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) props.onImportLyrics(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+          </div>
+          {props.lyricFileName && (
+            <>
+              <label className="field">
+                <span>Show</span>
+                <input
+                  type="checkbox"
+                  checked={props.lyricStyle.enabled}
+                  title="Draw the active lyric line over the visual"
+                  onChange={(e) => props.onLyricStyle({ enabled: e.target.checked })}
+                />
+              </label>
+              <label className="field">
+                <span>Position</span>
+                <select
+                  className="select"
+                  value={props.lyricStyle.position}
+                  title="Where the lines sit in the frame"
+                  onChange={(e) =>
+                    props.onLyricStyle({ position: e.target.value as LyricStyle["position"] })
+                  }
+                >
+                  <option value="bottom">Bottom</option>
+                  <option value="center">Center</option>
+                  <option value="top">Top</option>
+                </select>
+              </label>
+              <div className="field">
+                <span>Size</span>
+                <Slider
+                  min={0.5}
+                  max={2}
+                  step={0.05}
+                  value={props.lyricStyle.size}
+                  onChange={(v) => props.onLyricStyle({ size: v })}
+                />
+              </div>
+              <div className="field">
+                <span>Fade</span>
+                <Slider
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={props.lyricStyle.fadeSec}
+                  onChange={(v) => props.onLyricStyle({ fadeSec: v })}
+                />
+              </div>
+              <label className="field">
+                <span>Color</span>
+                <input
+                  type="color"
+                  value={props.lyricStyle.color}
+                  title="Lyric text color"
+                  onChange={(e) => props.onLyricStyle({ color: e.target.value })}
+                />
+              </label>
+            </>
+          )}
+          {!props.lyricFileName && (
+            <p className="section-hint">
+              Drop an .lrc or .srt on the window (or import here) — the current line follows the
+              music, karaoke-style, live and in every export.
+            </p>
+          )}
         </section>
 
         <section className="panel-section">

@@ -100,6 +100,9 @@ Free and open source. Built to become a professional-grade tool for producers an
   −1 dBTP ceiling by a look-ahead true-peak limiter, so nothing clips when a
   streaming service re-encodes it. Audio-only — a normalized export renders
   frame-for-frame identically to the preview. Off by default
+- **Timed lyrics (.lrc / .srt)**: drop a lyrics file on the window and the
+  current line renders karaoke-style over the visual — position, size, color
+  and fades configurable, identical live and in every export
 - **Music library** (desktop): pick your music folder once — every track
   listed with its real tags (title/artist/duration via lofty), one click to
   play, and finished tracks flow into the next near-gaplessly (the next file

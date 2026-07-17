@@ -57,6 +57,13 @@ import type { KeyEstimate } from "../audio/analysis/keyDetect";
 import { newRouteId, type ModRoute, type ModSource } from "./modMatrix";
 import { clearHistory, historyDepths, popRedo, popUndo, pushHistory } from "./history";
 import type { Timeline } from "./timeline";
+import { LyricParseError, parseLyrics, type LyricLine, type LyricStyle } from "./lyrics";
+import {
+  composeLyricOverlay,
+  lyricFrameKeyAt,
+  sameLyricFrame,
+  type LyricFrameKey,
+} from "../render/lyricOverlay";
 import type { MotionSettings, PostSettings } from "../render/types";
 import {
   downloadBlob,
@@ -136,6 +143,8 @@ import {
   saveStoredPresetId,
   saveStoredSync,
   saveStoredVolume,
+  loadStoredLyricStyle,
+  saveStoredLyricStyle,
 } from "./persistence";
 
 export const RESOLUTIONS = [
@@ -310,6 +319,12 @@ interface SessionSlice {
   showShaderEditor: boolean;
   /** Stem currently being analyzed (its file name), null when idle. */
   stemAnalyzing: string | null;
+  /** Timed lyrics (parsed .lrc/.srt) — session-scoped like stems. */
+  lyrics: LyricLine[] | null;
+  /** Source file name of the loaded lyrics, for the UI. */
+  lyricFileName: string | null;
+  /** How lyric lines render (position/size/color/fade); persisted. */
+  lyricStyle: LyricStyle;
 }
 
 interface Actions {
@@ -354,6 +369,10 @@ interface Actions {
   exportCustomPreset(id: string): Promise<void>;
   importCustomPresetText(contents: string): Promise<void>;
   removeStem(slot: StemSlot): void;
+  /** Import timed lyrics (.lrc/.srt contents) — karaoke overlay. */
+  loadLyricsText(fileName: string, contents: string): void;
+  clearLyrics(): void;
+  setLyricStyle(patch: Partial<LyricStyle>): void;
   pickLibraryFolder(): Promise<void>;
   playLibraryTrack(path: string): Promise<void>;
   /** Auto-advance hook — called by the engine's natural-end callback. */
@@ -431,6 +450,12 @@ let libraryPrefetch: { path: string; file: File; buffer: AudioBuffer } | null = 
 /** Live canvas — overlay rasters at its pixel size. Set by initApp. */
 let liveCanvas: HTMLCanvasElement | null = null;
 let overlayTimer: ReturnType<typeof setTimeout> | undefined;
+/** Static overlay bitmap RETAINED while lyrics are active: the compositor
+ * redraws base+line on every line/fade-step change, so the renderer only
+ * ever receives composed copies (it closes what it's handed). */
+let overlayBase: ImageBitmap | null = null;
+let lastLyricKey: LyricFrameKey = { idx: -1, alphaQ: 0 };
+let lyricComposeToken = 0;
 /** Monotonic token: only the newest raster result gets applied. */
 let overlayToken = 0;
 /** Latest analysis job id — stale results are dropped. */
@@ -696,6 +721,9 @@ export const useVizStore = create<VizState>((set, get) => {
     presetThumbs: null,
     stems: [],
     stemAnalyzing: null,
+    lyrics: null,
+    lyricFileName: null,
+    lyricStyle: loadStoredLyricStyle(),
     customDefs: initialCustomDefs,
     showShaderEditor: false,
     showBatch: false,
@@ -736,6 +764,35 @@ export const useVizStore = create<VizState>((set, get) => {
         onResize: () => get().refreshOverlay(),
         onMeter: (lufs, stereoWidth) => set({ lufs, stereoWidth }),
         getStemValues: (t) => stemValuesAt(get().stems, t),
+        onLyricTick: (t) => {
+          const s = get();
+          if (!s.lyrics || !s.lyricStyle.enabled) return;
+          const key = lyricFrameKeyAt(s.lyrics, t, s.lyricStyle.fadeSec);
+          if (sameLyricFrame(key, lastLyricKey)) return;
+          lastLyricKey = key;
+          const canvas = liveCanvas;
+          if (!canvas) return;
+          // Token pair: superseded composes AND full overlay re-rasters both
+          // invalidate this frame's composition.
+          const token = ++lyricComposeToken;
+          const oTok = overlayToken;
+          void composeLyricOverlay(
+            overlayBase,
+            s.lyrics,
+            key,
+            s.lyricStyle,
+            canvas.width,
+            canvas.height,
+          )
+            .then((bmp) => {
+              if (token === lyricComposeToken && oTok === overlayToken) {
+                getRenderer()?.setOverlay(bmp);
+              } else {
+                bmp.close();
+              }
+            })
+            .catch(() => undefined);
+        },
       });
       getEngine().setVolume(get().muted ? 0 : get().volume);
       // Library auto-advance: when a library track finishes naturally, play
@@ -954,7 +1011,7 @@ export const useVizStore = create<VizState>((set, get) => {
         // Stems are per-track: envelopes analyzed against the old track have
         // no time relationship to the new one, so carrying them over would
         // modulate the new track with the old track's rhythm.
-        set({ trackMeta: meta, coverArt, stems: [] });
+        set({ trackMeta: meta, coverArt, stems: [], lyrics: null, lyricFileName: null });
         applyCoverArt();
         get().refreshOverlay();
         get().analyzeCurrentTrack();
@@ -976,7 +1033,13 @@ export const useVizStore = create<VizState>((set, get) => {
         if (gen !== trackLoadGen) return;
         engine.loadBuffer(buf, `Demo: ${demo.name}`);
         await engine.play();
-        set({ trackMeta: { title: demo.name, artist: "" }, coverArt: null, stems: [] });
+        set({
+          trackMeta: { title: demo.name, artist: "" },
+          coverArt: null,
+          stems: [],
+          lyrics: null,
+          lyricFileName: null,
+        });
         applyCoverArt();
         get().refreshOverlay();
         get().analyzeCurrentTrack();
@@ -1190,6 +1253,36 @@ export const useVizStore = create<VizState>((set, get) => {
       }
     },
 
+    loadLyricsText(fileName, contents) {
+      try {
+        const lyrics = parseLyrics(fileName, contents);
+        set({ lyrics, lyricFileName: fileName, error: null });
+        lastLyricKey = { idx: -2, alphaQ: -1 }; // force the first recompose
+        get().refreshOverlay();
+        flashNotice(`Lyrics loaded — ${lyrics.length} lines from ${fileName}`);
+      } catch (e) {
+        set({
+          error:
+            e instanceof LyricParseError
+              ? e.message
+              : `Could not read lyrics: ${(e as Error).message}`,
+        });
+      }
+    },
+
+    clearLyrics() {
+      set({ lyrics: null, lyricFileName: null });
+      get().refreshOverlay();
+    },
+
+    setLyricStyle(patch) {
+      const lyricStyle = { ...get().lyricStyle, ...patch };
+      set({ lyricStyle });
+      saveStoredLyricStyle(lyricStyle);
+      lastLyricKey = { idx: -2, alphaQ: -1 };
+      get().refreshOverlay();
+    },
+
     async pickLibraryFolder() {
       if (!isTauri()) {
         set({ error: "The music library needs the desktop app (it scans a folder)" });
@@ -1253,7 +1346,15 @@ export const useVizStore = create<VizState>((set, get) => {
         await engine.play();
         const { meta, coverArt } = await readTrackMeta(pre.file, pre.file.name);
         if (gen !== trackLoadGen) return;
-        set({ trackMeta: meta, coverArt, stems: [], libraryActivePath: next.path, error: null });
+        set({
+          trackMeta: meta,
+          coverArt,
+          stems: [],
+          lyrics: null,
+          lyricFileName: null,
+          libraryActivePath: next.path,
+          error: null,
+        });
         applyCoverArt();
         get().refreshOverlay();
         get().analyzeCurrentTrack();
@@ -1539,6 +1640,10 @@ export const useVizStore = create<VizState>((set, get) => {
               coverArt: get().coverArt,
               beatGrid: get().beatGrid,
               stems: get().stems,
+              lyrics:
+                get().lyrics && get().lyricStyle.enabled
+                  ? { lines: get().lyrics!, style: get().lyricStyle }
+                  : undefined,
               customPresets: get().customDefs,
             },
             overlay,
@@ -2212,10 +2317,31 @@ export const useVizStore = create<VizState>((set, get) => {
             canvas.height,
             get().trackMeta,
           );
-          if (token === overlayToken) {
-            getRenderer()?.setOverlay(bitmap); // takes ownership (closes it)
-          } else {
+          if (token !== overlayToken) {
             bitmap?.close(); // superseded by a newer raster — release it
+            return;
+          }
+          const s = get();
+          if (s.lyrics && s.lyricStyle.enabled) {
+            // Lyrics ride on top of the static overlay: retain the base and
+            // hand the renderer a composed copy (it closes what it's given).
+            overlayBase?.close();
+            overlayBase = bitmap;
+            lastLyricKey = lyricFrameKeyAt(s.lyrics, getEngine().currentTime, s.lyricStyle.fadeSec);
+            const composed = await composeLyricOverlay(
+              overlayBase,
+              s.lyrics,
+              lastLyricKey,
+              s.lyricStyle,
+              canvas.width,
+              canvas.height,
+            );
+            if (token === overlayToken) getRenderer()?.setOverlay(composed);
+            else composed.close();
+          } else {
+            overlayBase?.close();
+            overlayBase = null;
+            getRenderer()?.setOverlay(bitmap); // takes ownership (closes it)
           }
         } catch (e) {
           console.error("[overlay]", e);

@@ -38,6 +38,13 @@ import {
 import { bakeBackgroundBitmap } from "../render/bgImage";
 import { stemValuesAt, type StemEntry } from "../audio/stems";
 import { registerCustomPreset, validCustomPreset } from "../render/presets/custom";
+import {
+  composeLyricOverlay,
+  lyricFrameKeyAt,
+  sameLyricFrame,
+  type LyricFrameKey,
+} from "../render/lyricOverlay";
+import type { LyricLine, LyricStyle } from "../state/lyrics";
 
 /**
  * Offline MP4 export — the design in docs/EXPORT-DESIGN.md, realized.
@@ -89,6 +96,9 @@ export interface ExportJob {
   bgImage?: { dataUrl: string; dim: number; blur: number };
   /** Imported stems' envelope timelines — mod-matrix stem sources. */
   stems?: StemEntry[];
+  /** Timed lyrics (already segment-shifted) + style — composited onto the
+   * overlay with the SAME function the live view uses. */
+  lyrics?: { lines: LyricLine[]; style: LyricStyle };
   /** User-authored WGSL presets — re-registered inside the worker so
    * presetById() resolves them there too. */
   customPresets?: PresetDef[];
@@ -402,10 +412,17 @@ export async function runExportJob(
     for (const w of errorWaiters) w(err);
   };
 
+  // With lyrics the static overlay is a compositing BASE that must survive
+  // the whole render — the renderer closes whatever it's handed on replace,
+  // so it only ever receives composed copies (the frame loop swaps them as
+  // the active line moves). Without lyrics the old direct hand-off stands.
+  const lyricJob = job.lyrics && job.lyrics.style.enabled ? job.lyrics : null;
+  const overlayBase = lyricJob ? (job.overlay ?? null) : null;
+  let lastLyricKey: LyricFrameKey = { idx: -2, alphaQ: -1 };
   try {
     renderer.setPreset(presetById(job.presetId));
     renderer.setBackground(job.bg);
-    renderer.setOverlay(job.overlay ?? null);
+    if (!lyricJob) renderer.setOverlay(job.overlay ?? null);
     renderer.setSmoothSpectrum(job.smoothSpectrum === true);
     if (job.post) renderer.setPost(job.post);
     if (job.motion) renderer.setMotion(job.motion);
@@ -580,6 +597,25 @@ export async function runExportJob(
       renderer.setBackground(
         bgImageFailed && rf.bg.mode === BG_IMAGE ? { ...rf.bg, mode: 0 } : rf.bg,
       );
+      // Lyrics: recompose the overlay when the (line, fade-step) key moves —
+      // the SAME pure key + compose functions the live loop uses, fed this
+      // frame's t, is what makes the file match the preview.
+      if (lyricJob) {
+        const key = lyricFrameKeyAt(lyricJob.lines, t, lyricJob.style.fadeSec);
+        if (!sameLyricFrame(key, lastLyricKey)) {
+          lastLyricKey = key;
+          renderer.setOverlay(
+            await composeLyricOverlay(
+              overlayBase,
+              lyricJob.lines,
+              key,
+              lyricJob.style,
+              job.width,
+              job.height,
+            ),
+          );
+        }
+      }
       let transition: { params: ParamValues; mix: number } | undefined;
       if (rf.prev) {
         if (fadeFromId !== rf.prev.presetId) {
@@ -715,6 +751,7 @@ export async function runExportJob(
       // already torn down
     }
     headFrames.forEach((b) => b.close());
+    overlayBase?.close();
     // Never let teardown throw: this runs on the failure path too, and a
     // dispose() that throws on an already-lost device would replace the real
     // error with a confusing one — and skip the rest of the cleanup.
