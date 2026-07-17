@@ -1,6 +1,6 @@
 [package]
 name = "beatform"
-version = "2.23.0"
+version = "2.24.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"

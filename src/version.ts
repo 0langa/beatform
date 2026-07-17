@@ -1,3 +1,3 @@
 /** Single source of the app version for UI + file metadata.
  * Keep in lockstep with package.json / Cargo.toml / tauri.conf.json. */
-export const APP_VERSION = "2.23.0";
+export const APP_VERSION = "2.24.0";
