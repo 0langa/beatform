@@ -4,11 +4,22 @@ import type { PresetDef } from "../render/types";
 import { allParams, type ParamValues } from "../render/types";
 import {
   newSceneId,
+  TRANSITION_KINDS,
   type AutomationLane,
   type Keyframe,
   type Scene,
   type Timeline,
 } from "../state/timeline";
+
+const TRANSITION_LABELS: Record<(typeof TRANSITION_KINDS)[number], string> = {
+  crossfade: "Crossfade",
+  wipe: "Wipe →",
+  wipeup: "Wipe ↑",
+  iris: "Iris",
+  zoom: "Zoom",
+  glitch: "Glitch",
+  cut: "Hard cut",
+};
 
 /**
  * Bottom timeline panel: beat/section ruler, waveform overview, a scene lane
@@ -522,6 +533,32 @@ export function TimelinePanel(props: {
                     }}
                   />
                   <span className="row-value">{(s.fadeSec ?? 0).toFixed(2)}s</span>
+                </label>
+                <label className="inline" title="How this scene's incoming fade renders">
+                  Transition
+                  <select
+                    className="select"
+                    value={s.transition ?? "crossfade"}
+                    onChange={(e) => {
+                      const transition = e.target.value as (typeof TRANSITION_KINDS)[number];
+                      update({
+                        scenes: timeline.scenes.map((x) =>
+                          x.id === s.id
+                            ? {
+                                ...x,
+                                transition: transition === "crossfade" ? undefined : transition,
+                              }
+                            : x,
+                        ),
+                      });
+                    }}
+                  >
+                    {TRANSITION_KINDS.map((k) => (
+                      <option key={k} value={k}>
+                        {TRANSITION_LABELS[k]}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <button className="text-btn danger" onClick={() => removeScene(s.id)}>
                   Delete scene

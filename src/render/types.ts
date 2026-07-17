@@ -170,6 +170,8 @@ export const DEFAULT_MOTION: MotionSettings = {
 export interface TransitionState {
   params: ParamValues;
   mix: number;
+  /** Transition style index (see TRANSITION_KINDS); 0 = crossfade. */
+  kind?: number;
 }
 
 export interface Renderer {

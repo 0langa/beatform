@@ -69,8 +69,26 @@ describe("timeline evaluation", () => {
       scene: null,
       prevScene: null,
       mix: 1,
+      transitionKind: 0,
       automation: {},
     });
+  });
+
+  it("carries the scene's transition kind during its fade (linear progress for cut)", () => {
+    const tl: Timeline = {
+      enabled: true,
+      scenes: [
+        { id: "a", name: "A", presetId: "spectrum-bars", start: 0 },
+        { id: "b", name: "B", presetId: "radial-burst", start: 10, fadeSec: 2, transition: "cut" },
+      ],
+      lanes: [],
+    };
+    const mid = evalTimeline(tl, 11); // halfway through the 2s fade
+    expect(mid.transitionKind).toBe(6); // "cut" index
+    expect(mid.mix).toBeCloseTo(0.5, 5); // linear, not eased
+    expect(mid.prevScene?.id).toBe("a");
+    // Outside the fade window: kind resets to 0.
+    expect(evalTimeline(tl, 15).transitionKind).toBe(0);
   });
 
   it("crossfade: mix ramps smoothly and prevScene is the outgoing scene", () => {

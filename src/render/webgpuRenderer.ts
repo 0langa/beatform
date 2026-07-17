@@ -426,7 +426,7 @@ fn fs_composite(in: VSOut) -> @location(0) vec4f {
 `;
 
 const BLEND_WGSL = /* wgsl */ `
-struct BlendU { mixv: f32, _p0: f32, _p1: f32, _p2: f32 }
+struct BlendU { mixv: f32, kind: f32, _p1: f32, _p2: f32 }
 @group(0) @binding(0) var fromTex: texture_2d<f32>;
 @group(0) @binding(1) var toTex: texture_2d<f32>;
 @group(0) @binding(2) var smp: sampler;
@@ -446,11 +446,57 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VSOut {
   return out;
 }
 
+fn bhash(p: vec2f) -> f32 {
+  return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453);
+}
+
+// Scene transitions — all pure functions of (from, to, uv, m). m is the
+// eased progress 0..1, so the result is deterministic (identical live/export).
+// kind: 0 crossfade, 1 wipe L->R, 2 wipe up, 3 radial, 4 zoom-through,
+// 5 glitch, 6 hard cut.
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-  let a = textureSampleLevel(fromTex, smp, in.uv, 0.0);
-  let b = textureSampleLevel(toTex, smp, in.uv, 0.0);
-  return mix(a, b, bu.mixv);
+  let uv = in.uv;
+  let m = bu.mixv;
+  let a = textureSampleLevel(fromTex, smp, uv, 0.0);
+  let b = textureSampleLevel(toTex, smp, uv, 0.0);
+  let k = i32(bu.kind + 0.5);
+
+  if (k == 1) { // wipe left->right, soft edge
+    let e = smoothstep(m - 0.04, m + 0.04, uv.x);
+    return mix(b, a, e);
+  }
+  if (k == 2) { // wipe bottom->top
+    let e = smoothstep(m - 0.04, m + 0.04, 1.0 - uv.y);
+    return mix(b, a, e);
+  }
+  if (k == 3) { // radial iris from center
+    let d = distance(uv, vec2f(0.5, 0.5)) / 0.7071;
+    let e = smoothstep(m - 0.04, m + 0.04, d);
+    return mix(b, a, e);
+  }
+  if (k == 4) { // zoom-through: incoming zooms in from 1.4x, crossfade
+    let scale = mix(1.4, 1.0, m);
+    let zuv = (uv - vec2f(0.5)) * scale + vec2f(0.5);
+    let bz = textureSampleLevel(toTex, smp, clamp(zuv, vec2f(0.0), vec2f(1.0)), 0.0);
+    return mix(a, bz, m);
+  }
+  if (k == 5) { // glitch: block displacement peaking mid-transition + channel split
+    let g = sin(m * 3.14159265); // 0 at ends, 1 at middle
+    let row = floor(uv.y * 24.0);
+    let shift = (bhash(vec2f(row, 3.0)) - 0.5) * 0.25 * g;
+    let uvB = vec2f(fract(uv.x + shift), uv.y);
+    let sp = 0.01 * g;
+    let br = textureSampleLevel(toTex, smp, vec2f(fract(uvB.x + sp), uvB.y), 0.0).r;
+    let bg = textureSampleLevel(toTex, smp, uvB, 0.0).g;
+    let bb = textureSampleLevel(toTex, smp, vec2f(fract(uvB.x - sp), uvB.y), 0.0).b;
+    let bGl = vec4f(br, bg, bb, 1.0);
+    return mix(a, bGl, smoothstep(0.0, 1.0, m));
+  }
+  if (k == 6) { // hard cut at the midpoint (beat-cut when fade is short)
+    return select(a, b, m >= 0.5);
+  }
+  return mix(a, b, m); // 0 crossfade
 }
 `;
 
@@ -1915,7 +1961,7 @@ export class WebGPURenderer implements Renderer {
       this.device.queue.writeBuffer(
         this.blendUniform,
         0,
-        new Float32Array([transition!.mix, 0, 0, 0]),
+        new Float32Array([transition!.mix, transition!.kind ?? 0, 0, 0]),
       );
       this.ensureFadeTargets();
     }

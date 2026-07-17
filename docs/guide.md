@@ -43,9 +43,11 @@ sizing. Layers render identically in preview and export.
 ## Timeline
 
 Press **T**: scenes switch visual modes at beats (drag snaps to the grid),
-automation lanes keyframe any parameter, scene crossfades blend on the GPU.
+automation lanes keyframe any parameter, and each scene picks a **Transition**
+for its incoming fade — crossfade, wipe, iris, zoom, glitch, or hard cut.
 Click a keyframe dot to cycle its curve (linear/smooth/hold); right-click
-removes it.
+removes it. **✦ Auto-arrange** builds a scene arrangement from the song's
+detected sections in one click.
 
 ## Library and live input (desktop)
 

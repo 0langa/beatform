@@ -29,6 +29,25 @@ export interface AutomationLane {
   keyframes: Keyframe[];
 }
 
+/** Transition styles for a scene's incoming fade. Index is the WGSL blend
+ * `kind` — order is ABI, append only. */
+export const TRANSITION_KINDS = [
+  "crossfade",
+  "wipe",
+  "wipeup",
+  "iris",
+  "zoom",
+  "glitch",
+  "cut",
+] as const;
+export type TransitionKind = (typeof TRANSITION_KINDS)[number];
+
+/** WGSL kind index for a transition name (0 = crossfade fallback). */
+export function transitionIndex(kind: TransitionKind | undefined): number {
+  const i = kind ? TRANSITION_KINDS.indexOf(kind) : 0;
+  return i < 0 ? 0 : i;
+}
+
 export interface Scene {
   id: string;
   name: string;
@@ -37,6 +56,8 @@ export interface Scene {
   start: number;
   /** Crossfade from the previous setup over this many seconds (0 = cut). */
   fadeSec?: number;
+  /** How the incoming fade renders (default crossfade). */
+  transition?: TransitionKind;
   /** Sparse param overrides on top of the document's per-preset params. */
   params?: ParamValues;
   bg?: BgSettings;
@@ -61,6 +82,8 @@ export interface TimelineFrame {
   prevScene: Scene | null;
   /** 0..1 blend toward `scene` (1 = fully arrived; no fade → always 1). */
   mix: number;
+  /** WGSL blend kind for the active crossfade (0 when not fading). */
+  transitionKind: number;
   /** Automation values at t, by param key. */
   automation: ParamValues;
 }
@@ -92,7 +115,8 @@ export function laneValue(lane: AutomationLane, t: number): number | null {
 
 /** Evaluate the whole timeline at time t. Pure and allocation-light. */
 export function evalTimeline(timeline: Timeline, t: number): TimelineFrame {
-  if (!timeline.enabled) return { scene: null, prevScene: null, mix: 1, automation: {} };
+  if (!timeline.enabled)
+    return { scene: null, prevScene: null, mix: 1, transitionKind: 0, automation: {} };
 
   // Order-independent: the active scene is the latest one starting at or
   // before t; prev is the latest one strictly before the active scene's
@@ -114,10 +138,14 @@ export function evalTimeline(timeline: Timeline, t: number): TimelineFrame {
   // real scenes — the first scene hard-cuts from the base setup.
   let prevScene: Scene | null = null;
   let mix = 1;
+  let transitionKind = 0;
   const fade = scene?.fadeSec ?? 0;
   if (scene && prev && fade > 0 && t < scene.start + fade) {
     const f = Math.min(1, Math.max(0, (t - scene.start) / fade));
-    mix = f * f * (3 - 2 * f); // smoothstep — eased in both directions
+    // A hard cut ("cut") wants a LINEAR progress so the midpoint lands at
+    // exactly fade/2; the geometric transitions read better eased.
+    transitionKind = transitionIndex(scene.transition);
+    mix = scene.transition === "cut" ? f : f * f * (3 - 2 * f);
     prevScene = prev;
   }
 
@@ -126,7 +154,7 @@ export function evalTimeline(timeline: Timeline, t: number): TimelineFrame {
     const v = laneValue(lane, t);
     if (v !== null) automation[lane.param] = v;
   }
-  return { scene, prevScene, mix, automation };
+  return { scene, prevScene, mix, transitionKind, automation };
 }
 
 /** Validation for project files / storage. */
@@ -164,6 +192,11 @@ export function validTimeline(v: unknown): Timeline {
           fadeSec:
             typeof s.fadeSec === "number" && Number.isFinite(s.fadeSec) && s.fadeSec > 0
               ? Math.min(8, s.fadeSec)
+              : undefined,
+          transition:
+            typeof s.transition === "string" &&
+            (TRANSITION_KINDS as readonly string[]).includes(s.transition)
+              ? (s.transition as TransitionKind)
               : undefined,
           params: Object.keys(params).length > 0 ? params : undefined,
           bg: s.bg ? validBg(s.bg) : undefined,

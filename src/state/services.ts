@@ -273,13 +273,13 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       }
       renderer?.setBackground(rf.bg);
       // Crossfade: keep the outgoing preset compiled while inside the window
-      let transition: { params: ParamValues; mix: number } | undefined;
+      let transition: { params: ParamValues; mix: number; kind: number } | undefined;
       if (rf.prev) {
         if (fadeFromId !== rf.prev.presetId) {
           renderer?.setTransitionPreset(presetById(rf.prev.presetId));
           fadeFromId = rf.prev.presetId;
         }
-        transition = { params: rf.prev.params, mix: rf.mix };
+        transition = { params: rf.prev.params, mix: rf.mix, kind: rf.transitionKind };
       } else if (fadeFromId !== null) {
         renderer?.setTransitionPreset(null);
         fadeFromId = null;

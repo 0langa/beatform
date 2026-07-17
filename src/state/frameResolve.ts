@@ -37,6 +37,8 @@ export interface ResolvedFrame {
   prev: { presetId: string; params: ParamValues } | null;
   /** 0..1 blend toward the active preset (1 = no fade). */
   mix: number;
+  /** WGSL blend kind for the active crossfade (0 = crossfade). */
+  transitionKind: number;
 }
 
 export function resolveActiveFrame(input: FrameResolveInput, t: number): ResolvedFrame {
@@ -79,5 +81,5 @@ export function resolveActiveFrame(input: FrameResolveInput, t: number): Resolve
     };
   }
 
-  return { presetId, params, mods, bg, prev, mix: frame.mix };
+  return { presetId, params, mods, bg, prev, mix: frame.mix, transitionKind: frame.transitionKind };
 }
