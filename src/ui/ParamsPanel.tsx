@@ -241,6 +241,7 @@ export function ParamsPanel(props: {
   stemAnalyzing: string | null;
   onAddStem: (file: File) => void;
   onRemoveStem: (slot: StemSlot) => void;
+  onAutoRouteStem: (slot: StemSlot) => void;
   onAddMod: (source: ModSource, param: string) => void;
   onUpdateMod: (id: string, patch: Partial<ModRoute>) => void;
   onRemoveMod: (id: string) => void;
@@ -819,6 +820,13 @@ export function ParamsPanel(props: {
                 >
                   {st.analysis.name}
                 </span>
+                <button
+                  className="chip-x"
+                  title="Auto-route: wire this stem's kick/bass/snare/hats/mids to the best-matching knobs of this visual"
+                  onClick={() => props.onAutoRouteStem(st.slot)}
+                >
+                  ✦
+                </button>
                 <button
                   className="chip-x"
                   title="Remove this stem (routes to it go inert)"

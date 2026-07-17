@@ -46,7 +46,8 @@ import {
   type StemEntry,
   type StemSlot,
 } from "../audio/stems";
-import { defaultParams } from "../render/types";
+import { allParams, defaultParams } from "../render/types";
+import { stemRoutesFor } from "./stemRouting";
 import { presetById, presets } from "../render/presets";
 import { exportVideo } from "../export/videoExporter";
 import { APP_VERSION } from "../version";
@@ -370,6 +371,8 @@ interface Actions {
   exportCustomPreset(id: string): Promise<void>;
   importCustomPresetText(contents: string): Promise<void>;
   removeStem(slot: StemSlot): void;
+  /** One-click: wire this stem's bands to sensible knobs of the active visual. */
+  autoRouteStem(slot: StemSlot): void;
   /** Import timed lyrics (.lrc/.srt contents) — karaoke overlay. */
   loadLyricsText(fileName: string, contents: string): void;
   clearLyrics(): void;
@@ -1189,6 +1192,27 @@ export const useVizStore = create<VizState>((set, get) => {
 
     removeStem(slot) {
       set({ stems: get().stems.filter((e) => e.slot !== slot) });
+    },
+
+    autoRouteStem(slot) {
+      const s = get();
+      if (!s.stems.some((e) => e.slot === slot)) return;
+      // Replace any existing routes for THIS stem (re-clicking re-wires it),
+      // keep routes for other sources, and don't fight over knobs already
+      // targeted by surviving routes.
+      const kept = s.activeMods.filter((r) => !r.source.startsWith(`${slot}:`));
+      const taken = new Set(kept.map((r) => r.param));
+      const added = stemRoutesFor(slot, allParams(presetById(s.presetId)), newRouteId, taken);
+      if (added.length === 0) {
+        flashNotice("This visual has no knobs that map to stem bands");
+        return;
+      }
+      record("mod-add");
+      const activeMods = [...kept, ...added];
+      const modsByPreset = { ...s.modsByPreset, [s.presetId]: activeMods };
+      set({ activeMods, modsByPreset });
+      saveStoredMods(modsByPreset);
+      flashNotice(`Wired ${added.length} routes from the stem — tweak amounts in Modulation`);
     },
 
     setShowShaderEditor(open) {

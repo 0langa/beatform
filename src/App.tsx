@@ -766,6 +766,7 @@ export default function App() {
           stemAnalyzing={stemAnalyzing}
           onAddStem={(f) => void store().addStem(f)}
           onRemoveStem={(slot) => store().removeStem(slot)}
+          onAutoRouteStem={(slot) => store().autoRouteStem(slot)}
           onAddMod={(source, param) => store().addModRoute(source, param)}
           onUpdateMod={(id, patch) => store().updateModRoute(id, patch)}
           onRemoveMod={(id) => store().removeModRoute(id)}

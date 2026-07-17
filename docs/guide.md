@@ -64,6 +64,14 @@ every export. Position/size/color/fade in the panel's **Lyrics** section.
 Drop the lyrics together with the track or after it; they attach to the
 loaded track like stems do.
 
+## Stems
+
+Import a stem (drums/bass/vocals bounced from 0:00) in the panel's
+**Modulation** section — it's analyzed once, never played, and its bands
+become modulation sources. Hit the **✦** on a stem chip to auto-wire its
+kick/bass/snare/hats/mids to the best-matching knobs of the current visual;
+tweak the amounts from there.
+
 ## Export
 
 - **MP4** — H.264 everywhere; **HEVC/AV1** where your GPU supports them
