@@ -62,7 +62,7 @@ export const bassCircle: PresetDef = {
       key: "radius",
       label: "Circle size",
       min: 0.08,
-      max: 0.4,
+      max: 0.3,
       step: 0.005,
       default: 0.18,
       hint: "Resting radius of the centre circle",
@@ -80,10 +80,10 @@ export const bassCircle: PresetDef = {
       key: "barLen",
       label: "Bar length",
       min: 0.05,
-      max: 0.5,
+      max: 0.32,
       step: 0.01,
       default: 0.24,
-      hint: "Outward reach of the radial spectrum bars",
+      hint: "Outward reach of the radial spectrum bars (kept inside the frame)",
     },
     {
       key: "particles",
@@ -245,7 +245,9 @@ fn preset(uv: vec2f) -> vec4f {
   // strong off-grid hits still punch through.
   let beatP = max(u.driveBeat, gridPulse(7.0));
   let pump = 1.0 + (u.drive * P_pump() + beatP * P_beatPump()) * u.pulse;
-  let circleR = P_radius() * pump;
+  // Frame-safety: cap the swollen disc so a loud beat (big u.drive/pulse) can't
+  // balloon it past the frame. The top/bottom edge is r=0.5.
+  let circleR = min(P_radius() * pump, 0.34);
 
   // --- Background bokeh particles: each drifts along its own slow path and
   // twinkles, independent of the circle (the classic floating-dust layer).
@@ -290,7 +292,9 @@ fn preset(uv: vec2f) -> vec4f {
   let xs = abs(seg * 2.0 - 1.0);
   let v = binAt(xs);
   let barInner = circleR + P_gap();
-  let barLen = v * P_barLen();
+  // Radial bars stay inside the frame too (tip <= ~0.47).
+  let barLenMax = max(0.0, 0.47 - barInner);
+  let barLen = min(v * P_barLen(), barLenMax);
   let barHue = P_hue() + xs * P_hueSpread();
   let inBar = step(barInner, r) * step(r, barInner + barLen);
   let along = (r - barInner) / max(barLen, 1e-3);

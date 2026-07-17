@@ -134,10 +134,10 @@ export const spectrumBars: PresetDef = {
       key: "barHeight",
       label: "Bar height",
       min: 0.3,
-      max: 1,
+      max: 0.92,
       step: 0.01,
-      default: 0.92,
-      hint: "Maximum height a bar can reach (fraction of screen)",
+      default: 0.82,
+      hint: "Maximum height a bar can reach (fraction of screen; leaves room for the peak caps)",
     },
     {
       key: "barSat",

@@ -5,6 +5,16 @@ export const MIN_FREQ = 30;
 export const MAX_FREQ = 16000;
 export const MIN_DB = -90;
 export const MAX_DB = -22;
+/**
+ * Ceiling for the DRAWN spectrum only. −22 dBFS is where sync/beat detection
+ * saturates (fine — those want to fire hard on loud content), but using it for
+ * the visible bars pins every band to full on a loud master (a −7 LUFS track's
+ * bass sits well above −22), so the bars read as clipped, not dynamic. The
+ * drawn spectrum uses this higher ceiling + a gamma lift instead: loud content
+ * lands near the top with visible headroom, moderate content still looks full.
+ */
+export const DISPLAY_MAX_DB = -8;
+const DISPLAY_GAMMA = 0.8;
 
 /**
  * Adaptive beat threshold windows, in SECONDS (not frames) so detection is
@@ -71,6 +81,10 @@ export class FeaturePipeline {
   readonly features: AudioFeatures;
 
   private mag: Float32Array;
+  /** Same magnitudes as `mag`, but on the DISPLAY scale (more headroom): the
+   * drawn spectrum only. `mag` (the −22 dBFS ceiling) still drives bands,
+   * flux and beats, so sync feel is unchanged by the display headroom. */
+  private magDisp: Float32Array;
   private prevMag: Float32Array;
   /** [start, end) FFT-bin range per output bin, geometrically spaced */
   private ranges: Array<[number, number]>;
@@ -103,6 +117,7 @@ export class FeaturePipeline {
     this.binCount = config.binCount ?? 96;
     const fftBins = config.fftBins;
     this.mag = new Float32Array(fftBins);
+    this.magDisp = new Float32Array(fftBins);
     this.prevMag = new Float32Array(fftBins);
 
     const nyquist = config.sampleRate / 2;
@@ -159,21 +174,31 @@ export class FeaturePipeline {
     const dt = Math.min(0.1, Math.max(0.0001, input.dt));
     this.clock += dt;
 
-    // dB -> 0..1 magnitudes
+    // dB -> 0..1 magnitudes. `mag` keeps the −22 dBFS ceiling (bands, flux,
+    // beats); `magDisp` uses the display ceiling + gamma (the drawn bars only).
     const mag = this.mag;
+    const magDisp = this.magDisp;
+    const dispRange = DISPLAY_MAX_DB - MIN_DB;
     for (let i = 0; i < mag.length; i++) {
       const db = input.magDb[i];
-      mag[i] = db === -Infinity ? 0 : clamp01((db - MIN_DB) / (MAX_DB - MIN_DB));
+      if (db === -Infinity) {
+        mag[i] = 0;
+        magDisp[i] = 0;
+      } else {
+        mag[i] = clamp01((db - MIN_DB) / (MAX_DB - MIN_DB));
+        magDisp[i] = Math.pow(clamp01((db - MIN_DB) / dispRange), DISPLAY_GAMMA);
+      }
     }
 
-    // Log-spaced bins with asymmetric EMA + peak hold with gravity
+    // Log-spaced bins with asymmetric EMA + peak hold with gravity. Built from
+    // magDisp so a loud master doesn't slam every bar to the ceiling.
     const attack = 1 - Math.exp(-dt * 35);
     const release = 1 - Math.exp(-dt * 9);
     const gravity = 0.55 * dt;
     for (let i = 0; i < this.binCount; i++) {
       const [b0, b1] = this.ranges[i];
       let v = 0;
-      for (let b = b0; b < b1; b++) v = Math.max(v, mag[b]);
+      for (let b = b0; b < b1; b++) v = Math.max(v, magDisp[b]);
       const prev = f.bins[i];
       f.bins[i] = prev + (v - prev) * (v > prev ? attack : release);
       f.peaks[i] = Math.max(f.peaks[i] - gravity, f.bins[i]);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FeaturePipeline, MIN_DB, MAX_DB } from "./featurePipeline";
+import { FeaturePipeline, MIN_DB, MAX_DB, DISPLAY_MAX_DB } from "./featurePipeline";
 import type { PipelineInput } from "./featurePipeline";
 
 const SAMPLE_RATE = 48000;
@@ -71,21 +71,31 @@ describe("FeaturePipeline fps-independence (WYSIWYG)", () => {
 });
 
 describe("FeaturePipeline", () => {
-  it("maps MIN_DB to 0 and MAX_DB to saturated bins", () => {
+  it("saturates drawn bins only at the DISPLAY ceiling, leaving headroom at MAX_DB", () => {
     const p = makePipeline();
     // Silence stays at zero
     let f = p.update(makeInput());
     expect(Math.max(...f.bins)).toBe(0);
 
-    // Full-scale spectrum converges to 1 under the attack EMA
-    const hot = makeInput({ magDb: new Float32Array(FFT_BINS).fill(MAX_DB) });
-    for (let i = 0; i < 60; i++) f = p.update({ ...hot, time: i * DT });
+    // Content at the display ceiling converges to full.
+    const disp = makeInput({ magDb: new Float32Array(FFT_BINS).fill(DISPLAY_MAX_DB) });
+    for (let i = 0; i < 60; i++) f = p.update({ ...disp, time: i * DT });
     expect(Math.min(...f.bins)).toBeGreaterThan(0.99);
+
+    // Content at MAX_DB (the sync/beat ceiling, −22 dBFS) must NOT slam the
+    // drawn bars — that headroom is the whole point, so a loud master reads as
+    // dynamic rather than a solid wall.
+    const p2 = makePipeline();
+    const hot = makeInput({ magDb: new Float32Array(FFT_BINS).fill(MAX_DB) });
+    let g = p2.update(hot);
+    for (let i = 0; i < 60; i++) g = p2.update({ ...hot, time: i * DT });
+    expect(Math.max(...g.bins)).toBeLessThan(0.95);
+    expect(Math.max(...g.bins)).toBeGreaterThan(0.6); // still healthy, not weak
   });
 
   it("attacks faster than it releases", () => {
     const p = makePipeline();
-    const hot = makeInput({ magDb: new Float32Array(FFT_BINS).fill(MAX_DB) });
+    const hot = makeInput({ magDb: new Float32Array(FFT_BINS).fill(DISPLAY_MAX_DB) });
     const cold = makeInput();
 
     let framesUp = 0;

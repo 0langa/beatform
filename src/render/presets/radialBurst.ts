@@ -102,10 +102,10 @@ export const radialBurst: PresetDef = {
       key: "barLen",
       label: "Bar length",
       min: 0.1,
-      max: 0.6,
+      max: 0.4,
       step: 0.01,
-      default: 0.34,
-      hint: "Maximum outward reach of the bars",
+      default: 0.3,
+      hint: "Maximum outward reach of the bars (kept inside the frame)",
     },
     {
       key: "ringBreathe",
@@ -251,7 +251,9 @@ fn preset(uv: vec2f) -> vec4f {
   let pk = peakAt(xs);
 
   let inner = P_innerRadius() * (1.0 + (u.bass * P_ringBreathe() + beatP * 0.06) * u.pulse);
-  let len = v * P_barLen();
+  // Frame-safety: the top/bottom edge sits at r=0.5, so a radial bar's tip must
+  // never pass ~0.47 or the burst spills out of frame at any loudness/setting.
+  let len = min(v * P_barLen(), max(0.0, 0.47 - inner));
   let barHue = P_hue() + xs * P_hueSpread();
 
   // Background wash
@@ -268,7 +270,7 @@ fn preset(uv: vec2f) -> vec4f {
   col += hsl2rgb(barHue, 0.9, 0.5) * fall * P_glow() * v * step(tip, r);
 
   // Peak arc (toggleable)
-  let pkR = inner + pk * P_barLen();
+  let pkR = min(inner + pk * P_barLen(), 0.47);
   col += hsl2rgb(barHue, 0.3, 0.9) * smoothstep(0.005, 0.0, abs(r - pkR)) * 0.8
        * step(0.5, P_peaks());
 
@@ -296,6 +298,9 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Vignette
   col *= 1.0 - r * r * P_vignette();
+  // Frame-safety fade: guarantee nothing (bar tips, tip-glow, wash) stays
+  // bright past the top/bottom edge (r=0.5), so the burst never spills out.
+  col *= smoothstep(0.5, 0.45, r);
   return vec4f(col, 1.0);
 }
 `,
