@@ -26,6 +26,7 @@ import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../rende
 import { MOD_SOURCES, type ModRoute, type ModSource } from "../state/modMatrix";
 import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../audio/stems";
 import type { LyricStyle } from "../state/lyrics";
+import type { AudiogramSettings } from "../state/audiogram";
 import { allParams } from "../render/types";
 import { Slider } from "./Slider";
 import { LayersPanel } from "./LayersPanel";
@@ -251,6 +252,9 @@ export function ParamsPanel(props: {
   onImportLyrics: (file: File) => void;
   onClearLyrics: () => void;
   onLyricStyle: (patch: Partial<LyricStyle>) => void;
+  /** Audiogram overlay elements (progress bar / time / waveform strip). */
+  audiogram: AudiogramSettings;
+  onAudiogram: (patch: Partial<AudiogramSettings>) => void;
 }) {
   const [showAdvanced, setShowAdvanced] = useState(
     () => localStorage.getItem("viz.advancedOpen") === "1",
@@ -798,6 +802,68 @@ export function ParamsPanel(props: {
               Drop an .lrc or .srt on the window (or import here) — the current line follows the
               music, karaoke-style, live and in every export.
             </p>
+          )}
+        </section>
+
+        <section className="panel-section">
+          <div className="section-head">
+            <span className="section-title">Audiogram</span>
+          </div>
+          <p className="section-hint">
+            Overlay elements driven by the track — a progress bar, a time readout, a mini-waveform
+            strip. The podcast/reel look; drawn identically in exports.
+          </p>
+          <label className="field">
+            <span>Progress bar</span>
+            <input
+              type="checkbox"
+              checked={props.audiogram.progressBar}
+              onChange={(e) => props.onAudiogram({ progressBar: e.target.checked })}
+            />
+          </label>
+          <label className="field">
+            <span>Time readout</span>
+            <input
+              type="checkbox"
+              checked={props.audiogram.timeReadout}
+              onChange={(e) => props.onAudiogram({ timeReadout: e.target.checked })}
+            />
+          </label>
+          <label className="field">
+            <span>Waveform strip</span>
+            <input
+              type="checkbox"
+              checked={props.audiogram.waveformStrip}
+              onChange={(e) => props.onAudiogram({ waveformStrip: e.target.checked })}
+            />
+          </label>
+          {(props.audiogram.progressBar ||
+            props.audiogram.timeReadout ||
+            props.audiogram.waveformStrip) && (
+            <>
+              <label className="field">
+                <span>Position</span>
+                <select
+                  className="select"
+                  value={props.audiogram.position}
+                  onChange={(e) =>
+                    props.onAudiogram({ position: e.target.value as AudiogramSettings["position"] })
+                  }
+                >
+                  <option value="bottom">Bottom</option>
+                  <option value="top">Top</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Accent</span>
+                <input
+                  type="color"
+                  value={props.audiogram.color}
+                  title="Bar fill, playhead and played-waveform color"
+                  onChange={(e) => props.onAudiogram({ color: e.target.value })}
+                />
+              </label>
+            </>
           )}
         </section>
 

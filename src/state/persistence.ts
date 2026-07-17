@@ -16,6 +16,7 @@ import type { MotionSettings, PostSettings, PresetDef } from "../render/types";
 import { validCustomPreset } from "../render/presets/custom";
 import { validTimeline, type Timeline } from "./timeline";
 import { DEFAULT_LYRIC_STYLE, type LyricStyle } from "./lyrics";
+import { DEFAULT_AUDIOGRAM, type AudiogramSettings } from "./audiogram";
 
 /**
  * localStorage persistence for the current session. Keys and formats are the
@@ -160,6 +161,26 @@ export function loadStoredLyricStyle(): LyricStyle {
 
 export function saveStoredLyricStyle(style: LyricStyle): void {
   localStorage.setItem(LS_LYRIC_STYLE, JSON.stringify(style));
+}
+
+const LS_AUDIOGRAM = "viz.audiogram.v1";
+
+export function loadStoredAudiogram(): AudiogramSettings {
+  const raw = readJson<Partial<AudiogramSettings> | null>(LS_AUDIOGRAM, null);
+  const d = DEFAULT_AUDIOGRAM;
+  if (typeof raw !== "object" || raw === null) return { ...d };
+  return {
+    progressBar: typeof raw.progressBar === "boolean" ? raw.progressBar : d.progressBar,
+    timeReadout: typeof raw.timeReadout === "boolean" ? raw.timeReadout : d.timeReadout,
+    waveformStrip: typeof raw.waveformStrip === "boolean" ? raw.waveformStrip : d.waveformStrip,
+    position: raw.position === "top" ? "top" : d.position,
+    color:
+      typeof raw.color === "string" && /^#[0-9a-f]{3,8}$/i.test(raw.color) ? raw.color : d.color,
+  };
+}
+
+export function saveStoredAudiogram(a: AudiogramSettings): void {
+  localStorage.setItem(LS_AUDIOGRAM, JSON.stringify(a));
 }
 
 const LS_ASPECT = "viz.aspect.v1";

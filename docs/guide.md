@@ -72,6 +72,13 @@ become modulation sources. Hit the **✦** on a stem chip to auto-wire its
 kick/bass/snare/hats/mids to the best-matching knobs of the current visual;
 tweak the amounts from there.
 
+## Audiogram
+
+The panel's **Audiogram** section adds track-driven overlay elements — a
+progress bar, an elapsed/total time readout, and a mini-waveform strip with
+a moving playhead (the podcast/reel look). Position and accent color are
+yours; everything renders identically in exports.
+
 ## Export
 
 - **MP4** — H.264 everywhere; **HEVC/AV1** where your GPU supports them

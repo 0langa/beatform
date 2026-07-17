@@ -12,6 +12,7 @@ import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { VideoCodecId } from "./codecProbe";
 import { shiftStemAnalysis, type StemEntry } from "../audio/stems";
 import type { LyricLine, LyricStyle } from "../state/lyrics";
+import type { AudiogramSettings } from "../state/audiogram";
 import type { PresetDef as PresetDefLike } from "../render/types";
 import type { ModRoute } from "../state/modMatrix";
 import type { Timeline } from "../state/timeline";
@@ -42,6 +43,8 @@ export interface ExportOptions {
   /** Timed lyrics + style — composited onto the overlay per line, exactly
    * like the live view (same compose function, same frame keys). */
   lyrics?: { lines: LyricLine[]; style: LyricStyle };
+  /** Audiogram elements + the waveform overview to draw the strip from. */
+  audiogram?: { settings: AudiogramSettings; waveform: Float32Array | null };
   /** User-authored WGSL presets (registered in the worker). */
   customPresets?: PresetDefLike[];
   presetId: string;
@@ -273,6 +276,10 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
             })),
           }
         : o.lyrics,
+    // Audiogram progress/time are inherently relative to the exported clip
+    // (pcm is already sliced for segments) — no shift, duration comes from
+    // pcm.duration inside the core.
+    audiogram: o.audiogram,
     customPresets: o.customPresets,
     paramsByPreset: o.paramsByPreset,
     modsByPreset: o.modsByPreset,

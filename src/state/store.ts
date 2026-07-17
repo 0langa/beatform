@@ -61,11 +61,14 @@ import type { Timeline } from "./timeline";
 import { LyricParseError, parseLyrics, type LyricLine, type LyricStyle } from "./lyrics";
 import { autoArrangeScenes, overviewEnergy } from "./autoArrange";
 import {
-  composeLyricOverlay,
-  lyricFrameKeyAt,
-  sameLyricFrame,
-  type LyricFrameKey,
-} from "../render/lyricOverlay";
+  composeOverlayFrame,
+  hasDynamics,
+  overlayFrameKeyAt,
+  sameOverlayFrame,
+  type OverlayDynamics,
+  type OverlayFrameKey,
+} from "../render/dynamicOverlay";
+import { audiogramActive, type AudiogramSettings } from "./audiogram";
 import type { MotionSettings, PostSettings } from "../render/types";
 import {
   downloadBlob,
@@ -147,6 +150,8 @@ import {
   saveStoredVolume,
   loadStoredLyricStyle,
   saveStoredLyricStyle,
+  loadStoredAudiogram,
+  saveStoredAudiogram,
 } from "./persistence";
 
 export const RESOLUTIONS = [
@@ -327,6 +332,8 @@ interface SessionSlice {
   lyricFileName: string | null;
   /** How lyric lines render (position/size/color/fade); persisted. */
   lyricStyle: LyricStyle;
+  /** Audiogram overlay elements (progress bar / time / waveform); persisted. */
+  audiogram: AudiogramSettings;
 }
 
 interface Actions {
@@ -377,6 +384,8 @@ interface Actions {
   loadLyricsText(fileName: string, contents: string): void;
   clearLyrics(): void;
   setLyricStyle(patch: Partial<LyricStyle>): void;
+  /** Toggle/adjust the audiogram overlay elements. */
+  setAudiogram(patch: Partial<AudiogramSettings>): void;
   /** One click: detected sections -> energy-ranked timeline scenes. */
   autoArrangeTimeline(): void;
   pickLibraryFolder(): Promise<void>;
@@ -460,8 +469,25 @@ let overlayTimer: ReturnType<typeof setTimeout> | undefined;
  * redraws base+line on every line/fade-step change, so the renderer only
  * ever receives composed copies (it closes what it's handed). */
 let overlayBase: ImageBitmap | null = null;
-let lastLyricKey: LyricFrameKey = { idx: -1, alphaQ: 0 };
-let lyricComposeToken = 0;
+const NULL_FRAME_KEY: OverlayFrameKey = {
+  lyricIdx: -2,
+  lyricAlphaQ: -1,
+  progressPx: -2,
+  clockSec: -2,
+};
+let lastFrameKey: OverlayFrameKey = NULL_FRAME_KEY;
+let overlayComposeToken = 0;
+
+/** The per-frame overlay layers (lyrics + audiogram) assembled from state —
+ * the SAME shape the export job carries, so live and export compose alike. */
+function overlayDynamics(s: VizState): OverlayDynamics {
+  return {
+    lyrics: s.lyrics ? { lines: s.lyrics, style: s.lyricStyle } : undefined,
+    audiogram: audiogramActive(s.audiogram)
+      ? { settings: s.audiogram, duration: getEngine().duration, waveform: s.waveformOverview }
+      : undefined,
+  };
+}
 /** Monotonic token: only the newest raster result gets applied. */
 let overlayToken = 0;
 /** Latest analysis job id — stale results are dropped. */
@@ -730,6 +756,7 @@ export const useVizStore = create<VizState>((set, get) => {
     lyrics: null,
     lyricFileName: null,
     lyricStyle: loadStoredLyricStyle(),
+    audiogram: loadStoredAudiogram(),
     customDefs: initialCustomDefs,
     showShaderEditor: false,
     showBatch: false,
@@ -772,26 +799,20 @@ export const useVizStore = create<VizState>((set, get) => {
         getStemValues: (t) => stemValuesAt(get().stems, t),
         onLyricTick: (t) => {
           const s = get();
-          if (!s.lyrics || !s.lyricStyle.enabled) return;
-          const key = lyricFrameKeyAt(s.lyrics, t, s.lyricStyle.fadeSec);
-          if (sameLyricFrame(key, lastLyricKey)) return;
-          lastLyricKey = key;
+          const dyn = overlayDynamics(s);
+          if (!hasDynamics(dyn)) return;
           const canvas = liveCanvas;
           if (!canvas) return;
+          const key = overlayFrameKeyAt(dyn, t, canvas.width);
+          if (sameOverlayFrame(key, lastFrameKey)) return;
+          lastFrameKey = key;
           // Token pair: superseded composes AND full overlay re-rasters both
           // invalidate this frame's composition.
-          const token = ++lyricComposeToken;
+          const token = ++overlayComposeToken;
           const oTok = overlayToken;
-          void composeLyricOverlay(
-            overlayBase,
-            s.lyrics,
-            key,
-            s.lyricStyle,
-            canvas.width,
-            canvas.height,
-          )
+          void composeOverlayFrame(overlayBase, dyn, t, canvas.width, canvas.height)
             .then((bmp) => {
-              if (token === lyricComposeToken && oTok === overlayToken) {
+              if (token === overlayComposeToken && oTok === overlayToken) {
                 getRenderer()?.setOverlay(bmp);
               } else {
                 bmp.close();
@@ -1311,7 +1332,7 @@ export const useVizStore = create<VizState>((set, get) => {
       try {
         const lyrics = parseLyrics(fileName, contents);
         set({ lyrics, lyricFileName: fileName, error: null });
-        lastLyricKey = { idx: -2, alphaQ: -1 }; // force the first recompose
+        lastFrameKey = NULL_FRAME_KEY; // force the first recompose
         get().refreshOverlay();
         flashNotice(`Lyrics loaded — ${lyrics.length} lines from ${fileName}`);
       } catch (e) {
@@ -1333,7 +1354,15 @@ export const useVizStore = create<VizState>((set, get) => {
       const lyricStyle = { ...get().lyricStyle, ...patch };
       set({ lyricStyle });
       saveStoredLyricStyle(lyricStyle);
-      lastLyricKey = { idx: -2, alphaQ: -1 };
+      lastFrameKey = NULL_FRAME_KEY;
+      get().refreshOverlay();
+    },
+
+    setAudiogram(patch) {
+      const audiogram = { ...get().audiogram, ...patch };
+      set({ audiogram });
+      saveStoredAudiogram(audiogram);
+      lastFrameKey = NULL_FRAME_KEY;
       get().refreshOverlay();
     },
 
@@ -1698,6 +1727,9 @@ export const useVizStore = create<VizState>((set, get) => {
                 get().lyrics && get().lyricStyle.enabled
                   ? { lines: get().lyrics!, style: get().lyricStyle }
                   : undefined,
+              audiogram: audiogramActive(get().audiogram)
+                ? { settings: get().audiogram, waveform: get().waveformOverview }
+                : undefined,
               customPresets: get().customDefs,
             },
             overlay,
@@ -2376,17 +2408,19 @@ export const useVizStore = create<VizState>((set, get) => {
             return;
           }
           const s = get();
-          if (s.lyrics && s.lyricStyle.enabled) {
-            // Lyrics ride on top of the static overlay: retain the base and
-            // hand the renderer a composed copy (it closes what it's given).
+          const dyn = overlayDynamics(s);
+          if (hasDynamics(dyn)) {
+            // Dynamic layers (lyrics/audiogram) ride on top of the static
+            // overlay: retain the base and hand the renderer a composed copy
+            // (it closes what it's given). The next tick swaps in fresh copies.
             overlayBase?.close();
             overlayBase = bitmap;
-            lastLyricKey = lyricFrameKeyAt(s.lyrics, getEngine().currentTime, s.lyricStyle.fadeSec);
-            const composed = await composeLyricOverlay(
+            const t = getEngine().currentTime;
+            lastFrameKey = overlayFrameKeyAt(dyn, t, canvas.width);
+            const composed = await composeOverlayFrame(
               overlayBase,
-              s.lyrics,
-              lastLyricKey,
-              s.lyricStyle,
+              dyn,
+              t,
               canvas.width,
               canvas.height,
             );

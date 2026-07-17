@@ -39,12 +39,15 @@ import { bakeBackgroundBitmap } from "../render/bgImage";
 import { stemValuesAt, type StemEntry } from "../audio/stems";
 import { registerCustomPreset, validCustomPreset } from "../render/presets/custom";
 import {
-  composeLyricOverlay,
-  lyricFrameKeyAt,
-  sameLyricFrame,
-  type LyricFrameKey,
-} from "../render/lyricOverlay";
+  composeOverlayFrame,
+  hasDynamics,
+  overlayFrameKeyAt,
+  sameOverlayFrame,
+  type OverlayDynamics,
+  type OverlayFrameKey,
+} from "../render/dynamicOverlay";
 import type { LyricLine, LyricStyle } from "../state/lyrics";
+import type { AudiogramSettings } from "../state/audiogram";
 
 /**
  * Offline MP4 export — the design in docs/EXPORT-DESIGN.md, realized.
@@ -99,6 +102,9 @@ export interface ExportJob {
   /** Timed lyrics (already segment-shifted) + style — composited onto the
    * overlay with the SAME function the live view uses. */
   lyrics?: { lines: LyricLine[]; style: LyricStyle };
+  /** Audiogram elements (progress bar / time / waveform strip) — composited
+   * per frame from track time + the waveform overview. */
+  audiogram?: { settings: AudiogramSettings; waveform: Float32Array | null };
   /** User-authored WGSL presets — re-registered inside the worker so
    * presetById() resolves them there too. */
   customPresets?: PresetDef[];
@@ -412,17 +418,33 @@ export async function runExportJob(
     for (const w of errorWaiters) w(err);
   };
 
-  // With lyrics the static overlay is a compositing BASE that must survive
-  // the whole render — the renderer closes whatever it's handed on replace,
-  // so it only ever receives composed copies (the frame loop swaps them as
-  // the active line moves). Without lyrics the old direct hand-off stands.
-  const lyricJob = job.lyrics && job.lyrics.style.enabled ? job.lyrics : null;
-  const overlayBase = lyricJob ? (job.overlay ?? null) : null;
-  let lastLyricKey: LyricFrameKey = { idx: -2, alphaQ: -1 };
+  // With dynamic layers (lyrics/audiogram) the static overlay is a
+  // compositing BASE that must survive the whole render — the renderer closes
+  // whatever it's handed on replace, so it only ever receives composed copies
+  // (the frame loop swaps them as the key moves). Otherwise the old direct
+  // hand-off stands.
+  const dynamics: OverlayDynamics = {
+    lyrics: job.lyrics,
+    audiogram: job.audiogram
+      ? {
+          settings: job.audiogram.settings,
+          duration: pcm.duration,
+          waveform: job.audiogram.waveform,
+        }
+      : undefined,
+  };
+  const dynamicOverlay = hasDynamics(dynamics);
+  const overlayBase = dynamicOverlay ? (job.overlay ?? null) : null;
+  let lastFrameKey: OverlayFrameKey = {
+    lyricIdx: -2,
+    lyricAlphaQ: -1,
+    progressPx: -2,
+    clockSec: -2,
+  };
   try {
     renderer.setPreset(presetById(job.presetId));
     renderer.setBackground(job.bg);
-    if (!lyricJob) renderer.setOverlay(job.overlay ?? null);
+    if (!dynamicOverlay) renderer.setOverlay(job.overlay ?? null);
     renderer.setSmoothSpectrum(job.smoothSpectrum === true);
     if (job.post) renderer.setPost(job.post);
     if (job.motion) renderer.setMotion(job.motion);
@@ -597,22 +619,15 @@ export async function runExportJob(
       renderer.setBackground(
         bgImageFailed && rf.bg.mode === BG_IMAGE ? { ...rf.bg, mode: 0 } : rf.bg,
       );
-      // Lyrics: recompose the overlay when the (line, fade-step) key moves —
-      // the SAME pure key + compose functions the live loop uses, fed this
-      // frame's t, is what makes the file match the preview.
-      if (lyricJob) {
-        const key = lyricFrameKeyAt(lyricJob.lines, t, lyricJob.style.fadeSec);
-        if (!sameLyricFrame(key, lastLyricKey)) {
-          lastLyricKey = key;
+      // Dynamic overlay (lyrics/audiogram): recompose when the key moves — the
+      // SAME pure key + compose functions the live loop uses, fed this frame's
+      // t, is what makes the file match the preview.
+      if (dynamicOverlay) {
+        const key = overlayFrameKeyAt(dynamics, t, job.width);
+        if (!sameOverlayFrame(key, lastFrameKey)) {
+          lastFrameKey = key;
           renderer.setOverlay(
-            await composeLyricOverlay(
-              overlayBase,
-              lyricJob.lines,
-              key,
-              lyricJob.style,
-              job.width,
-              job.height,
-            ),
+            await composeOverlayFrame(overlayBase, dynamics, t, job.width, job.height),
           );
         }
       }

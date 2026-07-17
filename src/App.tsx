@@ -26,6 +26,7 @@ import {
 import { PlayerBar } from "./ui/PlayerBar";
 import { LibraryPanel } from "./ui/LibraryPanel";
 import { isTauri } from "./state/platform";
+import { audiogramActive } from "./state/audiogram";
 import { TimelinePanel } from "./ui/TimelinePanel";
 import { PresetStrip } from "./ui/PresetStrip";
 import { ShaderEditor } from "./ui/ShaderEditor";
@@ -128,6 +129,7 @@ export default function App() {
   const stemAnalyzing = useVizStore((s) => s.stemAnalyzing);
   const lyricFileName = useVizStore((s) => s.lyricFileName);
   const lyricStyle = useVizStore((s) => s.lyricStyle);
+  const audiogram = useVizStore((s) => s.audiogram);
   const showBatch = useVizStore((s) => s.showBatch);
   const customDefs = useVizStore((s) => s.customDefs);
   const showShaderEditor = useVizStore((s) => s.showShaderEditor);
@@ -345,6 +347,9 @@ export default function App() {
         stems: s.stems,
         lyrics:
           s.lyrics && s.lyricStyle.enabled ? { lines: s.lyrics, style: s.lyricStyle } : undefined,
+        audiogram: audiogramActive(s.audiogram)
+          ? { settings: s.audiogram, waveform: s.waveformOverview }
+          : undefined,
         customPresets: s.customDefs,
         mods: s.activeMods,
         smoothSpectrum: s.smoothSpectrum,
@@ -775,6 +780,8 @@ export default function App() {
           onImportLyrics={(f) => void f.text().then((t) => store().loadLyricsText(f.name, t))}
           onClearLyrics={() => store().clearLyrics()}
           onLyricStyle={(patch) => store().setLyricStyle(patch)}
+          audiogram={audiogram}
+          onAudiogram={(patch) => store().setAudiogram(patch)}
         />
       )}
 
