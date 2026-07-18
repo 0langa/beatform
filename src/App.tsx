@@ -33,6 +33,7 @@ import { ShaderEditor } from "./ui/ShaderEditor";
 import { ParamsPanel } from "./ui/ParamsPanel";
 import { EmptyState } from "./ui/EmptyState";
 import { Slider } from "./ui/Slider";
+import { Switch } from "./ui/Switch";
 import {
   IconBatch,
   IconExport,
@@ -663,6 +664,8 @@ export default function App() {
           <button
             className={`icon-btn ${showBatch ? "active" : ""}`}
             title="Batch render — one video per track (B)"
+            aria-label="Batch render"
+            aria-pressed={showBatch}
             disabled={showBatch && batchStatus === "running"}
             onClick={() => store().setShowBatch(!showBatch)}
           >
@@ -671,6 +674,8 @@ export default function App() {
           <button
             className={`icon-btn ${showLibrary ? "active" : ""}`}
             title="Music library (Q)"
+            aria-label="Music library"
+            aria-pressed={showLibrary}
             onClick={() => store().setShowLibrary(!showLibrary)}
           >
             <IconMusic size={18} />
@@ -682,6 +687,8 @@ export default function App() {
                 ? "Stop listening to system audio"
                 : "Visualize system audio — whatever this PC is playing"
             }
+            aria-label="Visualize system audio"
+            aria-pressed={liveInputActive}
             disabled={!!exporting || batchStatus === "running"}
             onClick={() => void store().toggleLiveInput()}
           >
@@ -690,6 +697,8 @@ export default function App() {
           <button
             className={`icon-btn ${showPanel ? "active" : ""}`}
             title="Visual settings (G)"
+            aria-label="Visual settings"
+            aria-pressed={showPanel}
             onClick={() => store().setShowPanel((v) => !v)}
           >
             <IconSettings size={18} />
@@ -697,11 +706,17 @@ export default function App() {
           <button
             className="icon-btn"
             title="Keyboard shortcuts"
+            aria-label="Keyboard shortcuts"
             onClick={() => store().setShowHelp(!showHelp)}
           >
             <IconHelp size={18} />
           </button>
-          <button className="icon-btn" title="Fullscreen (F)" onClick={toggleFullscreen}>
+          <button
+            className="icon-btn"
+            title="Fullscreen (F)"
+            aria-label="Toggle fullscreen"
+            onClick={toggleFullscreen}
+          >
             <IconFullscreen size={18} />
           </button>
         </div>
@@ -1154,15 +1169,15 @@ export default function App() {
               <div className="field">
                 <span>Bitrate</span>
                 <div className="bitrate-controls">
-                  <label className="inline">
-                    <input
-                      type="checkbox"
+                  <span className="inline">
+                    <Switch
                       checked={exportSettings.autoRate}
                       disabled={!!exporting}
-                      onChange={(e) => store().setExportSettings({ autoRate: e.target.checked })}
+                      onChange={(autoRate) => store().setExportSettings({ autoRate })}
+                      label="Automatic bitrate"
                     />
                     Auto
-                  </label>
+                  </span>
                   {!exportSettings.autoRate && (
                     <Slider
                       min={2}

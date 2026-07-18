@@ -1,4 +1,6 @@
 import type { LibraryTrack } from "../state/platform";
+import { Switch } from "./Switch";
+import { IconClose } from "./Icons";
 
 /**
  * Music library sidebar: pick a folder once, get every audio file with its
@@ -36,8 +38,13 @@ export function LibraryPanel(props: LibraryPanelProps) {
     <aside className="chrome library-panel">
       <div className="panel-header">
         <span className="panel-heading">Library</span>
-        <button className="icon-btn subtle" title="Close (Q)" onClick={props.onClose}>
-          ✕
+        <button
+          className="icon-btn subtle"
+          title="Close (Q)"
+          aria-label="Close library"
+          onClick={props.onClose}
+        >
+          <IconClose size={16} />
         </button>
       </div>
 
@@ -50,14 +57,14 @@ export function LibraryPanel(props: LibraryPanelProps) {
         >
           {library ? "Change folder…" : "Choose music folder…"}
         </button>
-        <label className="inline" title="Play the next track when this one ends">
-          <input
-            type="checkbox"
+        <span className="inline" title="Play the next track when this one ends">
+          <Switch
             checked={props.autoAdvance}
-            onChange={(e) => props.onAutoAdvance(e.target.checked)}
+            onChange={props.onAutoAdvance}
+            label="Auto-play next"
           />
           Auto-play next
-        </label>
+        </span>
       </div>
 
       {!props.desktop && (

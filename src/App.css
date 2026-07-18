@@ -467,6 +467,21 @@ button:disabled {
   cursor: default;
 }
 
+/* Keyboard focus ring — shown for keyboard navigation, not mouse clicks, so
+ * every custom control is operable and visible when tabbing through. */
+.slider:focus-visible,
+.switch:focus-visible,
+.segment:focus-visible,
+.style-chip:focus-visible,
+.text-btn:focus-visible,
+.icon-btn:focus-visible,
+.chip-x:focus-visible,
+.swatch:focus-visible,
+.advanced-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .slider::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;

@@ -28,8 +28,9 @@ import { MOD_SOURCES, type ModRoute, type ModSource } from "../state/modMatrix";
 import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../audio/stems";
 import type { LyricStyle } from "../state/lyrics";
 import type { AudiogramSettings } from "../state/audiogram";
-import { allParams } from "../render/types";
+import { allParams, presetMasters } from "../render/types";
 import { Slider } from "./Slider";
+import { Switch } from "./Switch";
 import { LayersPanel } from "./LayersPanel";
 import { IconChevronRight, IconClose } from "./Icons";
 
@@ -197,6 +198,62 @@ function ParamRow(props: {
   );
 }
 
+/** Shared switch row — the single toggle control used across every section, so
+ * lyrics/audiogram look identical to Motion/Post instead of raw checkboxes. */
+function ToggleRow(props: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  onHint?: (hint: string | null) => void;
+}) {
+  return (
+    <label
+      className="row toggle-row"
+      title={props.hint}
+      onPointerEnter={() => props.onHint?.(props.hint ?? null)}
+      onPointerLeave={() => props.onHint?.(null)}
+    >
+      <span className="row-label">{props.label}</span>
+      <Switch checked={props.checked} onChange={props.onChange} label={props.label} />
+    </label>
+  );
+}
+
+/** Shared labelled slider row with a numeric readout — the single slider
+ * control used across every section. */
+function SliderRow(props: {
+  label: string;
+  hint?: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onChange: (v: number) => void;
+  format?: (v: number) => string;
+  onHint?: (hint: string | null) => void;
+}) {
+  const fmt = props.format ?? ((v: number) => v.toFixed(props.step < 1 ? 2 : 0));
+  return (
+    <label
+      className="row param-row"
+      title={props.hint}
+      onPointerEnter={() => props.onHint?.(props.hint ?? null)}
+      onPointerLeave={() => props.onHint?.(null)}
+    >
+      <span className="row-label">{props.label}</span>
+      <Slider
+        min={props.min}
+        max={props.max}
+        step={props.step}
+        value={props.value}
+        onChange={props.onChange}
+      />
+      <span className="row-value">{fmt(props.value)}</span>
+    </label>
+  );
+}
+
 /** Right-hand settings panel: styles, preset parameters, background. */
 export function ParamsPanel(props: {
   preset: PresetDef;
@@ -294,6 +351,11 @@ export function ParamsPanel(props: {
   const changedCount = advanced.filter(
     (p) => (props.params[p.key] ?? p.default) !== p.default,
   ).length;
+
+  // Which global masters actually move THIS mode — used to hide inert sliders
+  // (e.g. Rotation on a mode that can't spin, Detail on a non-discrete mode).
+  const caps = presetMasters(props.preset);
+  const showMotion = caps.rotation || caps.pulse || caps.detail;
 
   // A style is "active" when current params exactly equal defaults + values
   const defaults = defaultParams(props.preset);
@@ -528,96 +590,62 @@ export function ParamsPanel(props: {
           )}
         </section>
 
-        <section className="panel-section">
-          <div className="section-head">
-            <span className="section-title">Motion</span>
-            {motionChanged && (
-              <button
-                className="text-btn"
-                title="Back to normal motion (100% everywhere)"
-                onClick={() => props.onMotion({ ...DEFAULT_MOTION })}
-              >
-                Reset
-              </button>
+        {showMotion && (
+          <section className="panel-section">
+            <div className="section-head">
+              <span className="section-title">Motion</span>
+              {motionChanged && (
+                <button
+                  className="text-btn"
+                  title="Back to normal motion (100% everywhere)"
+                  onClick={() => props.onMotion({ ...DEFAULT_MOTION })}
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+            {caps.rotation && (
+              <SliderRow
+                label="Rotation"
+                hint="Global spin master — 0% stops all rotation, 100% = normal, up to 200%"
+                min={0}
+                max={2}
+                step={0.05}
+                value={props.motion.rotation}
+                onChange={(v) => props.onMotion({ rotation: v })}
+                format={(v) => `${Math.round(v * 100)}%`}
+                onHint={setHint}
+              />
             )}
-          </div>
-          <label
-            className="row param-row"
-            title="Master rotation — 0% stops all spinning in every mode"
-            onPointerEnter={() =>
-              setHint("Global spin master — 0% stops all rotation, 100% = normal, up to 200%")
-            }
-            onPointerLeave={() => setHint(null)}
-          >
-            <span className="row-label">Rotation</span>
-            <Slider
-              min={0}
-              max={2}
-              step={0.05}
-              value={props.motion.rotation}
-              onChange={(v) => props.onMotion({ rotation: v })}
-            />
-            <span className="row-value">{Math.round(props.motion.rotation * 100)}%</span>
-          </label>
-          <label
-            className="row param-row"
-            title="Master pulse — 0% removes all beat pumping / zoom in every mode"
-            onPointerEnter={() =>
-              setHint("Global pulse master — 0% removes beat pumping, 100% = normal, up to 200%")
-            }
-            onPointerLeave={() => setHint(null)}
-          >
-            <span className="row-label">Pulse</span>
-            <Slider
-              min={0}
-              max={2}
-              step={0.05}
-              value={props.motion.pulse}
-              onChange={(v) => props.onMotion({ pulse: v })}
-            />
-            <span className="row-value">{Math.round(props.motion.pulse * 100)}%</span>
-          </label>
-          <label
-            className="row param-row"
-            title="How many bars / points / segments the visual draws, where the mode supports it"
-            onPointerEnter={() =>
-              setHint("Detail — number of bars/points/segments (modes that support it)")
-            }
-            onPointerLeave={() => setHint(null)}
-          >
-            <span className="row-label">Detail</span>
-            <Slider
-              min={0}
-              max={1}
-              step={0.02}
-              value={props.motion.detail}
-              onChange={(v) => props.onMotion({ detail: v })}
-            />
-            <span className="row-value">{Math.round(props.motion.detail * 100)}%</span>
-          </label>
-          <label
-            className="row param-row"
-            title="Smooths the spectrum shape — 0% = hard bins, 100% = a flowing curve"
-            onPointerEnter={() =>
-              setHint("Spectrum smooth — rounds the spectrum from hard bins toward a flowing curve")
-            }
-            onPointerLeave={() => setHint(null)}
-          >
-            <span className="row-label">Spectrum smooth</span>
-            <Slider
-              min={0}
-              max={1}
-              step={0.02}
-              value={props.motion.spectrumSmooth}
-              onChange={(v) => props.onMotion({ spectrumSmooth: v })}
-            />
-            <span className="row-value">{Math.round(props.motion.spectrumSmooth * 100)}%</span>
-          </label>
-          <p className="section-hint">
-            Global motion — applies to every mode that spins, pulses or draws discrete elements.
-            Exports match.
-          </p>
-        </section>
+            {caps.pulse && (
+              <SliderRow
+                label="Pulse"
+                hint="Global pulse master — 0% removes beat pumping, 100% = normal, up to 200%"
+                min={0}
+                max={2}
+                step={0.05}
+                value={props.motion.pulse}
+                onChange={(v) => props.onMotion({ pulse: v })}
+                format={(v) => `${Math.round(v * 100)}%`}
+                onHint={setHint}
+              />
+            )}
+            {caps.detail && (
+              <SliderRow
+                label="Detail"
+                hint="Detail — how many bars / points / segments this mode draws"
+                min={0}
+                max={1}
+                step={0.02}
+                value={props.motion.detail}
+                onChange={(v) => props.onMotion({ detail: v })}
+                format={(v) => `${Math.round(v * 100)}%`}
+                onHint={setHint}
+              />
+            )}
+            <p className="section-hint">Global motion for this mode — exports match.</p>
+          </section>
+        )}
 
         <section className="panel-section">
           <div className="section-head">
@@ -637,84 +665,60 @@ export function ParamsPanel(props: {
               </button>
             ))}
           </div>
-          <label
-            className="row param-row"
-            title="Overall smoothing — 0 = punchy and instant, 1 = long smooth glides. Sets both attack and release."
-            onPointerEnter={() =>
-              setHint(
-                "Overall response — 0 = punchy, 1 = long glides. Sets attack + release together",
-              )
+          <SliderRow
+            label="Smoothing"
+            hint="Overall response — 0 = punchy, 1 = long glides. Sets attack + release together"
+            min={0}
+            max={1}
+            step={0.01}
+            value={props.sync.smooth}
+            onChange={(v) =>
+              props.onSync({ ...props.sync, smooth: v, attack: undefined, release: undefined })
             }
-            onPointerLeave={() => setHint(null)}
-          >
-            <span className="row-label">Smoothing</span>
-            <Slider
-              min={0}
-              max={1}
-              step={0.01}
-              value={props.sync.smooth}
-              onChange={(v) =>
-                props.onSync({ ...props.sync, smooth: v, attack: undefined, release: undefined })
-              }
-            />
-            <span className="row-value">{props.sync.smooth.toFixed(2)}</span>
-          </label>
-          <label
-            className="row param-row"
-            title="How fast the visuals rise on a hit — 0 = instant, 1 = slow swell"
-            onPointerEnter={() =>
-              setHint("Attack — how fast the reaction rises on a hit (0 = instant, 1 = slow)")
-            }
-            onPointerLeave={() => setHint(null)}
-          >
-            <span className="row-label">Attack</span>
-            <Slider
-              min={0}
-              max={1}
-              step={0.01}
-              value={props.sync.attack ?? props.sync.smooth}
-              onChange={(v) => props.onSync({ ...props.sync, attack: v })}
-            />
-            <span className="row-value">{(props.sync.attack ?? props.sync.smooth).toFixed(2)}</span>
-          </label>
-          <label
-            className="row param-row"
-            title="How slowly the visuals fall after a hit — 0 = instant, 1 = long glide out"
-            onPointerEnter={() =>
-              setHint("Release — how slowly the reaction falls after a hit (0 = instant, 1 = long)")
-            }
-            onPointerLeave={() => setHint(null)}
-          >
-            <span className="row-label">Release</span>
-            <Slider
-              min={0}
-              max={1}
-              step={0.01}
-              value={props.sync.release ?? props.sync.smooth}
-              onChange={(v) => props.onSync({ ...props.sync, release: v })}
-            />
-            <span className="row-value">
-              {(props.sync.release ?? props.sync.smooth).toFixed(2)}
-            </span>
-          </label>
-          <label
-            className="row toggle-row"
-            title="Connect the spectrum with smooth splines instead of hard-edged bins"
-            onPointerEnter={() =>
-              setHint("Spline-smoothed spectrum: curves instead of corners, in every visual")
-            }
-            onPointerLeave={() => setHint(null)}
-          >
-            <span className="row-label">Smooth curve</span>
-            <button
-              className={`switch ${props.smoothSpectrum ? "on" : ""}`}
-              role="switch"
-              aria-checked={props.smoothSpectrum}
-              onClick={() => props.onSmoothSpectrum(!props.smoothSpectrum)}
-            >
-              <span className="knob" />
-            </button>
-          </label>
+            onHint={setHint}
+          />
+          <SliderRow
+            label="Attack"
+            hint="Attack — how fast the reaction rises on a hit (0 = instant, 1 = slow)"
+            min={0}
+            max={1}
+            step={0.01}
+            value={props.sync.attack ?? props.sync.smooth}
+            onChange={(v) => props.onSync({ ...props.sync, attack: v })}
+            onHint={setHint}
+          />
+          <SliderRow
+            label="Release"
+            hint="Release — how slowly the reaction falls after a hit (0 = instant, 1 = long)"
+            min={0}
+            max={1}
+            step={0.01}
+            value={props.sync.release ?? props.sync.smooth}
+            onChange={(v) => props.onSync({ ...props.sync, release: v })}
+            onHint={setHint}
+          />
+          {caps.spectrumSmooth && (
+            <>
+              <SliderRow
+                label="Spectrum smooth"
+                hint="Rounds the spectrum from hard bins toward a flowing curve"
+                min={0}
+                max={1}
+                step={0.02}
+                value={props.motion.spectrumSmooth}
+                onChange={(v) => props.onMotion({ spectrumSmooth: v })}
+                format={(v) => `${Math.round(v * 100)}%`}
+                onHint={setHint}
+              />
+              <ToggleRow
+                label="Smooth curve"
+                hint="Spline-smoothed spectrum: curves instead of corners"
+                checked={props.smoothSpectrum}
+                onChange={props.onSmoothSpectrum}
+                onHint={setHint}
+              />
+            </>
+          )}
           <p className="section-hint">
             What this visual reacts to. Saved per mode; exports use it too.
           </p>
@@ -755,15 +759,13 @@ export function ParamsPanel(props: {
           </div>
           {props.lyricFileName && (
             <>
-              <label className="field">
-                <span>Show</span>
-                <input
-                  type="checkbox"
-                  checked={props.lyricStyle.enabled}
-                  title="Draw the active lyric line over the visual"
-                  onChange={(e) => props.onLyricStyle({ enabled: e.target.checked })}
-                />
-              </label>
+              <ToggleRow
+                label="Show"
+                hint="Draw the active lyric line over the visual"
+                checked={props.lyricStyle.enabled}
+                onChange={(v) => props.onLyricStyle({ enabled: v })}
+                onHint={setHint}
+              />
               <label className="field">
                 <span>Position</span>
                 <select
@@ -779,26 +781,26 @@ export function ParamsPanel(props: {
                   <option value="top">Top</option>
                 </select>
               </label>
-              <div className="field">
-                <span>Size</span>
-                <Slider
-                  min={0.5}
-                  max={2}
-                  step={0.05}
-                  value={props.lyricStyle.size}
-                  onChange={(v) => props.onLyricStyle({ size: v })}
-                />
-              </div>
-              <div className="field">
-                <span>Fade</span>
-                <Slider
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={props.lyricStyle.fadeSec}
-                  onChange={(v) => props.onLyricStyle({ fadeSec: v })}
-                />
-              </div>
+              <SliderRow
+                label="Size"
+                hint="Lyric text size"
+                min={0.5}
+                max={2}
+                step={0.05}
+                value={props.lyricStyle.size}
+                onChange={(v) => props.onLyricStyle({ size: v })}
+                onHint={setHint}
+              />
+              <SliderRow
+                label="Fade"
+                hint="Cross-fade time between lines, in seconds"
+                min={0}
+                max={1}
+                step={0.05}
+                value={props.lyricStyle.fadeSec}
+                onChange={(v) => props.onLyricStyle({ fadeSec: v })}
+                onHint={setHint}
+              />
               <label className="field">
                 <span>Color</span>
                 <input
@@ -826,30 +828,27 @@ export function ParamsPanel(props: {
             Overlay elements driven by the track — a progress bar, a time readout, a mini-waveform
             strip. The podcast/reel look; drawn identically in exports.
           </p>
-          <label className="field">
-            <span>Progress bar</span>
-            <input
-              type="checkbox"
-              checked={props.audiogram.progressBar}
-              onChange={(e) => props.onAudiogram({ progressBar: e.target.checked })}
-            />
-          </label>
-          <label className="field">
-            <span>Time readout</span>
-            <input
-              type="checkbox"
-              checked={props.audiogram.timeReadout}
-              onChange={(e) => props.onAudiogram({ timeReadout: e.target.checked })}
-            />
-          </label>
-          <label className="field">
-            <span>Waveform strip</span>
-            <input
-              type="checkbox"
-              checked={props.audiogram.waveformStrip}
-              onChange={(e) => props.onAudiogram({ waveformStrip: e.target.checked })}
-            />
-          </label>
+          <ToggleRow
+            label="Progress bar"
+            hint="A thin played/remaining bar driven by the track position"
+            checked={props.audiogram.progressBar}
+            onChange={(v) => props.onAudiogram({ progressBar: v })}
+            onHint={setHint}
+          />
+          <ToggleRow
+            label="Time readout"
+            hint="Elapsed / total time, drawn as text"
+            checked={props.audiogram.timeReadout}
+            onChange={(v) => props.onAudiogram({ timeReadout: v })}
+            onHint={setHint}
+          />
+          <ToggleRow
+            label="Waveform strip"
+            hint="A mini waveform overview with a moving playhead"
+            checked={props.audiogram.waveformStrip}
+            onChange={(v) => props.onAudiogram({ waveformStrip: v })}
+            onHint={setHint}
+          />
           {(props.audiogram.progressBar ||
             props.audiogram.timeReadout ||
             props.audiogram.waveformStrip) && (
@@ -1179,42 +1178,25 @@ export function ParamsPanel(props: {
               </button>
             )}
           </div>
-          <label
-            className="row toggle-row"
-            title="ACES filmic tonemap — filmic contrast/rolloff on highlights"
-            onPointerEnter={() =>
-              setHint("Filmic (ACES) tonemap — cinematic contrast and highlight rolloff")
-            }
-            onPointerLeave={() => setHint(null)}
-          >
-            <span className="row-label">Filmic tonemap</span>
-            <button
-              className={`switch ${props.post.tonemap ? "on" : ""}`}
-              role="switch"
-              aria-checked={props.post.tonemap}
-              onClick={() => props.onPost({ tonemap: !props.post.tonemap })}
-            >
-              <span className="knob" />
-            </button>
-          </label>
+          <ToggleRow
+            label="Filmic tonemap"
+            hint="Filmic (ACES) tonemap — cinematic contrast and highlight rolloff"
+            checked={props.post.tonemap}
+            onChange={(v) => props.onPost({ tonemap: v })}
+            onHint={setHint}
+          />
           {POST_SLIDERS.map((r) => (
-            <label
+            <SliderRow
               key={r.key}
-              className="row param-row"
-              title={r.hint}
-              onPointerEnter={() => setHint(r.hint)}
-              onPointerLeave={() => setHint(null)}
-            >
-              <span className="row-label">{r.label}</span>
-              <Slider
-                min={r.min}
-                max={r.max}
-                step={r.step}
-                value={props.post[r.key]}
-                onChange={(v) => props.onPost({ [r.key]: v })}
-              />
-              <span className="row-value">{props.post[r.key].toFixed(2)}</span>
-            </label>
+              label={r.label}
+              hint={r.hint}
+              min={r.min}
+              max={r.max}
+              step={r.step}
+              value={props.post[r.key]}
+              onChange={(v) => props.onPost({ [r.key]: v })}
+              onHint={setHint}
+            />
           ))}
           <p className="section-hint">
             Finishing pass applied to the whole frame — grain is deterministic, so preview and

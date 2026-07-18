@@ -10,6 +10,9 @@ import {
   type Scene,
   type Timeline,
 } from "../state/timeline";
+import { Slider } from "./Slider";
+import { Switch } from "./Switch";
+import { IconClose } from "./Icons";
 
 const TRANSITION_LABELS: Record<(typeof TRANSITION_KINDS)[number], string> = {
   crossfade: "Crossfade",
@@ -309,14 +312,14 @@ export function TimelinePanel(props: {
     <div className="chrome timeline-panel">
       <div className="tl-toolbar">
         <span className="section-title">Timeline</span>
-        <label className="inline tl-enable" title="Master switch — off plays the base setup">
-          <input
-            type="checkbox"
+        <span className="inline tl-enable" title="Master switch — off plays the base setup">
+          <Switch
             checked={timeline.enabled}
-            onChange={(e) => props.onChange({ ...timeline, enabled: e.target.checked })}
+            onChange={(enabled) => props.onChange({ ...timeline, enabled })}
+            label="Timeline enabled"
           />
           Enabled
-        </label>
+        </span>
         <button
           className="text-btn"
           title="Add a scene with the current visual at the playhead"
@@ -350,18 +353,16 @@ export function TimelinePanel(props: {
         </select>
         <div className="tl-zoom">
           <span className="row-label">Zoom</span>
-          <input
-            type="range"
-            min={1}
-            max={12}
-            step={0.5}
-            value={zoom}
-            onChange={(e) => setZoom(Number(e.target.value))}
-          />
+          <Slider min={1} max={12} step={0.5} value={zoom} onChange={setZoom} title="Timeline zoom" />
         </div>
         <span className="tl-spacer" />
-        <button className="icon-btn subtle" title="Close (T)" onClick={props.onClose}>
-          ✕
+        <button
+          className="icon-btn subtle"
+          title="Close (T)"
+          aria-label="Close timeline"
+          onClick={props.onClose}
+        >
+          <IconClose size={16} />
         </button>
       </div>
 
@@ -519,14 +520,13 @@ export function TimelinePanel(props: {
                 <span className="row-value">@ {s.start.toFixed(2)}s</span>
                 <label className="inline" title="Crossfade from the previous scene (0 = hard cut)">
                   Fade
-                  <input
-                    type="range"
+                  <Slider
                     min={0}
                     max={4}
                     step={0.25}
                     value={s.fadeSec ?? 0}
-                    onChange={(e) => {
-                      const fadeSec = Number(e.target.value) || undefined;
+                    onChange={(v) => {
+                      const fadeSec = v || undefined;
                       update({
                         scenes: timeline.scenes.map((x) => (x.id === s.id ? { ...x, fadeSec } : x)),
                       });

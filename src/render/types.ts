@@ -84,6 +84,42 @@ export function allParams(preset: PresetDef): ParamSpec[] {
 }
 
 /**
+ * Which global Motion/Sync masters actually change a given mode. The masters
+ * (Rotation→u.spin, Pulse→u.pulse, Detail→u.detail, Spectrum-smooth→binAt/
+ * peakAt spline) are shared uniforms, but most modes read only some of them —
+ * showing an inert "Rotation" slider on a mode that can't rotate reads as
+ * broken. Derived from the fragment shader by default; the compute/mesh presets
+ * read the masters CPU-side in the renderer, so they're declared explicitly.
+ */
+export interface MotionCaps {
+  rotation: boolean;
+  pulse: boolean;
+  detail: boolean;
+  spectrumSmooth: boolean;
+}
+
+/** particle-flow / spectrum-scape drive the masters from webgpuRenderer.ts
+ * (not the fragment `wgsl`), so their caps can't be scanned — keep in sync with
+ * the renderer's motion multiplies. */
+const CPU_MOTION_CAPS: Record<string, Partial<MotionCaps>> = {
+  "particle-flow": { rotation: true, pulse: true, detail: true },
+  "spectrum-scape": { rotation: true, pulse: true },
+};
+
+export function presetMasters(preset: PresetDef): MotionCaps {
+  const w = preset.wgsl;
+  const cpu = CPU_MOTION_CAPS[preset.id] ?? {};
+  return {
+    rotation: cpu.rotation ?? w.includes("u.spin"),
+    pulse: cpu.pulse ?? w.includes("u.pulse"),
+    detail: cpu.detail ?? w.includes("u.detail"),
+    // The spectrum spline is applied inside binAt/peakAt, so any mode sampling
+    // the spectrum honors it; modes that don't (orbs, fields) do not.
+    spectrumSmooth: cpu.spectrumSmooth ?? (w.includes("binAt") || w.includes("peakAt")),
+  };
+}
+
+/**
  * Background modes, composited centrally after the preset runs:
  *  - preset: the preset's own animated background (as authored)
  *  - solid: user color replaces everything behind the visualization
