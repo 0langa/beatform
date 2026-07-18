@@ -8,6 +8,8 @@ import { IconChevronLeft, IconChevronRight } from "./Icons";
 export const PresetStrip = memo(function PresetStrip(props: {
   presets: PresetDef[];
   activeId: string;
+  /** A beat-quantized switch waiting to land (null = none) — its chip pulses. */
+  pendingId?: string | null;
   /** presetId -> PNG data URL; null while thumbnails are still rendering. */
   thumbs: Record<string, string> | null;
   onSwitch: (id: string) => void;
@@ -26,12 +28,16 @@ export const PresetStrip = memo(function PresetStrip(props: {
       <div className="chips">
         {props.presets.map((p) => {
           const thumb = props.thumbs?.[p.id];
+          const queued = p.id === props.pendingId;
           return (
             <button
               key={p.id}
               data-preset-id={p.id}
-              className={`chip ${thumb ? "with-thumb" : ""} ${p.id === props.activeId ? "active" : ""}`}
-              title={p.description ?? p.name}
+              className={`chip ${thumb ? "with-thumb" : ""} ${p.id === props.activeId ? "active" : ""} ${queued ? "queued" : ""}`}
+              title={
+                queued ? `${p.name} — queued for the next boundary` : (p.description ?? p.name)
+              }
+              aria-busy={queued || undefined}
               onClick={() => props.onSwitch(p.id)}
             >
               {thumb && <img className="chip-thumb" src={thumb} alt="" draggable={false} />}

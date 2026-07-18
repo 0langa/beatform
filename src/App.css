@@ -317,6 +317,24 @@ button:disabled {
   color: var(--accent-fg);
 }
 
+/* A beat-quantized switch that's queued but hasn't landed yet — pulses until
+   the next boundary takes it over. */
+.chip.queued {
+  color: var(--accent-fg);
+  border-color: var(--accent);
+  animation: chip-queued 0.9s ease-in-out infinite;
+}
+
+@keyframes chip-queued {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(106, 168, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(106, 168, 255, 0.35);
+  }
+}
+
 /* ---------- player bar ---------- */
 
 .player-bar {

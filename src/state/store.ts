@@ -165,7 +165,10 @@ import {
   saveStoredLyricStyle,
   loadStoredAudiogram,
   saveStoredAudiogram,
+  loadStoredQuantize,
+  saveStoredQuantize,
 } from "./persistence";
+import { crossedBoundary, hasFutureBoundary, type QuantizeMode } from "./quantize";
 
 export const RESOLUTIONS = [
   { label: "720p (1280×720)", w: 1280, h: 720, aspect: "16:9" },
@@ -328,6 +331,12 @@ interface SessionSlice {
   libraryActivePath: string | null;
   /** Play the next library track when the current one ends. */
   libraryAutoAdvance: boolean;
+  /** Beat-quantized preset takeover: a hotkey/chip switch lands on the next
+   * beat/bar boundary instead of instantly. Live performance only — never
+   * affects export. Persisted across sessions. */
+  switchQuantize: QuantizeMode;
+  /** A preset switch waiting for the next quantize boundary (null = none). */
+  pendingPresetId: string | null;
   /** Analysers fed by live system audio (WASAPI loopback) instead of a track. */
   liveInputActive: boolean;
   /** presetId -> PNG data URL, generated lazily after first paint. */
@@ -355,6 +364,10 @@ interface Actions {
   initApp(canvas: HTMLCanvasElement): () => void;
   switchPreset(id: string): void;
   stepPreset(delta: number): void;
+  /** Switch to a preset, honoring the beat-quantize mode: instant when off /
+   * paused / unanalyzed, otherwise queued until the next beat/bar boundary. */
+  queuePreset(id: string): void;
+  setSwitchQuantize(mode: QuantizeMode): void;
   setParam(key: string, value: number): void;
   applyStyle(values: Partial<ParamValues>): void;
   resetParams(): void;
@@ -495,6 +508,8 @@ const NULL_FRAME_KEY: OverlayFrameKey = {
   clockSec: -2,
 };
 let lastFrameKey: OverlayFrameKey = NULL_FRAME_KEY;
+// Previous frame's track time, for beat-quantized switch takeover. Live-only.
+let lastQuantizeTick = -1;
 let overlayComposeToken = 0;
 
 /** The per-frame overlay layers (lyrics + audiogram) assembled from state —
@@ -817,6 +832,8 @@ export const useVizStore = create<VizState>((set, get) => {
     libraryScanning: false,
     libraryActivePath: null,
     libraryAutoAdvance: true,
+    switchQuantize: loadStoredQuantize(),
+    pendingPresetId: null,
     liveInputActive: false,
     presetThumbs: null,
     stems: [],
@@ -869,6 +886,16 @@ export const useVizStore = create<VizState>((set, get) => {
         getStemValues: (t) => stemValuesAt(get().stems, t),
         onFrameTick: (t) => {
           const s = get();
+          // Beat-quantized takeover: fire the queued switch the moment the track
+          // crosses the chosen boundary. Live-only — export never runs this loop.
+          if (s.pendingPresetId && s.beatGrid) {
+            if (crossedBoundary(s.beatGrid.beatTimes, lastQuantizeTick, t, s.switchQuantize)) {
+              const target = s.pendingPresetId;
+              set({ pendingPresetId: null });
+              get().switchPreset(target);
+            }
+          }
+          lastQuantizeTick = t;
           // Video background: upload the frame for THIS track time (pure index
           // → deterministic, matches the export). A GPU renderer only.
           if (videoBgFrames && s.bg.mode === BG_VIDEO) {
@@ -920,7 +947,14 @@ export const useVizStore = create<VizState>((set, get) => {
       const activeParams = resolveParams(next.id, state.paramsByPreset);
       const sync = state.syncByPreset[next.id] ?? { ...DEFAULT_SYNC };
       const activeMods = state.modsByPreset[next.id] ?? [];
-      set({ presetId: next.id, activeParams, activeMods, sync });
+      // Any concrete switch supersedes a queued one.
+      set({
+        presetId: next.id,
+        activeParams,
+        activeMods,
+        sync,
+        ...(state.pendingPresetId ? { pendingPresetId: null } : {}),
+      });
       saveStoredPresetId(next.id);
       getRenderer()?.setPreset(next);
       getAnalyzer().setSync(sync);
@@ -930,6 +964,40 @@ export const useVizStore = create<VizState>((set, get) => {
       const all = [...presets, ...get().customDefs];
       const i = all.findIndex((p) => p.id === get().presetId);
       get().switchPreset(all[(i + delta + all.length) % all.length].id);
+    },
+
+    queuePreset(id) {
+      const s = get();
+      // Targeting the current mode cancels any pending queue and does nothing.
+      if (id === s.presetId) {
+        if (s.pendingPresetId) set({ pendingPresetId: null });
+        return;
+      }
+      // Re-queuing the already-pending target cancels it (toggle off).
+      if (id === s.pendingPresetId) {
+        set({ pendingPresetId: null });
+        return;
+      }
+      const grid = s.beatGrid;
+      // Instant when quantize is off, playback is stopped, or there is no future
+      // boundary to land on (unanalyzed track, or past the last beat) — queuing
+      // then would hang forever.
+      if (
+        s.switchQuantize === "off" ||
+        !s.playback.playing ||
+        !grid ||
+        !hasFutureBoundary(grid.beatTimes, getEngine().currentTime, s.switchQuantize)
+      ) {
+        if (s.pendingPresetId) set({ pendingPresetId: null });
+        get().switchPreset(id);
+        return;
+      }
+      set({ pendingPresetId: id });
+    },
+
+    setSwitchQuantize(mode) {
+      set({ switchQuantize: mode, pendingPresetId: null });
+      saveStoredQuantize(mode);
     },
 
     setParam(key, value) {

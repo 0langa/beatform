@@ -29,6 +29,7 @@ import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../au
 import type { LyricStyle } from "../state/lyrics";
 import type { AudiogramSettings } from "../state/audiogram";
 import { allParams, presetMasters } from "../render/types";
+import { QUANTIZE_MODES, type QuantizeMode } from "../state/quantize";
 import { Slider } from "./Slider";
 import { Switch } from "./Switch";
 import { LayersPanel } from "./LayersPanel";
@@ -306,6 +307,9 @@ export function ParamsPanel(props: {
   onPost: (patch: Partial<PostSettings>) => void;
   motion: MotionSettings;
   onMotion: (patch: Partial<MotionSettings>) => void;
+  /** Beat-quantized preset takeover mode (live performance). */
+  switchQuantize: QuantizeMode;
+  onSwitchQuantize: (mode: QuantizeMode) => void;
   mods: ModRoute[];
   /** Imported stems (analysis-only modulation sources). */
   stems: StemEntry[];
@@ -646,6 +650,37 @@ export function ParamsPanel(props: {
             <p className="section-hint">Global motion for this mode — exports match.</p>
           </section>
         )}
+
+        <section className="panel-section">
+          <div className="section-head">
+            <span className="section-title">Live</span>
+          </div>
+          <div className="segmented">
+            {QUANTIZE_MODES.map((m) => {
+              const label = m === "off" ? "Off" : m === "beat" ? "Beat" : "Bar";
+              const hint =
+                m === "off"
+                  ? "Mode switches happen instantly"
+                  : `Mode switches wait for the next ${m} before taking over`;
+              return (
+                <button
+                  key={m}
+                  className={`segment ${props.switchQuantize === m ? "active" : ""}`}
+                  title={hint}
+                  onPointerEnter={() => setHint(hint)}
+                  onPointerLeave={() => setHint(null)}
+                  onClick={() => props.onSwitchQuantize(m)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="section-hint">
+            Switch quantize — number keys 1–9 (or a mode chip) jump to a visual; with Beat/Bar the
+            switch lands on the next boundary, Ableton-style. Live only; exports are unaffected.
+          </p>
+        </section>
 
         <section className="panel-section">
           <div className="section-head">

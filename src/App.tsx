@@ -53,6 +53,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ["M", "Mute"],
   ["L", "Loop"],
   ["[ / ]", "Previous / next preset"],
+  ["1 – 9", "Jump to mode (beat-quantized when Live › Quantize is on)"],
   ["G", "Settings panel"],
   ["F", "Fullscreen"],
   ["Ctrl+S", "Save project"],
@@ -79,6 +80,8 @@ export default function App() {
   const dragDepthRef = useRef(0);
 
   const presetId = useVizStore((s) => s.presetId);
+  const pendingPresetId = useVizStore((s) => s.pendingPresetId);
+  const switchQuantize = useVizStore((s) => s.switchQuantize);
   const preset = presetById(presetId);
   const params = useVizStore((s) => s.activeParams);
   const bg = useVizStore((s) => s.bg);
@@ -140,8 +143,9 @@ export default function App() {
   const store = useVizStore.getState; // stable accessor for actions/handlers
 
   // Stable handlers for the always-mounted PresetStrip so it can stay memoized
-  // across playback ticks (store.getState is itself stable).
-  const switchPreset = useCallback((id: string) => store().switchPreset(id), [store]);
+  // across playback ticks (store.getState is itself stable). Clicking a mode
+  // goes through queuePreset so it obeys the beat-quantize takeover.
+  const switchPreset = useCallback((id: string) => store().queuePreset(id), [store]);
   const openShaderEditor = useCallback(() => store().setShowShaderEditor(true), [store]);
 
   // One-time init: engine, renderer (with GPU-loss recovery), frame loop
@@ -184,6 +188,14 @@ export default function App() {
           e.preventDefault();
           s.redo();
         }
+        return;
+      }
+      // Number keys 1-9 jump to a mode by position, beat-quantized when the
+      // Quantize control is on (the switch lands on the next beat/bar).
+      if (e.key >= "1" && e.key <= "9") {
+        const all = [...presets, ...s.customDefs];
+        const target = all[Number(e.key) - 1];
+        if (target) s.queuePreset(target.id);
         return;
       }
       switch (e.key) {
@@ -730,6 +742,7 @@ export default function App() {
       <PresetStrip
         presets={allPresets}
         activeId={presetId}
+        pendingId={pendingPresetId}
         thumbs={presetThumbs}
         onSwitch={switchPreset}
         onNewVisual={openShaderEditor}
@@ -794,6 +807,8 @@ export default function App() {
           onPost={(patch) => store().setPost(patch)}
           motion={motion}
           onMotion={(patch) => store().setMotion(patch)}
+          switchQuantize={switchQuantize}
+          onSwitchQuantize={(m) => store().setSwitchQuantize(m)}
           mods={activeMods}
           stems={stems}
           stemAnalyzing={stemAnalyzing}

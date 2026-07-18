@@ -17,6 +17,7 @@ import { validCustomPreset } from "../render/presets/custom";
 import { validTimeline, type Timeline } from "./timeline";
 import { DEFAULT_LYRIC_STYLE, type LyricStyle } from "./lyrics";
 import { DEFAULT_AUDIOGRAM, type AudiogramSettings } from "./audiogram";
+import { isQuantizeMode, type QuantizeMode } from "./quantize";
 
 /**
  * localStorage persistence for the current session. Keys and formats are the
@@ -267,6 +268,17 @@ export function loadStoredAspect(): Aspect {
 
 export function saveStoredAspect(aspect: Aspect): void {
   localStorage.setItem(LS_ASPECT, aspect);
+}
+
+const LS_QUANTIZE = "viz.switchQuantize.v1";
+
+export function loadStoredQuantize(): QuantizeMode {
+  const v = localStorage.getItem(LS_QUANTIZE);
+  return isQuantizeMode(v) ? v : "off";
+}
+
+export function saveStoredQuantize(mode: QuantizeMode): void {
+  localStorage.setItem(LS_QUANTIZE, mode);
 }
 
 export function loadStoredPanelOpen(): boolean {
