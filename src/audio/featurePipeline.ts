@@ -6,15 +6,26 @@ export const MAX_FREQ = 16000;
 export const MIN_DB = -90;
 export const MAX_DB = -22;
 /**
- * Ceiling for the DRAWN spectrum only. −22 dBFS is where sync/beat detection
- * saturates (fine — those want to fire hard on loud content), but using it for
- * the visible bars pins every band to full on a loud master (a −7 LUFS track's
- * bass sits well above −22), so the bars read as clipped, not dynamic. The
- * drawn spectrum uses this higher ceiling + a gamma lift instead: loud content
- * lands near the top with visible headroom, moderate content still looks full.
+ * Window for the DRAWN spectrum only, independent of the −90..−22 sync scale.
+ *
+ * Ceiling −8 dBFS: −22 (the sync/beat ceiling) pins every band to full on a
+ * loud master (a −7 LUFS track's bass sits well above −22), so drawn bars read
+ * as clipped. −8 gives headroom so only a genuine peak tops out.
+ *
+ * Floor −80 dBFS (vs the −90 sync floor): most musical content sits well above
+ * −90, so mapping from −90 crowds every audible band into the top of the range
+ * where they all look the same height — "mush". Lifting the floor to −80 drops
+ * the near-silent bins toward zero and spreads the rest across the full height.
+ *
+ * Gamma 1.3 EXPANDS contrast (x^1.3 < x for x in 0..1): it pulls the mid bins
+ * down relative to the peaks, so the spectrum reads as clear spikes over low
+ * bars instead of a flat wall. (The old 0.8 lifted mids toward the ceiling,
+ * which is what made the bars bunch together.) >1 also can't re-clip: it only
+ * ever lowers a value, so a loud master stays dynamic rather than maxing out.
  */
 export const DISPLAY_MAX_DB = -8;
-const DISPLAY_GAMMA = 0.8;
+export const DISPLAY_MIN_DB = -80;
+const DISPLAY_GAMMA = 1.3;
 
 /**
  * Adaptive beat threshold windows, in SECONDS (not frames) so detection is
@@ -178,7 +189,7 @@ export class FeaturePipeline {
     // beats); `magDisp` uses the display ceiling + gamma (the drawn bars only).
     const mag = this.mag;
     const magDisp = this.magDisp;
-    const dispRange = DISPLAY_MAX_DB - MIN_DB;
+    const dispRange = DISPLAY_MAX_DB - DISPLAY_MIN_DB;
     for (let i = 0; i < mag.length; i++) {
       const db = input.magDb[i];
       if (db === -Infinity) {
@@ -186,7 +197,7 @@ export class FeaturePipeline {
         magDisp[i] = 0;
       } else {
         mag[i] = clamp01((db - MIN_DB) / (MAX_DB - MIN_DB));
-        magDisp[i] = Math.pow(clamp01((db - MIN_DB) / dispRange), DISPLAY_GAMMA);
+        magDisp[i] = Math.pow(clamp01((db - DISPLAY_MIN_DB) / dispRange), DISPLAY_GAMMA);
       }
     }
 
