@@ -798,7 +798,9 @@ export async function runExportJob(
     // throws if the output already finalized — the success path — so gate it.
     try {
       if (webmOutput && webmOutput.state !== "finalized" && webmOutput.state !== "canceled") {
-        void webmOutput.cancel();
+        // cancel() returns a promise; swallow a rejected teardown so it can't
+        // surface as an unhandled rejection on the abort/failure path.
+        webmOutput.cancel().catch(() => {});
       }
     } catch {
       // already torn down

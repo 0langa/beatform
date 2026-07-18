@@ -40,6 +40,46 @@ function readJson<T>(key: string, fallback: T): T {
   }
 }
 
+/**
+ * Trailing-debounced writes for the settings that change on a slider drag
+ * (params/post/motion/sync/mods). setParam is wired straight to the slider, so
+ * a drag would otherwise run JSON.stringify + a synchronous localStorage write
+ * dozens of times a second on the same thread as the 60fps render loop. We
+ * coalesce to one write per key ~200ms after the last change, and flush on tab
+ * hide so the final edit is never lost. The autosave .avproj is the durable
+ * copy; this cache is just "last session".
+ */
+const pendingWrites = new Map<string, () => void>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushPendingWrites(): void {
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  for (const write of pendingWrites.values()) write();
+  pendingWrites.clear();
+}
+
+function scheduleWrite(key: string, write: () => void): void {
+  pendingWrites.set(key, write); // latest value per key wins
+  if (flushTimer === null) {
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      for (const w of pendingWrites.values()) w();
+      pendingWrites.clear();
+    }, 200);
+  }
+}
+
+if (typeof window !== "undefined") {
+  // A closing/backgrounded tab must not drop the last debounced edit.
+  window.addEventListener("pagehide", flushPendingWrites);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPendingWrites();
+  });
+}
+
 export function loadStoredPresetId(): string | null {
   return localStorage.getItem(LS_PRESET);
 }
@@ -55,7 +95,7 @@ export function loadStoredParams(): Record<string, ParamValues> {
 }
 
 export function saveStoredParams(params: Record<string, ParamValues>): void {
-  localStorage.setItem(LS_PARAMS, JSON.stringify(params));
+  scheduleWrite(LS_PARAMS, () => localStorage.setItem(LS_PARAMS, JSON.stringify(params)));
 }
 
 export function loadStoredSync(): Record<string, SyncSettings> {
@@ -63,7 +103,7 @@ export function loadStoredSync(): Record<string, SyncSettings> {
 }
 
 export function saveStoredSync(sync: Record<string, SyncSettings>): void {
-  localStorage.setItem(LS_SYNC, JSON.stringify(sync));
+  scheduleWrite(LS_SYNC, () => localStorage.setItem(LS_SYNC, JSON.stringify(sync)));
 }
 
 export function loadStoredBg(): BgSettings {
@@ -191,7 +231,7 @@ export function loadStoredPost(): PostSettings {
 }
 
 export function saveStoredPost(post: PostSettings): void {
-  localStorage.setItem(LS_POST, JSON.stringify(post));
+  scheduleWrite(LS_POST, () => localStorage.setItem(LS_POST, JSON.stringify(post)));
 }
 const LS_MOTION = "viz.motion.v1";
 
@@ -200,7 +240,7 @@ export function loadStoredMotion(): MotionSettings {
 }
 
 export function saveStoredMotion(motion: MotionSettings): void {
-  localStorage.setItem(LS_MOTION, JSON.stringify(motion));
+  scheduleWrite(LS_MOTION, () => localStorage.setItem(LS_MOTION, JSON.stringify(motion)));
 }
 const LS_MODS = "viz.mods.v1";
 const LS_TIMELINE = "viz.timeline.v1";
@@ -218,7 +258,7 @@ export function loadStoredMods(): Record<string, ModRoute[]> {
 }
 
 export function saveStoredMods(mods: Record<string, ModRoute[]>): void {
-  localStorage.setItem(LS_MODS, JSON.stringify(mods));
+  scheduleWrite(LS_MODS, () => localStorage.setItem(LS_MODS, JSON.stringify(mods)));
 }
 
 export function loadStoredAspect(): Aspect {

@@ -1,6 +1,6 @@
 import type { AudioFeatures } from "../audio/types";
 import type { PresetDef } from "../render/types";
-import { allParams, type ParamValues } from "../render/types";
+import { paramSpecMap, type ParamValues } from "../render/types";
 
 /**
  * Modulation matrix: route any audio feature to any numeric parameter of the
@@ -94,10 +94,10 @@ export function applyMods(
   stems?: Record<string, number>,
 ): ParamValues {
   if (routes.length === 0) return base;
-  const specs = allParams(preset);
+  const specs = paramSpecMap(preset);
   const out: ParamValues = { ...base };
   for (const route of routes) {
-    const spec = specs.find((s) => s.key === route.param);
+    const spec = specs.get(route.param);
     if (!spec) continue; // route to a param this preset doesn't have — skip
     const value = sourceValue(features, route.source, stems);
     const range = spec.max - spec.min;

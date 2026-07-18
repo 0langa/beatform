@@ -37,8 +37,12 @@ export const presets: PresetDef[] = [
   builder,
 ];
 
+// Built-in id -> def, built once (the list is static). presetById runs in the
+// per-frame resolve path, so this avoids a linear scan every frame.
+const builtinById = new Map(presets.map((p) => [p.id, p]));
+
 export function presetById(id: string): PresetDef {
   // Built-ins win; then the runtime registry of user-authored WGSL presets
   // (custom ids are prefixed "custom-", so collisions cannot occur).
-  return presets.find((p) => p.id === id) ?? customPresetById(id) ?? presets[0];
+  return builtinById.get(id) ?? customPresetById(id) ?? presets[0];
 }

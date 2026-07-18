@@ -935,6 +935,8 @@ export class WebGPURenderer implements Renderer {
   private transitionParamsBuf: GPUBuffer;
   private transitionBindGroup: GPUBindGroup | null = null;
   private transitionParamsData = new Float32Array(MAX_PARAMS);
+  // Reused per crossfade frame (mix, kind, pad, pad) — avoids a per-frame alloc.
+  private blendData = new Float32Array(4);
   private fadeTexA: GPUTexture | null = null;
   private fadeTexB: GPUTexture | null = null;
   private fadeSize: [number, number] = [0, 0];
@@ -1996,11 +1998,9 @@ export class WebGPURenderer implements Renderer {
         if (i < MAX_PARAMS) this.transitionParamsData[i] = transition!.params[p.key] ?? p.default;
       });
       this.device.queue.writeBuffer(this.transitionParamsBuf, 0, this.transitionParamsData);
-      this.device.queue.writeBuffer(
-        this.blendUniform,
-        0,
-        new Float32Array([transition!.mix, transition!.kind ?? 0, 0, 0]),
-      );
+      this.blendData[0] = transition!.mix;
+      this.blendData[1] = transition!.kind ?? 0;
+      this.device.queue.writeBuffer(this.blendUniform, 0, this.blendData);
       this.ensureFadeTargets();
     }
     this.ensureGraphTargets();

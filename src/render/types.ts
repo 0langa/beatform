@@ -78,9 +78,30 @@ export interface Mesh3DSpec {
 
 export type ParamValues = Record<string, number>;
 
-/** Main + advanced specs in ABI order (buffer packing = accessor indices). */
+/** Main + advanced specs in ABI order (buffer packing = accessor indices).
+ * Memoized per preset object — this runs in the per-frame render + modulation
+ * paths, and preset defs are stable (custom-preset edits mint a new object, so
+ * the WeakMap naturally re-caches). */
+const allParamsCache = new WeakMap<PresetDef, ParamSpec[]>();
 export function allParams(preset: PresetDef): ParamSpec[] {
-  return preset.advanced ? [...preset.params, ...preset.advanced] : preset.params;
+  let merged = allParamsCache.get(preset);
+  if (!merged) {
+    merged = preset.advanced ? [...preset.params, ...preset.advanced] : preset.params;
+    allParamsCache.set(preset, merged);
+  }
+  return merged;
+}
+
+/** key -> spec map for a preset, memoized. Lets the per-frame modulation path
+ * resolve a route's target by key in O(1) instead of scanning every param. */
+const paramMapCache = new WeakMap<PresetDef, Map<string, ParamSpec>>();
+export function paramSpecMap(preset: PresetDef): Map<string, ParamSpec> {
+  let map = paramMapCache.get(preset);
+  if (!map) {
+    map = new Map(allParams(preset).map((p) => [p.key, p]));
+    paramMapCache.set(preset, map);
+  }
+  return map;
 }
 
 /**
