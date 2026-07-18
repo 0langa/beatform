@@ -277,7 +277,9 @@ fn preset(uv: vec2f) -> vec4f {
 
   // ---- Fly mode: particles stream toward the viewer ----
   if (P_fly() > 0.5) {
-    let pc = vec2f((uv.x - 0.5) * u.aspect, uv.y - 0.5);
+    // Direction steers the vanishing point so the field flies toward a point
+    // offset from center (banking), instead of ignoring Direction entirely.
+    let pc = vec2f((uv.x - 0.5) * u.aspect, uv.y - 0.5) - dirv * 0.15;
     let rr = length(pc) + 1e-3;
     let aa = atan2(pc.y, pc.x);
     for (var l = 0; l < layerCount; l++) {

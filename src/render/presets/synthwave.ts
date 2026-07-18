@@ -208,7 +208,10 @@ fn preset(uv: vec2f) -> vec4f {
     // at 120 BPM both modes move at the same average rate.
     var scroll = u.time * P_speed() * 2.0;
     if (P_gridLock() > 0.5 && u.bpm > 0.5) {
-      scroll = beatRamp() * max(1.0, round(P_speed()));
+      // Integer lines-per-beat keeps the scroll continuous across the bar wrap;
+      // ×2 before rounding makes each 0.5 of the Speed slider a distinct rate
+      // (1..6 lines/beat) instead of round() collapsing the lower half to 1.
+      scroll = beatRamp() * max(1.0, round(P_speed() * 2.0));
     }
     let gz = persp - scroll;
     let gx = cx * persp * P_gridScale();

@@ -205,10 +205,10 @@ export const tunnelRings: PresetDef = {
       key: "fogFar",
       label: "Fog reach",
       min: 0.3,
-      max: 2,
+      max: 0.95,
       step: 0.05,
       default: 0.7,
-      hint: "Where the tunnel fades at the screen edges",
+      hint: "Where the tunnel starts fading toward the screen edges",
     },
     {
       key: "centerGlow",
@@ -288,7 +288,9 @@ fn preset(uv: vec2f) -> vec4f {
   }
 
   // Distance fog + center hole
-  let fog = smoothstep(P_fogNear(), 0.22, r) * (1.0 - smoothstep(P_fogFar(), 1.25, r));
+  // Far fade band is relative to fogFar (and stays on-screen, r maxes ~1 at
+  // the corners) so the whole slider visibly moves the edge fade.
+  let fog = smoothstep(P_fogNear(), 0.22, r) * (1.0 - smoothstep(P_fogFar(), P_fogFar() + 0.35, r));
   var col = hsl2rgb(P_hue() + 60.0, 0.5, 0.025);
   col += tile * fog;
 

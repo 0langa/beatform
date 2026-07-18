@@ -224,8 +224,10 @@ export const nebula: PresetDef = {
 fn preset(uv: vec2f) -> vec4f {
   var p = centered(uv);
 
-  // Kaleidoscope fold
-  if (P_kaleido() >= 2.0) {
+  // Kaleidoscope fold. 0 = off; 1 folds to a single bilateral mirror; 2+ give
+  // that many mirror axes (mandala). Gating at >=1 keeps every slider step
+  // distinct — at >=2 the value 1 was identical to "off".
+  if (P_kaleido() >= 1.0) {
     let r = length(p);
     var ang = atan2(p.y, p.x) + u.time * P_flow() * 0.5 * u.spin;
     let seg = TAU / P_kaleido();

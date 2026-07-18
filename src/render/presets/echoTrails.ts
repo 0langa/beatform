@@ -113,7 +113,7 @@ export const echoTrails: PresetDef = {
       key: "radius",
       label: "Ring size",
       min: 0.05,
-      max: 0.5,
+      max: 0.44,
       step: 0.01,
       default: 0.22,
       hint: "Base radius of the injected spectrum ring",

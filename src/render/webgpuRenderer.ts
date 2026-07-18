@@ -752,8 +752,10 @@ fn fs_mesh(in: VOut) -> @location(0) vec4f {
   let lightDir = normalize(vec3f(0.4, 0.9, 0.3));
   let diff = max(dot(n, lightDir), 0.0);
   let lit = in.shade * (0.25 + diff * m.light);
-  // Emissive rises with height so tall bars glow (bloom picks them up).
-  let emis = in.shade * clamp(in.height, 0.0, 3.0) * m.emissive * (0.7 + m.drive * 0.6 + m.driveBeat * 0.5);
+  // Emissive rises with height so tall bars glow (bloom picks them up). The
+  // clamp scales with heightScale so the glow keeps tracking the slider instead
+  // of pinning at a fixed ceiling that mid-level bars already hit by default.
+  let emis = in.shade * clamp(in.height, 0.0, m.heightScale * 0.5) * m.emissive * (0.7 + m.drive * 0.6 + m.driveBeat * 0.5);
   return vec4f(lit + emis, 1.0);
 }
 `;

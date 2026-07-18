@@ -59,7 +59,7 @@ export const oscilloscope: PresetDef = {
         mirror: 0,
         gridLevel: 0.18,
         coreWidth: 0.0025,
-        traceAmp: 0.28,
+        gain: 0.74,
         hueWave: 0,
         bgLevel: 0.02,
         vignette: 0.4,
@@ -123,15 +123,6 @@ export const oscilloscope: PresetDef = {
     },
   ],
   advanced: [
-    {
-      key: "traceAmp",
-      label: "Trace height",
-      min: 0.1,
-      max: 0.5,
-      step: 0.01,
-      default: 0.34,
-      hint: "Screen fraction the wave can occupy",
-    },
     {
       key: "traceClamp",
       label: "Height limit",
@@ -266,7 +257,10 @@ fn preset(uv: vec2f) -> vec4f {
   col += hsl2rgb(P_hue(), 0.3, 0.3) * smoothstep(0.0015, 0.0, abs(uv.y - 0.5)) * 0.3;
 
   let w = calmWave(uv.x, P_calm()) * gain;
-  let amp = clamp(w * P_traceAmp(), -P_traceClamp(), P_traceClamp());
+  // Trace height comes from Gain (× the fixed display scale); Height limit is
+  // the hard ceiling. (These were a redundant pair with a separate traceAmp
+  // multiplier — folded away so there's one amplitude knob, not two.)
+  let amp = clamp(w * 0.34, -P_traceClamp(), P_traceClamp());
   let y = 0.5 + amp;
 
   // Main trace: crisp core + soft neon glow

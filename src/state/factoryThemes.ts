@@ -113,7 +113,7 @@ export const FACTORY_THEMES: FactoryTheme[] = [
         spokes: 20,
         beatSpeed: 0.22,
         beatPulse: 0.9,
-        fogFar: 1.0,
+        fogFar: 0.9,
       },
       { post: { ...DEFAULT_POST, bloom: 0.5, bloomThreshold: 0.9, tonemap: true } },
     ),

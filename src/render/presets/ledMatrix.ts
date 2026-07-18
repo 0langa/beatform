@@ -156,15 +156,6 @@ export const ledMatrix: PresetDef = {
       hint: "Extra brightness for the topmost lit cells",
     },
     {
-      key: "unlitLevel",
-      label: "Unlit level",
-      min: 0,
-      max: 0.2,
-      step: 0.01,
-      default: 0.05,
-      hint: "Brightness of unlit LEDs",
-    },
-    {
       key: "beatBoost",
       label: "Beat boost",
       min: 0,
@@ -241,7 +232,7 @@ fn preset(uv: vec2f) -> vec4f {
   // between columns, without touching the LED look itself.
   col += hsl2rgb(P_hueLow() + P_hueShift(), 0.8, 0.3) * u.bass * P_bassGlow();
   // Unlit LEDs faintly visible
-  col += hsl2rgb(cellHue, 0.6, P_unlitLevel()) * mask * P_dim() * (1.0 - lit);
+  col += hsl2rgb(cellHue, 0.6, 0.05) * mask * P_dim() * (1.0 - lit);
   // Lit LEDs, brighter near the top of the column's level
   let hot = P_litLevel() + P_hotBoost() * smoothstep(level - 2.0, level, cy + 0.5)
           + u.driveBeat * P_beatBoost();

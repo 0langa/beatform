@@ -520,14 +520,18 @@ fn preset(uv: vec2f) -> vec4f {
 
   // --- Orb core
   if (P_orb() > 0.5) {
-    let level = clamp(u.drive * 1.6 + gridPulse(7.0) * P_orbBeat(), 0.0, 1.0);
+    // Sustained size rides energy; the beat kick is kept SEPARATE from the
+    // clamped level so it still pops the orb (radius + brightness) even when a
+    // loud passage has already driven level to its 1.0 ceiling.
+    let level = clamp(u.drive * 1.6, 0.0, 1.0);
+    let beatKick = clamp(gridPulse(7.0) * P_orbBeat(), 0.0, 1.0);
     let spin = u.time * 0.35;
     let amp = P_orbSize() * P_orbWobble() * (0.1 + level * 0.35);
     let wob = sin(a * 3.0 + spin) * amp + sin(a * 6.0 - spin * 0.8 + 1.5) * amp * 0.4;
     // Frame-safety: the orb can't balloon past the frame on a loud beat.
-    let orbR = min(P_orbSize() * (1.0 + level * P_orbPump()) + wob, 0.44);
+    let orbR = min(P_orbSize() * (1.0 + level * P_orbPump() + beatKick * 0.4) + wob, 0.44);
     let inside = smoothstep(orbR, orbR - 0.01, r);
-    let body = hsl2rgb(P_hue() + 20.0, 0.7, 0.18 + level * 0.3 + exp(-r * 6.0) * 0.2);
+    let body = hsl2rgb(P_hue() + 20.0, 0.7, 0.18 + level * 0.3 + beatKick * 0.25 + exp(-r * 6.0) * 0.2);
     col = mix(col, body, inside);
     col += hsl2rgb(P_hue() + 20.0, 0.8, 0.6) * smoothstep(0.005, 0.0, abs(r - orbR)) * 0.6;
   }
