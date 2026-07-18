@@ -306,6 +306,26 @@ export function TimelinePanel(props: {
     else setLane(laneIndex, { ...lane, keyframes });
   };
 
+  // Keyboard nudge for a focused keyframe (parity with the pointer drag):
+  // ↑/↓ move its value, ←/→ move it in time, Delete removes it.
+  const nudgeKeyframe = (
+    laneIndex: number,
+    kfIndex: number,
+    dValue: number,
+    dTime: number,
+  ) => {
+    const lane = timeline.lanes[laneIndex];
+    const spec = laneSpec(lane);
+    const cur = lane.keyframes[kfIndex];
+    if (!cur) return;
+    const value = Math.min(spec.max, Math.max(spec.min, cur.value + dValue));
+    const t = dTime ? Math.min(duration || cur.t, Math.max(0, cur.t + dTime)) : cur.t;
+    const keyframes = lane.keyframes
+      .map((k, i) => (i === kfIndex ? { ...k, value, t } : k))
+      .sort((a, b) => a.t - b.t);
+    setLane(laneIndex, { ...lane, keyframes });
+  };
+
   const paramOptions = allParams(props.activePreset);
 
   return (
@@ -451,12 +471,33 @@ export function TimelinePanel(props: {
                 >
                   {lane.keyframes.map((k, ki) => {
                     const f = (k.value - spec.min) / Math.max(1e-9, spec.max - spec.min);
+                    const vStep = ("step" in spec ? spec.step : 0) || (spec.max - spec.min) / 50;
                     return (
                       <div
                         key={ki}
                         className={`tl-key tl-key-${k.curve}`}
                         style={{ left: xOf(k.t), top: `${(1 - f) * 100}%` }}
                         title={`${lane.param} = ${k.value.toFixed(2)} @ ${k.t.toFixed(2)}s (${k.curve})`}
+                        role="slider"
+                        tabIndex={0}
+                        aria-label={`${lane.param} keyframe at ${k.t.toFixed(2)}s`}
+                        aria-valuemin={spec.min}
+                        aria-valuemax={spec.max}
+                        aria-valuenow={k.value}
+                        onKeyDown={(e) => {
+                          let handled = true;
+                          if (e.key === "ArrowUp") nudgeKeyframe(li, ki, vStep, 0);
+                          else if (e.key === "ArrowDown") nudgeKeyframe(li, ki, -vStep, 0);
+                          else if (e.key === "ArrowRight") nudgeKeyframe(li, ki, 0, 0.05);
+                          else if (e.key === "ArrowLeft") nudgeKeyframe(li, ki, 0, -0.05);
+                          else if (e.key === "Delete" || e.key === "Backspace")
+                            removeKeyframe(li, ki);
+                          else handled = false;
+                          if (handled) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }
+                        }}
                         onPointerDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();

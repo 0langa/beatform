@@ -9,8 +9,12 @@
   --text-faint: rgba(233, 234, 240, 0.4);
   --accent: #6aa8ff;
   --accent-strong: #3b82f6;
+  --accent-hover: #2f74ec; /* primary button hover */
+  --accent-fg: #dce9ff; /* text on accent-tinted active surfaces */
+  --accent-alt: #9d7bff; /* secondary accent — smooth-curve keyframes */
   --track: rgba(255, 255, 255, 0.14);
   --danger: #ff8f8f;
+  --live: #ff5a5a; /* live system-audio capture indicator */
   --ok: #7ee29b;
   --radius: 12px;
   --radius-sm: 8px;
@@ -145,7 +149,7 @@ button:disabled {
 }
 
 .ghost-btn.accent {
-  color: #cfe1ff;
+  color: var(--accent-fg);
   background: rgba(59, 130, 246, 0.22);
 }
 
@@ -169,7 +173,7 @@ button:disabled {
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #2f74ec;
+  background: var(--accent-hover);
 }
 
 .btn-primary:active:not(:disabled) {
@@ -310,7 +314,7 @@ button:disabled {
 .chip.active {
   background: rgba(59, 130, 246, 0.28);
   border-color: rgba(106, 168, 255, 0.55);
-  color: #dce9ff;
+  color: var(--accent-fg);
 }
 
 /* ---------- player bar ---------- */
@@ -477,7 +481,8 @@ button:disabled {
 .icon-btn:focus-visible,
 .chip-x:focus-visible,
 .swatch:focus-visible,
-.advanced-toggle:focus-visible {
+.advanced-toggle:focus-visible,
+.tl-key:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -508,7 +513,7 @@ button:disabled {
 
 /* Live system-audio capture: the button breathes while listening. */
 .icon-btn.live-pulse {
-  color: #ff5a5a;
+  color: var(--live);
   animation: live-pulse 1.6s ease-in-out infinite;
 }
 @keyframes live-pulse {
@@ -831,7 +836,7 @@ button:disabled {
 .style-chip.active {
   background: rgba(59, 130, 246, 0.25);
   border-color: rgba(106, 168, 255, 0.5);
-  color: #dce9ff;
+  color: var(--accent-fg);
 }
 
 .style-custom {
@@ -957,7 +962,7 @@ button:disabled {
 
 .segment.active {
   background: rgba(106, 168, 255, 0.25);
-  color: #dce9ff;
+  color: var(--accent-fg);
   font-weight: 500;
 }
 
@@ -1638,7 +1643,7 @@ kbd {
   cursor: grab;
   font-size: 10.5px;
   padding: 2px 6px;
-  color: #dce9ff;
+  color: var(--accent-fg);
   white-space: nowrap;
 }
 
@@ -1699,7 +1704,7 @@ kbd {
 }
 
 .tl-key-smooth {
-  background: #9d7bff;
+  background: var(--accent-alt);
 }
 
 .tl-playhead {

@@ -1,8 +1,11 @@
+import { memo } from "react";
 import type { PresetDef } from "../render/types";
 import { IconChevronLeft, IconChevronRight } from "./Icons";
 
-/** Horizontal chip strip for one-click preset switching. */
-export function PresetStrip(props: {
+/** Horizontal chip strip for one-click preset switching. Always mounted, so
+ * it's memoized — it only depends on the preset list / active id / thumbnails,
+ * not on playback, and shouldn't reconcile on every position tick. */
+export const PresetStrip = memo(function PresetStrip(props: {
   presets: PresetDef[];
   activeId: string;
   /** presetId -> PNG data URL; null while thumbnails are still rendering. */
@@ -49,4 +52,4 @@ export function PresetStrip(props: {
       </button>
     </div>
   );
-}
+});

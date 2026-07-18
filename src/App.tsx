@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { demos } from "./audio/demoTrack";
 import { BG_TRANSPARENT, DEFAULT_POST } from "./render/types";
 import { presets, presetById } from "./render/presets";
@@ -135,9 +135,14 @@ export default function App() {
   const showBatch = useVizStore((s) => s.showBatch);
   const customDefs = useVizStore((s) => s.customDefs);
   const showShaderEditor = useVizStore((s) => s.showShaderEditor);
-  const allPresets = [...presets, ...customDefs];
+  const allPresets = useMemo(() => [...presets, ...customDefs], [customDefs]);
 
   const store = useVizStore.getState; // stable accessor for actions/handlers
+
+  // Stable handlers for the always-mounted PresetStrip so it can stay memoized
+  // across playback ticks (store.getState is itself stable).
+  const switchPreset = useCallback((id: string) => store().switchPreset(id), [store]);
+  const openShaderEditor = useCallback(() => store().setShowShaderEditor(true), [store]);
 
   // One-time init: engine, renderer (with GPU-loss recovery), frame loop
   useEffect(() => {
@@ -726,8 +731,8 @@ export default function App() {
         presets={allPresets}
         activeId={presetId}
         thumbs={presetThumbs}
-        onSwitch={(id) => store().switchPreset(id)}
-        onNewVisual={() => store().setShowShaderEditor(true)}
+        onSwitch={switchPreset}
+        onNewVisual={openShaderEditor}
       />
 
       {showLibrary && (
