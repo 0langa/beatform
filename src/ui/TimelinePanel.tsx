@@ -308,12 +308,7 @@ export function TimelinePanel(props: {
 
   // Keyboard nudge for a focused keyframe (parity with the pointer drag):
   // ↑/↓ move its value, ←/→ move it in time, Delete removes it.
-  const nudgeKeyframe = (
-    laneIndex: number,
-    kfIndex: number,
-    dValue: number,
-    dTime: number,
-  ) => {
+  const nudgeKeyframe = (laneIndex: number, kfIndex: number, dValue: number, dTime: number) => {
     const lane = timeline.lanes[laneIndex];
     const spec = laneSpec(lane);
     const cur = lane.keyframes[kfIndex];
@@ -373,7 +368,14 @@ export function TimelinePanel(props: {
         </select>
         <div className="tl-zoom">
           <span className="row-label">Zoom</span>
-          <Slider min={1} max={12} step={0.5} value={zoom} onChange={setZoom} title="Timeline zoom" />
+          <Slider
+            min={1}
+            max={12}
+            step={0.5}
+            value={zoom}
+            onChange={setZoom}
+            title="Timeline zoom"
+          />
         </div>
         <span className="tl-spacer" />
         <button

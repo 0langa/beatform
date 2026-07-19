@@ -15,7 +15,7 @@ import { validPost, validMotion } from "./project";
 import type { MotionSettings, PostSettings, PresetDef } from "../render/types";
 import { validCustomPreset } from "../render/presets/custom";
 import { validTimeline, type Timeline } from "./timeline";
-import { DEFAULT_LYRIC_STYLE, type LyricStyle } from "./lyrics";
+import { DEFAULT_LYRIC_STYLE, isLyricAnim, type LyricStyle } from "./lyrics";
 import { DEFAULT_AUDIOGRAM, type AudiogramSettings } from "./audiogram";
 import { isQuantizeMode, type QuantizeMode } from "./quantize";
 
@@ -197,6 +197,7 @@ export function loadStoredLyricStyle(): LyricStyle {
       typeof raw.fadeSec === "number" && Number.isFinite(raw.fadeSec)
         ? Math.min(1, Math.max(0, raw.fadeSec))
         : d.fadeSec,
+    anim: isLyricAnim(raw.anim) ? raw.anim : d.anim,
   };
 }
 

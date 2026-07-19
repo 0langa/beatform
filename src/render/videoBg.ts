@@ -38,10 +38,11 @@ export function videoBgFrameIndex(count: number, fps: number, t: number): number
  * (0..0.9 black overlay for visualizer readability, mirroring image bg) into
  * each frame, and stops at VIDEO_BG_MAX_FRAMES / VIDEO_BG_MAX_SECONDS. Throws
  * if the file has no decodable video track. Deterministic: the same bytes +
- * dim always produce the same frames, so a worker re-decode matches the live
- * decode. (Blur is deliberately not applied per-frame — too costly for v1.)
+ * dim + blur always produce the same frames, so a worker re-decode matches the
+ * live decode. Blur is baked ONCE per decoded frame here (not per render frame)
+ * — same rule as the image background, so it's cheap and export-identical.
  */
-export async function decodeVideoBgFrames(blob: Blob, dim = 0): Promise<VideoBgFrames> {
+export async function decodeVideoBgFrames(blob: Blob, dim = 0, blur = 0): Promise<VideoBgFrames> {
   const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
   const track = (await input.getVideoTracks())[0];
   if (!track) throw new Error("No video track in that file");
@@ -52,6 +53,9 @@ export async function decodeVideoBgFrames(blob: Blob, dim = 0): Promise<VideoBgF
   const outW = Math.max(2, Math.round(w * scale) & ~1);
   const outH = Math.max(2, Math.round(h * scale) & ~1);
   const dimA = Math.min(0.9, Math.max(0, dim));
+  // Scale the blur radius with the downscale so it looks the same regardless of
+  // source resolution (the UI slider is in source pixels, like the image bg).
+  const blurPx = Math.max(0, Math.min(60, blur)) * scale;
 
   const sink = new CanvasSink(track, { width: outW, height: outH, fit: "contain", poolSize: 2 });
   const bake = new OffscreenCanvas(outW, outH);
@@ -63,9 +67,17 @@ export async function decodeVideoBgFrames(blob: Blob, dim = 0): Promise<VideoBgF
     for await (const wrapped of sink.canvases(0, VIDEO_BG_MAX_SECONDS)) {
       if (firstTs === null) firstTs = wrapped.timestamp;
       lastTs = wrapped.timestamp;
-      // The pooled canvas is reused on the next iteration — copy (with the dim
-      // overlay baked) to an owned ImageBitmap before advancing.
-      bctx.drawImage(wrapped.canvas, 0, 0, outW, outH);
+      // The pooled canvas is reused on the next iteration — copy (with blur +
+      // dim baked) to an owned ImageBitmap before advancing.
+      if (blurPx > 0) {
+        bctx.filter = `blur(${blurPx}px)`;
+        // Overscan by the blur radius so edges don't fringe (blur samples past
+        // the frame border otherwise) — same trick as the image background.
+        bctx.drawImage(wrapped.canvas, -blurPx, -blurPx, outW + 2 * blurPx, outH + 2 * blurPx);
+        bctx.filter = "none";
+      } else {
+        bctx.drawImage(wrapped.canvas, 0, 0, outW, outH);
+      }
       if (dimA > 0) {
         bctx.fillStyle = `rgba(0,0,0,${dimA})`;
         bctx.fillRect(0, 0, outW, outH);

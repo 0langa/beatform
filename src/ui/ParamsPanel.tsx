@@ -26,7 +26,7 @@ import type { ThemeMeta } from "../state/themes";
 import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
 import { MOD_SOURCES, type ModRoute, type ModSource } from "../state/modMatrix";
 import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../audio/stems";
-import type { LyricStyle } from "../state/lyrics";
+import { LYRIC_ANIMS, type LyricAnim, type LyricStyle } from "../state/lyrics";
 import type { AudiogramSettings } from "../state/audiogram";
 import { allParams, presetMasters } from "../render/types";
 import { QUANTIZE_MODES, type QuantizeMode } from "../state/quantize";
@@ -816,6 +816,21 @@ export function ParamsPanel(props: {
                   <option value="top">Top</option>
                 </select>
               </label>
+              <label className="field">
+                <span>Animation</span>
+                <select
+                  className="select"
+                  value={props.lyricStyle.anim ?? "plain"}
+                  title="How each line enters — plain fade, slide up, or a scale pop"
+                  onChange={(e) => props.onLyricStyle({ anim: e.target.value as LyricAnim })}
+                >
+                  {LYRIC_ANIMS.map((a) => (
+                    <option key={a} value={a}>
+                      {a === "plain" ? "Plain" : a === "slide" ? "Slide up" : "Pop"}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <SliderRow
                 label="Size"
                 hint="Lyric text size"
@@ -1184,6 +1199,24 @@ export function ParamsPanel(props: {
                     }
                   />
                   <span className="row-value">{props.bg.video.dim.toFixed(2)}</span>
+                </label>
+              )}
+              {props.bg.video && (
+                <label
+                  className="row param-row"
+                  title="Soften the video behind the visualization (baked once per loop; re-decodes)"
+                >
+                  <span className="row-label">Blur</span>
+                  <Slider
+                    min={0}
+                    max={60}
+                    step={1}
+                    value={props.bg.video.blur}
+                    onChange={(blur) =>
+                      props.onBg({ ...props.bg, video: { ...props.bg.video!, blur } })
+                    }
+                  />
+                  <span className="row-value">{props.bg.video.blur.toFixed(0)}</span>
                 </label>
               )}
               <p className="section-hint">

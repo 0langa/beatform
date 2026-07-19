@@ -341,7 +341,11 @@ export function validBg(v: unknown): BgSettings {
       bg!.video !== null &&
       typeof bg!.video.assetId === "string" &&
       bg!.video.assetId.length > 0
-        ? { assetId: bg!.video.assetId, dim: n(bg!.video.dim, 0.35, 0, 0.9), blur: 0 }
+        ? {
+            assetId: bg!.video.assetId,
+            dim: n(bg!.video.dim, 0.35, 0, 0.9),
+            blur: n(bg!.video.blur, 0, 0, 60),
+          }
         : undefined;
     return {
       // Image/video mode without a usable reference falls back to the preset's

@@ -27,6 +27,17 @@ export interface LyricStyle {
   color: string;
   /** Fade in/out at line boundaries, seconds (0 = hard cuts). */
   fadeSec: number;
+  /** Entry animation: plain fade, slide-up, or a scale pop. All are driven by
+   * the (already frame-keyed) fade alpha, so they stay WYSIWYG. */
+  anim?: LyricAnim;
+}
+
+export type LyricAnim = "plain" | "slide" | "pop";
+
+export const LYRIC_ANIMS: LyricAnim[] = ["plain", "slide", "pop"];
+
+export function isLyricAnim(v: unknown): v is LyricAnim {
+  return v === "plain" || v === "slide" || v === "pop";
 }
 
 export const DEFAULT_LYRIC_STYLE: LyricStyle = {
@@ -35,6 +46,7 @@ export const DEFAULT_LYRIC_STYLE: LyricStyle = {
   size: 1,
   color: "#ffffff",
   fadeSec: 0.15,
+  anim: "plain",
 };
 
 const LRC_TAG = /\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;

@@ -113,6 +113,20 @@ function drawLyric(
         ? anchor - blockH / 2
         : anchor - blockH;
 
+  // Entry animation, driven purely by the (frame-keyed) fade alpha so preview
+  // and export stay identical. slide: rises into place; pop: scales in.
+  const anim = style.anim ?? "plain";
+  ctx.save();
+  if (anim === "slide") {
+    ctx.translate(0, (1 - alpha) * lineH * 0.6);
+  } else if (anim === "pop") {
+    const s = 0.9 + 0.1 * alpha;
+    const cx = w / 2;
+    const cy = top + blockH / 2;
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+    ctx.translate(-cx, -cy);
+  }
   for (let i = 0; i < rows.length; i++) {
     const y = top + lineH * (i + 0.8);
     ctx.lineJoin = "round";
@@ -122,6 +136,7 @@ function drawLyric(
     ctx.fillStyle = style.color;
     ctx.fillText(rows[i], w / 2, y);
   }
+  ctx.restore();
   ctx.globalAlpha = 1;
 }
 

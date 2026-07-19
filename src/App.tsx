@@ -36,6 +36,7 @@ import { Slider } from "./ui/Slider";
 import { Switch } from "./ui/Switch";
 import {
   IconBatch,
+  IconClose,
   IconExport,
   IconFolder,
   IconFullscreen,
@@ -884,8 +885,12 @@ export default function App() {
           >
             <div className="panel-header">
               <span className="panel-heading">Keyboard shortcuts</span>
-              <button className="icon-btn subtle" onClick={() => store().setShowHelp(false)}>
-                ✕
+              <button
+                className="icon-btn subtle"
+                aria-label="Close"
+                onClick={() => store().setShowHelp(false)}
+              >
+                <IconClose size={16} />
               </button>
             </div>
             <div className="shortcut-list">
@@ -935,9 +940,11 @@ export default function App() {
               <button
                 className="icon-btn subtle"
                 disabled={!!exporting}
+                aria-label="Close"
+                title={exporting ? "Export in progress…" : "Close"}
                 onClick={() => store().setShowExport(false)}
               >
-                ✕
+                <IconClose size={16} />
               </button>
             </div>
 

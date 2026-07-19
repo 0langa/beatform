@@ -720,7 +720,7 @@ export const useVizStore = create<VizState>((set, get) => {
     set({ videoBgLoading: true });
     void fetch(asset.dataUrl)
       .then((r) => r.blob())
-      .then((blob) => decodeVideoBgFrames(blob, bg.video!.dim))
+      .then((blob) => decodeVideoBgFrames(blob, bg.video!.dim, bg.video!.blur))
       .then((decoded) => {
         if (token !== videoBgToken) {
           disposeVideoBgFrames(decoded);

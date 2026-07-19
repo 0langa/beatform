@@ -140,6 +140,8 @@ export function PlayerBar(props: {
           <button
             className={`icon-btn ${playback.loop ? "active" : ""}`}
             title={`Loop ${playback.loop ? "on" : "off"} (L)`}
+            aria-label="Loop"
+            aria-pressed={playback.loop}
             onClick={props.onToggleLoop}
           >
             <IconLoop size={17} />

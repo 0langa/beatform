@@ -108,7 +108,7 @@ export interface ExportJob {
    * capped loop the live view did and uploads a frame per export frame.
    * timeOffset (seconds) shifts the loop index for segment exports so it
    * matches the live view's absolute-track-time loop. */
-  bgVideo?: { dataUrl: string; dim: number; timeOffset?: number };
+  bgVideo?: { dataUrl: string; dim: number; blur?: number; timeOffset?: number };
   /** Imported stems' envelope timelines — mod-matrix stem sources. */
   stems?: StemEntry[];
   /** Timed lyrics (already segment-shifted) + style — composited onto the
@@ -493,7 +493,7 @@ export async function runExportJob(
     if (job.bgVideo) {
       try {
         const blob = await (await fetch(job.bgVideo.dataUrl)).blob();
-        videoBg = await decodeVideoBgFrames(blob, job.bgVideo.dim);
+        videoBg = await decodeVideoBgFrames(blob, job.bgVideo.dim, job.bgVideo.blur ?? 0);
       } catch {
         videoBg = null;
       }

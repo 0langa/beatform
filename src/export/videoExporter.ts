@@ -39,7 +39,7 @@ export interface ExportOptions {
   /** Image background asset + baked-look params (bg.mode 3). */
   bgImage?: { dataUrl: string; dim: number; blur: number };
   /** Video background asset + dim (bg.mode 4). */
-  bgVideo?: { dataUrl: string; dim: number };
+  bgVideo?: { dataUrl: string; dim: number; blur?: number };
   /** Imported stems' envelope timelines (mod-matrix stem sources). */
   stems?: StemEntry[];
   /** Timed lyrics + style — composited onto the overlay per line, exactly

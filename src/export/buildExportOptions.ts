@@ -136,7 +136,11 @@ export function buildExportOptions(
     // Video background: same asset-resolve; the core decodes the loop itself.
     bgVideo:
       doc.bg.mode === BG_VIDEO && doc.bg.video && doc.assets[doc.bg.video.assetId]
-        ? { dataUrl: doc.assets[doc.bg.video.assetId].dataUrl, dim: doc.bg.video.dim }
+        ? {
+            dataUrl: doc.assets[doc.bg.video.assetId].dataUrl,
+            dim: doc.bg.video.dim,
+            blur: doc.bg.video.blur,
+          }
         : undefined,
     beatGrid: track.beatGrid ?? undefined,
     stems: track.stems,
