@@ -26,6 +26,7 @@ import {
 import { PlayerBar } from "./ui/PlayerBar";
 import { LibraryPanel } from "./ui/LibraryPanel";
 import { isTauri } from "./state/platform";
+import { midiSupported } from "./state/midiInput";
 import { audiogramActive } from "./state/audiogram";
 import { TimelinePanel } from "./ui/TimelinePanel";
 import { PresetStrip } from "./ui/PresetStrip";
@@ -46,6 +47,8 @@ import {
   IconSettings,
 } from "./ui/Icons";
 import "./App.css";
+
+const MIDI_SUPPORTED = midiSupported();
 
 const SHORTCUTS: Array<[string, string]> = [
   ["Space", "Play / pause"],
@@ -83,6 +86,10 @@ export default function App() {
   const presetId = useVizStore((s) => s.presetId);
   const pendingPresetId = useVizStore((s) => s.pendingPresetId);
   const switchQuantize = useVizStore((s) => s.switchQuantize);
+  const midiEnabled = useVizStore((s) => s.midiEnabled);
+  const midiDevices = useVizStore((s) => s.midiDevices);
+  const midiBindings = useVizStore((s) => s.midiBindings);
+  const midiLearn = useVizStore((s) => s.midiLearn);
   const preset = presetById(presetId);
   const params = useVizStore((s) => s.activeParams);
   const bg = useVizStore((s) => s.bg);
@@ -810,6 +817,15 @@ export default function App() {
           onMotion={(patch) => store().setMotion(patch)}
           switchQuantize={switchQuantize}
           onSwitchQuantize={(m) => store().setSwitchQuantize(m)}
+          midiSupported={MIDI_SUPPORTED}
+          midiEnabled={midiEnabled}
+          midiDevices={midiDevices}
+          midiBindings={midiBindings}
+          midiLearn={midiLearn}
+          onEnableMidi={() => void store().enableMidi()}
+          onDisableMidi={() => store().disableMidi()}
+          onMidiLearn={(l) => store().setMidiLearn(l)}
+          onRemoveMidiBinding={(id) => store().removeMidiBinding(id)}
           mods={activeMods}
           stems={stems}
           stemAnalyzing={stemAnalyzing}

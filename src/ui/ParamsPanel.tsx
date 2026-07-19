@@ -30,6 +30,7 @@ import { LYRIC_ANIMS, type LyricAnim, type LyricStyle } from "../state/lyrics";
 import type { AudiogramSettings } from "../state/audiogram";
 import { allParams, presetMasters } from "../render/types";
 import { QUANTIZE_MODES, type QuantizeMode } from "../state/quantize";
+import { bindingId, type MidiBinding, type MidiLearn } from "../state/midi";
 import { Slider } from "./Slider";
 import { Switch } from "./Switch";
 import { LayersPanel } from "./LayersPanel";
@@ -310,6 +311,16 @@ export function ParamsPanel(props: {
   /** Beat-quantized preset takeover mode (live performance). */
   switchQuantize: QuantizeMode;
   onSwitchQuantize: (mode: QuantizeMode) => void;
+  /** Web MIDI (live performance). Absent entirely where unsupported. */
+  midiSupported: boolean;
+  midiEnabled: boolean;
+  midiDevices: string[];
+  midiBindings: MidiBinding[];
+  midiLearn: MidiLearn | null;
+  onEnableMidi: () => void;
+  onDisableMidi: () => void;
+  onMidiLearn: (learn: MidiLearn | null) => void;
+  onRemoveMidiBinding: (id: string) => void;
   mods: ModRoute[];
   /** Imported stems (analysis-only modulation sources). */
   stems: StemEntry[];
@@ -339,6 +350,7 @@ export function ParamsPanel(props: {
   const [savingTheme, setSavingTheme] = useState(false);
   const [themeName, setThemeName] = useState("");
   const [themeAuthor, setThemeAuthor] = useState("");
+  const [midiParam, setMidiParam] = useState("");
   const toggleAdvanced = () => {
     setShowAdvanced((v) => {
       localStorage.setItem("viz.advancedOpen", v ? "0" : "1");
@@ -681,6 +693,115 @@ export function ParamsPanel(props: {
             switch lands on the next boundary, Ableton-style. Live only; exports are unaffected.
           </p>
         </section>
+
+        {props.midiSupported && (
+          <section className="panel-section">
+            <div className="section-head">
+              <span className="section-title">MIDI</span>
+              {props.midiEnabled && (
+                <button
+                  className="text-btn"
+                  title="Stop listening to MIDI"
+                  onClick={props.onDisableMidi}
+                >
+                  Disable
+                </button>
+              )}
+            </div>
+            {!props.midiEnabled ? (
+              <>
+                <div className="save-look-row">
+                  <button
+                    className="text-btn"
+                    title="Grant MIDI access and start listening"
+                    onClick={props.onEnableMidi}
+                  >
+                    Enable MIDI…
+                  </button>
+                </div>
+                <p className="section-hint">
+                  Map a controller's knobs to any setting and its notes to visual modes. Live
+                  performance only — exports are unaffected.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="section-hint">
+                  {props.midiDevices.length
+                    ? `Connected: ${props.midiDevices.join(", ")}`
+                    : "No MIDI inputs detected — plug one in."}
+                </p>
+                <div className="save-look-row">
+                  <select
+                    className="select"
+                    value={midiParam || props.preset.params[0]?.key || ""}
+                    title="Which setting a knob/fader should control"
+                    onChange={(e) => setMidiParam(e.target.value)}
+                  >
+                    {allParams(props.preset).map((p) => (
+                      <option key={p.key} value={p.key}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="text-btn"
+                    title="Then move a knob/fader on your controller to bind it"
+                    onClick={() => {
+                      if (props.midiLearn?.kind === "cc") {
+                        props.onMidiLearn(null);
+                        return;
+                      }
+                      const key = midiParam || props.preset.params[0]?.key;
+                      const spec = allParams(props.preset).find((p) => p.key === key);
+                      if (spec)
+                        props.onMidiLearn({ kind: "cc", param: key, min: spec.min, max: spec.max });
+                    }}
+                  >
+                    {props.midiLearn?.kind === "cc" ? "Move a knob…" : "Learn CC"}
+                  </button>
+                </div>
+                <div className="save-look-row">
+                  <button
+                    className="text-btn"
+                    title={`Bind a note to switch to ${props.preset.name}`}
+                    onClick={() =>
+                      props.midiLearn?.kind === "note"
+                        ? props.onMidiLearn(null)
+                        : props.onMidiLearn({ kind: "note", presetId: props.preset.id })
+                    }
+                  >
+                    {props.midiLearn?.kind === "note"
+                      ? "Play a note…"
+                      : `Learn note → ${props.preset.name}`}
+                  </button>
+                </div>
+                {props.midiBindings.map((b) => {
+                  const id = bindingId(b);
+                  const label =
+                    b.kind === "cc"
+                      ? `CC ${b.cc} → ${allParams(props.preset).find((p) => p.key === b.param)?.label ?? b.param}`
+                      : `Note ${b.note} → ${b.presetId}`;
+                  return (
+                    <div key={id} className="mod-row">
+                      <span className="row-label" style={{ flex: 1 }}>
+                        {label}
+                      </span>
+                      <button
+                        className="chip-x"
+                        title="Remove this binding"
+                        aria-label={`Remove ${label}`}
+                        onClick={() => props.onRemoveMidiBinding(id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </section>
+        )}
 
         <section className="panel-section">
           <div className="section-head">

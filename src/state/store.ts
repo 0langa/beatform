@@ -167,8 +167,19 @@ import {
   saveStoredAudiogram,
   loadStoredQuantize,
   saveStoredQuantize,
+  loadStoredMidiBindings,
+  saveStoredMidiBindings,
 } from "./persistence";
 import { crossedBoundary, hasFutureBoundary, type QuantizeMode } from "./quantize";
+import {
+  applyMidiMessage,
+  bindingId,
+  learnBinding,
+  upsertBinding,
+  type MidiBinding,
+  type MidiLearn,
+} from "./midi";
+import { startMidi, type MidiHandle } from "./midiInput";
 
 export const RESOLUTIONS = [
   { label: "720p (1280×720)", w: 1280, h: 720, aspect: "16:9" },
@@ -337,6 +348,14 @@ interface SessionSlice {
   switchQuantize: QuantizeMode;
   /** A preset switch waiting for the next quantize boundary (null = none). */
   pendingPresetId: string | null;
+  /** Web MIDI on (access granted + listening). Live performance only. */
+  midiEnabled: boolean;
+  /** Names of connected MIDI inputs (updates on hot-plug). */
+  midiDevices: string[];
+  /** CC→param / note→preset bindings (persisted). */
+  midiBindings: MidiBinding[];
+  /** What "MIDI learn" is armed for, if anything. */
+  midiLearn: MidiLearn | null;
   /** Analysers fed by live system audio (WASAPI loopback) instead of a track. */
   liveInputActive: boolean;
   /** presetId -> PNG data URL, generated lazily after first paint. */
@@ -368,6 +387,13 @@ interface Actions {
    * paused / unanalyzed, otherwise queued until the next beat/bar boundary. */
   queuePreset(id: string): void;
   setSwitchQuantize(mode: QuantizeMode): void;
+  /** Request Web MIDI access and start listening (user-gesture initiated). */
+  enableMidi(): Promise<void>;
+  disableMidi(): void;
+  /** Feed one raw MIDI packet through learn/apply (also the adapter's sink). */
+  handleMidiMessage(data: ArrayLike<number>): void;
+  setMidiLearn(learn: MidiLearn | null): void;
+  removeMidiBinding(id: string): void;
   setParam(key: string, value: number): void;
   applyStyle(values: Partial<ParamValues>): void;
   resetParams(): void;
@@ -510,6 +536,8 @@ const NULL_FRAME_KEY: OverlayFrameKey = {
 let lastFrameKey: OverlayFrameKey = NULL_FRAME_KEY;
 // Previous frame's track time, for beat-quantized switch takeover. Live-only.
 let lastQuantizeTick = -1;
+// Active Web MIDI listener handle (null = off). Session-only.
+let midiHandle: MidiHandle | null = null;
 let overlayComposeToken = 0;
 
 /** The per-frame overlay layers (lyrics + audiogram) assembled from state —
@@ -834,6 +862,10 @@ export const useVizStore = create<VizState>((set, get) => {
     libraryAutoAdvance: true,
     switchQuantize: loadStoredQuantize(),
     pendingPresetId: null,
+    midiEnabled: false,
+    midiDevices: [],
+    midiBindings: loadStoredMidiBindings(),
+    midiLearn: null,
     liveInputActive: false,
     presetThumbs: null,
     stems: [],
@@ -998,6 +1030,61 @@ export const useVizStore = create<VizState>((set, get) => {
     setSwitchQuantize(mode) {
       set({ switchQuantize: mode, pendingPresetId: null });
       saveStoredQuantize(mode);
+    },
+
+    async enableMidi() {
+      if (get().midiEnabled || midiHandle) return;
+      const handle = await startMidi(
+        (data) => get().handleMidiMessage(data),
+        (names) => set({ midiDevices: names }),
+      );
+      if (!handle) {
+        flashNotice("MIDI isn't available here (needs a Chromium-based build)");
+        return;
+      }
+      midiHandle = handle;
+      set({ midiEnabled: true });
+    },
+
+    disableMidi() {
+      midiHandle?.stop();
+      midiHandle = null;
+      set({ midiEnabled: false, midiDevices: [], midiLearn: null });
+    },
+
+    handleMidiMessage(data) {
+      const s = get();
+      // Learn mode: the first matching message becomes a binding, and is NOT
+      // also applied (so wiggling the control to learn it doesn't fire it).
+      if (s.midiLearn) {
+        const b = learnBinding(s.midiLearn, data);
+        if (b) {
+          const midiBindings = upsertBinding(s.midiBindings, b);
+          set({ midiBindings, midiLearn: null });
+          saveStoredMidiBindings(midiBindings);
+        }
+        return;
+      }
+      const action = applyMidiMessage(s.midiBindings, data);
+      if (!action) return;
+      if (action.type === "param") {
+        // A binding can outlive a mode switch — only drive a param the active
+        // preset actually has, and clamp to its range.
+        const spec = allParams(presetById(s.presetId)).find((p) => p.key === action.key);
+        if (spec) get().setParam(action.key, Math.min(spec.max, Math.max(spec.min, action.value)));
+      } else {
+        get().queuePreset(action.id); // inherits the beat-quantize takeover
+      }
+    },
+
+    setMidiLearn(learn) {
+      set({ midiLearn: learn });
+    },
+
+    removeMidiBinding(id) {
+      const midiBindings = get().midiBindings.filter((b) => bindingId(b) !== id);
+      set({ midiBindings });
+      saveStoredMidiBindings(midiBindings);
     },
 
     setParam(key, value) {

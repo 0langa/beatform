@@ -18,6 +18,7 @@ import { validTimeline, type Timeline } from "./timeline";
 import { DEFAULT_LYRIC_STYLE, isLyricAnim, type LyricStyle } from "./lyrics";
 import { DEFAULT_AUDIOGRAM, type AudiogramSettings } from "./audiogram";
 import { isQuantizeMode, type QuantizeMode } from "./quantize";
+import { validMidiBindings, type MidiBinding } from "./midi";
 
 /**
  * localStorage persistence for the current session. Keys and formats are the
@@ -269,6 +270,16 @@ export function loadStoredAspect(): Aspect {
 
 export function saveStoredAspect(aspect: Aspect): void {
   localStorage.setItem(LS_ASPECT, aspect);
+}
+
+const LS_MIDI = "viz.midiBindings.v1";
+
+export function loadStoredMidiBindings(): MidiBinding[] {
+  return validMidiBindings(readJson<unknown>(LS_MIDI, null));
+}
+
+export function saveStoredMidiBindings(bindings: MidiBinding[]): void {
+  localStorage.setItem(LS_MIDI, JSON.stringify(bindings));
 }
 
 const LS_QUANTIZE = "viz.switchQuantize.v1";
