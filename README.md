@@ -111,6 +111,12 @@ Free and open source. Built to become a professional-grade tool for producers an
 - **Listen to the system** (desktop): WASAPI loopback visualizes whatever the
   PC is playing — Spotify, a browser, a DAW — live, without touching a file.
   Analysis-only tap; nothing is re-emitted to the speakers
+- **Live performance / VJ**: jump between modes with number keys **1–9** or a
+  MIDI controller, with optional **beat-quantized takeover** (the switch lands
+  on the next beat/bar, Ableton-style); **Stage mode** (`\`) gives a clean
+  chrome-free full-bleed output with blackout and a mode-name HUD; **Web MIDI**
+  maps knobs to any setting and notes to modes (local, no drivers). Preview-only
+  — never affects exports
 - Product chrome: auto-hides while playing, keyboard shortcuts (press ?),
   hover-scrub seek bar, onboarding empty state, GPU-loss auto-recovery
 - Three synthesized demo tracks (120 BPM house / 174 BPM DnB / 70 BPM ambient)
@@ -171,10 +177,13 @@ npm run typecheck    # tsc --noEmit
 
 CI runs typecheck, lint, format check, tests and build on every push/PR.
 
-## Roadmap (next)
+## Roadmap
 
-- Producer basics, remaining: video/image backgrounds, preset thumbnails
-- Musical sync, remaining: stem import as additional sync sources
-- Visual ceiling, remaining: custom WGSL preset SDK (in-app editor)
-- Ecosystem (v3.0): .avtheme templates + gallery, CI-built installers,
-  docs site
+The foundations → workstation → visual-ceiling → pro-delivery → ecosystem →
+storytelling → motion arc is **complete and shipped**; live-performance
+("Stage") is the current frontier — beat-quantized switching, Web MIDI and
+Stage mode have landed, with a true second-display output window still to come.
+Everything stays free and open source, GitHub-only, with no monetization.
+
+Next up is a full on-hardware acceptance pass (see `TESTING.md`) toward a
+1.0-grade **v3.0.0** milestone.

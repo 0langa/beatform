@@ -58,13 +58,36 @@ detected sections in one click.
   browser, a DAW — via native loopback. Analysis-only: nothing echoes back
   out. Play/pause stops listening.
 
+## Live performance
+
+Beatform doubles as a live/VJ tool. Everything here is preview-only — it never
+changes an export.
+
+- **Jump between modes hands-free.** Number keys **1–9** (or clicking a mode
+  chip) switch the visual. With **Settings ▸ Live ▸ Quantize** set to **Beat**
+  or **Bar**, the switch doesn't happen instantly — it waits and lands exactly
+  on the next beat/bar of the detected grid, Ableton-session-launch style. The
+  queued mode's chip pulses until it takes over. Off = instant.
+- **Stage mode** (the monitor icon, or **`\`**) hides all the chrome and the
+  cursor for a clean, full-bleed output — for a projector, a capture card, or
+  screen-share. The mode name flashes briefly on each switch so you can drive
+  blind. **`.`** blacks out (the VJ cut); **Esc** exits.
+- **MIDI** (Settings ▸ MIDI ▸ Enable, on Chromium-based builds): map a
+  controller's knobs and pads. **Learn CC** then move a knob to bind it to the
+  selected setting; **Learn note → &lt;mode&gt;** then play a note to switch to
+  that mode (it obeys the beat-quantize too). Bindings are remembered. Local
+  only, no drivers.
+- Pair Stage mode with the **broadcast icon** (loopback, below) and you have a
+  live rig: visualize whatever the PC is playing, switch on the beat by hand or
+  MIDI, output clean and full-screen.
+
 ## Lyrics
 
 Drop an `.lrc` file (any lyrics site exports them) or `.srt` subtitles onto
 the window — the current line follows the music, karaoke-style, live and in
-every export. Position/size/color/fade in the panel's **Lyrics** section.
-Drop the lyrics together with the track or after it; they attach to the
-loaded track like stems do.
+every export. Position/size/color, an entry **Animation** (plain / slide / pop)
+and fade live in the panel's **Lyrics** section. Drop the lyrics together with
+the track or after it; they attach to the loaded track like stems do.
 
 ## Stems
 
