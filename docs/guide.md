@@ -85,8 +85,9 @@ changes an export.
 
 Drop an `.lrc` file (any lyrics site exports them) or `.srt` subtitles onto
 the window — the current line follows the music, karaoke-style, live and in
-every export. Position/size/color, an entry **Animation** (plain / slide / pop)
-and fade live in the panel's **Lyrics** section. Drop the lyrics together with
+every export. Position/size/color, an **Animation** (plain / slide / pop, or
+**karaoke** — the line fills bright left-to-right as it's sung) and fade live in
+the panel's **Lyrics** section. Drop the lyrics together with
 the track or after it; they attach to the loaded track like stems do.
 
 ## Stems

@@ -452,6 +452,7 @@ export async function runExportJob(
   let lastFrameKey: OverlayFrameKey = {
     lyricIdx: -2,
     lyricAlphaQ: -1,
+    lyricProgQ: -1,
     progressPx: -2,
     clockSec: -2,
   };

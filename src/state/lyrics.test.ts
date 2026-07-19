@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   activeLyricIndex,
   lyricAlphaAt,
+  lyricProgressAt,
   LyricParseError,
   parseLrc,
   parseLyrics,
@@ -90,5 +91,14 @@ describe("activeLyricIndex + lyricAlphaAt", () => {
     expect(lyricAlphaAt(lines, 0, 4.45, 0.1)).toBeCloseTo(0.5, 5); // fading out
     expect(lyricAlphaAt(lines, -1, 3, 0.1)).toBe(0);
     expect(lyricAlphaAt(lines, 0, 3, 0)).toBe(1); // fade off = hard
+  });
+
+  it("karaoke wipe progress runs 0..1 across the line window", () => {
+    // line 0 is [2, 4.5]: midpoint 3.25 -> 0.5
+    expect(lyricProgressAt(lines, 0, 2)).toBe(0);
+    expect(lyricProgressAt(lines, 0, 3.25)).toBeCloseTo(0.5, 5);
+    expect(lyricProgressAt(lines, 0, 4.5)).toBe(1);
+    expect(lyricProgressAt(lines, 0, 5)).toBe(1); // clamped past the end
+    expect(lyricProgressAt(lines, -1, 3)).toBe(0); // no active line
   });
 });

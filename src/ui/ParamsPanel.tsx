@@ -947,7 +947,13 @@ export function ParamsPanel(props: {
                 >
                   {LYRIC_ANIMS.map((a) => (
                     <option key={a} value={a}>
-                      {a === "plain" ? "Plain" : a === "slide" ? "Slide up" : "Pop"}
+                      {a === "plain"
+                        ? "Plain"
+                        : a === "slide"
+                          ? "Slide up"
+                          : a === "pop"
+                            ? "Pop"
+                            : "Karaoke"}
                     </option>
                   ))}
                 </select>

@@ -537,6 +537,7 @@ let videoBgFrames: VideoBgFrames | null = null;
 const NULL_FRAME_KEY: OverlayFrameKey = {
   lyricIdx: -2,
   lyricAlphaQ: -1,
+  lyricProgQ: -1,
   progressPx: -2,
   clockSec: -2,
 };

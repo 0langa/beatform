@@ -1,4 +1,10 @@
-import { activeLyricIndex, lyricAlphaAt, type LyricLine, type LyricStyle } from "../state/lyrics";
+import {
+  activeLyricIndex,
+  lyricAlphaAt,
+  lyricProgressAt,
+  type LyricLine,
+  type LyricStyle,
+} from "../state/lyrics";
 import { audiogramActive, formatClock, type AudiogramSettings } from "../state/audiogram";
 
 /**
@@ -23,6 +29,8 @@ export interface OverlayFrameKey {
   lyricIdx: number;
   /** Lyric alpha in 1/64 steps. */
   lyricAlphaQ: number;
+  /** Karaoke-wipe progress in 1/32 steps (0 unless the wipe anim is active). */
+  lyricProgQ: number;
   /** Progress position in whole output pixels (-1 = no audiogram). */
   progressPx: number;
   /** Whole-second clock value (-1 = no time readout). */
@@ -40,6 +48,7 @@ export function hasDynamics(d: OverlayDynamics): boolean {
 export function overlayFrameKeyAt(d: OverlayDynamics, t: number, w: number): OverlayFrameKey {
   let lyricIdx = -1;
   let lyricAlphaQ = 0;
+  let lyricProgQ = 0;
   if (d.lyrics && d.lyrics.style.enabled) {
     const idx = activeLyricIndex(d.lyrics.lines, t);
     const aQ =
@@ -48,6 +57,11 @@ export function overlayFrameKeyAt(d: OverlayDynamics, t: number, w: number): Ove
         : Math.round(lyricAlphaAt(d.lyrics.lines, idx, t, d.lyrics.style.fadeSec) * 64) / 64;
     lyricIdx = aQ === 0 ? -1 : idx;
     lyricAlphaQ = aQ;
+    // Karaoke wipe: the within-line play position must move the frame key, or
+    // the sweep would never re-rasterize. 1/32 steps = smooth but still gated.
+    if (lyricIdx >= 0 && d.lyrics.style.anim === "wipe") {
+      lyricProgQ = Math.round(lyricProgressAt(d.lyrics.lines, idx, t) * 32) / 32;
+    }
   }
   let progressPx = -1;
   let clockSec = -1;
@@ -57,13 +71,14 @@ export function overlayFrameKeyAt(d: OverlayDynamics, t: number, w: number): Ove
     if (settings.progressBar || settings.waveformStrip) progressPx = Math.round(frac * w);
     if (settings.timeReadout) clockSec = Math.floor(t);
   }
-  return { lyricIdx, lyricAlphaQ, progressPx, clockSec };
+  return { lyricIdx, lyricAlphaQ, lyricProgQ, progressPx, clockSec };
 }
 
 export function sameOverlayFrame(a: OverlayFrameKey, b: OverlayFrameKey): boolean {
   return (
     a.lyricIdx === b.lyricIdx &&
     a.lyricAlphaQ === b.lyricAlphaQ &&
+    a.lyricProgQ === b.lyricProgQ &&
     a.progressPx === b.progressPx &&
     a.clockSec === b.clockSec
   );
@@ -74,6 +89,7 @@ function drawLyric(
   lines: LyricLine[],
   idx: number,
   alpha: number,
+  prog: number,
   style: LyricStyle,
   w: number,
   h: number,
@@ -127,6 +143,7 @@ function drawLyric(
     ctx.scale(s, s);
     ctx.translate(-cx, -cy);
   }
+  const wipe = anim === "wipe";
   for (let i = 0; i < rows.length; i++) {
     const y = top + lineH * (i + 0.8);
     ctx.lineJoin = "round";
@@ -134,7 +151,27 @@ function drawLyric(
     ctx.lineWidth = Math.max(2, px * 0.16);
     ctx.strokeText(rows[i], w / 2, y);
     ctx.fillStyle = style.color;
-    ctx.fillText(rows[i], w / 2, y);
+    if (wipe) {
+      // Karaoke: the whole line sits dim; the "sung" part fills bright, swept
+      // left-to-right as the line plays. Progress spans the rows in order.
+      const rowW = ctx.measureText(rows[i]).width;
+      const leftX = w / 2 - rowW / 2;
+      const local = Math.max(0, Math.min(1, prog * rows.length - i));
+      ctx.globalAlpha = alpha * 0.4;
+      ctx.fillText(rows[i], w / 2, y);
+      if (local > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(leftX - 2, top - lineH, rowW * local + 2, blockH + lineH * 2);
+        ctx.clip();
+        ctx.globalAlpha = alpha;
+        ctx.fillText(rows[i], w / 2, y);
+        ctx.restore();
+      }
+      ctx.globalAlpha = alpha;
+    } else {
+      ctx.fillText(rows[i], w / 2, y);
+    }
   }
   ctx.restore();
   ctx.globalAlpha = 1;
@@ -220,7 +257,8 @@ export async function composeOverlayFrame(
     const idx = activeLyricIndex(d.lyrics.lines, t);
     if (idx >= 0) {
       const alpha = lyricAlphaAt(d.lyrics.lines, idx, t, d.lyrics.style.fadeSec);
-      if (alpha > 0) drawLyric(ctx, d.lyrics.lines, idx, alpha, d.lyrics.style, w, h);
+      const prog = lyricProgressAt(d.lyrics.lines, idx, t);
+      if (alpha > 0) drawLyric(ctx, d.lyrics.lines, idx, alpha, prog, d.lyrics.style, w, h);
     }
   }
   return canvas.transferToImageBitmap();

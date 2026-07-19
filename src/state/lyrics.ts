@@ -32,12 +32,12 @@ export interface LyricStyle {
   anim?: LyricAnim;
 }
 
-export type LyricAnim = "plain" | "slide" | "pop";
+export type LyricAnim = "plain" | "slide" | "pop" | "wipe";
 
-export const LYRIC_ANIMS: LyricAnim[] = ["plain", "slide", "pop"];
+export const LYRIC_ANIMS: LyricAnim[] = ["plain", "slide", "pop", "wipe"];
 
 export function isLyricAnim(v: unknown): v is LyricAnim {
-  return v === "plain" || v === "slide" || v === "pop";
+  return v === "plain" || v === "slide" || v === "pop" || v === "wipe";
 }
 
 export const DEFAULT_LYRIC_STYLE: LyricStyle = {
@@ -175,4 +175,18 @@ export function lyricAlphaAt(lines: LyricLine[], idx: number, t: number, fadeSec
   const inA = Math.min(1, (t - start) / fadeSec);
   const outA = end === Infinity ? 1 : Math.min(1, Math.max(0, (end - t) / fadeSec));
   return Math.max(0, Math.min(inA, outA));
+}
+
+/**
+ * How far the active line has played, 0..1 across its [start, end] window — the
+ * karaoke wipe position. Pure (function of lines + t), so live and export agree.
+ * An open-ended last line uses a 4 s nominal window so the wipe still completes.
+ */
+export function lyricProgressAt(lines: LyricLine[], idx: number, t: number): number {
+  if (idx < 0 || idx >= lines.length) return 0;
+  const line = lines[idx];
+  const start = line.t;
+  const end = line.end ?? (idx + 1 < lines.length ? lines[idx + 1].t : start + 4);
+  if (end <= start) return 1;
+  return Math.max(0, Math.min(1, (t - start) / (end - start)));
 }
