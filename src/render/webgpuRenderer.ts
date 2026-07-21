@@ -28,15 +28,27 @@ const POST_UNIFORM_SIZE = 48; // 9 f32 (8 post params + transparent flag), 16B-a
 /** Particle uniform block: 24 scalar lanes = 96 bytes. */
 const PARTICLE_UNIFORM_SIZE = 96;
 /** Fixed particle simulation rate. Steps are keyed to track time
- * (target = floor(time * SIM_FPS)) so the sim speed is frame-rate independent
- * and exports are bit-reproducible run-to-run AT A GIVEN fps. (Not across
- * fps: the per-frame uniform write shares one pu.time across that frame's
- * catch-up steps, so a 30 fps and a 60 fps export sim slightly different
- * flow-field inputs — PNG-hash baselines are only comparable at equal fps.) */
+ * (target = floor(time * SIM_FPS)) so the sim speed is frame-rate independent.
+ *
+ * Each step n runs with pu.time = (n+1)/SIM_FPS — the track time at the END of
+ * that step — regardless of how many steps a given frame happens to batch. So
+ * step 137 sees the same time whether it ran alone at 60 fps or second-of-two
+ * at 30 fps, and the time-driven parts of the sim (flow field, respawn hash)
+ * are identical across frame rates and between preview and export.
+ *
+ * The audio lanes (bass/drive/kick) are still per-FRAME, not per-step: at
+ * 30 fps two steps share one feature sample. Resolving features per sim step
+ * would mean running the whole feature pipeline 60x/s off the render path.
+ * That residual is why PNG-hash baselines are compared at equal fps. */
 const SIM_FPS = 60;
 const PARTICLE_DT = 1 / SIM_FPS;
 /** Live-safety cap on catch-up steps per frame (never hit during export). */
 const MAX_SIM_CATCHUP = 8;
+/** Uniform slots: one per catch-up step, plus one for the draw pass. Stride is
+ * the WebGPU guaranteed minUniformBufferOffsetAlignment. */
+const PARTICLE_SLOT_STRIDE = 256;
+const PARTICLE_SLOTS = MAX_SIM_CATCHUP + 1;
+const PARTICLE_DRAW_SLOT = MAX_SIM_CATCHUP;
 
 /**
  * Post-processing WGSL. One module, three entry points sharing a fullscreen
@@ -1216,12 +1228,20 @@ export class WebGPURenderer implements Renderer {
     // Particle pipelines: compute needs read_write on the state buffer, the
     // draw pass reads it — two layouts over the same buffer.
     this.particleUniform = device.createBuffer({
-      size: PARTICLE_UNIFORM_SIZE,
+      size: PARTICLE_SLOT_STRIDE * PARTICLE_SLOTS,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.particleSimLayout = device.createBindGroupLayout({
       entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+        {
+          binding: 0,
+          visibility: GPUShaderStage.COMPUTE,
+          // One uniform SLOT per catch-up step, selected by dynamic offset.
+          // queue.writeBuffer between compute passes would not work: those
+          // writes all land before the encoder's commands are submitted, so
+          // every step would read the last value written.
+          buffer: { type: "uniform", hasDynamicOffset: true },
+        },
         { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
       ],
     });
@@ -1550,7 +1570,16 @@ export class WebGPURenderer implements Renderer {
     this.particleInitPending = false;
   }
 
-  private writeParticleUniform(time: number, f: AudioFeatures, params: ParamValues): void {
+  /**
+   * Fill one uniform slot. `time` is the slot's own track time: the end of a
+   * sim step for the step slots, the frame time for the draw slot.
+   */
+  private writeParticleSlot(
+    slot: number,
+    time: number,
+    f: AudioFeatures,
+    params: ParamValues,
+  ): void {
     const F = this.particleF32;
     F[0] = PARTICLE_DT;
     F[1] = time;
@@ -1566,7 +1595,11 @@ export class WebGPURenderer implements Renderer {
     // Motion masters: swirl obeys Rotation, beat burst obeys Pulse.
     F[8 + PARTICLE_PARAM_KEYS.indexOf("swirl")] *= this.motion.rotation;
     F[8 + PARTICLE_PARAM_KEYS.indexOf("beatBurst")] *= this.motion.pulse;
-    this.device.queue.writeBuffer(this.particleUniform, 0, this.particleData);
+    this.device.queue.writeBuffer(
+      this.particleUniform,
+      slot * PARTICLE_SLOT_STRIDE,
+      this.particleData,
+    );
   }
 
   /** Run the particle sim (fixed steps keyed to track time) and draw the
@@ -1601,12 +1634,21 @@ export class WebGPURenderer implements Renderer {
     }
     steps = Math.min(steps, MAX_SIM_CATCHUP);
 
-    this.writeParticleUniform(time, f, params);
+    // One slot per step, each carrying the track time at the END of that step.
+    // Absolute step index n always runs at (n+1)/SIM_FPS, so a step's inputs
+    // don't depend on how many steps its frame batched.
+    for (let k = 0; k < steps; k++) {
+      this.writeParticleSlot(k, (this.simStepsDone + k + 1) / SIM_FPS, f, params);
+    }
+    this.writeParticleSlot(PARTICLE_DRAW_SLOT, time, f, params);
     if (!this.particleSimBind) {
       this.particleSimBind = this.device.createBindGroup({
         layout: this.particleSimLayout,
         entries: [
-          { binding: 0, resource: { buffer: this.particleUniform } },
+          {
+            binding: 0,
+            resource: { buffer: this.particleUniform, offset: 0, size: PARTICLE_UNIFORM_SIZE },
+          },
           { binding: 1, resource: { buffer: this.particleBuf! } },
         ],
       });
@@ -1615,7 +1657,7 @@ export class WebGPURenderer implements Renderer {
     for (let k = 0; k < steps; k++) {
       const cp = encoder.beginComputePass();
       cp.setPipeline(this.particleSimPipeline!);
-      cp.setBindGroup(0, this.particleSimBind);
+      cp.setBindGroup(0, this.particleSimBind, [k * PARTICLE_SLOT_STRIDE]);
       cp.dispatchWorkgroups(groups);
       cp.end();
     }
@@ -1625,7 +1667,14 @@ export class WebGPURenderer implements Renderer {
       this.particleDrawBind = this.device.createBindGroup({
         layout: this.particleDrawLayout,
         entries: [
-          { binding: 0, resource: { buffer: this.particleUniform } },
+          {
+            binding: 0,
+            resource: {
+              buffer: this.particleUniform,
+              offset: PARTICLE_DRAW_SLOT * PARTICLE_SLOT_STRIDE,
+              size: PARTICLE_UNIFORM_SIZE,
+            },
+          },
           { binding: 1, resource: { buffer: this.particleBuf! } },
         ],
       });

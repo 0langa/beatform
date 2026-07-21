@@ -89,6 +89,20 @@ const SHORTCUTS: Array<[string, string]> = [
   ["?", "This shortcut list"],
 ];
 
+/**
+ * FNV-1a over raw PNG bytes — a content fingerprint for the export harness.
+ * Not cryptographic; it only has to make "these two frames differ" cheap to
+ * see across thousands of frames.
+ */
+function fnv1a(bytes: Uint8Array): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i++) {
+    h ^= bytes[i];
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
 function toggleFullscreen(): void {
   // Rejections are expected where the Fullscreen API is policy-blocked
   // (embedded webviews) — treat as a no-op, not an error.
@@ -411,10 +425,16 @@ export default function App() {
       // PNG probe: collect frame sizes instead of writing files (no desktop fs
       // in a browser); lets the harness verify the sequence path end-to-end.
       const pngFrames: number[] = [];
+      // A per-frame content hash, not just frame 0. Anything that ACCUMULATES
+      // across frames (the particle sim, feedback trails) is identical on frame
+      // 0 no matter how badly it diverges later, so a frame-0-only baseline
+      // silently passes the exact regressions it exists to catch.
+      const pngHashes: string[] = [];
       const result = await exportVideo(buf, {
         onPngFrame: opts.png
           ? (data, index) => {
               pngFrames.push(data.length);
+              pngHashes.push(fnv1a(data));
               // Keep frame 0 around so tooling can decode + inspect it.
               if (index === 0) {
                 (window as unknown as { __lastPngFrame: Blob }).__lastPngFrame = new Blob(
@@ -495,7 +515,7 @@ export default function App() {
         seconds: result.seconds,
         ...(result.loudness ? { loudness: result.loudness } : {}),
         ...(measured ? { measured } : {}),
-        ...(opts.png ? { pngFrames: pngFrames.length, pngBytes: pngFrames } : {}),
+        ...(opts.png ? { pngFrames: pngFrames.length, pngBytes: pngFrames, pngHashes } : {}),
       };
       (window as unknown as { __lastExport: unknown }).__lastExport = info;
       (window as unknown as { __lastExportBlob: Blob | undefined }).__lastExportBlob = result.blob;
