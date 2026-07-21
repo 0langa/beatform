@@ -204,7 +204,12 @@ export async function openTextFile(
   });
 }
 
-const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg"];
+// SVG deliberately excluded: validAssets (project.ts) refuses it (SVG
+// decoding is a DoS surface, and consumption here is createImageBitmap, so
+// there's no XSS upside to accepting it) — offering it in the picker only to
+// have it silently dropped on the next save/load would be worse than not
+// offering it at all.
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif"];
 
 const MIME_BY_EXT: Record<string, string> = {
   png: "image/png",
@@ -212,7 +217,6 @@ const MIME_BY_EXT: Record<string, string> = {
   jpeg: "image/jpeg",
   webp: "image/webp",
   gif: "image/gif",
-  svg: "image/svg+xml",
 };
 
 const VIDEO_EXTENSIONS = ["mp4", "webm", "mov", "m4v", "mkv"];

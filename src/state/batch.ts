@@ -96,12 +96,68 @@ export interface BatchRun {
  * game — including CJK, Cyrillic and accents. */
 const ILLEGAL_IN_FILENAME = ["<", ">", ":", '"', "/", "\\", "|", "?", "*"];
 
+/**
+ * Windows device names, reserved regardless of case or extension: `CON`,
+ * `con.txt` and `Con.mp4.bak` are all refused because the OS matches on the
+ * path segment before the FIRST dot, not the whole filename. A title (or
+ * fallback filename) that happens to equal one exactly would otherwise
+ * produce an unwritable batch output.
+ */
+const RESERVED_NAMES = new Set([
+  "CON",
+  "PRN",
+  "AUX",
+  "NUL",
+  "COM1",
+  "COM2",
+  "COM3",
+  "COM4",
+  "COM5",
+  "COM6",
+  "COM7",
+  "COM8",
+  "COM9",
+  "LPT1",
+  "LPT2",
+  "LPT3",
+  "LPT4",
+  "LPT5",
+  "LPT6",
+  "LPT7",
+  "LPT8",
+  "LPT9",
+]);
+
+/**
+ * NTFS filenames cap out at 255 UTF-16 code units. This is comfortably under
+ * that even after a caller appends the longest realistic suffix — a
+ * resolution qualifier plus a dedupe counter plus an extension, e.g.
+ * `_3840x2160 (12).mp4` (~20 chars).
+ */
+const MAX_STEM_LENGTH = 200;
+
 export function safeName(name: string): string {
   let base = name.replace(/\.[a-z0-9]+$/i, "");
   for (const ch of ILLEGAL_IN_FILENAME) base = base.split(ch).join("");
+  // Control characters (NUL and 0x01-0x1F) are illegal in Windows filenames.
+  // A literal control-character regex trips eslint's no-control-regex (it's
+  // usually a mistake elsewhere), so filter by code unit instead.
+  base = base
+    .split("")
+    .filter((ch) => ch.charCodeAt(0) > 0x1f)
+    .join("");
   // Windows also rejects a trailing dot or space.
   base = base.replace(/[. ]+$/, "").trim();
-  return base || "visualization";
+  // A hostile or merely verbose ID3 tag must not produce an unwritable path.
+  base = base.slice(0, MAX_STEM_LENGTH);
+  // Truncation can strand a new trailing dot/space; strip once more.
+  base = base.replace(/[. ]+$/, "").trim();
+  if (!base) return "visualization";
+  // Windows matches the reserved-name list against the segment before the
+  // FIRST dot only — "CON.mp4.bak" is still refused, "Confessions" is not.
+  const firstSegment = base.split(".", 1)[0];
+  if (RESERVED_NAMES.has(firstSegment.toUpperCase())) return `_${base}`;
+  return base;
 }
 
 /**

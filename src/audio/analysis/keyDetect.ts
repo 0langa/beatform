@@ -57,6 +57,22 @@ export function chromagram(mono: Float32Array, sampleRate: number): Float64Array
   return chroma;
 }
 
+/**
+ * Below this peak-to-mean ratio, the chroma is too flat to support a
+ * confident key claim: with 12 pitch classes and 24 candidate (tonic, mode)
+ * rotations, SOME rotation always correlates best, even against noise — so
+ * "there is a winner" is not evidence of tonal content. Only a genuinely
+ * peaky chroma (energy concentrated in a few pitch classes) is.
+ *
+ * Threshold picked empirically (see keyDetect.test.ts): white noise and
+ * percussion-like noise bursts (decaying, jittered so the envelope isn't
+ * itself periodic) were run 200+ trials each and never produced a ratio
+ * above ~1.7. Every tonal signal tried — a single sustained tone, a short
+ * one-chord clip, a full progression, even a chord with noise mixed in at
+ * up to unity gain — cleared 2.4. 2.0 sits with margin on both sides.
+ */
+const MIN_CHROMA_PEAKINESS = 2.0;
+
 function pearson(a: ArrayLike<number>, b: ArrayLike<number>): number {
   const n = a.length;
   let ma = 0;
@@ -81,12 +97,21 @@ function pearson(a: ArrayLike<number>, b: ArrayLike<number>): number {
   return denom > 0 ? num / denom : 0;
 }
 
-/** Estimate the key of a mono signal. Null when there's no tonal content. */
+/**
+ * Estimate the key of a mono signal. Null when there's no tonal content:
+ * silence, or a chroma too flat to support a confident key claim (pure
+ * percussion/noise — see MIN_CHROMA_PEAKINESS).
+ */
 export function estimateKey(mono: Float32Array, sampleRate: number): KeyEstimate | null {
   const chroma = chromagram(mono, sampleRate);
   let total = 0;
-  for (const v of chroma) total += v;
+  let peak = 0;
+  for (const v of chroma) {
+    total += v;
+    if (v > peak) peak = v;
+  }
   if (total <= 0) return null;
+  if (peak / (total / chroma.length) < MIN_CHROMA_PEAKINESS) return null;
 
   let best: KeyEstimate | null = null;
   for (let tonic = 0; tonic < 12; tonic++) {

@@ -1,4 +1,4 @@
-import type { SyncSettings } from "../audio/types";
+import { sanitizeSync, type SyncSettings } from "../audio/types";
 import type { ParamValues } from "../render/types";
 import { presets } from "../render/presets";
 
@@ -32,7 +32,13 @@ interface UserPresetFile {
 export function loadUserPresets(): UserPreset[] {
   try {
     const raw = JSON.parse(localStorage.getItem(LS_KEY) ?? "[]");
-    return Array.isArray(raw) ? raw.filter(isValidUserPreset) : [];
+    if (!Array.isArray(raw)) return [];
+    const out: UserPreset[] = [];
+    for (const item of raw) {
+      const preset = validUserPreset(item);
+      if (preset) out.push(preset);
+    }
+    return out;
   } catch {
     return [];
   }
@@ -73,25 +79,54 @@ export function parseUserPreset(json: string): UserPreset {
       "Preset was saved by a newer app version; update the app to import it",
     );
   }
-  if (!isValidUserPreset(file.preset)) {
+  const preset = validUserPreset(file.preset);
+  if (!preset) {
     throw new UserPresetParseError("Preset file is malformed");
   }
   // Fresh identity on import: the same file imported twice must not collide.
-  return { ...file.preset, id: newUserPresetId() };
+  // preset was just built field-by-field below, so this spread is safe —
+  // it can only carry the fields validUserPreset put there itself.
+  return { ...preset, id: newUserPresetId() };
 }
 
-function isValidUserPreset(v: unknown): v is UserPreset {
+/**
+ * Validate an untrusted value and build a clean UserPreset from ONLY its
+ * known fields, or return null.
+ *
+ * Previously this was a boolean type-guard (isValidUserPreset) and both
+ * call sites spread the ORIGINAL untrusted object after it passed — so any
+ * extra key in a hand-edited or foreign .avpreset file (or a corrupted
+ * localStorage entry) rode straight through into app state and got
+ * re-serialized on the next save. It also never looked at `sync` at all:
+ * a malformed sync object passed validation unexamined and sat in state/
+ * storage until something happened to sanitize it (setSync does, at apply
+ * time — but only once the look was actually applied, not at rest).
+ * Building the object explicitly, field by field, closes both gaps: unknown
+ * keys have nowhere to attach, and sync (still optional) is run through the
+ * same sanitizer setSync itself uses for exactly this kind of untrusted input.
+ */
+function validUserPreset(v: unknown): UserPreset | null {
   const p = v as Partial<UserPreset>;
-  return (
-    typeof p === "object" &&
-    p !== null &&
-    typeof p.id === "string" &&
-    typeof p.name === "string" &&
-    p.name.length > 0 &&
-    typeof p.presetId === "string" &&
-    presets.some((x) => x.id === p.presetId) &&
-    typeof p.params === "object" &&
-    p.params !== null &&
-    Object.values(p.params).every((n) => typeof n === "number" && Number.isFinite(n))
-  );
+  if (
+    typeof p !== "object" ||
+    p === null ||
+    typeof p.id !== "string" ||
+    typeof p.name !== "string" ||
+    p.name.length === 0 ||
+    typeof p.presetId !== "string" ||
+    !presets.some((x) => x.id === p.presetId) ||
+    typeof p.params !== "object" ||
+    p.params === null ||
+    !Object.values(p.params).every((n) => typeof n === "number" && Number.isFinite(n))
+  ) {
+    return null;
+  }
+  return {
+    id: p.id,
+    name: p.name,
+    presetId: p.presetId,
+    params: { ...p.params },
+    ...(p.sync !== undefined ? { sync: sanitizeSync(p.sync) } : {}),
+    createdAt: typeof p.createdAt === "string" ? p.createdAt : new Date().toISOString(),
+  };
 }

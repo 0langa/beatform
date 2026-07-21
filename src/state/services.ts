@@ -41,9 +41,24 @@ export interface ServiceHooks {
 let engine: AudioEngine | null = null;
 let analyzer: RealtimeAnalyzer | null = null;
 let renderer: Renderer | null = null;
-let disposeLoop: (() => void) | null = null;
 let measure: (() => void) | null = null;
 let liveRenderPaused = false;
+/**
+ * Identity guard for the three module-level singletons above (engine already
+ * had its own ad hoc version of this — `if (engine === eng) engine = null`).
+ * Each initServices() call claims this on entry; its teardown only writes to
+ * analyzer/renderer/measure if it still holds the claim.
+ *
+ * Without this, an overlapping lifecycle (StrictMode double-invoke racing an
+ * async device-loss rebuild, or a fast re-init before the previous instance's
+ * teardown has actually run) lets instance A's stale teardown null out
+ * instance B's still-live renderer and analyzer, and — since the SAME bug
+ * used to route the rAF-loop stop through a shared variable too — kill B's
+ * frame loop along with it. After that every getAnalyzer() throws for a
+ * session the UI still thinks is running.
+ */
+let activeInstance = 0;
+let instanceSeq = 0;
 
 /**
  * How long a rebuilt renderer must survive before its device loss is written
@@ -89,6 +104,9 @@ export function getRenderer(): Renderer | null {
  * init/dispose must be safely repeatable).
  */
 export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): () => void {
+  const myInstance = ++instanceSeq;
+  activeInstance = myInstance;
+
   const eng = new AudioEngine();
   engine = eng;
   eng.onStateChange = (s) => {
@@ -140,6 +158,13 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
   // caches are stale — the loop wires this up to clear them so the next
   // frame re-issues setPreset/setTransitionPreset onto the fresh renderer.
   let resyncRenderer: () => void = () => {};
+  // THIS instance's own current renderer, kept in lockstep with every write
+  // to the shared `renderer` below (including the null on device loss). The
+  // module-level `renderer` can end up pointing at a NEWER instance's
+  // renderer by the time this one is torn down — myRenderer is what lets
+  // teardown still dispose OUR OWN GPU resources without touching (or
+  // needing to know anything about) whoever the shared slot currently holds.
+  let myRenderer: Renderer | null = null;
 
   const installRenderer = async () => {
     let next: Renderer;
@@ -149,6 +174,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         // Driver reset / TDR: rebuild the renderer once, fall back after 2
         if (disposed) return;
         renderer = null;
+        myRenderer = null;
         gpu.dispose();
         gpuRetries++;
         void installRenderer().catch(() => {
@@ -186,6 +212,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     const r = canvas.getBoundingClientRect();
     next.resize(r.width, r.height, window.devicePixelRatio);
     renderer = next;
+    myRenderer = next;
     resyncRenderer(); // a rebuilt renderer must re-receive preset/transition
     hooks.onRendererChanged(
       next.kind,
@@ -325,24 +352,42 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     }, 300);
   })();
 
-  disposeLoop = () => {
+  // Stops THIS instance's own rAF loop / resize observer. A plain local
+  // closure, deliberately NOT stashed in a module-level variable: an earlier
+  // version routed this through one (so it could be invoked from outside),
+  // and a stale instance's teardown reading that shared slot could end up
+  // invoking a NEWER instance's stop function instead of its own, which is
+  // precisely how instance A's cleanup used to kill instance B's rAF loop.
+  // raf/ro/fallback are private to this call (never shared), so calling this
+  // directly is always correct regardless of whether we're still the
+  // "active" instance below.
+  const stopOwnLoop = () => {
     disposed = true;
     clearTimeout(fallback);
     cancelAnimationFrame(raf);
     ro?.disconnect();
-    measure = null;
   };
 
   return () => {
-    disposeLoop?.();
-    disposeLoop = null;
-    renderer?.dispose();
-    renderer = null;
+    stopOwnLoop();
     fallbackCanvas?.remove();
     fallbackCanvas = null;
     canvas.style.visibility = "";
-    analyzer = null;
     eng.dispose();
     if (engine === eng) engine = null;
+    // Always dispose OUR OWN renderer — tracked locally (myRenderer) so this
+    // runs whether or not the shared `renderer` slot still points to it.
+    myRenderer?.dispose();
+    myRenderer = null;
+    // Everything below is a module-level singleton shared with whichever
+    // initServices call is CURRENTLY active — only touch it if that's still
+    // us (see activeInstance's docblock above). In particular, do NOT call
+    // renderer?.dispose() here: unlike myRenderer, by this point `renderer`
+    // may belong to a newer instance entirely.
+    if (activeInstance === myInstance) {
+      renderer = null;
+      analyzer = null;
+      measure = null;
+    }
   };
 }

@@ -1024,6 +1024,20 @@ export const useVizStore = create<VizState>((set, get) => {
         clearTimeout(overlayTimer);
         liveCanvas = null;
         dispose();
+        // The rest of teardown: services.dispose() above only owns the
+        // engine/analyzer/renderer/loop. Everything the STORE itself
+        // retained outside React state was left dangling here — a stale
+        // ImageBitmap, up to 240 decoded video-bg frames (~220 MB), a live
+        // MIDI listener, a 5s autosave timer that fires after teardown and
+        // writes to disk, and a prefetched AudioBuffer for the session.
+        clearTimeout(autosaveTimer);
+        overlayBase?.close();
+        overlayBase = null;
+        disposeVideoBgFrames(videoBgFrames);
+        videoBgFrames = null;
+        midiHandle?.stop();
+        midiHandle = null;
+        libraryPrefetch = null;
       };
     },
 
@@ -2344,6 +2358,13 @@ export const useVizStore = create<VizState>((set, get) => {
             // means "skip this job" for free.
             exportAbort = jobAc;
           },
+          onTrackStart: (_trackId, trackAc) => {
+            // Same wiring as onJobStart, one level earlier: while a track is
+            // still decoding/analysing (before any of its jobs exist), Skip
+            // must still have something to abort, or it sits inert until
+            // that finishes on its own.
+            exportAbort = trackAc;
+          },
           onJobUpdate: (id, status) => {
             const cur = get().batch;
             if (!cur) return;
@@ -2409,6 +2430,11 @@ export const useVizStore = create<VizState>((set, get) => {
         await runBatch(again, {
           onJobStart: (_id, jobAc) => {
             exportAbort = jobAc;
+          },
+          // A retry re-decodes/re-analyses any track whose failed job it
+          // just re-queued — same window, same need for Skip to reach it.
+          onTrackStart: (_trackId, trackAc) => {
+            exportAbort = trackAc;
           },
           onJobUpdate: (id, status) => {
             const cur = get().batch;

@@ -387,6 +387,19 @@ async function runInline(
   });
 }
 
+/**
+ * How long the worker may go completely silent — no progress/chunk/frame/
+ * done/error message of ANY kind — before it's treated as dead. This is the
+ * safety net for an OS OOM-kill or a wedged worker thread: neither fires
+ * `worker.onerror` (that only fires for an uncaught JS exception INSIDE a
+ * still-running worker), so without a watchdog the promise never settles,
+ * `exportVideo` hangs forever, and `.finally()`'s `worker.terminate()` never
+ * runs because nothing ever causes the promise to settle. Generous on
+ * purpose: `progress` alone fires every 10 frames (exportCore.ts), and a
+ * slow 4K/ProRes frame is still nowhere near this on any real machine.
+ */
+const WORKER_WATCHDOG_MS = 30_000;
+
 function runInWorker(
   job: ExportJob,
   o: ExportOptions,
@@ -402,18 +415,33 @@ function runInWorker(
   // real failure — retrying would append a second pass onto the first one's
   // bytes (the writer only truncates at open()) and hand back a corrupt file.
   let wroteAnything = false;
+  let watchdog: ReturnType<typeof setInterval> | undefined;
 
   return new Promise<ExportCoreResult>((resolve, reject) => {
     o.signal?.addEventListener("abort", onAbort);
 
+    const dead = (detail: string) =>
+      reject(
+        wroteAnything
+          ? new Error(`Export worker ${detail} mid-render`)
+          : new Error(`__fallback__ worker ${detail}`),
+      );
+
+    let lastMessageAt = Date.now();
+    watchdog = setInterval(() => {
+      if (Date.now() - lastMessageAt >= WORKER_WATCHDOG_MS) dead("stopped responding");
+    }, 1000);
+
     worker.onerror = () => {
       // Fires for any uncaught worker error, including one 90% into a job —
       // only a start-up failure is safe to retry inline.
-      reject(
-        wroteAnything
-          ? new Error("Export worker crashed mid-render")
-          : new Error("__fallback__ worker failed to start"),
-      );
+      dead("crashed");
+    };
+    // Fires when a posted message can't be deserialized on this side. Rare in
+    // this app's own protocol, but without a handler it's the same silent
+    // hang as the OOM case: onerror never fires for it either.
+    worker.onmessageerror = () => {
+      dead("sent an unreadable message");
     };
     worker.onmessage = (
       e: MessageEvent<
@@ -424,6 +452,7 @@ function runInWorker(
         | { type: "error"; message: string; name: string }
       >,
     ) => {
+      lastMessageAt = Date.now();
       const msg = e.data;
       switch (msg.type) {
         case "progress":
@@ -471,6 +500,7 @@ function runInWorker(
     const transfers: Transferable[] = job.pcm.channels.map((c) => c.buffer);
     worker.postMessage({ type: "start", job }, transfers);
   }).finally(() => {
+    clearInterval(watchdog);
     o.signal?.removeEventListener("abort", onAbort);
     worker.terminate();
   });

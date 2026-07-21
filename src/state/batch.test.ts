@@ -105,6 +105,57 @@ describe("expandJobs", () => {
     expect(safeName("")).toBe("visualization");
   });
 
+  it("defuses Windows reserved device names, case-insensitively", () => {
+    // "CON", "con.txt" and "Con.mp4.bak" are ALL refused by Windows — it
+    // matches the segment before the first dot, not the whole filename. A
+    // stock ID3 title of exactly "CON" would otherwise render an unwritable
+    // batch job that fails at write time with no useful error.
+    expect(safeName("CON")).not.toBe("CON");
+    expect(safeName("con")).not.toMatch(/^con$/i);
+    expect(safeName("Con")).not.toMatch(/^con$/i);
+    expect(safeName("COM1")).not.toMatch(/^com1$/i);
+    expect(safeName("lpt9")).not.toMatch(/^lpt9$/i);
+    expect(safeName("NUL")).not.toMatch(/^nul$/i);
+  });
+
+  it("only defuses an EXACT reserved-name segment, not a superstring", () => {
+    // Real titles/artists that merely start with a reserved-looking prefix
+    // must pass through untouched — "COM" with no digit isn't reserved, and
+    // "Confessions" isn't "CON".
+    expect(safeName("Confessions")).toBe("Confessions");
+    expect(safeName("Com Truise")).toBe("Com Truise");
+    expect(safeName("Nullptr")).toBe("Nullptr");
+  });
+
+  it("keeps a reserved-name stem unwritable-proof once the caller appends an extension", () => {
+    const jobs = expandJobs([track("t1", "CON")], [F16], "/out");
+    expect(jobs[0].outPath).not.toBe("/out/CON.mp4");
+    expect(jobs[0].outPath.toLowerCase()).not.toMatch(/\/con\.mp4$/);
+  });
+
+  it("strips control characters an ID3 tag can legally contain", () => {
+    // Frame text can carry raw bytes 0x00-0x1F (NUL, BEL, TAB, CR/LF, ...);
+    // Windows refuses every one of them in a filename. Built via
+    // String.fromCharCode rather than source escapes so the test file
+    // itself never carries a literal control byte.
+    const bel = String.fromCharCode(7);
+    const nul = String.fromCharCode(0);
+    const tab = String.fromCharCode(9);
+    const crlf = String.fromCharCode(13) + String.fromCharCode(10);
+    expect(safeName(`Track${bel}Title`)).toBe("TrackTitle");
+    expect(safeName(`A${nul}B`)).toBe("AB");
+    expect(safeName(`Tab${tab}Here`)).toBe("TabHere");
+    expect(safeName(`Line1${crlf}Line2`)).toBe("Line1Line2");
+  });
+
+  it("caps a hostile or merely verbose ID3 tag to a writable length", () => {
+    const long = safeName("A".repeat(5000));
+    expect(long.length).toBeLessThanOrEqual(200);
+    // Truncation must not stop right after a space/dot the sanitizer would
+    // otherwise have trimmed from the end.
+    expect(long).not.toMatch(/[. ]$/);
+  });
+
   it("derives total frames from duration and fps", () => {
     const jobs = expandJobs([track("t1", "One", 10)], [F16], "/out");
     expect(jobs[0].totalFrames).toBe(300);

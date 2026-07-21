@@ -27,10 +27,22 @@ import { validTimeline, type Timeline } from "./timeline";
  * v3 (+) modulation-matrix routes · v4 (+) timeline (scenes + automation) ·
  * v5 (+) post-processing (bloom/tonemap/vignette/grain/chromatic) ·
  * v6 (+) global motion masters (rotation/pulse/detail) ·
- * v7 (+) image backgrounds (bg.mode 3 + bg.image asset ref/dim/blur)
+ * v7 (+) image backgrounds (bg.mode 3 + bg.image asset ref/dim/blur) ·
+ * v8 (+) video backgrounds (bg.mode 4 + bg.video asset ref/dim/blur, and
+ *        `data:video/` entries in the asset map)
+ *
+ * v8 note: video backgrounds actually landed in the app after the v7 bump,
+ * with no version bump of their own — so real v7 files exist in both the
+ * pre-video shape (only ever bg.mode <= 3, only `data:image/` assets) and,
+ * confusingly, some that already carried bg.mode 4 / video assets under a
+ * schemaVersion that predates the field's documented introduction. v8 exists
+ * to give the current (video-capable) shape its own honest number; nothing
+ * below the schema-version gate changed, so older files of every prior
+ * version keep loading exactly as before — the per-field validators are the
+ * actual migration path, not a per-version branch.
  */
 
-export const PROJECT_VERSION = 7;
+export const PROJECT_VERSION = 8;
 export const PROJECT_EXTENSION = "avproj";
 
 /** Frame aspect: "free" fills the window; fixed ratios letterbox the stage. */
@@ -243,7 +255,15 @@ function num(v: unknown, fallback: number, lo: number, hi: number): number {
  * (bg.video references one by id), so both MIME families must survive a
  * round-trip. Accepting only `data:image/` silently dropped every video asset
  * on load, which flipped bg.mode back to the preset background and left
- * bg.video as a dangling id that re-serialized forever. */
+ * bg.video as a dangling id that re-serialized forever.
+ *
+ * SVG is refused even though it starts with `data:image/`: consumption is
+ * createImageBitmap (not innerHTML), so this isn't an XSS vector, but SVG
+ * decoding is a known DoS surface (recursive references, huge intrinsic
+ * sizes) with no upside over a raster format. This also matches the
+ * theme-thumbnail validator (themes.ts), which already refused SVG — the two
+ * disagreeing was the actual bug; openImageFile no longer offers `.svg` for
+ * the same reason, so this only ever fires for a hand-edited or foreign file. */
 export function validAssets(v: unknown): Record<string, OverlayAsset> {
   if (typeof v !== "object" || v === null) return {};
   const out: Record<string, OverlayAsset> = Object.create(null);
@@ -253,7 +273,8 @@ export function validAssets(v: unknown): Record<string, OverlayAsset> {
       typeof a === "object" &&
       a !== null &&
       typeof a.dataUrl === "string" &&
-      (a.dataUrl.startsWith("data:image/") || a.dataUrl.startsWith("data:video/"))
+      (a.dataUrl.startsWith("data:image/") || a.dataUrl.startsWith("data:video/")) &&
+      !a.dataUrl.startsWith("data:image/svg+xml")
     ) {
       const isVideo = a.dataUrl.startsWith("data:video/");
       out[id] = {

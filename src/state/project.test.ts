@@ -83,7 +83,7 @@ describe("project files (.avproj)", () => {
   it("stamps metadata", () => {
     const file = JSON.parse(serializeProject(doc, "1.2.0"));
     expect(file.kind).toBe("avproj");
-    expect(file.schemaVersion).toBe(7);
+    expect(file.schemaVersion).toBe(8);
     expect(file.appVersion).toBe("1.2.0");
     expect(typeof file.savedAt).toBe("string");
   });
@@ -244,5 +244,100 @@ describe("project files (.avproj)", () => {
     ];
     const parsed = parseProject(JSON.stringify(file));
     expect(parsed.overlayLayers).toHaveLength(0);
+  });
+
+  // Regression (M26): video backgrounds landed after the v7 bump with no
+  // version bump of their own, so a pre-video file and a post-video file
+  // were both stamped schemaVersion 7 and indistinguishable. v8 gives the
+  // current (video-capable) shape its own number; old files must still open.
+  describe("schema v7 -> v8 (video backgrounds)", () => {
+    it("the current shape is stamped v8", () => {
+      const file = JSON.parse(serializeProject(doc, "2.35.0"));
+      expect(file.schemaVersion).toBe(8);
+    });
+
+    it("still opens a real v7 file saved before video backgrounds existed", () => {
+      // A pre-video .avproj: schemaVersion 7, image background only, no
+      // bg.video anywhere in the shape — exactly what an app version before
+      // video backgrounds landed would have written to disk.
+      const file = {
+        schemaVersion: 7,
+        kind: "avproj",
+        appVersion: "2.20.0",
+        savedAt: "2025-01-01T00:00:00.000Z",
+        document: {
+          ...doc,
+          assets: { "as-1": { id: "as-1", name: "bg.png", dataUrl: PIXEL } },
+          bg: { mode: 3, color: [0, 0, 0], image: { assetId: "as-1", dim: 0.3, blur: 5 } },
+        },
+      };
+      const parsed = parseProject(JSON.stringify(file));
+      expect(parsed.bg.mode).toBe(3);
+      expect(parsed.bg.image).toEqual({ assetId: "as-1", dim: 0.3, blur: 5 });
+      expect(parsed.presetId).toBe(doc.presetId);
+    });
+
+    it("opens a v8 file with a video background", () => {
+      const file = {
+        schemaVersion: 8,
+        kind: "avproj",
+        appVersion: "2.35.0",
+        savedAt: "2026-07-01T00:00:00.000Z",
+        document: {
+          ...doc,
+          assets: {
+            "vid-1": { id: "vid-1", name: "clip.mp4", dataUrl: "data:video/mp4;base64,AA" },
+          },
+          bg: { mode: 4, color: [0, 0, 0], video: { assetId: "vid-1", dim: 0.4, blur: 12 } },
+        },
+      };
+      const parsed = parseProject(JSON.stringify(file));
+      expect(parsed.bg.mode).toBe(4);
+      expect(parsed.bg.video).toEqual({ assetId: "vid-1", dim: 0.4, blur: 12 });
+      expect(parsed.assets["vid-1"]?.dataUrl).toBe("data:video/mp4;base64,AA");
+    });
+
+    it("still rejects a file from a schema newer than the current v8", () => {
+      const file = JSON.parse(serializeProject(doc, "x"));
+      file.schemaVersion = 9;
+      expect(() => parseProject(JSON.stringify(file))).toThrow(/newer app version/);
+    });
+  });
+
+  // Regression (L17): validAssets accepted `data:image/svg+xml` (it matches
+  // the generic `data:image/` prefix) while the theme-thumbnail validator
+  // explicitly refused SVG — the two disagreed. SVG decoding is a known DoS
+  // surface and consumption is createImageBitmap either way, so there is no
+  // upside to accepting it; make the general asset validator refuse it too.
+  it("refuses an SVG asset (matches the theme-thumbnail validator)", () => {
+    const file = JSON.parse(serializeProject(doc, "x"));
+    file.document.assets = {
+      "svg-1": {
+        id: "svg-1",
+        name: "logo.svg",
+        dataUrl: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
+      },
+    };
+    const parsed = parseProject(JSON.stringify(file));
+    expect(parsed.assets["svg-1"]).toBeUndefined();
+  });
+
+  it("an SVG background asset degrades to the preset bg instead of persisting", () => {
+    const file = JSON.parse(serializeProject(doc, "x"));
+    file.document.assets = {
+      "svg-1": {
+        id: "svg-1",
+        name: "bg.svg",
+        dataUrl: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
+      },
+    };
+    file.document.bg = {
+      mode: 3,
+      color: [0, 0, 0],
+      image: { assetId: "svg-1", dim: 0.2, blur: 0 },
+    };
+    const parsed = parseProject(JSON.stringify(file));
+    expect(parsed.assets["svg-1"]).toBeUndefined();
+    expect(parsed.bg.mode).toBe(0); // no black hole, same degrade path as a missing asset
   });
 });
