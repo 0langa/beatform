@@ -202,11 +202,21 @@ fn preset(uv: vec2f) -> vec4f {
   // --- Feedback: inverse-warp the current coord back into the previous
   // frame (zoom + swirl), sample it and decay. zoom>1 pulls content from
   // nearer the center, so last frame's image grows outward = a tunnel. ---
-  let zoom = 1.0 + P_zoom() * 0.06 + u.driveBeat * P_beatZoom() * 0.12 * u.pulse;
-  let swirl = (P_swirl() * 0.15 + u.drive * P_flowSwirl() * 0.1) * u.spin;
+  // The whole feedback transform is per-RENDERED-FRAME, so it has to be scaled
+  // by dt like the decay below — otherwise a 30 fps export advects the trail
+  // half as many times as a 60 fps preview and the streaks are half as long.
+  // At 60 fps this factor is 1.0, so the tuned look is unchanged there.
+  let fpsComp = u.dt * 60.0;
+  let zoom = 1.0 + (P_zoom() * 0.06 + u.driveBeat * P_beatZoom() * 0.12 * u.pulse) * fpsComp;
+  let swirl = (P_swirl() * 0.15 + u.drive * P_flowSwirl() * 0.1) * u.spin * fpsComp;
   let w = rot2(swirl) * (c / zoom);
   let puv = vec2f(w.x / u.aspect + 0.5, w.y + 0.5);
-  var col = feedbackSample(puv).rgb * P_decay();
+  // Decay expressed PER SECOND, not per rendered frame. P_decay() remains the
+  // per-frame factor at 60 fps (so the tuned look is unchanged there), but at
+  // 30 fps the exponent doubles and the trail fades over the same amount of
+  // TRACK time. Previously a 30 fps export held trails roughly twice as long
+  // as the preview, and a 144 Hz display diverged the other way.
+  var col = feedbackSample(puv).rgb * pow(P_decay(), u.dt * 60.0);
 
   // --- Inject a fresh audio-driven source over the trails ---
   // Spectrum ring: its radius per angle rides the spectrum + bass.

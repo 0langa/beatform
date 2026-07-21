@@ -191,7 +191,11 @@ struct Uniforms {
   binCount: u32,
   aspect: f32,
   waveCount: u32,
-  progress: f32,
+  // Seconds of TRACK time this frame covers. Lets per-frame accumulations
+  // (feedback trails) be expressed per-second instead of per-frame, so they
+  // look the same at 30 fps, 60 fps and on a 144 Hz preview. Reuses what was
+  // the dead progress lane — no ABI size change.
+  dt: f32,
   energy: f32,
   bgMode: u32,
   bgColor: vec4f,
@@ -982,6 +986,8 @@ export class WebGPURenderer implements Renderer {
   /** Compiled fragment pipelines, keyed by preset def object (see setPreset).
    * Weak so an unregistered/edited custom preset's pipeline can be collected. */
   private pipelineCache = new WeakMap<PresetDef, GPURenderPipeline>();
+  /** Previous render's track time, for the per-frame dt uniform (-1 = none). */
+  private lastRenderTime = -1;
   private postUniform: GPUBuffer;
   private postUniformData = new Float32Array(POST_UNIFORM_SIZE / 4);
   private postSampler: GPUSampler;
@@ -1978,7 +1984,14 @@ export class WebGPURenderer implements Renderer {
     this.uniformU32[6] = f.bins.length;
     this.uniformF32[7] = this.canvas.width / Math.max(1, this.canvas.height);
     this.uniformU32[8] = WAVE_POINTS;
-    this.uniformF32[9] = f.duration > 0 ? f.time / f.duration : 0;
+    // Track-time delta for this frame. Derived from successive render times so
+    // it is correct on BOTH paths: the export advances time by exactly 1/fps,
+    // the live loop by whatever the display did. Seeks/pauses produce negative
+    // or huge deltas — fall back to a 60 fps step rather than let a trail
+    // vanish or freeze.
+    const dtRaw = this.lastRenderTime < 0 ? 0 : time - this.lastRenderTime;
+    this.lastRenderTime = time;
+    this.uniformF32[9] = dtRaw > 0 && dtRaw <= 0.1 ? dtRaw : 1 / 60;
     this.uniformF32[10] = f.energy;
     this.uniformU32[11] = this.bg.mode;
     this.uniformF32[12] = this.bg.color[0];
