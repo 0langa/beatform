@@ -4,6 +4,16 @@ import type { PresetDef } from "../types";
  * Synthwave — a retro perspective grid streaming toward a scanline sun, over
  * rolling mountains and a starfield. The grid, sun glow and horizon all react
  * to the selected sync source; the grid pulses on its beats.
+ *
+ * Look pass: the floor is an actual dense grid now (both axes ride a real
+ * density multiplier — the raw 1/depth mapping only has about 3x dynamic
+ * range across the closest two-thirds of the floor, which read as two or
+ * three lonely lines), atmospheric fog fades it into haze toward the
+ * vanishing point instead of holding constant brightness, the sun gets a
+ * genuine hot white core that partially bleeds through its scanline bands,
+ * and the mountain ridge catches a thin backlit rim. No mirror/kaleido here
+ * — the composition is a single asymmetric horizon + off-center sun, and
+ * folding it would break that on purpose-built geometry.
  */
 export const synthwave: PresetDef = {
   id: "synthwave",
@@ -130,7 +140,7 @@ export const synthwave: PresetDef = {
       max: 1,
       step: 0.02,
       default: 0.35,
-      hint: "Silhouetted rolling mountains on the horizon (rise with the bass)",
+      hint: "Silhouetted rolling mountains on the horizon (rise with the bass), rim-lit along the ridge",
     },
     {
       key: "stars",
@@ -166,7 +176,7 @@ export const synthwave: PresetDef = {
       max: 2,
       step: 0.05,
       default: 0.7,
-      hint: "How fine the grid columns are",
+      hint: "How fine the grid lines are, in both directions",
     },
     {
       key: "scan",
@@ -175,7 +185,7 @@ export const synthwave: PresetDef = {
       max: 1,
       step: 0.02,
       default: 0.6,
-      hint: "Strength of the horizontal bands across the sun",
+      hint: "Strength of the horizontal bands across the sun (the hot core still glows through)",
     },
     {
       key: "gridLock",
@@ -185,6 +195,24 @@ export const synthwave: PresetDef = {
       step: 1,
       default: 1,
       hint: "Grid lines cross exactly on the beat (needs the track's beat grid; off = free speed)",
+    },
+    {
+      key: "fog",
+      label: "Atmospheric fog",
+      min: 0,
+      max: 1.5,
+      step: 0.05,
+      default: 0.8,
+      hint: "Grid fades into haze toward the horizon instead of staying constant brightness",
+    },
+    {
+      key: "vignette",
+      label: "Vignette",
+      min: 0,
+      max: 1,
+      step: 0.05,
+      default: 0.3,
+      hint: "Darkening toward the screen corners",
     },
   ],
   wgsl: /* wgsl */ `
@@ -213,15 +241,33 @@ fn preset(uv: vec2f) -> vec4f {
       // (1..6 lines/beat) instead of round() collapsing the lower half to 1.
       scroll = beatRamp() * max(1.0, round(P_speed() * 2.0));
     }
-    let gz = persp - scroll;
-    let gx = cx * persp * P_gridScale();
+    // Grid density: a plain 1/depth mapping only has ~3x dynamic range across
+    // the CLOSEST two-thirds of the floor (persp goes from 1.0 to 0.32 across
+    // that whole span), which is why the old grid read as two or three lonely
+    // lines instead of a floor. dens multiplies both axes up to a real
+    // density — rounded to an INTEGER so the beat-locked scroll's "integer
+    // cells per beat" guarantee above still lands on an integer number of
+    // sub-lines too, keeping fract(gz) continuous across the bar wrap.
+    let dens = max(1.0, round(P_gridScale() * 9.0));
+    let gz = (persp - scroll) * dens;
+    let gx = cx * persp * dens;
     let lz = abs(fract(gz) - 0.5);
     let lx = abs(fract(gx) - 0.5);
-    let lineW = 0.035 + fy * 0.12;
+    let lineW = 0.05 + fy * 0.05;
     let grid = smoothstep(lineW, 0.0, lz) + smoothstep(lineW, 0.0, lx);
-    let fade = smoothstep(0.0, 0.12, fy);
+    let fade = smoothstep(0.0, 0.06, fy);
     let glow = P_gridGlow() * (0.4 + drive * P_react() + u.bass * 0.3) * pulse;
-    col += hsl2rgb(P_gridHue(), 0.9, 0.55) * grid * fade * glow;
+    var gridCol = hsl2rgb(P_gridHue(), 0.9, 0.55) * grid * fade * glow;
+
+    // Atmospheric fog (IQ): brightness/saturation fall off with the TRUE
+    // optical depth (persp, not the density-scaled line coordinate), so the
+    // grid recedes into haze approaching the vanishing point instead of
+    // holding constant brightness all the way to the horizon — this was the
+    // single biggest reason the floor read as flat rather than deep.
+    let fogAmt = (1.0 - exp(-persp * 0.22)) * clamp(P_fog(), 0.0, 1.5);
+    let fogCol = mix(hsl2rgb(P_gridHue(), 0.5, 0.045), hsl2rgb(P_hue(), 0.55, 0.045), 0.5);
+    gridCol = mix(gridCol, fogCol * (grid * 0.7 + 0.3) * fade, clamp(fogAmt, 0.0, 1.0));
+    col += gridCol;
   } else {
     // --- Sky.
     // Rolling mountain silhouette rising from the horizon (bass lifts it).
@@ -242,6 +288,14 @@ fn preset(uv: vec2f) -> vec4f {
       clamp((uv.y - (horizon - P_sunY() - P_sunR())) / (2.0 * P_sunR()), 0.0, 1.0),
     );
     var sky = sunGrad * sunBody * (1.0 - scanGap);
+    // Hot core: a genuinely emissive centre that partially bleeds through the
+    // scan bands (real overexposed light does not get fully cut by them) —
+    // desaturating toward white and pushing past 1.0 for tonemap() to roll
+    // off is what reads as EMITTING rather than merely sun-coloured.
+    let core = exp(-sd * sd * (9.0 / max(P_sunR() * P_sunR(), 1e-4)));
+    let hot = smoothstep(0.3, 0.85, core) * sunBody;
+    sky = mix(sky, vec3f(1.0, 0.97, 0.9), hot * 0.75);
+    sky += vec3f(1.0, 0.95, 0.85) * hot * hot * 0.7 * (1.0 - scanGap * 0.6);
     sky += hsl2rgb(P_hue() + 30.0, 0.8, 0.45) * smoothstep(P_sunR() * 2.3, 0.0, sd) * (0.35 + drive * 0.35);
     // Rotating sun rays (optional).
     if (P_sunRays() > 0.01) {
@@ -266,11 +320,24 @@ fn preset(uv: vec2f) -> vec4f {
     }
     // Mountains are a dark silhouette over the sky.
     col += mix(sky, sky * 0.1, mtn);
+    // Rim light: a thin warm highlight along the ridge, as if backlit by the
+    // sun behind it — sells the silhouette as a shape instead of a flat cutout.
+    let ridgeDist = abs(uv.y - ridgeTop);
+    col += hsl2rgb(P_hue() + 20.0, 0.85, 0.6) * smoothstep(0.007, 0.0, ridgeDist)
+         * (0.5 + drive * 0.4) * P_mountains();
   }
-  // Horizon bloom line, pumped by the sync source.
-  col += hsl2rgb(P_gridHue(), 0.8, 0.6) * exp(-abs(uv.y - horizon) * 55.0)
-       * (0.4 + u.energy * 0.3 + drive * 0.5) * pulse;
-  return vec4f(col, 1.0);
+  // Horizon bloom: a tight crisp line plus a wider soft halo, pumped by the
+  // sync source — two exp() reaches read as an actual light source instead
+  // of a single flat bar.
+  let hEdge = abs(uv.y - horizon);
+  col += hsl2rgb(P_gridHue(), 0.85, 0.65) * exp(-hEdge * 90.0)
+       * (0.5 + u.energy * 0.3 + drive * 0.5) * pulse;
+  col += hsl2rgb(P_gridHue(), 0.7, 0.6) * exp(-hEdge * 16.0) * 0.22 * (0.4 + drive * 0.4) * pulse;
+
+  col *= vignette(uv, P_vignette());
+  col = tonemap(col * 1.15);
+  col += grain(uv, 0.012);
+  return vec4f(max(col, vec3f(0.0)), 1.0);
 }
 `,
 };
