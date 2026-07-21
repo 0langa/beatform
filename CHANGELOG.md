@@ -11,9 +11,69 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
-Ongoing hardening pass across the render/export/state layers, CI and
-repository documentation, following an internal code audit. Will land as a
-tagged release once complete.
+## [2.35.0] - 2026-07-21
+
+A hardening release: the whole render/export/state stack, CI, and the docs
+were worked through against a full internal code audit. Nothing here changes
+how you use Beatform, but a lot of it changes whether Beatform does the right
+thing when something goes wrong.
+
+### Added
+
+- **Crash recovery.** The autosave has been written every 5 s for a long time
+  and nothing ever read it back. It does now: if Beatform is killed with
+  unsaved work, the next launch offers to restore it. A clean quit shows
+  nothing.
+- Media size limits on background images (32 MB) and video (192 MB), with an
+  error that names the file's real size, instead of a renderer OOM.
+- Repository documentation a public project should have: CHANGELOG, SECURITY,
+  CODE_OF_CONDUCT, CODEOWNERS, and a PR template.
+
+### Fixed
+
+- **Exports no longer start beat-blind.** The first ~0.2 s of every export had
+  no beat, kick, snare or hat, because the detector warmup counted from when
+  the analyzer was built rather than from the track. The preview, warm for
+  minutes, fired them at the same moment — a straight preview/export mismatch
+  at the most visible point in the video.
+- **Crossfades into and out of feedback presets** (Echo Trails) no longer pop.
+  The outgoing preset's trail was being wiped at the exact instant the fade
+  began, while it was still fully visible.
+- **A wedged ProRes/GIF/WebP export can be cancelled.** A blocked frame write
+  held the same lock cancel needed, so a stalled encoder was unkillable.
+  Finishing a long export no longer freezes the window either.
+- Feedback trails and the particle simulation are frame-rate independent, so a
+  30 fps export matches a 60 fps preview instead of drifting.
+- Losing the system-audio device no longer bricks loopback until restart — it
+  reconnects on the next start instead of answering "already running" forever.
+- Overlay rendering stopped churning a full-resolution GPU texture every frame
+  during lyric fades (measured: 49,884 texture creations and 47 GPU validation
+  errors over one fade, now zero of each).
+- A GPU device loss during startup is no longer silently dropped.
+- Export/batch robustness: a killed export worker fails instead of hanging
+  forever; Cancel and Skip interrupt a track while it is still decoding;
+  cancelling a batch no longer strands the untouched jobs as unreachable.
+- Video backgrounds, custom presets edited inside timeline scenes, undo/redo
+  grouping, and keyframe editing all had correctness bugs; all fixed.
+- Accessibility: focus traps in dialogs, keyboard-reachable setting hints,
+  labels on icon-only buttons, and a described canvas.
+
+### Changed
+
+- Project schema is now version 8, distinguishing files saved with video
+  backgrounds. Older projects still open unchanged.
+- The release workflow runs the same gates as CI. Running a smaller set is how
+  two releases previously shipped from a failing main.
+- The UI no longer re-renders the whole tree several times a second alongside
+  the render loop.
+- Startup bundle split: the main chunk dropped from 1,059 kB to 381 kB.
+
+### Security
+
+- Temp files are created in a way that cannot be redirected through a planted
+  symlink.
+- Removed an unused plugin whose permission expansion would have granted a
+  URL-open primitive.
 
 ## [2.34.1] - 2026-07-20
 
@@ -385,7 +445,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.34.1...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.35.0...HEAD
+[2.35.0]: https://github.com/0langa/beatform/compare/v2.34.1...v2.35.0
 [2.34.1]: https://github.com/0langa/beatform/compare/v2.34.0...v2.34.1
 [2.34.0]: https://github.com/0langa/beatform/compare/v2.33.0...v2.34.0
 [2.33.0]: https://github.com/0langa/beatform/compare/v2.32.0...v2.33.0
