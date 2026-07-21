@@ -280,13 +280,22 @@ fn specAmt() -> f32 { return max(u.smoothBins, u.specSmooth); }
 
 /** Spectrum sampled at x in 0..1. Blends the raw nearest bin toward a
  * Catmull-Rom spline by the smoothing amount (0 = hard bins / classic look,
- * 1 = full curve). At amount 0 it returns the exact nearest bin. */
+ * 1 = full curve). At amount 0 it returns the exact nearest bin.
+ *
+ * nearest and the spline share ONE bin-center anchor (L5): bin i's
+ * representative position is (i+0.5)/n, and fi below is x in that
+ * fractional-index space — already needed for the spline's own control
+ * points. nearest rounds that SAME fi to pick whichever of the spline's two
+ * active control points (i1/i2) x is closer to, instead of separately
+ * re-deriving a floor(x*n) index with no visible tie to the spline's
+ * anchor. Previously the two were only coincidentally equal (they agree
+ * almost everywhere on a uniform grid); now it is the same expression. */
 fn binAt(x: f32) -> f32 {
   let n = f32(u.binCount);
-  let nearest = bins[u32(clamp(x, 0.0, 0.999) * n)];
+  let fi = clamp(x, 0.0, 0.999) * n - 0.5;
+  let nearest = bins[u32(clamp(round(fi), 0.0, n - 1.0))];
   let amt = specAmt();
   if (amt < 0.001) { return nearest; }
-  let fi = clamp(x, 0.0, 0.999) * n - 0.5;
   let i = floor(fi);
   let t = fi - i;
   let i0 = u32(clamp(i - 1.0, 0.0, n - 1.0));
@@ -296,12 +305,13 @@ fn binAt(x: f32) -> f32 {
   return mix(nearest, catmullRom(bins[i0], bins[i1], bins[i2], bins[i3], t), amt);
 }
 
+/** peaks[] counterpart to binAt() — same bin-center anchor, see above. */
 fn peakAt(x: f32) -> f32 {
   let n = f32(u.binCount);
-  let nearest = peaks[u32(clamp(x, 0.0, 0.999) * n)];
+  let fi = clamp(x, 0.0, 0.999) * n - 0.5;
+  let nearest = peaks[u32(clamp(round(fi), 0.0, n - 1.0))];
   let amt = specAmt();
   if (amt < 0.001) { return nearest; }
-  let fi = clamp(x, 0.0, 0.999) * n - 0.5;
   let i = floor(fi);
   let t = fi - i;
   let i0 = u32(clamp(i - 1.0, 0.0, n - 1.0));
@@ -1082,8 +1092,33 @@ export class WebGPURenderer implements Renderer {
   private paramsData = new Float32Array(MAX_PARAMS);
   private waveData = new Float32Array(WAVE_POINTS);
 
-  /** Fires if the GPU device dies (driver reset, TDR) — host may recreate. */
-  onDeviceLost: ((reason: string) => void) | null = null;
+  private _onDeviceLost: ((reason: string) => void) | null = null;
+  // L7: device.lost is wired inside create() (below), but every caller
+  // assigns the public onDeviceLost callback AFTER `await create(...)`
+  // returns — a real gap, not a theoretical one: the WebGPU spec allows a
+  // device to be lost essentially immediately (the "driver keeps dying"
+  // case the retry loop in services.ts exists for). A loss that lands in
+  // that gap is captured here instead of being dropped, and delivered as
+  // soon as a handler is attached (see the setter below).
+  private pendingDeviceLoss: string | null = null;
+
+  /**
+   * Fires if the GPU device dies (driver reset, TDR) — host may recreate.
+   * If the device was already lost before this was assigned, the buffered
+   * reason fires on the next microtask after assignment rather than being
+   * silently dropped (L7).
+   */
+  get onDeviceLost(): ((reason: string) => void) | null {
+    return this._onDeviceLost;
+  }
+  set onDeviceLost(fn: ((reason: string) => void) | null) {
+    this._onDeviceLost = fn;
+    if (fn && this.pendingDeviceLoss !== null) {
+      const reason = this.pendingDeviceLoss;
+      this.pendingDeviceLoss = null;
+      queueMicrotask(() => fn(reason));
+    }
+  }
   private disposed = false;
 
   static async create(canvas: HTMLCanvasElement | OffscreenCanvas): Promise<WebGPURenderer> {
@@ -1095,7 +1130,11 @@ export class WebGPURenderer implements Renderer {
     void device.lost.then((info) => {
       if (renderer.disposed) return;
       console.error("[webgpu] device lost:", info.reason, info.message);
-      renderer.onDeviceLost?.(info.message);
+      if (renderer._onDeviceLost) {
+        renderer._onDeviceLost(info.message);
+      } else {
+        renderer.pendingDeviceLoss = info.message;
+      }
     });
     return renderer;
   }
@@ -1852,10 +1891,31 @@ export class WebGPURenderer implements Renderer {
     pass.end();
   }
 
+  /**
+   * Upload a new overlay bitmap. During a lyric fade or karaoke wipe this is
+   * called on nearly every rendered frame (the frame key moves every 1/64
+   * alpha step), so — like updateBackgroundVideoFrame — it reuses the texture
+   * when dimensions match and only recreates on an actual size change (e.g.
+   * a live-canvas resize). Recreating a full-res texture + rebinding 3 bind
+   * groups every frame was the previous behavior and is expensive at 4K.
+   */
   setOverlay(source: ImageBitmap | null): void {
-    this.overlayTexture?.destroy();
-    this.overlayTexture = null;
-    if (source) {
+    if (!source) {
+      if (this.overlayTexture) {
+        this.overlayTexture.destroy();
+        this.overlayTexture = null;
+        this.bindGroup = null;
+        this.transitionBindGroup = null;
+        this.compositeBind = null;
+      }
+      return;
+    }
+    if (
+      !this.overlayTexture ||
+      this.overlayTexture.width !== source.width ||
+      this.overlayTexture.height !== source.height
+    ) {
+      this.overlayTexture?.destroy();
       this.overlayTexture = this.device.createTexture({
         size: [source.width, source.height],
         format: "rgba8unorm",
@@ -1864,19 +1924,19 @@ export class WebGPURenderer implements Renderer {
           GPUTextureUsage.COPY_DST |
           GPUTextureUsage.RENDER_ATTACHMENT,
       });
-      this.device.queue.copyExternalImageToTexture(
-        { source },
-        { texture: this.overlayTexture, premultipliedAlpha: true },
-        [source.width, source.height],
-      );
-      // The copy snapshots the source synchronously; WebGPU does not retain
-      // the bitmap. Release it now — the store rasterizes a fresh overlay on
-      // every debounced change, so without this each one leaks until GC.
-      source.close();
+      this.bindGroup = null; // rebind with the new texture view
+      this.transitionBindGroup = null;
+      this.compositeBind = null; // composite pass also samples the overlay
     }
-    this.bindGroup = null; // rebind with the new texture view
-    this.transitionBindGroup = null;
-    this.compositeBind = null; // composite pass also samples the overlay
+    this.device.queue.copyExternalImageToTexture(
+      { source },
+      { texture: this.overlayTexture, premultipliedAlpha: true },
+      [source.width, source.height],
+    );
+    // The copy snapshots the source synchronously; WebGPU does not retain
+    // the bitmap. Release it now — the store rasterizes a fresh overlay on
+    // every debounced change, so without this each one leaks until GC.
+    source.close();
   }
 
   setCoverArt(source: ImageBitmap | null): void {
