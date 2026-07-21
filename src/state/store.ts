@@ -720,10 +720,27 @@ export const useVizStore = create<VizState>((set, get) => {
   let bgImageToken = 0;
   // Decoded video-background loop (non-serializable, lives outside state).
   let videoBgToken = 0;
+  /**
+   * What each background is currently baked/decoded FROM. `setBg` runs on every
+   * slider `onChange`, so a one-second Dim/Blur drag used to launch dozens of
+   * concurrent full bakes (and, for video, full mediabunny decodes of up to 240
+   * frames). The token guard discarded the results but all the work still ran.
+   * Skipping when the inputs are unchanged is what actually stops it.
+   * Cleared on renderer change, since a fresh renderer holds no bitmap.
+   */
+  let bgImageKey = "";
+  let videoBgKey = "";
+  const invalidateBgCaches = () => {
+    bgImageKey = "";
+    videoBgKey = "";
+  };
   const applyBgImage = () => {
-    const token = ++bgImageToken;
     const { bg, assets } = get();
     const asset = bg.mode === BG_IMAGE && bg.image ? assets[bg.image.assetId] : undefined;
+    const key = asset && bg.image ? `${bg.image.assetId}|${bg.image.dim}|${bg.image.blur}` : "";
+    if (key === bgImageKey) return; // nothing that affects the bake changed
+    bgImageKey = key;
+    const token = ++bgImageToken;
     if (!asset || !bg.image) {
       getRenderer()?.setBackgroundImage(null);
       return;
@@ -745,9 +762,14 @@ export const useVizStore = create<VizState>((set, get) => {
    * frame tick; this only owns the decoded array's lifecycle.
    */
   const applyVideoBg = () => {
-    const token = ++videoBgToken;
     const { bg, assets } = get();
     const asset = bg.mode === BG_VIDEO && bg.video ? assets[bg.video.assetId] : undefined;
+    // See bgImageKey: without this a Dim/Blur drag re-decoded the whole clip
+    // on every pointer move.
+    const key = asset && bg.video ? `${bg.video.assetId}|${bg.video.dim}|${bg.video.blur}` : "";
+    if (key === videoBgKey) return;
+    videoBgKey = key;
+    const token = ++videoBgToken;
     if (!asset || !bg.video) {
       disposeVideoBgFrames(videoBgFrames);
       videoBgFrames = null;
@@ -922,6 +944,7 @@ export const useVizStore = create<VizState>((set, get) => {
           getRenderer()?.setPost(get().post);
           getRenderer()?.setMotion(get().motion);
           applyCoverArt(); // new renderer starts without a cover bound
+          invalidateBgCaches(); // a fresh renderer holds no bitmap/frames
           applyBgImage(); // ...and without a background image
           applyVideoBg(); // ...and without video frames (re-decode for it)
           get().refreshOverlay(); // new renderer starts without an overlay bound
@@ -1008,7 +1031,10 @@ export const useVizStore = create<VizState>((set, get) => {
     stepPreset(delta) {
       const all = [...presets, ...get().customDefs];
       const i = all.findIndex((p) => p.id === get().presetId);
-      get().switchPreset(all[(i + delta + all.length) % all.length].id);
+      // Through queuePreset, not switchPreset: [ and ] are live-performance
+      // controls exactly like the number keys, and it was inconsistent for
+      // 1-9 to honour beat-quantize while the step keys jumped instantly.
+      get().queuePreset(all[(i + delta + all.length) % all.length].id);
     },
 
     queuePreset(id) {

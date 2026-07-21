@@ -151,7 +151,14 @@ body,
 .app.stage-mode {
   cursor: none;
 }
-.app.stage-mode .chrome {
+/* Everything that can sit on top of the visual, not just `.chrome` — an open
+   Export dialog, a sticky error toast, the drag-drop overlay or the empty
+   state would otherwise be projected to the audience. */
+.app.stage-mode .chrome,
+.app.stage-mode .modal-backdrop,
+.app.stage-mode .toast,
+.app.stage-mode .drop-overlay,
+.app.stage-mode .empty-state {
   display: none !important;
 }
 .blackout-overlay {
@@ -1664,7 +1671,11 @@ kbd {
 /* With the timeline open, lift the settings panel above it — the timeline is
    opaque and otherwise buries the panel footer (meters, hints) with no way to
    scroll it into view. */
-.app:has(.timeline-panel) .params-panel {
+/* The library panel shares the params panel's `bottom`, so it needs the same
+   lift — without it an open timeline covered the lower ~250 px of the track
+   list, which is the exact bug the params-panel rule was added to fix. */
+.app:has(.timeline-panel) .params-panel,
+.app:has(.timeline-panel) .library-panel {
   bottom: 348px;
 }
 

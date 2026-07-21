@@ -318,6 +318,12 @@ export default function App() {
           // Never let Escape dismiss a running queue out from under itself.
           if (s.batchStatus !== "running") s.setShowBatch(false);
           if (s.stageMode) s.setStageMode(false);
+          // Escape used to close only half the dismissible surfaces. The
+          // shader editor is deliberately NOT closed here — it holds unsaved
+          // WGSL and has no confirmation step.
+          s.setShowPanel(false);
+          s.setShowLibrary(false);
+          s.setShowTimeline(false);
           break;
       }
     };

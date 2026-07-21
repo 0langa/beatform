@@ -85,4 +85,30 @@ describe("history", () => {
     expect(popUndo(doc(1))).toBeNull();
     expect(historyDepths().redo).toBe(0);
   });
+
+  it("does NOT group discrete actions that share a key", () => {
+    // Two "Add text" clicks inside the grouping window are two separate
+    // actions — grouping made one undo remove both.
+    pushHistory(doc(1), "layer-add", 1000);
+    pushHistory(doc(2), "layer-add", 1100);
+    pushHistory(doc(3), "preset", 1200);
+    pushHistory(doc(4), "preset", 1250);
+    expect(historyDepths().undo).toBe(4);
+  });
+
+  it("still groups a continuous slider drag", () => {
+    pushHistory(doc(1), "param:hue", 1000);
+    pushHistory(doc(2), "param:hue", 1100);
+    pushHistory(doc(3), "param:hue", 1200);
+    expect(historyDepths().undo).toBe(1);
+  });
+
+  it("shares the asset map by reference instead of deep-cloning megabytes", () => {
+    const assets = { a1: { id: "a1", name: "clip", dataUrl: "data:video/mp4;base64,AA" } };
+    const d = { ...doc(1), assets };
+    pushHistory(d, "layer-add", 1000);
+    const restored = popUndo(doc(9));
+    // Same object identity — an embedded video is never re-serialized.
+    expect(restored?.assets).toBe(assets);
+  });
 });
