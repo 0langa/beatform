@@ -3,7 +3,10 @@ import type { PresetDef } from "../types";
 /**
  * Aurora — layered curtains of light that waver on an fbm flow, brightened by
  * the spectrum and the selected sync source, with vertical ray texture and an
- * optional starfield. Green-to-violet northern-lights look over a dark sky.
+ * optional starfield. Colour comes from a saturated cosine palette instead of
+ * a drifting hsl hue, back curtains sit dimmer/softer for a cheap depth cue,
+ * beat response is staggered per curtain, and curtain peaks blow out to a hot
+ * white core. Green-to-violet northern-lights look over a genuinely dark sky.
  */
 export const aurora: PresetDef = {
   id: "aurora",
@@ -140,7 +143,7 @@ export const aurora: PresetDef = {
       max: 1.5,
       step: 0.05,
       default: 0.4,
-      hint: "Flash/expand on each detected beat of the sync source",
+      hint: "Flash/expand on each detected beat of the sync source, staggered per curtain",
     },
     {
       key: "wave",
@@ -205,12 +208,30 @@ export const aurora: PresetDef = {
       default: 0.25,
       hint: "Soft glow rising from the horizon",
     },
+    {
+      key: "mirror",
+      label: "Symmetric",
+      min: 1,
+      max: 2,
+      step: 1,
+      default: 1,
+      hint: "Fold the curtains and stars left/right into a symmetric aurora — 1 is off",
+    },
   ],
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
-  var col = vec3f(0.0);
-  let x = uv.x;
   let y = uv.y;
+
+  // Optional left/right symmetry — folds curtains AND stars together using
+  // the shared club-mirror fold at its bilateral setting (2). 1 = off.
+  let cx = (uv.x - 0.5) * u.aspect;
+  let foldedX = kaleido(vec2f(cx, 0.0), P_mirror()).x;
+  let x = clamp(foldedX / u.aspect + 0.5, 0.0, 1.0);
+
+  // Deep night sky: near-black but hued, not grey, so the curtains have
+  // real darkness to glow against instead of sitting on flat mid-grey fog.
+  let skyPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.025), vec3f(0.02), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  var col = skyPal;
 
   // Optional starfield behind everything (small round points, twinkling).
   if (P_stars() > 0.5) {
@@ -228,32 +249,82 @@ fn preset(uv: vec2f) -> vec4f {
   // Sync-reactive envelope + beat pulse: switching the sync source (bass /
   // treble / kicks / ...) visibly changes the drive here.
   let drive = clamp(u.drive, 0.0, 1.5);
-  let pulse = 1.0 + u.driveBeat * P_beatPulse() * u.pulse;
   let layers = i32(P_layers());
   for (var i = 0; i < 3; i++) {
     if (i >= layers) { break; }
     let fi = f32(i);
-    // Non-wrapping spectrum window per curtain (clamp, never fract) so there is
-    // no hard seam where the sample index would roll over.
+
+    // Depth cue: back curtains (higher index) sit dimmer and drift slower —
+    // cheap parallax so the stack reads as depth, not three identical
+    // decals stacked at different heights.
+    let depthT = fi / f32(max(layers - 1, 1));
+    let fog = mix(1.0, 0.55, depthT);
+
+    // Per-layer beat stagger (golden-ratio conjugate, same shape as
+    // gridPulse()) so curtains don't all flash in perfect unison — identical
+    // phase across layers is what reads as one pulsing sheet, not three.
+    var pulse = 1.0 + u.driveBeat * P_beatPulse() * u.pulse;
+    if (u.bpm > 0.5) {
+      let bph = fract(u.beatPhase + fi * 0.6180339887);
+      let staggered = max(exp(-bph * 5.0) - 0.03, 0.0) / 0.97;
+      pulse = 1.0 + staggered * P_beatPulse() * u.pulse;
+    }
+
+    // Non-wrapping spectrum window per curtain (clamp, never fract) so there
+    // is no hard seam where the sample index would roll over.
     let sx = clamp(x * 0.82 + fi * 0.09, 0.0, 1.0);
     let spec = binAt(sx);
-    // Wavy vertical center of the curtain.
-    let wob = fbm(vec2f(x * (2.0 + fi) + fi * 7.0, u.time * P_flow() * 0.15 + fi * 3.0));
+    // Wavy vertical center of the curtain, drifting slower with depth.
+    let flowT = u.time * P_flow() * 0.15 * mix(1.0, 0.6, depthT);
+    let wob = fbm(vec2f(x * (2.0 + fi) + fi * 7.0, flowT + fi * 3.0));
     let cy = P_baseY() + 0.15 * fi + (wob - 0.5) * 0.35 * P_wave();
-    let react = 0.32 + spec * P_specAmt() + drive * P_react();
+    // Capped so a loud, bass-heavy passage (spec and drive can both sit near
+    // their ceiling at once) can't run this away to the point every curtain
+    // pixel blows past the hot-core threshold below — it stays a strong,
+    // legible reaction instead of a flat white-out.
+    let react = min(0.32 + spec * P_specAmt() + drive * P_react(), 2.2);
     let thick = P_thick() * (0.55 + react * 0.9) * pulse;
     let d = (y - cy) / max(thick, 1e-3);
     let band = exp(-d * d);
     let ray = 1.0 - P_rays()
             + P_rays() * (0.5 + 0.5 * sin(x * (60.0 + fi * 30.0) + fbm(vec2f(x * 8.0, u.time * 0.2)) * 8.0));
-    let hue = P_hue() + fi * P_hueStep() + (x - 0.5) * P_hueSpread() + spec * 26.0;
-    col += hsl2rgb(hue, P_sat(), 0.55) * band * ray * react * pulse * P_bright();
+
+    // Cosine palette keyed by curtain index + spectrum, instead of an hsl
+    // hue that could drift 400+ degrees through the desaturated middle of
+    // the wheel — this stays saturated at every hueStep/hueSpread setting.
+    let palT = fract(P_hue() / 360.0 + fi * (P_hueStep() / 360.0)
+             + (x - 0.5) * (P_hueSpread() / 360.0) + spec * 0.12);
+    let chroma = mix(0.08, 0.5, P_sat());
+    let pal = cosPalette(palT, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+
+    // Loudness is logarithmic: compress react through pow(.,0.6) before it
+    // drives brightness (doc guidance) so 3 stacked curtains overlapping
+    // during a loud passage tonemap into rich saturated colour instead of
+    // additively summing straight past white every time.
+    let reactGlow = pow(clamp(react / 2.2, 0.0, 1.0), 0.6) * 1.5;
+    var layerCol = pal * band * ray * reactGlow * pulse * P_bright() * fog;
+
+    // Hot core: only the curtain's exact vertical centerline, and only where
+    // the spectrum is genuinely loud there, desaturates toward white and
+    // pushes past 1.0 for tonemap() to roll off. Gating on band (which is a
+    // narrow Gaussian peak, naturally rare) rather than on react (which
+    // commonly sits above 1) is what keeps this a thin bright seam instead
+    // of blowing out the whole curtain — entirely missing before (flat
+    // hsl2rgb capped at l=0.55).
+    let hot = smoothstep(0.82, 0.98, band) * clamp(spec * 1.3, 0.0, 1.0) * fog;
+    layerCol = mix(layerCol, vec3f(1.0, 0.98, 0.95), hot * 0.6 * P_bright());
+    layerCol *= 1.0 + hot * 1.0;
+
+    col += layerCol;
   }
 
   // Soft sky glow rising from the horizon, lifted by the sync source.
-  col += hsl2rgb(P_hue() + P_hueStep(), P_sat() * 0.8, 0.5)
-       * smoothstep(0.0, 0.55, y) * P_bgGlow() * (0.3 + drive * 0.6) * 0.35;
-  return vec4f(col, 1.0);
+  let glowPal = cosPalette(fract(P_hue() / 360.0 + P_hueStep() / 360.0), vec3f(0.5), vec3f(mix(0.08, 0.4, P_sat())), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  col += glowPal * smoothstep(0.0, 0.55, y) * P_bgGlow() * (0.3 + drive * 0.6) * 0.35;
+
+  col = tonemap(col * 1.1);
+  col += grain(uv, 0.012);
+  return vec4f(max(col, vec3f(0.0)), 1.0);
 }
 `,
 };

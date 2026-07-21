@@ -2,7 +2,10 @@ import type { PresetDef } from "../types";
 
 /**
  * Lava-lamp metaballs: blobs orbit slowly and merge; each blob's size tracks
- * one band (bass/mid/treble round-robin), beats wobble the surface.
+ * one band (bass/mid/treble round-robin), beats wobble the surface. Colour
+ * comes from a saturated cosine palette instead of a drifting hsl hue, the
+ * field's natural 1/d^2 falloff gives every blob a hot white nucleus, and
+ * beat response is staggered per blob so they don't all pulse in lockstep.
  */
 export const metaballs: PresetDef = {
   id: "metaballs",
@@ -40,6 +43,7 @@ export const metaballs: PresetDef = {
         hueField: 32,
         radiusBand: 0.9,
         beatSwell: 0.3,
+        mirror: 6,
       },
     },
     {
@@ -160,7 +164,7 @@ export const metaballs: PresetDef = {
       max: 0.6,
       step: 0.02,
       default: 0.2,
-      hint: "All blobs pump together on every beat",
+      hint: "Blobs pump on every beat, staggered so they don't all swell at once",
     },
     {
       key: "rimStart",
@@ -216,10 +220,23 @@ export const metaballs: PresetDef = {
       default: 0.4,
       hint: "Darkening toward the screen corners",
     },
+    {
+      key: "mirror",
+      label: "Club mirror",
+      min: 1,
+      max: 12,
+      step: 1,
+      default: 1,
+      hint: "Fold the blob field into mirrored wedges — 1 is off, 2 mirrors left/right, higher makes a kaleidoscope",
+    },
   ],
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
-  let p = centered(uv);
+  var p = centered(uv);
+  // Club mirror: fold the field before summing blobs so the orbit becomes a
+  // symmetric mandala. 1 = off.
+  p = kaleido(p, P_mirror());
+
   let count = i32(P_count());
 
   var field = 0.0;
@@ -237,36 +254,62 @@ fn preset(uv: vec2f) -> vec4f {
       sin(t + ph) * (P_orbitX() + h * 0.1) * u.aspect * 0.8,
       cos(t * 1.31 + ph * 1.7) * (P_orbitY() + h * 0.08),
     );
+
+    // Per-blob beat response, staggered by the golden-ratio conjugate (same
+    // shape as gridPulse(), phase-shifted per blob) so blobs don't all
+    // swell in perfect lockstep on every hit — identical phase across N
+    // elements reads as one pulsing blob instead of N independent ones.
+    var beatMul = u.driveBeat;
+    if (u.bpm > 0.5) {
+      let bph = fract(u.beatPhase + fi * 0.6180339887);
+      beatMul = max(exp(-bph * 5.0) - 0.03, 0.0) / 0.97;
+    }
+
     // Size = calm floor + smooth energy breathing (primary sync) + a gentle
-    // per-band accent + a synchronized beat gulp across all blobs
-    // Cap the blob radius so a loud beat can't inflate a single ball into a
-    // full-frame solid wash — it stays a blob that merges, not a fill.
+    // per-band accent + a staggered beat gulp. Capped so a loud beat can't
+    // inflate a single ball into a full-frame solid wash — it stays a blob
+    // that merges, not a fill.
     let rad = min(P_size() * (P_radiusFloor() + u.drive * P_energyGrow()
-            + band * P_radiusBand() + u.driveBeat * P_beatSwell() * u.pulse), 0.34);
+            + band * P_radiusBand() + beatMul * P_beatSwell() * u.pulse), 0.34);
     let d2 = dot(p - pos, p - pos);
     let contrib = rad * rad / (d2 + 1e-5);
     field += contrib;
     hueAcc += contrib * fi * P_hueField();
   }
 
-  let localHue = P_hue() + hueAcc / max(field, 1e-4);
+  // Cosine palette keyed by the same contribution-weighted blend that used
+  // to drive an hsl hue — stays saturated instead of drifting toward mud.
+  let paletteT = fract(P_hue() / 360.0 + (hueAcc / max(field, 1e-4)) / 360.0);
+  let pal = cosPalette(paletteT, vec3f(0.5), vec3f(0.42), vec3f(1.0, 1.0, 1.0), vec3f(0.0, 0.33, 0.67));
 
   // Surface + rim
   let surface = smoothstep(P_threshold(), P_threshold() * 1.12, field);
   let rim = smoothstep(P_threshold() * P_rimStart(), P_threshold(), field) * (1.0 - surface);
 
-  // Background
+  // Background: dark complementary wash with a slow fbm texture so the void
+  // behind the blobs reads as atmosphere instead of a flat vector fill.
   let r = length(p);
-  var col = hsl2rgb(P_hue() + 180.0, 0.4, P_bgLevel()) * (1.0 - r * 0.7);
+  let bgN = fbm(p * 1.1 + u.time * 0.025);
+  let bgPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.04), vec3f(0.03), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  var col = bgPal * mix(0.7, 1.3, bgN) * (1.0 - r * 0.7) + vec3f(P_bgLevel());
 
   // Blob body with inner gradient
   let inner = clamp((field - P_threshold()) * 0.35, 0.0, P_innerGrad() + 0.1);
-  col = mix(col, hsl2rgb(localHue, 0.85, 0.42 + inner + u.driveBeat * P_beatBright()), surface);
+  col = mix(col, pal * (0.55 + inner * 1.3 + u.driveBeat * P_beatBright()), surface);
   // Rim glow
-  col += hsl2rgb(localHue + 30.0, 0.9, 0.55) * rim * (0.4 + P_glow() * 0.9);
+  col += mix(pal, vec3f(1.0), 0.3) * rim * (0.4 + P_glow() * 0.9);
 
-  col *= 1.0 - r * r * P_vignette();
-  return vec4f(col, 1.0);
+  // Hot core: the field's own 1/d^2 falloff blows out to white exactly at
+  // each blob's nucleus (and even harder where blobs overlap), so every
+  // blob reads as emitting rather than merely being a flat colored disc.
+  let hot = smoothstep(P_threshold() * 1.15, P_threshold() * 2.2, field);
+  col = mix(col, vec3f(1.0, 0.98, 0.95), hot * 0.75);
+  col *= 1.0 + hot * 1.4;
+
+  col *= vignette(uv, P_vignette());
+  col = tonemap(col * 1.05);
+  col += grain(uv, 0.012);
+  return vec4f(max(col, vec3f(0.0)), 1.0);
 }
 `,
 };
