@@ -397,6 +397,67 @@ fn rot2(a: f32) -> mat2x2f {
   return mat2x2f(c, -s, s, c);
 }
 
+// ---------------------------------------------------------------------------
+// Look kit. The difference between the presets that read as professional and
+// the ones that read as amateur was never the idea, it was the finishing —
+// so the finishing lives here, once, instead of being re-invented per preset.
+// ---------------------------------------------------------------------------
+
+/**
+ * Inigo Quilez's cosine gradient. Cheap, always-smooth, and it stays
+ * SATURATED across the whole ramp, which is what separates a designed palette
+ * from the muddy olive/brown you get by lerping two hues through grey.
+ * col(t) = a + b * cos(TAU * (c*t + d))
+ */
+fn cosPalette(t: f32, a: vec3f, b: vec3f, c: vec3f, d: vec3f) -> vec3f {
+  return a + b * cos(TAU * (c * t + d));
+}
+
+/**
+ * Domain warping (IQ): fbm of a position that is itself displaced by fbm.
+ * One extra octave of cost, but it turns smooth blobby noise into something
+ * with filaments and structure — the difference between "fog" and "nebula".
+ */
+fn warpFbm(p: vec2f, warp: f32) -> f32 {
+  let q = vec2f(fbm(p), fbm(p + vec2f(5.2, 1.3)));
+  return fbm(p + q * warp);
+}
+
+/**
+ * Filmic tone curve (ACES approximation, Krzysztof Narkowicz). Lets a preset
+ * push highlights way past 1.0 for a genuine hot core instead of flat-topping
+ * into a colour-shifted clipped mess. Feed it linear HDR, get displayable.
+ */
+fn tonemap(x: vec3f) -> vec3f {
+  let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
+}
+
+/** Ordered-ish dither. Dark gradients band badly on 8-bit; +-1/255 of noise
+ * costs nothing and removes the stair-stepping that screams "cheap". */
+fn grain(uv: vec2f, amt: f32) -> f32 {
+  return (hash21(uv * 1024.0 + u.time * 60.0) - 0.5) * amt;
+}
+
+/** Radial vignette. 0.25-0.4 reads as "lit"; past ~0.6 it reads as a mistake. */
+fn vignette(uv: vec2f, amt: f32) -> f32 {
+  let d = distance(uv, vec2f(0.5));
+  return 1.0 - d * d * amt;
+}
+
+/**
+ * Kaleidoscope / club mirror. segments<=1 passes through, 2 is a plain left-
+ * right mirror, higher folds into radial wedges. Operates on CENTERED uv.
+ */
+fn kaleido(p: vec2f, segments: f32) -> vec2f {
+  if (segments < 1.5) { return p; }
+  if (segments < 2.5) { return vec2f(abs(p.x), p.y); }
+  let seg = TAU / segments;
+  var a = atan2(p.y, p.x);
+  a = abs(a - seg * floor(a / seg + 0.5));
+  return vec2f(cos(a), sin(a)) * length(p);
+}
+
 /** uv centered at 0, x corrected for aspect ratio */
 fn centered(uv: vec2f) -> vec2f {
   return vec2f((uv.x - 0.5) * u.aspect, uv.y - 0.5);

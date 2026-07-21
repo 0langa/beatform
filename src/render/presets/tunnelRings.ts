@@ -228,54 +228,98 @@ export const tunnelRings: PresetDef = {
       default: 0.3,
       hint: "Darkening toward the screen corners",
     },
+    {
+      key: "mirror",
+      label: "Club mirror",
+      min: 1,
+      max: 12,
+      step: 1,
+      default: 1,
+      hint: "Fold the tunnel into mirrored wedges — 1 is off, 2 mirrors left/right, higher makes a kaleidoscope",
+    },
   ],
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
-  let p = centered(uv);
+  var p = centered(uv);
+  // Club mirror: fold the wall into radial wedges. 1 = off.
+  p = kaleido(p, P_mirror());
   let r = length(p) + 1e-3;
   let a = atan2(p.y, p.x);
 
-  // Depth: cruise on the slow envelope, brief kick on beats (metronome-true
-  // when the track has a grid; flux-only when it doesn't)
+  // --- Perspective ---------------------------------------------------------
+  // z = k/r is the actual pinhole mapping for a cylinder viewed down its
+  // axis: r -> 0 is infinitely far away. Everything else keys off THIS, so
+  // the tunnel reads as depth rather than as a dartboard.
   let kickP = max(u.driveBeat, gridPulse(6.0));
   let spd = P_speed() * (P_cruiseFloor() + u.drive * P_cruiseEnergy())
           * (1.0 + kickP * P_beatSpeed() * u.pulse);
-  let z = 0.30 / r + u.time * spd * 5.0;
+  let depth = 0.30 / r;                 // 0 at the rim, large toward centre
+  let z = depth + u.time * spd * 5.0;
 
-  // Tile grid in (depth, angle)
-  let zq = z * P_rings() * 0.22;
+  // Tile grid in (depth, angle). Because z is 1/r, rows automatically
+  // compress toward the vanishing point — the texture-density cue that sells
+  // perspective. Row height is scaled so the compression stays legible.
+  let zq = z * P_rings() * 0.62;
   let ang = fract(a / TAU + 0.5);
   let aq = ang * P_spokes();
   let cellZ = floor(zq);
-  let cellA = floor(aq);
   let fz = fract(zq);
   let fa = fract(aq);
 
-  // Spectrum at this angle (mirrored for seamless wrap)
+  // Spectrum at this angle (mirrored so the wrap is seamless).
   let xs = abs(ang * 2.0 - 1.0);
   let v = binAt(xs);
+  let pk = peakAt(xs);
 
-  // Checkerboard shade so rows visibly march toward the viewer
-  let checker = f32((i32(cellZ) + i32(cellA)) % 2);
+  // --- Colour --------------------------------------------------------------
+  // Cosine palette rather than an hsl hue that drifts by hueSpread: the old
+  // version walked orange -> olive -> brown through the desaturated middle of
+  // HSL, which is exactly the mud this preset was criticised for. A cosine
+  // ramp stays saturated across its whole range. Phase is driven by the row,
+  // so consecutive rows are related colours instead of random ones.
+  let t = fract(cellZ * 0.11 + P_hue() / 360.0);
+  let spread = P_hueSpread() / 360.0;
+  let pal = cosPalette(
+    t,
+    vec3f(0.5),
+    vec3f(0.5),
+    vec3f(1.0, 1.0, 1.0) * max(spread, 0.08),
+    vec3f(0.00, 0.33, 0.67)
+  );
 
-  // Tile color: smooth hue gradient along the depth (hashed rows read as
-  // random); brightness = calm base + moderate spectrum + energy breathing
-  let rowHue = P_hue() + (0.5 + 0.5 * sin(cellZ * 0.4)) * P_hueSpread();
-  let tileL = P_tileLevel() + v * P_tileSpectrum() + checker * P_checker()
-            + u.drive * 0.1;
-  var tile = hsl2rgb(rowHue, P_tileSat(), tileL);
+  // Tile brightness: quiet base, spectrum on top, and a per-row shimmer that
+  // replaces the old hard checkerboard (which read as a flat dartboard).
+  let odd = f32(i32(cellZ) & 1);
+  let shimmer = 0.5 + 0.5 * sin(cellZ * 1.7 + u.time * 0.6);
+  // Alternating row lift keeps consecutive rows distinguishable; without it
+  // the bands blur together and the tunnel stops reading as motion.
+  var lit = P_tileLevel() * (0.55 + odd * 0.45) + v * P_tileSpectrum()
+          + shimmer * P_checker() * 0.5;
+  var tile = pal * lit * (0.35 + P_tileSat() * 0.9);
 
-  // Constant subtle grout lines (no strobe)
-  let lz = smoothstep(P_groutWidth(), 0.0, min(fz, 1.0 - fz));
-  let la = smoothstep(P_groutWidth() * 1.4, 0.0, min(fa, 1.0 - fa));
+  // Grout: thin bright seams. Width shrinks with depth so distant seams stay
+  // hairlines instead of smearing into a grey wash.
+  let gw = P_groutWidth() * clamp(r * 2.2, 0.25, 1.6);
+  let lz = smoothstep(gw, 0.0, min(fz, 1.0 - fz));
+  let la = smoothstep(gw * 1.4, 0.0, min(fa, 1.0 - fa));
   let line = max(lz, la);
-  tile = mix(tile, hsl2rgb(rowHue + 30.0, 0.5, 0.75), line * P_groutLevel());
+  tile += pal * line * P_groutLevel() * (0.6 + v * 1.4);
 
-  // Beat pulse: one ring of light per beat, traveling from the viewer into
-  // the depth. With a beat grid it rides beatPhase — launched ON the beat,
-  // arriving as the next one lands, a perfectly periodic train. Without a
-  // grid it follows the flux pulse's decay, as before.
-  var pt = 1.0 - u.driveBeat; // ring travel 0 (launch) -> 1 (gone)
+  // Peak-hold crown: the loudest angles get a near-white filament. A hot,
+  // desaturated core is what makes a bright thing read as EMITTING rather
+  // than merely being light-coloured.
+  tile += vec3f(1.0, 0.98, 0.94) * line * pk * pk * P_groutLevel() * 1.2;
+
+  // --- Depth cues ----------------------------------------------------------
+  // Atmospheric attenuation: brightness falls off with distance into the
+  // tunnel, so the vanishing point recedes instead of glowing at us. This is
+  // the single biggest reason the old version looked flat.
+  let fog = exp(-depth * P_fogFar() * 0.55);
+  let rim = smoothstep(P_fogNear() * 0.5, P_fogNear() * 0.5 + 0.25, r);
+  var col = tile * fog * rim;
+
+  // Travelling beat ring, launched at the viewer and running to the horizon.
+  var pt = 1.0 - u.driveBeat;
   var amp = u.driveBeat;
   if (u.bpm > 0.5) {
     pt = u.beatPhase;
@@ -284,22 +328,18 @@ fn preset(uv: vec2f) -> vec4f {
   if (amp > 0.01) {
     let pulseR = mix(0.72, 0.04, pt);
     let pulse = exp(-abs(r - pulseR) * P_pulseWidth()) * amp * P_beatPulse();
-    tile += hsl2rgb(rowHue + 40.0, 0.6, 0.55) * pulse;
+    col += mix(pal, vec3f(1.0), 0.45) * pulse * 1.6;
   }
 
-  // Distance fog + center hole
-  // Far fade band is relative to fogFar (and stays on-screen, r maxes ~1 at
-  // the corners) so the whole slider visibly moves the edge fade.
-  let fog = smoothstep(P_fogNear(), 0.22, r) * (1.0 - smoothstep(P_fogFar(), P_fogFar() + 0.35, r));
-  var col = hsl2rgb(P_hue() + 60.0, 0.5, 0.025);
-  col += tile * fog;
+  // Vanishing-point core: small, hot, and gated on the envelope so it pumps.
+  col += mix(pal, vec3f(1.0), 0.6) * exp(-r * 16.0)
+       * (P_centerGlow() * 0.8 + u.drive * 0.5 + kickP * 0.35);
 
-  // Center glow breathes with the envelope, flashes softly on beat
-  col += hsl2rgb(P_hue(), 0.8, 0.5) * exp(-r * 10.0)
-       * (P_centerGlow() + u.drive * 0.7 + u.driveBeat * 0.3);
-
-  col *= 1.0 - r * r * P_vignette();
-  return vec4f(col, 1.0);
+  // --- Finishing -----------------------------------------------------------
+  col *= vignette(uv, P_vignette());
+  col = tonemap(col * 1.15);
+  col += grain(uv, 0.012);
+  return vec4f(max(col, vec3f(0.0)), 1.0);
 }
 `,
 };
