@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { SyncMode, SyncSettings } from "../audio/types";
 import type {
   BgMode,
@@ -178,6 +178,12 @@ function ParamRow(props: {
     title: p.hint,
     onPointerEnter: () => props.onHint(p.hint ?? null),
     onPointerLeave: () => props.onHint(null),
+    // H17: the footer hint was mouse-only — a keyboard user tabbing through
+    // never saw it. onFocus/onBlur fire when the row's Slider/Switch child
+    // receives/loses focus (React bubbles focus events), mirroring the
+    // pointer pair exactly.
+    onFocus: () => props.onHint(p.hint ?? null),
+    onBlur: () => props.onHint(null),
   };
   return isToggle ? (
     <label className="row toggle-row" {...hintProps}>
@@ -215,6 +221,8 @@ function ToggleRow(props: {
       title={props.hint}
       onPointerEnter={() => props.onHint?.(props.hint ?? null)}
       onPointerLeave={() => props.onHint?.(null)}
+      onFocus={() => props.onHint?.(props.hint ?? null)}
+      onBlur={() => props.onHint?.(null)}
     >
       <span className="row-label">{props.label}</span>
       <Switch checked={props.checked} onChange={props.onChange} label={props.label} />
@@ -242,6 +250,8 @@ function SliderRow(props: {
       title={props.hint}
       onPointerEnter={() => props.onHint?.(props.hint ?? null)}
       onPointerLeave={() => props.onHint?.(null)}
+      onFocus={() => props.onHint?.(props.hint ?? null)}
+      onBlur={() => props.onHint?.(null)}
     >
       <span className="row-label">{props.label}</span>
       <Slider
@@ -256,8 +266,7 @@ function SliderRow(props: {
   );
 }
 
-/** Right-hand settings panel: styles, preset parameters, background. */
-export function ParamsPanel(props: {
+export interface ParamsPanelProps {
   preset: PresetDef;
   params: ParamValues;
   onParam: (key: string, value: number) => void;
@@ -340,7 +349,16 @@ export function ParamsPanel(props: {
   /** Audiogram overlay elements (progress bar / time / waveform strip). */
   audiogram: AudiogramSettings;
   onAudiogram: (patch: Partial<AudiogramSettings>) => void;
-}) {
+}
+
+/** Right-hand settings panel: styles, preset parameters, background.
+ * Memoized (H13): App re-renders at ~4Hz alongside the 60fps render loop for
+ * unrelated reasons (playback/lufs ticks), and this panel alone is 1,400+
+ * lines — without memo it fully reconciled on every one of those ticks even
+ * though none of ITS OWN props had changed. Requires every callback prop
+ * from App.tsx to be reference-stable (see the useCallback block there); a
+ * fresh arrow function per render would silently defeat this. */
+export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
   const [showAdvanced, setShowAdvanced] = useState(
     () => localStorage.getItem("viz.advancedOpen") === "1",
   );
@@ -434,6 +452,7 @@ export function ParamsPanel(props: {
                     <button
                       className="chip-x"
                       title={`Delete "${p.name}"`}
+                      aria-label={`Delete "${p.name}"`}
                       onClick={() => props.onDeleteUserPreset(p.id)}
                     >
                       ✕
@@ -441,6 +460,7 @@ export function ParamsPanel(props: {
                     <button
                       className="chip-x"
                       title={`Export "${p.name}" as .avpreset file`}
+                      aria-label={`Export "${p.name}" as .avpreset file`}
                       onClick={() => props.onExportUserPreset(p.id)}
                     >
                       ↗
@@ -681,6 +701,8 @@ export function ParamsPanel(props: {
                   title={hint}
                   onPointerEnter={() => setHint(hint)}
                   onPointerLeave={() => setHint(null)}
+                  onFocus={() => setHint(hint)}
+                  onBlur={() => setHint(null)}
                   onClick={() => props.onSwitchQuantize(m)}
                 >
                   {label}
@@ -815,6 +837,8 @@ export function ParamsPanel(props: {
                 title={o.hint}
                 onPointerEnter={() => setHint(o.hint)}
                 onPointerLeave={() => setHint(null)}
+                onFocus={() => setHint(o.hint)}
+                onBlur={() => setHint(null)}
                 onClick={() => props.onSync({ ...props.sync, mode: o.mode })}
               >
                 {o.label}
@@ -890,7 +914,12 @@ export function ParamsPanel(props: {
                 <span className="style-chip user" title="Loaded timed lyrics">
                   {props.lyricFileName}
                 </span>
-                <button className="chip-x" title="Remove lyrics" onClick={props.onClearLyrics}>
+                <button
+                  className="chip-x"
+                  title="Remove lyrics"
+                  aria-label="Remove lyrics"
+                  onClick={props.onClearLyrics}
+                >
                   ✕
                 </button>
               </span>
@@ -1078,6 +1107,7 @@ export function ParamsPanel(props: {
                 <button
                   className="chip-x"
                   title="Auto-route: wire this stem's kick/bass/snare/hats/mids to the best-matching knobs of this visual"
+                  aria-label={`Auto-route ${st.analysis.name}`}
                   onClick={() => props.onAutoRouteStem(st.slot)}
                 >
                   ✦
@@ -1085,6 +1115,7 @@ export function ParamsPanel(props: {
                 <button
                   className="chip-x"
                   title="Remove this stem (routes to it go inert)"
+                  aria-label={`Remove ${st.analysis.name} stem`}
                   onClick={() => props.onRemoveStem(st.slot)}
                 >
                   ✕
@@ -1159,6 +1190,7 @@ export function ParamsPanel(props: {
               <button
                 className="chip-x"
                 title="Remove route"
+                aria-label={`Remove ${r.source} to ${r.param} modulation route`}
                 onClick={() => props.onRemoveMod(r.id)}
               >
                 ✕
@@ -1188,6 +1220,8 @@ export function ParamsPanel(props: {
                 title={a.hint}
                 onPointerEnter={() => setHint(a.hint)}
                 onPointerLeave={() => setHint(null)}
+                onFocus={() => setHint(a.hint)}
+                onBlur={() => setHint(null)}
                 onClick={() => props.onAspect(a.id)}
               >
                 {a.label}
@@ -1212,6 +1246,8 @@ export function ParamsPanel(props: {
                   title={o.hint}
                   onPointerEnter={() => setHint(o.hint)}
                   onPointerLeave={() => setHint(null)}
+                  onFocus={() => setHint(o.hint)}
+                  onBlur={() => setHint(null)}
                   onClick={() => {
                     if (o.mode === BG_IMAGE && !props.bg.image) props.onPickBackgroundImage();
                     else if (o.mode === BG_VIDEO && !props.bg.video) props.onPickVideoBackground();
@@ -1439,4 +1475,4 @@ export function ParamsPanel(props: {
       </div>
     </aside>
   );
-}
+});

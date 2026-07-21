@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { LibraryTrack } from "../state/platform";
 import { Switch } from "./Switch";
 import { IconClose } from "./Icons";
@@ -32,7 +33,10 @@ function folderName(dir: string): string {
   return dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;
 }
 
-export function LibraryPanel(props: LibraryPanelProps) {
+// Memoized (H13): can hold up to 5,000 track rows; requires every callback
+// prop from App.tsx to stay reference-stable (see the useCallback block
+// there) or memo does nothing.
+export const LibraryPanel = memo(function LibraryPanel(props: LibraryPanelProps) {
   const { library, scanning, activePath } = props;
   return (
     <aside className="chrome library-panel">
@@ -111,4 +115,4 @@ export function LibraryPanel(props: LibraryPanelProps) {
       )}
     </aside>
   );
-}
+});

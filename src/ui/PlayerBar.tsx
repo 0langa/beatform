@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import type { PlaybackState } from "../audio/types";
 import { Slider } from "./Slider";
 import { IconLoop, IconMusic, IconMute, IconPause, IconPlay, IconVolume } from "./Icons";
@@ -9,11 +9,7 @@ function fmt(t: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-/**
- * Bottom player chrome: transport, custom seek bar with hover time preview
- * and drag scrubbing, loop toggle, volume with mute.
- */
-export function PlayerBar(props: {
+export interface PlayerBarProps {
   playback: PlaybackState;
   /** Section boundaries (seconds) shown as ticks on the seek bar. */
   sections: number[];
@@ -25,7 +21,19 @@ export function PlayerBar(props: {
   onToggleLoop: () => void;
   onVolume: (v: number) => void;
   onToggleMute: () => void;
-}) {
+}
+
+/**
+ * Bottom player chrome: transport, custom seek bar with hover time preview
+ * and drag scrubbing, loop toggle, volume with mute.
+ *
+ * Memoized (H13): always mounted, so it otherwise reconciled on every App
+ * re-render for ANY reason (a ParamsPanel edit, export progress, …) even
+ * though none of its own props changed. It still re-renders every playback
+ * tick as it should (its own `playback` prop genuinely changes) — memo only
+ * removes the UNRELATED re-renders.
+ */
+export const PlayerBar = memo(function PlayerBar(props: PlayerBarProps) {
   const { playback } = props;
   const barRef = useRef<HTMLDivElement>(null);
   const [hoverT, setHoverT] = useState<number | null>(null);
@@ -170,4 +178,4 @@ export function PlayerBar(props: {
       </div>
     </footer>
   );
-}
+});

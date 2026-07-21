@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { PresetDef } from "../render/types";
 import { allParams, type ParamValues } from "../render/types";
@@ -24,13 +24,7 @@ const TRANSITION_LABELS: Record<(typeof TRANSITION_KINDS)[number], string> = {
   cut: "Hard cut",
 };
 
-/**
- * Bottom timeline panel: beat/section ruler, waveform overview, a scene lane
- * and one row per automation lane. Everything edits through onChange with a
- * whole new Timeline — the store records history (gesture-grouped) and
- * persists; drags snap to the beat grid when one exists.
- */
-export function TimelinePanel(props: {
+export interface TimelinePanelProps {
   timeline: Timeline;
   duration: number;
   time: number;
@@ -45,7 +39,21 @@ export function TimelinePanel(props: {
   onAutoArrange: () => void;
   onSeek: (t: number) => void;
   onClose: () => void;
-}) {
+}
+
+/**
+ * Bottom timeline panel: beat/section ruler, waveform overview, a scene lane
+ * and one row per automation lane. Everything edits through onChange with a
+ * whole new Timeline — the store records history (gesture-grouped) and
+ * persists; drags snap to the beat grid when one exists.
+ *
+ * Memoized (H13): at zoom 12 the track is 11,280px wide with ~840 ruler/
+ * scene/keyframe elements — reconciling all of that 4x/second just because
+ * some unrelated store field ticked (to move one playhead div) was the
+ * worst offender the audit found. Requires every callback prop from
+ * App.tsx to stay reference-stable — see the useCallback block there.
+ */
+export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelProps) {
   const { timeline, duration } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const waveRef = useRef<HTMLCanvasElement>(null);
@@ -528,7 +536,12 @@ export function TimelinePanel(props: {
                 </div>
                 <div className="tl-lane-label">
                   {lane.param}
-                  <button className="chip-x" title="Remove lane" onClick={() => removeLane(li)}>
+                  <button
+                    className="chip-x"
+                    title="Remove lane"
+                    aria-label={`Remove ${lane.param} automation lane`}
+                    onClick={() => removeLane(li)}
+                  >
                     ✕
                   </button>
                 </div>
@@ -613,4 +626,4 @@ export function TimelinePanel(props: {
       )}
     </div>
   );
-}
+});

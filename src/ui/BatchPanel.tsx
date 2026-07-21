@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { BatchRun, BatchTrack } from "../state/batch";
 import { runStats } from "../state/batch";
 import type { OverlayLayer } from "../render/overlay";
+import { useFocusTrap } from "./useFocusTrap";
 
 /**
  * Batch render panel — a table of tracks with editable, tag-filled titles.
@@ -56,11 +57,16 @@ function fmtEta(ms: number | null, now: number): string {
   return `${left} · finishes ~${time}`;
 }
 
-export function BatchPanel(props: BatchPanelProps) {
+// Memoized (H13): requires every callback prop from App.tsx to stay
+// reference-stable (see the useCallback block there) or memo does nothing.
+export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
   const { run, status, overlayLayers, aspect, formatLabel } = props;
   const fileInput = useRef<HTMLInputElement>(null);
   const tracks = run?.tracks ?? [];
   const running = status === "running";
+  // This component only exists in the tree while the panel is open, so its
+  // own mount IS "dialog opened" — no separate `active` flag needed (H17).
+  const dialogRef = useFocusTrap(true);
 
   // A clock, not a render-time Date.now(): reading the time during render is
   // impure, and a memo keyed only on `run` would freeze the countdown between
@@ -104,10 +110,12 @@ export function BatchPanel(props: BatchPanelProps) {
   return (
     <div className="modal-backdrop" onClick={() => !running && props.onClose()}>
       <div
+        ref={dialogRef}
         className="modal wide"
         role="dialog"
         aria-modal="true"
         aria-label="Batch render"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-header">
@@ -286,4 +294,4 @@ export function BatchPanel(props: BatchPanelProps) {
       </div>
     </div>
   );
-}
+});

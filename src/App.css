@@ -1141,6 +1141,7 @@ button:disabled {
   justify-content: space-between;
   padding: 9px 14px;
   border-top: 1px solid var(--border);
+  min-height: 44px;
 }
 
 .renderer-badge {
@@ -1165,10 +1166,6 @@ button:disabled {
 
 .footer-hint.is-hint {
   color: var(--text-dim);
-}
-
-.panel-footer {
-  min-height: 44px;
 }
 
 /* ---------- empty state ---------- */
@@ -1344,10 +1341,6 @@ button:disabled {
   gap: 6px;
   font-size: 12px;
   color: var(--text);
-}
-
-.inline input[type="checkbox"] {
-  accent-color: var(--accent-strong);
 }
 
 .progress {

@@ -9,7 +9,7 @@ import { APP_VERSION } from "./version";
 const CODEC_IDS: readonly VideoCodecId[] = ["h264", "hevc", "av1", "vp9a"];
 import { getEngine } from "./state/services";
 import { rasterizeOverlay } from "./render/overlay";
-import { BatchPanel } from "./ui/BatchPanel";
+import { BatchPanel, type BatchPanelProps } from "./ui/BatchPanel";
 import { expandJobs } from "./state/batch";
 import { runBatch } from "./state/batchRunner";
 // Used only by the dev-only E2E hooks below; both modules already ship as part
@@ -23,18 +23,19 @@ import {
   resolutionsForAspect,
   useVizStore,
 } from "./state/store";
-import { PlayerBar } from "./ui/PlayerBar";
-import { LibraryPanel } from "./ui/LibraryPanel";
+import { PlayerBar, type PlayerBarProps } from "./ui/PlayerBar";
+import { LibraryPanel, type LibraryPanelProps } from "./ui/LibraryPanel";
 import { isTauri } from "./state/platform";
 import { midiSupported } from "./state/midiInput";
 import { audiogramActive } from "./state/audiogram";
-import { TimelinePanel } from "./ui/TimelinePanel";
+import { TimelinePanel, type TimelinePanelProps } from "./ui/TimelinePanel";
 import { PresetStrip } from "./ui/PresetStrip";
-import { ShaderEditor } from "./ui/ShaderEditor";
-import { ParamsPanel } from "./ui/ParamsPanel";
+import { ShaderEditor, type ShaderEditorProps } from "./ui/ShaderEditor";
+import { ParamsPanel, type ParamsPanelProps } from "./ui/ParamsPanel";
 import { EmptyState } from "./ui/EmptyState";
 import { Slider } from "./ui/Slider";
 import { Switch } from "./ui/Switch";
+import { useFocusTrap } from "./ui/useFocusTrap";
 import {
   IconBatch,
   IconClose,
@@ -194,6 +195,295 @@ export default function App() {
   const switchPreset = useCallback((id: string) => store().queuePreset(id), [store]);
   const openShaderEditor = useCallback(() => store().setShowShaderEditor(true), [store]);
 
+  // Focus trap + initial focus + focus restore for the two modals owned
+  // directly by App (Help, Export) — BatchPanel and ShaderEditor manage their
+  // own (H17: "aria-modal on four dialogs with no focus trap, no initial
+  // focus, no focus restore").
+  const helpDialogRef = useFocusTrap(showHelp);
+  const exportDialogRef = useFocusTrap(showExport);
+
+  // Stable callback props for the six memoized panels below (H13): memo()
+  // does nothing if a component receives a FRESH function reference every
+  // render, so every callback these panels take is created once here
+  // instead of as an inline arrow in JSX. Nearly all of them just forward
+  // to a store action through the stable `store` accessor, so `[store]` is
+  // the only real dependency — the one exception (toggleMute) is called
+  // out where it happens.
+
+  // LibraryPanel
+  const libraryPickFolder: LibraryPanelProps["onPickFolder"] = useCallback(
+    () => void store().pickLibraryFolder(),
+    [store],
+  );
+  const libraryPlay: LibraryPanelProps["onPlay"] = useCallback(
+    (path) => void store().playLibraryTrack(path),
+    [store],
+  );
+  const setLibraryAutoAdvance: LibraryPanelProps["onAutoAdvance"] = useCallback(
+    (v) => store().setLibraryAutoAdvance(v),
+    [store],
+  );
+  const closeLibrary: LibraryPanelProps["onClose"] = useCallback(
+    () => store().setShowLibrary(false),
+    [store],
+  );
+
+  // ParamsPanel
+  const setParam: ParamsPanelProps["onParam"] = useCallback(
+    (k, v) => store().setParam(k, v),
+    [store],
+  );
+  const applyStyleCb: ParamsPanelProps["onApplyStyle"] = useCallback(
+    (values) => store().applyStyle(values),
+    [store],
+  );
+  const resetParams: ParamsPanelProps["onReset"] = useCallback(
+    () => store().resetParams(),
+    [store],
+  );
+  const setBg: ParamsPanelProps["onBg"] = useCallback((next) => store().setBg(next), [store]);
+  const pickBackgroundImage: ParamsPanelProps["onPickBackgroundImage"] = useCallback(
+    () => void store().pickBackgroundImage(),
+    [store],
+  );
+  const applyAlbumArtBackground: ParamsPanelProps["onUseAlbumArtBackground"] = useCallback(
+    () => store().useAlbumArtBackground(),
+    [store],
+  );
+  const pickVideoBackground: ParamsPanelProps["onPickVideoBackground"] = useCallback(
+    () => void store().pickVideoBackground(),
+    [store],
+  );
+  const setSync: ParamsPanelProps["onSync"] = useCallback((next) => store().setSync(next), [store]);
+  const closeParams: ParamsPanelProps["onClose"] = useCallback(
+    () => store().setShowPanel(false),
+    [store],
+  );
+  const setAspect: ParamsPanelProps["onAspect"] = useCallback((a) => store().setAspect(a), [store]);
+  const applyTheme: ParamsPanelProps["onApplyTheme"] = useCallback(
+    (document, name) => store().applyTheme(document, name),
+    [store],
+  );
+  const exportTheme: ParamsPanelProps["onExportTheme"] = useCallback(
+    (meta) => void store().exportCurrentTheme(meta),
+    [store],
+  );
+  const saveUserPreset: ParamsPanelProps["onSaveUserPreset"] = useCallback(
+    (name) => store().saveUserPreset(name),
+    [store],
+  );
+  const applyUserPreset: ParamsPanelProps["onApplyUserPreset"] = useCallback(
+    (id) => store().applyUserPreset(id),
+    [store],
+  );
+  const deleteUserPreset: ParamsPanelProps["onDeleteUserPreset"] = useCallback(
+    (id) => store().deleteUserPreset(id),
+    [store],
+  );
+  const exportUserPreset: ParamsPanelProps["onExportUserPreset"] = useCallback(
+    (id) => void store().exportUserPreset(id),
+    [store],
+  );
+  const importUserPreset: ParamsPanelProps["onImportUserPreset"] = useCallback(
+    () => void store().importUserPreset(),
+    [store],
+  );
+  const addTextLayer: ParamsPanelProps["onAddTextLayer"] = useCallback(
+    () => store().addTextLayer(),
+    [store],
+  );
+  const addImageLayer: ParamsPanelProps["onAddImageLayer"] = useCallback(
+    () => void store().addImageLayer(),
+    [store],
+  );
+  const addAlbumArtLayer: ParamsPanelProps["onAddAlbumArtLayer"] = useCallback(
+    () => store().addAlbumArtLayer(),
+    [store],
+  );
+  const updateLayer: ParamsPanelProps["onUpdateLayer"] = useCallback(
+    (id, patch) => store().updateOverlayLayer(id, patch),
+    [store],
+  );
+  const removeLayer: ParamsPanelProps["onRemoveLayer"] = useCallback(
+    (id) => store().removeOverlayLayer(id),
+    [store],
+  );
+  const setSmoothSpectrum: ParamsPanelProps["onSmoothSpectrum"] = useCallback(
+    (v) => store().setSmoothSpectrum(v),
+    [store],
+  );
+  const setPost: ParamsPanelProps["onPost"] = useCallback(
+    (patch) => store().setPost(patch),
+    [store],
+  );
+  const setMotion: ParamsPanelProps["onMotion"] = useCallback(
+    (patch) => store().setMotion(patch),
+    [store],
+  );
+  const setSwitchQuantize: ParamsPanelProps["onSwitchQuantize"] = useCallback(
+    (m) => store().setSwitchQuantize(m),
+    [store],
+  );
+  const enableMidi: ParamsPanelProps["onEnableMidi"] = useCallback(
+    () => void store().enableMidi(),
+    [store],
+  );
+  const disableMidi: ParamsPanelProps["onDisableMidi"] = useCallback(
+    () => store().disableMidi(),
+    [store],
+  );
+  const setMidiLearn: ParamsPanelProps["onMidiLearn"] = useCallback(
+    (l) => store().setMidiLearn(l),
+    [store],
+  );
+  const removeMidiBinding: ParamsPanelProps["onRemoveMidiBinding"] = useCallback(
+    (id) => store().removeMidiBinding(id),
+    [store],
+  );
+  const addStem: ParamsPanelProps["onAddStem"] = useCallback(
+    (f) => void store().addStem(f),
+    [store],
+  );
+  const removeStem: ParamsPanelProps["onRemoveStem"] = useCallback(
+    (slot) => store().removeStem(slot),
+    [store],
+  );
+  const autoRouteStem: ParamsPanelProps["onAutoRouteStem"] = useCallback(
+    (slot) => store().autoRouteStem(slot),
+    [store],
+  );
+  const addMod: ParamsPanelProps["onAddMod"] = useCallback(
+    (source, param) => store().addModRoute(source, param),
+    [store],
+  );
+  const updateMod: ParamsPanelProps["onUpdateMod"] = useCallback(
+    (id, patch) => store().updateModRoute(id, patch),
+    [store],
+  );
+  const removeMod: ParamsPanelProps["onRemoveMod"] = useCallback(
+    (id) => store().removeModRoute(id),
+    [store],
+  );
+  const importLyrics: ParamsPanelProps["onImportLyrics"] = useCallback(
+    (f) => void f.text().then((t) => store().loadLyricsText(f.name, t)),
+    [store],
+  );
+  const clearLyrics: ParamsPanelProps["onClearLyrics"] = useCallback(
+    () => store().clearLyrics(),
+    [store],
+  );
+  const setLyricStyle: ParamsPanelProps["onLyricStyle"] = useCallback(
+    (patch) => store().setLyricStyle(patch),
+    [store],
+  );
+  const setAudiogram: ParamsPanelProps["onAudiogram"] = useCallback(
+    (patch) => store().setAudiogram(patch),
+    [store],
+  );
+
+  // TimelinePanel
+  const autoArrangeTimeline: TimelinePanelProps["onAutoArrange"] = useCallback(
+    () => store().autoArrangeTimeline(),
+    [store],
+  );
+  const setTimelineData: TimelinePanelProps["onChange"] = useCallback(
+    (tl) => store().setTimeline(tl),
+    [store],
+  );
+  const timelineSeek: TimelinePanelProps["onSeek"] = useCallback(
+    (t) => store().seekEnd(t),
+    [store],
+  );
+  const closeTimeline: TimelinePanelProps["onClose"] = useCallback(
+    () => store().setShowTimeline(false),
+    [store],
+  );
+
+  // PlayerBar
+  const togglePlay: PlayerBarProps["onTogglePlay"] = useCallback(
+    () => void store().togglePlay(),
+    [store],
+  );
+  const seekStart: PlayerBarProps["onSeekStart"] = useCallback(() => store().seekStart(), [store]);
+  const seekEnd: PlayerBarProps["onSeekEnd"] = useCallback((t) => store().seekEnd(t), [store]);
+  const toggleLoop: PlayerBarProps["onToggleLoop"] = useCallback(
+    () => store().toggleLoop(),
+    [store],
+  );
+  const setVolume: PlayerBarProps["onVolume"] = useCallback(
+    (v) => store().applyVolume(v, false),
+    [store],
+  );
+  // Reads volume/muted fresh off the store snapshot at call time rather than
+  // closing over the render-scope `volume`/`muted` selector values above, so
+  // this stays keyed on [store] alone — including volume/muted in the deps
+  // would recreate the callback (and re-render PlayerBar) on every volume
+  // change, exactly the reconciliation this fix is meant to remove.
+  const toggleMute: PlayerBarProps["onToggleMute"] = useCallback(() => {
+    const s = store();
+    s.applyVolume(s.volume, !s.muted);
+  }, [store]);
+
+  // ShaderEditor
+  const saveCustomPreset: ShaderEditorProps["onSave"] = useCallback(
+    (def) => store().saveCustomPreset(def),
+    [store],
+  );
+  const deleteCustomPreset: ShaderEditorProps["onDelete"] = useCallback(
+    (id) => store().deleteCustomPreset(id),
+    [store],
+  );
+  const exportCustomPreset: ShaderEditorProps["onExport"] = useCallback(
+    (id) => void store().exportCustomPreset(id),
+    [store],
+  );
+  const importCustomPresetFile: ShaderEditorProps["onImportFile"] = useCallback(
+    (f) => void f.text().then((t) => store().importCustomPresetText(t)),
+    [store],
+  );
+  const closeShaderEditor: ShaderEditorProps["onClose"] = useCallback(
+    () => store().setShowShaderEditor(false),
+    [store],
+  );
+
+  // BatchPanel
+  const addBatchTracks: BatchPanelProps["onAddTracks"] = useCallback(
+    (files) => void store().addBatchTracks(files),
+    [store],
+  );
+  const removeBatchTrack: BatchPanelProps["onRemoveTrack"] = useCallback(
+    (id) => store().removeBatchTrack(id),
+    [store],
+  );
+  const retitleBatchTrack: BatchPanelProps["onRetitle"] = useCallback(
+    (id, title) => store().setBatchTrackMeta(id, { title }),
+    [store],
+  );
+  const startBatch: BatchPanelProps["onStart"] = useCallback(
+    () => void store().startBatch(),
+    [store],
+  );
+  const skipBatchJob: BatchPanelProps["onSkipJob"] = useCallback(
+    () => store().skipCurrentBatchJob(),
+    [store],
+  );
+  const cancelBatch: BatchPanelProps["onCancel"] = useCallback(
+    () => store().cancelBatch(),
+    [store],
+  );
+  const retryFailedBatch: BatchPanelProps["onRetryFailed"] = useCallback(
+    () => void store().retryFailedBatch(),
+    [store],
+  );
+  const newBatch: BatchPanelProps["onNewBatch"] = useCallback(
+    () => store().dismissBatch(),
+    [store],
+  );
+  const closeBatch: BatchPanelProps["onClose"] = useCallback(
+    () => store().setShowBatch(false),
+    [store],
+  );
+
   // One-time init: engine, renderer (with GPU-loss recovery), frame loop
   useEffect(() => {
     return store().initApp(canvasRef.current!);
@@ -212,12 +502,22 @@ export default function App() {
   }, [store]);
 
   // Preset thumbnails render lazily on idle — startup paint stays instant.
+  // Cleanup cancels whichever timer was armed: under StrictMode's dev-only
+  // mount→cleanup→remount, the FIRST mount's callback is cancelled before it
+  // ever fires, so only the second (real) mount's callback runs — without
+  // this, both survived and every preset thumbnail was GPU-rendered twice.
   useEffect(() => {
     const kick = () => store().loadPresetThumbnails();
-    const idle = (window as unknown as { requestIdleCallback?: (cb: () => void) => number })
-      .requestIdleCallback;
-    if (idle) idle(kick);
-    else setTimeout(kick, 1200);
+    const w = window as unknown as {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    if (w.requestIdleCallback) {
+      const handle = w.requestIdleCallback(kick);
+      return () => w.cancelIdleCallback?.(handle);
+    }
+    const timer = setTimeout(kick, 1200);
+    return () => clearTimeout(timer);
   }, [store]);
 
   // Keyboard shortcuts
@@ -340,9 +640,10 @@ export default function App() {
           // Never let Escape dismiss a running queue out from under itself.
           if (s.batchStatus !== "running") s.setShowBatch(false);
           if (s.stageMode) s.setStageMode(false);
-          // Escape used to close only half the dismissible surfaces. The
-          // shader editor is deliberately NOT closed here — it holds unsaved
-          // WGSL and has no confirmation step.
+          // The shader editor is intentionally NOT touched here (L12): it
+          // holds unsaved WGSL, so it handles its own Escape locally (with a
+          // confirm-before-discard gate) and stops the key event from
+          // reaching this handler — see ShaderEditor.tsx's onKeyDown.
           s.setShowPanel(false);
           s.setShowLibrary(false);
           s.setShowTimeline(false);
@@ -672,6 +973,15 @@ export default function App() {
       <div className="stage">
         <canvas
           ref={canvasRef}
+          // H17: the canvas is the entire product surface and previously had
+          // no role/label at all, making it invisible to assistive tech. It's
+          // a display, not a control — the real play/pause and fullscreen
+          // affordances are the PlayerBar/top-bar buttons — so role="img"
+          // plus a preset-aware label, not a button/application role.
+          role="img"
+          aria-label={
+            playback.trackName ? `${preset.name} audio visualization` : "Audio visualization"
+          }
           className={`viz-canvas ${bg.mode === BG_TRANSPARENT ? "transparent" : ""} ${
             aspect !== "free" ? "fixed-aspect" : ""
           }`}
@@ -866,10 +1176,10 @@ export default function App() {
           activePath={libraryActivePath}
           autoAdvance={libraryAutoAdvance}
           desktop={isTauri()}
-          onPickFolder={() => void store().pickLibraryFolder()}
-          onPlay={(path) => void store().playLibraryTrack(path)}
-          onAutoAdvance={(v) => store().setLibraryAutoAdvance(v)}
-          onClose={() => store().setShowLibrary(false)}
+          onPickFolder={libraryPickFolder}
+          onPlay={libraryPlay}
+          onAutoAdvance={setLibraryAutoAdvance}
+          onClose={closeLibrary}
         />
       )}
 
@@ -877,81 +1187,81 @@ export default function App() {
         <ParamsPanel
           preset={preset}
           params={params}
-          onParam={(k, v) => store().setParam(k, v)}
-          onApplyStyle={(values) => store().applyStyle(values)}
-          onReset={() => store().resetParams()}
+          onParam={setParam}
+          onApplyStyle={applyStyleCb}
+          onReset={resetParams}
           bg={bg}
-          onBg={(next) => store().setBg(next)}
-          onPickBackgroundImage={() => void store().pickBackgroundImage()}
-          onUseAlbumArtBackground={() => store().useAlbumArtBackground()}
-          onPickVideoBackground={() => void store().pickVideoBackground()}
+          onBg={setBg}
+          onPickBackgroundImage={pickBackgroundImage}
+          onUseAlbumArtBackground={applyAlbumArtBackground}
+          onPickVideoBackground={pickVideoBackground}
           videoBgLoading={videoBgLoading}
           showVideoBg={isTauri()}
           sync={sync}
-          onSync={(next) => store().setSync(next)}
+          onSync={setSync}
           rendererKind={rendererKind}
-          onClose={() => store().setShowPanel(false)}
+          onClose={closeParams}
           aspect={aspect}
-          onAspect={(a) => store().setAspect(a)}
+          onAspect={setAspect}
           lufs={lufs}
           bpm={beatGrid ? beatGrid.bpm : null}
           keyName={trackKey ? trackKey.name : null}
           userPresets={userPresets.filter((p) => p.presetId === presetId)}
-          onApplyTheme={(document, name) => store().applyTheme(document, name)}
-          onExportTheme={(meta) => void store().exportCurrentTheme(meta)}
-          onSaveUserPreset={(name) => store().saveUserPreset(name)}
-          onApplyUserPreset={(id) => store().applyUserPreset(id)}
-          onDeleteUserPreset={(id) => store().deleteUserPreset(id)}
-          onExportUserPreset={(id) => void store().exportUserPreset(id)}
-          onImportUserPreset={() => void store().importUserPreset()}
+          onApplyTheme={applyTheme}
+          onExportTheme={exportTheme}
+          onSaveUserPreset={saveUserPreset}
+          onApplyUserPreset={applyUserPreset}
+          onDeleteUserPreset={deleteUserPreset}
+          onExportUserPreset={exportUserPreset}
+          onImportUserPreset={importUserPreset}
           overlayLayers={overlayLayers}
           assets={assets}
           hasCoverArt={!!coverArt}
-          onAddTextLayer={() => store().addTextLayer()}
-          onAddImageLayer={() => void store().addImageLayer()}
-          onAddAlbumArtLayer={() => store().addAlbumArtLayer()}
-          onUpdateLayer={(id, patch) => store().updateOverlayLayer(id, patch)}
-          onRemoveLayer={(id) => store().removeOverlayLayer(id)}
+          onAddTextLayer={addTextLayer}
+          onAddImageLayer={addImageLayer}
+          onAddAlbumArtLayer={addAlbumArtLayer}
+          onUpdateLayer={updateLayer}
+          onRemoveLayer={removeLayer}
           smoothSpectrum={smoothSpectrum}
-          onSmoothSpectrum={(v) => store().setSmoothSpectrum(v)}
+          onSmoothSpectrum={setSmoothSpectrum}
           post={post}
-          onPost={(patch) => store().setPost(patch)}
+          onPost={setPost}
           motion={motion}
-          onMotion={(patch) => store().setMotion(patch)}
+          onMotion={setMotion}
           switchQuantize={switchQuantize}
-          onSwitchQuantize={(m) => store().setSwitchQuantize(m)}
+          onSwitchQuantize={setSwitchQuantize}
           midiSupported={MIDI_SUPPORTED}
           midiEnabled={midiEnabled}
           midiDevices={midiDevices}
           midiBindings={midiBindings}
           midiLearn={midiLearn}
-          onEnableMidi={() => void store().enableMidi()}
-          onDisableMidi={() => store().disableMidi()}
-          onMidiLearn={(l) => store().setMidiLearn(l)}
-          onRemoveMidiBinding={(id) => store().removeMidiBinding(id)}
+          onEnableMidi={enableMidi}
+          onDisableMidi={disableMidi}
+          onMidiLearn={setMidiLearn}
+          onRemoveMidiBinding={removeMidiBinding}
           mods={activeMods}
           stems={stems}
           stemAnalyzing={stemAnalyzing}
-          onAddStem={(f) => void store().addStem(f)}
-          onRemoveStem={(slot) => store().removeStem(slot)}
-          onAutoRouteStem={(slot) => store().autoRouteStem(slot)}
-          onAddMod={(source, param) => store().addModRoute(source, param)}
-          onUpdateMod={(id, patch) => store().updateModRoute(id, patch)}
-          onRemoveMod={(id) => store().removeModRoute(id)}
+          onAddStem={addStem}
+          onRemoveStem={removeStem}
+          onAutoRouteStem={autoRouteStem}
+          onAddMod={addMod}
+          onUpdateMod={updateMod}
+          onRemoveMod={removeMod}
           lyricFileName={lyricFileName}
           lyricStyle={lyricStyle}
-          onImportLyrics={(f) => void f.text().then((t) => store().loadLyricsText(f.name, t))}
-          onClearLyrics={() => store().clearLyrics()}
-          onLyricStyle={(patch) => store().setLyricStyle(patch)}
+          onImportLyrics={importLyrics}
+          onClearLyrics={clearLyrics}
+          onLyricStyle={setLyricStyle}
           audiogram={audiogram}
-          onAudiogram={(patch) => store().setAudiogram(patch)}
+          onAudiogram={setAudiogram}
         />
       )}
 
       {showTimeline && (
         <TimelinePanel
           timeline={timeline}
-          onAutoArrange={() => store().autoArrangeTimeline()}
+          onAutoArrange={autoArrangeTimeline}
           duration={playback.duration}
           time={playback.time}
           beatGrid={beatGrid}
@@ -960,9 +1270,9 @@ export default function App() {
           activePreset={preset}
           presets={allPresets}
           activeParams={params}
-          onChange={(tl) => store().setTimeline(tl)}
-          onSeek={(t) => store().seekEnd(t)}
-          onClose={() => store().setShowTimeline(false)}
+          onChange={setTimelineData}
+          onSeek={timelineSeek}
+          onClose={closeTimeline}
         />
       )}
 
@@ -971,12 +1281,12 @@ export default function App() {
         sections={sections}
         volume={volume}
         muted={muted}
-        onTogglePlay={() => void store().togglePlay()}
-        onSeekStart={() => store().seekStart()}
-        onSeekEnd={(t) => store().seekEnd(t)}
-        onToggleLoop={() => store().toggleLoop()}
-        onVolume={(v) => store().applyVolume(v, false)}
-        onToggleMute={() => store().applyVolume(volume, !muted)}
+        onTogglePlay={togglePlay}
+        onSeekStart={seekStart}
+        onSeekEnd={seekEnd}
+        onToggleLoop={toggleLoop}
+        onVolume={setVolume}
+        onToggleMute={toggleMute}
       />
 
       {/* role=alert so a screen reader is actually told; dismissible so a
@@ -1018,21 +1328,23 @@ export default function App() {
       {showShaderEditor && (
         <ShaderEditor
           customDefs={customDefs}
-          onSave={(def) => store().saveCustomPreset(def)}
-          onDelete={(id) => store().deleteCustomPreset(id)}
-          onExport={(id) => void store().exportCustomPreset(id)}
-          onImportFile={(f) => void f.text().then((t) => store().importCustomPresetText(t))}
-          onClose={() => store().setShowShaderEditor(false)}
+          onSave={saveCustomPreset}
+          onDelete={deleteCustomPreset}
+          onExport={exportCustomPreset}
+          onImportFile={importCustomPresetFile}
+          onClose={closeShaderEditor}
         />
       )}
 
       {showHelp && (
         <div className="modal-backdrop" onClick={() => store().setShowHelp(false)}>
           <div
+            ref={helpDialogRef}
             className="modal"
             role="dialog"
             aria-modal="true"
             aria-label="Keyboard shortcuts"
+            tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="panel-header">
@@ -1066,25 +1378,27 @@ export default function App() {
           overlayLayers={overlayLayers}
           aspect={aspect}
           formatLabel={RESOLUTIONS[exportSettings.resIdx].label}
-          onAddTracks={(files) => void store().addBatchTracks(files)}
-          onRemoveTrack={(id) => store().removeBatchTrack(id)}
-          onRetitle={(id, title) => store().setBatchTrackMeta(id, { title })}
-          onStart={() => void store().startBatch()}
-          onSkipJob={() => store().skipCurrentBatchJob()}
-          onCancel={() => store().cancelBatch()}
-          onRetryFailed={() => void store().retryFailedBatch()}
-          onNewBatch={() => store().dismissBatch()}
-          onClose={() => store().setShowBatch(false)}
+          onAddTracks={addBatchTracks}
+          onRemoveTrack={removeBatchTrack}
+          onRetitle={retitleBatchTrack}
+          onStart={startBatch}
+          onSkipJob={skipBatchJob}
+          onCancel={cancelBatch}
+          onRetryFailed={retryFailedBatch}
+          onNewBatch={newBatch}
+          onClose={closeBatch}
         />
       )}
 
       {showExport && (
         <div className="modal-backdrop" onClick={() => !exporting && store().setShowExport(false)}>
           <div
+            ref={exportDialogRef}
             className="modal"
             role="dialog"
             aria-modal="true"
             aria-label="Export video"
+            tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="panel-header">

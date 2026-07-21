@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { ParamSpec, PresetDef } from "../render/types";
 import { NEW_SHADER_TEMPLATE, newCustomPresetId } from "../render/presets/custom";
 import { IconClose } from "./Icons";
+import { useFocusTrap } from "./useFocusTrap";
 
 /**
  * The WGSL preset editor — a modal that authors a custom PresetDef: name,
@@ -86,13 +87,22 @@ function specsToRows(specs: ParamSpec[]): ParamRow[] {
   }));
 }
 
-export function ShaderEditor(props: ShaderEditorProps) {
+// Memoized (H13): requires every callback prop from App.tsx to stay
+// reference-stable (see the useCallback block there) or memo does nothing.
+export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("My Visual");
   const [rows, setRows] = useState<ParamRow[]>(STARTER_ROWS);
   const [wgsl, setWgsl] = useState(NEW_SHADER_TEMPLATE);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  // L12: the editor used to discard unsaved WGSL with no confirmation on a
+  // backdrop click (and Escape didn't close it at all, for the same reason).
+  // Track whether the in-progress edit differs from what was last loaded/
+  // saved, and gate every dismissal path (backdrop, header ✕, Escape) behind
+  // one confirm — a clean editor (nothing to lose) still closes instantly.
+  const [dirty, setDirty] = useState(false);
+  const dialogRef = useFocusTrap(true);
 
   const loadExisting = (def: PresetDef) => {
     setEditingId(def.id);
@@ -100,6 +110,12 @@ export function ShaderEditor(props: ShaderEditorProps) {
     setRows(specsToRows([...(def.params ?? []), ...(def.advanced ?? [])]));
     setWgsl(def.wgsl);
     setErrors([]);
+    setDirty(false);
+  };
+
+  const requestClose = () => {
+    if (dirty && !window.confirm("Discard unsaved changes to this shader?")) return;
+    props.onClose();
   };
 
   const apply = async () => {
@@ -118,17 +134,29 @@ export function ShaderEditor(props: ShaderEditorProps) {
     const result = await props.onSave(def);
     setBusy(false);
     setErrors(result);
-    if (result.length === 0) setEditingId(def.id);
+    if (result.length === 0) {
+      setEditingId(def.id);
+      setDirty(false);
+    }
   };
 
   return (
-    <div className="modal-backdrop" onClick={props.onClose}>
+    <div className="modal-backdrop" onClick={requestClose}>
       <div
+        ref={dialogRef}
         className="modal wide shader-editor"
         role="dialog"
         aria-modal="true"
         aria-label="Shader editor"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key !== "Escape") return;
+          // Handled locally (not the App-level shortcut handler) so the
+          // dirty confirm above can run first — see L12.
+          e.stopPropagation();
+          requestClose();
+        }}
       >
         <div className="panel-header">
           <span className="panel-heading">Shader editor</span>
@@ -136,7 +164,7 @@ export function ShaderEditor(props: ShaderEditorProps) {
             className="icon-btn subtle"
             title="Close"
             aria-label="Close shader editor"
-            onClick={props.onClose}
+            onClick={requestClose}
           >
             <IconClose size={16} />
           </button>
@@ -160,12 +188,18 @@ export function ShaderEditor(props: ShaderEditorProps) {
                 >
                   {d.name}
                 </button>
-                <button className="chip-x" title="Delete" onClick={() => props.onDelete(d.id)}>
+                <button
+                  className="chip-x"
+                  title="Delete"
+                  aria-label={`Delete "${d.name}"`}
+                  onClick={() => props.onDelete(d.id)}
+                >
                   ✕
                 </button>
                 <button
                   className="chip-x"
                   title="Export as .avshader file"
+                  aria-label={`Export "${d.name}" as .avshader file`}
                   onClick={() => props.onExport(d.id)}
                 >
                   ↗
@@ -181,7 +215,10 @@ export function ShaderEditor(props: ShaderEditorProps) {
             value={name}
             maxLength={40}
             placeholder="Visual name…"
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setDirty(true);
+            }}
           />
           <button
             className="text-btn"
@@ -192,6 +229,7 @@ export function ShaderEditor(props: ShaderEditorProps) {
               setRows(STARTER_ROWS);
               setWgsl(NEW_SHADER_TEMPLATE);
               setErrors([]);
+              setDirty(false);
             }}
           >
             New
@@ -222,18 +260,22 @@ export function ShaderEditor(props: ShaderEditorProps) {
                   aria-label={`Parameter ${field}`}
                   title={field}
                   value={r[field]}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setRows(
                       rows.map((row, j) => (j === i ? { ...row, [field]: e.target.value } : row)),
-                    )
-                  }
+                    );
+                    setDirty(true);
+                  }}
                 />
               ))}
               <button
                 className="chip-x"
                 title="Remove parameter"
                 aria-label="Remove parameter"
-                onClick={() => setRows(rows.filter((_, j) => j !== i))}
+                onClick={() => {
+                  setRows(rows.filter((_, j) => j !== i));
+                  setDirty(true);
+                }}
               >
                 ✕
               </button>
@@ -241,7 +283,10 @@ export function ShaderEditor(props: ShaderEditorProps) {
           ))}
           <button
             className="text-btn"
-            onClick={() => setRows([...rows, { ...EMPTY_ROW }])}
+            onClick={() => {
+              setRows([...rows, { ...EMPTY_ROW }]);
+              setDirty(true);
+            }}
             title="Add a parameter (becomes P_<key>() in WGSL and a slider in the panel)"
           >
             + Parameter
@@ -252,7 +297,10 @@ export function ShaderEditor(props: ShaderEditorProps) {
           className="shader-code"
           spellCheck={false}
           value={wgsl}
-          onChange={(e) => setWgsl(e.target.value)}
+          onChange={(e) => {
+            setWgsl(e.target.value);
+            setDirty(true);
+          }}
         />
 
         {errors.length > 0 && (
@@ -271,4 +319,4 @@ export function ShaderEditor(props: ShaderEditorProps) {
       </div>
     </div>
   );
-}
+});

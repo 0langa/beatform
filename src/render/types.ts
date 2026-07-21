@@ -288,3 +288,15 @@ export function defaultParams(preset: PresetDef): ParamValues {
   for (const p of allParams(preset)) out[p.key] = p.default;
   return out;
 }
+
+/**
+ * Resolve one param's live value, falling back to the preset's OWN
+ * ParamSpec.default — never a hardcoded literal — when it's absent from
+ * `params`. For render paths that read named params directly off the CPU
+ * side (mesh3d, e.g.) instead of through the generated P_<key>() accessors
+ * over the GPU params buffer, so a renderer-side fallback can't silently
+ * drift from the spec that actually defines it (see M19).
+ */
+export function paramOr(preset: PresetDef, params: ParamValues, key: string): number {
+  return params[key] ?? paramSpecMap(preset).get(key)?.default ?? 0;
+}

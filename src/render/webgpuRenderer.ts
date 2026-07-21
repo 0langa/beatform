@@ -1,5 +1,5 @@
 import type { AudioFeatures } from "../audio/types";
-import { allParams, DEFAULT_MOTION, DEFAULT_POST } from "./types";
+import { allParams, DEFAULT_MOTION, DEFAULT_POST, paramOr } from "./types";
 import type {
   BgSettings,
   Mesh3DSpec,
@@ -195,6 +195,10 @@ const TAU: f32 = 6.28318530718;
 
 struct Uniforms {
   time: f32,
+  // Reserved (L24): no built-in preset reads this, but it's a "Legacy"-
+  // labeled field in the documented custom-preset ABI (docs/presets.md's
+  // audio-uniforms table), so it stays declared AND live rather than frozen
+  // — a saved custom preset may still reference it by name.
   beatIntensity: f32,
   rms: f32,
   bass: f32,
@@ -214,13 +218,13 @@ struct Uniforms {
   drive: f32,
   driveBeat: f32,
   voice: f32,
-  width: f32,
+  width: f32, // Reserved (L24): documented ABI ("Stereo width"), unread by any built-in.
   bpm: f32,
   beatPhase: f32,
   barPhase: f32,
   kick: f32,
-  snare: f32,
-  hat: f32,
+  snare: f32, // Reserved (L24): documented ABI ("Per-drum onset envelope"), unread by any built-in.
+  hat: f32, // Reserved (L24): documented ABI ("Per-drum onset envelope"), unread by any built-in.
   smoothBins: f32,
   feedbackOn: f32,
   spin: f32,
@@ -239,6 +243,11 @@ struct Uniforms {
 @group(0) @binding(8) var coverTex: texture_2d<f32>;
 @group(0) @binding(9) var bgTex: texture_2d<f32>;
 
+// Reserved (L24): raw-index param access, superseded by the generated
+// P_<key>() accessors (see setPreset()) which every built-in and custom
+// preset now uses instead — zero call sites in this repo. Kept declared,
+// not removed: it's cheap (a function definition, not a per-frame cost) and
+// an existing hand-written custom preset could conceivably still call it.
 fn param(i: u32) -> f32 { return params[i]; }
 
 /** The track's embedded cover art. uv is 0..1 across the image. hasCover() is
@@ -979,6 +988,10 @@ export class WebGPURenderer implements Renderer {
   private transitionParamsBuf: GPUBuffer;
   private transitionBindGroup: GPUBindGroup | null = null;
   private transitionParamsData = new Float32Array(MAX_PARAMS);
+  /** Does the OUTGOING (fading-out) preset call feedbackSample()? See the
+   * `fading` branch of render() — an outgoing feedback preset keeps reading
+   * the shared history buffer instead of being cut to emptyFeedback (M14). */
+  private transitionPresetUsesFeedback = false;
   // Reused per crossfade frame (mix, kind, pad, pad) — avoids a per-frame alloc.
   private blendData = new Float32Array(4);
   private fadeTexA: GPUTexture | null = null;
@@ -1292,6 +1305,7 @@ export class WebGPURenderer implements Renderer {
 
   setTransitionPreset(preset: PresetDef | null): void {
     this.transitionPreset = preset;
+    this.transitionPresetUsesFeedback = preset ? usesFeedback(preset) : false;
     if (!preset) {
       this.transitionPipeline = null;
       this.transitionPipelineFor = null;
@@ -1325,7 +1339,14 @@ export class WebGPURenderer implements Renderer {
       this.device.createTexture({
         size: [w, h],
         format: SCENE_FORMAT,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        // COPY_SRC: a feedback preset crossfading IN copies its own fresh
+        // fadeTexA output into histTex every frame during the fade (see the
+        // `fading` branch of render()), so its trail keeps evolving instead
+        // of freezing for the whole transition and snapping after (M14).
+        usage:
+          GPUTextureUsage.RENDER_ATTACHMENT |
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_SRC,
       });
     this.fadeTexA = make();
     this.fadeTexB = make();
@@ -1424,6 +1445,24 @@ export class WebGPURenderer implements Renderer {
     this.compositeBind = null;
     this.bindGroup = null; // binding 7 (histTex view) changed
     this.transitionBindGroup = null;
+  }
+
+  /** Clear histTex to transparent black. A fresh feedback preset (built-in
+   * switch or the first frame of a crossfade into/out of one) must not
+   * inherit trails left over from whatever rendered before it. */
+  private clearFeedbackHistory(encoder: GPUCommandEncoder): void {
+    const clear = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: this.histTex!.createView(),
+          loadOp: "clear",
+          clearValue: { r: 0, g: 0, b: 0, a: 0 },
+          storeOp: "store",
+        },
+      ],
+    });
+    clear.end();
+    this.feedbackClearPending = false;
   }
 
   /** Composite-pass bind group: full ABI, but binding 7 = the freshly-rendered
@@ -1745,13 +1784,15 @@ export class WebGPURenderer implements Renderer {
     this.ensureDepth(w, h);
 
     const deg = Math.PI / 180;
-    const g = (k: string, d: number) => params[k] ?? d;
+    // Fallback comes from the preset's OWN ParamSpec.default (M19) — not a
+    // hardcoded literal that could silently drift from spectrum-scape's spec.
+    const g = (k: string) => paramOr(this.preset!, params, k);
     // Motion→Rotation scales the auto-orbit speed (0 = camera holds still).
-    const yaw = (g("camYaw", 30) + time * g("camSpin", 12) * this.motion.rotation) * deg;
-    const pitch = g("camPitch", 32) * deg;
-    const dist = g("camDist", 15);
-    const fov = g("fov", 50) * deg;
-    const targetY = g("targetY", 1);
+    const yaw = (g("camYaw") + time * g("camSpin") * this.motion.rotation) * deg;
+    const pitch = g("camPitch") * deg;
+    const dist = g("camDist");
+    const fov = g("fov") * deg;
+    const targetY = g("targetY");
     const cp = Math.cos(pitch);
     const eye: [number, number, number] = [
       Math.sin(yaw) * cp * dist,
@@ -1765,13 +1806,13 @@ export class WebGPURenderer implements Renderer {
     const F = this.mesh3dF32;
     F.set(vp, 0);
     F[16] = this.mesh3dSpec!.grid;
-    F[17] = g("spacing", 0.6);
-    F[18] = g("barWidth", 0.42);
-    F[19] = g("heightScale", 6);
-    F[20] = g("hue", 200);
-    F[21] = g("hueRange", 120);
-    F[22] = g("light", 0.9);
-    F[23] = g("emissive", 0.5);
+    F[17] = g("spacing");
+    F[18] = g("barWidth");
+    F[19] = g("heightScale");
+    F[20] = g("hue");
+    F[21] = g("hueRange");
+    F[22] = g("light");
+    F[23] = g("emissive");
     F[24] = f.bins.length;
     F[25] = time;
     F[26] = f.drive;
@@ -2024,6 +2065,11 @@ export class WebGPURenderer implements Renderer {
     if (!this.pipeline || !this.preset) return;
     this.ensureBinBuffers(f.bins.length);
 
+    // Slots 1 (beatIntensity), 19 (width), 24 (snare) and 25 (hat) are unread
+    // by any built-in preset but are kept written (not zeroed/skipped): all
+    // four are part of the documented custom-preset ABI (see the Uniforms
+    // struct comments above and docs/presets.md), so a saved custom preset
+    // referencing one by name still gets a live value, not a frozen one (L24).
     this.uniformF32[0] = time;
     this.uniformF32[1] = f.beatIntensity;
     this.uniformF32[2] = f.rms;
@@ -2111,7 +2157,17 @@ export class WebGPURenderer implements Renderer {
     }
     this.ensureGraphTargets();
     // Particles + feedback both draw into visTex, then composite -> sceneTex.
-    if (useFeedback || particlesActive || mesh3dActive) this.ensureFeedbackTargets();
+    // A crossfade needs histTex too whenever either side of it uses feedback
+    // (M14) — the fading branch below shares it exactly like the plain
+    // feedback path does, instead of forcing the outgoing/incoming preset to
+    // emptyFeedback or a stale pre-fade snapshot.
+    if (
+      useFeedback ||
+      particlesActive ||
+      mesh3dActive ||
+      (fading && (this.presetUsesFeedback || this.transitionPresetUsesFeedback))
+    )
+      this.ensureFeedbackTargets();
     const scene = this.sceneTex!.createView();
 
     const encoder = this.device.createCommandEncoder();
@@ -2142,20 +2198,7 @@ export class WebGPURenderer implements Renderer {
     } else if (useFeedback) {
       // Fresh history holds garbage / a previous preset's trails — clear it
       // before the first feedback frame so trails start from black.
-      if (this.feedbackClearPending) {
-        const clear = encoder.beginRenderPass({
-          colorAttachments: [
-            {
-              view: this.histTex!.createView(),
-              loadOp: "clear",
-              clearValue: { r: 0, g: 0, b: 0, a: 0 },
-              storeOp: "store",
-            },
-          ],
-        });
-        clear.end();
-        this.feedbackClearPending = false;
-      }
+      if (this.feedbackClearPending) this.clearFeedbackHistory(encoder);
       // 1) preset draws its raw visual (samples histTex) into visTex.
       drawPass(this.pipeline, this.getBindGroup(), this.visTex!.createView());
       // 2) composite pass finishes visTex -> sceneTex (bg + overlay).
@@ -2169,12 +2212,52 @@ export class WebGPURenderer implements Renderer {
       // Non-feedback: preset composites inline straight into the scene target.
       drawPass(this.pipeline, this.getBindGroup(), scene);
     } else {
+      // M14: a feedback preset crossfading in/out shares histTex with the
+      // plain feedback path instead of being forced to emptyFeedback (a
+      // visible pop to black on the outgoing side) or left reading whatever
+      // pre-fade snapshot happened to be there (stale content that then
+      // snaps once the fade ends, on the incoming side).
+      //
+      // Clear ONLY for the incoming preset, never merely because the outgoing
+      // one uses feedback.
+      //
+      // setPreset() raises feedbackClearPending whenever the ACTIVE preset
+      // changes — and at a fade's start the active preset is the INCOMING one.
+      // So clearing on `transitionPresetUsesFeedback` wiped the OUTGOING
+      // preset's accumulated trail at the exact instant the fade began, while
+      // its blend weight was still ~1. That is the pop, measured: fading
+      // echo-trails out to metaballs, frame 60 (the fade's first frame, mix~0,
+      // so it should look almost identical to frame 59) dropped 73.5% in
+      // encoded PNG size — the trail vanishing, not a crossfade.
+      //
+      // When the incoming preset uses feedback, clearing is still right: it
+      // needs a clean slate, and the fadeTexA -> histTex copy below keeps its
+      // trail alive from there. When only the OUTGOING one does, the history
+      // must survive the fade — it IS that preset's picture. Nothing writes
+      // histTex in that case, so the trail holds still for the fade; frozen
+      // for a few hundred ms under a falling blend weight is invisible next
+      // to a hard cut to black.
+      if (this.feedbackClearPending && this.presetUsesFeedback) this.clearFeedbackHistory(encoder);
+      // The outgoing pass (below) samples histTex as it stood at the END of
+      // the PREVIOUS frame — still the outgoing preset's own last real trail
+      // on the fade's first frame (perfect continuity, no pop), and the
+      // incoming preset's evolving trail from then on (its blend weight is
+      // already falling by that point, so any mismatch matters less).
       drawPass(this.pipeline, this.getBindGroup(), this.fadeTexA!.createView());
       drawPass(
         this.transitionPipeline!,
         this.getTransitionBindGroup(),
         this.fadeTexB!.createView(),
       );
+      if (this.presetUsesFeedback) {
+        // Keep the incoming preset's trail alive through the whole fade so
+        // it continues smoothly once the transition ends, instead of
+        // resuming from a stale pre-fade snapshot with a hard snap.
+        encoder.copyTextureToTexture({ texture: this.fadeTexA! }, { texture: this.histTex! }, [
+          this.feedbackSize[0],
+          this.feedbackSize[1],
+        ]);
+      }
       if (!this.blendBindGroup) {
         this.blendBindGroup = this.device.createBindGroup({
           layout: this.blendPipeline!.getBindGroupLayout(0),
@@ -2209,9 +2292,16 @@ export class WebGPURenderer implements Renderer {
             resource: (this.overlayTexture ?? this.emptyOverlay).createView(),
           },
           { binding: 6, resource: this.overlaySampler },
-          // Feedback is paused during crossfades: bind the empty history so a
-          // transition preset's feedbackSample() reads black.
-          { binding: 7, resource: this.emptyFeedback.createView() },
+          // An outgoing preset that itself uses feedback keeps reading the
+          // shared history (see the `fading` branch of render()) instead of
+          // being cut to black; one that doesn't never samples this anyway.
+          {
+            binding: 7,
+            resource: (this.transitionPresetUsesFeedback && this.histTex
+              ? this.histTex
+              : this.emptyFeedback
+            ).createView(),
+          },
           { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
           { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
         ],

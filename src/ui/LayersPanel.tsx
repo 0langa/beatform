@@ -252,7 +252,12 @@ export function LayersPanel(props: {
                 <span className="layer-kind">{l.type === "text" ? "T" : "▣"}</span>
                 {label}
               </button>
-              <button className="chip-x" title="Remove layer" onClick={() => props.onRemove(l.id)}>
+              <button
+                className="chip-x"
+                title="Remove layer"
+                aria-label={`Remove ${label} layer`}
+                onClick={() => props.onRemove(l.id)}
+              >
                 ✕
               </button>
             </div>
