@@ -64,3 +64,33 @@ grid). Ship 5–7 curated styles — structural variety, not just hue swaps.
 Conventional commits (`feat:`, `fix:`, `chore:` …) — release notes are
 generated from them. Explain _why_ in the body when the change is not
 obvious; the codebase's comments follow the same rule.
+
+## Deliberate non-changes
+
+Things that look like bugs, have been considered, and are staying as they are.
+Please don't "fix" them without reading the reasoning first.
+
+- **The bundle identifier is `com.olanga.audiovisualizer`, not something
+  Beatform-branded.** It predates the rebrand. Changing it is not cosmetic: on
+  Windows it moves the install location and the app-data directory, which means
+  existing installs would not upgrade in place and every user would silently
+  lose their settings, custom presets, MIDI bindings and library state — the
+  WebView2 profile is keyed to it. The cost lands entirely on people who
+  already use the app, to fix a string nobody sees. If it ever changes, it
+  needs a migration that copies the old app-data directory forward, and a
+  release note saying so.
+
+- **The realtime loopback callback allocates.** `to_stereo_le_bytes` builds a
+  fresh `Vec<u8>` inside cpal's audio callback, which is a genuine realtime
+  violation. It stays because this path is live-only — it never touches the
+  export pipeline or determinism — it works in practice, and the correct fix (a
+  lock-free ring buffer plus a forwarding thread) risks introducing exactly the
+  dropouts it would exist to prevent. Revisit if someone measures a real
+  glitch, not before.
+
+- **Cross-frame-rate exports are not pixel-identical.** A 30 fps and a 60 fps
+  export of the same track differ frame by frame, because the feature
+  pipeline's per-frame smoothing resolves differently at different frame rates.
+  This is not particle-specific: a preset with no simulation at all shows the
+  same divergence. WYSIWYG here means **preview == export at the same fps**,
+  which does hold, and PNG-hash baselines are compared at equal fps.
