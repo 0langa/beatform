@@ -78,8 +78,13 @@ fn scan_audio_library(dir: String) -> Result<Vec<LibraryTrack>, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // No opener plugin. It was registered but never called from the frontend,
+    // and its ACL expansion (`opener:default` -> `allow-open-url` scoped to
+    // http://* and https://*) is a ready-made exfiltration primitive for
+    // anything that manages to run script in the webview. The capability file
+    // never granted it, so nothing was exposed — but a plugin that is present
+    // and unused is one `opener:default` away from being exposed by accident.
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(loopback::LoopbackCtl::default())
