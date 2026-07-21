@@ -979,6 +979,9 @@ export class WebGPURenderer implements Renderer {
   private bloomTexA: GPUTexture | null = null;
   private bloomTexB: GPUTexture | null = null;
   private graphSize: [number, number] = [0, 0];
+  /** Compiled fragment pipelines, keyed by preset def object (see setPreset).
+   * Weak so an unregistered/edited custom preset's pipeline can be collected. */
+  private pipelineCache = new WeakMap<PresetDef, GPURenderPipeline>();
   private postUniform: GPUBuffer;
   private postUniformData = new Float32Array(POST_UNIFORM_SIZE / 4);
   private postSampler: GPUSampler;
@@ -1914,6 +1917,17 @@ export class WebGPURenderer implements Renderer {
     if (specs.length > MAX_PARAMS) {
       console.error(`[preset ${preset.id}] ${specs.length} params > ${MAX_PARAMS}`);
     }
+    // Reuse the compiled pipeline for a preset we've already built. Keyed by
+    // the def OBJECT, not its id: built-in presets are module singletons so
+    // A→B→A hits the cache (it used to pay two full WGSL compiles, a visible
+    // hitch on every live switch), while an edited custom preset arrives as a
+    // NEW object and correctly recompiles.
+    const cached = this.pipelineCache.get(preset);
+    if (cached) {
+      this.pipeline = cached;
+      this.bindGroup = null;
+      return;
+    }
     const accessors = specs
       .map((p, i) => `fn P_${p.key}() -> f32 { return params[${i}u]; }`)
       .join("\n");
@@ -1938,6 +1952,7 @@ export class WebGPURenderer implements Renderer {
       },
       primitive: { topology: "triangle-list" },
     });
+    this.pipelineCache.set(preset, this.pipeline);
     this.bindGroup = null; // rebuild lazily (depends on bins buffers)
   }
 

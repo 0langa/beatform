@@ -59,7 +59,26 @@ function flushPendingWrites(): void {
     clearTimeout(flushTimer);
     flushTimer = null;
   }
-  for (const write of pendingWrites.values()) write();
+  runPendingWrites();
+}
+
+/**
+ * Run every queued write, isolating failures. A QuotaExceededError thrown by
+ * one writer used to escape the loop, which skipped `pendingWrites.clear()` —
+ * so the failing key retried forever AND every write queued behind it (post,
+ * motion, mods, sync) was silently never persisted. Each write now fails on
+ * its own; the queue always drains.
+ */
+function runPendingWrites(): void {
+  for (const [key, write] of pendingWrites) {
+    try {
+      write();
+    } catch (e) {
+      // Storage full or blocked: this setting stays session-only rather than
+      // poisoning everyone else's persistence.
+      console.warn(`[persistence] write failed for ${key}`, e);
+    }
+  }
   pendingWrites.clear();
 }
 
@@ -68,8 +87,7 @@ function scheduleWrite(key: string, write: () => void): void {
   if (flushTimer === null) {
     flushTimer = setTimeout(() => {
       flushTimer = null;
-      for (const w of pendingWrites.values()) w();
-      pendingWrites.clear();
+      runPendingWrites();
     }, 200);
   }
 }

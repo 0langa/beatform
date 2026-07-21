@@ -114,4 +114,21 @@ describe("validMidiBindings", () => {
     expect(validMidiBindings(null)).toEqual([]);
     expect(validMidiBindings("nope")).toEqual([]);
   });
+
+  it("rejects non-finite numbers instead of letting NaN reach a uniform", () => {
+    expect(validMidiBindings([{ kind: "cc", cc: 1, param: "glow", min: NaN, max: 1 }])).toEqual([]);
+    expect(
+      validMidiBindings([{ kind: "cc", cc: 1, param: "glow", min: 0, max: Infinity }]),
+    ).toEqual([]);
+    expect(validMidiBindings([{ kind: "note", note: NaN, presetId: "x" }])).toEqual([]);
+  });
+
+  it("clamps CC and note numbers into MIDI's 0..127 range", () => {
+    const out = validMidiBindings([
+      { kind: "cc", cc: 999, param: "glow", min: 0, max: 1 },
+      { kind: "note", note: -5, presetId: "x" },
+    ]);
+    expect((out.find((b) => b.kind === "cc") as { cc: number }).cc).toBe(127);
+    expect((out.find((b) => b.kind === "note") as { note: number }).note).toBe(0);
+  });
 });

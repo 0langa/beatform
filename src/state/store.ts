@@ -1151,9 +1151,13 @@ export const useVizStore = create<VizState>((set, get) => {
       // Replacing the image orphans the old asset — a multi-MB data URL that
       // would otherwise ride along in state, autosave, .avproj and storage
       // forever. Drop it unless an overlay layer still uses it.
-      const prevId = prev.image?.assetId;
-      if (prevId && !get().overlayLayers.some((l) => "assetId" in l && l.assetId === prevId)) {
-        delete assets[prevId];
+      // Both sub-objects, not just the image: switching video -> image left the
+      // (tens-of-MB) video asset orphaned in state, autosave, .avproj and
+      // localStorage forever — exactly what this GC exists to prevent.
+      for (const prevId of [prev.image?.assetId, prev.video?.assetId]) {
+        if (prevId && !get().overlayLayers.some((l) => "assetId" in l && l.assetId === prevId)) {
+          delete assets[prevId];
+        }
       }
       const bg: BgSettings = {
         ...prev,
@@ -1225,9 +1229,13 @@ export const useVizStore = create<VizState>((set, get) => {
       const assets = { ...get().assets, [asset.id]: asset };
       const prev = get().bg;
       // Same orphan-GC as pickBackgroundImage.
-      const prevId = prev.image?.assetId;
-      if (prevId && !get().overlayLayers.some((l) => "assetId" in l && l.assetId === prevId)) {
-        delete assets[prevId];
+      // Both sub-objects, not just the image: switching video -> image left the
+      // (tens-of-MB) video asset orphaned in state, autosave, .avproj and
+      // localStorage forever — exactly what this GC exists to prevent.
+      for (const prevId of [prev.image?.assetId, prev.video?.assetId]) {
+        if (prevId && !get().overlayLayers.some((l) => "assetId" in l && l.assetId === prevId)) {
+          delete assets[prevId];
+        }
       }
       const bg: BgSettings = {
         ...prev,
@@ -1556,6 +1564,10 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     deleteCustomPreset(id) {
+      // This mutates document state (timeline scenes below), so it has to join
+      // the undo history like every other document write — without it the next
+      // Ctrl+Z restored a timeline referencing a preset that no longer exists.
+      record("delete-preset");
       unregisterCustomPreset(id);
       const customDefs = get().customDefs.filter((d) => d.id !== id);
       set({ customDefs });

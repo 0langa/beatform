@@ -249,7 +249,10 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Background: near-black, subtle bass tint, faint grid
   var col = hsl2rgb(P_hue() + 40.0, 0.4, P_bgLevel() + u.bass * 0.02);
-  col *= (1.0 - P_scanline()) + P_scanline() * sin(uv.y * 400.0);
+  // 0.5 + 0.5*sin, not raw sin: raw sin spans -1..1, so half of every scanline
+  // cycle drove the multiplier negative and clipped to black instead of
+  // modulating brightness.
+  col *= (1.0 - P_scanline()) + P_scanline() * (0.5 + 0.5 * sin(uv.y * 400.0));
   let gx = smoothstep(0.004, 0.0, abs(fract(uv.x * 8.0) - 0.5) * 0.25);
   let gy = smoothstep(0.004, 0.0, abs(fract(uv.y * 6.0) - 0.5) * 0.25);
   col += hsl2rgb(P_hue(), 0.3, 0.25) * (gx + gy) * P_gridLevel();

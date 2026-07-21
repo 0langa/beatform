@@ -125,14 +125,26 @@ export function validMidiBindings(raw: unknown): MidiBinding[] {
     const o = b as Record<string, unknown>;
     if (
       o.kind === "cc" &&
-      typeof o.cc === "number" &&
+      Number.isFinite(o.cc) &&
       typeof o.param === "string" &&
-      typeof o.min === "number" &&
-      typeof o.max === "number"
+      // isFinite, not just typeof: a hand-edited NaN/Infinity would otherwise
+      // scale straight into a Float32 uniform and poison the render.
+      Number.isFinite(o.min) &&
+      Number.isFinite(o.max)
     ) {
-      out.push({ kind: "cc", cc: o.cc | 0, param: o.param, min: o.min, max: o.max });
-    } else if (o.kind === "note" && typeof o.note === "number" && typeof o.presetId === "string") {
-      out.push({ kind: "note", note: o.note | 0, presetId: o.presetId });
+      out.push({
+        kind: "cc",
+        cc: Math.min(127, Math.max(0, (o.cc as number) | 0)),
+        param: o.param,
+        min: o.min as number,
+        max: o.max as number,
+      });
+    } else if (o.kind === "note" && Number.isFinite(o.note) && typeof o.presetId === "string") {
+      out.push({
+        kind: "note",
+        note: Math.min(127, Math.max(0, (o.note as number) | 0)),
+        presetId: o.presetId,
+      });
     }
   }
   // Dedupe by trigger, last wins.
