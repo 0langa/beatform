@@ -1,4 +1,7 @@
 :root {
+  /* The app is dark-only; tell the platform so native UI (scrollbars, <select>
+     popups, the colour picker) renders dark instead of light. */
+  color-scheme: dark;
   --bg-strong: #10121a;
   --glass: rgba(13, 15, 22, 0.66);
   --glass-heavy: rgba(12, 14, 20, 0.92);
@@ -6,7 +9,11 @@
   --border-strong: rgba(255, 255, 255, 0.16);
   --text: #e9eaf0;
   --text-dim: rgba(233, 234, 240, 0.62);
-  --text-faint: rgba(233, 234, 240, 0.4);
+  /* Was 0.40, which measured 3.33:1 over the panel — below WCAG AA (4.5:1) and
+     used for ALL small text (.section-hint, .row-value, .footer-hint, …). The
+     panel is translucent over arbitrary video, so contrast is never guaranteed;
+     0.62 matches --text-dim and clears AA against a dark canvas. */
+  --text-faint: rgba(233, 234, 240, 0.62);
   --accent: #6aa8ff;
   --accent-strong: #3b82f6;
   --accent-hover: #2f74ec; /* primary button hover */

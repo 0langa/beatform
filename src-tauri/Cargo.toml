@@ -1,8 +1,8 @@
 [package]
 name = "beatform"
 version = "2.34.1"
-description = "A Tauri App"
-authors = ["you"]
+description = "Local-first music visualizer — realtime preview and deterministic offline export from one engine."
+authors = ["0langa"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

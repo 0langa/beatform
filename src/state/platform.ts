@@ -57,7 +57,10 @@ export async function saveBinaryFile(
  * the path, null on cancel. */
 export async function pickFolder(title: string): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
-  const path = await open({ multiple: false, directory: true, title });
+  // `recursive` widens the granted fs scope to the whole subtree. The library
+  // scanner walks recursively and plays tracks by full path, so without this
+  // every track in a subfolder fails to load with "forbidden path".
+  const path = await open({ multiple: false, directory: true, recursive: true, title });
   return typeof path === "string" ? path : null;
 }
 

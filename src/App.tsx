@@ -51,6 +51,24 @@ import "./App.css";
 
 const MIDI_SUPPORTED = midiSupported();
 
+/** Input types that are real text entry — these swallow every shortcut. A
+ * range/color/checkbox/file input is NOT text entry and must not block Ctrl+Z. */
+const TEXT_INPUT_TYPES = new Set(["text", "search", "url", "email", "password", "number", "tel"]);
+
+/** Keys a focused form control handles natively (slider stepping, select
+ * navigation) — the global shortcuts must not double-handle them. */
+const NATIVE_CONTROL_KEYS = new Set([
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+  " ",
+]);
+
 const SHORTCUTS: Array<[string, string]> = [
   ["Space", "Play / pause"],
   ["← / →", "Seek 5 s"],
@@ -68,6 +86,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ["T", "Timeline panel"],
   ["B", "Batch render"],
   ["Q", "Music library"],
+  ["?", "This shortcut list"],
 ];
 
 function toggleFullscreen(): void {
@@ -182,9 +201,22 @@ export default function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName ?? "";
+      const inputType = (el as HTMLInputElement | null)?.type ?? "";
+      // Genuine text entry swallows everything, so typing never fires a
+      // shortcut and the field keeps its own native undo.
+      const isTextEntry =
+        tag === "TEXTAREA" ||
+        el?.isContentEditable === true ||
+        (tag === "INPUT" && TEXT_INPUT_TYPES.has(inputType));
+      if (isTextEntry) return;
+
       const s = store();
+      // Ctrl/Cmd shortcuts run from anywhere else — including a focused slider
+      // or select, which is exactly the moment a user reaches for undo/save.
+      // (This branch used to sit BELOW a blanket INPUT/SELECT/TEXTAREA guard,
+      // so touching any slider silently killed Ctrl+Z/Y/S/O until focus moved.)
       if (e.ctrlKey || e.metaKey) {
         if (e.key === "s" || e.key === "S") {
           e.preventDefault();
@@ -202,6 +234,11 @@ export default function App() {
         }
         return;
       }
+      // Plain-key shortcuts: a focused slider/checkbox owns its navigation
+      // keys, and a focused <select> owns letters too (they jump options).
+      // Everything else (G, T, B, Q, F, \, [, ], digits…) still works.
+      if ((tag === "INPUT" || tag === "SELECT") && NATIVE_CONTROL_KEYS.has(e.key)) return;
+      if (tag === "SELECT") return;
       // Number keys 1-9 jump to a mode by position, beat-quantized when the
       // Quantize control is on (the switch lands on the next beat/bar).
       if (e.key >= "1" && e.key <= "9") {
@@ -228,6 +265,10 @@ export default function App() {
         case "ArrowDown":
           e.preventDefault();
           s.applyVolume(Math.max(0, s.volume - 0.05), false);
+          break;
+        case "?":
+          // README + docs/guide.md both tell users to press ? for shortcuts.
+          s.setShowHelp(!s.showHelp);
           break;
         case "m":
         case "M":

@@ -85,6 +85,10 @@ export function PlayerBar(props: {
           if (!enabled) return;
           if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
             e.preventDefault();
+            // The window-level shortcut handler also seeks on arrows and its
+            // guard only skips INPUT/SELECT/TEXTAREA — this is a DIV, so
+            // without this the seek fires twice (~10 s per press).
+            e.stopPropagation();
             const step = e.shiftKey ? 10 : 5;
             props.onSeekEnd(
               Math.max(
