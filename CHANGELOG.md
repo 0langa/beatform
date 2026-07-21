@@ -11,6 +11,14 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.36.1] - 2026-07-22
+
+### Changed
+
+- The mode selector no longer wraps each preview in an oval pill. Thumbnails
+  are now clean framed previews with the label beneath; the selected mode is
+  shown by an accent ring on its thumbnail instead of a filled pill.
+
 ## [2.36.0] - 2026-07-21
 
 The visuals release. Every one of the 16 modes was reworked to a single quality
@@ -486,7 +494,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.36.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.36.1...HEAD
+[2.36.1]: https://github.com/0langa/beatform/compare/v2.36.0...v2.36.1
 [2.36.0]: https://github.com/0langa/beatform/compare/v2.35.0...v2.36.0
 [2.35.0]: https://github.com/0langa/beatform/compare/v2.34.1...v2.35.0
 [2.34.1]: https://github.com/0langa/beatform/compare/v2.34.0...v2.34.1
