@@ -88,9 +88,14 @@ describe("OfflineAnalyzer", () => {
     // Kicks land at t = 0, 0.5, 1.0, 1.5 → frames 0, 30, 60, 90. Frame N's
     // window ends at t + ANALYSIS_LOOKAHEAD, so a kick starting exactly at
     // frame N fires IN frame N (see offlineSource.ts — pulses must land in
-    // the frame where the transient is heard, not one later). The t=0 kick
-    // falls inside the detector warmup (~12 frames) and is not detectable.
-    const kicks = [30, 60, 90];
+    // the frame where the transient is heard, not one later).
+    //
+    // The t=0 kick used to be undetectable: the detector warmup (~12 frames)
+    // counted from the analyzer's construction, so every export opened blind
+    // while the live preview — warm for minutes — fired at that same track
+    // moment. OfflineAnalyzer now pre-rolls the pipeline, so t=0 is detected
+    // like any other. See exportWarmup.test.ts.
+    const kicks = [0, 30, 60, 90];
     expect(beatFrames.length).toBe(kicks.length);
     for (let i = 0; i < kicks.length; i++) {
       expect(beatFrames[i]).toBeGreaterThanOrEqual(kicks[i]);

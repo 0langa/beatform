@@ -34,7 +34,14 @@ const DISPLAY_GAMMA = 1.3;
  * frame counts (43 and 12 frames), so 60 fps behaviour is unchanged.
  */
 const FLUX_WINDOW_SEC = 43 / 60; // ~0.717 s of flux history for the mean
-const WARMUP_SEC = 12 / 60; // ~0.2 s before the detector may fire
+/**
+ * How long a freshly-built pipeline stays silent before any detector may fire.
+ * Exported so the offline path can PRE-ROLL exactly this much: without it the
+ * first ~0.2 s of every export has no beat/kick/snare/hat while the live
+ * preview — whose pipeline has been running for minutes — fires them at the
+ * same track moment.
+ */
+export const WARMUP_SEC = 12 / 60; // ~0.2 s before the detector may fire
 /** Flux-history ring size for the current frame interval. */
 function fluxWindowFrames(dt: number): number {
   return Math.max(4, Math.round(FLUX_WINDOW_SEC / Math.max(1e-4, dt)));

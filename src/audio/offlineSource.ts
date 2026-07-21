@@ -1,5 +1,5 @@
 import type { AudioFeatures, PcmData, SyncSettings } from "./types";
-import { FeaturePipeline } from "./featurePipeline";
+import { FeaturePipeline, WARMUP_SEC } from "./featurePipeline";
 import { RealFFT } from "./dsp/fft";
 import { LoudnessMeter } from "./dsp/lufs";
 import { stereoWidth } from "./dsp/stereo";
@@ -108,6 +108,56 @@ export class OfflineAnalyzer {
       waveformLength: Math.floor((FFT_SIZE * 3) / 4),
     });
     if (sync) this.pipeline.setSync(sync);
+    this.primePipeline();
+  }
+
+  /**
+   * Warm the pipeline so frame 0 is not beat-blind.
+   *
+   * `FeaturePipeline` gates every detector on `clock >= WARMUP_SEC`, where the
+   * clock counts from CONSTRUCTION. Live that is minutes-since-analyzer-start,
+   * so the preview is always warm; offline it is zero, so the first ~0.2 s of
+   * every export had no beat, kick, snare, hat or driveBeat pulse while the
+   * preview fired them at the same track moment.
+   *
+   * The pre-roll runs the frames leading UP TO t=0 with `playing: false`. That
+   * flag is the key: flux history, the adaptive means and the peak-hold EMAs
+   * all update (so the first real frame compares against a populated window
+   * rather than ramping from silence), but no detector may fire, so the
+   * pre-roll cannot invent an onset or set a refractory that suppresses a real
+   * beat at t=0.
+   *
+   * Before t=0 there is no audio — for a full-track export because the track
+   * starts there, for a segment export because the PCM handed to us is already
+   * sliced. Those windows come through as silence, which is the honest input.
+   * It is also deterministic: the same track always primes the same way, so
+   * exports stay byte-reproducible.
+   */
+  private primePipeline(): void {
+    const frames = Math.ceil(WARMUP_SEC * this.fps);
+    const dt = 1 / this.fps;
+    for (let i = frames; i >= 1; i--) {
+      const t = -i * dt;
+      const end = Math.min(
+        this.mono.length,
+        Math.round((t + ANALYSIS_LOOKAHEAD) * this.sampleRate),
+      );
+      const start = Math.max(0, end - FFT_SIZE);
+      this.windowBuf.fill(0);
+      if (end > start) this.windowBuf.set(this.mono.subarray(start, end), FFT_SIZE - (end - start));
+      this.fft.magnitudesDb(this.windowBuf, this.magDb);
+      this.pipeline.update({
+        magDb: this.magDb,
+        waveform: this.windowBuf,
+        time: t,
+        dt,
+        // The whole point: warm the continuous state, fire nothing.
+        playing: false,
+        duration: this.duration,
+        width: 0,
+        lufs: -Infinity,
+      });
+    }
   }
 
   /** Sequential frame analysis (pipeline smoothing/beat state is stateful). */
