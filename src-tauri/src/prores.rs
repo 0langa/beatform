@@ -48,8 +48,41 @@ pub struct ProresState {
     pub pending_wav: Mutex<Option<PathBuf>>,
 }
 
-fn temp_path(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("av-prores-{}-{name}", std::process::id()))
+/// Monotonic suffix so two sessions in one process never collide.
+static TEMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn temp_path(name: &str, seq: u64) -> PathBuf {
+    std::env::temp_dir().join(format!("av-prores-{}-{seq}-{name}", std::process::id()))
+}
+
+/// Create a temp file that must NOT already exist.
+///
+/// `File::create` (and `fs::write`) truncate whatever is at the path and
+/// FOLLOW symlinks. The old names were fully predictable —
+/// `%TEMP%/av-prores-<pid>-audio.wav` — so anything that could write to
+/// `%TEMP%` first could pre-plant a symlink there and turn a ProRes export
+/// into an arbitrary-file overwrite. (`%TEMP%` is per-user on Windows, so this
+/// was same-user only, which is why it is low severity rather than none.)
+///
+/// `create_new` fails if ANYTHING is already at the path, symlink included, so
+/// there is no follow to exploit. On collision we advance the sequence rather
+/// than deleting what is there — deleting would reintroduce the TOCTOU.
+fn create_temp_new(name: &str) -> Result<(File, PathBuf), String> {
+    use std::sync::atomic::Ordering;
+    for _ in 0..64 {
+        let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+        let path = temp_path(name, seq);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(f) => return Ok((f, path)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("could not create temp file: {e}")),
+        }
+    }
+    Err("could not create a temp file (64 collisions)".into())
 }
 
 /// The sidecar lands next to the app executable ("ffmpeg.exe") in bundles.
@@ -193,8 +226,7 @@ fn has_extension(path: &Path, ext: &str) -> bool {
 
 /// Shared spawn: pipe stdin, stderr to a log file, no console window.
 fn spawn_sidecar(args: Vec<String>) -> Result<(Child, PathBuf), String> {
-    let log_path = temp_path("ffmpeg.log");
-    let log = File::create(&log_path).map_err(|e| e.to_string())?;
+    let (log, log_path) = create_temp_new("ffmpeg.log")?;
     let mut cmd = Command::new(ffmpeg_path()?);
     cmd.args(args)
         .stdin(Stdio::piped())
@@ -223,8 +255,11 @@ pub fn prores_set_audio(
     let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
         return Err("expected raw audio body".into());
     };
-    let path = temp_path("audio.wav");
-    std::fs::write(&path, data).map_err(|e| e.to_string())?;
+    // create_new + explicit write, NOT fs::write: the latter truncates through
+    // a symlink planted at this predictable path. See create_temp_new.
+    let (mut f, path) = create_temp_new("audio.wav")?;
+    f.write_all(data).map_err(|e| e.to_string())?;
+    drop(f);
     *state.pending_wav.lock().map_err(|_| "state poisoned")? = Some(path);
     Ok(())
 }

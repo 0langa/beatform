@@ -10,6 +10,8 @@
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::sync::{mpsc, Mutex};
 use tauri::ipc::{Channel, InvokeResponseBody};
 
@@ -24,11 +26,27 @@ pub struct LoopbackInfo {
 /// Handle to the capture thread. The cpal Stream itself is !Send, so a
 /// dedicated thread owns it; dropping the sender (or sending ()) unparks the
 /// thread, which drops the stream and exits.
-pub struct LoopbackCtl(pub Mutex<Option<mpsc::Sender<()>>>);
+///
+/// `dead` is set by cpal's error callback when the device goes away (unplugged
+/// headphones, a driver reset, a default-device switch). Without it, device
+/// loss was silent AND unrecoverable: the callback only logged, the sender
+/// stayed `Some`, and every later `start_loopback` answered "already running"
+/// forever while the UI kept showing a live capture that produced silence. The
+/// only fix was restarting the app.
+///
+/// It is an atomic rather than more state behind the mutex because it is set
+/// from the realtime audio thread, which must not block on a lock.
+pub struct LoopbackCtl {
+    pub inner: Mutex<Option<mpsc::Sender<()>>>,
+    pub dead: Arc<AtomicBool>,
+}
 
 impl Default for LoopbackCtl {
     fn default() -> Self {
-        Self(Mutex::new(None))
+        Self {
+            inner: Mutex::new(None),
+            dead: Arc::new(AtomicBool::new(false)),
+        }
     }
 }
 
@@ -49,15 +67,32 @@ fn to_stereo_le_bytes(data: &[f32], channels: usize) -> Vec<u8> {
     out
 }
 
+/// Decide whether a fresh capture may start, reclaiming a dead session.
+///
+/// Split out of `start_loopback` so the actual defect is testable: a session
+/// whose device died is NOT a running session, but the old code only checked
+/// "is the sender Some?" and so refused forever after any device loss.
+/// Reclaiming unparks the old capture thread on the way out.
+fn admit_start(guard: &mut Option<mpsc::Sender<()>>, dead: &AtomicBool) -> Result<(), String> {
+    if guard.is_some() {
+        if !dead.swap(false, Ordering::SeqCst) {
+            return Err("System-audio capture is already running".into());
+        }
+        if let Some(tx) = guard.take() {
+            let _ = tx.send(()); // let the old thread drop its stream
+        }
+    }
+    dead.store(false, Ordering::SeqCst);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn start_loopback(
     state: tauri::State<'_, LoopbackCtl>,
     on_samples: Channel<InvokeResponseBody>,
 ) -> Result<LoopbackInfo, String> {
-    let mut guard = state.0.lock().map_err(|_| "loopback state poisoned")?;
-    if guard.is_some() {
-        return Err("System-audio capture is already running".into());
-    }
+    let mut guard = state.inner.lock().map_err(|_| "loopback state poisoned")?;
+    admit_start(&mut guard, &state.dead)?;
 
     let host = cpal::default_host();
     let device = host
@@ -81,6 +116,11 @@ pub fn start_loopback(
 
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
     let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+    // The error callback needs to tear the stream down itself: it runs on the
+    // audio thread and cannot touch tauri state. Setting `dead` and unparking
+    // the capture thread is all it does, and both are lock-free.
+    let err_dead = Arc::clone(&state.dead);
+    let err_stop = stop_tx.clone();
     std::thread::spawn(move || {
         let ch = channels as usize;
         let stream = device.build_input_stream(
@@ -90,7 +130,14 @@ pub fn start_loopback(
                 // command will tear us down shortly — nothing to do here.
                 let _ = on_samples.send(InvokeResponseBody::Raw(to_stereo_le_bytes(data, ch)));
             },
-            |e| eprintln!("[loopback] stream error: {e}"),
+            move |e| {
+                // Device lost / driver reset. Mark the session dead and unpark
+                // the owner thread so the stream is dropped; the next
+                // start_loopback then reclaims instead of refusing.
+                eprintln!("[loopback] stream error, ending capture: {e}");
+                err_dead.store(true, Ordering::SeqCst);
+                let _ = err_stop.send(());
+            },
             None,
         );
         match stream {
@@ -123,11 +170,20 @@ pub fn start_loopback(
 
 #[tauri::command]
 pub fn stop_loopback(state: tauri::State<'_, LoopbackCtl>) -> Result<(), String> {
-    let mut guard = state.0.lock().map_err(|_| "loopback state poisoned")?;
+    let mut guard = state.inner.lock().map_err(|_| "loopback state poisoned")?;
+    state.dead.store(false, Ordering::SeqCst);
     if let Some(tx) = guard.take() {
         let _ = tx.send(()); // thread drops the stream and exits
     }
     Ok(())
+}
+
+/// True once the capture device has gone away. The frontend polls this so it
+/// can drop the "listening" indicator instead of showing a live capture that
+/// is silently producing nothing.
+#[tauri::command]
+pub fn loopback_died(state: tauri::State<'_, LoopbackCtl>) -> bool {
+    state.dead.load(Ordering::SeqCst)
 }
 
 #[cfg(test)]
@@ -139,6 +195,36 @@ mod tests {
             .chunks_exact(4)
             .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
             .collect()
+    }
+
+    #[test]
+    fn a_live_session_blocks_a_second_start() {
+        let (tx, _rx) = mpsc::channel::<()>();
+        let mut guard = Some(tx);
+        let dead = AtomicBool::new(false);
+        assert!(admit_start(&mut guard, &dead).is_err());
+        assert!(guard.is_some(), "the live session must be left alone");
+    }
+
+    #[test]
+    fn a_dead_session_is_reclaimed_instead_of_refused_forever() {
+        // The M22 defect: cpal's error callback only logged, so the sender
+        // stayed Some and every later start answered "already running" for the
+        // rest of the process's life. Unplugging a device bricked the feature.
+        let (tx, rx) = mpsc::channel::<()>();
+        let mut guard = Some(tx);
+        let dead = AtomicBool::new(true);
+        assert!(admit_start(&mut guard, &dead).is_ok());
+        assert!(guard.is_none(), "the dead session must be cleared");
+        assert!(rx.recv().is_ok(), "the old capture thread must be unparked");
+        assert!(!dead.load(Ordering::SeqCst), "the flag must reset");
+    }
+
+    #[test]
+    fn an_idle_state_starts_cleanly() {
+        let mut guard: Option<mpsc::Sender<()>> = None;
+        let dead = AtomicBool::new(false);
+        assert!(admit_start(&mut guard, &dead).is_ok());
     }
 
     #[test]

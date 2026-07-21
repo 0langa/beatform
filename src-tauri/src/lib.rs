@@ -88,6 +88,7 @@ pub fn run() {
             scan_audio_library,
             loopback::start_loopback,
             loopback::stop_loopback,
+            loopback::loopback_died,
             prores::prores_set_audio,
             prores::prores_begin,
             prores::anim_begin,
