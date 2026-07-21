@@ -32,5 +32,28 @@ JavaScript like any other npm dependency.
   npm package (`mediabunny`, version pinned in `package-lock.json`) and the
   repository above, which satisfies MPL-2.0 source availability.
 
+## Rust crates (statically linked into the desktop binary)
+
+The desktop app (`src-tauri`) links a Rust dependency tree of ~450 crates,
+locked in `src-tauri/Cargo.lock`. The direct dependencies are:
+
+| Crate                                             | Purpose                                               | License           |
+| ------------------------------------------------- | ----------------------------------------------------- | ----------------- |
+| `tauri`, `tauri-plugin-dialog`, `tauri-plugin-fs` | Desktop shell, native dialogs, filesystem access      | MIT OR Apache-2.0 |
+| `cpal`                                            | Cross-platform audio I/O (WASAPI loopback capture)    | Apache-2.0        |
+| `lofty`                                           | Audio metadata/tag reading for the library scanner    | MIT OR Apache-2.0 |
+| `walkdir`                                         | Recursive directory traversal for the library scanner | MIT OR Unlicense  |
+| `serde`, `serde_json`                             | Serialization                                         | MIT OR Apache-2.0 |
+
+These and their transitive dependencies are overwhelmingly dual-licensed
+`MIT OR Apache-2.0` (the Rust ecosystem convention). The authoritative,
+complete list with exact versions is `src-tauri/Cargo.lock`; a full
+license manifest can be regenerated at any time with `cargo license` or
+`cargo about` against that lockfile. No crate in the tree carries a
+copyleft (GPL/AGPL) license.
+
+The bundled **ffmpeg** sidecar is a separate LGPL binary, not linked — see
+`binaries/FFMPEG-LICENSE.txt`.
+
 Everything else in this repository is original code under the repository's
 own MIT license; JavaScript dependencies carry their own licenses via npm.

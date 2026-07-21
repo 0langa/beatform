@@ -1117,9 +1117,18 @@ function mat4Mul(a: Float32Array, b: Float32Array): Float32Array {
   return o;
 }
 
-/** A preset opts into the feedback/trails path by referencing the ABI helper. */
+/**
+ * A preset opts into the feedback/trails path by CALLING the ABI helper.
+ *
+ * Detected on comment-stripped source and requiring an actual call token
+ * `feedbackSample(` — a bare mention (`// see feedbackSample`) used to flip a
+ * preset into an extra full-frame render pass it never actually used. WGSL has
+ * no string literals to worry about, so stripping `//` and block comments is
+ * sufficient.
+ */
 function usesFeedback(preset: PresetDef): boolean {
-  return preset.wgsl.includes("feedbackSample");
+  const code = preset.wgsl.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  return /feedbackSample\s*\(/.test(code);
 }
 
 export class WebGPURenderer implements Renderer {
