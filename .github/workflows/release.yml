@@ -31,8 +31,14 @@ jobs:
       # The ProRes sidecar (~110 MB, gitignored) — tauri build fails without it
       - run: node scripts/fetch-ffmpeg.mjs
 
-      # Fast gates; the full lint/format matrix already runs in ci.yml
+      # The SAME gate set as ci.yml. Running a smaller one here is how two
+      # releases shipped off a main that was failing `format:check` — a red
+      # main was invisible at release time because the release path enforced a
+      # different contract. If a gate is worth blocking a PR, it is worth
+      # blocking a release.
       - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
       - run: npm test
       - run: cargo test --lib
         working-directory: src-tauri

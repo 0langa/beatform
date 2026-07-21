@@ -128,6 +128,7 @@ export default function App() {
   const showExport = useVizStore((s) => s.showExport);
   const error = useVizStore((s) => s.error);
   const notice = useVizStore((s) => s.notice);
+  const recoveredDoc = useVizStore((s) => s.recoveredDoc);
   const userPresets = useVizStore((s) => s.userPresets);
   const overlayLayers = useVizStore((s) => s.overlayLayers);
   const assets = useVizStore((s) => s.assets);
@@ -188,6 +189,13 @@ export default function App() {
   useEffect(() => {
     if (playback.playing) store().pokeChrome();
   }, [playback.playing, store]);
+
+  // Did the last session end in a crash? Offer its autosave back. Runs once,
+  // after the app has booted into its normal state — recovery is an offer, not
+  // an interruption.
+  useEffect(() => {
+    void store().checkAutosaveRecovery();
+  }, [store]);
 
   // Preset thumbnails render lazily on idle — startup paint stays instant.
   useEffect(() => {
@@ -971,6 +979,19 @@ export default function App() {
       {notice && !error && (
         <div className="toast notice-toast" role="status">
           <span className="toast-text">{notice}</span>
+        </div>
+      )}
+      {recoveredDoc && (
+        <div className="toast recovery-toast" role="alert">
+          <span className="toast-text">
+            Beatform closed unexpectedly last time. Restore your unsaved work?
+          </span>
+          <button className="btn-mini" onClick={() => store().restoreAutosave()}>
+            Restore
+          </button>
+          <button className="btn-mini ghost" onClick={() => store().dismissAutosave()}>
+            Discard
+          </button>
         </div>
       )}
 

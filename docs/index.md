@@ -38,7 +38,8 @@ GitHub is the only channel and everything is free forever.
 ## Highlights
 
 - **Beat-grid sync**: offline tempo tracking places beats on the audible
-  transients (±6 ms, regression-tested); grid-locked visuals ride the real
+  transients (regression-tested: mean offset under 8 ms, worst case under
+  12 ms); grid-locked visuals ride the real
   beats and fall back to onset pulses when a track has no grid.
 - **Batch render**: drop 20 tracks in, get 20 titled videos out — titles come
   from each file's own tags. Unattended, per-job isolation.

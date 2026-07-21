@@ -62,16 +62,26 @@ preset-animated / solid-color / transparent backgrounds with zero per-preset
 code. MP4 carries no alpha: transparent mode renders over black; chroma
 green/magenta swatches cover editor keying.
 
+Shipped since this document was first written (it described the v1 pipeline):
+
+- **Worker + OffscreenCanvas move** — encoding runs off the UI thread, with
+  frame/frameAck flow control so the queue can't outrun the encoder.
+- **Streaming to disk** for hour-long exports; memory stays flat instead of
+  holding the whole target.
+- **VP9-alpha (WebM) and PNG sequence** for true-alpha deliverables, plus
+  **ProRes 4444** via the sidecar below.
+- **Rust/ffmpeg sidecar** — bundled LGPL build driving ProRes 4444, GIF and
+  animated WebP. Args are built in Rust from structured parameters; the webview
+  can never pass raw arguments to a process.
+- **HEVC / AV1** behind a runtime capability probe, with fallback.
+- **LUFS normalization**, **loop crossfade**, **timeline-driven scene
+  resolution**, **lyric overlays**, **audiogram elements** and **batch render**.
+
 Still open (deliberately):
 
-- Worker + OffscreenCanvas move (UI stays responsive enough via per-frame
-  GPU-completion yields for now; timers must NOT be used — throttled in
-  hidden tabs).
-- `showSaveFilePicker` streaming for hour-long exports (in-memory target is
-  fine up to a few GB).
-- WebM/VP9-alpha or PNG-sequence path for true-alpha deliverables.
-- Rust/ffmpeg sidecar if a WebView2 codec gap ever appears (AAC verified
-  present on Windows).
+- Hardware-encoder selection (VideoEncoder picks its own backend today).
+- A second-display / multi-window performance output — see the Stage-mode
+  notes in the roadmap.
 
 ## Quality defaults
 

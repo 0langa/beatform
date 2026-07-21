@@ -300,12 +300,42 @@ export function bytesToDataUrl(bytes: Uint8Array, mime: string): string {
   return `data:${mime};base64,${btoa(bin)}`;
 }
 
+const AUTOSAVE_FILE = "autosave.avproj";
+
 /** Tauri only: crash-safe autosave of the current project to app data. */
 export async function writeAutosave(contents: string): Promise<void> {
   if (!isTauri()) return; // browser sessions persist via localStorage already
   const { writeTextFile, mkdir, BaseDirectory } = await import("@tauri-apps/plugin-fs");
   await mkdir("", { baseDir: BaseDirectory.AppData, recursive: true }).catch(() => undefined);
-  await writeTextFile("autosave.avproj", contents, { baseDir: BaseDirectory.AppData });
+  await writeTextFile(AUTOSAVE_FILE, contents, { baseDir: BaseDirectory.AppData });
+}
+
+/**
+ * The other half of the autosave: read back what the last session left behind.
+ * Returns null when there is nothing to recover (browser, no file, or an
+ * unreadable one) — recovery is strictly best-effort and must never block boot.
+ */
+export async function readAutosave(): Promise<string | null> {
+  if (!isTauri()) return null;
+  try {
+    const { readTextFile, exists, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+    if (!(await exists(AUTOSAVE_FILE, { baseDir: BaseDirectory.AppData }))) return null;
+    return await readTextFile(AUTOSAVE_FILE, { baseDir: BaseDirectory.AppData });
+  } catch (e) {
+    console.warn("[autosave] could not read", e);
+    return null;
+  }
+}
+
+/** Drop the autosave — the user declined recovery, or it has been applied. */
+export async function clearAutosave(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const { remove, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+    await remove(AUTOSAVE_FILE, { baseDir: BaseDirectory.AppData });
+  } catch {
+    // Already gone, or locked — nothing to do.
+  }
 }
 
 export function downloadBlob(blob: Blob, name: string): void {

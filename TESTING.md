@@ -1,8 +1,8 @@
 # Beatform — Manual Testing Batch
 
 The one hand-off checklist for things that need a **human on real hardware** — everything
-else (unit/golden tests, type-check, lint, headless render checks) runs automatically in CI
-and the dev harness. Run this **once, on the installed build**, after an autonomous work
+else (unit/golden tests, type-check, lint, format, Rust tests, dependency audit) runs
+automatically in CI, and the render/export invariants are covered by the dev harness. Run this **once, on the installed build**, after an autonomous work
 session. Grab the newest `Beatform_<version>_x64-setup.exe` from the
 [GitHub Releases](https://github.com/0langa/beatform/releases) page.
 
@@ -43,19 +43,26 @@ Mark each ✅ / ❌ with a note. Grouped by what it exercises.
       range; "Learn note → mode" + play a note switches modes (beat-quantized); unplug/replug
       is handled.
 - [ ] **Loopback**: visualize real desktop audio (Spotify / DAW master) live.
-- [ ] **Second display / projector** (the true multi-window output is NOT built — see
-      ROADMAP §6): put the app fullscreen on the projector display at the OS level + Stage
-      mode; confirm it's a usable performance output today.
+- [ ] **Second display / projector** — note the true multi-window output is **not built**;
+      the supported approach is: put the app fullscreen on the projector display at the OS
+      level, then enter Stage mode. Confirm it's a usable performance output today.
 
 ## Projects, library, misc
 
-- [ ] Save/open `.avproj` round-trips, including video-bg blur, lyric animation, and MIDI
-      bindings.
+- [ ] Save/open `.avproj` round-trips: mode + params, styles, background (incl. **video-bg
+      Dim/Blur**), overlay layers and assets, aspect, mod routes, timeline, post and motion.
+      (Lyric style, MIDI bindings, quantize mode and the audiogram are **session settings**,
+      not part of the project file — they persist per install, not per project. Not a bug.)
 - [ ] Library folder scan + gapless auto-advance on a real music folder.
 - [ ] `.avtheme` import via drag-drop; a factory pack applies cleanly.
-- [ ] Undo/redo across a real editing session; autosave recovers after a forced quit.
+- [ ] Undo/redo across a real editing session.
+- [ ] **Crash recovery**: make some edits, wait ~6 s (autosave is debounced 5 s), then kill
+      the app from Task Manager (End Task — do **not** close it normally). Relaunch: a
+      "closed unexpectedly / Restore your unsaved work?" bar appears. **Restore** brings the
+      edits back; **Discard** dismisses it for good. Closing the app normally must NOT show
+      the bar on the next launch.
 
 ## Sign-off
 
 When all green, the app has cleared its own acceptance bar end-to-end on real hardware —
-a good moment to cut the **v3.0.0** "1.0-grade" milestone (ROADMAP §6).
+a good moment to cut the **v3.0.0** "1.0-grade" milestone.

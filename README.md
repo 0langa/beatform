@@ -33,7 +33,7 @@ Free and open source. Built to become a professional-grade tool for producers an
   **Bass Circle** (circular bass visualizer with album art), and **Builder** —
   compose your own from six toggleable layers
 - Every mode: 5-7 curated factory **styles**, curated params + full **Advanced** section
-  (~150 knobs app-wide), plain-language **hint** for every setting (tooltip +
+  (~300 knobs app-wide), plain-language **hint** for every setting (tooltip +
   live hint bar), all persisted per mode
 - **User looks**: save your own named looks per visual mode, share them as
   `.avpreset` files (import/export)
@@ -63,7 +63,8 @@ Free and open source. Built to become a professional-grade tool for producers an
   beat/bar ruler and section markers. Exports render the arrangement
   frame-perfectly.
 - **Undo/redo** (Ctrl+Z / Ctrl+Y) across every edit, with gesture grouping
-  (a slider drag is one step); crash-safe autosave on desktop
+  (a slider drag is one step); crash-safe autosave on desktop, offered back on the
+  next launch if the app died with unsaved work
 - Sync-source system: choose what visuals react to (kicks, energy, bass,
   melody, voice, treble) + smoothing, per mode
 - Background system on every preset: preset-animated, any solid color

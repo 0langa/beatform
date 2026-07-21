@@ -51,8 +51,10 @@ fn ffmpeg_path() -> Result<PathBuf, String> {
     if dev.is_file() {
         return Ok(dev);
     }
-    Err("ffmpeg sidecar not found — reinstall the app (or run scripts/fetch-ffmpeg.mjs in dev)"
-        .into())
+    Err(
+        "ffmpeg sidecar not found — reinstall the app (or run scripts/fetch-ffmpeg.mjs in dev)"
+            .into(),
+    )
 }
 
 /// Build the exact ffmpeg invocation. Kept separate and pure for testing.
@@ -167,7 +169,7 @@ fn is_local_absolute(path: &Path) -> bool {
 
 /// Case-insensitive extension check — Windows paths carry whatever case the
 /// save dialog produced ("OUT.MOV" is a valid .mov path).
-fn has_extension(path: &PathBuf, ext: &str) -> bool {
+fn has_extension(path: &Path, ext: &str) -> bool {
     path.extension()
         .map(|e| e.to_string_lossy().eq_ignore_ascii_case(ext))
         .unwrap_or(false)
@@ -345,7 +347,11 @@ pub fn prores_finish(state: tauri::State<'_, ProresState>) -> Result<(), String>
     drop(job.stdin.take()); // EOF -> ffmpeg finalizes the output
     let status = job.child.wait().map_err(|e| e.to_string());
     let ok = matches!(&status, Ok(s) if s.success());
-    let tail = if ok { String::new() } else { log_tail(&job.log_path) };
+    let tail = if ok {
+        String::new()
+    } else {
+        log_tail(&job.log_path)
+    };
     cleanup(&job);
     if ok {
         Ok(())
@@ -434,7 +440,9 @@ mod tests {
         // removes the target on failure, so a UNC output would be a remote
         // write/delete primitive plus an outbound NTLM auth. is_absolute()
         // alone accepts UNC on Windows — this gate must not.
-        assert!(!is_local_absolute(Path::new(r"\\attacker-host\share\x.mov")));
+        assert!(!is_local_absolute(Path::new(
+            r"\\attacker-host\share\x.mov"
+        )));
         assert!(!is_local_absolute(Path::new("//attacker-host/share/x.mov")));
         assert!(!is_local_absolute(Path::new("relative/x.mov")));
         assert!(!is_local_absolute(Path::new("x.mov")));

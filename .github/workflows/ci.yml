@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege: these jobs only read the repo. (release.yml separately needs
+# contents: write to upload assets.)
+permissions:
+  contents: read
+
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -41,5 +46,26 @@ jobs:
       # COMPILE time, so even `cargo test` needs both present
       - run: node scripts/fetch-ffmpeg.mjs
       - run: npm run build
+      - run: cargo fmt --all -- --check
+        working-directory: src-tauri
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
       - run: cargo test --lib
+        working-directory: src-tauri
+
+  audit:
+    # Dependency vulnerabilities, both ecosystems. Non-blocking would defeat
+    # the point, so these fail the build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
         working-directory: src-tauri

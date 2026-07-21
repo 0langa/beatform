@@ -48,8 +48,9 @@ function readJson<T>(key: string, fallback: T): T {
  * a drag would otherwise run JSON.stringify + a synchronous localStorage write
  * dozens of times a second on the same thread as the 60fps render loop. We
  * coalesce to one write per key ~200ms after the last change, and flush on tab
- * hide so the final edit is never lost. The autosave .avproj is the durable
- * copy; this cache is just "last session".
+ * hide so the final edit is never lost. On desktop the autosave .avproj is the
+ * crash-recovery copy (it also survives the localStorage quota, which multi-MB
+ * image/video assets can exceed); this cache is just "last session".
  */
 const pendingWrites = new Map<string, () => void>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -92,9 +93,60 @@ function scheduleWrite(key: string, write: () => void): void {
   }
 }
 
+/**
+ * Clean-exit marker, used to decide whether the autosave on disk represents a
+ * CRASH (offer recovery) or an ordinary quit (say nothing). Set to "0" the
+ * moment the document changes and back to "1" only on `pagehide` — a hard kill
+ * or a power loss never runs that handler, so the "0" survives to the next
+ * boot. localStorage writes are synchronous, so the marker is durable the
+ * instant it is set.
+ *
+ * Deliberately NOT flipped on `visibilitychange`: minimizing the window is not
+ * an exit, and treating it as one would hide a genuine crash.
+ */
+const LS_CLEAN_EXIT = "viz.cleanExit";
+
+/**
+ * Captured ONCE at module load, before any of this session's own writes. The
+ * boot sequence dirties the marker almost immediately (applyDocument →
+ * scheduleAutosave), so reading it later would always say "clean".
+ */
+const previousExitWasClean = (() => {
+  try {
+    // A first-ever launch has no marker and no autosave file either, so
+    // treating "missing" as clean costs nothing and avoids a spurious prompt.
+    return localStorage.getItem(LS_CLEAN_EXIT) !== "0";
+  } catch {
+    return true;
+  }
+})();
+
+export function wasPreviousExitClean(): boolean {
+  return previousExitWasClean;
+}
+
+export function markSessionDirty(): void {
+  try {
+    localStorage.setItem(LS_CLEAN_EXIT, "0");
+  } catch {
+    // Storage full/blocked: recovery just degrades to "never offered".
+  }
+}
+
+function markCleanExit(): void {
+  try {
+    localStorage.setItem(LS_CLEAN_EXIT, "1");
+  } catch {
+    // See above.
+  }
+}
+
 if (typeof window !== "undefined") {
   // A closing/backgrounded tab must not drop the last debounced edit.
-  window.addEventListener("pagehide", flushPendingWrites);
+  window.addEventListener("pagehide", () => {
+    flushPendingWrites();
+    markCleanExit();
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushPendingWrites();
   });

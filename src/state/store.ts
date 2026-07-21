@@ -102,6 +102,8 @@ import {
   startLoopback,
   stopLoopback,
   writeAutosave,
+  readAutosave,
+  clearAutosave,
   type LibraryTrack,
 } from "./platform";
 import {
@@ -169,6 +171,8 @@ import {
   saveStoredQuantize,
   loadStoredMidiBindings,
   saveStoredMidiBindings,
+  markSessionDirty,
+  wasPreviousExitClean,
 } from "./persistence";
 import { crossedBoundary, hasFutureBoundary, type QuantizeMode } from "./quantize";
 import {
@@ -304,6 +308,13 @@ interface SessionSlice {
   error: string | null;
   /** Transient positive feedback (project saved, preset imported, …). */
   notice: string | null;
+  /**
+   * Work recovered from a previous session that ended without a clean exit.
+   * Non-null puts a Restore/Discard bar on screen; the document is NOT applied
+   * until the user says so, because silently replacing what they just booted
+   * into would be its own kind of data loss.
+   */
+  recoveredDoc: ProjectDocument | null;
   userPresets: UserPreset[];
   /** Track metadata for {title}/{artist} overlay templates. */
   trackMeta: OverlayMeta;
@@ -486,6 +497,9 @@ interface Actions {
   saveProject(): Promise<void>;
   openProject(): Promise<void>;
   applyDocument(doc: ProjectDocument): void;
+  checkAutosaveRecovery(): Promise<void>;
+  restoreAutosave(): void;
+  dismissAutosave(): void;
   undo(): void;
   redo(): void;
   saveUserPreset(name: string): void;
@@ -807,6 +821,10 @@ export const useVizStore = create<VizState>((set, get) => {
 
   /** Crash-safe project autosave (desktop), debounced past edit bursts. */
   const scheduleAutosave = () => {
+    // Mark the session dirty IMMEDIATELY, not when the debounced write lands:
+    // a crash inside those 5 s is exactly the case recovery exists for, and the
+    // previous autosave on disk is then the newest copy of the work.
+    markSessionDirty();
     clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {
       void writeAutosave(serializeProject(docOf(get()), APP_VERSION)).catch((e) =>
@@ -858,6 +876,7 @@ export const useVizStore = create<VizState>((set, get) => {
     showExport: false,
     error: null,
     notice: null,
+    recoveredDoc: null,
     userPresets: loadUserPresets(),
     trackMeta: { title: "", artist: "" },
     coverArt: null,
@@ -2485,6 +2504,47 @@ export const useVizStore = create<VizState>((set, get) => {
               : `Could not open project: ${(e as Error).message}`,
         });
       }
+    },
+
+    /**
+     * Boot-time half of the autosave. Offers recovery only when the last
+     * session did NOT exit cleanly — an ordinary quit leaves the marker at "1"
+     * and this returns silently, so the common path shows nothing at all.
+     *
+     * Everything here is best-effort: a missing, unparseable or truncated
+     * autosave must never keep the app from starting.
+     */
+    async checkAutosaveRecovery() {
+      if (wasPreviousExitClean()) {
+        // Clean quit — the file on disk is a duplicate of what localStorage
+        // already restored. Drop it so a LATER crash can't offer stale work.
+        void clearAutosave();
+        return;
+      }
+      const contents = await readAutosave();
+      if (contents === null) return;
+      try {
+        set({ recoveredDoc: parseProject(contents) });
+      } catch (e) {
+        console.warn("[autosave] unusable, discarding", e);
+        void clearAutosave();
+      }
+    },
+
+    restoreAutosave() {
+      const doc = get().recoveredDoc;
+      if (!doc) return;
+      // Same treatment as opening a project: the recovered document becomes
+      // the new baseline, so undo can't step back into the pre-boot state.
+      clearHistory();
+      set({ recoveredDoc: null, undoDepth: 0, redoDepth: 0 });
+      get().applyDocument(doc);
+      flashNotice("Recovered your work from the last session");
+    },
+
+    dismissAutosave() {
+      set({ recoveredDoc: null });
+      void clearAutosave();
     },
 
     applyDocument(doc) {

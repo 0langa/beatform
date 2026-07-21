@@ -1447,6 +1447,36 @@ kbd {
   color: var(--accent, #6aa8ff);
 }
 
+/* Crash recovery: the one toast that waits for an answer instead of fading. */
+.recovery-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+}
+
+.recovery-toast .btn-mini {
+  background: var(--accent, #6aa8ff);
+  color: #06101f;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 11px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.recovery-toast .btn-mini.ghost {
+  background: transparent;
+  color: var(--text-faint);
+  border: 1px solid var(--border-strong);
+}
+
+.recovery-toast .btn-mini:hover {
+  filter: brightness(1.12);
+}
+
 /* ---------- user looks (saved presets) ---------- */
 
 .user-presets {
