@@ -190,4 +190,43 @@ describe("timeline validation", () => {
   it("garbage becomes the empty timeline", () => {
     expect(validTimeline("junk")).toEqual({ enabled: false, scenes: [], lanes: [] });
   });
+
+  // L9: keyframe list keys were the array INDEX, and the editor re-sorts the
+  // array by `t` on every drag release / arrow-key nudge — so crossing a
+  // neighbour reshuffled indices and React reconciled the wrong DOM node
+  // (and its focus) onto the wrong keyframe. Fix: keyframes carry a stable
+  // `id`, backfilled here for anything that predates the field.
+  it("backfills a stable, unique id for keyframes that don't have one (pre-existing schema v8 files)", () => {
+    const clean = validTimeline({
+      enabled: true,
+      scenes: [],
+      lanes: [
+        {
+          param: "hue",
+          keyframes: [
+            { t: 0, value: 1, curve: "linear" },
+            { t: 10, value: 2, curve: "linear" },
+          ],
+        },
+      ],
+    });
+    const ids = clean.lanes[0].keyframes.map((k) => k.id);
+    expect(ids[0]).toBeTruthy();
+    expect(ids[1]).toBeTruthy();
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  it("preserves an existing keyframe id instead of replacing it", () => {
+    const clean = validTimeline({
+      enabled: true,
+      scenes: [],
+      lanes: [
+        {
+          param: "hue",
+          keyframes: [{ id: "kf-mine", t: 0, value: 1, curve: "linear" }],
+        },
+      ],
+    });
+    expect(clean.lanes[0].keyframes[0].id).toBe("kf-mine");
+  });
 });

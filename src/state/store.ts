@@ -1200,7 +1200,13 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     async pickBackgroundImage() {
-      const img = await openImageFile();
+      let img: { name: string; dataUrl: string } | null;
+      try {
+        img = await openImageFile();
+      } catch (e) {
+        set({ error: `Could not open image: ${(e as Error).message}` });
+        return;
+      }
       if (!img) return;
       record("bg");
       const asset: OverlayAsset = {

@@ -228,6 +228,49 @@ const VIDEO_MIME_BY_EXT: Record<string, string> = {
   mkv: "video/x-matroska",
 };
 
+/**
+ * Background images/videos embed as base64 `data:` URLs (below) that then
+ * ride along in EVERY copy of the document: live state, up to 100 undo/redo
+ * snapshots (each a full deep clone), the autosave write every 5s of
+ * editing, and the .avproj on disk — so an unbounded source file is a
+ * multiplied memory/disk cost, not a one-time one, and a large enough one
+ * OOMs the renderer well before any of that. Limits, justified rather than
+ * arbitrary:
+ *  - Images: 32 MB comfortably covers any real photo or graphic (even an
+ *    uncompressed 4K screenshot is a few MB; a 45-megapixel TIFF is still
+ *    under this) while keeping the worst case bounded.
+ *  - Video: openVideoFile's own framing is "short background loops" — a
+ *    couple of minutes of 1080p H.264 fits comfortably under 192 MB.
+ *    Anything bigger is almost certainly a full-length source file, not a
+ *    loop, and is exactly the case that used to OOM the renderer.
+ * Decimal MB (1e6), matching the unit the export summary toast already uses
+ * (store.ts) — one app, one definition of "MB".
+ */
+export const IMAGE_MAX_BYTES = 32 * 1e6;
+export const VIDEO_MAX_BYTES = 192 * 1e6;
+
+function formatMB(bytes: number): string {
+  return `${(bytes / 1e6).toFixed(1)} MB`;
+}
+
+/**
+ * Throws a message naming both the file's actual size and the limit. Called
+ * BEFORE the expensive base64 encode (bytesToDataUrl below allocates a ~2x
+ * intermediate binary string on top of the already 1.33x-inflated output) so
+ * an oversize file fails fast instead of ballooning memory first — the
+ * browser picker checks File.size before ever reading the file; the Tauri
+ * picker checks the read byte length before handing it to bytesToDataUrl
+ * (there is no cheaper pre-read check available: this app's fs capability
+ * grants read-file but not stat, so the raw read itself can't be skipped).
+ */
+function assertSizeAllowed(sizeBytes: number, maxBytes: number, kind: "Image" | "Video"): void {
+  if (sizeBytes > maxBytes) {
+    throw new Error(
+      `${kind} is ${formatMB(sizeBytes)}; the limit is ${formatMB(maxBytes)}. Choose a smaller file.`,
+    );
+  }
+}
+
 /** Pick a video and return it as a data URL (embeds into projects — clips are
  * expected to be short background loops). */
 export async function openVideoFile(): Promise<{ name: string; dataUrl: string } | null> {
@@ -241,17 +284,23 @@ export async function openVideoFile(): Promise<{ name: string; dataUrl: string }
     });
     if (typeof path !== "string") return null;
     const bytes = await readFile(path);
+    assertSizeAllowed(bytes.length, VIDEO_MAX_BYTES, "Video");
     const name = path.split(/[\\/]/).pop() ?? path;
     const ext = name.split(".").pop()?.toLowerCase() ?? "mp4";
     return { name, dataUrl: bytesToDataUrl(bytes, VIDEO_MIME_BY_EXT[ext] ?? "video/mp4") };
   }
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = VIDEO_EXTENSIONS.map((e) => `.${e}`).join(",");
     input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return resolve(null);
+      try {
+        assertSizeAllowed(file.size, VIDEO_MAX_BYTES, "Video");
+      } catch (e) {
+        return reject(e);
+      }
       const reader = new FileReader();
       reader.onload = () => resolve({ name: file.name, dataUrl: reader.result as string });
       reader.onerror = () => resolve(null);
@@ -274,17 +323,23 @@ export async function openImageFile(): Promise<{ name: string; dataUrl: string }
     });
     if (typeof path !== "string") return null;
     const bytes = await readFile(path);
+    assertSizeAllowed(bytes.length, IMAGE_MAX_BYTES, "Image");
     const name = path.split(/[\\/]/).pop() ?? path;
     const ext = name.split(".").pop()?.toLowerCase() ?? "png";
     return { name, dataUrl: bytesToDataUrl(bytes, MIME_BY_EXT[ext] ?? "image/png") };
   }
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = IMAGE_EXTENSIONS.map((e) => `.${e}`).join(",");
     input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return resolve(null);
+      try {
+        assertSizeAllowed(file.size, IMAGE_MAX_BYTES, "Image");
+      } catch (e) {
+        return reject(e);
+      }
       const reader = new FileReader();
       reader.onload = () => resolve({ name: file.name, dataUrl: reader.result as string });
       reader.onerror = () => resolve(null);

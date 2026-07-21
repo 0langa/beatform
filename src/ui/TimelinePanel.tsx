@@ -3,6 +3,7 @@ import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { PresetDef } from "../render/types";
 import { allParams, type ParamValues } from "../render/types";
 import {
+  newKeyframeId,
   newSceneId,
   TRANSITION_KINDS,
   type AutomationLane,
@@ -187,7 +188,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
     const value = props.activeParams[param] ?? 0;
     const lane: AutomationLane = {
       param,
-      keyframes: [{ t: snap(props.time), value, curve: "linear" }],
+      keyframes: [{ id: newKeyframeId(), t: snap(props.time), value, curve: "linear" }],
     };
     update({ lanes: [...timeline.lanes, lane] });
   };
@@ -226,9 +227,10 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
       spec.min +
       (1 - Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))) * (spec.max - spec.min);
     if (action === "add") {
-      const keyframes = [...lane.keyframes, { t, value, curve: "linear" as const }].sort(
-        (a, b) => a.t - b.t,
-      );
+      const keyframes = [
+        ...lane.keyframes,
+        { id: newKeyframeId(), t, value, curve: "linear" as const },
+      ].sort((a, b) => a.t - b.t);
       setLane(laneIndex, { ...lane, keyframes });
     }
   };
@@ -484,7 +486,12 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
                     const vStep = ("step" in spec ? spec.step : 0) || (spec.max - spec.min) / 50;
                     return (
                       <div
-                        key={ki}
+                        // Stable id, not the array index: endDrag/nudgeKeyframe
+                        // re-sort by t on every move, which shifts indices the
+                        // instant two keyframes cross (L9) — falls back to the
+                        // index only for a keyframe that somehow still lacks an
+                        // id (should not happen post-validTimeline backfill).
+                        key={k.id ?? ki}
                         className={`tl-key tl-key-${k.curve}`}
                         style={{ left: xOf(k.t), top: `${(1 - f) * 100}%` }}
                         title={`${lane.param} = ${k.value.toFixed(2)} @ ${k.t.toFixed(2)}s (${k.curve})`}

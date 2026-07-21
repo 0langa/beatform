@@ -56,8 +56,8 @@ const doc: ProjectDocument = {
       {
         param: "hue",
         keyframes: [
-          { t: 0, value: 100, curve: "linear" as const },
-          { t: 10, value: 200, curve: "smooth" as const },
+          { id: "kf-1", t: 0, value: 100, curve: "linear" as const },
+          { id: "kf-2", t: 10, value: 200, curve: "smooth" as const },
         ],
       },
     ],

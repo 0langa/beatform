@@ -76,6 +76,8 @@ import { getAnalyzer, getEngine, getRenderer, initServices, type ServiceHooks } 
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { PresetDef, BgSettings } from "../render/types";
 import type { FrameResolveInput } from "./frameResolve";
+import { EMPTY_TIMELINE } from "./timeline";
+import { registerCustomPreset, unregisterCustomPreset } from "../render/presets/custom";
 
 function fakeCanvas(): HTMLCanvasElement {
   return {
@@ -187,5 +189,94 @@ describe("services.ts overlapping-lifecycle teardown", () => {
     expect(getRenderer()).toBeNull();
     expect(() => getAnalyzer()).toThrow();
     expect(() => getEngine()).toThrow();
+  });
+});
+
+/**
+ * L8 regression: the frame loop used to cache the ACTIVE preset by its
+ * string id (`rf.presetId !== currentPresetId`). Saving an edited custom
+ * preset in the Shader Editor re-registers a brand-new object under the
+ * SAME id (render/presets/custom.ts's registry just replaces the map
+ * entry) — so whenever that id was already what the loop had cached (e.g.
+ * a scene elsewhere in the timeline reusing the same custom preset), the
+ * id-keyed comparison never noticed the def had changed, and the renderer
+ * kept the stale, already-compiled pipeline. The fix caches the RESOLVED
+ * DEF (by reference) instead of the id string.
+ *
+ * The loop's requestAnimationFrame is driven manually here (capture the
+ * callback, invoke it directly) instead of letting it free-run, so each
+ * "frame" is deterministic and the test can mutate the registry BETWEEN
+ * two ticks and assert exactly what got pushed to the (mocked) renderer.
+ */
+describe("services.ts frame loop — custom preset def cache (L8)", () => {
+  const PRESET_ID = "custom-l8-test";
+
+  afterEach(() => {
+    unregisterCustomPreset(PRESET_ID);
+  });
+
+  it("re-pushes an edited custom preset to the renderer even though its id is unchanged across frames", async () => {
+    const defA = { id: PRESET_ID, name: "A", params: [], wgsl: "// A" } as unknown as PresetDef;
+    registerCustomPreset(defA);
+
+    // A plain mutable box, not a reassigned `let`: captured-and-reassigned
+    // closure variables trip up some TS control-flow-narrowing edge cases
+    // (the assignment lives inside a callback passed to vi.fn, not in this
+    // function's own linear flow) — a box sidesteps that entirely.
+    const rafBox: { cb: ((t: number) => void) | null } = { cb: null };
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((cb: (t: number) => void) => {
+        rafBox.cb = cb;
+        return 1;
+      }),
+    );
+
+    const dispose = initServices(
+      fakeCanvas(),
+      fakeHooks({
+        getFrameInput: () =>
+          ({
+            timeline: EMPTY_TIMELINE,
+            basePresetId: PRESET_ID,
+            baseParams: {},
+            baseMods: [],
+            baseBg: {} as BgSettings,
+            paramsByPreset: {},
+            modsByPreset: {},
+          }) as FrameResolveInput,
+      }),
+    );
+    await flush(); // installRenderer resolves and arms the first rAF
+
+    const setPreset = (getRenderer() as unknown as { setPreset: ReturnType<typeof vi.fn> })
+      .setPreset;
+
+    // Frame 1: first time this preset id is seen — must push defA.
+    rafBox.cb?.(16);
+    expect(setPreset).toHaveBeenLastCalledWith(defA);
+    const callsAfterFrame1 = setPreset.mock.calls.length;
+
+    // Frame 2: same id, same (unedited) def — must NOT re-push.
+    rafBox.cb?.(32);
+    expect(setPreset).toHaveBeenCalledTimes(callsAfterFrame1);
+
+    // The user edits the shader and saves — re-registered under the SAME
+    // id, but as a genuinely new object (exactly what saveCustomPreset does
+    // in store.ts via validCustomPreset + registerCustomPreset).
+    const defB = {
+      id: PRESET_ID,
+      name: "A",
+      params: [],
+      wgsl: "// B, edited",
+    } as unknown as PresetDef;
+    registerCustomPreset(defB);
+
+    // Frame 3: id is STILL unchanged from frames 1/2 — only the fix (caching
+    // by resolved def reference, not id) makes this push the fresh def.
+    rafBox.cb?.(48);
+    expect(setPreset).toHaveBeenLastCalledWith(defB);
+
+    dispose();
   });
 });

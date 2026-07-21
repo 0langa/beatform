@@ -98,7 +98,18 @@ function fakeCanvas(): HTMLCanvasElement {
   } as unknown as HTMLCanvasElement;
 }
 
-describe("store initApp teardown", () => {
+/**
+ * These drive the REAL initApp/teardown against mocked dependencies, so each
+ * one does genuine async work (engine init, MIDI enable, bitmap teardown)
+ * rather than pure computation. Under heavy parallel load — several vitest
+ * workers plus a dev server plus a build on the same box — that occasionally
+ * ran past vitest's 5 s default and failed as a timeout, not as a logic
+ * error. Since a red suite now blocks a RELEASE and not just a PR, a
+ * load-sensitive timeout is a shipping hazard rather than an annoyance. The
+ * generous budget costs nothing when these pass in milliseconds, which they
+ * normally do.
+ */
+describe("store initApp teardown", { timeout: 30_000 }, () => {
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -172,5 +183,53 @@ describe("store initApp teardown", () => {
     dispose();
     expect(videoFrame1.close).toHaveBeenCalledTimes(1);
     expect(videoFrame2.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * L11 regression: `[`/`]` (stepPreset) used to call switchPreset directly,
+ * bypassing the beat-quantize takeover that the number-key path
+ * (queuePreset) already honoured — pressing `]` during quantized playback
+ * jumped instantly instead of landing on the next beat/bar like "1"-"9" do.
+ * Fixed by routing stepPreset through queuePreset too, so both live-
+ * performance paths defer to the same pendingPresetId mechanism.
+ */
+describe("stepPreset honours beat-quantize like the number-key path (L11)", () => {
+  it("queues a pending switch instead of jumping instantly when quantize is on and a future boundary exists", async () => {
+    const { useVizStore } = await import("./store");
+    const { presets } = await import("../render/presets");
+
+    useVizStore.setState({
+      presetId: presets[0].id,
+      customDefs: [],
+      switchQuantize: "beat",
+      playback: { ...useVizStore.getState().playback, playing: true },
+      beatGrid: { bpm: 120, beatTimes: Float32Array.from([0, 0.5, 1, 1.5, 2]), hopSec: 0.0116 },
+      pendingPresetId: null,
+    });
+
+    useVizStore.getState().stepPreset(1);
+
+    // Not switched yet — queued, exactly like the "1"-"9" number-key path
+    // (queuePreset) already behaves.
+    expect(useVizStore.getState().presetId).toBe(presets[0].id);
+    expect(useVizStore.getState().pendingPresetId).toBe(presets[1].id);
+  });
+
+  it("still switches instantly when quantize is off (no false positive)", async () => {
+    const { useVizStore } = await import("./store");
+    const { presets } = await import("../render/presets");
+
+    useVizStore.setState({
+      presetId: presets[0].id,
+      customDefs: [],
+      switchQuantize: "off",
+      pendingPresetId: null,
+    });
+
+    useVizStore.getState().stepPreset(1);
+
+    expect(useVizStore.getState().presetId).toBe(presets[1].id);
+    expect(useVizStore.getState().pendingPresetId).toBeNull();
   });
 });

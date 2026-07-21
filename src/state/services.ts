@@ -237,11 +237,22 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     let lastUiUpdate = 0;
     /** Smoothed output latency (s); <0 = not sampled yet. */
     let latency = -1;
-    let currentPresetId: string | null = null;
-    let fadeFromId: string | null = null;
+    // Cache the RESOLVED DEF, not its id (L8): saving an edited custom preset
+    // in the Shader Editor re-registers a NEW object under the SAME id
+    // (render/presets/custom.ts's registry replaces the map entry), so an
+    // id-keyed cache never notices the def changed whenever that id happens
+    // to already be what's cached — e.g. a scene elsewhere in the timeline
+    // that reuses the same custom preset while a different one is currently
+    // showing. presetById() is a cheap Map/array lookup and setPreset() has
+    // its own object-identity pipeline cache (webgpuRenderer.ts's
+    // pipelineCache, keyed by the def object), so comparing and (redundantly)
+    // pushing by reference every frame is both correct and free when nothing
+    // changed.
+    let currentPreset: PresetDef | null = null;
+    let fadeFromPreset: PresetDef | null = null;
     resyncRenderer = () => {
-      currentPresetId = null;
-      fadeFromId = null;
+      currentPreset = null;
+      fadeFromPreset = null;
     };
     const loop = (tMs: number) => {
       if (disposed) return;
@@ -295,33 +306,29 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         return;
       }
       const rf = resolveActiveFrame(hooks.getFrameInput(), trackTime);
-      if (rf.presetId !== currentPresetId) {
-        renderer?.setPreset(presetById(rf.presetId));
-        currentPresetId = rf.presetId;
+      const activePreset = presetById(rf.presetId);
+      if (activePreset !== currentPreset) {
+        renderer?.setPreset(activePreset);
+        currentPreset = activePreset;
       }
       renderer?.setBackground(rf.bg);
       // Crossfade: keep the outgoing preset compiled while inside the window
       let transition: { params: ParamValues; mix: number; kind: number } | undefined;
       if (rf.prev) {
-        if (fadeFromId !== rf.prev.presetId) {
-          renderer?.setTransitionPreset(presetById(rf.prev.presetId));
-          fadeFromId = rf.prev.presetId;
+        const prevPreset = presetById(rf.prev.presetId);
+        if (prevPreset !== fadeFromPreset) {
+          renderer?.setTransitionPreset(prevPreset);
+          fadeFromPreset = prevPreset;
         }
         transition = { params: rf.prev.params, mix: rf.mix, kind: rf.transitionKind };
-      } else if (fadeFromId !== null) {
+      } else if (fadeFromPreset !== null) {
         renderer?.setTransitionPreset(null);
-        fadeFromId = null;
+        fadeFromPreset = null;
       }
       renderer?.render(
         features,
         trackTime,
-        applyMods(
-          presetById(rf.presetId),
-          rf.params,
-          rf.mods,
-          features,
-          hooks.getStemValues?.(trackTime),
-        ),
+        applyMods(activePreset, rf.params, rf.mods, features, hooks.getStemValues?.(trackTime)),
         transition,
       );
       hooks.onFrameTick?.(trackTime);

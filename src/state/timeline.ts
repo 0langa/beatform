@@ -17,6 +17,16 @@ import { validBg } from "./project";
  * Layering per frame: base params → scene override → automation → mod matrix.
  */
 export interface Keyframe {
+  /** Stable identity for React reconciliation, independent of array
+   * position. `t`/`value` are exactly the fields a drag or an arrow-key
+   * nudge mutates, and the editor re-sorts the array by `t` right after
+   * (TimelinePanel's endDrag/nudgeKeyframe) — an index-based key would
+   * reattach a dragged/nudged DOM node (and its focus) to whichever
+   * keyframe the re-sort left sitting at that index once two keyframes
+   * cross. Optional: schema v8 project files predate this field, so it must
+   * keep loading files that lack it — validTimeline backfills a fresh id
+   * for any keyframe that arrives without one. */
+  id?: string;
   t: number;
   value: number;
   curve: "linear" | "hold" | "smooth";
@@ -73,6 +83,10 @@ export const EMPTY_TIMELINE: Timeline = { enabled: false, scenes: [], lanes: [] 
 
 export function newSceneId(): string {
   return `sc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function newKeyframeId(): string {
+  return `kf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export interface TimelineFrame {
@@ -223,6 +237,10 @@ export function validTimeline(v: unknown): Timeline {
             Number.isFinite(k.value)
           ) {
             keyframes.push({
+              // Preserve an id already on disk (a file saved by this fixed
+              // build); backfill one for anything older — every pre-existing
+              // schema v8 project predates this field.
+              id: typeof k.id === "string" && k.id ? k.id : newKeyframeId(),
               t: k.t,
               value: k.value,
               curve: k.curve === "hold" || k.curve === "smooth" ? k.curve : "linear",
