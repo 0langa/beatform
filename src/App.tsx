@@ -743,6 +743,15 @@ export default function App() {
                   { type: "image/png" },
                 );
               }
+              // ...and the FINAL frame, which is the only useful one for
+              // anything that accumulates. Frame 0 of the particle sim is the
+              // initial seeded disc (uniform noise) and frame 0 of a feedback
+              // preset has no trail at all, so a frame-0-only probe makes
+              // those two look broken when they are working perfectly.
+              (window as unknown as { __lastPngFrameEnd: Blob }).__lastPngFrameEnd = new Blob(
+                [data.slice()],
+                { type: "image/png" },
+              );
             }
           : undefined,
         width: w,
