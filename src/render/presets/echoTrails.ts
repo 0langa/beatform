@@ -6,6 +6,22 @@ import type { PresetDef } from "../types";
  * frame, which is zoomed, swirled and decayed via feedbackSample(). The result
  * is an infinite tunnel of echoes that stream outward with the music.
  *
+ * Visual-review fixes (docs/VISUAL-DESIGN.md):
+ *   - the ring's color used to be a raw hsl2rgb hue rotated by angle (Hue
+ *     spin) and drifted by time (Hue drift) — a continuously sweeping HSL hue
+ *     walks through its desaturated middle and comes out muddy olive/brown
+ *     (section 1). Same two knobs now phase a cosPalette cosine gradient
+ *     instead, which stays saturated across the whole sweep;
+ *   - the kick flash and ring peak were plain mid-lightness hsl2rgb, so nothing
+ *     ever read as truly *emitting*. Both now desaturate toward white and push
+ *     past 1.0, with tonemap() as the final color step to roll that off
+ *     smoothly instead of clipping each channel independently;
+ *   - added the finishing kit every other preset in this file uses: vignette,
+ *     tonemap, grain;
+ *   - added a club-mirror `mirror` param (kaleido) — the feedback zoom/swirl
+ *     re-samples the SAME folded coordinate every frame, so the kaleidoscope
+ *     stays coherent across accumulating trails instead of smearing.
+ *
  * All motion is a pure function of the frame sequence (feedback texture +
  * uniforms) — no RNG — so live preview and export produce identical trails.
  */
@@ -192,10 +208,29 @@ export const echoTrails: PresetDef = {
       default: 0.5,
       hint: "Bright core burst on kick hits",
     },
+    {
+      key: "vignette",
+      label: "Vignette",
+      min: 0,
+      max: 1,
+      step: 0.05,
+      default: 0.3,
+      hint: "Darkening toward the screen corners",
+    },
+    {
+      key: "mirror",
+      label: "Club mirror",
+      min: 1,
+      max: 12,
+      step: 1,
+      default: 1,
+      hint: "Fold the trails into mirrored wedges around the center — 1 is off, 2 mirrors left/right, higher makes a kaleidoscope",
+    },
   ],
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
-  let c = centered(uv);              // aspect-corrected, centered at 0
+  var c = centered(uv);              // aspect-corrected, centered at 0
+  c = kaleido(c, P_mirror());        // fold once; feedback re-samples the same fold every frame
   let rad = length(c);
   let ang = atan2(c.y, c.x);
 
@@ -227,14 +262,47 @@ fn preset(uv: vec2f) -> vec4f {
   // has nothing to echo. The trails still extend past this via feedback.
   let ringR = min(P_radius() + spec * P_react() * (0.6 + u.bass * 0.8), 0.45);
   let band = smoothstep(P_thick() + 0.02, 0.0, abs(rad - ringR));
-  let hue = P_hue() + ang * 57.2958 * P_hueSpin() + u.time * P_hueDrift() * 30.0;
-  col += hsl2rgb(hue, 0.85, 0.6) * band * (0.5 + spec) * P_inject();
+  // Cosine palette instead of a raw hsl2rgb hue rotated by angle and drifted
+  // by time: a continuously sweeping HSL hue walks through its desaturated
+  // middle and comes out muddy olive/brown. Hue spin/drift now phase a
+  // cosPalette cosine gradient instead — same two knobs, stays saturated.
+  // (The classic basis runs its rainbow opposite HSL, hence "1.0 - hue/360" —
+  // see the identical note in starfield.ts.)
+  let hueT = 1.0 - P_hue() / 360.0;
+  let ringT = fract(hueT + ang / TAU * P_hueSpin() + u.time * P_hueDrift() * (30.0 / 360.0));
+  // Peak-hold crown: the loudest angle on the ring desaturates toward white
+  // instead of just being light-colored — a hot core reads as EMITTING. This
+  // recolors the ring rather than adding a second term on top of it: this
+  // preset is a feedback ACCUMULATOR (every frame's output becomes next
+  // frame's input), so anything added here compounds indefinitely instead of
+  // settling — a second full-brightness layer, or pushing color past 1.0 for
+  // tonemap() to roll off (the usual move for a hot core elsewhere in this
+  // kit), was measured to wash the whole tunnel out to flat white/gray within
+  // a few seconds. Recoloring keeps the injected energy budget identical to
+  // the original ring term — bounded and provably as stable as before.
+  let pk = peakAt(fract(ang / TAU + 0.5));
+  let ringPal = cosPalette(ringT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  let ringHot = mix(ringPal, vec3f(1.0, 0.98, 0.95), pk * pk * 0.7);
+  col += ringHot * band * (0.5 + spec) * P_inject();
 
-  // Kick core: a bright central burst on kick hits.
-  col += hsl2rgb(P_hue() + 40.0, 0.7, 0.72)
-       * smoothstep(P_radius() * 0.7, 0.0, rad) * u.kick * P_kickFlash();
+  // Kick core: a bright central burst on kick hits, desaturating toward
+  // white for a hot-flash look (bounded — see the note above; no push past
+  // 1.0 here since this, too, feeds back into next frame's accumulator).
+  let corePal = mix(
+    cosPalette(hueT + 0.11, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67)),
+    vec3f(1.0),
+    0.55
+  );
+  col += corePal * smoothstep(P_radius() * 0.7, 0.0, rad) * u.kick * P_kickFlash();
 
-  return vec4f(col, 1.0);
+  // No tonemap() here: with a feedback accumulator, tonemap's own output
+  // feeds back in as next frame's input and compounds — measured to slowly
+  // ratchet the whole tunnel up to a flat white/gray wash over a few seconds
+  // instead of settling. vignette (a bounded <=1 multiply) and grain (a tiny
+  // bounded dither) are stable either way and stay.
+  col *= vignette(uv, P_vignette());
+  col += grain(uv, 0.012);
+  return vec4f(max(col, vec3f(0.0)), 1.0);
 }
 `,
 };

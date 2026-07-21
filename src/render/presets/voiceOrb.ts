@@ -6,6 +6,18 @@ import type { PresetDef } from "../types";
  * formant-band harmonics ripple its surface, sibilance sparkles the rim, and
  * an optional circular waveform ring orbits it. No beat machinery — speech
  * has none worth strobing to.
+ *
+ * Visual-review fixes (docs/VISUAL-DESIGN.md):
+ *   - body/background/ring were flat hsl2rgb fills — swapped for a cosPalette
+ *     cosine gradient, which reads richer at the same brightness (section 1);
+ *   - nothing ever exceeded 1.0, so the orb only ever got "lighter", never
+ *     read as emitting. Loud speech now pushes the core and rim toward a
+ *     genuine hot-white flare (new `flare` param), with tonemap() as the
+ *     final color step to roll that off instead of clipping per channel;
+ *   - added a club-mirror `mirror` param (kaleido): the orb silhouette itself
+ *     stays circular (it's radius-gated), but the formant ripple, sparkle
+ *     field and wave ring all read angle, so folding them makes a symmetric
+ *     voice-reactive mandala — an opt-in look, off by default.
  */
 export const voiceOrb: PresetDef = {
   id: "voice-orb",
@@ -15,8 +27,16 @@ export const voiceOrb: PresetDef = {
   styles: [
     { id: "aqua", name: "Aqua Calm", values: {} },
     { id: "warm", name: "Warm Host", values: { hue: 25, sparkle: 0.35 } },
-    { id: "midnight", name: "Midnight", values: { hue: 260, sparkle: 0.8, rimGlow: 0.5 } },
-    { id: "minimal", name: "Minimal", values: { ring: 0, sparkle: 0.1, wobble: 0.25 } },
+    {
+      id: "midnight",
+      name: "Midnight",
+      values: { hue: 260, sparkle: 0.8, rimGlow: 0.5, flare: 0.3 },
+    },
+    {
+      id: "minimal",
+      name: "Minimal",
+      values: { ring: 0, sparkle: 0.1, wobble: 0.25, flare: 0.15 },
+    },
     {
       id: "broadcast",
       name: "Broadcast",
@@ -27,12 +47,13 @@ export const voiceOrb: PresetDef = {
         voiceFocus: 0.9,
         response: 0.75,
         rmsBlend: 0.5,
+        flare: 0.75,
       },
     },
     {
       id: "forest",
       name: "Forest",
-      values: { hue: 140, sparkle: 0.4, wobble: 0.7, size: 0.19, ring: 1 },
+      values: { hue: 140, sparkle: 0.4, wobble: 0.7, size: 0.19, ring: 1, flare: 0.4 },
     },
   ],
   params: [
@@ -219,10 +240,29 @@ export const voiceOrb: PresetDef = {
       default: 0.45,
       hint: "Darkening toward the screen corners",
     },
+    {
+      key: "flare",
+      label: "Hot flare",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.5,
+      hint: "How strongly rising speech volume flares the core and rim toward hot white",
+    },
+    {
+      key: "mirror",
+      label: "Club mirror",
+      min: 1,
+      max: 12,
+      step: 1,
+      default: 1,
+      hint: "Fold the ripple pattern into a symmetric mandala around the orb — 1 is off, 2 mirrors left/right, higher makes a kaleidoscope",
+    },
   ],
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
-  let p = centered(uv);
+  var p = centered(uv);
+  p = kaleido(p, P_mirror());
   let r = length(p);
   let a = atan2(p.y, p.x);
 
@@ -254,40 +294,58 @@ fn preset(uv: vec2f) -> vec4f {
   let radius = min(P_size() * (1.0 + level * P_growth()) + idle, 0.4);
   let edge = min(radius + disp, 0.46);
 
+  // Cosine palette instead of flat hsl2rgb fills — stays saturated at low
+  // brightness (the background wash) and gives the hot-white pushes below
+  // clean room to exceed 1.0 without a per-channel clip.
+  // The classic cosPalette basis runs its rainbow opposite HSL (red still
+  // lands at t=0, but t increasing walks red->magenta->blue->cyan->green->
+  // yellow->red) — "1.0 - hue/360" un-reverses it so Hue keeps its label.
+  let baseT = 1.0 - P_hue() / 360.0;
+  let pal = cosPalette(baseT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+
   // Background: quiet radial wash that warms slightly with speech
-  var col = hsl2rgb(P_hue() + 30.0, 0.45, P_bgLevel() + level * 0.02) * (1.0 - r * 0.75);
+  var col = mix(pal, vec3f(1.0), 0.15) * (P_bgLevel() + level * 0.02) * (1.0 - r * 0.75);
 
   // Orb body: soft inner gradient, brighter core as level rises
   let inside = smoothstep(edge, edge - 0.012, r);
   let coreGlow = exp(-r * (7.0 - level * 2.0));
-  let body = hsl2rgb(P_hue(), 0.7, 0.16 + level * 0.30 + coreGlow * (P_coreGlow() + level * 0.25));
+  let bodyLevel = 0.16 + level * 0.30 + coreGlow * (P_coreGlow() + level * 0.25);
+  var body = pal * bodyLevel;
+  // Hot core: loud speech desaturates the very center toward white and pushes
+  // it past 1.0 — the difference between "brighter" and actually emitting.
+  let hot = smoothstep(0.5, 0.95, coreGlow * level) * P_flare();
+  body = mix(body, vec3f(1.0), hot) * (1.0 + hot * 1.4);
   col = mix(col, body, inside);
 
-  // Rim: bright line at the orb edge + soft outer halo
+  // Rim: bright line at the orb edge + soft outer halo, flaring hot on peaks
   let rimD = abs(r - edge);
-  col += hsl2rgb(P_hue() + 20.0, 0.8, 0.62) * smoothstep(0.006, 0.0, rimD) * (0.5 + level * 0.5);
-  col += hsl2rgb(P_hue(), 0.8, 0.5) * exp(-max(r - edge, 0.0) * 22.0) * P_rimGlow() * (0.3 + level);
+  let rimHot = smoothstep(0.3, 0.9, level) * P_flare();
+  let rimCol = mix(pal, vec3f(1.0), 0.35 + rimHot * 0.5);
+  col += rimCol * smoothstep(0.006, 0.0, rimD) * (0.5 + level * 0.5) * (1.0 + rimHot * 1.2);
+  col += pal * exp(-max(r - edge, 0.0) * 22.0) * P_rimGlow() * (0.3 + level);
 
-  // Sibilance sparkles: treble grain riding the rim band
+  // Sibilance sparkles: treble noise riding the rim band
   let rimBand = exp(-rimD * 40.0);
-  let grain = pow(noise2(p * P_sparkleScale() + vec2f(u.time * 5.0, -u.time * 3.0)), 10.0);
-  col += vec3f(1.0, 0.98, 0.95) * grain * rimBand * u.treble * P_sparkle() * 2.2;
+  let sparkleN = pow(noise2(p * P_sparkleScale() + vec2f(u.time * 5.0, -u.time * 3.0)), 10.0);
+  col += vec3f(1.0, 0.98, 0.95) * sparkleN * rimBand * u.treble * P_sparkle() * 2.2;
 
   // Circular waveform ring
   if (P_ring() > 0.5) {
     let wv = waveAt(fract(a / TAU + 0.5));
     let ringR = min(radius * P_ringDist() + wv * P_ringWave() * (0.35 + level * 1.2), 0.47);
     let dRing = abs(r - ringR);
-    let ringHue = P_hue() + 25.0 + wv * 20.0;
-    col += hsl2rgb(ringHue, 0.7, 0.55) * smoothstep(0.004, 0.0008, dRing) * (0.35 + level * 0.5);
-    col += hsl2rgb(ringHue, 0.8, 0.5) * exp(-dRing * 120.0) * 0.18;
+    let ringT = fract(baseT + 0.07 + wv * 0.05);
+    let ringPal = cosPalette(ringT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+    col += ringPal * smoothstep(0.004, 0.0008, dRing) * (0.35 + level * 0.5);
+    col += ringPal * exp(-dRing * 120.0) * 0.18;
   }
 
-  col *= 1.0 - r * r * P_vignette();
-  // NOTE: no global r=0.5 fade here — see radialBurst. The orb radius, rim and
-  // wave ring are already hard-clamped to <=0.47, so the full-field multiply
-  // was redundant and clipped the ambient field into a visible hard circle.
-  return vec4f(col, 1.0);
+  // Vignette is the shared smooth full-field falloff (never a hard-edged
+  // circle — the orb/rim/ring above are already clamped to r<=0.47).
+  col *= vignette(uv, P_vignette());
+  col = tonemap(col * 1.15);
+  col += grain(uv, 0.012);
+  return vec4f(max(col, vec3f(0.0)), 1.0);
 }
 `,
 };
