@@ -1,0 +1,32 @@
+# Automated dependency + Action updates. Pairs with the SHA-pinned actions in
+# the workflows: pinning to a commit is the supply-chain win, and Dependabot is
+# what keeps a pin from silently going stale by proposing the next SHA. Grouped
+# and capped so review stays light for a solo maintainer — majors still arrive
+# as individual PRs.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "cargo"
+    directory: "/src-tauri"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-patch:
+        update-types: ["minor", "patch"]
