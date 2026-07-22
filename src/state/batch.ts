@@ -203,6 +203,9 @@ export interface BatchStats {
   done: number;
   failed: number;
   skipped: number;
+  /** Jobs still waiting — nonzero after a cancel, which is what makes the
+   * Resume button appear (L19: cancelled runs stranded these forever). */
+  queued: number;
   total: number;
   framesDone: number;
   framesTotal: number;
@@ -222,6 +225,7 @@ export function runStats(run: BatchRun, nowMs: number): BatchStats {
   let done = 0;
   let failed = 0;
   let skipped = 0;
+  let queued = 0;
   let framesDone = 0;
   let framesTotal = 0;
   let finishedFrames = 0;
@@ -247,6 +251,8 @@ export function runStats(run: BatchRun, nowMs: number): BatchStats {
     } else if (j.status.k === "skipped") {
       skipped++;
       if (j.totalFrames != null) framesTotal -= j.totalFrames;
+    } else if (j.status.k === "queued") {
+      queued++;
     } else if (j.status.k === "running") {
       // Clamp: a job's reported progress can exceed the duration-derived
       // estimate by a frame or two, and a bar over 100% reads as a bug.
@@ -261,6 +267,7 @@ export function runStats(run: BatchRun, nowMs: number): BatchStats {
     done,
     failed,
     skipped,
+    queued,
     total: run.jobs.length,
     framesDone: Math.min(framesDone, framesTotal),
     framesTotal,

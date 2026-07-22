@@ -199,9 +199,13 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
               {stats.skipped > 0 ? ` · ${stats.skipped} skipped` : ""}
             </span>
             <span className="save-look-row" style={{ margin: 0 }}>
-              {stats.failed > 0 && (
+              {(stats.failed > 0 || stats.queued > 0) && (
                 <button className="text-btn" onClick={props.onRetryFailed}>
-                  Retry {stats.failed} failed
+                  {stats.failed > 0 && stats.queued > 0
+                    ? `Retry ${stats.failed} failed + resume ${stats.queued} queued`
+                    : stats.failed > 0
+                      ? `Retry ${stats.failed} failed`
+                      : `Resume ${stats.queued} queued`}
                 </button>
               )}
               {/* Without this the panel is a dead end — the only way to run a

@@ -246,7 +246,9 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // Retry names must also avoid files OTHER runs left in this folder —
       // the run object only knows its own; the disk knows them all.
       const again = retryFailed(b, Date.now(), await ctx.fileNamesInDir(b.outDir));
-      if (again.jobs.length === 0) return;
+      // Nothing failed AND nothing queued -> nothing to resume (L19: queued
+      // jobs after a cancel are picked straight up by the runner below).
+      if (!again.jobs.some((j) => j.status.k === "failed" || j.status.k === "queued")) return;
       const ac = new AbortController();
       batchAbort = ac;
       set({ batch: again, batchStatus: "running", exportError: null });
