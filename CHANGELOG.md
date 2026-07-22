@@ -11,6 +11,41 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.37.1] - 2026-07-22
+
+A hardening patch from re-auditing the full report against the current code —
+correctness, security, accessibility and supply-chain fixes. No visual changes.
+
+### Security
+
+- **Library folder scanning is now scope-gated.** `scan_audio_library` walked
+  any path it was handed and returned file paths and tags; it now honours the
+  filesystem scope, so only a folder you actually picked can be scanned.
+
+### Fixed
+
+- The in-app version (Help modal, and the stamp in every saved project/preset/
+  theme) was stuck ten releases stale; it is now correct and pinned by a test so
+  it can't silently drift again.
+- A background **mode** switch made right after a colour drag no longer collapses
+  into a single undo — mode changes undo on their own.
+- Switching backgrounds no longer leaks the previous image/video asset into the
+  saved project when both were set.
+- The Motion controls a preset exposes are now decided from its real shader code,
+  not text that might only appear in a comment.
+- "Simplified rendering" (the Canvas2D fallback) is now an auto-clearing notice
+  instead of a red error that sat on screen the whole session.
+
+### Accessibility
+
+- Tabbing with the keyboard during playback no longer lands on hidden, unreachable
+  controls — focused chrome reveals itself and re-arms the idle timer.
+
+### Build
+
+- CI Actions are pinned to commit SHAs and Dependabot keeps them (plus npm and
+  Cargo dependencies) current.
+
 ## [2.37.0] - 2026-07-22
 
 The visuals pass, part two — three modes reworked from the ground up, plus two
@@ -523,7 +558,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.37.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.37.1...HEAD
+[2.37.1]: https://github.com/0langa/beatform/compare/v2.37.0...v2.37.1
 [2.37.0]: https://github.com/0langa/beatform/compare/v2.36.1...v2.37.0
 [2.36.1]: https://github.com/0langa/beatform/compare/v2.36.0...v2.36.1
 [2.36.0]: https://github.com/0langa/beatform/compare/v2.35.0...v2.36.0
