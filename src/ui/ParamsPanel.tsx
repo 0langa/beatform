@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { Fragment, memo, useState, type ReactNode } from "react";
 import type { SyncMode, SyncSettings } from "../audio/types";
 import type {
   BgMode,
@@ -31,7 +31,8 @@ import { allParams, presetMasters } from "../render/types";
 import { QUANTIZE_MODES, type QuantizeMode } from "../state/quantize";
 import { bindingId, type MidiBinding, type MidiLearn } from "../state/midi";
 import { Slider } from "./Slider";
-import { ParamRow, SliderRow, Segmented, ToggleRow } from "./kit";
+import { ParamRow, SliderRow, Segmented, ToggleRow, CollapsibleSection } from "./kit";
+import type { AppPrefs } from "../state/prefs";
 import { getPrefs, setPrefs } from "../state/prefs";
 import { LayersPanel } from "./LayersPanel";
 import { IconChevronRight, IconClose } from "./Icons";
@@ -166,6 +167,22 @@ const POST_SLIDERS: Array<{
   },
 ];
 
+type ParamsTab = AppPrefs["paramsTab"];
+
+/** The five top-level tabs of the settings panel (v2.41). Each groups a set
+ * of the former flat sections; the active tab persists via prefs. */
+const PARAMS_TABS: Array<{ id: ParamsTab; label: string; hint: string }> = [
+  { id: "visual", label: "Visual", hint: "The visual itself — looks, motion and full templates" },
+  { id: "sync", label: "Sync", hint: "What the visual reacts to, and audio-to-knob modulation" },
+  {
+    id: "scene",
+    label: "Scene",
+    hint: "Background, frame shape, post-processing and overlay layers",
+  },
+  { id: "text", label: "Text", hint: "Timed lyrics and audiogram overlays" },
+  { id: "live", label: "Live", hint: "Live-performance switch quantize and MIDI mapping" },
+];
+
 export interface ParamsPanelProps {
   preset: PresetDef;
   params: ParamValues;
@@ -251,13 +268,30 @@ export interface ParamsPanelProps {
   onAudiogram: (patch: Partial<AudiogramSettings>) => void;
 }
 
+/** A settings section, mapped to a tab and given a searchable keyword blob.
+ * `standalone` sections render their own `.panel-section` (LayersPanel) and
+ * are not wrapped in a CollapsibleSection. */
+interface SectionDef {
+  title: string;
+  tab: ParamsTab;
+  /** Lowercased title + control labels/hints, matched by the search box. */
+  search: string;
+  headerExtra?: ReactNode;
+  body: ReactNode;
+  standalone?: boolean;
+}
+
 /** Right-hand settings panel: styles, preset parameters, background.
  * Memoized (H13): App re-renders at ~4Hz alongside the 60fps render loop for
  * unrelated reasons (playback/lufs ticks), and this panel alone is 1,400+
  * lines — without memo it fully reconciled on every one of those ticks even
  * though none of ITS OWN props had changed. Requires every callback prop
  * from App.tsx to be reference-stable (see the useCallback block there); a
- * fresh arrow function per render would silently defeat this. */
+ * fresh arrow function per render would silently defeat this.
+ *
+ * v2.41: the former flat 13-section scroll is now grouped into five tabs
+ * (Visual/Sync/Scene/Text/Live) with per-section collapse and a search box
+ * that bypasses the tabs. Active tab + collapsed titles persist via prefs. */
 export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
   const [showAdvanced, setShowAdvanced] = useState(() => getPrefs().advancedOpen);
   const [hint, setHint] = useState<string | null>(null);
@@ -267,6 +301,20 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
   const [themeName, setThemeName] = useState("");
   const [themeAuthor, setThemeAuthor] = useState("");
   const [midiParam, setMidiParam] = useState("");
+  const [tab, setTab] = useState<ParamsTab>(() => getPrefs().paramsTab);
+  const [query, setQuery] = useState("");
+  const [collapsed, setCollapsed] = useState<string[]>(() => getPrefs().collapsedSections);
+  const changeTab = (t: ParamsTab) => {
+    setTab(t);
+    setPrefs({ paramsTab: t });
+  };
+  const toggleSection = (title: string, open: boolean) => {
+    setCollapsed((prev) => {
+      const next = open ? prev.filter((t) => t !== title) : [...prev, title];
+      setPrefs({ collapsedSections: next });
+      return next;
+    });
+  };
   const toggleAdvanced = () => {
     setShowAdvanced((v) => {
       setPrefs({ advancedOpen: !v });
@@ -296,27 +344,30 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
     return Object.keys(merged).every((k) => (props.params[k] ?? defaults[k]) === merged[k]);
   })?.id;
 
-  return (
-    <aside className="chrome params-panel">
-      <div className="panel-header">
-        <span className="panel-heading">Visual settings</span>
-        <button className="icon-btn subtle" title="Close (G)" onClick={props.onClose}>
-          <IconClose size={16} />
-        </button>
-      </div>
+  const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
+  const presetParamText = allParams(props.preset)
+    .map((p) => p.label)
+    .join(" ");
 
-      <div className="panel-scroll">
-        <section className="panel-section">
-          <div className="section-head">
-            <span className="section-title">{props.preset.name}</span>
-            <button
-              className="text-btn"
-              onClick={props.onReset}
-              title="Back to factory defaults (all settings incl. advanced)"
-            >
-              Reset
-            </button>
-          </div>
+  const sections: SectionDef[] = [
+    // ---------------- Visual ----------------
+    {
+      title: props.preset.name,
+      tab: "visual",
+      search:
+        `${props.preset.name} ${props.preset.description ?? ""} preset style look custom save import advanced reset ${presetParamText}`.toLowerCase(),
+      headerExtra: (
+        <button
+          className="text-btn"
+          onClick={props.onReset}
+          title="Back to factory defaults (all settings incl. advanced)"
+        >
+          Reset
+        </button>
+      ),
+      body: (
+        <>
           {props.preset.description && <p className="preset-desc">{props.preset.description}</p>}
 
           {(props.preset.styles?.length ?? 0) > 0 && (
@@ -453,12 +504,78 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               )}
             </>
           )}
-        </section>
-
-        <section className="panel-section">
-          <div className="section-head">
-            <span className="section-title">Templates</span>
-          </div>
+        </>
+      ),
+    },
+    ...(showMotion
+      ? [
+          {
+            title: "Motion",
+            tab: "visual" as const,
+            search: "motion rotation pulse detail spin global",
+            headerExtra: motionChanged ? (
+              <button
+                className="text-btn"
+                title="Back to normal motion (100% everywhere)"
+                onClick={() => props.onMotion({ ...DEFAULT_MOTION })}
+              >
+                Reset
+              </button>
+            ) : undefined,
+            body: (
+              <>
+                {caps.rotation && (
+                  <SliderRow
+                    label="Rotation"
+                    hint="Global spin master — 0% stops all rotation, 100% = normal, up to 200%"
+                    min={0}
+                    max={2}
+                    step={0.05}
+                    value={props.motion.rotation}
+                    onChange={(v) => props.onMotion({ rotation: v })}
+                    format={(v) => `${Math.round(v * 100)}%`}
+                    onHint={setHint}
+                  />
+                )}
+                {caps.pulse && (
+                  <SliderRow
+                    label="Pulse"
+                    hint="Global pulse master — 0% removes beat pumping, 100% = normal, up to 200%"
+                    min={0}
+                    max={2}
+                    step={0.05}
+                    value={props.motion.pulse}
+                    onChange={(v) => props.onMotion({ pulse: v })}
+                    format={(v) => `${Math.round(v * 100)}%`}
+                    onHint={setHint}
+                  />
+                )}
+                {caps.detail && (
+                  <SliderRow
+                    label="Detail"
+                    hint="Detail — how many bars / points / segments this mode draws"
+                    min={0}
+                    max={1}
+                    step={0.02}
+                    value={props.motion.detail}
+                    onChange={(v) => props.onMotion({ detail: v })}
+                    format={(v) => `${Math.round(v * 100)}%`}
+                    onHint={setHint}
+                  />
+                )}
+                <p className="section-hint">Global motion for this mode — exports match.</p>
+              </>
+            ),
+          } satisfies SectionDef,
+        ]
+      : []),
+    {
+      title: "Templates",
+      tab: "visual",
+      search:
+        `templates theme complete looks colors sync post save export import avtheme ${FACTORY_THEMES.map((t) => t.meta.name).join(" ")}`.toLowerCase(),
+      body: (
+        <>
           <p className="section-hint">
             Complete looks — visual, colors, sync, post — in one click. Drop any .avtheme file onto
             the window to import; save yours to share.
@@ -522,202 +639,17 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               </button>
             </div>
           )}
-        </section>
-
-        {showMotion && (
-          <section className="panel-section">
-            <div className="section-head">
-              <span className="section-title">Motion</span>
-              {motionChanged && (
-                <button
-                  className="text-btn"
-                  title="Back to normal motion (100% everywhere)"
-                  onClick={() => props.onMotion({ ...DEFAULT_MOTION })}
-                >
-                  Reset
-                </button>
-              )}
-            </div>
-            {caps.rotation && (
-              <SliderRow
-                label="Rotation"
-                hint="Global spin master — 0% stops all rotation, 100% = normal, up to 200%"
-                min={0}
-                max={2}
-                step={0.05}
-                value={props.motion.rotation}
-                onChange={(v) => props.onMotion({ rotation: v })}
-                format={(v) => `${Math.round(v * 100)}%`}
-                onHint={setHint}
-              />
-            )}
-            {caps.pulse && (
-              <SliderRow
-                label="Pulse"
-                hint="Global pulse master — 0% removes beat pumping, 100% = normal, up to 200%"
-                min={0}
-                max={2}
-                step={0.05}
-                value={props.motion.pulse}
-                onChange={(v) => props.onMotion({ pulse: v })}
-                format={(v) => `${Math.round(v * 100)}%`}
-                onHint={setHint}
-              />
-            )}
-            {caps.detail && (
-              <SliderRow
-                label="Detail"
-                hint="Detail — how many bars / points / segments this mode draws"
-                min={0}
-                max={1}
-                step={0.02}
-                value={props.motion.detail}
-                onChange={(v) => props.onMotion({ detail: v })}
-                format={(v) => `${Math.round(v * 100)}%`}
-                onHint={setHint}
-              />
-            )}
-            <p className="section-hint">Global motion for this mode — exports match.</p>
-          </section>
-        )}
-
-        <section className="panel-section">
-          <div className="section-head">
-            <span className="section-title">Live</span>
-          </div>
-          <Segmented
-            value={props.switchQuantize}
-            onChange={props.onSwitchQuantize}
-            onHint={setHint}
-            ariaLabel="Switch quantize"
-            options={QUANTIZE_MODES.map((m) => ({
-              value: m,
-              label: m === "off" ? "Off" : m === "beat" ? "Beat" : "Bar",
-              hint:
-                m === "off"
-                  ? "Mode switches happen instantly"
-                  : `Mode switches wait for the next ${m} before taking over`,
-            }))}
-          />
-          <p className="section-hint">
-            Switch quantize — number keys 1–9 (or a mode chip) jump to a visual; with Beat/Bar the
-            switch lands on the next boundary, Ableton-style. Live only; exports are unaffected.
-          </p>
-        </section>
-
-        {props.midiSupported && (
-          <section className="panel-section">
-            <div className="section-head">
-              <span className="section-title">MIDI</span>
-              {props.midiEnabled && (
-                <button
-                  className="text-btn"
-                  title="Stop listening to MIDI"
-                  onClick={props.onDisableMidi}
-                >
-                  Disable
-                </button>
-              )}
-            </div>
-            {!props.midiEnabled ? (
-              <>
-                <div className="save-look-row">
-                  <button
-                    className="text-btn"
-                    title="Grant MIDI access and start listening"
-                    onClick={props.onEnableMidi}
-                  >
-                    Enable MIDI…
-                  </button>
-                </div>
-                <p className="section-hint">
-                  Map a controller's knobs to any setting and its notes to visual modes. Live
-                  performance only — exports are unaffected.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="section-hint">
-                  {props.midiDevices.length
-                    ? `Connected: ${props.midiDevices.join(", ")}`
-                    : "No MIDI inputs detected — plug one in."}
-                </p>
-                <div className="save-look-row">
-                  <select
-                    className="select"
-                    value={midiParam || props.preset.params[0]?.key || ""}
-                    title="Which setting a knob/fader should control"
-                    onChange={(e) => setMidiParam(e.target.value)}
-                  >
-                    {allParams(props.preset).map((p) => (
-                      <option key={p.key} value={p.key}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    className="text-btn"
-                    title="Then move a knob/fader on your controller to bind it"
-                    onClick={() => {
-                      if (props.midiLearn?.kind === "cc") {
-                        props.onMidiLearn(null);
-                        return;
-                      }
-                      const key = midiParam || props.preset.params[0]?.key;
-                      const spec = allParams(props.preset).find((p) => p.key === key);
-                      if (spec)
-                        props.onMidiLearn({ kind: "cc", param: key, min: spec.min, max: spec.max });
-                    }}
-                  >
-                    {props.midiLearn?.kind === "cc" ? "Move a knob…" : "Learn CC"}
-                  </button>
-                </div>
-                <div className="save-look-row">
-                  <button
-                    className="text-btn"
-                    title={`Bind a note to switch to ${props.preset.name}`}
-                    onClick={() =>
-                      props.midiLearn?.kind === "note"
-                        ? props.onMidiLearn(null)
-                        : props.onMidiLearn({ kind: "note", presetId: props.preset.id })
-                    }
-                  >
-                    {props.midiLearn?.kind === "note"
-                      ? "Play a note…"
-                      : `Learn note → ${props.preset.name}`}
-                  </button>
-                </div>
-                {props.midiBindings.map((b) => {
-                  const id = bindingId(b);
-                  const label =
-                    b.kind === "cc"
-                      ? `CC ${b.cc} → ${allParams(props.preset).find((p) => p.key === b.param)?.label ?? b.param}`
-                      : `Note ${b.note} → ${b.presetId}`;
-                  return (
-                    <div key={id} className="mod-row">
-                      <span className="row-label" style={{ flex: 1 }}>
-                        {label}
-                      </span>
-                      <button
-                        className="chip-x"
-                        title="Remove this binding"
-                        aria-label={`Remove ${label}`}
-                        onClick={() => props.onRemoveMidiBinding(id)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-          </section>
-        )}
-
-        <section className="panel-section">
-          <div className="section-head">
-            <span className="section-title">Sync</span>
-          </div>
+        </>
+      ),
+    },
+    // ---------------- Sync ----------------
+    {
+      title: "Sync",
+      tab: "sync",
+      search:
+        "sync react kick energy bass melody voice treble snare hats smoothing attack release spectrum smooth curve",
+      body: (
+        <>
           <div className="sync-grid">
             {SYNC_OPTIONS.map((o) => (
               <button
@@ -791,193 +723,15 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
           <p className="section-hint">
             What this visual reacts to. Saved per mode; exports use it too.
           </p>
-        </section>
-
-        <section className="panel-section">
-          <div className="section-head">
-            <span className="section-title">Lyrics</span>
-          </div>
-          <div className="save-look-row">
-            {props.lyricFileName ? (
-              <span className="user-chip-wrap">
-                <span className="style-chip user" title="Loaded timed lyrics">
-                  {props.lyricFileName}
-                </span>
-                <button
-                  className="chip-x"
-                  title="Remove lyrics"
-                  aria-label="Remove lyrics"
-                  onClick={props.onClearLyrics}
-                >
-                  ✕
-                </button>
-              </span>
-            ) : (
-              <label
-                className="text-btn"
-                title="Import timed lyrics (.lrc from any lyrics site, or .srt) — drawn as a karaoke overlay, identical in exports"
-              >
-                + Import lyrics…
-                <input
-                  type="file"
-                  accept=".lrc,.srt"
-                  hidden
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) props.onImportLyrics(f);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            )}
-          </div>
-          {props.lyricFileName && (
-            <>
-              <ToggleRow
-                label="Show"
-                hint="Draw the active lyric line over the visual"
-                checked={props.lyricStyle.enabled}
-                onChange={(v) => props.onLyricStyle({ enabled: v })}
-                onHint={setHint}
-              />
-              <label className="field">
-                <span>Position</span>
-                <select
-                  className="select"
-                  value={props.lyricStyle.position}
-                  title="Where the lines sit in the frame"
-                  onChange={(e) =>
-                    props.onLyricStyle({ position: e.target.value as LyricStyle["position"] })
-                  }
-                >
-                  <option value="bottom">Bottom</option>
-                  <option value="center">Center</option>
-                  <option value="top">Top</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Animation</span>
-                <select
-                  className="select"
-                  value={props.lyricStyle.anim ?? "plain"}
-                  title="How each line enters — plain fade, slide up, or a scale pop"
-                  onChange={(e) => props.onLyricStyle({ anim: e.target.value as LyricAnim })}
-                >
-                  {LYRIC_ANIMS.map((a) => (
-                    <option key={a} value={a}>
-                      {a === "plain"
-                        ? "Plain"
-                        : a === "slide"
-                          ? "Slide up"
-                          : a === "pop"
-                            ? "Pop"
-                            : "Karaoke"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <SliderRow
-                label="Size"
-                hint="Lyric text size"
-                min={0.5}
-                max={2}
-                step={0.05}
-                value={props.lyricStyle.size}
-                onChange={(v) => props.onLyricStyle({ size: v })}
-                onHint={setHint}
-              />
-              <SliderRow
-                label="Fade"
-                hint="Cross-fade time between lines, in seconds"
-                min={0}
-                max={1}
-                step={0.05}
-                value={props.lyricStyle.fadeSec}
-                onChange={(v) => props.onLyricStyle({ fadeSec: v })}
-                onHint={setHint}
-              />
-              <label className="field">
-                <span>Color</span>
-                <input
-                  type="color"
-                  value={props.lyricStyle.color}
-                  title="Lyric text color"
-                  onChange={(e) => props.onLyricStyle({ color: e.target.value })}
-                />
-              </label>
-            </>
-          )}
-          {!props.lyricFileName && (
-            <p className="section-hint">
-              Drop an .lrc or .srt on the window (or import here) — the current line follows the
-              music, karaoke-style, live and in every export.
-            </p>
-          )}
-        </section>
-
-        <section className="panel-section">
-          <div className="section-head">
-            <span className="section-title">Audiogram</span>
-          </div>
-          <p className="section-hint">
-            Overlay elements driven by the track — a progress bar, a time readout, a mini-waveform
-            strip. The podcast/reel look; drawn identically in exports.
-          </p>
-          <ToggleRow
-            label="Progress bar"
-            hint="A thin played/remaining bar driven by the track position"
-            checked={props.audiogram.progressBar}
-            onChange={(v) => props.onAudiogram({ progressBar: v })}
-            onHint={setHint}
-          />
-          <ToggleRow
-            label="Time readout"
-            hint="Elapsed / total time, drawn as text"
-            checked={props.audiogram.timeReadout}
-            onChange={(v) => props.onAudiogram({ timeReadout: v })}
-            onHint={setHint}
-          />
-          <ToggleRow
-            label="Waveform strip"
-            hint="A mini waveform overview with a moving playhead"
-            checked={props.audiogram.waveformStrip}
-            onChange={(v) => props.onAudiogram({ waveformStrip: v })}
-            onHint={setHint}
-          />
-          {(props.audiogram.progressBar ||
-            props.audiogram.timeReadout ||
-            props.audiogram.waveformStrip) && (
-            <>
-              <label className="field">
-                <span>Position</span>
-                <select
-                  className="select"
-                  value={props.audiogram.position}
-                  onChange={(e) =>
-                    props.onAudiogram({ position: e.target.value as AudiogramSettings["position"] })
-                  }
-                >
-                  <option value="bottom">Bottom</option>
-                  <option value="top">Top</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Accent</span>
-                <input
-                  type="color"
-                  value={props.audiogram.color}
-                  title="Bar fill, playhead and played-waveform color"
-                  onChange={(e) => props.onAudiogram({ color: e.target.value })}
-                />
-              </label>
-            </>
-          )}
-        </section>
-
-        <section className="panel-section">
-          <div className="section-head">
-            <span className="section-title">Modulation</span>
-          </div>
+        </>
+      ),
+    },
+    {
+      title: "Modulation",
+      tab: "sync",
+      search: "modulation route stem source amount kick hats auto-route feature knob",
+      body: (
+        <>
           {props.mods.length === 0 && (
             <p className="section-hint">
               Route any audio feature to any knob of this visual — kick pumps the zoom, hats flicker
@@ -1095,28 +849,17 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               + Route
             </button>
           </div>
-        </section>
-
-        <section className="panel-section">
-          <div className="section-head">
-            <span className="section-title">Frame</span>
-          </div>
-          <Segmented
-            value={props.aspect}
-            onChange={props.onAspect}
-            onHint={setHint}
-            ariaLabel="Frame aspect"
-            options={ASPECTS.map((a) => ({ value: a.id, label: a.label, hint: a.hint }))}
-          />
-          <p className="section-hint">
-            Frame shape for preview and export — 9:16 for Canvas/Shorts, 1:1 for posts.
-          </p>
-        </section>
-
-        <section className="panel-section">
-          <div className="section-head">
-            <span className="section-title">Background</span>
-          </div>
+        </>
+      ),
+    },
+    // ---------------- Scene ----------------
+    {
+      title: "Background",
+      tab: "scene",
+      search:
+        "background animated solid transparent image video color dim blur album art chroma green magenta keying",
+      body: (
+        <>
           <Segmented
             value={props.bg.mode}
             onHint={setHint}
@@ -1266,21 +1009,45 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               over black; use solid green/magenta for editor keying.
             </p>
           )}
-        </section>
-
-        <section className="panel-section">
-          <div className="section-head">
-            <span className="section-title">Post</span>
-            {postChanged && (
-              <button
-                className="text-btn"
-                title="Turn off all post-processing (neutral)"
-                onClick={() => props.onPost({ ...DEFAULT_POST })}
-              >
-                Reset
-              </button>
-            )}
-          </div>
+        </>
+      ),
+    },
+    {
+      title: "Frame",
+      tab: "scene",
+      search:
+        `frame aspect ratio shape preview export ${ASPECTS.map((a) => a.label).join(" ")} shorts posts`.toLowerCase(),
+      body: (
+        <>
+          <Segmented
+            value={props.aspect}
+            onChange={props.onAspect}
+            onHint={setHint}
+            ariaLabel="Frame aspect"
+            options={ASPECTS.map((a) => ({ value: a.id, label: a.label, hint: a.hint }))}
+          />
+          <p className="section-hint">
+            Frame shape for preview and export — 9:16 for Canvas/Shorts, 1:1 for posts.
+          </p>
+        </>
+      ),
+    },
+    {
+      title: "Post",
+      tab: "scene",
+      search:
+        `post processing finishing filmic tonemap aces ${POST_SLIDERS.map((r) => r.label).join(" ")}`.toLowerCase(),
+      headerExtra: postChanged ? (
+        <button
+          className="text-btn"
+          title="Turn off all post-processing (neutral)"
+          onClick={() => props.onPost({ ...DEFAULT_POST })}
+        >
+          Reset
+        </button>
+      ) : undefined,
+      body: (
+        <>
           <ToggleRow
             label="Filmic tonemap"
             hint="Filmic (ACES) tonemap — cinematic contrast and highlight rolloff"
@@ -1305,8 +1072,15 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             Finishing pass applied to the whole frame — grain is deterministic, so preview and
             export match exactly.
           </p>
-        </section>
-
+        </>
+      ),
+    },
+    {
+      title: "Layers",
+      tab: "scene",
+      search: "layers text image overlay album art drawn over visuals",
+      standalone: true,
+      body: (
         <LayersPanel
           layers={props.overlayLayers}
           assets={props.assets}
@@ -1317,6 +1091,387 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
           onUpdate={props.onUpdateLayer}
           onRemove={props.onRemoveLayer}
         />
+      ),
+    },
+    // ---------------- Text ----------------
+    {
+      title: "Lyrics",
+      tab: "text",
+      search: "lyrics lrc srt karaoke position animation slide pop size fade color import timed",
+      body: (
+        <>
+          <div className="save-look-row">
+            {props.lyricFileName ? (
+              <span className="user-chip-wrap">
+                <span className="style-chip user" title="Loaded timed lyrics">
+                  {props.lyricFileName}
+                </span>
+                <button
+                  className="chip-x"
+                  title="Remove lyrics"
+                  aria-label="Remove lyrics"
+                  onClick={props.onClearLyrics}
+                >
+                  ✕
+                </button>
+              </span>
+            ) : (
+              <label
+                className="text-btn"
+                title="Import timed lyrics (.lrc from any lyrics site, or .srt) — drawn as a karaoke overlay, identical in exports"
+              >
+                + Import lyrics…
+                <input
+                  type="file"
+                  accept=".lrc,.srt"
+                  hidden
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) props.onImportLyrics(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+          </div>
+          {props.lyricFileName && (
+            <>
+              <ToggleRow
+                label="Show"
+                hint="Draw the active lyric line over the visual"
+                checked={props.lyricStyle.enabled}
+                onChange={(v) => props.onLyricStyle({ enabled: v })}
+                onHint={setHint}
+              />
+              <label className="field">
+                <span>Position</span>
+                <select
+                  className="select"
+                  value={props.lyricStyle.position}
+                  title="Where the lines sit in the frame"
+                  onChange={(e) =>
+                    props.onLyricStyle({ position: e.target.value as LyricStyle["position"] })
+                  }
+                >
+                  <option value="bottom">Bottom</option>
+                  <option value="center">Center</option>
+                  <option value="top">Top</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Animation</span>
+                <select
+                  className="select"
+                  value={props.lyricStyle.anim ?? "plain"}
+                  title="How each line enters — plain fade, slide up, or a scale pop"
+                  onChange={(e) => props.onLyricStyle({ anim: e.target.value as LyricAnim })}
+                >
+                  {LYRIC_ANIMS.map((a) => (
+                    <option key={a} value={a}>
+                      {a === "plain"
+                        ? "Plain"
+                        : a === "slide"
+                          ? "Slide up"
+                          : a === "pop"
+                            ? "Pop"
+                            : "Karaoke"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <SliderRow
+                label="Size"
+                hint="Lyric text size"
+                min={0.5}
+                max={2}
+                step={0.05}
+                value={props.lyricStyle.size}
+                onChange={(v) => props.onLyricStyle({ size: v })}
+                onHint={setHint}
+              />
+              <SliderRow
+                label="Fade"
+                hint="Cross-fade time between lines, in seconds"
+                min={0}
+                max={1}
+                step={0.05}
+                value={props.lyricStyle.fadeSec}
+                onChange={(v) => props.onLyricStyle({ fadeSec: v })}
+                onHint={setHint}
+              />
+              <label className="field">
+                <span>Color</span>
+                <input
+                  type="color"
+                  value={props.lyricStyle.color}
+                  title="Lyric text color"
+                  onChange={(e) => props.onLyricStyle({ color: e.target.value })}
+                />
+              </label>
+            </>
+          )}
+          {!props.lyricFileName && (
+            <p className="section-hint">
+              Drop an .lrc or .srt on the window (or import here) — the current line follows the
+              music, karaoke-style, live and in every export.
+            </p>
+          )}
+        </>
+      ),
+    },
+    {
+      title: "Audiogram",
+      tab: "text",
+      search: "audiogram progress bar time readout waveform strip position accent podcast reel",
+      body: (
+        <>
+          <p className="section-hint">
+            Overlay elements driven by the track — a progress bar, a time readout, a mini-waveform
+            strip. The podcast/reel look; drawn identically in exports.
+          </p>
+          <ToggleRow
+            label="Progress bar"
+            hint="A thin played/remaining bar driven by the track position"
+            checked={props.audiogram.progressBar}
+            onChange={(v) => props.onAudiogram({ progressBar: v })}
+            onHint={setHint}
+          />
+          <ToggleRow
+            label="Time readout"
+            hint="Elapsed / total time, drawn as text"
+            checked={props.audiogram.timeReadout}
+            onChange={(v) => props.onAudiogram({ timeReadout: v })}
+            onHint={setHint}
+          />
+          <ToggleRow
+            label="Waveform strip"
+            hint="A mini waveform overview with a moving playhead"
+            checked={props.audiogram.waveformStrip}
+            onChange={(v) => props.onAudiogram({ waveformStrip: v })}
+            onHint={setHint}
+          />
+          {(props.audiogram.progressBar ||
+            props.audiogram.timeReadout ||
+            props.audiogram.waveformStrip) && (
+            <>
+              <label className="field">
+                <span>Position</span>
+                <select
+                  className="select"
+                  value={props.audiogram.position}
+                  onChange={(e) =>
+                    props.onAudiogram({ position: e.target.value as AudiogramSettings["position"] })
+                  }
+                >
+                  <option value="bottom">Bottom</option>
+                  <option value="top">Top</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Accent</span>
+                <input
+                  type="color"
+                  value={props.audiogram.color}
+                  title="Bar fill, playhead and played-waveform color"
+                  onChange={(e) => props.onAudiogram({ color: e.target.value })}
+                />
+              </label>
+            </>
+          )}
+        </>
+      ),
+    },
+    // ---------------- Live ----------------
+    {
+      title: "Live",
+      tab: "live",
+      search: "live switch quantize off beat bar boundary ableton number keys performance",
+      body: (
+        <>
+          <Segmented
+            value={props.switchQuantize}
+            onChange={props.onSwitchQuantize}
+            onHint={setHint}
+            ariaLabel="Switch quantize"
+            options={QUANTIZE_MODES.map((m) => ({
+              value: m,
+              label: m === "off" ? "Off" : m === "beat" ? "Beat" : "Bar",
+              hint:
+                m === "off"
+                  ? "Mode switches happen instantly"
+                  : `Mode switches wait for the next ${m} before taking over`,
+            }))}
+          />
+          <p className="section-hint">
+            Switch quantize — number keys 1–9 (or a mode chip) jump to a visual; with Beat/Bar the
+            switch lands on the next boundary, Ableton-style. Live only; exports are unaffected.
+          </p>
+        </>
+      ),
+    },
+    ...(props.midiSupported
+      ? [
+          {
+            title: "MIDI",
+            tab: "live" as const,
+            search: "midi controller cc note learn knob fader device mapping performance",
+            headerExtra: props.midiEnabled ? (
+              <button
+                className="text-btn"
+                title="Stop listening to MIDI"
+                onClick={props.onDisableMidi}
+              >
+                Disable
+              </button>
+            ) : undefined,
+            body: !props.midiEnabled ? (
+              <>
+                <div className="save-look-row">
+                  <button
+                    className="text-btn"
+                    title="Grant MIDI access and start listening"
+                    onClick={props.onEnableMidi}
+                  >
+                    Enable MIDI…
+                  </button>
+                </div>
+                <p className="section-hint">
+                  Map a controller's knobs to any setting and its notes to visual modes. Live
+                  performance only — exports are unaffected.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="section-hint">
+                  {props.midiDevices.length
+                    ? `Connected: ${props.midiDevices.join(", ")}`
+                    : "No MIDI inputs detected — plug one in."}
+                </p>
+                <div className="save-look-row">
+                  <select
+                    className="select"
+                    value={midiParam || props.preset.params[0]?.key || ""}
+                    title="Which setting a knob/fader should control"
+                    onChange={(e) => setMidiParam(e.target.value)}
+                  >
+                    {allParams(props.preset).map((p) => (
+                      <option key={p.key} value={p.key}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="text-btn"
+                    title="Then move a knob/fader on your controller to bind it"
+                    onClick={() => {
+                      if (props.midiLearn?.kind === "cc") {
+                        props.onMidiLearn(null);
+                        return;
+                      }
+                      const key = midiParam || props.preset.params[0]?.key;
+                      const spec = allParams(props.preset).find((p) => p.key === key);
+                      if (spec)
+                        props.onMidiLearn({ kind: "cc", param: key, min: spec.min, max: spec.max });
+                    }}
+                  >
+                    {props.midiLearn?.kind === "cc" ? "Move a knob…" : "Learn CC"}
+                  </button>
+                </div>
+                <div className="save-look-row">
+                  <button
+                    className="text-btn"
+                    title={`Bind a note to switch to ${props.preset.name}`}
+                    onClick={() =>
+                      props.midiLearn?.kind === "note"
+                        ? props.onMidiLearn(null)
+                        : props.onMidiLearn({ kind: "note", presetId: props.preset.id })
+                    }
+                  >
+                    {props.midiLearn?.kind === "note"
+                      ? "Play a note…"
+                      : `Learn note → ${props.preset.name}`}
+                  </button>
+                </div>
+                {props.midiBindings.map((b) => {
+                  const id = bindingId(b);
+                  const label =
+                    b.kind === "cc"
+                      ? `CC ${b.cc} → ${allParams(props.preset).find((p) => p.key === b.param)?.label ?? b.param}`
+                      : `Note ${b.note} → ${b.presetId}`;
+                  return (
+                    <div key={id} className="mod-row">
+                      <span className="row-label" style={{ flex: 1 }}>
+                        {label}
+                      </span>
+                      <button
+                        className="chip-x"
+                        title="Remove this binding"
+                        aria-label={`Remove ${label}`}
+                        onClick={() => props.onRemoveMidiBinding(id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </>
+            ),
+          } satisfies SectionDef,
+        ]
+      : []),
+  ];
+
+  const visibleSections = sections.filter((s) =>
+    searching ? s.search.includes(q) : s.tab === tab,
+  );
+
+  return (
+    <aside className="chrome params-panel">
+      <div className="panel-header">
+        <span className="panel-heading">Visual settings</span>
+        <button className="icon-btn subtle" title="Close (G)" onClick={props.onClose}>
+          <IconClose size={16} />
+        </button>
+      </div>
+
+      <div className="panel-tabs">
+        <Segmented
+          value={tab}
+          onChange={changeTab}
+          onHint={setHint}
+          ariaLabel="Settings tab"
+          options={PARAMS_TABS.map((t) => ({ value: t.id, label: t.label, hint: t.hint }))}
+        />
+      </div>
+
+      <input
+        type="search"
+        className="panel-search"
+        placeholder="Search settings…"
+        value={query}
+        aria-label="Search settings"
+        onChange={(e) => setQuery(e.target.value)}
+      />
+
+      <div className="panel-scroll">
+        {visibleSections.map((s) =>
+          s.standalone ? (
+            <Fragment key={s.title}>{s.body}</Fragment>
+          ) : (
+            <CollapsibleSection
+              key={s.title}
+              title={s.title}
+              open={searching ? true : !collapsed.includes(s.title)}
+              onToggle={searching ? undefined : (open) => toggleSection(s.title, open)}
+              headerExtra={s.headerExtra}
+            >
+              {s.body}
+            </CollapsibleSection>
+          ),
+        )}
+        {searching && visibleSections.length === 0 && (
+          <p className="panel-empty">No settings match “{query.trim()}”.</p>
+        )}
       </div>
 
       <div className="panel-footer">
