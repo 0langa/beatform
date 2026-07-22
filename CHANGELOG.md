@@ -11,6 +11,28 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.40.0] - 2026-07-22
+
+The foundation release: a consolidation pass the codebase had earned after
+seventy feature releases. Little changes visually — everything underneath got
+simpler, and one long-standing paper cut is gone.
+
+### Added
+
+- **The settings/library panel is resizable.** Drag its left edge (240-440 px);
+  the width persists. The fixed narrow column was a root cause of the settings
+  UI feeling cramped — the full panel overhaul builds on this next.
+
+### Changed
+
+- App shell split up: the Export dialog, the global keyboard map and the dev
+  probes are their own modules; the 2,900-line state store is now a core plus
+  eleven per-domain slices; every settings surface shares one control kit
+  (single toggle/slider/segmented idiom — behavior identical).
+- Chrome layout offsets derive from CSS variables instead of hand-computed
+  pixel chains (the class of bug where an open timeline buried other panels).
+- Component-level UI tests now run alongside the unit suite.
+
 ## [2.39.0] - 2026-07-22
 
 ### Added
