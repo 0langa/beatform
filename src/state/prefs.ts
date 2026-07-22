@@ -42,6 +42,10 @@ export interface AppPrefs {
   powerPreference: "default" | "high-performance" | "low-power";
   /** Check GitHub Releases for updates shortly after launch. */
   updateAutoCheck: boolean;
+  /** Active tab of the per-visual settings panel. */
+  paramsTab: "visual" | "sync" | "scene" | "text" | "live";
+  /** Collapsed section titles inside the settings panel. */
+  collapsedSections: string[];
 }
 
 export const DEFAULT_PREFS: AppPrefs = {
@@ -56,6 +60,8 @@ export const DEFAULT_PREFS: AppPrefs = {
   fpsCap: 0,
   powerPreference: "default",
   updateAutoCheck: true,
+  paramsTab: "visual",
+  collapsedSections: [],
 };
 
 const LS_PREFS = "beatform.prefs.v1";
@@ -93,6 +99,16 @@ function validPrefs(raw: unknown): AppPrefs {
         ? p.powerPreference
         : "default",
     updateAutoCheck: typeof p.updateAutoCheck === "boolean" ? p.updateAutoCheck : d.updateAutoCheck,
+    paramsTab:
+      p.paramsTab === "sync" ||
+      p.paramsTab === "scene" ||
+      p.paramsTab === "text" ||
+      p.paramsTab === "live"
+        ? p.paramsTab
+        : "visual",
+    collapsedSections: Array.isArray(p.collapsedSections)
+      ? p.collapsedSections.filter((s): s is string => typeof s === "string").slice(0, 64)
+      : [],
   };
 }
 
