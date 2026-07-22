@@ -11,6 +11,30 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.42.0] - 2026-07-23
+
+### Added
+
+- **Builder Studio** — a real layer compositor, replacing the fixed-toggle
+  Builder concept. Stack up to twelve layers from nine types (background
+  wash, particles, spectrum bars, radial ring, pulse rings, waveform circle,
+  orb, wave line, vignette), each with its own enable, opacity, blend mode
+  (Normal / Add / Screen), color (hue + spread) and parameters. Duplicate,
+  reorder and mute layers freely; the same type can appear as many times as
+  you like.
+- **Share stacks as `.avbuilder` files** (export/import), and stacks save
+  inside your project file (schema v10) — a project renders identically on
+  any machine.
+- The classic Builder mode is unchanged — existing projects render exactly
+  as before.
+
+### Under the hood
+
+- Layer parameters live in a GPU storage buffer, so a deep stack never hits
+  the parameter ceiling and every slider drag is a buffer write — structural
+  edits (add/remove/reorder/blend) compile once per stack shape and are
+  cached.
+
 ## [2.41.0] - 2026-07-23
 
 The settings release — the two UI structures the app had outgrown, rebuilt.
