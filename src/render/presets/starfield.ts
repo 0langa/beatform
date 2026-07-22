@@ -238,7 +238,7 @@ export const starfield: PresetDef = {
       min: 0,
       max: 1,
       step: 0.02,
-      default: 0.5,
+      default: 0.7,
       hint: "How far particles roam from home, carried partly by a shared drifting current",
     },
     {
@@ -448,7 +448,10 @@ fn preset(uv: vec2f) -> vec4f {
       let fl = f32(l);
       let scl = (P_density() + fl * 3.0) * 0.5;
       let par = 1.0 - P_parallax() * fl * 0.3;
-      let flow = dir * baseSpd * par * 0.18;
+      // Only a GENTLE overall drift in the chosen direction — the free
+      // per-particle float below is the dominant motion, so particles wander
+      // every which way instead of marching in formation.
+      let flow = dir * baseSpd * par * 0.06;
       let q = p * scl - flow * u.time;
       let base = floor(q);
       // 3x3 neighbourhood so a jittered star near a cell edge still draws.
@@ -462,10 +465,19 @@ fn preset(uv: vec2f) -> vec4f {
           let h2 = hash21(cell + 41.3);
           let h3 = hash21(cell + 77.7);
           let h4 = hash21(cell + 13.1);
-          let ph = h2 * TAU;
-          let wob = (vec2f(sin(u.time * P_wanderSpeed() * (0.5 + h2) + ph),
-                           cos(u.time * P_wanderSpeed() * (0.7 + h3) + ph * 1.7)) * 0.4
-                    + curlFlow(cell * 0.1 + u.time * 0.05) * 0.6) * P_wander() * 0.3;
+          // FREE ORGANIC FLOAT: each particle drifts on its own curved path —
+          // a slow curl-advected term plus two incommensurate sine pairs on
+          // this particle's own phase — so it wanders freely in its own
+          // direction instead of oscillating around a fixed home. Bounded to
+          // just under a cell so the 3x3 neighbour search still finds it.
+          let fph = h2 * TAU;
+          let wt = u.time * (0.25 + P_wanderSpeed() * 0.6);
+          let drift = vec2f(
+            sin(wt * (0.7 + 0.5 * h2) + fph) + 0.55 * sin(wt * (1.3 + 0.4 * h3) + fph * 1.7),
+            cos(wt * (0.6 + 0.5 * h3) + fph * 1.3) + 0.55 * cos(wt * (1.1 + 0.4 * h2) + fph * 0.7),
+          ) * 0.3;
+          let flowAdv = curlFlow(cell * 0.13 + u.time * 0.08) * 0.5;
+          let wob = (drift + flowAdv) * P_wander();
           let scatDir = normalize(vec2f(h2 - 0.5, h3 - 0.5) + 1e-4);
           let scat = scatDir * u.driveBeat * P_beatDance() * 0.35 * u.pulse;
           let home = (base + vec2f(f32(ox), f32(oy)) + vec2f(0.5) + wob + scat) / scl;
@@ -476,9 +488,12 @@ fn preset(uv: vec2f) -> vec4f {
           // Small radius: a particle floating in space is a crisp point of
           // light, not a fat soft bokeh disc. Shrunk hard from the old value.
           let rad = P_size() * 0.4 / scl * depthV * (0.7 + band * P_sizePulse());
-          let vel = normalize(dir + scatDir * u.driveBeat * 1.4 * u.pulse + curlFlow(cell * 0.1) * 0.4);
+          // Streak follows the particle's own drift; kept light in drift mode
+          // so free-floating particles stay mostly point-like, only stretching
+          // a little on a beat.
+          let vel = normalize(flowAdv + scatDir * u.driveBeat * 1.4 * u.pulse + vec2f(1e-4, 0.0));
           let perp = vec2f(-vel.y, vel.x);
-          let stretch = 1.0 + P_streak() * (0.6 + u.driveBeat * 1.6 * u.pulse);
+          let stretch = 1.0 + P_streak() * (0.2 + u.driveBeat * 1.0 * u.pulse);
           let dl = dot(d, vel);
           let dp = dot(d, perp);
           let dist = sqrt(dl * dl / (stretch * stretch) + dp * dp);
