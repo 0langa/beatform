@@ -113,6 +113,15 @@ body,
 .app {
   position: fixed;
   inset: 0;
+  /* Layout system (v2.40): every chrome offset derives from these — no more
+     hand-computed pixel chains ("348px = 74 + 264 + 10"). --panel-w is
+     user-resizable (drag handle on the settings/library panels; persisted). */
+  --topbar-h: 58px;
+  --playerbar-h: 86px;
+  --panel-w: 280px;
+  --timeline-bottom: 74px;
+  --timeline-h: 264px;
+  --gutter: 14px;
 }
 
 /* ---------- canvas ---------- */
@@ -400,7 +409,7 @@ button:disabled {
 
 .preset-strip {
   position: absolute;
-  top: 58px;
+  top: var(--topbar-h);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -818,10 +827,10 @@ button:disabled {
 
 .library-panel {
   position: absolute;
-  top: 58px;
-  left: 14px;
-  bottom: 86px;
-  width: 280px;
+  top: var(--topbar-h);
+  left: var(--gutter);
+  bottom: var(--playerbar-h);
+  width: var(--panel-w);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -923,10 +932,10 @@ button:disabled {
 
 .params-panel {
   position: absolute;
-  top: 58px;
-  right: 14px;
-  bottom: 86px;
-  width: 280px;
+  top: var(--topbar-h);
+  right: var(--gutter);
+  bottom: var(--playerbar-h);
+  width: var(--panel-w);
   display: flex;
   flex-direction: column;
   background: var(--glass);
@@ -1488,6 +1497,24 @@ kbd {
   padding-top: 2px;
 }
 
+/* Drag handle riding the settings panel's left edge (position derives from
+   the same variables as the panel itself). */
+.panel-resize-handle {
+  position: absolute;
+  top: var(--topbar-h);
+  bottom: var(--playerbar-h);
+  right: calc(var(--gutter) + var(--panel-w) - 3px);
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 7;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.panel-resize-handle:hover,
+.panel-resize-handle:active {
+  background: rgba(106, 168, 255, 0.28);
+}
+
 /* kit: CollapsibleSection */
 .section-toggle {
   display: inline-flex;
@@ -1786,8 +1813,8 @@ kbd {
   position: absolute;
   left: 10px;
   right: 10px;
-  bottom: 74px;
-  max-height: 264px;
+  bottom: var(--timeline-bottom);
+  max-height: var(--timeline-h);
   overflow-y: auto;
   background: var(--glass-heavy);
   backdrop-filter: blur(18px);
@@ -1808,7 +1835,8 @@ kbd {
    list, which is the exact bug the params-panel rule was added to fix. */
 .app:has(.timeline-panel) .params-panel,
 .app:has(.timeline-panel) .library-panel {
-  bottom: 348px;
+  /* Derived, not hand-computed: timeline bottom + its max height + a gap. */
+  bottom: calc(var(--timeline-bottom) + var(--timeline-h) + 10px);
 }
 
 .tl-toolbar {

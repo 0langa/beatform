@@ -143,6 +143,38 @@ export default function App() {
   // focus, no focus restore").
   const helpDialogRef = useFocusTrap(showHelp);
 
+  // Resizable settings/library panel width (v2.40 layout system). The value
+  // drives the `--panel-w` CSS variable on the app root; every offset that
+  // depends on it derives via calc() in App.css. Persisted per install.
+  const [panelW, setPanelW] = useState(() => {
+    const stored = Number(localStorage.getItem("viz.panelWidth.v1"));
+    return Number.isFinite(stored) && stored >= 240 && stored <= 440 ? stored : 280;
+  });
+  const startPanelResize = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    let latest = 0;
+    const onMove = (ev: PointerEvent) => {
+      // Panel hugs the right edge: width = distance from pointer to gutter.
+      latest = Math.min(440, Math.max(240, window.innerWidth - ev.clientX - 14));
+      setPanelW(latest);
+    };
+    const onUp = () => {
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      if (latest > 0) {
+        try {
+          localStorage.setItem("viz.panelWidth.v1", String(latest));
+        } catch {
+          // quota — width stays session-only
+        }
+      }
+    };
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+  }, []);
+
   // Auto-updater (desktop): silent check shortly after boot; manual check +
   // install live in the Help modal. Local state on purpose — this is UI
   // phase, not document/session state (it moves to the Settings page later).
@@ -516,6 +548,7 @@ export default function App() {
   return (
     <div
       className={`app ${dragOver ? "drag-over" : ""} ${idle ? "idle" : ""} ${stageMode ? "stage-mode" : ""}`}
+      style={{ "--panel-w": `${panelW}px` } as React.CSSProperties}
       onMouseMove={() => store().pokeChrome()}
       onPointerDown={() => store().pokeChrome()}
       // Keyboard focus (Tab) fires no pointer event, so without this a keyboard
@@ -789,6 +822,16 @@ export default function App() {
         />
       )}
 
+      {showPanel && (
+        <div
+          className="panel-resize-handle chrome"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the settings panel"
+          title="Drag to resize the panel"
+          onPointerDown={startPanelResize}
+        />
+      )}
       {showPanel && (
         <ParamsPanel
           preset={preset}
