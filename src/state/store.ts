@@ -475,8 +475,9 @@ interface Actions {
   setDragOver(v: boolean): void;
   setShowPanel(v: boolean | ((prev: boolean) => boolean)): void;
   setShowHelp(v: boolean): void;
-  /** Dismiss the error toast (it never auto-cleared, so a degraded-mode
-   * message sat on screen for the whole session — including over Stage mode). */
+  /** Dismiss the error toast — real errors have no timer, so a stale one would
+   * otherwise sit over the whole session, including Stage mode. (The degraded-
+   * renderer message that first motivated this now uses the notice channel.) */
   clearError(): void;
   setStageMode(v: boolean): void;
   setBlackout(v: boolean): void;
@@ -958,7 +959,11 @@ export const useVizStore = create<VizState>((set, get) => {
         isSeeking: () => get().seeking,
         onPlayback: (playback) => set({ playback }),
         onRendererChanged: (kind, warning) => {
-          set({ rendererKind: kind, error: warning });
+          set({ rendererKind: kind });
+          // A degraded renderer (Canvas2D fallback) is WORKING, not failed, so
+          // surface it as an auto-clearing notice — never the persistent red
+          // error toast, which used to sit over the whole session incl. Stage.
+          if (warning) flashNotice(warning);
           getRenderer()?.setSmoothSpectrum(get().smoothSpectrum);
           getRenderer()?.setPost(get().post);
           getRenderer()?.setMotion(get().motion);
