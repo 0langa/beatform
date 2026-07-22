@@ -48,6 +48,9 @@ jobs:
       - run: npm run tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # The key has an empty password, but the CLI PROMPTS interactively
+          # when this var is unset — which hangs a headless build forever.
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
 
       - name: Stage assets with clean names
         shell: bash

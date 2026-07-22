@@ -11,6 +11,25 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.39.0] - 2026-07-22
+
+### Added
+
+- **The app updates itself.** Beatform checks GitHub Releases shortly after
+  launch (and on demand from **Help ▸ Check for updates**), downloads the new
+  installer with progress, verifies its cryptographic signature against a key
+  built into the app, installs, and offers a one-click restart. No telemetry —
+  the check is a plain fetch of a static file on GitHub, and it fails silently
+  when offline.
+- MSI installs are outside the auto-update path (it uses the NSIS installer);
+  new MSIs stay available on the releases page.
+
+### Changed
+
+- Release hygiene: versions are stamped by `scripts/bump-version.mjs` across
+  all five version-carrying files with a `--verify` mode; SECURITY.md now
+  documents update integrity and the key-rotation policy.
+
 ## [2.38.0] - 2026-07-22
 
 Correctness & performance closeout — the audit backlog is now empty.

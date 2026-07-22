@@ -1,6 +1,6 @@
 [package]
 name = "beatform"
-version = "2.38.0"
+version = "2.39.0"
 description = "Local-first music visualizer — realtime preview and deterministic offline export from one engine."
 authors = ["0langa"]
 edition = "2021"
