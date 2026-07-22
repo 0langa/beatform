@@ -423,6 +423,41 @@ export function validBuilderStack(v: unknown): BuilderStack {
   return { layers };
 }
 
+// --- .avbuilder file format (share a layer stack as one JSON file) ---
+
+export const BUILDER_FILE_VERSION = 1;
+
+export function serializeBuilderStack(stack: BuilderStack, appVersion: string): string {
+  return JSON.stringify(
+    { kind: "avbuilder", schemaVersion: BUILDER_FILE_VERSION, appVersion, stack },
+    null,
+    2,
+  );
+}
+
+export class BuilderParseError extends Error {}
+
+export function parseBuilderStack(json: string): BuilderStack {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    throw new BuilderParseError("Not a valid JSON file");
+  }
+  const f = raw as {
+    kind?: string;
+    schemaVersion?: number;
+    stack?: unknown;
+  };
+  if (typeof f !== "object" || f === null || f.kind !== "avbuilder") {
+    throw new BuilderParseError("Not an .avbuilder file");
+  }
+  if (typeof f.schemaVersion !== "number" || f.schemaVersion > BUILDER_FILE_VERSION) {
+    throw new BuilderParseError("Builder file from a newer app version; update the app");
+  }
+  return validBuilderStack(f.stack);
+}
+
 /** Structural identity: anything that changes the GENERATED CODE. Values
  * (opacity/hue/params) live in the storage buffer and don't recompile. */
 export function stackStructureKey(stack: BuilderStack): string {

@@ -35,6 +35,8 @@ import { ParamRow, SliderRow, Segmented, ToggleRow, CollapsibleSection } from ".
 import type { AppPrefs } from "../state/prefs";
 import { getPrefs, setPrefs } from "../state/prefs";
 import { LayersPanel } from "./LayersPanel";
+import { BuilderPanel } from "./BuilderPanel";
+import { BUILDER2_ID, BUILDER_LAYER_TYPES, type BuilderStack } from "../render/builder2";
 import { IconChevronRight, IconClose } from "./Icons";
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -266,6 +268,11 @@ export interface ParamsPanelProps {
   /** Audiogram overlay elements (progress bar / time / waveform strip). */
   audiogram: AudiogramSettings;
   onAudiogram: (patch: Partial<AudiogramSettings>) => void;
+  /** Builder Studio layer stack (edited when preset.id === "builder2"). */
+  builderStack: BuilderStack;
+  onBuilderStack: (stack: BuilderStack) => void;
+  onBuilderExport: () => void;
+  onBuilderImport: (file: File) => void;
 }
 
 /** A settings section, mapped to a tab and given a searchable keyword blob.
@@ -507,6 +514,26 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
         </>
       ),
     },
+    ...(props.preset.id === BUILDER2_ID
+      ? [
+          {
+            title: "Builder layers",
+            tab: "visual" as const,
+            search:
+              `builder layer stack compositor blend add screen opacity hue spread ${BUILDER_LAYER_TYPES.map((t) => t.label).join(" ")}`.toLowerCase(),
+            standalone: true,
+            body: (
+              <BuilderPanel
+                stack={props.builderStack}
+                onChange={props.onBuilderStack}
+                onExport={props.onBuilderExport}
+                onImport={props.onBuilderImport}
+                onHint={setHint}
+              />
+            ),
+          } satisfies SectionDef,
+        ]
+      : []),
     ...(showMotion
       ? [
           {

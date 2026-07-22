@@ -127,6 +127,7 @@ export default function App() {
   const lyricFileName = useVizStore((s) => s.lyricFileName);
   const lyricStyle = useVizStore((s) => s.lyricStyle);
   const audiogram = useVizStore((s) => s.audiogram);
+  const builderStack = useVizStore((s) => s.builderStack);
   const videoBgLoading = useVizStore((s) => s.videoBgLoading);
   const showBatch = useVizStore((s) => s.showBatch);
   const customDefs = useVizStore((s) => s.customDefs);
@@ -378,6 +379,18 @@ export default function App() {
   );
   const setAudiogram: ParamsPanelProps["onAudiogram"] = useCallback(
     (patch) => store().setAudiogram(patch),
+    [store],
+  );
+  const setBuilderStack: ParamsPanelProps["onBuilderStack"] = useCallback(
+    (stack) => store().setBuilderStack(stack),
+    [store],
+  );
+  const exportBuilderStack: ParamsPanelProps["onBuilderExport"] = useCallback(
+    () => void store().exportBuilderStack(),
+    [store],
+  );
+  const importBuilderStack: ParamsPanelProps["onBuilderImport"] = useCallback(
+    (f) => void f.text().then((t) => store().importBuilderStackText(t)),
     [store],
   );
 
@@ -899,6 +912,10 @@ export default function App() {
           onLyricStyle={setLyricStyle}
           audiogram={audiogram}
           onAudiogram={setAudiogram}
+          builderStack={builderStack}
+          onBuilderStack={setBuilderStack}
+          onBuilderExport={exportBuilderStack}
+          onBuilderImport={importBuilderStack}
         />
       )}
 

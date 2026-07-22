@@ -128,6 +128,7 @@ import { type MidiBinding, type MidiLearn } from "./midi";
 import type { SliceCtx } from "./slices/ctx";
 import { NULL_FRAME_KEY, shared } from "./slices/shared";
 import { batchActions } from "./slices/batchActions";
+import { builderActions } from "./slices/builderActions";
 import { customShaderActions } from "./slices/customShaderActions";
 import { exportActions } from "./slices/exportActions";
 import { libraryActions } from "./slices/libraryActions";
@@ -319,6 +320,10 @@ interface Actions {
   setTimeline(timeline: Timeline): void;
   /** Replace the Builder Studio stack (undoable; recompiles only on structural change). */
   setBuilderStack(stack: BuilderStack): void;
+  /** Save the current Builder Studio stack as a shareable .avbuilder file. */
+  exportBuilderStack(): Promise<void>;
+  /** Parse + apply an .avbuilder file's text (import). */
+  importBuilderStackText(text: string): void;
   setShowTimeline(v: boolean): void;
   setPost(patch: Partial<PostSettings>): void;
   setMotion(patch: Partial<MotionSettings>): void;
@@ -854,6 +859,7 @@ export const useVizStore = create<VizState>((set, get) => {
     // core and the document core (applyDocument) stay below.
     ...exportActions(set, get, ctx),
     ...batchActions(set, get, ctx),
+    ...builderActions(set, get, ctx),
     ...libraryActions(set, get, ctx),
     ...customShaderActions(set, get, ctx),
     ...lyricsAudiogramActions(set, get, ctx),
