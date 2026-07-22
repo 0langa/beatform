@@ -131,9 +131,24 @@ interface SequenceWriter {
   discard(): Promise<void>;
 }
 
-async function createPngSequenceWriter(dir: string): Promise<SequenceWriter> {
-  const { writeFile, mkdir } = await import("@tauri-apps/plugin-fs");
-  await mkdir(dir, { recursive: true }).catch(() => undefined);
+/** Filesystem seam for the PNG writer, injectable so tests can fail writes. */
+export interface PngFsOps {
+  writeFile(path: string, data: Uint8Array): Promise<void>;
+  remove(path: string): Promise<void>;
+}
+
+/**
+ * The PNG writer's logic, split from the Tauri import so a stub fs can drive
+ * it in tests. A write failure is reported to `onError` IMMEDIATELY (not just
+ * stored for close()) — the caller trips the export's abort signal with it,
+ * which is what stops a disk-full at minute 5 from rendering the remaining
+ * 55 minutes into a no-op sink (H5).
+ */
+export function makePngSequenceWriter(
+  fs: PngFsOps,
+  dir: string,
+  onError?: (e: Error) => void,
+): SequenceWriter {
   let queue: Promise<void> = Promise.resolve();
   let failed: Error | null = null;
   const written: string[] = [];
@@ -146,10 +161,11 @@ async function createPngSequenceWriter(dir: string): Promise<SequenceWriter> {
         const name = `frame_${String(index + 1).padStart(6, "0")}.png`;
         const path = `${dir}/${name}`;
         try {
-          await writeFile(path, data);
+          await fs.writeFile(path, data);
           written.push(path);
         } catch (e) {
           failed = e as Error;
+          onError?.(failed);
         }
       });
       return queue;
@@ -160,13 +176,21 @@ async function createPngSequenceWriter(dir: string): Promise<SequenceWriter> {
     },
     async discard() {
       await queue.catch(() => undefined);
-      const { remove } = await import("@tauri-apps/plugin-fs");
-      for (const p of written) await remove(p).catch(() => undefined);
+      for (const p of written) await fs.remove(p).catch(() => undefined);
     },
   };
 }
 
-async function createTauriWriter(path: string): Promise<FileWriter> {
+async function createPngSequenceWriter(
+  dir: string,
+  onError?: (e: Error) => void,
+): Promise<SequenceWriter> {
+  const { writeFile, mkdir, remove } = await import("@tauri-apps/plugin-fs");
+  await mkdir(dir, { recursive: true }).catch(() => undefined);
+  return makePngSequenceWriter({ writeFile, remove }, dir, onError);
+}
+
+async function createTauriWriter(path: string, onError?: (e: Error) => void): Promise<FileWriter> {
   const { open, remove, SeekMode } = await import("@tauri-apps/plugin-fs");
   const handle = await open(path, { write: true, create: true, truncate: true });
   let queue: Promise<void> = Promise.resolve();
@@ -191,6 +215,9 @@ async function createTauriWriter(path: string): Promise<FileWriter> {
           cursor = position + data.length;
         } catch (e) {
           failed = e as Error;
+          // Same contract as the PNG writer: surface the first failure NOW so
+          // the export aborts instead of encoding into a dead sink (H5).
+          onError?.(failed);
         }
       });
     },
@@ -334,8 +361,26 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     loudness: o.loudness,
   });
 
-  const writer = o.streamToPath && !isPng ? await createTauriWriter(o.streamToPath) : null;
-  const pngWriter = o.pngDir ? await createPngSequenceWriter(o.pngDir) : null;
+  // H5: a disk-write failure must stop the render NOW, not at close(). The
+  // writers report their first error here; aborting the composed signal stops
+  // the encode loop within a frame, and the catch below surfaces the original
+  // disk error instead of a generic "cancelled".
+  let writeFailure: Error | null = null;
+  const failCtl = new AbortController();
+  const onWriteError = (e: Error) => {
+    writeFailure ??= e;
+    failCtl.abort();
+  };
+  const writer =
+    o.streamToPath && !isPng ? await createTauriWriter(o.streamToPath, onWriteError) : null;
+  const pngWriter = o.pngDir ? await createPngSequenceWriter(o.pngDir, onWriteError) : null;
+  const oo: ExportOptions =
+    writer || pngWriter
+      ? {
+          ...o,
+          signal: o.signal ? AbortSignal.any([o.signal, failCtl.signal]) : failCtl.signal,
+        }
+      : o;
   // Frames go to the folder writer and/or the caller's sink.
   const onFrame = isPng
     ? async (data: Uint8Array, index: number) => {
@@ -348,16 +393,16 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
   try {
     let result: ExportCoreResult;
     if (typeof Worker === "undefined") {
-      result = await runInline(buildJob(buildPcm()), o, writer, onFrame);
+      result = await runInline(buildJob(buildPcm()), oo, writer, onFrame);
     } else {
       try {
-        result = await runInWorker(buildJob(buildPcm()), o, writer, onFrame);
+        result = await runInWorker(buildJob(buildPcm()), oo, writer, onFrame);
       } catch (e) {
         // A worker may lack WebGPU where the main thread has it (older
         // WebView2). The worker run transferred (detached) its job's PCM, so
         // the inline fallback gets a FRESH job with fresh copies.
         if ((e as Error).message.startsWith("__fallback__")) {
-          result = await runInline(buildJob(buildPcm()), o, writer, onFrame);
+          result = await runInline(buildJob(buildPcm()), oo, writer, onFrame);
         } else {
           throw e;
         }
@@ -369,6 +414,10 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
   } catch (e) {
     await writer?.discard();
     await pngWriter?.discard();
+    // The abort we tripped ourselves must not masquerade as a user cancel —
+    // rethrow the disk error that actually caused it (classifyError keys off
+    // its message, e.g. Windows "not enough space ... (os error 112)").
+    if (writeFailure && (e as Error).name === "AbortError") throw writeFailure;
     throw e;
   }
 }

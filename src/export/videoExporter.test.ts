@@ -1,5 +1,67 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { exportVideo } from "./videoExporter";
+import { exportVideo, makePngSequenceWriter, type PngFsOps } from "./videoExporter";
+
+/**
+ * H5 regression: the sequence writer used to store a write failure in a local
+ * and only throw it from close() — which runs AFTER the whole render. A
+ * disk-full at minute 5 of a 60-minute export rendered the remaining 55
+ * minutes into a no-op sink. The writer must surface the FIRST failure
+ * immediately via onError (the caller trips the export's abort signal with
+ * it), stop writing, and still throw the original error from close().
+ */
+describe("makePngSequenceWriter failure channel", () => {
+  function stubFs(failOnIndex?: number) {
+    const written: string[] = [];
+    const removed: string[] = [];
+    let calls = 0;
+    const fs: PngFsOps = {
+      async writeFile(path) {
+        if (failOnIndex !== undefined && calls++ >= failOnIndex) {
+          throw new Error("There is not enough space on the disk. (os error 112)");
+        }
+        written.push(path);
+      },
+      async remove(path) {
+        removed.push(path);
+      },
+    };
+    return { fs, written, removed };
+  }
+
+  it("writes 6-digit frame names in order", async () => {
+    const { fs, written } = stubFs();
+    const w = makePngSequenceWriter(fs, "out");
+    await w.write(new Uint8Array([1]), 0);
+    await w.write(new Uint8Array([2]), 1);
+    await w.close();
+    expect(written).toEqual(["out/frame_000001.png", "out/frame_000002.png"]);
+  });
+
+  it("reports the first failure immediately, stops writing, and close() throws it", async () => {
+    const { fs, written } = stubFs(1); // second write fails
+    const onError = vi.fn();
+    const w = makePngSequenceWriter(fs, "out", onError);
+    await w.write(new Uint8Array([1]), 0);
+    expect(onError).not.toHaveBeenCalled();
+    await w.write(new Uint8Array([2]), 1); // fails -> onError NOW, not at close
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0].message).toMatch(/os error 112/);
+    await w.write(new Uint8Array([3]), 2); // after failure: no-op
+    expect(onError).toHaveBeenCalledTimes(1); // not re-reported
+    expect(written).toEqual(["out/frame_000001.png"]);
+    await expect(w.close()).rejects.toThrow(/os error 112/);
+  });
+
+  it("discard removes everything that was written", async () => {
+    const { fs, written, removed } = stubFs(2);
+    const w = makePngSequenceWriter(fs, "out", () => undefined);
+    await w.write(new Uint8Array([1]), 0);
+    await w.write(new Uint8Array([2]), 1);
+    await w.write(new Uint8Array([3]), 2); // fails
+    await w.discard();
+    expect(removed).toEqual(written);
+  });
+});
 
 describe("exportVideo abort handling", () => {
   it("rejects an already-aborted signal before touching the audio", async () => {
