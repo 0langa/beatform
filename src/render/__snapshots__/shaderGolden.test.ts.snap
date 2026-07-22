@@ -3196,16 +3196,6 @@ fn P_bgLevel() -> f32 { return params[22u]; }
 fn P_vignette() -> f32 { return params[23u]; }
 fn P_mirror() -> f32 { return params[24u]; }
 
-// Curl of a scalar noise field => a smooth divergence-free drift so neighbours
-// move as one current instead of on uncorrelated orbits (docs/VISUAL-DESIGN.md
-// section 4). Cheapened to noise2, this only needs to be smooth, not detailed.
-fn curlFlow(pp: vec2f) -> vec2f {
-  let e = 0.08;
-  let dx = (noise2(pp + vec2f(e, 0.0)) - noise2(pp - vec2f(e, 0.0))) / (2.0 * e);
-  let dy = (noise2(pp + vec2f(0.0, e)) - noise2(pp - vec2f(0.0, e))) / (2.0 * e);
-  return vec2f(dy, -dx);
-}
-
 fn preset(uv: vec2f) -> vec4f {
   var p = kaleido(centered(uv), P_mirror());
 
@@ -3215,7 +3205,10 @@ fn preset(uv: vec2f) -> vec4f {
   let hueT = 1.0 - P_hue() / 360.0;
   let bgPal = cosPalette(hueT + 0.08, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
   var col = bgPal * P_bgLevel() * (1.0 + u.bass * 0.6);
-  let nebT = warpFbm(p * 0.5 + u.time * 0.02, 0.7 + u.mid * 0.9);
+  // A plain fbm, not warpFbm: this ambient wash is barely visible (x0.05), so
+  // the domain-warp's extra two fbm evals per pixel (15 noise2 -> 5) were pure
+  // cost for no visible gain.
+  let nebT = fbm(p * 0.5 + u.time * 0.02);
   col += bgPal * nebT * nebT * 0.05 * (0.4 + u.mid * 0.8);
   col += bgPal * u.driveBeat * P_beatFlash() * u.pulse;
 
@@ -3228,7 +3221,12 @@ fn preset(uv: vec2f) -> vec4f {
     // streaking outward, then the shell wraps = despawn + a fresh one far away.
     // Flying THROUGH independent particles, not a zoomed image.
     let gs = 2.0 + P_density() * 0.45;
-    let shells = i32(P_layers()) * 4;
+    // Shells are the fly-mode cost multiplier: every shell walks a 3x3 cell
+    // neighbourhood, so 4-per-layer meant 108 cell iterations PER PIXEL (and
+    // 108 clump noise2 evals with it) — several times the cost of any other
+    // preset. Two per layer still reads as a deep, continuously-streaming field
+    // because the shells are golden-ratio spread across depth.
+    let shells = i32(P_layers()) * 2;
     for (var sI = 0; sI < shells; sI = sI + 1) {
       let fs = f32(sI);
       let rate = energy * (1.0 - P_parallax() * fract(fs * 0.37) * 0.45)
@@ -3265,6 +3263,11 @@ fn preset(uv: vec2f) -> vec4f {
           let flight = normalize(starScreen + vec2f(1e-4, 0.0));
           let perp = vec2f(-flight.y, flight.x);
           let stretch = 1.0 + P_streak() * (1.0 - Z) * (2.5 + u.driveBeat * 3.0 * u.pulse);
+          // EARLY DISTANCE CULL: a star's glow reaches at most ~3 core-radii, so
+          // past that skip the sqrt / twinkle sins / palette cos / halo exp that
+          // dominate the per-star cost. Stars are sparse, so most cells stop here.
+          let reach = rad * stretch * 3.0 + 0.003;
+          if (dot(dvec, dvec) > reach * reach) { continue; }
           let dl = dot(dvec, flight);
           let dp = dot(dvec, perp);
           let dist = sqrt(dl * dl / (stretch * stretch) + dp * dp);
@@ -3289,6 +3292,11 @@ fn preset(uv: vec2f) -> vec4f {
     let ang = radians(P_direction());
     let dir = vec2f(cos(ang), -sin(ang));
     let layerCount = i32(P_layers());
+    // Hoisted out of the per-cell loop (were recomputed 27x per pixel): the
+    // wander clock, and a single GLOBAL current (one sin/cos for the whole
+    // frame) that sways every particle together instead of a per-cell flow.
+    let wt = u.time * (0.25 + P_wanderSpeed() * 0.6);
+    let gCur = vec2f(sin(u.time * 0.3), cos(u.time * 0.26)) * 0.12;
     for (var l = 0; l < layerCount; l = l + 1) {
       let fl = f32(l);
       let scl = (P_density() + fl * 3.0) * 0.5;
@@ -3310,19 +3318,12 @@ fn preset(uv: vec2f) -> vec4f {
           let h2 = hash21(cell + 41.3);
           let h3 = hash21(cell + 77.7);
           let h4 = hash21(cell + 13.1);
-          // FREE ORGANIC FLOAT: each particle drifts on its own curved path —
-          // a slow curl-advected term plus two incommensurate sine pairs on
-          // this particle's own phase — so it wanders freely in its own
-          // direction instead of oscillating around a fixed home. Bounded to
-          // just under a cell so the 3x3 neighbour search still finds it.
+          // Free per-particle float: ONE incommensurate sine pair on this
+          // particle's own phase (down from three pairs) plus the hoisted global
+          // current — still reads as free wandering, at a third of the trig.
           let fph = h2 * TAU;
-          let wt = u.time * (0.25 + P_wanderSpeed() * 0.6);
-          let drift = vec2f(
-            sin(wt * (0.7 + 0.5 * h2) + fph) + 0.55 * sin(wt * (1.3 + 0.4 * h3) + fph * 1.7),
-            cos(wt * (0.6 + 0.5 * h3) + fph * 1.3) + 0.55 * cos(wt * (1.1 + 0.4 * h2) + fph * 0.7),
-          ) * 0.3;
-          let flowAdv = curlFlow(cell * 0.13 + u.time * 0.08) * 0.5;
-          let wob = (drift + flowAdv) * P_wander();
+          let drift = vec2f(sin(wt * (0.8 + 0.5 * h2) + fph), cos(wt * (0.7 + 0.5 * h3) + fph * 1.3)) * 0.34;
+          let wob = (drift + gCur) * P_wander();
           let scatDir = normalize(vec2f(h2 - 0.5, h3 - 0.5) + 1e-4);
           let scat = scatDir * u.driveBeat * P_beatDance() * 0.35 * u.pulse;
           let home = (base + vec2f(f32(ox), f32(oy)) + vec2f(0.5) + wob + scat) / scl;
@@ -3330,15 +3331,19 @@ fn preset(uv: vec2f) -> vec4f {
           var band = u.bass;
           if (h4 < 0.3333) { band = u.mid; } else if (h4 < 0.6666) { band = u.treble; }
           let depthV = mix(0.5, 1.4, h1);
-          // Small radius: a particle floating in space is a crisp point of
-          // light, not a fat soft bokeh disc. Shrunk hard from the old value.
           let rad = P_size() * 0.4 / scl * depthV * (0.7 + band * P_sizePulse());
-          // Streak follows the particle's own drift; kept light in drift mode
-          // so free-floating particles stay mostly point-like, only stretching
-          // a little on a beat.
-          let vel = normalize(flowAdv + scatDir * u.driveBeat * 1.4 * u.pulse + vec2f(1e-4, 0.0));
-          let perp = vec2f(-vel.y, vel.x);
           let stretch = 1.0 + P_streak() * (0.2 + u.driveBeat * 1.0 * u.pulse);
+          // EARLY DISTANCE CULL — the real speedup. A particle's glow reaches at
+          // most ~2.8 core-radii; beyond that its contribution is under 1% yet
+          // was computed anyway. Particles are sparse, so most of the
+          // 3x3-times-layers cells stop HERE, before the sqrt / twinkle sin /
+          // palette cos / bloom exp that dominate the per-particle cost.
+          let reach = rad * stretch * 2.8 + 0.004;
+          if (dot(d, d) > reach * reach) { continue; }
+          // Streak follows the particle's own drift; light in drift mode so
+          // free-floating particles stay mostly point-like, stretching on a beat.
+          let vel = normalize(gCur + drift * 0.5 + scatDir * u.driveBeat * 1.4 * u.pulse + vec2f(1e-4, 0.0));
+          let perp = vec2f(-vel.y, vel.x);
           let dl = dot(d, vel);
           let dp = dot(d, perp);
           let dist = sqrt(dl * dl / (stretch * stretch) + dp * dp);
