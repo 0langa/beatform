@@ -6,6 +6,7 @@ import type { BgSettings, ParamValues, PresetDef, Renderer } from "../render/typ
 import { applyMods } from "./modMatrix";
 import { resolveActiveFrame, type FrameResolveInput } from "./frameResolve";
 import { presetById } from "../render/presets";
+import { getPrefs } from "./prefs";
 import type { PlaybackState, SyncSettings } from "../audio/types";
 
 /**
@@ -248,6 +249,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     // pipelineCache, keyed by the def object), so comparing and (redundantly)
     // pushing by reference every frame is both correct and free when nothing
     // changed.
+    let lastCapDraw = -1e9;
     let currentPreset: PresetDef | null = null;
     let fadeFromPreset: PresetDef | null = null;
     resyncRenderer = () => {
@@ -287,6 +289,23 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       // so preview matches the deterministic export frame-for-frame and idle
       // motion freezes when paused (track time, not wall clock).
       const trackTime = compensated;
+      // Live FPS cap (Settings ▸ Performance): draw-skip, transport-keep.
+      // Preview-only by design — exports walk every frame deterministically
+      // and never consult this.
+      const fpsCap = getPrefs().fpsCap;
+      if (fpsCap > 0 && tMs - lastCapDraw < 1000 / fpsCap - 1) {
+        raf = requestAnimationFrame(loop);
+        fallback = setTimeout(() => {
+          cancelAnimationFrame(raf);
+          loop(performance.now());
+        }, 300);
+        if (eng.playing && t - lastUiUpdate > 0.25 && !hooks.isSeeking()) {
+          lastUiUpdate = t;
+          hooks.onPlayback(eng.state);
+        }
+        return;
+      }
+      lastCapDraw = tMs;
       if (liveRenderPaused) {
         // Skip the draw, keep the loop: a paused preview must still refresh
         // the transport below, and the caches stay valid for when it resumes.

@@ -1,4 +1,5 @@
 import type { AudioFeatures } from "../audio/types";
+import { getPrefs } from "../state/prefs";
 import { allParams, DEFAULT_MOTION, DEFAULT_POST, paramOr } from "./types";
 import type {
   BgSettings,
@@ -1385,7 +1386,13 @@ export class WebGPURenderer implements Renderer {
 
   static async create(canvas: HTMLCanvasElement | OffscreenCanvas): Promise<WebGPURenderer> {
     if (!navigator.gpu) throw new Error("WebGPU not available");
-    const adapter = await navigator.gpu.requestAdapter();
+    // GPU preference (Settings ▸ Performance) — a hint for dual-GPU machines.
+    // In the export worker localStorage is absent, so prefs resolve to
+    // "default" there; the live choice is what matters.
+    const pref = getPrefs().powerPreference;
+    const adapter = await navigator.gpu.requestAdapter(
+      pref === "default" ? undefined : { powerPreference: pref },
+    );
     if (!adapter) throw new Error("No WebGPU adapter");
     const device = await adapter.requestDevice();
     const renderer = new WebGPURenderer(canvas, device);

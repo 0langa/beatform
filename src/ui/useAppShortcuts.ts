@@ -55,7 +55,10 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
       // (This branch used to sit BELOW a blanket INPUT/SELECT/TEXTAREA guard,
       // so touching any slider silently killed Ctrl+Z/Y/S/O until focus moved.)
       if (e.ctrlKey || e.metaKey) {
-        if (e.key === "s" || e.key === "S") {
+        if (e.key === ",") {
+          e.preventDefault();
+          s.setShowSettings(!s.showSettings);
+        } else if (e.key === "s" || e.key === "S") {
           e.preventDefault();
           void s.saveProject();
         } else if (e.key === "o" || e.key === "O") {
@@ -151,6 +154,7 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
           break;
         case "Escape":
           s.setShowHelp(false);
+          s.setShowSettings(false);
           if (!s.exporting) s.setShowExport(false);
           // Never let Escape dismiss a running queue out from under itself.
           if (s.batchStatus !== "running") s.setShowBatch(false);

@@ -114,6 +114,7 @@ import {
   loadStoredExportSettings,
   markSessionDirty,
 } from "./persistence";
+import { getPrefs, setPrefs } from "./prefs";
 import { crossedBoundary, hasFutureBoundary, type QuantizeMode } from "./quantize";
 import { type MidiBinding, type MidiLearn } from "./midi";
 import type { SliceCtx } from "./slices/ctx";
@@ -185,6 +186,8 @@ interface SessionSlice {
   dragOver: boolean;
   showPanel: boolean;
   showHelp: boolean;
+  /** App-settings dialog (Ctrl+,). */
+  showSettings: boolean;
   showExport: boolean;
   error: string | null;
   /** Transient positive feedback (project saved, preset imported, …). */
@@ -356,6 +359,7 @@ interface Actions {
   setDragOver(v: boolean): void;
   setShowPanel(v: boolean | ((prev: boolean) => boolean)): void;
   setShowHelp(v: boolean): void;
+  setShowSettings(v: boolean): void;
   /** Dismiss the error toast — real errors have no timer, so a stale one would
    * otherwise sit over the whole session, including Stage mode. (The degraded-
    * renderer message that first motivated this now uses the notice channel.) */
@@ -701,7 +705,7 @@ export const useVizStore = create<VizState>((set, get) => {
       void writeAutosave(serializeProject(docOf(get()), APP_VERSION)).catch((e) =>
         console.error("[autosave]", e),
       );
-    }, 5000);
+    }, getPrefs().autosaveIntervalSec * 1000);
   };
 
   // The shared closure surface handed to every slice factory.
@@ -759,6 +763,7 @@ export const useVizStore = create<VizState>((set, get) => {
     dragOver: false,
     showPanel: loadStoredPanelOpen(),
     showHelp: false,
+    showSettings: false,
     showExport: false,
     error: null,
     notice: null,
@@ -772,7 +777,7 @@ export const useVizStore = create<VizState>((set, get) => {
     trackKey: null,
     sections: [],
     waveformOverview: null,
-    showTimeline: localStorage.getItem("viz.timelineOpen") === "1",
+    showTimeline: getPrefs().timelineOpen,
     analyzing: false,
     undoDepth: 0,
     redoDepth: 0,
@@ -1226,7 +1231,7 @@ export const useVizStore = create<VizState>((set, get) => {
 
     setShowTimeline(v) {
       set({ showTimeline: v });
-      localStorage.setItem("viz.timelineOpen", v ? "1" : "0");
+      setPrefs({ timelineOpen: v });
     },
 
     setPost(patch) {
@@ -1448,6 +1453,10 @@ export const useVizStore = create<VizState>((set, get) => {
       const next = typeof v === "function" ? v(get().showPanel) : v;
       set({ showPanel: next });
       saveStoredPanelOpen(next);
+    },
+
+    setShowSettings(showSettings) {
+      set({ showSettings });
     },
 
     setShowHelp(showHelp) {

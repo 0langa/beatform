@@ -25,6 +25,7 @@ import { EmptyState } from "./ui/EmptyState";
 import { useFocusTrap } from "./ui/useFocusTrap";
 import { useAppShortcuts, toggleFullscreen } from "./ui/useAppShortcuts";
 import { ExportDialog } from "./ui/ExportDialog";
+import { SettingsDialog } from "./ui/SettingsDialog";
 import {
   IconBatch,
   IconClose,
@@ -58,6 +59,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ["T", "Timeline panel"],
   ["B", "Batch render"],
   ["Q", "Music library"],
+  ["Ctrl+,", "App settings"],
   ["?", "This shortcut list"],
 ];
 
@@ -87,6 +89,7 @@ export default function App() {
   const dragOver = useVizStore((s) => s.dragOver);
   const showPanel = useVizStore((s) => s.showPanel);
   const showHelp = useVizStore((s) => s.showHelp);
+  const showSettings = useVizStore((s) => s.showSettings);
   const showExport = useVizStore((s) => s.showExport);
   const error = useVizStore((s) => s.error);
   const notice = useVizStore((s) => s.notice);
@@ -194,7 +197,7 @@ export default function App() {
     }
   }, [update]);
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri() || !getPrefs().updateAutoCheck) return;
     const t = setTimeout(() => void runUpdateCheck(false), 5000);
     return () => clearTimeout(t);
   }, [runUpdateCheck]);
@@ -1007,51 +1010,18 @@ export default function App() {
               ))}
             </div>
             <div className="about-line">Beatform v{APP_VERSION}</div>
-            {isTauri() && (
-              <div className="update-line">
-                {update.state === "available" ? (
-                  <>
-                    <span>Version {update.version} is available</span>
-                    <button className="ghost-btn accent" onClick={() => void installUpdate()}>
-                      Update now
-                    </button>
-                  </>
-                ) : update.state === "downloading" ? (
-                  <span aria-live="polite">
-                    Downloading update…{" "}
-                    {update.total
-                      ? `${Math.round((update.received / update.total) * 100)}%`
-                      : `${(update.received / 1e6).toFixed(0)} MB`}
-                  </span>
-                ) : update.state === "ready" ? (
-                  <>
-                    <span>Version {update.version} installed</span>
-                    <button className="ghost-btn accent" onClick={() => void relaunchApp()}>
-                      Restart now
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span aria-live="polite">
-                      {update.state === "checking"
-                        ? "Checking for updates…"
-                        : update.state === "none"
-                          ? "You're on the newest version"
-                          : update.state === "error"
-                            ? `Update check failed: ${update.message}`
-                            : ""}
-                    </span>
-                    <button
-                      className="ghost-btn"
-                      disabled={update.state === "checking"}
-                      onClick={() => void runUpdateCheck(true)}
-                    >
-                      Check for updates
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
+            <div className="update-line">
+              <button
+                className="ghost-btn"
+                title="App preferences: autosave, performance, updates (Ctrl+,)"
+                onClick={() => {
+                  store().setShowHelp(false);
+                  store().setShowSettings(true);
+                }}
+              >
+                App settings…
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1077,6 +1047,14 @@ export default function App() {
       )}
 
       {showExport && <ExportDialog />}
+      {showSettings && (
+        <SettingsDialog
+          update={update}
+          onCheckUpdate={() => void runUpdateCheck(true)}
+          onInstallUpdate={() => void installUpdate()}
+          onRelaunch={() => void relaunchApp()}
+        />
+      )}
     </div>
   );
 }
