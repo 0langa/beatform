@@ -171,6 +171,8 @@ import {
   saveStoredQuantize,
   loadStoredMidiBindings,
   saveStoredMidiBindings,
+  loadStoredExportSettings,
+  saveStoredExportSettings,
   markSessionDirty,
   wasPreviousExitClean,
 } from "./persistence";
@@ -904,21 +906,28 @@ export const useVizStore = create<VizState>((set, get) => {
     analyzing: false,
     undoDepth: 0,
     redoDepth: 0,
-    exportSettings: {
-      // The aspect persists across launches; the resolution must match it or
-      // the export select renders blank and exports the wrong shape.
-      resIdx: reconciledResIdx(loadStoredAspect(), 1),
-      codec: "h264" as const,
-      fps: 60,
-      autoRate: true,
-      manualMbps: 12,
-      mode: "video" as const,
-      canvasStart: 0,
-      canvasDuration: 6,
-      format: "mp4" as const,
-      loudnessTarget: null,
-      truePeakDb: -1,
-    },
+    exportSettings: (() => {
+      const stored = loadStoredExportSettings();
+      // Sidecar/PNG formats need the desktop; a persisted one loading in the
+      // browser dev build would render a dead Export dialog.
+      if (!isTauri() && stored.format && stored.format !== "mp4") delete stored.format;
+      return {
+        codec: "h264" as const,
+        fps: 60,
+        autoRate: true,
+        manualMbps: 12,
+        mode: "video" as const,
+        canvasStart: 0,
+        canvasDuration: 6,
+        format: "mp4" as const,
+        loudnessTarget: null,
+        truePeakDb: -1,
+        ...stored,
+        // The aspect persists across launches; the resolution must match it or
+        // the export select renders blank and exports the wrong shape.
+        resIdx: reconciledResIdx(loadStoredAspect(), stored.resIdx ?? 1),
+      };
+    })(),
     batch: null,
     batchStatus: "idle" as const,
     batchScanning: 0,
@@ -1970,6 +1979,7 @@ export const useVizStore = create<VizState>((set, get) => {
         next.format = "mp4";
       }
       set({ exportSettings: next });
+      saveStoredExportSettings(next);
     },
 
     async runExport() {

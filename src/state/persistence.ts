@@ -19,6 +19,7 @@ import { validLyricStyle, type LyricStyle } from "./lyrics";
 import { validAudiogram, type AudiogramSettings } from "./audiogram";
 import { isQuantizeMode, type QuantizeMode } from "./quantize";
 import { validMidiBindings, type MidiBinding } from "./midi";
+import type { ExportSettings } from "./store";
 
 /**
  * localStorage persistence for the current session. Keys and formats are the
@@ -267,6 +268,60 @@ export function loadStoredAudiogram(): AudiogramSettings {
 
 export function saveStoredAudiogram(a: AudiogramSettings): void {
   localStorage.setItem(LS_AUDIOGRAM, JSON.stringify(a));
+}
+
+const LS_EXPORT = "viz.exportSettings.v1";
+
+/** Export-dialog settings survive relaunch (they were session-only, so every
+ * launch reset resolution/codec/fps/format — a daily paper cut). Returns a
+ * validated PARTIAL: the store merges it over its defaults, so a malformed or
+ * stale field falls back individually instead of rejecting the whole blob. */
+export function loadStoredExportSettings(): Partial<ExportSettings> {
+  const raw = readJson<Partial<ExportSettings> | null>(LS_EXPORT, null);
+  if (typeof raw !== "object" || raw === null) return {};
+  const out: Partial<ExportSettings> = {};
+  const num = (v: unknown, lo: number, hi: number): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : undefined;
+  if (typeof raw.resIdx === "number" && Number.isInteger(raw.resIdx) && raw.resIdx >= 0) {
+    out.resIdx = raw.resIdx; // reconciledResIdx clamps against the aspect's list
+  }
+  if (raw.fps === 30 || raw.fps === 60) out.fps = raw.fps;
+  if (typeof raw.autoRate === "boolean") out.autoRate = raw.autoRate;
+  const mbps = num(raw.manualMbps, 1, 100);
+  if (mbps !== undefined) out.manualMbps = mbps;
+  if (raw.codec === "h264" || raw.codec === "hevc" || raw.codec === "av1" || raw.codec === "vp9a") {
+    out.codec = raw.codec; // the boot-time support probe degrades unsupported ones
+  }
+  if (raw.mode === "video" || raw.mode === "canvas") out.mode = raw.mode;
+  const cs = num(raw.canvasStart, 0, 36000);
+  if (cs !== undefined) out.canvasStart = cs;
+  const cd = num(raw.canvasDuration, 3, 8);
+  if (cd !== undefined) out.canvasDuration = cd;
+  if (
+    raw.format === "mp4" ||
+    raw.format === "png" ||
+    raw.format === "prores" ||
+    raw.format === "gif" ||
+    raw.format === "webp"
+  ) {
+    out.format = raw.format;
+  }
+  if (raw.loudnessTarget === null) out.loudnessTarget = null;
+  else {
+    const lt = num(raw.loudnessTarget, -36, -6);
+    if (lt !== undefined) out.loudnessTarget = lt;
+  }
+  const tp = num(raw.truePeakDb, -6, 0);
+  if (tp !== undefined) out.truePeakDb = tp;
+  return out;
+}
+
+export function saveStoredExportSettings(s: ExportSettings): void {
+  try {
+    localStorage.setItem(LS_EXPORT, JSON.stringify(s));
+  } catch {
+    // Quota — settings stay session-only; nothing depends on this write.
+  }
 }
 
 const LS_ASPECT = "viz.aspect.v1";

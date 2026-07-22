@@ -15,6 +15,32 @@ export interface FileFilter {
   extensions: string[];
 }
 
+/** Remember the folder of the last save/pick so every dialog opens where the
+ * user actually works instead of the OS default, every single time. */
+const LS_LAST_SAVE_DIR = "viz.lastSaveDir.v1";
+
+function rememberSaveDir(path: string): void {
+  const cut = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+  if (cut <= 0) return;
+  try {
+    localStorage.setItem(LS_LAST_SAVE_DIR, path.slice(0, cut));
+  } catch {
+    // Quota — losing the remembered folder is harmless.
+  }
+}
+
+/** defaultPath for a save dialog: last-used folder + suggested name. */
+function defaultSavePath(defaultName: string): string {
+  try {
+    const dir = localStorage.getItem(LS_LAST_SAVE_DIR);
+    if (!dir) return defaultName;
+    const sep = dir.includes("\\") ? "\\" : "/";
+    return `${dir}${sep}${defaultName}`;
+  } catch {
+    return defaultName;
+  }
+}
+
 /** Save text to a user-chosen location. Returns the path/name, null on cancel. */
 export async function saveTextFile(
   defaultName: string,
@@ -24,8 +50,9 @@ export async function saveTextFile(
   if (isTauri()) {
     const { save } = await import("@tauri-apps/plugin-dialog");
     const { writeTextFile } = await import("@tauri-apps/plugin-fs");
-    const path = await save({ defaultPath: defaultName, filters });
+    const path = await save({ defaultPath: defaultSavePath(defaultName), filters });
     if (!path) return null;
+    rememberSaveDir(path);
     await writeTextFile(path, contents);
     return path;
   }
@@ -42,8 +69,9 @@ export async function saveBinaryFile(
   if (isTauri()) {
     const { save } = await import("@tauri-apps/plugin-dialog");
     const { writeFile } = await import("@tauri-apps/plugin-fs");
-    const path = await save({ defaultPath: defaultName, filters });
+    const path = await save({ defaultPath: defaultSavePath(defaultName), filters });
     if (!path) return null;
+    rememberSaveDir(path);
     await writeFile(path, new Uint8Array(await data.arrayBuffer()));
     return path;
   }
@@ -69,7 +97,9 @@ export async function pickSavePath(
   filters: FileFilter[],
 ): Promise<string | null> {
   const { save } = await import("@tauri-apps/plugin-dialog");
-  return save({ defaultPath: defaultName, filters });
+  const path = await save({ defaultPath: defaultSavePath(defaultName), filters });
+  if (path) rememberSaveDir(path);
+  return path;
 }
 
 /** Tauri only: write a blob to a previously picked path. */
