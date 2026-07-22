@@ -1,10 +1,15 @@
 import type { PresetDef } from "../types";
 
 /**
- * Structured tunnel: the wall is a grid of spoke x ring tiles (checkerboard
- * shaded) so depth motion is readable. The spectrum lights tiles at their
- * angle, beats flash the grout lines and kick the speed — the sync is
- * explicit, not ambient.
+ * A real tube you fly down, not a zoomed disc. The wall is unwrapped with the
+ * pinhole depth 1/r (frame centre = the far vanishing point, frame edge = the
+ * near mouth), and every wall feature streams outward from the centre toward
+ * the viewer as time advances — the actual motion of travelling down a pipe.
+ * Circular rings rush past in depth; longitudinal flutes run down the tube's
+ * length and CONVERGE at the vanishing point (the strongest "this is a round
+ * 3D tube" cue); a one-sided cylinder shade curves the wall; fog recedes the
+ * far end into haze. Spectrum lights the circumference, beats send a ring of
+ * light receding to the core, and a corkscrew twist reads as a waterslide.
  */
 export const tunnelRings: PresetDef = {
   id: "tunnel-rings",
@@ -33,6 +38,7 @@ export const tunnelRings: PresetDef = {
         speed: 0.55,
         rings: 11,
         spokes: 20,
+        twist: 1.8,
         beatSpeed: 0.22,
         beatPulse: 0.9,
         fogFar: 1.0,
@@ -237,88 +243,115 @@ export const tunnelRings: PresetDef = {
       default: 1,
       hint: "Fold the tunnel into mirrored wedges — 1 is off, 2 mirrors left/right, higher makes a kaleidoscope",
     },
+    {
+      key: "twist",
+      label: "Corkscrew",
+      min: 0,
+      max: 3,
+      step: 0.05,
+      default: 0.8,
+      hint: "Spirals the flutes down the tube like a waterslide auger",
+    },
+    {
+      key: "roundness",
+      label: "Roundness",
+      min: 0,
+      max: 1,
+      step: 0.05,
+      default: 0.6,
+      hint: "Cylinder shading — a lit and a shadowed side so the wall reads as curved, not flat",
+    },
+    {
+      key: "surfaceWarp",
+      label: "Surface texture",
+      min: 0,
+      max: 3,
+      step: 0.05,
+      default: 1.2,
+      hint: "Worn/wet surface detail on the tube wall",
+    },
   ],
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
-  var p = centered(uv);
-  // Club mirror: fold the wall into radial wedges. 1 = off.
-  p = kaleido(p, P_mirror());
-  let r = length(p) + 1e-3;
+  // Club mirror folds the tube into radial wedges. 1 = off.
+  var p = kaleido(centered(uv), P_mirror());
+  let r = max(length(p), 2e-3);
   let a = atan2(p.y, p.x);
 
-  // --- Perspective ---------------------------------------------------------
-  // z = k/r is the actual pinhole mapping for a cylinder viewed down its
-  // axis: r -> 0 is infinitely far away. Everything else keys off THIS, so
-  // the tunnel reads as depth rather than as a dartboard.
+  // Forward speed: a cruising floor plus the sync envelope, kicked on beats.
   let kickP = max(u.driveBeat, gridPulse(6.0));
   let spd = P_speed() * (P_cruiseFloor() + u.drive * P_cruiseEnergy())
           * (1.0 + kickP * P_beatSpeed() * u.pulse);
-  let depth = 0.30 / r;                 // 0 at the rim, large toward centre
-  let z = depth + u.time * spd * 5.0;
 
-  // Tile grid in (depth, angle). Because z is 1/r, rows automatically
-  // compress toward the vanishing point — the texture-density cue that sells
-  // perspective. Row height is scaled so the compression stays legible.
-  let zq = z * P_rings() * 0.62;
-  let ang = fract(a / TAU + 0.5);
-  let aq = ang * P_spokes();
-  let cellZ = floor(zq);
-  let fz = fract(zq);
-  let fa = fract(aq);
+  // Depth. 1/r is the pinhole distance down the axis of a cylinder: the centre
+  // of the frame (r -> 0) is infinitely far, the frame edge is the near mouth
+  // of the tube. Adding time streams every wall feature from the vanishing
+  // point OUTWARD toward the viewer -- the actual motion of flying down a
+  // pipe, not a texture being zoomed.
+  let depth = 1.0 / r;
+  let travel = depth + u.time * spd * 2.2;
+  // Corkscrew: flutes spiral with depth like a waterslide auger.
+  let aTwist = a + travel * P_twist() * 0.15;
 
-  // Spectrum at this angle (mirrored so the wrap is seamless).
-  let xs = abs(ang * 2.0 - 1.0);
+  // Spectrum around the circumference, keyed to the true screen angle so it
+  // sits where the ear expects regardless of the corkscrew.
+  let xs = abs(fract(a / TAU + 0.5) * 2.0 - 1.0);
   let v = binAt(xs);
   let pk = peakAt(xs);
 
-  // --- Colour --------------------------------------------------------------
-  // Cosine palette rather than an hsl hue that drifts by hueSpread: the old
-  // version walked orange -> olive -> brown through the desaturated middle of
-  // HSL, which is exactly the mud this preset was criticised for. A cosine
-  // ramp stays saturated across its whole range. Phase is driven by the row,
-  // so consecutive rows are related colours instead of random ones.
-  let t = fract(cellZ * 0.11 + P_hue() / 360.0);
-  let spread = P_hueSpread() / 360.0;
-  let pal = cosPalette(
-    t,
-    vec3f(0.5),
-    vec3f(0.5),
-    vec3f(1.0, 1.0, 1.0) * max(spread, 0.08),
-    vec3f(0.00, 0.33, 0.67)
-  );
+  // Cosine palette by depth -- consecutive rings are related, saturated
+  // colours instead of a drifting hue (a drifting hue is how this went muddy).
+  let t = fract(travel * 0.05 + P_hue() / 360.0);
+  let spread = max(P_hueSpread() / 360.0, 0.08);
+  let pal = cosPalette(t, vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, vec3f(0.0, 0.33, 0.67));
 
-  // Tile brightness: quiet base, spectrum on top, and a per-row shimmer that
-  // replaces the old hard checkerboard (which read as a flat dartboard).
-  let odd = f32(i32(cellZ) & 1);
-  let shimmer = 0.5 + 0.5 * sin(cellZ * 1.7 + u.time * 0.6);
-  // Alternating row lift keeps consecutive rows distinguishable; without it
-  // the bands blur together and the tunnel stops reading as motion.
-  var lit = P_tileLevel() * (0.55 + odd * 0.45) + v * P_tileSpectrum()
-          + shimmer * P_checker() * 0.5;
-  var tile = pal * lit * (0.35 + P_tileSat() * 0.9);
+  // Circular rings stacked in depth, rushing outward past the viewer. Thin
+  // BRIGHT bands on a dark wall (high contrast) read as pipe segments flying
+  // by -- the previous version summed everything to a flat wash.
+  let ringF = travel * P_rings() * 0.35;
+  let ringD = fract(ringF);
+  let ringLine = smoothstep(P_groutWidth() * 1.6, 0.0, min(ringD, 1.0 - ringD));
+  let ringParity = f32(i32(floor(ringF)) & 1);
 
-  // Grout: thin bright seams. Width shrinks with depth so distant seams stay
-  // hairlines instead of smearing into a grey wash.
-  let gw = P_groutWidth() * clamp(r * 2.2, 0.25, 1.6);
-  let lz = smoothstep(gw, 0.0, min(fz, 1.0 - fz));
-  let la = smoothstep(gw * 1.4, 0.0, min(fa, 1.0 - fa));
-  let line = max(lz, la);
-  tile += pal * line * P_groutLevel() * (0.6 + v * 1.4);
+  // Longitudinal flutes running down the tube LENGTH and converging at the
+  // vanishing point. Converging perspective lines are the single strongest
+  // "this is a round 3D tube" cue.
+  let fluteF = aTwist / TAU * P_spokes();
+  let fluteD = fract(fluteF);
+  let fluteLine = smoothstep(P_groutWidth() * 2.2, 0.0, min(fluteD, 1.0 - fluteD));
+  let fluteShade = 0.5 + 0.5 * cos(fluteF * TAU);
 
-  // Peak-hold crown: the loudest angles get a near-white filament. A hot,
-  // desaturated core is what makes a bright thing read as EMITTING rather
-  // than merely being light-coloured.
-  tile += vec3f(1.0, 0.98, 0.94) * line * pk * pk * P_groutLevel() * 1.2;
+  // Wall surface texture, scrolling WITH the wall so it reads as a worn/wet
+  // surface rather than a flat gradient.
+  let surf = warpFbm(vec2f(a / TAU * 5.0, travel * 0.4), P_surfaceWarp() * (0.4 + u.mid * 0.8));
 
-  // --- Depth cues ----------------------------------------------------------
-  // Atmospheric attenuation: brightness falls off with distance into the
-  // tunnel, so the vanishing point recedes instead of glowing at us. This is
-  // the single biggest reason the old version looked flat.
-  let fog = exp(-depth * P_fogFar() * 0.55);
-  let rim = smoothstep(P_fogNear() * 0.5, P_fogNear() * 0.5 + 0.25, r);
-  var col = tile * fog * rim;
+  // Cylinder shading: light the round cross-section from one side so there is
+  // a lit stripe and a shadowed stripe around the circumference -- the wall
+  // curves away instead of reading flat.
+  let round = mix(1.0, 0.3 + 0.7 * (0.5 + 0.5 * cos(a - 2.2)), P_roundness());
 
-  // Travelling beat ring, launched at the viewer and running to the horizon.
+  // Wall base: DARK, lifted by structure + spectrum. Alternating ring parity
+  // (checker) gives neighbouring segments distinct tone so travel reads.
+  var lit = P_tileLevel() * (0.55 + ringParity * P_checker())
+          + fluteShade * 0.22
+          + surf * 0.3
+          + v * P_tileSpectrum();
+  var col = pal * lit * (0.35 + P_tileSat() * 0.9) * round;
+
+  // Bright seams (ring + flute lines), spectrum-lit; the loudest angle's seams
+  // flare near-white (a hot desaturated core reads as emitting).
+  let seam = max(ringLine, fluteLine);
+  col += pal * seam * P_groutLevel() * (0.6 + v * 1.6);
+  col += vec3f(1.0, 0.98, 0.94) * seam * pk * pk * P_groutLevel() * 1.4;
+
+  // Depth cue: near (frame edge) bright, far (centre) recedes into haze. This
+  // is what turns a flat disc into a tube you are flying INTO.
+  let near = smoothstep(P_fogNear() * 0.4, 0.6, r);
+  let far = 1.0 - exp(-depth * P_fogFar() * 0.35);
+  col *= near;
+  col = mix(col, pal * 0.05, clamp(far, 0.0, 0.9));
+
+  // Travelling beat ring, launched at the viewer and receding to the core.
   var pt = 1.0 - u.driveBeat;
   var amp = u.driveBeat;
   if (u.bpm > 0.5) {
@@ -326,18 +359,16 @@ fn preset(uv: vec2f) -> vec4f {
     amp = max(exp(-u.beatPhase * 3.0) - 0.05, 0.0) / 0.95;
   }
   if (amp > 0.01) {
-    let pulseR = mix(0.72, 0.04, pt);
-    let pulse = exp(-abs(r - pulseR) * P_pulseWidth()) * amp * P_beatPulse();
-    col += mix(pal, vec3f(1.0), 0.45) * pulse * 1.6;
+    let ringR = mix(0.62, 0.05, pt);
+    col += mix(pal, vec3f(1.0), 0.5) * exp(-abs(r - ringR) * P_pulseWidth()) * amp * P_beatPulse() * 1.6;
   }
 
-  // Vanishing-point core: small, hot, and gated on the envelope so it pumps.
-  col += mix(pal, vec3f(1.0), 0.6) * exp(-r * 16.0)
-       * (P_centerGlow() * 0.8 + u.drive * 0.5 + kickP * 0.35);
+  // Hot vanishing core: the bright far point you are flying toward.
+  col += mix(pal, vec3f(1.0), 0.6) * exp(-r * 14.0)
+       * (P_centerGlow() + u.drive * 0.5 + kickP * 0.4);
 
-  // --- Finishing -----------------------------------------------------------
   col *= vignette(uv, P_vignette());
-  col = tonemap(col * 1.15);
+  col = tonemap(col * 1.25);
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
