@@ -43,7 +43,11 @@ jobs:
       - run: cargo test --lib
         working-directory: src-tauri
 
+      # The signing key produces the .sig updater artifacts the in-app
+      # auto-updater verifies against the pubkey pinned in tauri.conf.json.
       - run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
       - name: Stage assets with clean names
         shell: bash
@@ -56,6 +60,35 @@ jobs:
           cp "src-tauri/target/release/bundle/msi/Beatform_${VERSION}_x64_en-US.msi" \
              "dist-release/Beatform_${VERSION}_x64_en-US.msi"
           (cd dist-release && sha256sum *.exe *.msi > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      # latest.json is what installed apps poll (releases/latest/download/
+      # latest.json). NSIS-only by policy: Tauri's silent in-place update is
+      # built around the NSIS installer; the MSI stays a manual/enterprise
+      # option outside auto-update.
+      - name: Build the updater manifest (latest.json)
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          SIG_FILE="src-tauri/target/release/bundle/nsis/Beatform_${VERSION}_x64-setup.exe.sig"
+          if [ ! -f "$SIG_FILE" ]; then
+            echo "::error::updater signature missing — TAURI_SIGNING_PRIVATE_KEY secret not set?"
+            exit 1
+          fi
+          export V="$VERSION"
+          export SIG="$(cat "$SIG_FILE")"
+          export URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/Beatform_${VERSION}_x64-setup.exe"
+          export PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          node -e "
+            const fs = require('fs');
+            fs.writeFileSync('dist-release/latest.json', JSON.stringify({
+              version: process.env.V,
+              notes: 'See the release notes: https://github.com/' + process.env.GITHUB_REPOSITORY + '/releases/tag/v' + process.env.V,
+              pub_date: process.env.PUB_DATE,
+              platforms: { 'windows-x86_64': { signature: process.env.SIG, url: process.env.URL } },
+            }, null, 2));
+          "
+          cat dist-release/latest.json
 
       - name: Attach to the GitHub release (create draft if missing, skip existing assets)
         shell: bash

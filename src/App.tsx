@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { demos } from "./audio/demoTrack";
 import { BG_TRANSPARENT, DEFAULT_POST } from "./render/types";
 import { presets, presetById } from "./render/presets";
@@ -26,6 +26,12 @@ import {
 import { PlayerBar, type PlayerBarProps } from "./ui/PlayerBar";
 import { LibraryPanel, type LibraryPanelProps } from "./ui/LibraryPanel";
 import { isTauri } from "./state/platform";
+import {
+  checkForUpdate,
+  downloadAndInstallUpdate,
+  relaunchApp,
+  type UpdatePhase,
+} from "./state/updater";
 import { midiSupported } from "./state/midiInput";
 import { audiogramActive } from "./state/audiogram";
 import { TimelinePanel, type TimelinePanelProps } from "./ui/TimelinePanel";
@@ -201,6 +207,38 @@ export default function App() {
   // focus, no focus restore").
   const helpDialogRef = useFocusTrap(showHelp);
   const exportDialogRef = useFocusTrap(showExport);
+
+  // Auto-updater (desktop): silent check shortly after boot; manual check +
+  // install live in the Help modal. Local state on purpose — this is UI
+  // phase, not document/session state (it moves to the Settings page later).
+  const [update, setUpdate] = useState<UpdatePhase>({ state: "idle" });
+  const runUpdateCheck = useCallback(async (manual: boolean) => {
+    setUpdate({ state: "checking" });
+    try {
+      const found = await checkForUpdate();
+      setUpdate(found ? { state: "available", ...found } : { state: "none" });
+    } catch (e) {
+      // Offline at boot is normal — only a MANUAL check reports the failure.
+      setUpdate(manual ? { state: "error", message: (e as Error).message } : { state: "idle" });
+    }
+  }, []);
+  const installUpdate = useCallback(async () => {
+    const version = update.state === "available" ? update.version : "";
+    setUpdate({ state: "downloading", received: 0, total: null });
+    try {
+      await downloadAndInstallUpdate((received, total) =>
+        setUpdate({ state: "downloading", received, total }),
+      );
+      setUpdate({ state: "ready", version });
+    } catch (e) {
+      setUpdate({ state: "error", message: (e as Error).message });
+    }
+  }, [update]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    const t = setTimeout(() => void runUpdateCheck(false), 5000);
+    return () => clearTimeout(t);
+  }, [runUpdateCheck]);
 
   // Stable callback props for the six memoized panels below (H13): memo()
   // does nothing if a component receives a FRESH function reference every
@@ -1379,6 +1417,51 @@ export default function App() {
               ))}
             </div>
             <div className="about-line">Beatform v{APP_VERSION}</div>
+            {isTauri() && (
+              <div className="update-line">
+                {update.state === "available" ? (
+                  <>
+                    <span>Version {update.version} is available</span>
+                    <button className="ghost-btn accent" onClick={() => void installUpdate()}>
+                      Update now
+                    </button>
+                  </>
+                ) : update.state === "downloading" ? (
+                  <span aria-live="polite">
+                    Downloading update…{" "}
+                    {update.total
+                      ? `${Math.round((update.received / update.total) * 100)}%`
+                      : `${(update.received / 1e6).toFixed(0)} MB`}
+                  </span>
+                ) : update.state === "ready" ? (
+                  <>
+                    <span>Version {update.version} installed</span>
+                    <button className="ghost-btn accent" onClick={() => void relaunchApp()}>
+                      Restart now
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span aria-live="polite">
+                      {update.state === "checking"
+                        ? "Checking for updates…"
+                        : update.state === "none"
+                          ? "You're on the newest version"
+                          : update.state === "error"
+                            ? `Update check failed: ${update.message}`
+                            : ""}
+                    </span>
+                    <button
+                      className="ghost-btn"
+                      disabled={update.state === "checking"}
+                      onClick={() => void runUpdateCheck(true)}
+                    >
+                      Check for updates
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

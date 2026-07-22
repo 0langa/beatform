@@ -11,6 +11,37 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.38.0] - 2026-07-22
+
+Correctness & performance closeout — the audit backlog is now empty.
+
+### Added
+
+- **Projects carry everything they render (schema v9).** Lyric style,
+  audiogram settings and any custom WGSL visual the project references now
+  travel inside the `.avproj`, so a project opened on another machine renders
+  identically — including custom visuals nobody imported separately. Older
+  files load unchanged; lyric/audiogram edits join the undo history; deleting
+  a custom visual and undoing restores it.
+- **Export settings persist** across launches, and every save dialog opens in
+  the folder you last saved to.
+
+### Fixed
+
+- **Disk-full stops an export immediately** with the real error — previously
+  a full disk at minute 5 of a 60-minute export silently rendered the
+  remaining 55 minutes into nothing.
+
+### Performance
+
+- The default render path (neutral post chain) skips the whole post graph —
+  no full-res HDR intermediate, no extra fullscreen pass per frame.
+- Crossfade/feedback/particle/3D render targets are released after ~5 s of
+  disuse instead of being retained all session (~330 MB back at 4K).
+- The audio and video encoder lanes interleave (audio no longer buffers
+  ahead of frame one), and ProRes audio stages in 8 MB chunks — long-export
+  memory is genuinely flat.
+
 ## [2.37.2] - 2026-07-22
 
 ### Performance

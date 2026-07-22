@@ -1488,6 +1488,16 @@ kbd {
   padding-top: 2px;
 }
 
+.update-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding-top: 8px;
+}
+
 /* ---------- toasts ---------- */
 
 .toast {

@@ -51,6 +51,25 @@ regular bugs — please file those as normal
 [issues](https://github.com/0langa/beatform/issues/new), not security
 reports.
 
+## Update integrity (auto-updater, v2.39.0+)
+
+- Updates are delivered as the NSIS installer from GitHub Releases and
+  verified in-app against a minisign public key pinned in the binary
+  (`tauri.conf.json → plugins.updater.pubkey`). An update payload that does
+  not carry a valid signature is refused before anything runs.
+- The signing private key exists only in this repository's GitHub Actions
+  secrets and the maintainer's offline backup. **If the key is lost**, the
+  next release cannot be auto-delivered: install it manually once from the
+  releases page — it ships with a freshly pinned key. **If the key is
+  compromised**, it is rotated the same way and affected release assets are
+  removed.
+- The updater's network activity is the app's only network activity: a fetch
+  of `latest.json` and the installer from `github.com` release assets. No
+  telemetry rides along.
+- Installers are not Authenticode-signed (no code-signing certificate), so
+  SmartScreen may warn on first manual install; `SHA256SUMS.txt` on each
+  release is the manual verification path.
+
 ## Response
 
 This is a small, independently maintained project with no dedicated

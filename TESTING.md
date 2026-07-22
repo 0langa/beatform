@@ -12,6 +12,11 @@ Mark each ✅ / ❌ with a note. Grouped by what it exercises.
 
 - [ ] Installer runs; app launches; a demo track plays and renders with no console errors.
 - [ ] ffmpeg sidecar present — ProRes / GIF / WebP export options are enabled (not greyed).
+- [ ] **Auto-updater**: install the PREVIOUS release, launch, wait ~10 s or use
+      Help ▸ "Check for updates" — it detects the newer version; "Update now"
+      downloads with progress, "Restart now" relaunches into the new version
+      (Help modal shows the new number). Offline, the startup check stays
+      silent and the manual check reports a readable error.
 
 ## Core render & export
 

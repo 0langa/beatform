@@ -104,6 +104,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        // Auto-updater: checks the signed latest.json on GitHub Releases;
+        // process provides relaunch() after an update installs.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(loopback::LoopbackCtl::default())
         .manage(prores::ProresState::default())
         .invoke_handler(tauri::generate_handler![

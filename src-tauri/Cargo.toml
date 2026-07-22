@@ -26,4 +26,6 @@ serde_json = "1"
 lofty = "0.24.0"
 walkdir = "2.5.0"
 cpal = "0.18.1"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
