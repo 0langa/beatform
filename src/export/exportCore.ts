@@ -566,62 +566,63 @@ export async function runExportJob(
       }
       limiter.process(prime, lat, channels);
     }
-    for (let pos = 0; (audioEncoder || webmAudio) && pos < pcm.length; pos += CHUNK) {
-      abort();
-      // A dead audio encoder otherwise only surfaces as a cryptic
-      // InvalidStateError from the next encode() call — throw the real cause.
-      if (encoderError) throw encoderError;
-      const frames = Math.min(CHUNK, pcm.length - pos);
-      for (let ch = 0; ch < channels; ch++) {
-        const src = pcm.channels[ch];
-        const off = ch * frames;
-        const from = pos + lat;
-        const n = Math.max(0, Math.min(frames, src.length - from));
-        if (n > 0) planar.set(src.subarray(from, from + n), off);
-        // Zero-pad past the end so the limiter can flush its look-ahead.
-        if (n < frames) planar.fill(0, off + n, off + frames);
-      }
-      limiter?.process(planar, frames, channels);
-      const data = new AudioData({
-        format: "f32-planar",
-        sampleRate,
-        numberOfFrames: frames,
-        numberOfChannels: channels,
-        timestamp: Math.round((pos * 1e6) / sampleRate),
-        data: planar.subarray(0, frames * channels),
-      });
-      if (webmAudio) {
-        // add() awaits the internal encode queue — backpressure built in.
-        // Closing the sample closes the wrapped AudioData. finally: a rejection
-        // mid-queue would otherwise leak both.
-        const sample = new AudioSample(data);
-        try {
-          await webmAudio.add(sample);
-        } finally {
-          sample.close();
+    // The audio lane is a PUMP the video loop drives incrementally (M9).
+    // Draining the whole track before the first video frame forced the muxer
+    // to buffer every encoded audio chunk (~86 MB per hour, plus hundreds of
+    // thousands of sample-metadata objects) until a video DTS existed. The
+    // video loop now pumps audio just ahead of the frame it encodes, so the
+    // muxer interleaves lanes as it goes and memory stays genuinely flat.
+    let audioPos = 0;
+    const pumpAudioTo = async (targetSample: number): Promise<void> => {
+      if (!audioEncoder && !webmAudio) return;
+      const end = Math.min(targetSample, pcm.length);
+      while (audioPos < end) {
+        abort();
+        // A dead audio encoder otherwise only surfaces as a cryptic
+        // InvalidStateError from the next encode() call — throw the real cause.
+        if (encoderError) throw encoderError;
+        const pos = audioPos;
+        const frames = Math.min(CHUNK, pcm.length - pos);
+        for (let ch = 0; ch < channels; ch++) {
+          const src = pcm.channels[ch];
+          const off = ch * frames;
+          const from = pos + lat;
+          const n = Math.max(0, Math.min(frames, src.length - from));
+          if (n > 0) planar.set(src.subarray(from, from + n), off);
+          // Zero-pad past the end so the limiter can flush its look-ahead.
+          if (n < frames) planar.fill(0, off + n, off + frames);
         }
-      } else {
-        try {
-          audioEncoder!.encode(data);
-        } finally {
-          data.close();
+        limiter?.process(planar, frames, channels);
+        const data = new AudioData({
+          format: "f32-planar",
+          sampleRate,
+          numberOfFrames: frames,
+          numberOfChannels: channels,
+          timestamp: Math.round((pos * 1e6) / sampleRate),
+          data: planar.subarray(0, frames * channels),
+        });
+        if (webmAudio) {
+          // add() awaits the internal encode queue — backpressure built in.
+          // Closing the sample closes the wrapped AudioData. finally: a
+          // rejection mid-queue would otherwise leak both.
+          const sample = new AudioSample(data);
+          try {
+            await webmAudio.add(sample);
+          } finally {
+            sample.close();
+          }
+        } else {
+          try {
+            audioEncoder!.encode(data);
+          } finally {
+            data.close();
+          }
+          // Backpressure the audio lane too.
+          if (audioEncoder!.encodeQueueSize > QUEUE_MAX) await waitForDrain(audioEncoder!);
         }
-        // Backpressure the audio lane too: without it the whole track is
-        // queued synchronously ahead of the first video frame, and peak memory
-        // scales with track length — the opposite of the flat-memory
-        // guarantee.
-        if (audioEncoder!.encodeQueueSize > QUEUE_MAX) await waitForDrain(audioEncoder!);
+        audioPos = pos + frames;
       }
-    }
-    if (limiter) {
-      const r = limiter.report;
-      loudnessResult = {
-        inputLufs: normInputLufs,
-        gainDb: normGainDb,
-        peakInDb: r.peakInDb,
-        reductionDb: r.reductionDb,
-      };
-    }
+    };
 
     // --- Video lane: deterministic frame walk. Per-frame preset/params/mods/
     // background come from resolveActiveFrame — the SAME pure function the live
@@ -784,10 +785,25 @@ export async function runExportJob(
       if (videoEncoder && videoEncoder.encodeQueueSize > QUEUE_MAX) {
         await waitForDrain(videoEncoder);
       }
+      // M9: keep the audio lane one chunk ahead of the video timestamp just
+      // encoded, so the muxer can interleave instead of buffering a lane.
+      await pumpAudioTo(Math.ceil(((n + 1) / job.fps) * sampleRate) + CHUNK);
       // No timer-based yield here: gpuDone() above already yields the event
       // loop every frame (timers are throttled to 1s in hidden tabs and
       // would stall exports; GPU-completion promises are not).
       if (n % 10 === 0) hooks.onProgress?.(n, total);
+    }
+
+    // Audio may outlast the last video frame by a fraction of a chunk.
+    await pumpAudioTo(pcm.length);
+    if (limiter) {
+      const r = limiter.report;
+      loudnessResult = {
+        inputLufs: normInputLufs,
+        gainDb: normGainDb,
+        peakInDb: r.peakInDb,
+        reductionDb: r.reductionDb,
+      };
     }
 
     if (videoEncoder) await videoEncoder.flush();
