@@ -1,91 +1,151 @@
-# Beatform — Manual Testing Batch
+# Beatform — Manual Testing Batch (agent-executable)
 
-State as of **v2.44.1** (2026-07-23). The first full hardware pass ran on
-v2.44.0; every failure it found that was fixable in code is fixed in
-v2.44.1 — update in-app (Ctrl+, ▸ Updates) before continuing. Sections:
-what's **done**, what needs a **retest because it was just fixed**, and
-what's **still untested**.
+State as of **v2.44.1** (2026-07-23). Written so a computer-controlling agent
+with full PC access can execute it; items that genuinely need human senses or
+hardware are marked **HUMAN**. Mark each item ✅/❌ with a one-line note.
 
-## ✅ Verified (v2.44.0 pass — no action needed)
+## Environment facts (read first)
 
-- Installer / launch / demo track / sidecar present.
-- **Auto-updater** end-to-end (detect → download → restart into new version).
-- All 16 modes look correct; **max-settings sweep** on Bass Circle, Radial
-  Burst, Voice Orb, Metaballs, Echo Trails: smooth at the frame edge, no
-  hard circular clipping (soft frame limits confirmed on hardware).
-- Preview ≡ export; lyrics Plain/Slide/Pop live + exported.
-- Video background (VP9/WebM): Dim 0.90 / Blur 60 correct live + exported.
-- Exports decoded clean: H.264, AV1, **VP9-alpha** (`alpha_mode: 1`),
-  **ProRes 4444** (`yuva444p12le` + PCM), GIF.
-- Batch: ~20 MP3s unattended, ID3 titles, bad file doesn't kill the run.
-- Beat-quantized switching on-beat across genres; pending chip behaves.
-- Second display via OS-fullscreen + Stage mode is a usable performance
-  output.
-- Undo/redo across a real session.
-- `.avproj` partial round-trip (mode/params/aspect/video-bg incl. Dim+Blur).
-- Builder partial: duplicate/mute/blend-change/reorder all work.
+- Installed app: `C:\Users\Julius\AppData\Local\Beatform\Beatform.exe`
+  (version via `(Get-Item <path>).VersionInfo.ProductVersion` — must be ≥ 2.44.1).
+- Bundled ffmpeg (use it for probing exports AND generating test media):
+  `C:\Users\Julius\AppData\Local\Beatform\ffmpeg.exe`.
+- Autosave file: `%APPDATA%\com.olanga.audiovisualizer\autosave.avproj`.
+- **The visual canvas (WebGPU) is INVISIBLE to standard screen capture** of the
+  WebView2 window — screenshots show flat dark where the visual renders. Do
+  NOT judge visuals from screenshots. Judge via: (a) exported files probed
+  with ffmpeg/ffprobe, (b) UI chrome (buttons/panels/toasts — those DO
+  capture), (c) OBS/Game-Bar capture if available, else mark visual-quality
+  items HUMAN.
+- Native Win32 file dialogs: automate by typing the FULL PATH into the
+  file-name field and pressing Enter (arrow-key navigation is unreliable).
+- Keyboard: the app binds `[ ] \` by PHYSICAL position (works on QWERTZ):
+  previous mode = key right of P (ü on QWERTZ), next mode = second key right
+  of P (+ on QWERTZ), Stage mode = key left of Enter/below (# on QWERTZ).
+  Synthetic input should send scancodes/`e.code` (BracketLeft, BracketRight,
+  Backslash), not characters.
+- Prepare a scratch folder first: `C:\bf-test\` (media in `C:\bf-test\media`,
+  exports in `C:\bf-test\out`).
 
-## 🔁 Fixed in v2.44.1 — please retest
+### Generate test media (once, with the bundled ffmpeg)
 
-- [ ] **Loopback / live input** (was: "Unable to load a worklet's module").
-      Root cause: the audio worklet loaded from a `blob:` URL, which the
-      app's CSP correctly blocks in installed builds (dev has no CSP, so it
-      always worked there). It now ships as a bundled asset. Click the
-      broadcast icon while Spotify/a DAW plays — visuals should follow.
-- [ ] **Crash recovery** (was: no restore bar after force-kill). Root cause:
-      the autosave file had **never been written** — the fs permission set
-      granted read but not write scope for the app-data folder, and the
-      failure only ever hit the console. Scope granted; additionally, if
-      autosave ever fails again the app now shows an error instead of
-      staying silent. Retest: edit → wait ~7 s → End Task in Task Manager →
-      relaunch → "Restore your unsaved work?" bar → Restore brings edits
-      back. Normal close must show no bar.
-- [ ] **Stage mode on QWERTZ** (was: `[` entered Stage, Esc stuck). Three
-      fixes: AltGr chords (Ctrl+Alt, how QWERTZ types `[ ] \`) are never
-      treated as shortcuts anymore; the previous/next-mode and Stage keys
-      now bind to the **physical key positions** (the two keys right of P,
-      and the key below/right of them — layout-independent); **Esc is
-      handled before every other rule**, so it always exits Stage/blackout
-      even with a dropdown focused. Retest all three on your layout.
-- [ ] **Video background with unsupported codec** (was: raw "Assertion
-      failed"). Same clip should now produce a readable message naming the
-      codec problem and suggesting H.264/VP9. (Decoding old MPEG-4 Part 2
-      files is genuinely unsupported — the fix is the message, not the
-      codec.)
+```powershell
+$ff = "$env:LOCALAPPDATA\Beatform\ffmpeg.exe"
+mkdir C:\bf-test\media, C:\bf-test\out -Force
+# 60 s music-like test tone (beats via amplitude modulation)
+& $ff -y -f lavfi -i "sine=frequency=110:duration=60" -f lavfi -i "sine=frequency=440:duration=60" -filter_complex "[0][1]amix,volume='0.5+0.5*sin(2*PI*t*2)':eval=frame" C:\bf-test\media\track.wav
+# 20 tagged MP3s for batch/library
+1..20 | ForEach-Object { & $ff -y -f lavfi -i "sine=frequency=$(200+$_*20):duration=8" -metadata title="Track $_" -metadata artist="Tester" C:\bf-test\media\batch$_.mp3 }
+# video-bg clips: one good (H.264), one deliberately unsupported (MPEG-4 Part 2)
+& $ff -y -f lavfi -i "testsrc2=size=640x360:rate=30:duration=6" -c:v libx264 -pix_fmt yuv420p C:\bf-test\media\bg-good.mp4
+& $ff -y -f lavfi -i "testsrc2=size=640x360:rate=30:duration=6" -c:v mpeg4 C:\bf-test\media\bg-bad.mp4
+# lyrics
+"[00:01.00]first line`n[00:04.00]second line`n[00:08.00]third line" | Set-Content C:\bf-test\media\track.lrc
+# 2-hour source for the long-form test (tiny to generate)
+& $ff -y -f lavfi -i "sine=frequency=220:duration=7200" -c:a libmp3lame -b:a 128k C:\bf-test\media\long2h.mp3
+```
 
-## ℹ Explained — not bugs, notes updated
+## ✅ Verified (v2.44.0/2.44.1 passes — no action needed)
 
-- **HEVC missing from the codec picker**: the picker only offers codecs your
-  hardware/OS can actually encode (probed at start); this machine exposes
-  H.264/AV1/VP9 but not HEVC encode. The MP4 help text no longer implies
-  HEVC is always available.
-- **Animated WebP "undecodable by ffmpeg"**: ffmpeg cannot decode animated
-  WebP at all (long-standing upstream gap — `image data not found` is its
-  standard symptom). Verify WebP loops by opening the file in a
-  Chromium-based browser instead; the export pipeline itself was verified
-  frame-accurate there.
+Installer/launch/sidecar · auto-updater end-to-end (twice: 2.39→2.43 and
+2.44.0→2.44.1) · 16 modes look correct · max-settings sweep (no hard circular
+clipping) · preview ≡ export · lyrics anims · video-bg dim/blur · H.264, AV1,
+VP9-alpha (`alpha_mode: 1`), ProRes 4444 (`yuva444p12le` + PCM), GIF decode
+clean · batch 20 MP3s with ID3 titles + bad-file isolation · beat-quantized
+switching · OS-fullscreen + Stage as projector output · undo/redo ·
+`.avproj` partial round-trip · Builder duplicate/mute/blend/reorder.
 
-## ⬜ Still to test (untouched by the fixes)
+## 🔁 Retest on v2.44.1 (fixed since the failures)
 
-- [ ] **ProRes 4444 into Premiere/Resolve** with correct transparency
-      (needs an NLE install; the technical alpha validation already passed).
-- [ ] **Long-form**: a ~2 h mix exports; memory stays flat (< ~2 GB RSS);
-      ETA sane.
-- [ ] **PNG sequence** export completes into a picked folder (run
-      interrupted last time; no known defect).
-- [ ] `.avproj` FULL matrix: overlay layers + assets, mod routes, timeline,
-      post, motion, **lyric style + audiogram**, and a **custom WGSL
-      visual** rendering on a machine that never imported the .avshader.
-      (MIDI bindings + quantize are per-install session settings — not in
-      the file, not a bug.)
-- [ ] Library folder scan + gapless auto-advance on a real folder (blocked
-      only by dialog automation last time).
-- [ ] `.avtheme` drag-drop import; factory pack applies cleanly.
-- [ ] **Builder** remaining: add-layer from the picker, `.avbuilder`
-      export → import back, project save/reopen round-trip, export matches
-      preview.
-- [ ] **MIDI** (needs a controller): enable, learn CC → knob drives a
-      setting; learn note → mode switch (beat-quantized); unplug/replug.
+- [ ] **Loopback / live input.** Steps: play audio in any app (e.g.
+      `start https://www.youtube.com/watch?v=jNQXAC9IVRw` or a local file in
+      the browser). In Beatform click the **broadcast icon** (top bar).
+      PASS: no error toast appears (the old failure was the toast "System-audio
+      capture failed: Unable to load a worklet's module"), the icon shows the
+      live state, and the LUFS badge in the settings-panel footer (open with G)
+      moves with the external audio. Click the icon again to stop.
+- [ ] **Crash recovery.** Steps: launch app → open Demos menu → load any demo →
+      open panel (G) → change any slider → wait 8 s →
+      `powershell Stop-Process -Name beatform -Force` → verify the autosave
+      exists: `Test-Path "$env:APPDATA\com.olanga.audiovisualizer\autosave.avproj"`
+      must be **True** (this file never existed before v2.44.1 — its presence
+      is the core fix) → relaunch the app. PASS: a "Restore your unsaved
+      work?" bar is visible in the UI chrome; click **Restore**; the app
+      continues without error. Then: close the app NORMALLY, relaunch —
+      PASS: no recovery bar.
+- [ ] **Physical-key shortcuts (QWERTZ-safe).** With the app focused and a
+      demo playing: send scancode for **BracketRight** (second key right of P)
+      → the mode strip's selection advances (watch the highlighted chip — UI
+      chrome is visible to capture). Send **Backslash** scancode → all chrome
+      disappears (Stage mode). Send **Escape** → chrome returns. Then focus a
+      dropdown first (open panel, click any `<select>`), send Backslash →
+      Stage; send Escape → PASS only if chrome returns (Esc must win with a
+      dropdown focused). Finally, type text containing AltGr characters into
+      the search box (e.g. `@[]\` on QWERTZ = AltGr chords) — PASS: no mode
+      switch/stage toggle fires while typing.
+- [ ] **Unsupported video-bg codec message.** Panel (G) → Scene tab →
+      Background → Video → pick `C:\bf-test\media\bg-bad.mp4` (type the path
+      into the dialog's file-name field + Enter). PASS: an error toast appears
+      whose text names a codec problem and suggests H.264/VP9 — NOT
+      "Assertion failed". Then pick `bg-good.mp4` — PASS: loads, no error.
+
+## ⬜ Still to test
+
+- [ ] **PNG sequence export.** Load a demo → Export → Format "PNG frames" →
+      Export → in the folder dialog type `C:\bf-test\out\pngseq` + Enter.
+      Wait for the success toast. Verify:
+      `(Get-ChildItem C:\bf-test\out\pngseq\*_frames\*.png).Count` > 100 and
+      first file starts with PNG magic
+      (`(Get-Content <file> -AsByteStream -TotalCount 4)` = 137,80,78,71).
+- [ ] **Long-form export, flat memory.** Load `C:\bf-test\media\long2h.mp3`
+      (drag onto the window, or the Open button + typed path). Export → MP4 →
+      720p30 → save to `C:\bf-test\out\long.mp4`. While exporting, sample
+      memory every ~5 min:
+      `Get-Process beatform | Select-Object -Expand WorkingSet64` — PASS if
+      it stays < 2 GB throughout and the finished file plays (probe with
+      ffmpeg: duration ≈ 2 h, audio + video streams present). This runs
+      1-2 h wall-clock — schedule it last / run unattended.
+- [ ] **`.avproj` FULL matrix.** Build a maximal document: mode with edited
+      params, a text overlay layer + an image layer, a mod route, a timeline
+      with 2 scenes + 1 automation lane, non-default post + motion, edited
+      lyric style + audiogram ON, and a custom WGSL visual (Shader editor →
+      compile the default template → save). Ctrl+S → `C:\bf-test\out\full.avproj`.
+      Then: switch mode, delete the custom visual, change everything → Ctrl+O
+      the file back. PASS: every listed piece returns, INCLUDING the custom
+      visual rendering (its WGSL travels in the file since schema v9).
+      (MIDI bindings + quantize are per-install session settings — excluded
+      by design.)
+- [ ] **Library scan + auto-advance.** Q → "Choose folder…" → type
+      `C:\bf-test\media` + Enter. PASS: the 20 batch MP3s list with their
+      ID3 titles ("Track 1"…); click one → it plays (playhead moves in the
+      player bar); enable Auto-play-next → seek near the end (player-bar
+      click at ~95%) → PASS: the next track starts by itself.
+- [ ] **`.avtheme` import.** First export one: panel → Visual tab →
+      Templates → "Save as template…" → name it → save to
+      `C:\bf-test\out\mine.avtheme`. Change modes/settings, then drag the
+      file from Explorer onto the Beatform window (if drag-drop cannot be
+      automated, mark HUMAN-assist). PASS: the saved look applies. Also click
+      any factory-pack chip — PASS: applies without error.
+- [ ] **Builder file round-trip.** Select the Builder mode → Visual tab →
+      add a layer from the picker (e.g. Orb), change its blend to Add →
+      "Export .avbuilder" → `C:\bf-test\out\stack.avbuilder`. Delete/modify
+      layers, then Import… the file back. PASS: the stack (incl. the added
+      Orb with blend Add) returns. Ctrl+S / Ctrl+O a project — PASS: stack
+      survives the project round-trip.
+- [ ] **WebP loop sanity (browser, NOT ffmpeg).** Export → GIF or WebP with
+      Canvas-loop mode → save to `C:\bf-test\out\loop.webp`. ffmpeg CANNOT
+      decode animated WebP (upstream gap) — instead verify the header:
+      bytes 0-3 = "RIFF", 8-11 = "WEBP", and the file contains an "ANIM"
+      chunk (`Select-String -Path <file> -Pattern "ANIM" -Encoding ascii`
+      finds a match) — or open it in a Chromium browser and see it animate.
+- [ ] **HUMAN — ProRes 4444 into Premiere/Resolve** with correct
+      transparency (no NLE on this machine; technical alpha validation
+      already passed).
+- [ ] **HUMAN — MIDI hardware**: plug a controller → Live tab → Enable MIDI →
+      Learn CC + wiggle a knob drives the chosen setting; Learn note + a key
+      switches modes (beat-quantized); unplug/replug survives.
+- [ ] **HUMAN — subjective visual quality** on real music across modes
+      (screenshots can't see the canvas; needs eyes or OBS capture).
 
 ## Sign-off
 
