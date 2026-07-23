@@ -433,6 +433,7 @@ export type VizState = DocumentSlice & SessionSlice & Actions;
 // own slice files. What remains here is owned by the store core.
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+let autosaveFailureShown = false;
 /** Live canvas — overlay rasters at its pixel size. Set by initApp. */
 let liveCanvas: HTMLCanvasElement | null = null;
 let overlayTimer: ReturnType<typeof setTimeout> | undefined;
@@ -720,9 +721,19 @@ export const useVizStore = create<VizState>((set, get) => {
     markSessionDirty();
     clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {
-      void writeAutosave(serializeProject(docOf(get()), APP_VERSION)).catch((e) =>
-        console.error("[autosave]", e),
-      );
+      void writeAutosave(serializeProject(docOf(get()), APP_VERSION)).catch((e) => {
+        console.error("[autosave]", e);
+        // Surface ONCE per session: a failing autosave means crash recovery
+        // silently cannot work — exactly the failure that went unnoticed from
+        // the feature's birth until the first hardware test (the $APPDATA
+        // write scope was never granted).
+        if (!autosaveFailureShown) {
+          autosaveFailureShown = true;
+          set({
+            error: `Autosave is failing — crash recovery is unavailable (${(e as Error).message ?? e})`,
+          });
+        }
+      });
     }, getPrefs().autosaveIntervalSec * 1000);
   };
 

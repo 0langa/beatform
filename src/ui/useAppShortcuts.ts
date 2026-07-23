@@ -47,9 +47,51 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         tag === "TEXTAREA" ||
         el?.isContentEditable === true ||
         (tag === "INPUT" && TEXT_INPUT_TYPES.has(inputType));
-      if (isTextEntry) return;
 
       const s = store();
+      // Escape is the universal way out — handled BEFORE every guard. It used
+      // to sit behind the SELECT/native-control filters, so with focus on a
+      // dropdown Esc was swallowed and Stage mode felt stuck (QWERTZ report).
+      if (e.key === "Escape") {
+        s.setShowHelp(false);
+        s.setShowSettings(false);
+        if (!s.exporting) s.setShowExport(false);
+        // Never let Escape dismiss a running queue out from under itself.
+        if (s.batchStatus !== "running") s.setShowBatch(false);
+        if (s.stageMode) s.setStageMode(false); // also clears blackout
+        // The shader editor handles its own Escape (confirm-before-discard)
+        // and stops propagation before this handler sees it.
+        s.setShowPanel(false);
+        s.setShowLibrary(false);
+        s.setShowTimeline(false);
+        return;
+      }
+      if (isTextEntry) return;
+
+      // AltGr (Ctrl+Alt on Windows) TYPES characters on many layouts — on
+      // QWERTZ, [ ] \ @ etc. all arrive with ctrlKey+altKey set. Treating
+      // those as shortcuts fired random actions while typing (the QWERTZ
+      // Stage-mode report). AltGr chords are never app shortcuts.
+      if (e.ctrlKey && e.altKey) return;
+
+      // Layout-independent PHYSICAL keys for the performance shortcuts: on
+      // QWERTZ (and most non-US layouts) the [ ] \ characters need AltGr,
+      // which the guard above ignores — so bind the physical key positions
+      // via e.code instead. US layouts hit the same keys either way.
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.code === "BracketLeft") {
+          s.stepPreset(-1);
+          return;
+        }
+        if (e.code === "BracketRight") {
+          s.stepPreset(1);
+          return;
+        }
+        if (e.code === "Backslash") {
+          s.setStageMode(!s.stageMode);
+          return;
+        }
+      }
       // Ctrl/Cmd shortcuts run from anywhere else — including a focused slider
       // or select, which is exactly the moment a user reaches for undo/save.
       // (This branch used to sit BELOW a blanket INPUT/SELECT/TEXTAREA guard,
@@ -118,12 +160,6 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         case "L":
           s.toggleLoop();
           break;
-        case "[":
-          s.stepPreset(-1);
-          break;
-        case "]":
-          s.stepPreset(1);
-          break;
         case "g":
         case "G":
           s.setShowPanel((v) => !v);
@@ -146,26 +182,8 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         case "Q":
           s.setShowLibrary(!s.showLibrary);
           break;
-        case "\\":
-          s.setStageMode(!s.stageMode);
-          break;
         case ".":
           if (s.stageMode) s.setBlackout(!s.blackout);
-          break;
-        case "Escape":
-          s.setShowHelp(false);
-          s.setShowSettings(false);
-          if (!s.exporting) s.setShowExport(false);
-          // Never let Escape dismiss a running queue out from under itself.
-          if (s.batchStatus !== "running") s.setShowBatch(false);
-          if (s.stageMode) s.setStageMode(false);
-          // The shader editor is intentionally NOT touched here (L12): it
-          // holds unsaved WGSL, so it handles its own Escape locally (with a
-          // confirm-before-discard gate) and stops the key event from
-          // reaching this handler — see ShaderEditor.tsx's onKeyDown.
-          s.setShowPanel(false);
-          s.setShowLibrary(false);
-          s.setShowTimeline(false);
           break;
       }
     };

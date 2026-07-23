@@ -11,6 +11,34 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.44.1] - 2026-07-23
+
+Fixes for everything the first full hardware test found (thank you,
+checklist). All three were real bugs that only manifest in installed builds.
+
+### Fixed
+
+- **Live input (loopback) works in installed builds.** The audio worklet
+  loaded from a `blob:` URL, which the app's own Content-Security-Policy
+  correctly blocks — development builds carry no CSP, so it always worked
+  there and never on a real install. The worklet now ships as a bundled
+  asset.
+- **Crash recovery actually works now.** The autosave file had never been
+  written: the filesystem permission set granted read but not write scope
+  for the app-data folder, and the failure only ever reached the console.
+  The scope is granted, and any future autosave failure surfaces as a
+  visible error instead of silently disabling recovery.
+- **Keyboard shortcuts on QWERTZ (and other non-US layouts).** AltGr chords
+  (how QWERTZ types `[ ] \`) are no longer misread as shortcuts; the
+  previous/next-mode and Stage-mode keys bind to physical key positions so
+  they sit on the same keys on every layout; and Esc is now handled before
+  every other rule, so it always exits Stage mode and blackout — even with
+  a dropdown focused.
+- Unsupported video-background codecs (e.g. old MPEG-4 files) report a
+  readable message naming the problem instead of "Assertion failed".
+- The MP4 help text no longer implies HEVC is always available — the codec
+  picker only ever offers what your hardware can encode.
+
 ## [2.44.0] - 2026-07-23
 
 ### Fixed

@@ -1,82 +1,93 @@
 # Beatform — Manual Testing Batch
 
-The one hand-off checklist for things that need a **human on real hardware** — everything
-else (unit/golden tests, type-check, lint, format, Rust tests, dependency audit) runs
-automatically in CI, and the render/export invariants are covered by the dev harness. Run this **once, on the installed build**, after an autonomous work
-session. Grab the newest `Beatform_<version>_x64-setup.exe` from the
-[GitHub Releases](https://github.com/0langa/beatform/releases) page.
+State as of **v2.44.1** (2026-07-23). The first full hardware pass ran on
+v2.44.0; every failure it found that was fixable in code is fixed in
+v2.44.1 — update in-app (Ctrl+, ▸ Updates) before continuing. Sections:
+what's **done**, what needs a **retest because it was just fixed**, and
+what's **still untested**.
 
-Mark each ✅ / ❌ with a note. Grouped by what it exercises.
+## ✅ Verified (v2.44.0 pass — no action needed)
 
-## Install & boot
+- Installer / launch / demo track / sidecar present.
+- **Auto-updater** end-to-end (detect → download → restart into new version).
+- All 16 modes look correct; **max-settings sweep** on Bass Circle, Radial
+  Burst, Voice Orb, Metaballs, Echo Trails: smooth at the frame edge, no
+  hard circular clipping (soft frame limits confirmed on hardware).
+- Preview ≡ export; lyrics Plain/Slide/Pop live + exported.
+- Video background (VP9/WebM): Dim 0.90 / Blur 60 correct live + exported.
+- Exports decoded clean: H.264, AV1, **VP9-alpha** (`alpha_mode: 1`),
+  **ProRes 4444** (`yuva444p12le` + PCM), GIF.
+- Batch: ~20 MP3s unattended, ID3 titles, bad file doesn't kill the run.
+- Beat-quantized switching on-beat across genres; pending chip behaves.
+- Second display via OS-fullscreen + Stage mode is a usable performance
+  output.
+- Undo/redo across a real session.
+- `.avproj` partial round-trip (mode/params/aspect/video-bg incl. Dim+Blur).
+- Builder partial: duplicate/mute/blend-change/reorder all work.
 
-- [ ] Installer runs; app launches; a demo track plays and renders with no console errors.
-- [ ] ffmpeg sidecar present — ProRes / GIF / WebP export options are enabled (not greyed).
-- [ ] **Auto-updater**: install the PREVIOUS release, launch, wait ~10 s or use
-      Help ▸ "Check for updates" — it detects the newer version; "Update now"
-      downloads with progress, "Restart now" relaunches into the new version
-      (Help modal shows the new number). Offline, the startup check stays
-      silent and the manual check reports a readable error.
+## 🔁 Fixed in v2.44.1 — please retest
 
-## Core render & export
+- [ ] **Loopback / live input** (was: "Unable to load a worklet's module").
+      Root cause: the audio worklet loaded from a `blob:` URL, which the
+      app's CSP correctly blocks in installed builds (dev has no CSP, so it
+      always worked there). It now ships as a bundled asset. Click the
+      broadcast icon while Spotify/a DAW plays — visuals should follow.
+- [ ] **Crash recovery** (was: no restore bar after force-kill). Root cause:
+      the autosave file had **never been written** — the fs permission set
+      granted read but not write scope for the app-data folder, and the
+      failure only ever hit the console. Scope granted; additionally, if
+      autosave ever fails again the app now shows an error instead of
+      staying silent. Retest: edit → wait ~7 s → End Task in Task Manager →
+      relaunch → "Restore your unsaved work?" bar → Restore brings edits
+      back. Normal close must show no bar.
+- [ ] **Stage mode on QWERTZ** (was: `[` entered Stage, Esc stuck). Three
+      fixes: AltGr chords (Ctrl+Alt, how QWERTZ types `[ ] \`) are never
+      treated as shortcuts anymore; the previous/next-mode and Stage keys
+      now bind to the **physical key positions** (the two keys right of P,
+      and the key below/right of them — layout-independent); **Esc is
+      handled before every other rule**, so it always exits Stage/blackout
+      even with a dropdown focused. Retest all three on your layout.
+- [ ] **Video background with unsupported codec** (was: raw "Assertion
+      failed"). Same clip should now produce a readable message naming the
+      codec problem and suggesting H.264/VP9. (Decoding old MPEG-4 Part 2
+      files is genuinely unsupported — the fix is the message, not the
+      codec.)
 
-- [ ] Each of the 16 visual modes looks correct and "pro": no maxing-out, nothing out of
-      frame, dynamics read as spikes not mush, sync feels locked to the track.
-- [ ] **Max-settings sweep**: on Bass Circle, Radial Burst, Voice Orb, Metaballs and
-      Echo Trails, drag the size/reach sliders to max — geometry should compress
-      smoothly toward the frame edge; no hard circular cut anywhere.
-- [ ] Export a clip in H.264, then spot-check HEVC / AV1 / VP9-alpha / PNG-seq / ProRes /
-      GIF / WebP — each opens in a player or NLE.
-- [ ] **ProRes 4444 with alpha drops into Premiere/Resolve** with correct transparency.
-- [ ] Preview ≡ export: the exported clip matches what the preview showed.
-- [ ] Video background: pick a clip, set **Dim + Blur** — the blur looks right and the export
-      matches the preview.
-- [ ] Lyrics: import an `.lrc`, try the **Plain / Slide / Pop** animations — each looks right
-      live and in the export.
-- [ ] Long-form: a ~2 h mix exports; memory stays flat (< ~2 GB RSS); the ETA is sane.
+## ℹ Explained — not bugs, notes updated
 
-## Batch
+- **HEVC missing from the codec picker**: the picker only offers codecs your
+  hardware/OS can actually encode (probed at start); this machine exposes
+  H.264/AV1/VP9 but not HEVC encode. The MP4 help text no longer implies
+  HEVC is always available.
+- **Animated WebP "undecodable by ffmpeg"**: ffmpeg cannot decode animated
+  WebP at all (long-standing upstream gap — `image data not found` is its
+  standard symptom). Verify WebP loops by opening the file in a
+  Chromium-based browser instead; the export pipeline itself was verified
+  frame-accurate there.
 
-- [ ] Drop ~20 MP3s → 20 titled videos, unattended; titles come from ID3 tags; one bad file
-      doesn't kill the run; skip / retry / resume behave.
+## ⬜ Still to test (untouched by the fixes)
 
-## Live performance (Phase 9 — the hardware-dependent surface)
-
-- [ ] **Beat-quantized switching** feels on-beat on real tracks across genres/BPMs. Number
-      keys 1–9 and mode chips both queue; the pending chip pulses; it lands on the boundary.
-- [ ] **Stage mode** (toolbar button or `\`): all chrome hides, cursor hides, output is clean
-      and full-bleed; the mode-name HUD flashes on switch; `.` blackout works; `Esc` exits.
-- [ ] **MIDI** (needs a controller): Settings ▸ MIDI ▸ Enable; the device is listed;
-      "Learn CC" + wiggle a knob binds it and the knob then drives that setting across its
-      range; "Learn note → mode" + play a note switches modes (beat-quantized); unplug/replug
-      is handled.
-- [ ] **Loopback**: visualize real desktop audio (Spotify / DAW master) live.
-- [ ] **Second display / projector** — note the true multi-window output is **not built**;
-      the supported approach is: put the app fullscreen on the projector display at the OS
-      level, then enter Stage mode. Confirm it's a usable performance output today.
-
-## Projects, library, misc
-
-- [ ] Save/open `.avproj` round-trips: mode + params, styles, background (incl. **video-bg
-      Dim/Blur**), overlay layers and assets, aspect, mod routes, timeline, post and motion,
-      **lyric style and audiogram settings** (schema v9), and any **custom WGSL visual** the
-      project references (it should render on a machine that never imported the .avshader).
-      (MIDI bindings and quantize mode are **session settings**, not part of the project
-      file — they persist per install, not per project. Not a bug.)
-- [ ] Library folder scan + gapless auto-advance on a real music folder.
-- [ ] `.avtheme` import via drag-drop; a factory pack applies cleanly.
-- [ ] **Builder** (the layer compositor): add/duplicate/reorder/mute layers, change a blend
-      mode; export the stack as `.avbuilder` and import it back; save the
-      project, reopen — the stack round-trips and the export matches the
+- [ ] **ProRes 4444 into Premiere/Resolve** with correct transparency
+      (needs an NLE install; the technical alpha validation already passed).
+- [ ] **Long-form**: a ~2 h mix exports; memory stays flat (< ~2 GB RSS);
+      ETA sane.
+- [ ] **PNG sequence** export completes into a picked folder (run
+      interrupted last time; no known defect).
+- [ ] `.avproj` FULL matrix: overlay layers + assets, mod routes, timeline,
+      post, motion, **lyric style + audiogram**, and a **custom WGSL
+      visual** rendering on a machine that never imported the .avshader.
+      (MIDI bindings + quantize are per-install session settings — not in
+      the file, not a bug.)
+- [ ] Library folder scan + gapless auto-advance on a real folder (blocked
+      only by dialog automation last time).
+- [ ] `.avtheme` drag-drop import; factory pack applies cleanly.
+- [ ] **Builder** remaining: add-layer from the picker, `.avbuilder`
+      export → import back, project save/reopen round-trip, export matches
       preview.
-- [ ] Undo/redo across a real editing session.
-- [ ] **Crash recovery**: make some edits, wait ~6 s (autosave is debounced 5 s), then kill
-      the app from Task Manager (End Task — do **not** close it normally). Relaunch: a
-      "closed unexpectedly / Restore your unsaved work?" bar appears. **Restore** brings the
-      edits back; **Discard** dismisses it for good. Closing the app normally must NOT show
-      the bar on the next launch.
+- [ ] **MIDI** (needs a controller): enable, learn CC → knob drives a
+      setting; learn note → mode switch (beat-quantized); unplug/replug.
 
 ## Sign-off
 
-When all green, the app has cleared its own acceptance bar end-to-end on real hardware —
-a good moment to cut the **v3.0.0** "1.0-grade" milestone.
+When the retest + still-to-test items are green, the app has cleared its
+acceptance bar end-to-end on real hardware — cut the **v3.0.0** milestone.
