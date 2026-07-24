@@ -11,6 +11,19 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.44.2] - 2026-07-24
+
+### Fixed
+
+- **Tracks longer than ~90 minutes load again.** Chromium's audio decoder
+  has an undocumented ceiling (a 90-minute file decodes, a 2-hour one is
+  rejected outright — bisected on this engine). Long tracks now fall back to
+  an incremental decoder, so 2-hour mixes load, play and export. Decoding a
+  2-hour file takes a couple of minutes; the app is not hung.
+- The friendly unsupported-video-codec message really ships this time — it
+  had been written for v2.44.1 but was lost in the edit that produced that
+  build (the acceptance run caught it: "Assertion failed" was still showing).
+
 ## [2.44.1] - 2026-07-23
 
 Fixes for everything the first full hardware test found (thank you,

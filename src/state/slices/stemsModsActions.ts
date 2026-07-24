@@ -1,4 +1,5 @@
 import { pcmFromAudioBuffer } from "../../audio/offlineSource";
+import { decodeAudioLenient } from "../../audio/decodeLenient";
 import { analyzeStem, MAX_STEMS, STEM_SLOTS } from "../../audio/stems";
 import { allParams } from "../../render/types";
 import { presetById } from "../../render/presets";
@@ -29,7 +30,7 @@ export function stemsModsActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       try {
         // Decode on the ENGINE's context: a fresh OfflineAudioContext would
         // resample and shift every FFT bin (the batch learned this once).
-        const buf = await getEngine().ctx.decodeAudioData(await file.arrayBuffer());
+        const buf = await decodeAudioLenient(getEngine().ctx, await file.arrayBuffer());
         const analysis = await analyzeStem(pcmFromAudioBuffer(buf), file.name);
         if (gen !== shared.trackLoadGen) return;
         set({ stems: [...get().stems, { slot, analysis }] });

@@ -1,4 +1,5 @@
 import type { PlaybackState } from "./types";
+import { decodeAudioLenient } from "./decodeLenient";
 
 /**
  * AudioWorklet that turns pushed sample chunks into a live audio-graph
@@ -146,7 +147,7 @@ export class AudioEngine {
 
   async loadArrayBuffer(data: ArrayBuffer, name: string): Promise<void> {
     const gen = ++this.loadGen;
-    const buffer = await this.ctx.decodeAudioData(data);
+    const buffer = await decodeAudioLenient(this.ctx, data);
     // Two overlapping loads race their decodes: whichever resolves LAST used
     // to win, so a slow first drop could clobber a quick second one. Only the
     // newest load may commit.

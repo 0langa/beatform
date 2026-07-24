@@ -1,4 +1,5 @@
 import { exportVideo } from "../export/videoExporter";
+import { decodeAudioLenient } from "../audio/decodeLenient";
 import { buildExportOptions } from "../export/buildExportOptions";
 import { rasterizeOverlay } from "../render/overlay";
 import { analyzeTrack } from "../audio/analysis/trackAnalysis";
@@ -155,7 +156,7 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
         // while the preview runs at 48k would shift every FFT bin, feature and
         // LUFS reading — a determinism break that reports no error at all.
         buf = await raceAgainstStop(
-          (async () => getEngine().ctx.decodeAudioData(await track.file.arrayBuffer()))(),
+          (async () => decodeAudioLenient(getEngine().ctx, await track.file.arrayBuffer()))(),
           isStopped,
         );
         // Per-track analysis is not optional: without it every track after the

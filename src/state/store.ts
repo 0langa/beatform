@@ -117,6 +117,7 @@ import {
   markSessionDirty,
 } from "./persistence";
 import { getPrefs, setPrefs } from "./prefs";
+import { decodeAudioLenient } from "../audio/decodeLenient";
 import {
   BUILDER2_ID,
   packBuilderParams,
@@ -610,7 +611,7 @@ export const useVizStore = create<VizState>((set, get) => {
     try {
       const bytes = await readBinaryFromPath(next.path);
       const file = new File([bytes as BlobPart], next.fileName);
-      const buffer = await getEngine().ctx.decodeAudioData(await file.arrayBuffer());
+      const buffer = await decodeAudioLenient(getEngine().ctx, await file.arrayBuffer());
       // Only keep it if the user is still on the track we prefetched FOR.
       if (get().library?.tracks[i + 1]?.path === next.path) {
         shared.libraryPrefetch = { path: next.path, file, buffer };
@@ -706,9 +707,15 @@ export const useVizStore = create<VizState>((set, get) => {
         // Clear bgTex so mode 4 doesn't keep compositing the last uploaded
         // frame frozen forever — a broken video degrades to an empty bg.
         getRenderer()?.setBackgroundImage(null);
+        // A codec mediabunny can't decode (e.g. old MPEG-4 Part 2 in an
+        // .mp4 shell) surfaces as a bare "Assertion failed" — translate.
+        const msg = (e as Error).message ?? String(e);
+        const friendly = /assertion|unsupported|no decoder|codec/i.test(msg)
+          ? "this clip's video codec isn't supported — re-encode it as H.264 or VP9 and try again"
+          : msg;
         set({
           videoBgLoading: false,
-          error: `Could not load video background: ${(e as Error).message}`,
+          error: `Could not load video background: ${friendly}`,
         });
       });
   };
