@@ -297,3 +297,91 @@ describe("runBatch cancel leaves a coherent state", () => {
     expect(retryFailed(finalRun, Date.now())).toBe(finalRun); // no failed jobs -> no-op
   });
 });
+
+/**
+ * F2 regression: on a machine with no WebGPU, every job's export worker throws
+ * GpuInitError — a property of the MACHINE, not of the track. The loop's "one
+ * job's failure is one job's failure" rule (correct for a bad file, a full
+ * disk, a lost device) turned that into 20 identical red errors, each paid for
+ * with a full decode + analysis of a track that was never going to render.
+ * The queue must give up on the first one instead.
+ */
+describe("runBatch aborts the whole run when WebGPU is unavailable (F2)", () => {
+  afterEach(() => {
+    vi.mocked(getEngine).mockReset();
+    vi.mocked(analyzeTrack).mockReset();
+    vi.mocked(exportVideo).mockReset();
+  });
+
+  it("stops after the first GpuInitError and never decodes the remaining tracks", async () => {
+    const decodeAudioData = vi.fn(() => Promise.resolve({} as AudioBuffer));
+    vi.mocked(getEngine).mockReturnValue({
+      ctx: { decodeAudioData },
+    } as unknown as ReturnType<typeof getEngine>);
+    vi.mocked(analyzeTrack).mockReturnValue({
+      id: 1,
+      result: Promise.resolve({ grid: null, key: null, sections: [] }),
+    });
+    // Exactly what exportCore throws when WebGPURenderer.create() fails.
+    vi.mocked(exportVideo).mockImplementation(() => {
+      const err = new Error("Export requires WebGPU, which is unavailable on this system");
+      err.name = "GpuInitError";
+      return Promise.reject(err);
+    });
+
+    const tracks = ["t1", "t2", "t3"].map(fakeTrack);
+    const run = fakeRun(tracks);
+    const { hooks: h, statuses } = hooks();
+
+    await runBatch(run, h);
+
+    // Track 1 paid for its decode and carries the real reason...
+    expect(decodeAudioData).toHaveBeenCalledTimes(1);
+    expect(statuses.get("job-t1")).toMatchObject({ k: "failed", kind: "gpu" });
+    // ...and 2 and 3 were never attempted. "skipped" (via the cancel sweep),
+    // not "failed": nothing about those tracks went wrong, and a red row per
+    // track would be 20 lies about 20 files.
+    expect(statuses.get("job-t2")).toEqual({ k: "skipped" });
+    expect(statuses.get("job-t3")).toEqual({ k: "skipped" });
+    expect(vi.mocked(exportVideo)).toHaveBeenCalledTimes(1);
+
+    // The run still reads as complete (every job terminal), and the one real
+    // failure is re-runnable on hardware that can render it.
+    const finalRun: BatchRun = {
+      ...run,
+      jobs: run.jobs.map((j) => ({ ...j, status: statuses.get(j.id) ?? j.status })),
+    };
+    expect(isRunComplete(finalRun)).toBe(true);
+    expect(retryFailed(finalRun, Date.now())).not.toBe(finalRun);
+  });
+
+  it("still isolates an ordinary per-job failure — one bad track costs one track", async () => {
+    // The guard above must not have widened into "any GPU-ish error ends the
+    // night": a device lost mid-job, or a codec the machine lacks, is exactly
+    // the case the loop's isolation exists for.
+    const decodeAudioData = vi.fn(() => Promise.resolve({} as AudioBuffer));
+    vi.mocked(getEngine).mockReturnValue({
+      ctx: { decodeAudioData },
+    } as unknown as ReturnType<typeof getEngine>);
+    vi.mocked(analyzeTrack).mockReturnValue({
+      id: 1,
+      result: Promise.resolve({ grid: null, key: null, sections: [] }),
+    });
+    vi.mocked(exportVideo)
+      .mockImplementationOnce(() => {
+        const err = new Error("GPU device lost during export: reset");
+        err.name = "GpuDeviceLostError";
+        return Promise.reject(err);
+      })
+      .mockResolvedValue({ bytes: 10, seconds: 1, audioCodec: "aac" });
+
+    const run = fakeRun(["t1", "t2"].map(fakeTrack));
+    const { hooks: h, statuses } = hooks();
+
+    await runBatch(run, h);
+
+    expect(statuses.get("job-t1")).toMatchObject({ k: "failed", kind: "gpu" });
+    expect(statuses.get("job-t2")).toMatchObject({ k: "done" });
+    expect(decodeAudioData).toHaveBeenCalledTimes(2);
+  });
+});

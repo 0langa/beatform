@@ -29,12 +29,12 @@ export const voiceOrb: PresetDef = {
     {
       id: "podcastBlue",
       name: "Podcast Blue",
-      values: { hue: 210, sparkle: 0.4, rimGlow: 0.35, breathGlow: 0.22, flare: 0.35 },
+      values: { hue: 210, sparkle: 0.4, rimGlow: 0.36, breathGlow: 0.22, flare: 0.36 },
     },
     {
       id: "warm",
       name: "Warm Studio",
-      values: { hue: 30, sparkle: 0.35, rimGlow: 0.4, flare: 0.45, breathGlow: 0.18 },
+      values: { hue: 30, sparkle: 0.35, rimGlow: 0.4, flare: 0.46, breathGlow: 0.18 },
     },
     {
       id: "broadcast",
@@ -46,7 +46,7 @@ export const voiceOrb: PresetDef = {
         voiceFocus: 0.9,
         response: 0.75,
         rmsBlend: 0.5,
-        flare: 0.75,
+        flare: 0.76,
       },
     },
     {
@@ -59,7 +59,7 @@ export const voiceOrb: PresetDef = {
         rimGlow: 0.5,
         flare: 0.3,
         ring: 1,
-        breathGlow: 0.15,
+        breathGlow: 0.16,
       },
     },
     {
@@ -351,7 +351,16 @@ fn preset(uv: vec2f) -> vec4f {
   // the orb compresses toward the largest inscribed circle instead of
   // flattening against a hard 0.4/0.46 wall at max Size + loud voice.
   let radius = softLimit(P_size() * (1.0 + level * P_growth()) + idle, frameCircle() * 0.86);
-  let edge = softLimit(radius + disp, frameCircle() * 0.95);
+  // The ripple is applied as a FRACTION of the body, not as an absolute offset.
+  // At max mode amps and max Wobble disp reaches +-0.48 while Size bottoms out
+  // at 0.08, and a raw radius + disp then goes NEGATIVE on the trough of every
+  // ripple: softLimit() is identity below its knee, so it passes that straight
+  // through, inside is 0 everywhere and the orb AND its rim blink out on half
+  // of each cycle. Bounding the ratio holds the surface between 0.4x and 1.9x
+  // the body; at any sane setting disp/radius sits well inside that window, so
+  // the ripple itself is unchanged.
+  let edge = softLimit(radius * (1.0 + clamp(disp / max(radius, 1e-3), -0.6, 0.9)),
+                       frameCircle() * 0.95);
 
   // Cosine palette instead of flat hsl2rgb fills — stays saturated at low
   // brightness (the background wash) and gives the hot-white pushes below
@@ -414,7 +423,9 @@ fn preset(uv: vec2f) -> vec4f {
   col += pal * exp(-max(r - edge, 0.0) * 20.0) * breathG * 0.6;
 
   // Vignette is the shared smooth full-field falloff (never a hard-edged
-  // circle — the orb/rim/ring above are already clamped to r<=0.47).
+  // circle — the orb, rim and ring above are already soft-limited against
+  // frameCircle(), which tracks the frame's short side rather than the fixed
+  // radius the pre-v2.44 code clipped against).
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.15);
   col += grain(uv, 0.012);

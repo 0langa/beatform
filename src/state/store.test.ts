@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ProjectDocument } from "./project";
 
 /**
  * M17 regression: initApp's teardown only ever called services' own
@@ -231,5 +232,114 @@ describe("stepPreset honours beat-quantize like the number-key path (L11)", () =
 
     expect(useVizStore.getState().presetId).toBe(presets[1].id);
     expect(useVizStore.getState().pendingPresetId).toBeNull();
+  });
+});
+
+/**
+ * F2 regression: the export worker builds its own WebGPU device, so on the
+ * Canvas2D fallback exportCore throws GpuInitError — but it only got there
+ * after the native save dialog, the overlay raster and a full decode, and a
+ * batch paid that price once per queued track. Both entry points must refuse
+ * BEFORE any of that, so the file picker never opens for a file that was
+ * never going to be written.
+ *
+ * rasterizeOverlay is the sentinel: it is the first real work runExport does
+ * after the dialog, so its call count not moving is the proof that nothing
+ * started. Counts are read as deltas, not absolutes, because refreshOverlay
+ * (exercised above) shares the mock.
+ */
+describe("export and batch refuse to start on the simplified renderer (F2)", () => {
+  afterEach(async () => {
+    const { useVizStore } = await import("./store");
+    useVizStore.setState({ simplifiedRenderer: false, exportError: null, batch: null });
+  });
+
+  it("runExport sets the reason and does no work at all", async () => {
+    const { useVizStore } = await import("./store");
+    const { rasterizeOverlay } = await import("../render/overlay");
+    const { SIMPLIFIED_EXPORT_REASON } = await import("./exportConfig");
+
+    useVizStore.setState({ simplifiedRenderer: true, exportError: null, exporting: null });
+    const before = vi.mocked(rasterizeOverlay).mock.calls.length;
+
+    await useVizStore.getState().runExport();
+
+    expect(useVizStore.getState().exportError).toBe(SIMPLIFIED_EXPORT_REASON);
+    expect(useVizStore.getState().exporting).toBeNull();
+    expect(vi.mocked(rasterizeOverlay).mock.calls.length).toBe(before);
+  });
+
+  it("startBatch refuses before the output-folder dialog, leaving the queue intact", async () => {
+    const { useVizStore } = await import("./store");
+    const { SIMPLIFIED_EXPORT_REASON } = await import("./exportConfig");
+
+    const track = {
+      id: "t1",
+      file: new File([], "a.mp3"),
+      meta: { title: "a", artist: "" },
+      metaFromTags: false,
+      coverArt: null,
+      duration: 10,
+    };
+    useVizStore.setState({
+      simplifiedRenderer: true,
+      exportError: null,
+      batchStatus: "idle",
+      batch: {
+        // Never read: startBatch returns long before runBatch touches it.
+        doc: {} as unknown as ProjectDocument,
+        tracks: [track],
+        formats: [],
+        outDir: "",
+        startedAt: 0,
+        jobs: [],
+      },
+    });
+
+    await useVizStore.getState().startBatch();
+
+    expect(useVizStore.getState().exportError).toBe(SIMPLIFIED_EXPORT_REASON);
+    // Nothing was consumed: the tracks the user queued are still queued, so
+    // this reads as "not yet", not "your list is gone".
+    expect(useVizStore.getState().batchStatus).toBe("idle");
+    expect(useVizStore.getState().batch?.tracks).toHaveLength(1);
+    expect(useVizStore.getState().batch?.jobs).toHaveLength(0);
+  });
+
+  it("leaves both paths untouched when hardware rendering is available", async () => {
+    const { useVizStore } = await import("./store");
+
+    // The guards are the ONLY thing this fix adds to these actions, so the
+    // control case is that neither fires: startBatch falls through to the
+    // pre-existing desktop-only guard instead of the WebGPU one.
+    useVizStore.setState({
+      simplifiedRenderer: false,
+      exportError: null,
+      batchStatus: "idle",
+      batch: {
+        // Never read: startBatch returns long before runBatch touches it.
+        doc: {} as unknown as ProjectDocument,
+        tracks: [
+          {
+            id: "t1",
+            file: new File([], "a.mp3"),
+            meta: { title: "a", artist: "" },
+            metaFromTags: false,
+            coverArt: null,
+            duration: 10,
+          },
+        ],
+        formats: [],
+        outDir: "",
+        startedAt: 0,
+        jobs: [],
+      },
+    });
+
+    await useVizStore.getState().startBatch();
+
+    expect(useVizStore.getState().exportError).toBe(
+      "Batch render needs the desktop app (it writes files to a folder)",
+    );
   });
 });

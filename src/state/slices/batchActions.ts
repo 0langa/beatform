@@ -10,7 +10,7 @@ import {
   type BatchTrack,
 } from "../batch";
 import { runBatch } from "../batchRunner";
-import { autoBitrateMbps, RESOLUTIONS } from "../exportConfig";
+import { autoBitrateMbps, RESOLUTIONS, SIMPLIFIED_EXPORT_REASON } from "../exportConfig";
 import { isTauri, pickFolder } from "../platform";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
@@ -100,6 +100,14 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // design — each export builds its own device + encoder session).
       if (get().exporting || shared.exportStarting) {
         set({ exportError: "Finish (or cancel) the running export before starting a batch" });
+        return;
+      }
+      // F2: worse here than for a single export — every job builds its own
+      // WebGPU device, so on the Canvas2D fallback a 20-track queue used to
+      // fail 20 times in a row, paying a full decode + analysis for each. Stop
+      // before the folder dialog, same reason the Start button's tooltip gives.
+      if (get().simplifiedRenderer) {
+        set({ exportError: SIMPLIFIED_EXPORT_REASON });
         return;
       }
       if (!isTauri()) {
@@ -241,6 +249,12 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // Same single-render rule as startBatch: never race a running export.
       if (get().exporting || shared.exportStarting) {
         set({ exportError: "Finish (or cancel) the running export before retrying the batch" });
+        return;
+      }
+      // Same gate as startBatch (F2): a retry is a run, and re-running N jobs
+      // that can only fail is the exact behaviour that fix exists to remove.
+      if (get().simplifiedRenderer) {
+        set({ exportError: SIMPLIFIED_EXPORT_REASON });
         return;
       }
       // Retry names must also avoid files OTHER runs left in this folder —

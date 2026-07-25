@@ -26,7 +26,7 @@ export const aurora: PresetDef = {
         sat: 0.7,
         stars: 1,
         bgGlow: 0.3,
-        reflect: 0.55,
+        reflect: 0.56,
         horizon: 0.86,
         bassSwell: 0.6,
       },
@@ -56,7 +56,7 @@ export const aurora: PresetDef = {
         hueStep: 35,
         hueSpread: 80,
         bright: 1.1,
-        sat: 0.85,
+        sat: 0.86,
         bassSwell: 0.5,
       },
     },
@@ -89,7 +89,7 @@ export const aurora: PresetDef = {
         wave: 0.6,
         rays: 0.2,
         sat: 0.4,
-        bgGlow: 0.55,
+        bgGlow: 0.56,
         reflect: 0.6,
         horizon: 0.78,
         drift: 0.15,
@@ -304,6 +304,23 @@ export const aurora: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+// Bounded, continuous noise clock (seconds of TRACK time in, noise coordinate
+// out). u.time grows without bound and fbm's top octave multiplies its input by
+// ~17 before hashing the integer cell index, so a long render walks that index
+// past the point where f32 can still tell neighbouring cells apart: measured,
+// 64 consecutive cells collapse from 20 distinct hashes to 8 by a coordinate of
+// 240 and to 1 — completely frozen — by 1600, which max Flow reaches inside an
+// hour. Same class as the look kit's grain seed. Folding the clock into a
+// TRIANGLE keeps the coordinate inside 0..240 forever AND keeps it continuous;
+// a plain fract() wrap would bound it just as well but teleport the whole
+// curtain field at every wrap. The first 240/rate seconds are identical to the
+// unfolded clock, so shipped looks render unchanged over a normal track, and
+// after that the churn simply retraces its path instead of quantising.
+fn noiseClock(rate: f32) -> f32 {
+  let ph = fract(u.time * rate * (1.0 / 480.0));
+  return 240.0 * (1.0 - abs(2.0 * ph - 1.0));
+}
+
 // One stack of aurora curtains sampled at horizontal position x and vertical
 // position y. Split out of preset() so the horizon reflection below can
 // re-evaluate the exact same field at a mirrored y — a real reflection, not a
@@ -338,21 +355,38 @@ fn auroraCurtains(x: f32, y: f32, drive: f32) -> vec3f {
     // Wavy vertical center of the curtain, drifting slower with depth. Drift
     // slides the whole field sideways over time (monotonic, so it never reads
     // as reversing), parallaxed by depth like the vertical churn.
-    let flowT = u.time * P_flow() * 0.15 * mix(1.0, 0.6, depthT);
+    // The churn clock is folded (see noiseClock above) so hours of Flow can't
+    // walk the fbm cell index out of f32's resolution. Drift is deliberately
+    // NOT folded: it is a directional slide whose whole point is that it never
+    // reverses, and it runs at a quarter of the churn's top rate, so it stays
+    // well inside the resolved range for any realistic render.
+    let flowT = noiseClock(P_flow() * 0.15 * mix(1.0, 0.6, depthT));
     let driftX = u.time * P_drift() * 0.08 * mix(1.0, 0.6, depthT);
     let wob = fbm(vec2f(x * (2.0 + fi) + fi * 7.0 + driftX, flowT + fi * 3.0));
-    let cy = P_baseY() + 0.15 * fi + (wob - 0.5) * 0.35 * P_wave();
-    // Capped so a loud, bass-heavy passage (spec, drive and bass can all sit
+    // Frame-safety: the per-layer stack offset is compressed into whatever sky
+    // is left below Height, so the back curtain's centre cannot walk off the
+    // bottom edge — 0.15*2 on top of Height 0.8 put it at 1.1, entirely
+    // offscreen, and the third curtain silently vanished. Every shipped style
+    // sits below the knee, so their stacks are unchanged.
+    let stackY = softLimit(0.15 * fi, max(0.98 - P_baseY(), 0.02));
+    let cy = P_baseY() + stackY + (wob - 0.5) * 0.35 * P_wave();
+    // Limited so a loud, bass-heavy passage (spec, drive and bass can all sit
     // near their ceiling at once) can't run this away to the point every
     // curtain pixel blows past the hot-core threshold below — it stays a
     // strong, legible reaction instead of a flat white-out. Bass swell adds
     // the low-end "breathing" of the sky on top of the sync source.
-    let react = min(0.32 + spec * P_specAmt() + drive * P_react() + u.bass * P_bassSwell(), 2.2);
+    // SOFT-limited, and against 3.2 rather than the old hard min(., 2.2): once
+    // Bass swell joined the sum, Solar Storm (Spectrum shape 2.4, Reactivity
+    // 1.8, Bass swell 0.8) pinned that ceiling through every loud chorus, and
+    // since react drives curtain THICKNESS this was a hard cap on geometry —
+    // the v2.44 law's exact prohibition. Identity below 2.3, so the tuned looks
+    // are untouched; above it the response compresses instead of flat-topping.
+    let react = softLimit(0.32 + spec * P_specAmt() + drive * P_react() + u.bass * P_bassSwell(), 3.2);
     let thick = P_thick() * (0.55 + react * 0.9) * pulse;
     let d = (y - cy) / max(thick, 1e-3);
     let band = exp(-d * d);
     let ray = 1.0 - P_rays()
-            + P_rays() * (0.5 + 0.5 * sin(x * (60.0 + fi * 30.0) + fbm(vec2f(x * 8.0, u.time * 0.2)) * 8.0));
+            + P_rays() * (0.5 + 0.5 * sin(x * (60.0 + fi * 30.0) + fbm(vec2f(x * 8.0, noiseClock(0.2))) * 8.0));
 
     // Cosine palette keyed by curtain index + spectrum, instead of an hsl
     // hue that could drift 400+ degrees through the desaturated middle of
@@ -365,8 +399,11 @@ fn auroraCurtains(x: f32, y: f32, drive: f32) -> vec3f {
     // Loudness is logarithmic: compress react through pow(.,0.6) before it
     // drives brightness (doc guidance) so 3 stacked curtains overlapping
     // during a loud passage tonemap into rich saturated colour instead of
-    // additively summing straight past white every time.
-    let reactGlow = pow(clamp(react / 2.2, 0.0, 1.0), 0.6) * 1.5;
+    // additively summing straight past white every time. Normalised against
+    // the SAME 3.2 ceiling as the soft limit above — with the old 2.2 divisor
+    // the clamp saturated wherever react did, so the glow stopped answering
+    // the music for the rest of the passage too.
+    let reactGlow = pow(clamp(react / 3.2, 0.0, 1.0), 0.6) * 1.5;
     var layerCol = pal * band * ray * reactGlow * pulse * P_bright() * fog;
 
     // Hot core: only the curtain's exact vertical centerline, and only where

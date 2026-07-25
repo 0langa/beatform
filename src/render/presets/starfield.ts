@@ -34,8 +34,8 @@ export const starfield: PresetDef = {
         beatDance: 0.15,
         sizePulse: 0.4,
         clump: 0.3,
-        streak: 0.15,
-        hotCore: 0.35,
+        streak: 0.16,
+        hotCore: 0.36,
       },
     },
     { id: "dance", name: "Beat Dance", values: { bandColor: 30, beatPop: 0.5 } },
@@ -63,8 +63,8 @@ export const starfield: PresetDef = {
         hue: 210,
         sizePulse: 0.3,
         streak: 0.1,
-        hotCore: 0.25,
-        clump: 0.35,
+        hotCore: 0.26,
+        clump: 0.36,
       },
     },
     {
@@ -99,7 +99,7 @@ export const starfield: PresetDef = {
         glow: 0.2,
         brightness: 0.6,
         clump: 0.7,
-        streak: 0.05,
+        streak: 0.06,
         hotCore: 0.5,
         sizeVar: 1.2,
         bandColor: 20,
@@ -123,7 +123,7 @@ export const starfield: PresetDef = {
         brightness: 1,
         streak: 0.6,
         hotCore: 0.8,
-        clump: 0.55,
+        clump: 0.56,
         sizeVar: 0.8,
         bandColor: 15,
       },
@@ -402,8 +402,6 @@ fn preset(uv: vec2f) -> vec4f {
   col += bgPal * nebT * nebT * 0.05 * (0.4 + u.mid * 0.8);
   col += bgPal * u.driveBeat * P_beatFlash() * u.pulse;
 
-  let energy = P_speed() * (0.4 + u.drive * P_energyDrive());
-
   // Grid-locked beat brightness pop applied to every particle's luminance in
   // both modes. Frame-constant, so hoisted out of the cell loops. u.pulse gates
   // it; default Beat brightness of 0 makes this exactly 1.0 (no change).
@@ -424,9 +422,18 @@ fn preset(uv: vec2f) -> vec4f {
     let shells = i32(P_layers()) * 2;
     for (var sI = 0; sI < shells; sI = sI + 1) {
       let fs = f32(sI);
-      let rate = energy * (1.0 - P_parallax() * fract(fs * 0.37) * 0.45)
-               * (1.0 + u.driveBeat * P_beatDance() * 0.8 * u.pulse);
-      let phase = fract(fs * 0.6180339887 + u.time * rate * 0.28);
+      // The coefficient on u.time is PARAMS-ONLY. It used to carry u.drive and
+      // u.driveBeat, which makes the shell position t*v(t) instead of the
+      // integral of v: whenever the rate moved, the phase jumped by
+      // t*(rate change) — an error that grows LINEARLY with track time. A beat
+      // shifted the shell phase 0.20 at t=5 s but 4.68 at t=120 s, i.e. the
+      // whole field re-rolled mid-track. Loudness and beats now ride as a
+      // BOUNDED additive phase offset, so they still push the field toward you
+      // without ever re-seeding it.
+      let baseRate = P_speed() * (1.0 - P_parallax() * fract(fs * 0.37) * 0.45);
+      let phase = fract(fs * 0.6180339887 + u.time * baseRate * 0.28
+                      + u.drive * P_energyDrive() * 0.4
+                      + u.driveBeat * P_beatDance() * 0.25 * u.pulse);
       let Z = mix(1.25, 0.05, phase);           // far -> at the camera
       // Rotate each shell's grid by a different angle. Otherwise every shell's
       // naturally-sparse vanishing point (the grid origin) sits on the same
@@ -489,7 +496,13 @@ fn preset(uv: vec2f) -> vec4f {
     }
     } else {
     // ---- DRIFT MODE: independent particles drifting on a shared current ----
-    let baseSpd = energy * (1.0 + u.driveBeat * P_beatDance() * 0.8 * u.pulse);
+    // Same rule as fly mode: what multiplies u.time is params-only, so the
+    // field can never teleport by t*(rate change) when loudness moves. Audio
+    // becomes a bounded positional PUSH added below. (The beat kick the eye
+    // actually reads in drift mode is scat, already an additive offset.)
+    let baseSpd = P_speed() * 0.6;
+    let push = u.drive * P_energyDrive() * 0.08
+             + u.driveBeat * P_beatDance() * 0.06 * u.pulse;
     let ang = radians(P_direction());
     let dir = vec2f(cos(ang), -sin(ang));
     let layerCount = i32(P_layers());
@@ -506,7 +519,7 @@ fn preset(uv: vec2f) -> vec4f {
       // per-particle float below is the dominant motion, so particles wander
       // every which way instead of marching in formation.
       let flow = dir * baseSpd * par * 0.06;
-      let q = p * scl - flow * u.time;
+      let q = p * scl - flow * u.time - dir * push * par;
       let base = floor(q);
       // 3x3 neighbourhood so a jittered star near a cell edge still draws.
       for (var oy = -1; oy <= 1; oy = oy + 1) {

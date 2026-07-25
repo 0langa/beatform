@@ -45,7 +45,7 @@ export const ledMatrix: PresetDef = {
         hueLow: 45,
         hueHigh: 10,
         gradStart: 0.5,
-        gradEnd: 0.95,
+        gradEnd: 0.94,
         bassGlow: 0.16,
         rounded: 0,
         gap: 0.12,

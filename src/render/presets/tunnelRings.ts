@@ -41,7 +41,7 @@ export const tunnelRings: PresetDef = {
         twist: 1.8,
         beatSpeed: 0.22,
         beatPulse: 0.9,
-        fogFar: 1.0,
+        fogFar: 0.95,
       },
     },
     {
@@ -50,10 +50,10 @@ export const tunnelRings: PresetDef = {
       values: {
         hue: 210,
         hueSpread: 15,
-        tileSat: 0.15,
+        tileSat: 0.16,
         checker: 0.12,
         groutLevel: 0.3,
-        centerGlow: 0.35,
+        centerGlow: 0.36,
         beatPulse: 0.5,
         tileLevel: 0.14,
       },
@@ -64,13 +64,13 @@ export const tunnelRings: PresetDef = {
       values: {
         hue: 195,
         hueSpread: 34,
-        speed: 0.12,
+        speed: 0.1,
         twist: 0.2,
         roundness: 0.9,
         tileSat: 0.3,
         groutLevel: 0.28,
         surfaceWarp: 2.2,
-        centerGlow: 0.35,
+        centerGlow: 0.36,
         beatPulse: 0.5,
         fogFar: 0.85,
       },
@@ -304,10 +304,8 @@ fn preset(uv: vec2f) -> vec4f {
   let r = max(length(p), 2e-3);
   let a = atan2(p.y, p.x);
 
-  // Forward speed: a cruising floor plus the sync envelope, kicked on beats.
+  // Beat kick, tempo-grid locked with a flux fallback.
   let kickP = max(u.driveBeat, gridPulse(6.0));
-  let spd = P_speed() * (P_cruiseFloor() + u.drive * P_cruiseEnergy())
-          * (1.0 + kickP * P_beatSpeed() * u.pulse);
 
   // Depth. 1/r is the pinhole distance down the axis of a cylinder: the centre
   // of the frame (r -> 0) is infinitely far, the frame edge is the near mouth
@@ -315,7 +313,15 @@ fn preset(uv: vec2f) -> vec4f {
   // point OUTWARD toward the viewer -- the actual motion of flying down a
   // pipe, not a texture being zoomed.
   let depth = 1.0 / r;
-  let travel = depth + u.time * spd * 2.2;
+  // What multiplies u.time is PARAMS-ONLY. Folding u.drive/kickP into the speed
+  // made travel = t*v(t) instead of the integral of v, so every change in
+  // loudness snapped the whole wall forward or back by t*(speed change): fine
+  // in the first seconds, a hard stutter/strobe after ~30 s of track. Loudness
+  // and beats are now BOUNDED additive travel offsets — they still shove you
+  // down the pipe, but the ring pattern can never be re-seeded mid-track.
+  let travel = depth + u.time * P_speed() * P_cruiseFloor() * 2.2
+             + u.drive * P_cruiseEnergy() * 0.3
+             + kickP * P_beatSpeed() * u.pulse;
   // Corkscrew: flutes spiral with depth like a waterslide auger.
   let aTwist = a + travel * P_twist() * 0.15;
 

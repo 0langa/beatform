@@ -21,6 +21,13 @@ export interface BatchPanelProps {
   overlayLayers: OverlayLayer[];
   aspect: string;
   formatLabel: string;
+  /**
+   * True while the Canvas2D fallback is drawing (audit F2). Every job builds
+   * its own WebGPU device, so on that path a 20-track queue used to fail 20
+   * times — one full decode + analysis each — instead of saying so once, up
+   * front, before the output folder was even chosen.
+   */
+  simplifiedRenderer: boolean;
   onAddTracks(files: File[]): void;
   onRemoveTrack(id: string): void;
   onRetitle(id: string, title: string): void;
@@ -60,7 +67,12 @@ function fmtEta(ms: number | null, now: number): string {
 // Memoized (H13): requires every callback prop from App.tsx to stay
 // reference-stable (see the useCallback block there) or memo does nothing.
 export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
-  const { run, status, overlayLayers, aspect, formatLabel } = props;
+  const { run, status, overlayLayers, aspect, formatLabel, simplifiedRenderer } = props;
+  // Not a pre-flight WARNING (those advise and let you proceed) — this one is
+  // a hard block, so it disables Start rather than sitting above it.
+  const blocked = simplifiedRenderer
+    ? "Batch render needs hardware rendering (WebGPU), which isn't available on this system — every job would fail after decoding its track"
+    : null;
   const fileInput = useRef<HTMLInputElement>(null);
   const tracks = run?.tracks ?? [];
   const running = status === "running";
@@ -200,7 +212,12 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
             </span>
             <span className="save-look-row" style={{ margin: 0 }}>
               {(stats.failed > 0 || stats.queued > 0) && (
-                <button className="text-btn" onClick={props.onRetryFailed}>
+                <button
+                  className="text-btn"
+                  disabled={!!blocked}
+                  title={blocked ?? undefined}
+                  onClick={props.onRetryFailed}
+                >
                   {stats.failed > 0 && stats.queued > 0
                     ? `Retry ${stats.failed} failed + resume ${stats.queued} queued`
                     : stats.failed > 0
@@ -216,6 +233,8 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
             </span>
           </div>
         )}
+
+        {blocked && <div className="toast-inline error">{blocked}</div>}
 
         {warnings.map((w) => (
           <p className="section-hint" key={w}>
@@ -281,7 +300,12 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
         </div>
 
         {status === "idle" && tracks.length > 0 && (
-          <button className="btn-primary wide" onClick={props.onStart}>
+          <button
+            className="btn-primary wide"
+            disabled={!!blocked}
+            title={blocked ?? undefined}
+            onClick={props.onStart}
+          >
             Render {tracks.length} video{tracks.length === 1 ? "" : "s"}…
           </button>
         )}

@@ -63,9 +63,12 @@ reports.
   releases page — it ships with a freshly pinned key. **If the key is
   compromised**, it is rotated the same way and affected release assets are
   removed.
-- The updater's network activity is the app's only network activity: a fetch
-  of `latest.json` and the installer from `github.com` release assets. No
-  telemetry rides along.
+- The app makes exactly two kinds of network request, both user-facing and
+  both to GitHub: the updater fetches `latest.json` and the installer from
+  `github.com` release assets, and the update dialog fetches `CHANGELOG.md`
+  from `raw.githubusercontent.com` to show the release notes for the versions
+  between yours and the offered one. Both hosts are the only entries in the
+  webview's CSP `connect-src` allowlist. No telemetry rides along.
 - Installers are not Authenticode-signed (no code-signing certificate), so
   SmartScreen may warn on first manual install; `SHA256SUMS.txt` on each
   release is the manual verification path.

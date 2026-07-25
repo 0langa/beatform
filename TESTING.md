@@ -78,7 +78,7 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   work?" bar is visible in the UI chrome; click **Restore**; the app
   continues without error. Then: close the app NORMALLY, relaunch —
   PASS: no recovery bar.
-- [✅] **Shortcuts on a non-US keyboard.** PASS 2026-07-25 on v2.47.0 via
+- [~] **Shortcuts on a non-US keyboard.** PASS 2026-07-25 on v2.47.0 via
   SPOOFED input (synthetic KeyboardEvent matrix in the dev harness —
   no physical keyboard needed): AltGr chords (ctrl+alt+letter, how
   QWERTZ types symbols) fire NO shortcut; the physical bracket
@@ -86,8 +86,13 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   u-umlaut/+) step modes; the physical Backslash position (#) toggles
   Stage; Esc exits; letters P/N/S/0/H verified earlier along with the
   focused-<select> guard. The letter/digit primaries make raw
-  scancodes irrelevant; a physical-keyboard pass is OPTIONAL, not a
-  v3 gate.
+  scancodes irrelevant. **Scope note (v3 audit, HW-2): this spoof
+  verifies the HANDLER against hand-authored code/key pairs — it asserts
+  what the tester believed QWERTZ emits, so it cannot falsify the layout
+  mapping itself** (dead keys, AltGr surfacing as ctrl+alt, IME, WebView2
+  quirks). Handler logic: verified. Physical layout mapping: unverified —
+  one real pass on a QWERTZ layout still recommended before the v3 tag
+  (costs a layout switch, not hardware).
 - [ ] **Unsupported video-bg codec message.** FIXED in v2.44.2 — the
       friendly-message translation existed but had been lost in a botched
       multi-edit before the v2.44.1 build; it is actually in the binary now.
@@ -187,17 +192,20 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   ID3 titles ("Track 1"…); click one → it plays (playhead moves in the
   player bar); enable Auto-play-next → seek near the end (player-bar
   click at ~95%) → PASS: the next track starts by itself.
-- [✅] **`.avtheme` import.** PASS 2026-07-25 on v2.47.0. Export verified
-  earlier (v2.44.1, 2 MB file, factory template applies). Drag-drop —
-  the HUMAN-assist half — now verified via SPOOFED drop: a synthetic
-  DragEvent carrying a real File in a DataTransfer, dispatched at the
-  app root (dragenter → dragover → drop), ran the full pipeline —
-  parse, validate, apply, "by QA applied" notice — and the theme's
-  mode + params landed. Spoof method (dev harness):
-  `app.dispatchEvent(new DragEvent('drop', { dataTransfer }))` with
-  `dataTransfer.items.add(new File([themeText], 'x.avtheme'))`.
-  OS-level Explorer drag is the same event stream; no human pass
-  required.
+- [ ] **`.avtheme` import.** Export half PASSES (v2.44.1, 2 MB file,
+      factory template applies). **Drag-drop is UNVERIFIED and was wrongly
+      marked PASS** — the v3 audit (HW-1) found the synthetic-DragEvent
+      spoof only proves the React `onDrop` handler works IN A BROWSER. It
+      says nothing about WebView2, where Tauri itself consumes the OS drop:
+      the window config left `dragDropEnabled` at its default `true`, and
+      tauri-utils' own doc states disabling it "is required to use HTML5
+      drag and drop on the frontend on Windows" — with no
+      `onDragDropEvent` listener anywhere in `src/`, a real Explorer drag
+      reached nothing. Fixed in v2.48.2 by setting `dragDropEnabled: false`.
+      RETEST ON THE INSTALLED BUILD, with a real mouse: drag an audio file
+      from Explorer onto the window (it should load), then a `.avtheme`
+      (it should apply), and confirm the drop overlay appears and clears.
+      A synthetic DragEvent does NOT satisfy this item.
 - [✅] **Builder file round-trip.** PASS 2026-07-23 on v2.44.1: exported a
   six-layer stack to `C:\bf-test\out\stack.avbuilder`, removed the added
   `Orb core`, imported the file, and recovered all six layers with

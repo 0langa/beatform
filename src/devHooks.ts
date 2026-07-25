@@ -1,16 +1,16 @@
-import { useVizStore } from "./state/store";
+import { useVizStore, type VizState } from "./state/store";
 import { getEngine } from "./state/services";
 import { rasterizeOverlay } from "./render/overlay";
 import { exportVideo } from "./export/videoExporter";
 import type { VideoCodecId } from "./export/codecProbe";
+import { buildExportOptions } from "./export/buildExportOptions";
 import { DEFAULT_POST } from "./render/types";
 import { audiogramActive } from "./state/audiogram";
 import { integratedLufs } from "./audio/dsp/lufs";
 import { truePeakDbfs } from "./audio/dsp/truepeak";
 import { expandJobs, type BatchRun } from "./state/batch";
 import { runBatch } from "./state/batchRunner";
-import { DEFAULT_LYRIC_STYLE } from "./state/lyrics";
-import { DEFAULT_AUDIOGRAM } from "./state/audiogram";
+import type { ProjectDocument } from "./state/project";
 
 /**
  * Dev-only E2E probes, extracted whole from App.tsx (they were ~240 lines and
@@ -18,6 +18,47 @@ import { DEFAULT_AUDIOGRAM } from "./state/audiogram";
  * hangs off `window` so the browser-pane harness can drive the real export
  * and batch pipelines without a filesystem.
  */
+
+/**
+ * The store's document slice as a real `ProjectDocument`.
+ *
+ * ANNOTATED, never cast. Both probes used to hand-roll their own document (or
+ * their own ExportOptions) behind an `as unknown as T`, and the cast hid every
+ * omission from tsc: the batch probe's doc silently lacked `builderStack`, so
+ * exportCore never called rebuildBuilder2 and a Builder-mode run rendered
+ * ALL-BLACK frames while reporting `{k:"done"}`; it also lacked the custom
+ * defs, so a custom-shader run quietly rendered Spectrum Bars instead. With
+ * the annotation, the next field added to ProjectDocument is a compile error
+ * here instead of a silently wrong probe run.
+ *
+ * store.docOf does this for the app, but it lives inside create()'s closure
+ * (SliceCtx) and is not on VizState, so the probes cannot borrow it.
+ */
+function docFromState(s: VizState): ProjectDocument {
+  return {
+    presetId: s.presetId,
+    paramsByPreset: s.paramsByPreset,
+    syncByPreset: s.syncByPreset,
+    bg: s.bg,
+    bgByPreset: s.bgByPreset,
+    centerImageByPreset: s.centerImageByPreset,
+    overlayLayers: s.overlayLayers,
+    assets: s.assets,
+    aspect: s.aspect,
+    modsByPreset: s.modsByPreset,
+    smoothSpectrum: s.smoothSpectrum,
+    timeline: s.timeline,
+    post: s.post,
+    motion: s.motion,
+    lyricStyle: s.lyricStyle,
+    audiogram: s.audiogram,
+    // The WHOLE library, not docOf's referenced-only filter: a probe exists to
+    // exercise a specific def, and an empty registry falls back to presets[0]
+    // (Spectrum Bars) without saying a word.
+    customDefs: s.customDefs,
+    builderStack: s.builderStack,
+  };
+}
 
 /**
  * FNV-1a over raw PNG bytes — a content fingerprint for the export harness.
@@ -161,87 +202,77 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
     // 0 no matter how badly it diverges later, so a frame-0-only baseline
     // silently passes the exact regressions it exists to catch.
     const pngHashes: string[] = [];
-    const result = await exportVideo(buf, {
-      onPngFrame: opts.png
-        ? (data, index) => {
-            pngFrames.push(data.length);
-            pngHashes.push(fnv1a(data));
-            // Keep frame 0 around so tooling can decode + inspect it.
-            if (index === 0) {
-              (window as unknown as { __lastPngFrame: Blob }).__lastPngFrame = new Blob(
-                [data.slice()],
-                { type: "image/png" },
-              );
-            }
-            // ...and the FINAL frame, which is the only useful one for
-            // anything that accumulates. Frame 0 of the particle sim is the
-            // initial seeded disc (uniform noise) and frame 0 of a feedback
-            // preset has no trail at all, so a frame-0-only probe makes
-            // those two look broken when they are working perfectly.
-            (window as unknown as { __lastPngFrameEnd: Blob }).__lastPngFrameEnd = new Blob(
-              [data.slice()],
-              { type: "image/png" },
-            );
-          }
-        : undefined,
-      width: w,
-      height: h,
-      fps: opts.fps ?? 30,
-      bitrate: 1_000_000,
-      codec: opts.codec,
-      presetId: s.presetId,
-      params: s.activeParams,
-      // Per-mode overrides (v2.46) — mirror buildExportOptions or the probe
-      // silently tests the wrong background/cover.
-      bg: s.bgByPreset[s.presetId] ?? s.bg,
-      sync: s.sync,
-      overlay,
-      segment: opts.canvasLoop,
-      loopCrossfadeSec: opts.canvasLoop ? 0.5 : undefined,
-      beatGrid: s.beatGrid ?? undefined,
-      stems: s.stems,
-      lyrics:
-        s.lyrics && s.lyricStyle.enabled ? { lines: s.lyrics, style: s.lyricStyle } : undefined,
-      audiogram: audiogramActive(s.audiogram)
-        ? { settings: s.audiogram, waveform: s.waveformOverview }
-        : undefined,
-      customPresets: s.customDefs,
-      builderStack: s.builderStack,
-      mods: s.activeMods,
-      smoothSpectrum: s.smoothSpectrum,
-      // Merge onto DEFAULT_POST. A partial post object is a trap: `exposure`
-      // is a MULTIPLY (1 = neutral), so omitting it lands 0 in the uniform
-      // and every frame renders solid black — which silently turned a whole
-      // regression baseline into hashes of black frames.
-      post: opts.post ? { ...DEFAULT_POST, ...opts.post } : s.post,
-      motion: s.motion,
-      coverArt:
-        (s.centerImageByPreset[s.presetId]
-          ? s.assets[s.centerImageByPreset[s.presetId]]?.dataUrl
-          : undefined) ??
-        s.coverArt ??
-        undefined,
-      bgImage: (() => {
-        const bg = s.bgByPreset[s.presetId] ?? s.bg;
-        return bg.mode === 3 && bg.image && s.assets[bg.image.assetId]
-          ? {
-              dataUrl: s.assets[bg.image.assetId].dataUrl,
-              dim: bg.image.dim,
-              blur: bg.image.blur,
-            }
-          : undefined;
-      })(),
-      bgVideo: (() => {
-        const bg = s.bgByPreset[s.presetId] ?? s.bg;
-        return bg.mode === 4 && bg.video && s.assets[bg.video.assetId]
-          ? { dataUrl: s.assets[bg.video.assetId].dataUrl, dim: bg.video.dim, blur: bg.video.blur }
-          : undefined;
-      })(),
-      timeline: s.timeline.enabled ? s.timeline : undefined,
-      paramsByPreset: s.paramsByPreset,
-      modsByPreset: s.modsByPreset,
-      loudness: opts.loudness,
-    });
+    const doc = docFromState(s);
+    // Everything the document contributes goes through the SAME builder the
+    // app's export path and the batch runner use. This probe used to re-derive
+    // bg / coverArt / bgImage / bgVideo itself — a THIRD copy of rules that
+    // buildExportOptions exists to hold exactly once — so every per-mode change
+    // (v2.46) had to be made twice, and the copy that was missed is precisely
+    // why the probe kept testing a background the app would never render.
+    const result = await exportVideo(
+      buf,
+      buildExportOptions(
+        {
+          ...doc,
+          // Probe-only override. A PARTIAL post object is a trap: `exposure`
+          // is a MULTIPLY (1 = neutral), so omitting it lands 0 in the uniform
+          // and every frame renders solid black — which silently turned a
+          // whole regression baseline into hashes of black frames.
+          post: opts.post ? { ...DEFAULT_POST, ...opts.post } : doc.post,
+        },
+        {
+          id: "probe",
+          label: "probe",
+          w,
+          h,
+          fps: opts.fps ?? 30,
+          mbps: 1,
+          format: "mp4",
+          codec: opts.codec,
+        },
+        {
+          name: getEngine().state.trackName ?? "visualization",
+          meta: s.trackMeta,
+          coverArt: s.coverArt,
+          beatGrid: s.beatGrid,
+          stems: s.stems,
+          lyrics:
+            s.lyrics && s.lyricStyle.enabled ? { lines: s.lyrics, style: s.lyricStyle } : undefined,
+          audiogram: audiogramActive(s.audiogram)
+            ? { settings: s.audiogram, waveform: s.waveformOverview }
+            : undefined,
+          customPresets: s.customDefs,
+        },
+        overlay,
+        {
+          onPngFrame: opts.png
+            ? (data, index) => {
+                pngFrames.push(data.length);
+                pngHashes.push(fnv1a(data));
+                // Keep frame 0 around so tooling can decode + inspect it.
+                if (index === 0) {
+                  (window as unknown as { __lastPngFrame: Blob }).__lastPngFrame = new Blob(
+                    [data.slice()],
+                    { type: "image/png" },
+                  );
+                }
+                // ...and the FINAL frame, which is the only useful one for
+                // anything that accumulates. Frame 0 of the particle sim is
+                // the initial seeded disc (uniform noise) and frame 0 of a
+                // feedback preset has no trail at all, so a frame-0-only probe
+                // makes those two look broken when they are working perfectly.
+                (window as unknown as { __lastPngFrameEnd: Blob }).__lastPngFrameEnd = new Blob(
+                  [data.slice()],
+                  { type: "image/png" },
+                );
+              }
+            : undefined,
+          segment: opts.canvasLoop,
+          loopCrossfadeSec: opts.canvasLoop ? 0.5 : undefined,
+          loudness: opts.loudness,
+        },
+      ),
+    );
     // Decode what we actually wrote and measure it. AAC is lossy, so this is
     // the honest number a delivery target would see — not what we intended.
     let measured: { lufs: number; truePeakDb: number } | undefined;
@@ -279,7 +310,16 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
   // per-job isolation, abort, ordering) can be exercised in browser dev.
   (window as unknown as { __runBatch: unknown }).__runBatch = async (
     files: File[],
-    opts: { width?: number; height?: number; fps?: number; failOn?: number } = {},
+    opts: {
+      width?: number;
+      height?: number;
+      fps?: number;
+      /** Fail the Nth job (0-based) to prove per-job isolation. */
+      failOn?: number;
+      /** Loudness target, frozen with the run — the real panel freezes one
+       * here too, and without it the probe cannot exercise that lane at all. */
+      loudness?: { targetLufs: number; truePeakDb: number };
+    } = {},
   ) => {
     // Start clean: addBatchTracks appends (as it should for the real UI),
     // which would silently carry tracks over between probe runs.
@@ -298,46 +338,45 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
       mbps: 1,
       format: "mp4" as const,
     };
-    const run = {
-      doc: {
-        presetId: s.presetId,
-        paramsByPreset: s.paramsByPreset,
-        syncByPreset: s.syncByPreset,
-        bg: s.bg,
-        bgByPreset: s.bgByPreset,
-        centerImageByPreset: s.centerImageByPreset,
-        overlayLayers: s.overlayLayers,
-        assets: s.assets,
-        aspect: s.aspect,
-        modsByPreset: s.modsByPreset,
-        smoothSpectrum: s.smoothSpectrum,
-        timeline: s.timeline,
-        post: s.post,
-        motion: s.motion,
-        // v9 document fields — the probe's frozen doc mirrors docOf. (This
-        // literal predates them; the `as BatchRun` cast hid the omission.)
-        lyricStyle: { ...DEFAULT_LYRIC_STYLE },
-        audiogram: { ...DEFAULT_AUDIOGRAM },
-        customDefs: [],
-      },
+    // Annotated, NOT cast: see docFromState. `as unknown as BatchRun` is what
+    // let this literal ship without `builderStack`, and the resulting probe
+    // reported a clean `{k:"done"}` over all-black frames.
+    const run: BatchRun = {
+      doc: docFromState(s),
       tracks,
       formats: [fmt],
       outDir: "/probe",
-      startedAt: performance.now(),
+      // Date.now, NOT performance.now — the panel's countdown ticks on the
+      // wall clock, so mixing epochs reports an elapsed of ~55 years (see the
+      // note on BatchRun.startedAt).
+      startedAt: Date.now(),
       jobs: [],
-    } as unknown as BatchRun;
+      // Frozen with the run, exactly as batchActions does. The doc only
+      // carries a custom preset's ID; without the defs riding along the export
+      // worker's registry is empty, presetById falls through to presets[0] and
+      // every job silently renders Spectrum Bars.
+      customPresets: s.customDefs,
+      loudness: opts.loudness,
+    };
     run.jobs = expandJobs(run.tracks, run.formats, run.outDir);
 
     const events: string[] = [];
     const statuses: Record<string, unknown> = {};
-    let n = 0;
+    let jobIndex = -1;
     await runBatch(run, {
-      streamPathFor: () => undefined, // blob mode: no fs needed
+      // blob mode: no fs needed. Also the injection point for `failOn` —
+      // runBatch calls onJobStart OUTSIDE its per-job try, so a throw from
+      // there escapes the whole loop and rejects the run, which proves the
+      // opposite of the isolation this affordance claims to test. streamPathFor
+      // is read inside the try, so a throw here lands in the per-job catch and
+      // genuinely exercises "one job's failure is one job's failure".
+      streamPathFor: () => {
+        if (opts.failOn != null && jobIndex === opts.failOn) throw new Error("probe: injected");
+        return undefined;
+      },
       onJobStart: (id) => {
         events.push(`start:${id}`);
-        // Simulate a mid-run failure to prove isolation, if asked.
-        if (opts.failOn != null && n === opts.failOn) throw new Error("probe: injected");
-        n++;
+        jobIndex++;
       },
       onJobUpdate: (id, st) => {
         statuses[id] = st;

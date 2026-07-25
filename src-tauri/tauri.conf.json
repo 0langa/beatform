@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "Beatform",
+        "dragDropEnabled": false,
         "width": 1280,
         "height": 780,
         "minWidth": 640,

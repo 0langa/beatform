@@ -154,6 +154,7 @@ export {
   reconciledResIdx,
   autoBitrateMbps,
   LOUDNESS_PRESETS,
+  SIMPLIFIED_EXPORT_REASON,
 } from "./exportConfig";
 export type { ExportProgress, ExportSettings } from "./exportConfig";
 
@@ -198,6 +199,28 @@ interface SessionSlice {
   muted: boolean;
   seeking: boolean;
   rendererKind: string;
+  /**
+   * True while the Canvas2D fallback is driving the canvas (audit F1).
+   *
+   * The fallback draws ONE look — spectrum bars — and its setPreset/setMotion/
+   * setBuilderParams/setTransitionPreset/setPost are empty stubs, so every
+   * mode chip, the Motion masters, Builder Studio, the shader editor, scene
+   * transitions, post-processing and video backgrounds are accepted and
+   * discarded. Derived once here on every renderer swap and threaded to the
+   * panels as a single flag, so "can this backend honour that control?" has
+   * one answer instead of a `rendererKind === "canvas2d"` string test copied
+   * into every surface that needs to ask.
+   */
+  simplifiedRenderer: boolean;
+  /** What the renderer swap wants the user to know, in their language — the
+   * fallback explanation, or the "restart to recover" after a failed GPU
+   * reset. Persistent (it feeds the banner), not a 4-second toast: the
+   * condition it describes lasts the whole session. */
+  rendererWarning: string | null;
+  /** The user closed the simplified-renderer banner. Session-only, and reset
+   * whenever a hardware renderer comes back, so a LATER fallback is announced
+   * again rather than inheriting an old dismissal. */
+  simplifiedNoticeDismissed: boolean;
   chromeIdle: boolean;
   /** Stage mode: chrome-free full-bleed output for live performance / capture /
    * projecting. Drive visuals via keys/MIDI; Esc exits. */
@@ -402,8 +425,12 @@ interface Actions {
   setShowSettings(v: boolean): void;
   /** Dismiss the error toast — real errors have no timer, so a stale one would
    * otherwise sit over the whole session, including Stage mode. (The degraded-
-   * renderer message that first motivated this now uses the notice channel.) */
+   * renderer message that first motivated this now has its own persistent,
+   * separately dismissible banner — see simplifiedRenderer.) */
   clearError(): void;
+  /** Close the simplified-renderer banner. Dismissible so it is not a dead
+   * end, but never auto-expiring — the controls it explains stay disabled. */
+  dismissSimplifiedNotice(): void;
   setStageMode(v: boolean): void;
   setBlackout(v: boolean): void;
   setShowExport(v: boolean): void;
@@ -913,6 +940,9 @@ export const useVizStore = create<VizState>((set, get) => {
     muted: false,
     seeking: false,
     rendererKind: "…",
+    simplifiedRenderer: false,
+    rendererWarning: null,
+    simplifiedNoticeDismissed: false,
     chromeIdle: false,
     stageMode: false,
     blackout: false,
@@ -1035,11 +1065,22 @@ export const useVizStore = create<VizState>((set, get) => {
         isSeeking: () => get().seeking,
         onPlayback: (playback) => set({ playback }),
         onRendererChanged: (kind, warning) => {
-          set({ rendererKind: kind });
+          const simplified = kind === "canvas2d";
           // A degraded renderer (Canvas2D fallback) is WORKING, not failed, so
-          // surface it as an auto-clearing notice — never the persistent red
-          // error toast, which used to sit over the whole session incl. Stage.
-          if (warning) flashNotice(warning);
+          // it is neither the persistent red error toast (which used to sit
+          // over the whole session incl. Stage) nor — as of F1 — a notice that
+          // auto-cleared after 4 seconds while the UI went on offering 16 mode
+          // chips, post-processing, Motion, Builder and Export that the
+          // fallback silently discards. It gets its own channel: a persistent,
+          // dismissible banner plus disabled controls that say why.
+          set({
+            rendererKind: kind,
+            simplifiedRenderer: simplified,
+            rendererWarning: warning,
+            // A hardware renderer coming back (device-loss rebuild) re-arms
+            // the banner, so a second fallback later is announced again.
+            ...(simplified ? null : { simplifiedNoticeDismissed: false }),
+          });
           getRenderer()?.setSmoothSpectrum(get().smoothSpectrum);
           getRenderer()?.setPost(get().post);
           getRenderer()?.setMotion(get().motion);
@@ -1763,6 +1804,10 @@ export const useVizStore = create<VizState>((set, get) => {
 
     clearError() {
       set({ error: null });
+    },
+
+    dismissSimplifiedNotice() {
+      set({ simplifiedNoticeDismissed: true });
     },
 
     setStageMode(stageMode) {

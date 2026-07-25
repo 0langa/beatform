@@ -6,7 +6,7 @@ import { exportVideo } from "../../export/videoExporter";
 import { rasterizeOverlay } from "../../render/overlay";
 import { audiogramActive } from "../audiogram";
 import { safeName } from "../batch";
-import { autoBitrateMbps, RESOLUTIONS } from "../exportConfig";
+import { autoBitrateMbps, RESOLUTIONS, SIMPLIFIED_EXPORT_REASON } from "../exportConfig";
 import {
   animBegin,
   downloadBlob,
@@ -58,6 +58,16 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     },
 
     async runExport() {
+      // F2: the export worker builds its own WebGPU device, so on the Canvas2D
+      // fallback exportCore threw GpuInitError — but only after the native save
+      // dialog, the overlay raster and a full decode. Refuse FIRST, with the
+      // same sentence the (already disabled) Export buttons put in their
+      // tooltip, so the user never picks a destination for a file that was
+      // never going to be written.
+      if (get().simplifiedRenderer) {
+        set({ exportError: SIMPLIFIED_EXPORT_REASON, exportDone: null });
+        return;
+      }
       const engine = getEngine();
       const buf = engine.audioBuffer;
       if (!buf) return;

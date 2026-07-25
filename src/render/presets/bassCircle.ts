@@ -48,7 +48,7 @@ export const bassCircle: PresetDef = {
         hue: 42,
         hueSpread: 25,
         symmetry: 2,
-        spin: 0.15,
+        spin: 0.16,
         rimBright: 1.3,
         beatBurst: 0.9,
         particles: 1.4,
@@ -331,7 +331,13 @@ fn preset(uv: vec2f) -> vec4f {
           let pos = vec2f(f32(dx), f32(dy)) + 0.5 + wob;
           let d = length(fq - pos);
           let sz = (0.06 + h1 * 0.12) * (1.0 - fl * 0.2);
-          let tw = 0.4 + 0.6 * sin(u.time * (0.8 + h2 * 3.0) + h1 * 40.0);
+          // sin() is remapped to 0..1 BEFORE the 0.4 + 0.6 * mix. A bare
+          // 0.4 + 0.6 * sin() spans -0.2..1.0, so for ~23% of every particle's
+          // twinkle cycle the multiplier is NEGATIVE and the particle
+          // SUBTRACTS light — dark specks punched into a solid or image
+          // background (bug L4). Particles are on by default, so this was
+          // visible out of the box.
+          let tw = 0.4 + 0.6 * (0.5 + 0.5 * sin(u.time * (0.8 + h2 * 3.0) + h1 * 40.0));
           let core = smoothstep(sz, 0.0, d);
           let halo = exp(-d * d / max(sz * sz * 3.0, 1e-6)) * 0.5;
           col += hsl2rgb(P_hue() + (h2 - 0.5) * P_hueSpread(), 0.5, 0.72)
@@ -384,8 +390,13 @@ fn preset(uv: vec2f) -> vec4f {
   col += hsl2rgb(P_hue(), 0.9, 0.65) * rim * P_rimBright() * (0.7 + u.drive * 0.6 + beatP * 0.5);
   col += hsl2rgb(P_hue() + 20.0, 0.8, 0.5) * smoothstep(circleR, 0.0, r) * (0.08 + u.drive * 0.3) * inner;
 
-  col *= 1.0 - r * r * P_vignette();
-  return vec4f(col, 1.0);
+  // Vignette, clamped at zero: r*r reaches ~1.04 in the corners of a 16:9 frame
+  // (1.61 at 21:9) while Vignette goes to 1.2, so the bare 1.0 - r*r*amt lands
+  // at -0.25 out there. A negative multiplier makes the corners SUBTRACT light
+  // and dent a solid or image background below black instead of darkening
+  // toward it. The final max() enforces the same rule on everything above.
+  col *= max(1.0 - r * r * P_vignette(), 0.0);
+  return vec4f(max(col, vec3f(0.0)), 1.0);
 }
 `,
 };

@@ -85,6 +85,14 @@ export async function decodeVideoBgFrames(blob: Blob, dim = 0, blur = 0): Promis
       frames.push(await createImageBitmap(bake));
       if (frames.length >= VIDEO_BG_MAX_FRAMES) break;
     }
+  } catch (e) {
+    // Every frame already pushed is an OWNED ImageBitmap — up to 240 of them,
+    // ~220 MB at the decode size. A truncated or corrupt clip throws mid-stream
+    // and the caller only ever sees the error, so nothing else can ever reach
+    // this array: without an explicit release they sit detached-but-alive until
+    // the GC gets round to them, once per retry.
+    for (const f of frames) f.close();
+    throw e;
   } finally {
     await input.dispose?.();
   }

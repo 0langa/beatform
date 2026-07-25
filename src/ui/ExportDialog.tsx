@@ -3,6 +3,7 @@ import {
   LOUDNESS_PRESETS,
   RESOLUTIONS,
   resolutionsForAspect,
+  SIMPLIFIED_EXPORT_REASON,
   useVizStore,
 } from "../state/store";
 import { CODEC_LABELS, type VideoCodecId } from "../export/codecProbe";
@@ -32,6 +33,7 @@ export function ExportDialog() {
   const bg = useVizStore((s) => s.bg);
   const codecSupport = useVizStore((s) => s.codecSupport);
   const duration = useVizStore((s) => s.playback.duration);
+  const simplifiedRenderer = useVizStore((s) => s.simplifiedRenderer);
   const store = useVizStore.getState;
 
   const dialogRef = useFocusTrap(true);
@@ -334,6 +336,17 @@ export function ExportDialog() {
             " Transparent background becomes black in MP4 — PNG frames, ProRes, WebP and VP9+alpha keep it."}
         </p>
 
+        {/* F2: the dialog stayed fully operable on the Canvas2D fallback and
+            only admitted the truth after the save dialog, the decode and the
+            analysis — a GpuInitError thrown from inside the export worker.
+            Say it here, where the decision is made, and disable the button. */}
+        {simplifiedRenderer && (
+          <div className="toast-inline error">
+            {SIMPLIFIED_EXPORT_REASON}. The renderer in use draws a simplified preview only; a
+            graphics driver or WebView2 runtime update usually restores it.
+          </div>
+        )}
+
         {exporting ? (
           <>
             <div className="progress">
@@ -350,7 +363,12 @@ export function ExportDialog() {
             </div>
           </>
         ) : (
-          <button className="btn-primary wide" onClick={() => void store().runExport()}>
+          <button
+            className="btn-primary wide"
+            disabled={simplifiedRenderer}
+            title={simplifiedRenderer ? SIMPLIFIED_EXPORT_REASON : undefined}
+            onClick={() => void store().runExport()}
+          >
             <IconExport size={16} />
             Export {res.w}×{res.h} @ {effFps} fps
           </button>

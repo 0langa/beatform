@@ -8,6 +8,7 @@ import {
   validBg,
   validBgByPreset,
   validCenterImages,
+  validLayers,
   validateDocument,
 } from "./project";
 import { BG_SOLID } from "../render/types";
@@ -613,5 +614,66 @@ describe("background fit / zoom / pan", () => {
       offsetY: 0.5,
     });
     expect(out.aurora.image).toMatchObject(NEUTRAL_FIT);
+  });
+});
+
+describe("text layer font family", () => {
+  const layer = (font: unknown) => ({
+    id: "ly-f",
+    type: "text",
+    text: "hi",
+    font,
+    weight: 700,
+    size: 0.06,
+    color: [1, 1, 1],
+    opacity: 1,
+    letterSpacing: 0,
+    anchor: "cc",
+    offset: [0, 0],
+    glow: 0,
+    uppercase: false,
+  });
+  const fontOf = (font: unknown) => {
+    const out = validLayers([layer(font)], {});
+    return out[0].type === "text" ? out[0].font : null;
+  };
+
+  it("keeps ordinary families, stacks and generic keywords", () => {
+    expect(fontOf("Arial")).toBe("Arial");
+    expect(fontOf("Helvetica Neue")).toBe("Helvetica Neue");
+    expect(fontOf("sans-serif")).toBe("sans-serif");
+    expect(fontOf("Helvetica Neue, Arial, sans-serif")).toBe("Helvetica Neue, Arial, sans-serif");
+    // Non-ASCII families are real font names, not an attack.
+    expect(fontOf("Noto Sans JP")).toBe("Noto Sans JP");
+    expect(fontOf("游ゴシック")).toBe("游ゴシック");
+  });
+
+  it("rejects families that would make the ctx.font assignment a silent no-op", () => {
+    // Every one of these leaves ctx.font at 10px sans-serif in BOTH the
+    // preview and the export, with nothing reported — the whole point of F12.
+    for (const bad of [
+      "Arial; color: red",
+      "Arial}",
+      'Arial"',
+      "'Arial'",
+      "3Bad",
+      "Arial\nBold",
+      "",
+      "   ",
+      42,
+      null,
+      undefined,
+    ]) {
+      expect(fontOf(bad)).toBe("Arial");
+    }
+  });
+
+  it("rejects a stack whose LAST family is bad — one bad part kills the whole shorthand", () => {
+    expect(fontOf("Arial, 3Bad")).toBe("Arial");
+    expect(fontOf("Arial, sans-serif}")).toBe("Arial");
+  });
+
+  it("still caps the family length", () => {
+    expect(fontOf("A".repeat(500))).toHaveLength(100);
   });
 });

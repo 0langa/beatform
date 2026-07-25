@@ -314,7 +314,11 @@ fn fitUV(boxUV: vec2f, texAspect: f32, boxAspect: f32, mode: f32, zoom: f32, off
   var c = boxUV - vec2f(0.5) - offset;
   let ratio = texAspect / max(boxAspect, 1e-4);
   if (mode < 0.5) {
-    if (ratio > 1.0) { c.x = c.x / ratio; } else { c.y = c.y * ratio; }
+    // Written as a multiply by (boxAspect/texAspect), not a divide by ratio:
+    // the two are algebraically equal but differ by an ULP, and this is the
+    // exact form the hardcoded cover crop used before fitUV replaced it — so
+    // a background saved before this helper existed still renders bit-identically.
+    if (ratio > 1.0) { c.x = c.x * (boxAspect / max(texAspect, 1e-4)); } else { c.y = c.y * ratio; }
   } else if (mode < 1.5) {
     if (ratio > 1.0) { c.y = c.y * ratio; } else { c.x = c.x / ratio; }
   }
@@ -2058,7 +2062,11 @@ export class WebGPURenderer implements Renderer {
     F[6] = f.driveBeat;
     F[7] = f.kick;
     PARTICLE_PARAM_KEYS.forEach((k, idx) => {
-      F[8 + idx] = params[k] ?? 0;
+      // Resolve through the preset's OWN spec default, never a literal: a bare
+      // `?? 0` here would freeze the sim (damping 0) or hide the field (size 0)
+      // for any key a caller omitted, and it silently duplicates a default that
+      // can drift from the spec. renderMesh3d already uses paramOr for this.
+      F[8 + idx] = paramOr(this.preset!, params, k);
     });
     // Motion masters: swirl obeys Rotation, beat burst obeys Pulse.
     F[8 + PARTICLE_PARAM_KEYS.indexOf("swirl")] *= this.motion.rotation;
@@ -2147,7 +2155,12 @@ export class WebGPURenderer implements Renderer {
         ],
       });
     }
-    const density = Math.min(1, Math.max(0, (params["density"] ?? 1) * this.motion.detail));
+    // Same rule as the param upload above: the literal 1 here contradicted the
+    // preset's own default of 0.45, so an omitted key drew 2.2x the particles.
+    const density = Math.min(
+      1,
+      Math.max(0, paramOr(this.preset!, params, "density") * this.motion.detail),
+    );
     const drawCount = Math.max(1, Math.floor(count * density));
     const pass = encoder.beginRenderPass({
       colorAttachments: [

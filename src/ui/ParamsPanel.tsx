@@ -185,6 +185,10 @@ function BgFitRows(props: {
   color: [number, number, number];
   onColor: (color: [number, number, number]) => void;
   onHint: (hint: string | null) => void;
+  /** Set when the active renderer can't frame this source at all (video on
+   * the Canvas2D fallback) — disables the rows and explains itself. Images
+   * ARE fitted there (see drawFittedBg), so they never pass this. */
+  disabledReason?: string;
 }) {
   const { value, onChange, what } = props;
   const fit = value.fit ?? 0;
@@ -195,6 +199,7 @@ function BgFitRows(props: {
         onChange={(next) => onChange({ fit: next })}
         onHint={props.onHint}
         ariaLabel={`Background ${what} fit`}
+        disabled={!!props.disabledReason}
         options={BG_FIT_OPTIONS}
       />
       {fit === 1 && (
@@ -213,6 +218,7 @@ function BgFitRows(props: {
         value={value.zoom ?? 1}
         onChange={(zoom) => onChange({ zoom })}
         onHint={props.onHint}
+        disabledReason={props.disabledReason}
       />
       <SliderRow
         label="X"
@@ -223,6 +229,7 @@ function BgFitRows(props: {
         value={value.offsetX ?? 0}
         onChange={(offsetX) => onChange({ offsetX })}
         onHint={props.onHint}
+        disabledReason={props.disabledReason}
       />
       <SliderRow
         label="Y"
@@ -233,6 +240,7 @@ function BgFitRows(props: {
         value={value.offsetY ?? 0}
         onChange={(offsetY) => onChange({ offsetY })}
         onHint={props.onHint}
+        disabledReason={props.disabledReason}
       />
     </>
   );
@@ -338,6 +346,13 @@ export interface ParamsPanelProps {
   sync: SyncSettings;
   onSync: (sync: SyncSettings) => void;
   rendererKind: string;
+  /**
+   * True while the Canvas2D fallback is drawing (audit F1). Everything this
+   * panel offers that the fallback cannot honour — Post, the Motion masters,
+   * Builder Studio, the Video background — is disabled and says why, instead
+   * of accepting the input and quietly dropping it on the floor.
+   */
+  simplifiedRenderer: boolean;
   onClose: () => void;
   /** Saved user looks for THIS visual mode (already filtered by caller). */
   userPresets: UserPreset[];
@@ -479,6 +494,14 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
   // (e.g. Rotation on a mode that can't spin, Detail on a non-discrete mode).
   const caps = presetMasters(props.preset);
   const showMotion = caps.rotation || caps.pulse || caps.detail;
+
+  // One sentence, reused by every control the Canvas2D fallback cannot honour
+  // (F1). `undefined` on the normal WebGPU path, which is what leaves those
+  // controls with their own hints and their own enabled behaviour — the
+  // fallback must cost the 99% of users nothing.
+  const unavailable = props.simplifiedRenderer
+    ? "Unavailable right now: hardware rendering (WebGPU) isn't available on this system, and the simplified renderer can't draw this"
+    : undefined;
 
   // A style is "active" when current params exactly equal defaults + values
   const defaults = defaultParams(props.preset);
@@ -686,7 +709,18 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             search:
               `builder layer stack compositor blend add screen opacity hue spread ${BUILDER_LAYER_TYPES.map((t) => t.label).join(" ")}`.toLowerCase(),
             standalone: true,
-            body: (
+            body: props.simplifiedRenderer ? (
+              // The whole stack compiles to WGSL, so there is nothing here the
+              // fallback can render — showing the editor would invite edits
+              // that change the picture not at all (F1).
+              <div className="panel-section" title={unavailable}>
+                <p className="section-hint">
+                  Builder Studio compiles its layer stack to a GPU shader, so it needs hardware
+                  rendering (WebGPU). Your saved stack is untouched and will render again on a
+                  system that has it.
+                </p>
+              </div>
+            ) : (
               <BuilderPanel
                 stack={props.builderStack}
                 onChange={props.onBuilderStack}
@@ -704,15 +738,16 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             title: "Motion",
             tab: "visual" as const,
             search: "motion rotation pulse detail spin global",
-            headerExtra: motionChanged ? (
-              <button
-                className="text-btn"
-                title="Back to normal motion (100% everywhere)"
-                onClick={() => props.onMotion({ ...DEFAULT_MOTION })}
-              >
-                Reset
-              </button>
-            ) : undefined,
+            headerExtra:
+              motionChanged && !props.simplifiedRenderer ? (
+                <button
+                  className="text-btn"
+                  title="Back to normal motion (100% everywhere)"
+                  onClick={() => props.onMotion({ ...DEFAULT_MOTION })}
+                >
+                  Reset
+                </button>
+              ) : undefined,
             body: (
               <>
                 {caps.rotation && (
@@ -726,6 +761,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     onChange={(v) => props.onMotion({ rotation: v })}
                     format={PERCENT}
                     onHint={setHint}
+                    disabledReason={unavailable}
                   />
                 )}
                 {caps.pulse && (
@@ -739,6 +775,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     onChange={(v) => props.onMotion({ pulse: v })}
                     format={PERCENT}
                     onHint={setHint}
+                    disabledReason={unavailable}
                   />
                 )}
                 {caps.detail && (
@@ -752,9 +789,14 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     onChange={(v) => props.onMotion({ detail: v })}
                     format={PERCENT}
                     onHint={setHint}
+                    disabledReason={unavailable}
                   />
                 )}
-                <p className="section-hint">Global motion for this mode — exports match.</p>
+                <p className="section-hint">
+                  {props.simplifiedRenderer
+                    ? "The motion masters drive the visual's own shader, so they need hardware rendering (WebGPU). Your settings are kept and apply again where it is available."
+                    : "Global motion for this mode — exports match."}
+                </p>
               </>
             ),
           } satisfies SectionDef,
@@ -1155,7 +1197,16 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             options={(props.showVideoBg
               ? [...BG_OPTIONS_BASE, BG_OPTION_VIDEO]
               : BG_OPTIONS_BASE
-            ).map((o) => ({ value: o.mode, label: o.label, hint: o.hint }))}
+            ).map((o) => ({
+              value: o.mode,
+              label: o.label,
+              // Video frames are uploaded as GPU textures every frame — the
+              // simplified renderer has nowhere to put them, and picking Video
+              // there used to decode the whole clip and then draw a hue wash
+              // that matched nothing the user chose (F9).
+              disabled: o.mode === BG_VIDEO && props.simplifiedRenderer,
+              hint: o.mode === BG_VIDEO && unavailable ? unavailable : o.hint,
+            }))}
             onChange={(mode) => {
               if (mode === BG_IMAGE && !props.bg.image) props.onPickBackgroundImage();
               else if (mode === BG_VIDEO && !props.bg.video) props.onPickVideoBackground();
@@ -1229,7 +1280,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               <div className="save-look-row">
                 <button
                   className="text-btn"
-                  title="Choose a different video file"
+                  disabled={props.simplifiedRenderer}
+                  title={unavailable ?? "Choose a different video file"}
                   onClick={props.onPickVideoBackground}
                 >
                   {props.videoBgLoading ? "Decoding…" : "Choose video…"}
@@ -1246,6 +1298,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   onChange={(dim) =>
                     props.onBg({ ...props.bg, video: { ...props.bg.video!, dim } })
                   }
+                  disabledReason={unavailable}
                 />
               )}
               {props.bg.video && (
@@ -1259,6 +1312,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   onChange={(blur) =>
                     props.onBg({ ...props.bg, video: { ...props.bg.video!, blur } })
                   }
+                  disabledReason={unavailable}
                 />
               )}
               {props.bg.video && (
@@ -1271,11 +1325,13 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   color={props.bg.color}
                   onColor={(color) => props.onBg({ ...props.bg, color })}
                   onHint={setHint}
+                  disabledReason={unavailable}
                 />
               )}
               <p className="section-hint">
-                A short clip loops behind the visualization (first {12}s, decoded to a fixed loop).
-                Deterministic — the export matches the preview. Desktop only.
+                {props.simplifiedRenderer
+                  ? "Video backgrounds upload a frame to the GPU every frame, so they need hardware rendering (WebGPU). This mode currently paints the flat background color instead — pick Animated, Solid or Image."
+                  : `A short clip loops behind the visualization (first ${12}s, decoded to a fixed loop). Deterministic — the export matches the preview. Desktop only.`}
               </p>
             </>
           )}
@@ -1313,15 +1369,16 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       tab: "scene",
       search:
         `post processing finishing filmic tonemap aces ${POST_SLIDERS.map((r) => r.label).join(" ")}`.toLowerCase(),
-      headerExtra: postChanged ? (
-        <button
-          className="text-btn"
-          title="Turn off all post-processing (neutral)"
-          onClick={() => props.onPost({ ...DEFAULT_POST })}
-        >
-          Reset
-        </button>
-      ) : undefined,
+      headerExtra:
+        postChanged && !props.simplifiedRenderer ? (
+          <button
+            className="text-btn"
+            title="Turn off all post-processing (neutral)"
+            onClick={() => props.onPost({ ...DEFAULT_POST })}
+          >
+            Reset
+          </button>
+        ) : undefined,
       body: (
         <>
           <ToggleRow
@@ -1330,6 +1387,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             checked={props.post.tonemap}
             onChange={(v) => props.onPost({ tonemap: v })}
             onHint={setHint}
+            disabledReason={unavailable}
           />
           {POST_SLIDERS.map((r) => (
             <SliderRow
@@ -1342,11 +1400,13 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               value={props.post[r.key]}
               onChange={(v) => props.onPost({ [r.key]: v })}
               onHint={setHint}
+              disabledReason={unavailable}
             />
           ))}
           <p className="section-hint">
-            Finishing pass applied to the whole frame — grain is deterministic, so preview and
-            export match exactly.
+            {props.simplifiedRenderer
+              ? "The finishing pass runs on the GPU, so it needs hardware rendering (WebGPU). Your settings are kept and apply again where it is available."
+              : "Finishing pass applied to the whole frame — grain is deterministic, so preview and export match exactly."}
           </p>
         </>
       ),
@@ -1751,8 +1811,19 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       </div>
 
       <div className="panel-footer">
-        <span className="renderer-badge" title="Active render backend">
-          {props.rendererKind}
+        {/* The backend id is developer shorthand — fine as a badge while it
+            reads "webgpu" and everything works, useless as the ONLY signal
+            that the app has quietly stopped drawing what you asked for (F1).
+            On the fallback it says so in words, in the app's warning colour. */}
+        <span
+          className={`renderer-badge ${props.simplifiedRenderer ? "danger" : ""}`}
+          title={
+            props.simplifiedRenderer
+              ? "Simplified renderer — hardware rendering (WebGPU) is unavailable, so every mode draws the same spectrum bars and video export is off"
+              : "Active render backend"
+          }
+        >
+          {props.simplifiedRenderer ? "simplified" : props.rendererKind}
         </span>
         {props.bpm !== null && props.bpm > 0 && (
           <span className="renderer-badge" title="Detected tempo (beat grid)">

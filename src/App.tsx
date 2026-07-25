@@ -91,6 +91,9 @@ export default function App() {
   const volume = useVizStore((s) => s.volume);
   const muted = useVizStore((s) => s.muted);
   const rendererKind = useVizStore((s) => s.rendererKind);
+  const simplifiedRenderer = useVizStore((s) => s.simplifiedRenderer);
+  const rendererWarning = useVizStore((s) => s.rendererWarning);
+  const simplifiedNoticeDismissed = useVizStore((s) => s.simplifiedNoticeDismissed);
   const chromeIdle = useVizStore((s) => s.chromeIdle);
   const stageMode = useVizStore((s) => s.stageMode);
   const blackout = useVizStore((s) => s.blackout);
@@ -582,6 +585,13 @@ export default function App() {
     };
   }, []);
 
+  // One sentence for every Export/Batch entry point in the shell, so the
+  // top-bar tooltips, the dialog and the store guard all give the same reason
+  // (F2). Null on the normal path — nothing below changes there.
+  const exportBlocked = simplifiedRenderer
+    ? "Video export needs hardware rendering (WebGPU), which isn't available on this system"
+    : null;
+
   // Idle-hide only when nothing interactive is open (audit U6): the params
   // panel, library, guide and settings are .chrome too, so holding the
   // pointer still while READING one used to fade it out under the cursor.
@@ -773,13 +783,14 @@ export default function App() {
         <div className="top-right">
           <button
             className="ghost-btn accent"
-            disabled={!playback.trackName || batchStatus === "running"}
+            disabled={!playback.trackName || batchStatus === "running" || !!exportBlocked}
             title={
-              batchStatus === "running"
+              exportBlocked ??
+              (batchStatus === "running"
                 ? "Batch render in progress"
                 : playback.trackName
                   ? "Export MP4 video"
-                  : "Load a track first"
+                  : "Load a track first")
             }
             onClick={() => store().setShowExport(true)}
           >
@@ -788,10 +799,12 @@ export default function App() {
           </button>
           <button
             className={`icon-btn ${showBatch ? "active" : ""}`}
-            title="Batch render — one video per track (B)"
+            title={exportBlocked ?? "Batch render — one video per track (B)"}
             aria-label="Batch render"
             aria-pressed={showBatch}
-            disabled={showBatch && batchStatus === "running"}
+            // Closing an OPEN panel must stay possible even when blocked, or a
+            // mid-session fallback (GPU reset) would strand it on screen.
+            disabled={(showBatch && batchStatus === "running") || (!!exportBlocked && !showBatch)}
             onClick={() => store().setShowBatch(!showBatch)}
           >
             <IconBatch size={18} />
@@ -872,6 +885,11 @@ export default function App() {
         thumbs={presetThumbs}
         onSwitch={switchPreset}
         onNewVisual={openShaderEditor}
+        newVisualDisabledReason={
+          simplifiedRenderer
+            ? "The shader editor needs hardware rendering (WebGPU), which isn't available on this system"
+            : undefined
+        }
       />
 
       {showLibrary && (
@@ -920,6 +938,7 @@ export default function App() {
           sync={sync}
           onSync={setSync}
           rendererKind={rendererKind}
+          simplifiedRenderer={simplifiedRenderer}
           onClose={closeParams}
           aspect={aspect}
           onAspect={setAspect}
@@ -997,6 +1016,7 @@ export default function App() {
           onChange={setTimelineData}
           onSeek={timelineSeek}
           onClose={closeTimeline}
+          simplifiedRenderer={simplifiedRenderer}
         />
       )}
 
@@ -1013,41 +1033,75 @@ export default function App() {
         onToggleMute={toggleMute}
       />
 
-      {/* role=alert so a screen reader is actually told; dismissible so a
-          sticky message (notably the degraded-but-working "WebGPU
-          unavailable") isn't a dead end that sits over Stage mode all
-          session; selectable so the text can be copied into a bug report. */}
-      {error && (
-        <div className="toast error-toast" role="alert">
-          <span className="toast-text">{error}</span>
-          <button
-            className="chip-x"
-            aria-label="Dismiss error"
-            title="Dismiss"
-            onClick={() => store().clearError()}
-          >
-            <IconClose size={13} />
-          </button>
-        </div>
-      )}
-      {notice && !error && (
-        <div className="toast notice-toast" role="status">
-          <span className="toast-text">{notice}</span>
-        </div>
-      )}
-      {recoveredDoc && (
-        <div className="toast recovery-toast" role="alert">
-          <span className="toast-text">
-            Beatform closed unexpectedly last time. Restore your unsaved work?
-          </span>
-          <button className="btn-mini" onClick={() => store().restoreAutosave()}>
-            Restore
-          </button>
-          <button className="btn-mini ghost" onClick={() => store().dismissAutosave()}>
-            Discard
-          </button>
-        </div>
-      )}
+      {/* A column, not three absolutely-positioned siblings at the same
+          bottom offset: recovery + error could already co-occur and drew on
+          top of each other, and the persistent fallback banner below would
+          have made that a three-way pile-up. With one toast the geometry is
+          byte-identical to what the single .toast rule produced. */}
+      <div className="toast-stack">
+        {/* The one banner that never expires. The Canvas2D fallback used to
+            announce itself as a 4-second notice while the whole UI went on
+            offering 16 modes, post, Motion, Builder and Export that it
+            silently discards (audit F1). It lasts as long as the condition
+            does, and dismissing it is the user's call, not a timer's. */}
+        {simplifiedRenderer && !simplifiedNoticeDismissed && (
+          <div className="toast fallback-toast" role="alert">
+            <div className="toast-body">
+              <strong className="toast-title">Hardware rendering unavailable</strong>
+              <span className="toast-text">
+                {rendererWarning ??
+                  "WebGPU is unavailable on this system, so Beatform is drawing a simplified preview."}{" "}
+                Every visual mode draws the same spectrum bars; post-processing, the Motion masters,
+                Builder Studio, the shader editor, scene transitions and video backgrounds are
+                switched off. Video export and batch render are disabled — your project is unharmed
+                and renders in full on a system with hardware rendering.
+              </span>
+            </div>
+            <button
+              className="chip-x"
+              aria-label="Dismiss the simplified rendering notice"
+              title="Dismiss — the affected controls stay disabled"
+              onClick={() => store().dismissSimplifiedNotice()}
+            >
+              <IconClose size={13} />
+            </button>
+          </div>
+        )}
+        {/* role=alert so a screen reader is actually told; dismissible so a
+            sticky message isn't a dead end that sits over Stage mode all
+            session; selectable so the text can be copied into a bug report. */}
+        {error && (
+          <div className="toast error-toast" role="alert">
+            <span className="toast-text">{error}</span>
+            <button
+              className="chip-x"
+              aria-label="Dismiss error"
+              title="Dismiss"
+              onClick={() => store().clearError()}
+            >
+              <IconClose size={13} />
+            </button>
+          </div>
+        )}
+        {notice && !error && (
+          <div className="toast notice-toast" role="status">
+            <span className="toast-text">{notice}</span>
+          </div>
+        )}
+        {recoveredDoc && (
+          <div className="toast recovery-toast" role="alert">
+            <span className="toast-text">
+              Beatform closed unexpectedly last time. Restore your unsaved work?
+            </span>
+            <button className="btn-mini" onClick={() => store().restoreAutosave()}>
+              Restore
+            </button>
+            <button className="btn-mini ghost" onClick={() => store().dismissAutosave()}>
+              Discard
+            </button>
+          </div>
+        )}
+      </div>
 
       {showShaderEditor && (
         <ShaderEditor
@@ -1133,6 +1187,7 @@ export default function App() {
           overlayLayers={overlayLayers}
           aspect={aspect}
           formatLabel={RESOLUTIONS[exportSettings.resIdx].label}
+          simplifiedRenderer={simplifiedRenderer}
           onAddTracks={addBatchTracks}
           onRemoveTrack={removeBatchTrack}
           onRetitle={retitleBatchTrack}

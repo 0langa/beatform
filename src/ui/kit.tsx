@@ -26,18 +26,40 @@ function hintProps(hint: string | undefined, onHint?: (h: string | null) => void
   };
 }
 
+/**
+ * Why a row is unavailable right now. Its PRESENCE is what disables the
+ * control, and it replaces the row's hover hint — so a control cannot be
+ * switched off without telling the user what would switch it back on.
+ *
+ * That coupling is the point (audit F1): the Canvas2D fallback accepted and
+ * silently discarded Post / Motion / Builder input, and a plain `disabled`
+ * flag would only have downgraded that from a lie to a mystery.
+ */
+type DisabledReason = { disabledReason?: string };
+
 /** Labelled switch row. */
-export function ToggleRow(props: {
-  label: string;
-  hint?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  onHint?: (hint: string | null) => void;
-}) {
+export function ToggleRow(
+  props: {
+    label: string;
+    hint?: string;
+    checked: boolean;
+    onChange: (v: boolean) => void;
+    onHint?: (hint: string | null) => void;
+  } & DisabledReason,
+) {
+  const off = !!props.disabledReason;
   return (
-    <label className="row toggle-row" {...hintProps(props.hint, props.onHint)}>
+    <label
+      className={`row toggle-row ${off ? "is-unavailable" : ""}`}
+      {...hintProps(props.disabledReason ?? props.hint, props.onHint)}
+    >
       <span className="row-label">{props.label}</span>
-      <Switch checked={props.checked} onChange={props.onChange} label={props.label} />
+      <Switch
+        checked={props.checked}
+        onChange={props.onChange}
+        label={props.label}
+        disabled={off}
+      />
     </label>
   );
 }
@@ -218,10 +240,15 @@ export function SliderField(props: {
           type="button"
           className="row-value"
           disabled={disabled}
+          // A disabled readout must not advertise an affordance it no longer
+          // has — "double-click to type a value" on a control that ignores
+          // both is the same class of lie this row's disabling exists to fix.
           title={
-            props.hint
-              ? `${props.hint} — double-click to type a value`
-              : "Double-click to type a value"
+            disabled
+              ? props.hint
+              : props.hint
+                ? `${props.hint} — double-click to type a value`
+                : "Double-click to type a value"
           }
           onDoubleClick={() => open(value)}
           onPointerUp={onReadoutTap}
@@ -243,29 +270,36 @@ export function SliderField(props: {
 }
 
 /** Labelled slider row with a numeric readout. */
-export function SliderRow(props: {
-  label: string;
-  hint?: string;
-  min: number;
-  max: number;
-  step: number;
-  value: number;
-  onChange: (v: number) => void;
-  format?: ValueFormat;
-  onHint?: (hint: string | null) => void;
-}) {
+export function SliderRow(
+  props: {
+    label: string;
+    hint?: string;
+    min: number;
+    max: number;
+    step: number;
+    value: number;
+    onChange: (v: number) => void;
+    format?: ValueFormat;
+    onHint?: (hint: string | null) => void;
+  } & DisabledReason,
+) {
+  const reason = props.disabledReason;
   return (
-    <label className="row param-row" {...hintProps(props.hint, props.onHint)}>
+    <label
+      className={`row param-row ${reason ? "is-unavailable" : ""}`}
+      {...hintProps(reason ?? props.hint, props.onHint)}
+    >
       <span className="row-label">{props.label}</span>
       <SliderField
         label={props.label}
-        hint={props.hint}
+        hint={reason ?? props.hint}
         min={props.min}
         max={props.max}
         step={props.step}
         value={props.value}
         onChange={props.onChange}
         format={props.format}
+        disabled={!!reason}
       />
     </label>
   );

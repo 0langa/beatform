@@ -69,6 +69,22 @@ export interface ExportSettings {
   truePeakDb: number;
 }
 
+/**
+ * Why every render path refuses to run on the Canvas2D fallback (audit F2).
+ *
+ * The export worker builds its own WebGPU device, so a machine that fell back
+ * to Canvas2D cannot encode a single frame — exportCore throws GpuInitError.
+ * It used to throw AFTER the native save dialog and a full decode + analysis
+ * (and, in a batch, once per queued track). This one string is what the
+ * disabled buttons put in their tooltip AND what the actions set as their
+ * error, so the promise the UI makes and the reason it gives cannot drift.
+ *
+ * Lives here rather than in store.ts so the slices can import it as a value
+ * without a cycle back through the store (same reason RESOLUTIONS does).
+ */
+export const SIMPLIFIED_EXPORT_REASON =
+  "Video export needs hardware rendering (WebGPU), which is unavailable on this system";
+
 /** Loudness targets people actually deliver to. */
 export const LOUDNESS_PRESETS: { label: string; hint: string; lufs: number }[] = [
   { label: "-14", hint: "Streaming (Spotify, YouTube, Apple Music)", lufs: -14 },

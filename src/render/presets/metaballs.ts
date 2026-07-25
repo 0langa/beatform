@@ -17,12 +17,12 @@ export const metaballs: PresetDef = {
     {
       id: "mercury",
       name: "Mercury",
-      values: { hue: 210, hueField: 4, glow: 0.3, gloss: 0.85, squash: 0.08 },
+      values: { hue: 210, hueField: 4, glow: 0.3, gloss: 0.86, squash: 0.08 },
     },
     {
       id: "toxic",
       name: "Toxic",
-      values: { hue: 100, count: 6, speed: 0.5, hueField: 40, gloss: 0.15, squash: 0.35 },
+      values: { hue: 100, count: 6, speed: 0.5, hueField: 40, gloss: 0.16, squash: 0.36 },
     },
     { id: "sunspot", name: "Sunspot", values: { hue: 40, size: 0.2, threshold: 1.3, count: 3 } },
     {
@@ -36,7 +36,7 @@ export const metaballs: PresetDef = {
         hueField: 10,
         bgLevel: 0.015,
         vignette: 0.7,
-        gloss: 0.55,
+        gloss: 0.56,
       },
     },
     {
@@ -300,9 +300,17 @@ fn preset(uv: vec2f) -> vec4f {
     if (i % 3 == 1) { band = u.mid; }
     if (i % 3 == 2) { band = u.treble; }
     let t = u.time * P_speed() * (0.5 + h * 0.6);
+    // Frame-safety: the X amplitude was already written against the frame
+    // (aspect * 0.8 keeps it inside the half-width), the Y amplitude was not —
+    // Orbit height at its max plus the per-blob spread reached 0.58 against a
+    // frame that ends at 0.5, so a blob's CENTRE orbited off the top and bottom
+    // edges and the lamp lost a ball for part of every cycle. frameReach at
+    // straight-up is the vertical half-extent, and softLimit compresses toward
+    // it rather than clipping; the defaults sit below the knee, unchanged.
+    let orbitY = softLimit(P_orbitY() + h * 0.08, frameReach(TAU * 0.25));
     let pos = vec2f(
       sin(t + ph) * (P_orbitX() + h * 0.1) * u.aspect * 0.8,
-      cos(t * 1.31 + ph * 1.7) * (P_orbitY() + h * 0.08),
+      cos(t * 1.31 + ph * 1.7) * orbitY,
     );
 
     // Per-blob beat response, staggered by the golden-ratio conjugate (same

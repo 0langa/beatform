@@ -11,6 +11,82 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.49.0] - 2026-07-25
+
+The audit-remediation release. An independent five-part audit read every
+surface of the app; this is everything it found, fixed and pinned by tests.
+
+### Fixed
+
+- **Drag and drop works again on Windows.** Dropping a file on the window did
+  nothing in installed builds: Tauri intercepts the OS drop by default, and
+  the app only ever listened for the browser-level event, so nothing reached
+  it. The interception is now disabled and the drop path is live again for
+  audio files, projects, themes, shaders and lyrics.
+- **Visuals no longer drift out of time with the music.** Particles, Tunnel
+  and Radial Burst multiplied elapsed track time by a speed that itself moved
+  with the audio, so every loudness swing displaced the whole field by an
+  amount that grew the longer the track ran — smooth at the start, stuttering
+  and re-rolling minutes in. Audio now changes the motion without dragging the
+  accumulated position with it.
+- **Bass Circle particles no longer punch dark specks into your background.**
+  Their twinkle went negative for part of each cycle, subtracting light
+  instead of dimming.
+- **Echo Trails no longer washes toward white.** With Echo hue drift on, the
+  colour rotation was quietly adding brightness on every generation, so trails
+  brightened as they aged instead of decaying.
+- **Aurora keeps responding on loud passages** instead of flat-lining once the
+  bass swell pushed it into a hard ceiling. Voice Orb no longer vanishes at
+  high Wobble, Metaballs blobs stay in frame at high Orbit height, and
+  Synthwave's sun can no longer be pushed entirely off-screen.
+- **Corners can no longer go darker than black.** Radial Burst and Bass
+  Circle's vignette could drive the image negative over a solid or image
+  background.
+- **The Builder chip in the mode strip is no longer a black square.**
+- Tunnel's Hyperdrive style, and ~30 other factory style values across the
+  library, sat on settings the sliders themselves could not reach — so the
+  look changed the first time you touched the knob. All now land on the grid,
+  with a test that keeps every future style honest.
+
+### Changed
+
+- **The app is honest when hardware rendering is unavailable.** On the
+  simplified fallback renderer it now says so in a banner that stays put
+  (instead of a notice that vanished after four seconds), and the features
+  that renderer genuinely cannot do — post-processing, Motion masters, Builder
+  Studio, the shader editor, scene transitions, video backgrounds — are
+  disabled with the reason on hover, rather than silently accepting settings
+  and discarding them. Video export and batch render are refused up front
+  instead of failing after a save dialog and a full decode, and a batch run
+  aborts once rather than failing every track in turn. Background images still
+  honour fit, zoom and pan on this path.
+- Typing an exact value on a slider now rounds half-steps the way the slider
+  itself does (typing 35 on a percent row no longer read back 34).
+
+### Security
+
+- The ProRes/GIF/WebP encoder now refuses an output path that did not come
+  from the save dialog. Previously any absolute path with the right extension
+  was accepted and overwritten, and removed on failure.
+- A wedged encoder can no longer hang the app forever at "Finishing": the
+  finalize step is bounded, and cancelling during it genuinely stops ffmpeg
+  instead of reporting success while the process lived on.
+- An imported project or theme can no longer specify a font that silently
+  breaks text rendering; font names are validated and fall back cleanly.
+
+### Under the hood
+
+- Live audio capture no longer allocates inside the realtime audio callback
+  (a buffer pool replaces per-callback allocation), which removes a glitch
+  risk on the live-input path.
+- Fixed leaks: video-background decoding released nothing when a clip failed
+  part-way, overlay bitmaps were dropped without being closed, and the Builder
+  shader cache grew without bound for the whole session.
+- The developer export/batch probes now go through the same code path the real
+  export uses, instead of a hand-copied duplicate that had drifted — a
+  Builder-mode probe could previously report success for an all-black video.
+- 485 automated tests (up from 420), plus 24 on the Rust side.
+
 ## [2.48.1] - 2026-07-25
 
 ### Fixed

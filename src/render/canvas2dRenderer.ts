@@ -1,10 +1,24 @@
 import type { AudioFeatures } from "../audio/types";
-import type { BgSettings, ParamValues, PresetDef, Renderer } from "./types";
+import { BG_IMAGE, BG_SOLID, BG_TRANSPARENT, BG_VIDEO } from "./types";
+import type { BgFit, BgSettings, ParamValues, PresetDef, Renderer } from "./types";
 
 /**
  * Canvas2D fallback renderer — used when WebGPU is unavailable (old WebView2
- * runtime, GPU blocklist). Approximates the spectrum-bars preset; parameter
- * keys match so the UI works identically.
+ * runtime, GPU blocklist).
+ *
+ * It draws exactly ONE look, an approximation of spectrum-bars, and reads
+ * exactly four parameter keys (hue, hueSpread, barGap, peaks). Everything else
+ * the UI can express — the other modes, Motion masters, Builder Studio, custom
+ * WGSL, scene transitions, post-processing, cover art — has no equivalent here
+ * and the setters below are honest no-ops.
+ *
+ * That used to be a silent lie: the panels went on offering all of it (audit
+ * F1). The fix is NOT in this file — a 2D canvas cannot grow a bloom pass — it
+ * is that `simplifiedRenderer` in the store now disables those controls and an
+ * app-level banner says why. What this file owes in return is that the things
+ * it CAN honour, it honours exactly like the shader does: hence the background
+ * fit/zoom/offset arithmetic below, which mirrors fitUV() in webgpuRenderer.ts
+ * rather than the hardcoded cover crop it replaced (audit F9).
  */
 export class Canvas2DRenderer implements Renderer {
   readonly kind = "canvas2d" as const;
@@ -24,7 +38,9 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   setPreset(_preset: PresetDef): void {
-    // Single built-in look; params are read live in render().
+    // Single built-in look; params are read live in render(). The mode chips
+    // stay clickable (switching is how you leave a broken-looking mode), but
+    // the banner tells the user every one of them draws these same bars.
   }
 
   setBackground(bg: BgSettings): void {
@@ -44,6 +60,8 @@ export class Canvas2DRenderer implements Renderer {
 
   setMotion(): void {
     // Fallback renderer approximates spectrum-bars only; motion masters no-op.
+    // The Motion sliders are disabled while it is active (F1) — they used to
+    // move, print a percentage, and change nothing on screen.
   }
 
   setBackgroundImage(source: ImageBitmap | null): void {
@@ -52,8 +70,9 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   updateBackgroundVideoFrame(source: ImageBitmap): void {
-    // The 2D fallback draws its single built-in look and no image/video bg;
-    // frames are owned by the store's loop, so nothing to keep or close here.
+    // No video background here: the store's loop only uploads frames to the
+    // WebGPU renderer, and the Video option is disabled while this renderer is
+    // active. Frames are owned by that loop — nothing to keep or close.
     void source;
   }
 
@@ -64,15 +83,72 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   setBuilderParams(_data: Float32Array): void {
-    // Builder Studio renders through WGSL codegen — WebGPU only.
+    // Builder Studio renders through WGSL codegen — WebGPU only. The layer
+    // editor is disabled while this renderer is active (F1).
   }
 
   setTransitionPreset(_preset: PresetDef | null): void {
-    // Fallback renderer hard-cuts between scenes.
+    // Fallback renderer hard-cuts between scenes; the timeline's Transition
+    // select is disabled while it is active (F1) so the choice isn't a lie.
   }
 
   setPost(): void {
-    // Fallback renderer has no post-processing chain.
+    // Fallback renderer has no post-processing chain — the Post section is
+    // disabled while it is active (F1).
+  }
+
+  /** The document's background colour as a CSS string (0..1 rgb -> 0..255). */
+  private cssBgColor(): string {
+    const [r, g, b] = this.bg.color;
+    return `rgb(${r * 255} ${g * 255} ${b * 255})`;
+  }
+
+  /**
+   * Draw a background bitmap under the same framing rules as the shader
+   * (audit F9: this renderer hardcoded a cover crop and ignored the v2.48
+   * fit/zoom/offset controls entirely, so three sliders and a segmented
+   * control moved nothing at all).
+   *
+   * fitUV() in webgpuRenderer.ts maps a frame uv to a texture uv:
+   *
+   *   tex = (uv - 0.5 - offset) * S / zoom + 0.5
+   *
+   * where S is the per-axis aspect correction for the chosen fit. drawImage
+   * needs the inverse — where the whole texture lands in the frame — which is
+   * that expression solved for uv at tex = 0 and tex = 1:
+   *
+   *   size = zoom / S   (in frame units)   origin = 0.5 + offset - size / 2
+   *
+   * With no fit fields (the neutral default a pre-v2.48 project saves) this
+   * reduces to the centred cover crop it replaces, pixel for pixel.
+   */
+  private drawFittedBg(img: ImageBitmap, W: number, H: number, fit: BgFit | undefined): void {
+    const zoom = Math.max(0.01, fit?.zoom ?? 1);
+    const mode = fit?.fit ?? 0;
+    const boxAspect = W / Math.max(H, 1);
+    const texAspect = img.width / Math.max(img.height, 1);
+    const ratio = texAspect / Math.max(boxAspect, 1e-4);
+    let sx = 1;
+    let sy = 1;
+    if (mode < 0.5) {
+      // Cover: shrink the axis that would otherwise letterbox, so it crops.
+      if (ratio > 1) sx = boxAspect / Math.max(texAspect, 1e-4);
+      else sy = ratio;
+    } else if (mode < 1.5) {
+      // Contain: the opposite axis, so the whole image fits inside the frame.
+      if (ratio > 1) sy = ratio;
+      else sx = 1 / ratio;
+    }
+    // mode >= 1.5 is stretch: S stays (1, 1) and the image fills the frame.
+    const dw = (W * zoom) / sx;
+    const dh = (H * zoom) / sy;
+    this.ctx.drawImage(
+      img,
+      W * (0.5 + (fit?.offsetX ?? 0)) - dw / 2,
+      H * (0.5 + (fit?.offsetY ?? 0)) - dh / 2,
+      dw,
+      dh,
+    );
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -92,22 +168,34 @@ export class Canvas2DRenderer implements Renderer {
     const hueSpread = params.hueSpread ?? 80;
     const gap = params.barGap ?? 0.22;
 
-    if (this.bg.mode === 2) {
+    if (this.bg.mode === BG_TRANSPARENT) {
+      // NOTE: this is a real difference from the shader, which derives alpha
+      // from the visual's own luma. Here the bars stay fully opaque and only
+      // the space around them is see-through — close enough for a preview,
+      // and exports (the only place alpha is delivered) need WebGPU anyway.
       ctx.clearRect(0, 0, W, H);
-    } else if (this.bg.mode === 3 && this.bgImage) {
-      // Cover-fit: fill the frame, crop the excess (blur/dim are pre-baked)
-      const img = this.bgImage;
-      const scale = Math.max(W / img.width, H / img.height);
-      const dw = img.width * scale;
-      const dh = img.height * scale;
-      ctx.fillStyle = "#000";
+    } else if (this.bg.mode === BG_IMAGE && this.bgImage) {
+      // Letterbox bars take the background COLOUR, exactly like the shader's
+      // `select(u.bgColor.rgb, src, inBox(buv))` — black here would have been
+      // a second, invisible divergence the moment "Fit" was chosen.
+      ctx.fillStyle = this.cssBgColor();
       ctx.fillRect(0, 0, W, H);
-      ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-    } else if (this.bg.mode === 1 || this.bg.mode === 3) {
-      const [br, bgc, bb] = this.bg.color;
-      ctx.fillStyle = this.bg.mode === 3 ? "#000" : `rgb(${br * 255} ${bgc * 255} ${bb * 255})`;
+      this.drawFittedBg(this.bgImage, W, H, this.bg.image);
+    } else if (
+      this.bg.mode === BG_SOLID ||
+      this.bg.mode === BG_IMAGE ||
+      this.bg.mode === BG_VIDEO
+    ) {
+      // Solid; an image mode whose bitmap has not landed yet; and video —
+      // which matched NO branch at all and fell through to the animated hue
+      // wash below (F9), a background nobody chose. There are no video frames
+      // to draw here (see updateBackgroundVideoFrame), so the flat background
+      // colour is the honest stand-in, and it is also what a fitted image's
+      // letterbox bars would be.
+      ctx.fillStyle = this.cssBgColor();
       ctx.fillRect(0, 0, W, H);
     } else {
+      // BG_PRESET: the one animated background this renderer authors itself.
       ctx.fillStyle = `hsl(${hue + 40} 50% ${4 + f.beatIntensity * 6}%)`;
       ctx.fillRect(0, 0, W, H);
     }

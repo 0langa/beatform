@@ -529,13 +529,39 @@ ${body}
  * identity check and the renderer's pipeline cache both do the right thing
  * for free. ---- */
 
+/**
+ * How many compiled structures the def cache keeps.
+ *
+ * BOUNDED on purpose. The renderer's pipeline cache is a WeakMap keyed by the
+ * PresetDef precisely so an edited preset's GPUShaderModule + pipelines become
+ * collectable the moment nothing references the def any more. An unbounded Map
+ * here held a strong reference to EVERY structure compiled this session, so
+ * that weak cache could never drop anything: each add/remove/reorder/blend edit
+ * mints a new key, and a long Builder Studio session pinned a shader module and
+ * one or two pipelines per edit for as long as the tab lived.
+ *
+ * 16 comfortably covers the A→B→A shuffling an edit session actually does (the
+ * M5 lesson this cache exists for), and an evicted structure costs one
+ * recompile, not a wrong render.
+ */
+export const BUILDER2_DEF_CACHE_MAX = 16;
+
+/** Structure key -> compiled def, least-recently-used FIRST (Map iterates in
+ * insertion order, so the eviction candidate is always `keys().next()`). */
 const defCache = new Map<string, PresetDef>();
 let currentDef: PresetDef = makeDef(defaultBuilderStack());
 
 function makeDef(stack: BuilderStack): PresetDef {
   const key = stackStructureKey(stack);
   const cached = defCache.get(key);
-  if (cached) return cached;
+  if (cached) {
+    // Re-insert to move it to the most-recently-used end. Without this the
+    // structure the user keeps returning to would age out before the ones they
+    // passed through once — the exact opposite of what the cache is for.
+    defCache.delete(key);
+    defCache.set(key, cached);
+    return cached;
+  }
   const def: PresetDef = {
     id: BUILDER2_ID,
     name: "Builder",
@@ -544,6 +570,10 @@ function makeDef(stack: BuilderStack): PresetDef {
     wgsl: buildStackWgsl(stack),
   };
   defCache.set(key, def);
+  if (defCache.size > BUILDER2_DEF_CACHE_MAX) {
+    const oldest = defCache.keys().next();
+    if (!oldest.done) defCache.delete(oldest.value);
+  }
   return def;
 }
 

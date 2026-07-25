@@ -10,12 +10,18 @@
 //! writes give natural backpressure: the IPC call doesn't return until
 //! ffmpeg accepted the frame. One session at a time; prores_write/finish/
 //! abort drive every format.
+//!
+//! The output file is whatever the user picked in the save dialog, and it is
+//! bound to that pick by the fs plugin scope (see `check_out_path`) — not just
+//! by the shape of the string the webview sent.
 
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
+use tauri_plugin_fs::FsExt;
 
 pub struct ProresJob {
     child: Child,
@@ -229,6 +235,37 @@ fn has_extension(path: &Path, ext: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// The complete output-path policy for a sidecar session.
+///
+/// `scope_allows` is `app.fs_scope().is_allowed(out)` — the SAME gate
+/// `scan_audio_library` is given, and the reason it belongs here too: ffmpeg is
+/// spawned with `-y` (unconditional truncate) and both `prores_finish` and
+/// `prores_abort` `remove_file(out_path)`. Validating only the SHAPE of the
+/// path therefore left "start an export" as a truncate-and-delete primitive
+/// against any local .mov/.gif/.webp a script running in the webview could
+/// name — the path never had to be one the user chose.
+///
+/// tauri-plugin-dialog's `save()` calls `allow_file` on whatever the user
+/// picked, so the real flow (pickSavePath -> proresBegin) passes; a path the
+/// renderer invented on its own does not.
+///
+/// The shape checks stay in front of it as defence in depth. The scope can be
+/// widened by a directory grant — the library folder picker grants a whole
+/// subtree recursively — and neither the local-absolute nor the extension
+/// check depends on the scope being narrow.
+fn check_out_path(scope_allows: bool, out: &Path, ext: &str) -> Result<(), String> {
+    if !is_local_absolute(out) || !has_extension(out, ext) {
+        return Err(format!("Output must be an absolute .{ext} path"));
+    }
+    if !scope_allows {
+        return Err(format!(
+            "Output path not permitted: {} — choose the destination with the save dialog",
+            out.display()
+        ));
+    }
+    Ok(())
+}
+
 /// Shared spawn: pipe stdin, stderr to a log file, no console window.
 fn spawn_sidecar(args: Vec<String>) -> Result<(Child, PathBuf), String> {
     let (log, log_path) = create_temp_new("ffmpeg.log")?;
@@ -319,6 +356,7 @@ pub fn prores_audio_end(state: tauri::State<'_, ProresState>) -> Result<(), Stri
 
 #[tauri::command]
 pub fn prores_begin(
+    app: tauri::AppHandle,
     state: tauri::State<'_, ProresState>,
     fps: u32,
     out_path: String,
@@ -331,9 +369,7 @@ pub fn prores_begin(
         return Err(format!("Unreasonable fps: {fps}"));
     }
     let out = PathBuf::from(&out_path);
-    if !is_local_absolute(&out) || !has_extension(&out, "mov") {
-        return Err("Output must be an absolute .mov path".into());
-    }
+    check_out_path(app.fs_scope().is_allowed(&out), &out, "mov")?;
     let wav_path = state
         .pending_wav
         .lock()
@@ -368,6 +404,7 @@ pub fn prores_begin(
 /// same prores_write/finish/abort commands — one sidecar session at a time.
 #[tauri::command]
 pub fn anim_begin(
+    app: tauri::AppHandle,
     state: tauri::State<'_, ProresState>,
     format: String,
     fps: u32,
@@ -387,9 +424,7 @@ pub fn anim_begin(
         return Err(format!("Unknown animation format: {format}"));
     }
     let out = PathBuf::from(&out_path);
-    if !is_local_absolute(&out) || !has_extension(&out, &format) {
-        return Err(format!("Output must be an absolute .{format} path"));
-    }
+    check_out_path(app.fs_scope().is_allowed(&out), &out, &format)?;
     let (mut child, log_path) = spawn_sidecar(anim_args(&format, fps, &out.to_string_lossy()))?;
     *state.stdin.lock().map_err(|_| "state poisoned")? = child.stdin.take();
     *job_guard = Some(ProresJob {
@@ -439,38 +474,151 @@ fn cleanup(job: &ProresJob) {
     let _ = std::fs::remove_file(&job.log_path);
 }
 
+/// How long `prores_finish` lets ffmpeg finalize before killing it.
+///
+/// Deliberately generous. Flushing a multi-GB ProRes 4444 to a slow external
+/// disk, or running GIF `paletteuse` over thousands of buffered frames, takes
+/// minutes on real hardware, and killing a healthy encoder would throw away a
+/// finished render. The ceiling exists only so a WEDGED ffmpeg ends as an error
+/// the user can act on instead of an export parked in "Finishing" forever.
+const FINISH_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+
+/// Ceiling for reaping an ALREADY-KILLED child. Kill is TerminateProcess, so
+/// this is near-instant in practice; the bound is here so `prores_abort` can
+/// never hang while holding the job mutex.
+const REAP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Poll interval for both bounded waits: short enough that finish returns
+/// promptly after ffmpeg exits, long enough to cost nothing.
+const WAIT_POLL: Duration = Duration::from_millis(50);
+
+/// `Child::wait` with a deadline. std has no timeout on `wait`, so poll
+/// `try_wait`. `Ok(None)` means the deadline passed and the child is STILL
+/// running — the caller decides what to do about it.
+fn wait_bounded(child: &mut Child, timeout: Duration) -> std::io::Result<Option<ExitStatus>> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(Some(status));
+        }
+        if Instant::now() >= deadline {
+            return Ok(None);
+        }
+        std::thread::sleep(WAIT_POLL);
+    }
+}
+
+/// Terminal state of a finalize wait. Every variant except `Cancelled` hands
+/// back the job, because the caller owns the cleanup from there.
+enum Finalize {
+    /// ffmpeg exited 0 — the output file is complete.
+    Done(ProresJob),
+    /// ffmpeg exited non-zero, or `try_wait` itself failed.
+    Failed(ProresJob),
+    /// The deadline passed; ffmpeg has been killed and reaped.
+    TimedOut(ProresJob),
+    /// `prores_abort` took the job first — it killed ffmpeg and cleaned up.
+    Cancelled,
+}
+
+/// Wait for ffmpeg to finish finalizing, bounded by `timeout`, WITHOUT ever
+/// holding the job mutex across the wait.
+///
+/// Two distinct failures shape this loop.
+///
+/// 1. The original deadlock (audit E3): `prores_finish` held the `job` mutex
+///    across an unbounded `child.wait()`, so a wedged finalize blocked
+///    `prores_abort` on that same lock forever. Cancel was impossible.
+/// 2. The fix for (1) — taking the job OUT before waiting — made cancel lie
+///    instead: `prores_abort` found `None`, returned `Ok(())`, and the UI said
+///    "cancelled" while ffmpeg was still running with the file open.
+///
+/// So the job STAYS in the mutex for the whole wait and this re-locks for each
+/// `try_wait`, releasing before every sleep. Abort keeps a killable child to
+/// reach, and this loop notices on its next poll and reports `Cancelled`.
+fn await_finalize(job: &Mutex<Option<ProresJob>>, timeout: Duration) -> Result<Finalize, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        {
+            let mut guard = job.lock().map_err(|_| "state poisoned")?;
+            let Some(running) = guard.as_mut() else {
+                return Ok(Finalize::Cancelled);
+            };
+            let polled = running.child.try_wait();
+            let expired = Instant::now() >= deadline;
+            match polled {
+                Ok(Some(status)) => {
+                    let success = status.success();
+                    let done = guard.take().expect("job was Some one line above");
+                    return Ok(if success {
+                        Finalize::Done(done)
+                    } else {
+                        Finalize::Failed(done)
+                    });
+                }
+                // We can no longer observe the child at all. Report a failed
+                // export rather than spinning here until the deadline.
+                Err(_) => {
+                    let done = guard.take().expect("job was Some one line above");
+                    return Ok(Finalize::Failed(done));
+                }
+                Ok(None) if expired => {
+                    let _ = running.child.kill();
+                    let _ = wait_bounded(&mut running.child, REAP_TIMEOUT);
+                    let done = guard.take().expect("job was Some one line above");
+                    return Ok(Finalize::TimedOut(done));
+                }
+                Ok(None) => {}
+            }
+            // guard drops HERE: never sleep holding the job mutex.
+        }
+        std::thread::sleep(WAIT_POLL);
+    }
+}
+
 /// Close the frame pipe (EOF), wait for ffmpeg, verify success.
 ///
-/// `async` because `child.wait()` is unbounded — finalizing a multi-GB ProRes
-/// movie or running GIF `paletteuse` took however long it took, and as a
-/// blocking command that ran inline on the IPC handler and froze the UI.
+/// `async` because the wait can legitimately take minutes — finalizing a
+/// multi-GB ProRes movie or running GIF `paletteuse`. As a blocking command
+/// that ran inline on the IPC handler and froze the UI.
 #[tauri::command(async)]
 pub fn prores_finish(state: tauri::State<'_, ProresState>) -> Result<(), String> {
-    let mut job = {
-        // Take the job and RELEASE the mutex before the unbounded wait
-        // (audit E3): holding it across child.wait() meant a wedged ffmpeg
-        // finalize blocked prores_abort forever on the same lock. With the
-        // job taken, a concurrent abort now gets "No sidecar export running"
-        // instead of a deadlock.
-        let mut guard = state.job.lock().map_err(|_| "state poisoned")?;
-        guard.take().ok_or("No sidecar export running")?
-    };
+    {
+        // Don't close the pipe of a session that isn't there.
+        let guard = state.job.lock().map_err(|_| "state poisoned")?;
+        if guard.is_none() {
+            return Err("No sidecar export running".into());
+        }
+    }
     // EOF -> ffmpeg finalizes the output. Waits out an in-flight write, which
     // is correct: frames must all land before the pipe closes.
     drop(state.stdin.lock().map_err(|_| "state poisoned")?.take());
-    let status = job.child.wait().map_err(|e| e.to_string());
-    let ok = matches!(&status, Ok(s) if s.success());
-    let tail = if ok {
-        String::new()
-    } else {
-        log_tail(&job.log_path)
-    };
-    cleanup(&job);
-    if ok {
-        Ok(())
-    } else {
-        let _ = std::fs::remove_file(&job.out_path); // no half-written movs
-        Err(format!("ffmpeg failed: {tail}"))
+    // The job deliberately stays in `state.job` for the whole wait so a
+    // concurrent prores_abort still finds a killable child (see await_finalize).
+    // It also means a `prores_begin` fired during finalize is refused instead of
+    // spawning a second ffmpeg into the first one's stdin slot.
+    match await_finalize(&state.job, FINISH_TIMEOUT)? {
+        Finalize::Done(job) => {
+            cleanup(&job);
+            Ok(())
+        }
+        Finalize::Failed(job) => {
+            let tail = log_tail(&job.log_path);
+            cleanup(&job);
+            let _ = std::fs::remove_file(&job.out_path); // no half-written movs
+            Err(format!("ffmpeg failed: {tail}"))
+        }
+        Finalize::TimedOut(job) => {
+            let tail = log_tail(&job.log_path);
+            cleanup(&job);
+            let _ = std::fs::remove_file(&job.out_path);
+            Err(format!(
+                "ffmpeg stopped responding while finishing the file (waited {} minutes) and was \
+                 stopped; the incomplete output was removed. {tail}",
+                FINISH_TIMEOUT.as_secs() / 60
+            ))
+        }
+        Finalize::Cancelled => Err("Export cancelled while finishing".into()),
     }
 }
 
@@ -481,12 +629,20 @@ pub fn prores_finish(state: tauri::State<'_, ProresState>) -> Result<(), String>
 /// pipe, that write fails, and the mutex is released. Taking `stdin` first
 /// would just queue this cancel behind the very write it needs to interrupt —
 /// which is the deadlock this split exists to remove.
+///
+/// This also reaches a session that is already FINALIZING: `prores_finish`
+/// leaves the job in the mutex while it waits, so the child below is the real
+/// one. When that happens the finish call sees the job gone and reports the
+/// cancel rather than claiming success.
 #[tauri::command(async)]
 pub fn prores_abort(state: tauri::State<'_, ProresState>) -> Result<(), String> {
     let mut guard = state.job.lock().map_err(|_| "state poisoned")?;
     if let Some(mut job) = guard.take() {
         let _ = job.child.kill();
-        let _ = job.child.wait();
+        // Bounded: reaping a killed process is immediate, but an unbounded wait
+        // here would be a wait held under the job mutex — the exact shape of
+        // the deadlock this file keeps designing around.
+        let _ = wait_bounded(&mut job.child, REAP_TIMEOUT);
         // The writer has been broken loose by now; reclaim and close the pipe.
         if let Ok(mut s) = state.stdin.lock() {
             drop(s.take());
@@ -613,6 +769,166 @@ mod tests {
     fn accepts_a_plain_drive_letter_path() {
         assert!(is_local_absolute(Path::new(r"C:\Users\me\out.mov")));
         assert!(is_local_absolute(Path::new("C:/Users/me/out.mov")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_output_outside_the_fs_scope_is_refused() {
+        // Audit E1: the shape checks alone never bound the output to something
+        // the USER picked. ffmpeg runs with -y and finish/abort remove_file the
+        // target, so a perfectly well-formed local .mov the renderer simply
+        // named was a truncate-and-delete primitive.
+        let picked = Path::new(r"C:\Users\me\Videos\out.mov");
+        assert!(check_out_path(true, picked, "mov").is_ok());
+
+        let err = check_out_path(false, picked, "mov").expect_err("scope gate must refuse");
+        assert!(
+            err.contains("not permitted"),
+            "the rejection must say WHY: {err}"
+        );
+        assert!(
+            check_out_path(false, Path::new(r"C:\Users\me\loop.gif"), "gif").is_err(),
+            "GIF/WebP go through the same gate"
+        );
+    }
+
+    #[test]
+    fn the_shape_checks_survive_a_permissive_scope() {
+        // Defence in depth: a directory grant (the library picker allows a whole
+        // subtree) can make is_allowed true for paths these checks still reject.
+        assert!(check_out_path(true, Path::new(r"\\host\share\x.mov"), "mov").is_err());
+        assert!(check_out_path(true, Path::new("relative/x.mov"), "mov").is_err());
+        #[cfg(windows)]
+        assert!(
+            check_out_path(true, Path::new(r"C:\Users\me\out.txt"), "mov").is_err(),
+            "extension is still pinned"
+        );
+    }
+
+    /// A child that will NOT exit on its own — a stand-in for a wedged ffmpeg.
+    fn spawn_wedged() -> Child {
+        let mut cmd = if cfg!(windows) {
+            let mut c = Command::new("ping");
+            c.args(["-n", "60", "127.0.0.1"]);
+            c
+        } else {
+            let mut c = Command::new("sleep");
+            c.arg("60");
+            c
+        };
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn test child")
+    }
+
+    /// A child that exits immediately with `code`.
+    fn spawn_exiting(code: i32) -> Child {
+        let code = code.to_string();
+        let mut cmd = if cfg!(windows) {
+            let mut c = Command::new("cmd");
+            c.args(["/c", "exit", &code]);
+            c
+        } else {
+            let mut c = Command::new("sh");
+            c.args(["-c", &format!("exit {code}")]);
+            c
+        };
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn test child")
+    }
+
+    fn test_job(child: Child) -> ProresJob {
+        // Paths that do not exist: nothing in await_finalize touches them.
+        ProresJob {
+            child,
+            wav_path: None,
+            log_path: temp_path("test-finalize.log", u64::MAX),
+            out_path: temp_path("test-finalize.mov", u64::MAX),
+        }
+    }
+
+    #[test]
+    fn a_wedged_finalize_is_bounded_and_kills_ffmpeg() {
+        // Audit E3 residual: child.wait() had no ceiling, so an ffmpeg that
+        // wedged during finalize left the export in "Finishing" forever.
+        let job = Mutex::new(Some(test_job(spawn_wedged())));
+        let started = Instant::now();
+        let outcome = await_finalize(&job, Duration::from_millis(200)).unwrap();
+        let Finalize::TimedOut(mut timed_out) = outcome else {
+            panic!("a child that never exits must time out");
+        };
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "the wait must be bounded, not merely long"
+        );
+        assert!(
+            timed_out.child.try_wait().unwrap().is_some(),
+            "the wedged ffmpeg must be killed, not left running with the file open"
+        );
+        assert!(job.lock().unwrap().is_none(), "the job must be cleared");
+    }
+
+    #[test]
+    fn a_cancel_during_finalize_still_reaches_the_child() {
+        // Audit V2: the previous fix TOOK the job before waiting, so a
+        // concurrent prores_abort found None and returned Ok(()) without
+        // killing anything — the UI reported "cancelled" while ffmpeg ran on.
+        // The job must stay reachable for the whole wait.
+        use std::sync::Arc;
+
+        let job = Arc::new(Mutex::new(Some(test_job(spawn_wedged()))));
+        let waiting = Arc::clone(&job);
+        let waiter =
+            std::thread::spawn(move || await_finalize(&waiting, Duration::from_secs(60)).unwrap());
+        std::thread::sleep(Duration::from_millis(120));
+
+        // Exactly what prores_abort does.
+        let mut cancelled = job
+            .lock()
+            .expect("cancel must not wait on the finalize loop")
+            .take()
+            .expect("finish must NOT have taken the job — abort would silently no-op");
+        let _ = cancelled.child.kill();
+        assert!(
+            wait_bounded(&mut cancelled.child, Duration::from_secs(10))
+                .unwrap()
+                .is_some(),
+            "the cancel must genuinely reap ffmpeg"
+        );
+
+        assert!(matches!(waiter.join().unwrap(), Finalize::Cancelled));
+    }
+
+    #[test]
+    fn a_clean_exit_finishes_and_a_bad_one_fails() {
+        let ok = Mutex::new(Some(test_job(spawn_exiting(0))));
+        assert!(matches!(
+            await_finalize(&ok, Duration::from_secs(30)).unwrap(),
+            Finalize::Done(_)
+        ));
+        let bad = Mutex::new(Some(test_job(spawn_exiting(3))));
+        assert!(matches!(
+            await_finalize(&bad, Duration::from_secs(30)).unwrap(),
+            Finalize::Failed(_)
+        ));
+    }
+
+    #[test]
+    fn wait_bounded_reports_a_live_child_instead_of_hanging() {
+        let mut child = spawn_wedged();
+        assert!(
+            wait_bounded(&mut child, Duration::from_millis(150))
+                .unwrap()
+                .is_none(),
+            "a running child must come back as None, not block"
+        );
+        let _ = child.kill();
+        assert!(wait_bounded(&mut child, REAP_TIMEOUT).unwrap().is_some());
     }
 
     #[test]

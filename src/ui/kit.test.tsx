@@ -177,6 +177,17 @@ describe("SliderRow numeric entry", () => {
     expect(onChange).toHaveBeenLastCalledWith(0);
   });
 
+  it("snaps an exact half-step the way a native range input does", async () => {
+    // (0.35 - 0.2) / 0.02 is 7.499999999999998 in binary float, so a bare
+    // Math.round snapped this DOWN to 0.34, while the native range input --
+    // which aligns steps with exact decimal arithmetic -- gives 0.36.
+    const { onChange } = row({ min: 0.2, max: 3, step: 0.02, value: 1 });
+    await userEvent.dblClick(readout("1.00"));
+    await userEvent.clear(editor());
+    await userEvent.type(editor(), "0.35{Enter}");
+    expect(onChange).toHaveBeenLastCalledWith(0.36);
+  });
+
   it("snaps to step, so a typed value is one the thumb could sit on", async () => {
     const { onChange } = row({ min: 0, max: 4, step: 0.25, value: 1 });
     await userEvent.dblClick(readout("1.00"));

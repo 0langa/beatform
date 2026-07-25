@@ -46,7 +46,7 @@ export const synthwave: PresetDef = {
         gridHue: 205,
         sunY: 0.2,
         sunR: 0.22,
-        mountains: 0.55,
+        mountains: 0.56,
         speed: 0.7,
         gridGlow: 0.8,
         scan: 0.3,
@@ -59,9 +59,9 @@ export const synthwave: PresetDef = {
         hue: 42,
         gridHue: 35,
         sunR: 0.36,
-        sunRays: 0.65,
-        scan: 0.85,
-        mountains: 0.45,
+        sunRays: 0.66,
+        scan: 0.86,
+        mountains: 0.46,
         gridGlow: 1.2,
         beatPulse: 0.35,
       },
@@ -73,7 +73,7 @@ export const synthwave: PresetDef = {
         hue: 205,
         gridHue: 190,
         sunR: 0.3,
-        sunRays: 0.35,
+        sunRays: 0.36,
         scan: 0.3,
         mountains: 0.4,
         gridGlow: 1.1,
@@ -235,7 +235,7 @@ export const synthwave: PresetDef = {
       max: 0.62,
       step: 0.01,
       default: 0.5,
-      hint: "Height of the horizon line — lower shows more sky, higher gives more grid floor",
+      hint: "Where the horizon line sits — lower raises it for more grid floor, higher drops it for more sky",
     },
     {
       key: "scan",
@@ -336,7 +336,14 @@ fn preset(uv: vec2f) -> vec4f {
     let mtn = smoothstep(ridgeTop - 0.004, ridgeTop, uv.y);
 
     // Sun with a vertical gradient + widening scanline gaps.
-    let sunCtr = vec2f(cx - P_sunX(), uv.y - (horizon - P_sunY()));
+    // Frame-safety: Sun height is soft-limited against the sky that actually
+    // exists above the horizon. Raw, the lowest Horizon (0.35) with the highest
+    // Sun height (0.45) put the centre at uv.y = -0.10 — above the top edge,
+    // and at a small Sun size the entire disc sat offscreen, so the mode
+    // silently lost its subject. Reserving half a radius of sky keeps the disc
+    // in frame at every combination; at the defaults this is a ~0.002 shift.
+    let sunCy = horizon - softLimit(P_sunY(), max(horizon - P_sunR() * 0.5, 0.02));
+    let sunCtr = vec2f(cx - P_sunX(), uv.y - sunCy);
     let sd = length(sunCtr);
     let sunBody = smoothstep(P_sunR(), P_sunR() - 0.008, sd);
     let scanPos = horizon - uv.y;
@@ -344,7 +351,7 @@ fn preset(uv: vec2f) -> vec4f {
     let sunGrad = mix(
       hsl2rgb(P_hue() + 45.0, 0.95, 0.62),
       hsl2rgb(P_hue(), 0.95, 0.55),
-      clamp((uv.y - (horizon - P_sunY() - P_sunR())) / (2.0 * P_sunR()), 0.0, 1.0),
+      clamp((uv.y - (sunCy - P_sunR())) / (2.0 * P_sunR()), 0.0, 1.0),
     );
     var sky = sunGrad * sunBody * (1.0 - scanGap);
     // Hot core: a genuinely emissive centre that partially bleeds through the

@@ -24,6 +24,23 @@ fn P_stars() -> f32 { return params[19u]; }
 fn P_bgGlow() -> f32 { return params[20u]; }
 fn P_mirror() -> f32 { return params[21u]; }
 
+// Bounded, continuous noise clock (seconds of TRACK time in, noise coordinate
+// out). u.time grows without bound and fbm's top octave multiplies its input by
+// ~17 before hashing the integer cell index, so a long render walks that index
+// past the point where f32 can still tell neighbouring cells apart: measured,
+// 64 consecutive cells collapse from 20 distinct hashes to 8 by a coordinate of
+// 240 and to 1 — completely frozen — by 1600, which max Flow reaches inside an
+// hour. Same class as the look kit's grain seed. Folding the clock into a
+// TRIANGLE keeps the coordinate inside 0..240 forever AND keeps it continuous;
+// a plain fract() wrap would bound it just as well but teleport the whole
+// curtain field at every wrap. The first 240/rate seconds are identical to the
+// unfolded clock, so shipped looks render unchanged over a normal track, and
+// after that the churn simply retraces its path instead of quantising.
+fn noiseClock(rate: f32) -> f32 {
+  let ph = fract(u.time * rate * (1.0 / 480.0));
+  return 240.0 * (1.0 - abs(2.0 * ph - 1.0));
+}
+
 // One stack of aurora curtains sampled at horizontal position x and vertical
 // position y. Split out of preset() so the horizon reflection below can
 // re-evaluate the exact same field at a mirrored y — a real reflection, not a
@@ -58,21 +75,38 @@ fn auroraCurtains(x: f32, y: f32, drive: f32) -> vec3f {
     // Wavy vertical center of the curtain, drifting slower with depth. Drift
     // slides the whole field sideways over time (monotonic, so it never reads
     // as reversing), parallaxed by depth like the vertical churn.
-    let flowT = u.time * P_flow() * 0.15 * mix(1.0, 0.6, depthT);
+    // The churn clock is folded (see noiseClock above) so hours of Flow can't
+    // walk the fbm cell index out of f32's resolution. Drift is deliberately
+    // NOT folded: it is a directional slide whose whole point is that it never
+    // reverses, and it runs at a quarter of the churn's top rate, so it stays
+    // well inside the resolved range for any realistic render.
+    let flowT = noiseClock(P_flow() * 0.15 * mix(1.0, 0.6, depthT));
     let driftX = u.time * P_drift() * 0.08 * mix(1.0, 0.6, depthT);
     let wob = fbm(vec2f(x * (2.0 + fi) + fi * 7.0 + driftX, flowT + fi * 3.0));
-    let cy = P_baseY() + 0.15 * fi + (wob - 0.5) * 0.35 * P_wave();
-    // Capped so a loud, bass-heavy passage (spec, drive and bass can all sit
+    // Frame-safety: the per-layer stack offset is compressed into whatever sky
+    // is left below Height, so the back curtain's centre cannot walk off the
+    // bottom edge — 0.15*2 on top of Height 0.8 put it at 1.1, entirely
+    // offscreen, and the third curtain silently vanished. Every shipped style
+    // sits below the knee, so their stacks are unchanged.
+    let stackY = softLimit(0.15 * fi, max(0.98 - P_baseY(), 0.02));
+    let cy = P_baseY() + stackY + (wob - 0.5) * 0.35 * P_wave();
+    // Limited so a loud, bass-heavy passage (spec, drive and bass can all sit
     // near their ceiling at once) can't run this away to the point every
     // curtain pixel blows past the hot-core threshold below — it stays a
     // strong, legible reaction instead of a flat white-out. Bass swell adds
     // the low-end "breathing" of the sky on top of the sync source.
-    let react = min(0.32 + spec * P_specAmt() + drive * P_react() + u.bass * P_bassSwell(), 2.2);
+    // SOFT-limited, and against 3.2 rather than the old hard min(., 2.2): once
+    // Bass swell joined the sum, Solar Storm (Spectrum shape 2.4, Reactivity
+    // 1.8, Bass swell 0.8) pinned that ceiling through every loud chorus, and
+    // since react drives curtain THICKNESS this was a hard cap on geometry —
+    // the v2.44 law's exact prohibition. Identity below 2.3, so the tuned looks
+    // are untouched; above it the response compresses instead of flat-topping.
+    let react = softLimit(0.32 + spec * P_specAmt() + drive * P_react() + u.bass * P_bassSwell(), 3.2);
     let thick = P_thick() * (0.55 + react * 0.9) * pulse;
     let d = (y - cy) / max(thick, 1e-3);
     let band = exp(-d * d);
     let ray = 1.0 - P_rays()
-            + P_rays() * (0.5 + 0.5 * sin(x * (60.0 + fi * 30.0) + fbm(vec2f(x * 8.0, u.time * 0.2)) * 8.0));
+            + P_rays() * (0.5 + 0.5 * sin(x * (60.0 + fi * 30.0) + fbm(vec2f(x * 8.0, noiseClock(0.2))) * 8.0));
 
     // Cosine palette keyed by curtain index + spectrum, instead of an hsl
     // hue that could drift 400+ degrees through the desaturated middle of
@@ -85,8 +119,11 @@ fn auroraCurtains(x: f32, y: f32, drive: f32) -> vec3f {
     // Loudness is logarithmic: compress react through pow(.,0.6) before it
     // drives brightness (doc guidance) so 3 stacked curtains overlapping
     // during a loud passage tonemap into rich saturated colour instead of
-    // additively summing straight past white every time.
-    let reactGlow = pow(clamp(react / 2.2, 0.0, 1.0), 0.6) * 1.5;
+    // additively summing straight past white every time. Normalised against
+    // the SAME 3.2 ceiling as the soft limit above — with the old 2.2 divisor
+    // the clamp saturated wherever react did, so the glow stopped answering
+    // the music for the rest of the passage too.
+    let reactGlow = pow(clamp(react / 3.2, 0.0, 1.0), 0.6) * 1.5;
     var layerCol = pal * band * ray * reactGlow * pulse * P_bright() * fog;
 
     // Hot core: only the curtain's exact vertical centerline, and only where
@@ -326,7 +363,13 @@ fn preset(uv: vec2f) -> vec4f {
           let pos = vec2f(f32(dx), f32(dy)) + 0.5 + wob;
           let d = length(fq - pos);
           let sz = (0.06 + h1 * 0.12) * (1.0 - fl * 0.2);
-          let tw = 0.4 + 0.6 * sin(u.time * (0.8 + h2 * 3.0) + h1 * 40.0);
+          // sin() is remapped to 0..1 BEFORE the 0.4 + 0.6 * mix. A bare
+          // 0.4 + 0.6 * sin() spans -0.2..1.0, so for ~23% of every particle's
+          // twinkle cycle the multiplier is NEGATIVE and the particle
+          // SUBTRACTS light — dark specks punched into a solid or image
+          // background (bug L4). Particles are on by default, so this was
+          // visible out of the box.
+          let tw = 0.4 + 0.6 * (0.5 + 0.5 * sin(u.time * (0.8 + h2 * 3.0) + h1 * 40.0));
           let core = smoothstep(sz, 0.0, d);
           let halo = exp(-d * d / max(sz * sz * 3.0, 1e-6)) * 0.5;
           col += hsl2rgb(P_hue() + (h2 - 0.5) * P_hueSpread(), 0.5, 0.72)
@@ -379,8 +422,13 @@ fn preset(uv: vec2f) -> vec4f {
   col += hsl2rgb(P_hue(), 0.9, 0.65) * rim * P_rimBright() * (0.7 + u.drive * 0.6 + beatP * 0.5);
   col += hsl2rgb(P_hue() + 20.0, 0.8, 0.5) * smoothstep(circleR, 0.0, r) * (0.08 + u.drive * 0.3) * inner;
 
-  col *= 1.0 - r * r * P_vignette();
-  return vec4f(col, 1.0);
+  // Vignette, clamped at zero: r*r reaches ~1.04 in the corners of a 16:9 frame
+  // (1.61 at 21:9) while Vignette goes to 1.2, so the bare 1.0 - r*r*amt lands
+  // at -0.25 out there. A negative multiplier makes the corners SUBTRACT light
+  // and dent a solid or image background below black instead of darkening
+  // toward it. The final max() enforces the same rule on everything above.
+  col *= max(1.0 - r * r * P_vignette(), 0.0);
+  return vec4f(max(col, vec3f(0.0)), 1.0);
 }
 "
 `;
@@ -665,8 +713,14 @@ fn preset(uv: vec2f) -> vec4f {
   // by dt like the decay below — otherwise a 30 fps export advects the trail
   // half as many times as a 60 fps preview and the streaks are half as long.
   // At 60 fps this factor is 1.0, so the tuned look is unchanged there.
+  // The zoom COMPOUNDS — each frame multiplies the sampled coordinate — so N
+  // frames of x*(1+k) is (1+k)^N, not 1+k*N. The linear form under-advected by
+  // ~2.6% of a second's travel at 30 fps against a 60 Hz preview; raising the
+  // per-frame factor to the fpsComp power is the exact per-second equivalent,
+  // the same reasoning as the decay's pow() below. The swirl stays linear
+  // because it is an ANGLE, and rotations compose by adding angles.
   let fpsComp = u.dt * 60.0;
-  let zoom = 1.0 + (P_zoom() * 0.06 + u.driveBeat * P_beatZoom() * 0.12 * u.pulse) * fpsComp;
+  let zoom = pow(1.0 + P_zoom() * 0.06 + u.driveBeat * P_beatZoom() * 0.12 * u.pulse, fpsComp);
   let swirl = (P_swirl() * 0.15 + u.drive * P_flowSwirl() * 0.1) * u.spin * fpsComp;
   let w = rot2(swirl) * (c / zoom);
   let puv = vec2f(w.x / u.aspect + 0.5, w.y + 0.5);
@@ -678,20 +732,28 @@ fn preset(uv: vec2f) -> vec4f {
   var col = feedbackSample(puv).rgb * pow(P_decay(), u.dt * 60.0);
 
   // Per-generation hue drift: rotate the fed-back color a little each frame
-  // about the grey (luminance) axis via Rodrigues rotation. A rotation is
-  // ORTHOGONAL — it preserves the color vector's magnitude exactly — so unlike
-  // an added tint it injects ZERO net energy into the accumulator and cannot
-  // wash the tunnel to white (provably as stable as plain decay). The oldest
-  // echoes have been rotated the most, so the tunnel becomes a gradient of hues
-  // from the fresh center outward. Scaled by fpsComp so drift-per-second
-  // matches at 30 / 60 / 144 fps.
+  // about the grey (luminance) axis via Rodrigues rotation, then rescale the
+  // result back to the luminance it had BEFORE the rotation. The rotation on
+  // its own does NOT hold the energy budget: rotating a saturated color swings
+  // one channel negative, and the max(col, 0) that has to follow (a displayable
+  // color cannot be negative) clamps it back up — measured at roughly 2.3x the
+  // brightness plain decay would have left after a few generations, which is
+  // exactly the white-out a feedback accumulator cannot survive. Renormalising
+  // makes the step purely CHROMATIC: luminance out == luminance in, so the
+  // tunnel's brightness stays governed by decay alone at every setting. The
+  // oldest echoes have been rotated the most, so the tunnel becomes a gradient
+  // of hues from the fresh center outward. Scaled by fpsComp so drift-per-
+  // second matches at 30 / 60 / 144 fps.
   if (P_echoHue() > 0.001) {
     let ha = P_echoHue() * 0.5 * fpsComp;
     let ax = vec3f(0.5773502691896);
     let ca = cos(ha);
     let sa = sin(ha);
+    let lw = vec3f(0.2126, 0.7152, 0.0722);
+    let l0 = dot(col, lw);
     col = col * ca + cross(ax, col) * sa + ax * dot(ax, col) * (1.0 - ca);
     col = max(col, vec3f(0.0));
+    col *= l0 / max(dot(col, lw), 1e-5);
   }
 
   // --- Inject a fresh audio-driven source over the trails ---
@@ -713,7 +775,14 @@ fn preset(uv: vec2f) -> vec4f {
   if (P_sides() > 0.5) {
     let beatP = max(u.driveBeat, gridPulse(7.0));
     let lobe = cos(P_sides() * ang);
-    shape = 1.0 + (0.11 + P_beatStar() * beatP * u.pulse * 0.5) * lobe;
+    // Soft-limited, never min(): the Pulse master runs to 200%, so at full Beat
+    // bloom the raw lobe depth reaches 1.11 and the notches between lobes would
+    // drive the ring radius NEGATIVE — the ring collapsing inward on every beat,
+    // precisely when it should read loudest. Compressing against 0.9 leaves the
+    // deepest notch at ~0.11x the radius, and every shipped style sits under the
+    // 0.648 knee, so their stars are bit-identical.
+    let star = softLimit(0.11 + P_beatStar() * beatP * u.pulse * 0.5, 0.9);
+    shape = 1.0 + star * lobe;
   }
   let ringR = softLimit((P_radius() + spec * P_react() * (0.6 + u.bass * 0.8)) * shape, frameCircle());
   let band = smoothstep(P_thick() + 0.02, 0.0, abs(rad - ringR));
@@ -1160,9 +1229,17 @@ fn preset(uv: vec2f) -> vec4f {
     if (i % 3 == 1) { band = u.mid; }
     if (i % 3 == 2) { band = u.treble; }
     let t = u.time * P_speed() * (0.5 + h * 0.6);
+    // Frame-safety: the X amplitude was already written against the frame
+    // (aspect * 0.8 keeps it inside the half-width), the Y amplitude was not —
+    // Orbit height at its max plus the per-blob spread reached 0.58 against a
+    // frame that ends at 0.5, so a blob's CENTRE orbited off the top and bottom
+    // edges and the lamp lost a ball for part of every cycle. frameReach at
+    // straight-up is the vertical half-extent, and softLimit compresses toward
+    // it rather than clipping; the defaults sit below the knee, unchanged.
+    let orbitY = softLimit(P_orbitY() + h * 0.08, frameReach(TAU * 0.25));
     let pos = vec2f(
       sin(t + ph) * (P_orbitX() + h * 0.1) * u.aspect * 0.8,
-      cos(t * 1.31 + ph * 1.7) * (P_orbitY() + h * 0.08),
+      cos(t * 1.31 + ph * 1.7) * orbitY,
     );
 
     // Per-blob beat response, staggered by the golden-ratio conjugate (same
@@ -1996,8 +2073,11 @@ fn preset(uv: vec2f) -> vec4f {
   let len = max(tipSoft - inner, 0.0);
   let barHue = P_hue() + xs * P_hueSpread();
 
-  // Background wash
-  var col = hsl2rgb(P_hue() + 60.0, 0.5, 0.04 + u.mid * 0.04) * (1.0 - r * 0.8);
+  // Background wash. The max() is load-bearing: r reaches ~1.02 in the corners
+  // of a 16:9 frame and 1.27 at 21:9, where a bare (1.0 - r * 0.8) goes
+  // NEGATIVE and the wash starts subtracting light from whatever is behind the
+  // preset instead of fading out against it.
+  var col = hsl2rgb(P_hue() + 60.0, 0.5, 0.04 + u.mid * 0.04) * max(1.0 - r * 0.8, 0.0);
 
   // Radial bar body
   let inBar = step(inner, r) * step(r, inner + len);
@@ -2019,7 +2099,14 @@ fn preset(uv: vec2f) -> vec4f {
   // envelope; hard clamp keeps the core inside the bar ring.
   let pump = 1.0 + (u.drive * P_corePump() + beatP * P_coreBeat()) * u.pulse;
   let coreR = inner * P_coreSize() * pump;
-  let spin = u.time * (P_spinBase() + u.drive * P_spinEnergy()) * u.spin;
+  // What multiplies u.time is params-only. With u.drive inside the rate the
+  // wave phase was t*v(t), not the integral of v, so every transient whipped
+  // the crests by t*(rate change) — a fraction of a radian early in a track,
+  // several radians two minutes in. Loudness now adds a BOUNDED phase offset:
+  // it still visibly stirs the waves, and the error no longer grows with time.
+  // Both terms stay behind Motion->Rotation (u.spin), as before, so Rotation 0
+  // still means a dead-still edge.
+  let spin = (u.time * P_spinBase() + u.drive * P_spinEnergy() * 3.0) * u.spin;
   let amp = inner * (P_wobBase() + u.drive * P_wobAmp());
   var wob = sin(a * 3.0 + spin) * amp
           + sin(a * 6.0 - spin * 0.7 + 1.3) * amp * 0.35;
@@ -2066,14 +2153,21 @@ fn preset(uv: vec2f) -> vec4f {
     col += hsl2rgb(P_hue() + 50.0, 0.6, 0.65) * smoothstep(0.004, 0.0, abs(r - wr)) * core * 0.5;
   }
 
-  // Vignette
-  col *= 1.0 - r * r * P_vignette();
+  // Vignette. Clamped at zero because r*r reaches ~1.04 in the corners of a
+  // 16:9 frame (1.61 at 21:9) while Vignette goes to 1.2 — the bare
+  // 1.0 - r*r*amt lands at -0.25 there, and a negative multiplier makes the
+  // corners SUBTRACT light, denting the backdrop below black.
+  col *= max(1.0 - r * r * P_vignette(), 0.0);
   // NOTE: no global r=0.5 fade here. Frame-safety is enforced GEOMETRICALLY —
-  // bar length, peak arc and core are all hard-clamped to <=0.47 above — so a
-  // full-field multiply is redundant. It also cut the background wash and the
-  // tip glow off at r=0.5, which is well inside a 16:9 frame (corners reach
-  // r~1.02) and showed up as a hard black circle around the burst.
-  return vec4f(col, 1.0);
+  // bar length, peak arc and core are all soft-limited against the frame above
+  // (softLimit against frameReach/frameCircle, so they approach the border and
+  // never slice along it) — so a full-field multiply is redundant. It also cut
+  // the background wash and the tip glow off at r=0.5, which is well inside a
+  // 16:9 frame (corners reach r~1.02) and showed up as a hard black circle
+  // around the burst.
+  // The final max() is the same rule as the vignette: this preset must never
+  // hand the compositor a negative channel to subtract from the background.
+  return vec4f(max(col, vec3f(0.0)), 1.0);
 }
 "
 `;
@@ -2451,7 +2545,11 @@ fn fitUV(boxUV: vec2f, texAspect: f32, boxAspect: f32, mode: f32, zoom: f32, off
   var c = boxUV - vec2f(0.5) - offset;
   let ratio = texAspect / max(boxAspect, 1e-4);
   if (mode < 0.5) {
-    if (ratio > 1.0) { c.x = c.x / ratio; } else { c.y = c.y * ratio; }
+    // Written as a multiply by (boxAspect/texAspect), not a divide by ratio:
+    // the two are algebraically equal but differ by an ULP, and this is the
+    // exact form the hardcoded cover crop used before fitUV replaced it — so
+    // a background saved before this helper existed still renders bit-identically.
+    if (ratio > 1.0) { c.x = c.x * (boxAspect / max(texAspect, 1e-4)); } else { c.y = c.y * ratio; }
   } else if (mode < 1.5) {
     if (ratio > 1.0) { c.y = c.y * ratio; } else { c.x = c.x / ratio; }
   }
@@ -3476,8 +3574,6 @@ fn preset(uv: vec2f) -> vec4f {
   col += bgPal * nebT * nebT * 0.05 * (0.4 + u.mid * 0.8);
   col += bgPal * u.driveBeat * P_beatFlash() * u.pulse;
 
-  let energy = P_speed() * (0.4 + u.drive * P_energyDrive());
-
   // Grid-locked beat brightness pop applied to every particle's luminance in
   // both modes. Frame-constant, so hoisted out of the cell loops. u.pulse gates
   // it; default Beat brightness of 0 makes this exactly 1.0 (no change).
@@ -3498,9 +3594,18 @@ fn preset(uv: vec2f) -> vec4f {
     let shells = i32(P_layers()) * 2;
     for (var sI = 0; sI < shells; sI = sI + 1) {
       let fs = f32(sI);
-      let rate = energy * (1.0 - P_parallax() * fract(fs * 0.37) * 0.45)
-               * (1.0 + u.driveBeat * P_beatDance() * 0.8 * u.pulse);
-      let phase = fract(fs * 0.6180339887 + u.time * rate * 0.28);
+      // The coefficient on u.time is PARAMS-ONLY. It used to carry u.drive and
+      // u.driveBeat, which makes the shell position t*v(t) instead of the
+      // integral of v: whenever the rate moved, the phase jumped by
+      // t*(rate change) — an error that grows LINEARLY with track time. A beat
+      // shifted the shell phase 0.20 at t=5 s but 4.68 at t=120 s, i.e. the
+      // whole field re-rolled mid-track. Loudness and beats now ride as a
+      // BOUNDED additive phase offset, so they still push the field toward you
+      // without ever re-seeding it.
+      let baseRate = P_speed() * (1.0 - P_parallax() * fract(fs * 0.37) * 0.45);
+      let phase = fract(fs * 0.6180339887 + u.time * baseRate * 0.28
+                      + u.drive * P_energyDrive() * 0.4
+                      + u.driveBeat * P_beatDance() * 0.25 * u.pulse);
       let Z = mix(1.25, 0.05, phase);           // far -> at the camera
       // Rotate each shell's grid by a different angle. Otherwise every shell's
       // naturally-sparse vanishing point (the grid origin) sits on the same
@@ -3563,7 +3668,13 @@ fn preset(uv: vec2f) -> vec4f {
     }
     } else {
     // ---- DRIFT MODE: independent particles drifting on a shared current ----
-    let baseSpd = energy * (1.0 + u.driveBeat * P_beatDance() * 0.8 * u.pulse);
+    // Same rule as fly mode: what multiplies u.time is params-only, so the
+    // field can never teleport by t*(rate change) when loudness moves. Audio
+    // becomes a bounded positional PUSH added below. (The beat kick the eye
+    // actually reads in drift mode is scat, already an additive offset.)
+    let baseSpd = P_speed() * 0.6;
+    let push = u.drive * P_energyDrive() * 0.08
+             + u.driveBeat * P_beatDance() * 0.06 * u.pulse;
     let ang = radians(P_direction());
     let dir = vec2f(cos(ang), -sin(ang));
     let layerCount = i32(P_layers());
@@ -3580,7 +3691,7 @@ fn preset(uv: vec2f) -> vec4f {
       // per-particle float below is the dominant motion, so particles wander
       // every which way instead of marching in formation.
       let flow = dir * baseSpd * par * 0.06;
-      let q = p * scl - flow * u.time;
+      let q = p * scl - flow * u.time - dir * push * par;
       let base = floor(q);
       // 3x3 neighbourhood so a jittered star near a cell edge still draws.
       for (var oy = -1; oy <= 1; oy = oy + 1) {
@@ -3853,7 +3964,14 @@ fn preset(uv: vec2f) -> vec4f {
     let mtn = smoothstep(ridgeTop - 0.004, ridgeTop, uv.y);
 
     // Sun with a vertical gradient + widening scanline gaps.
-    let sunCtr = vec2f(cx - P_sunX(), uv.y - (horizon - P_sunY()));
+    // Frame-safety: Sun height is soft-limited against the sky that actually
+    // exists above the horizon. Raw, the lowest Horizon (0.35) with the highest
+    // Sun height (0.45) put the centre at uv.y = -0.10 — above the top edge,
+    // and at a small Sun size the entire disc sat offscreen, so the mode
+    // silently lost its subject. Reserving half a radius of sky keeps the disc
+    // in frame at every combination; at the defaults this is a ~0.002 shift.
+    let sunCy = horizon - softLimit(P_sunY(), max(horizon - P_sunR() * 0.5, 0.02));
+    let sunCtr = vec2f(cx - P_sunX(), uv.y - sunCy);
     let sd = length(sunCtr);
     let sunBody = smoothstep(P_sunR(), P_sunR() - 0.008, sd);
     let scanPos = horizon - uv.y;
@@ -3861,7 +3979,7 @@ fn preset(uv: vec2f) -> vec4f {
     let sunGrad = mix(
       hsl2rgb(P_hue() + 45.0, 0.95, 0.62),
       hsl2rgb(P_hue(), 0.95, 0.55),
-      clamp((uv.y - (horizon - P_sunY() - P_sunR())) / (2.0 * P_sunR()), 0.0, 1.0),
+      clamp((uv.y - (sunCy - P_sunR())) / (2.0 * P_sunR()), 0.0, 1.0),
     );
     var sky = sunGrad * sunBody * (1.0 - scanGap);
     // Hot core: a genuinely emissive centre that partially bleeds through the
@@ -4036,10 +4154,8 @@ fn preset(uv: vec2f) -> vec4f {
   let r = max(length(p), 2e-3);
   let a = atan2(p.y, p.x);
 
-  // Forward speed: a cruising floor plus the sync envelope, kicked on beats.
+  // Beat kick, tempo-grid locked with a flux fallback.
   let kickP = max(u.driveBeat, gridPulse(6.0));
-  let spd = P_speed() * (P_cruiseFloor() + u.drive * P_cruiseEnergy())
-          * (1.0 + kickP * P_beatSpeed() * u.pulse);
 
   // Depth. 1/r is the pinhole distance down the axis of a cylinder: the centre
   // of the frame (r -> 0) is infinitely far, the frame edge is the near mouth
@@ -4047,7 +4163,15 @@ fn preset(uv: vec2f) -> vec4f {
   // point OUTWARD toward the viewer -- the actual motion of flying down a
   // pipe, not a texture being zoomed.
   let depth = 1.0 / r;
-  let travel = depth + u.time * spd * 2.2;
+  // What multiplies u.time is PARAMS-ONLY. Folding u.drive/kickP into the speed
+  // made travel = t*v(t) instead of the integral of v, so every change in
+  // loudness snapped the whole wall forward or back by t*(speed change): fine
+  // in the first seconds, a hard stutter/strobe after ~30 s of track. Loudness
+  // and beats are now BOUNDED additive travel offsets — they still shove you
+  // down the pipe, but the ring pattern can never be re-seeded mid-track.
+  let travel = depth + u.time * P_speed() * P_cruiseFloor() * 2.2
+             + u.drive * P_cruiseEnergy() * 0.3
+             + kickP * P_beatSpeed() * u.pulse;
   // Corkscrew: flutes spiral with depth like a waterslide auger.
   let aTwist = a + travel * P_twist() * 0.15;
 
@@ -4310,7 +4434,16 @@ fn preset(uv: vec2f) -> vec4f {
   // the orb compresses toward the largest inscribed circle instead of
   // flattening against a hard 0.4/0.46 wall at max Size + loud voice.
   let radius = softLimit(P_size() * (1.0 + level * P_growth()) + idle, frameCircle() * 0.86);
-  let edge = softLimit(radius + disp, frameCircle() * 0.95);
+  // The ripple is applied as a FRACTION of the body, not as an absolute offset.
+  // At max mode amps and max Wobble disp reaches +-0.48 while Size bottoms out
+  // at 0.08, and a raw radius + disp then goes NEGATIVE on the trough of every
+  // ripple: softLimit() is identity below its knee, so it passes that straight
+  // through, inside is 0 everywhere and the orb AND its rim blink out on half
+  // of each cycle. Bounding the ratio holds the surface between 0.4x and 1.9x
+  // the body; at any sane setting disp/radius sits well inside that window, so
+  // the ripple itself is unchanged.
+  let edge = softLimit(radius * (1.0 + clamp(disp / max(radius, 1e-3), -0.6, 0.9)),
+                       frameCircle() * 0.95);
 
   // Cosine palette instead of flat hsl2rgb fills — stays saturated at low
   // brightness (the background wash) and gives the hot-white pushes below
@@ -4373,7 +4506,9 @@ fn preset(uv: vec2f) -> vec4f {
   col += pal * exp(-max(r - edge, 0.0) * 20.0) * breathG * 0.6;
 
   // Vignette is the shared smooth full-field falloff (never a hard-edged
-  // circle — the orb/rim/ring above are already clamped to r<=0.47).
+  // circle — the orb, rim and ring above are already soft-limited against
+  // frameCircle(), which tracks the frame's short side rather than the fixed
+  // radius the pre-v2.44 code clipped against).
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.15);
   col += grain(uv, 0.012);

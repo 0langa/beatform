@@ -293,6 +293,16 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
           // An abort means the user hit Skip — record that, not a red error.
           const c = classifyError(e);
           updateJob(job.id, c ? { k: "failed", ...c } : { k: "skipped" });
+          // ...with exactly one exception (audit F2). GpuInitError means the
+          // export worker could not create a WebGPU device AT ALL — a property
+          // of this machine, not of this track. Every remaining job would fail
+          // identically, each after its own full decode + analysis, so a
+          // 20-track queue burned an hour to produce 20 copies of the same
+          // error. Abort instead: the `finally` sweep below marks the jobs we
+          // never attempted as skipped (a terminal state, so the run reads as
+          // complete and "Retry failed + resume queued" can pick them back up
+          // on a machine that can actually render).
+          if ((e as Error)?.name === "GpuInitError") return;
         } finally {
           // 20 full-res bitmaps would otherwise pile up over a night. close()
           // on an already-detached bitmap is a no-op, so this is safe even

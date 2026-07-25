@@ -40,7 +40,7 @@ export const echoTrails: PresetDef = {
     {
       id: "vortex",
       name: "Vortex",
-      values: { swirl: 0.7, zoom: 0.3, decay: 0.9, hueSpin: 0.5, echoHue: 0.35 },
+      values: { swirl: 0.7, zoom: 0.3, decay: 0.9, hueSpin: 0.5, echoHue: 0.36 },
     },
     {
       id: "supernova",
@@ -84,7 +84,7 @@ export const echoTrails: PresetDef = {
         beatZoom: 0.6,
         flowSwirl: 0.6,
         hueSpin: 0.3,
-        echoHue: 0.25,
+        echoHue: 0.26,
         sides: 5,
         beatStar: 0.5,
       },
@@ -280,8 +280,14 @@ fn preset(uv: vec2f) -> vec4f {
   // by dt like the decay below — otherwise a 30 fps export advects the trail
   // half as many times as a 60 fps preview and the streaks are half as long.
   // At 60 fps this factor is 1.0, so the tuned look is unchanged there.
+  // The zoom COMPOUNDS — each frame multiplies the sampled coordinate — so N
+  // frames of x*(1+k) is (1+k)^N, not 1+k*N. The linear form under-advected by
+  // ~2.6% of a second's travel at 30 fps against a 60 Hz preview; raising the
+  // per-frame factor to the fpsComp power is the exact per-second equivalent,
+  // the same reasoning as the decay's pow() below. The swirl stays linear
+  // because it is an ANGLE, and rotations compose by adding angles.
   let fpsComp = u.dt * 60.0;
-  let zoom = 1.0 + (P_zoom() * 0.06 + u.driveBeat * P_beatZoom() * 0.12 * u.pulse) * fpsComp;
+  let zoom = pow(1.0 + P_zoom() * 0.06 + u.driveBeat * P_beatZoom() * 0.12 * u.pulse, fpsComp);
   let swirl = (P_swirl() * 0.15 + u.drive * P_flowSwirl() * 0.1) * u.spin * fpsComp;
   let w = rot2(swirl) * (c / zoom);
   let puv = vec2f(w.x / u.aspect + 0.5, w.y + 0.5);
@@ -293,20 +299,28 @@ fn preset(uv: vec2f) -> vec4f {
   var col = feedbackSample(puv).rgb * pow(P_decay(), u.dt * 60.0);
 
   // Per-generation hue drift: rotate the fed-back color a little each frame
-  // about the grey (luminance) axis via Rodrigues rotation. A rotation is
-  // ORTHOGONAL — it preserves the color vector's magnitude exactly — so unlike
-  // an added tint it injects ZERO net energy into the accumulator and cannot
-  // wash the tunnel to white (provably as stable as plain decay). The oldest
-  // echoes have been rotated the most, so the tunnel becomes a gradient of hues
-  // from the fresh center outward. Scaled by fpsComp so drift-per-second
-  // matches at 30 / 60 / 144 fps.
+  // about the grey (luminance) axis via Rodrigues rotation, then rescale the
+  // result back to the luminance it had BEFORE the rotation. The rotation on
+  // its own does NOT hold the energy budget: rotating a saturated color swings
+  // one channel negative, and the max(col, 0) that has to follow (a displayable
+  // color cannot be negative) clamps it back up — measured at roughly 2.3x the
+  // brightness plain decay would have left after a few generations, which is
+  // exactly the white-out a feedback accumulator cannot survive. Renormalising
+  // makes the step purely CHROMATIC: luminance out == luminance in, so the
+  // tunnel's brightness stays governed by decay alone at every setting. The
+  // oldest echoes have been rotated the most, so the tunnel becomes a gradient
+  // of hues from the fresh center outward. Scaled by fpsComp so drift-per-
+  // second matches at 30 / 60 / 144 fps.
   if (P_echoHue() > 0.001) {
     let ha = P_echoHue() * 0.5 * fpsComp;
     let ax = vec3f(0.5773502691896);
     let ca = cos(ha);
     let sa = sin(ha);
+    let lw = vec3f(0.2126, 0.7152, 0.0722);
+    let l0 = dot(col, lw);
     col = col * ca + cross(ax, col) * sa + ax * dot(ax, col) * (1.0 - ca);
     col = max(col, vec3f(0.0));
+    col *= l0 / max(dot(col, lw), 1e-5);
   }
 
   // --- Inject a fresh audio-driven source over the trails ---
@@ -328,7 +342,14 @@ fn preset(uv: vec2f) -> vec4f {
   if (P_sides() > 0.5) {
     let beatP = max(u.driveBeat, gridPulse(7.0));
     let lobe = cos(P_sides() * ang);
-    shape = 1.0 + (0.11 + P_beatStar() * beatP * u.pulse * 0.5) * lobe;
+    // Soft-limited, never min(): the Pulse master runs to 200%, so at full Beat
+    // bloom the raw lobe depth reaches 1.11 and the notches between lobes would
+    // drive the ring radius NEGATIVE — the ring collapsing inward on every beat,
+    // precisely when it should read loudest. Compressing against 0.9 leaves the
+    // deepest notch at ~0.11x the radius, and every shipped style sits under the
+    // 0.648 knee, so their stars are bit-identical.
+    let star = softLimit(0.11 + P_beatStar() * beatP * u.pulse * 0.5, 0.9);
+    shape = 1.0 + star * lobe;
   }
   let ringR = softLimit((P_radius() + spec * P_react() * (0.6 + u.bass * 0.8)) * shape, frameCircle());
   let band = smoothstep(P_thick() + 0.02, 0.0, abs(rad - ringR));

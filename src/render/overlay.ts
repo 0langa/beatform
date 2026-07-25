@@ -102,11 +102,32 @@ export function defaultImageLayer(assetId: string): ImageLayer {
 // Keyed by asset id AND the dataUrl that was decoded: a loaded project can
 // reuse an id with different image bytes (save-as + edit, templates), and an
 // id-only cache would keep serving the stale bitmap — in exports too.
-const bitmapCache = new Map<string, { url: string; bmp: Promise<ImageBitmap> }>();
+type BitmapEntry = { url: string; bmp: Promise<ImageBitmap> };
+
+const bitmapCache = new Map<string, BitmapEntry>();
+
+/**
+ * Release an entry we are dropping. Every other ImageBitmap owner in this
+ * codebase closes explicitly (disposeVideoBgFrames, the batch runner's overlay,
+ * runExport's finally) — leaving a full-resolution logo decode to the GC is how
+ * a long editing session, or a template gallery that swaps asset bytes under a
+ * reused id, accumulates megabytes of detached-but-alive bitmaps.
+ *
+ * The decode may still be in flight, and may reject: close on settle and
+ * swallow the rejection. The entry is already off the cache by then, so nothing
+ * is waiting on it and an unhandled rejection here would be pure noise.
+ */
+function releaseBitmapEntry(entry: BitmapEntry): void {
+  void entry.bmp.then(
+    (b) => b.close(),
+    () => {},
+  );
+}
 
 function assetBitmap(asset: OverlayAsset): Promise<ImageBitmap> {
   let hit = bitmapCache.get(asset.id);
   if (!hit || hit.url !== asset.dataUrl) {
+    if (hit) releaseBitmapEntry(hit);
     const bmp = fetch(asset.dataUrl)
       .then((r) => r.blob())
       .then((b) => createImageBitmap(b));
@@ -124,10 +145,19 @@ function assetBitmap(asset: OverlayAsset): Promise<ImageBitmap> {
 
 /** Drop cached decodes for assets that no longer exist. */
 export function pruneBitmapCache(liveAssetIds: Set<string>): void {
-  for (const id of bitmapCache.keys()) {
-    if (!liveAssetIds.has(id)) bitmapCache.delete(id);
+  for (const [id, entry] of bitmapCache) {
+    if (!liveAssetIds.has(id)) {
+      releaseBitmapEntry(entry);
+      bitmapCache.delete(id);
+    }
   }
 }
+
+/** Sentinel for the ctx.font parse check below — see the note there. */
+const FONT_PROBE = "1px monospace";
+/** Family used when the layer's own family will not parse. Matches
+ * defaultTextLayer, so a rejected font degrades to the app's default look. */
+const FONT_FALLBACK = "Arial";
 
 function anchorPoint(anchor: OverlayAnchor, w: number, h: number): [number, number] {
   const x = anchor[1] === "l" ? 0 : anchor[1] === "r" ? w : w / 2;
@@ -171,7 +201,17 @@ export async function rasterizeOverlay(
       if (!text.trim()) continue;
       const px = Math.max(4, layer.size * height);
       ctx.save();
+      // The 2D spec says an UNPARSEABLE `font` assignment must be IGNORED —
+      // no throw, no warning, the previous value simply stays. So a family
+      // carrying a `;`, a `}`, a quote or a leading digit does not fail loudly:
+      // the layer renders at the 10px sans-serif default in the preview AND the
+      // export with nothing reported anywhere. Probe it: FONT_PROBE is 1px, and
+      // px is clamped to >= 4 above, so a font that actually took can never
+      // serialize back to the sentinel. (validLayers whitelists imported
+      // documents; this also covers a family typed live in the Layers panel.)
+      ctx.font = FONT_PROBE;
       ctx.font = `${layer.weight} ${px}px ${layer.font}`;
+      if (ctx.font === FONT_PROBE) ctx.font = `${layer.weight} ${px}px ${FONT_FALLBACK}`;
       ctx.letterSpacing = `${layer.letterSpacing * px}px`;
       ctx.textAlign =
         layer.anchor[1] === "l" ? "left" : layer.anchor[1] === "r" ? "right" : "center";
@@ -193,6 +233,12 @@ export async function rasterizeOverlay(
       } catch {
         continue; // corrupt asset — skip, never kill the whole overlay
       }
+      // A cached bitmap can now be closed out from under an in-flight
+      // rasterize (releaseBitmapEntry), e.g. the user deletes the asset while
+      // this loop awaits a later layer. A detached bitmap reports 0x0, which
+      // would make drawW NaN and drawImage throw — same rule as a corrupt
+      // asset: skip the layer, never lose the whole overlay.
+      if (bmp.width === 0 || bmp.height === 0) continue;
       const drawH = layer.size * height;
       const drawW = (bmp.width / bmp.height) * drawH;
       // Anchor the image box: anchor point maps to the matching box corner

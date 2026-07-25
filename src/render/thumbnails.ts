@@ -1,5 +1,6 @@
 import { WebGPURenderer } from "./webgpuRenderer";
 import { presets } from "./presets";
+import { defaultBuilderStack, packBuilderParams } from "./builder2";
 import { defaultParams } from "./types";
 import type { AudioFeatures } from "../audio/types";
 
@@ -88,6 +89,11 @@ async function generate(): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   try {
     renderer.resize(W, H, 1);
+    // Builder Studio keeps its per-layer values in a storage buffer, not in
+    // `params`. A fresh renderer's buffer is zero-initialised, so every layer
+    // reads opacity 0 and the mode rendered as a SOLID BLACK chip — worse than
+    // the readable text chip an unthumbed mode gets. Seed the starter stack.
+    renderer.setBuilderParams(packBuilderParams(defaultBuilderStack()));
     for (const p of presets) {
       renderer.setPreset(p);
       const params = defaultParams(p);

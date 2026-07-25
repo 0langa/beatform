@@ -15,6 +15,13 @@ export const PresetStrip = memo(function PresetStrip(props: {
   onSwitch: (id: string) => void;
   /** Open the WGSL shader editor. */
   onNewVisual: () => void;
+  /**
+   * Why the shader editor can't be opened right now (audit F1). Set on the
+   * Canvas2D fallback, which has no WGSL pipeline at all: the editor used to
+   * open, compile and save a visual that then drew the same spectrum bars as
+   * everything else. Undefined on the normal path — the button is unchanged.
+   */
+  newVisualDisabledReason?: string;
 }) {
   const idx = props.presets.findIndex((p) => p.id === props.activeId);
   const step = (d: number) =>
@@ -89,7 +96,10 @@ export const PresetStrip = memo(function PresetStrip(props: {
         })}
         <button
           className="chip chip-new"
-          title="Write your own visual in WGSL — the shader editor"
+          disabled={!!props.newVisualDisabledReason}
+          title={
+            props.newVisualDisabledReason ?? "Write your own visual in WGSL — the shader editor"
+          }
           onClick={props.onNewVisual}
         >
           +

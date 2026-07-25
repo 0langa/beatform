@@ -44,6 +44,14 @@ export interface TimelinePanelProps {
   onAutoArrange: () => void;
   onSeek: (t: number) => void;
   onClose: () => void;
+  /**
+   * True while the Canvas2D fallback is drawing (audit F1). It hard-cuts
+   * between scenes — setTransitionPreset is an empty stub — so the Transition
+   * select is disabled rather than offering seven effects it will not run.
+   * Scene fades stay editable: they are document data, and the timeline is
+   * still worth building for a later render on capable hardware.
+   */
+  simplifiedRenderer?: boolean;
 }
 
 /**
@@ -602,11 +610,19 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
                     }}
                   />
                 </label>
-                <label className="inline" title="How this scene's incoming fade renders">
+                <label
+                  className="inline"
+                  title={
+                    props.simplifiedRenderer
+                      ? "Transitions are GPU effects — hardware rendering (WebGPU) isn't available, so scenes hard-cut. The choice is kept for a render on capable hardware."
+                      : "How this scene's incoming fade renders"
+                  }
+                >
                   Transition
                   <select
                     className="select"
                     value={s.transition ?? "crossfade"}
+                    disabled={props.simplifiedRenderer}
                     onChange={(e) => {
                       const transition = e.target.value as (typeof TRANSITION_KINDS)[number];
                       update({

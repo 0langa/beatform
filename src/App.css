@@ -1082,6 +1082,17 @@ button:disabled {
   color: var(--text-dim);
 }
 
+/* A row the active renderer cannot honour (kit's `disabledReason`). Dimmed
+   rather than hidden: the setting still exists, still travels in the project
+   and still applies on hardware that can draw it — it just isn't doing
+   anything HERE, which is what the row's title says. The label keeps
+   pointer-events so hovering it surfaces that reason; disabled controls
+   swallow their own hover in every engine. */
+.row.is-unavailable {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .row-value {
   font-size: 11.5px;
   text-align: right;
@@ -2020,17 +2031,37 @@ kbd {
 
 /* ---------- toasts ---------- */
 
-.toast {
+/* One bottom-centred column instead of N absolutely-positioned siblings all
+   claiming `bottom: 92px`. Two toasts could already co-occur (crash recovery
+   over an error) and drew on top of each other; the persistent simplified-
+   renderer banner made a third. `align-items: center` keeps a lone toast in
+   exactly the position the old single rule produced. */
+.toast-stack {
   position: absolute;
   bottom: 92px;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: min(92vw, 560px);
+  z-index: 15;
+  /* The column spans the full width so its children can centre; without this
+     the gaps between toasts would swallow clicks on the visual behind them. */
+  pointer-events: none;
+}
+
+.toast-stack > * {
+  pointer-events: auto;
+}
+
+.toast {
   background: var(--glass-heavy);
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   padding: 10px 16px;
   font-size: 12.5px;
-  z-index: 15;
 }
 
 .error-toast {
@@ -2039,6 +2070,35 @@ kbd {
 
 .notice-toast {
   color: var(--accent, #6aa8ff);
+}
+
+/* Simplified renderer (audit F1): the app is WORKING but is not drawing what
+   the UI describes, and that lasts the whole session — so this one neither
+   fades on a timer nor styles itself as a crash. Warning-coloured edge,
+   full sentences, and a dismiss that costs the user nothing (the controls it
+   explains stay disabled either way). */
+.fallback-toast {
+  align-items: flex-start;
+  max-width: 100%;
+  border-color: var(--danger);
+  background: var(--glass-heavy);
+  line-height: 1.45;
+}
+
+.fallback-toast .toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fallback-toast .toast-title {
+  color: var(--danger);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.fallback-toast .toast-text {
+  color: var(--text-faint);
 }
 
 /* Crash recovery: the one toast that waits for an answer instead of fading. */

@@ -80,9 +80,9 @@ export function sourceValue(
 }
 
 /**
- * Apply routes over base params. Pure; returns base unchanged (same object)
- * when there are no routes, so the per-frame hot path stays allocation-free
- * in the common case.
+ * Apply routes over base params. Pure; returns base UNCHANGED (same object)
+ * when no route actually drives a param of this preset, so the per-frame hot
+ * path stays allocation-free in the common case.
  */
 export function applyMods(
   preset: PresetDef,
@@ -95,16 +95,23 @@ export function applyMods(
 ): ParamValues {
   if (routes.length === 0) return base;
   const specs = paramSpecMap(preset);
-  const out: ParamValues = { ...base };
+  // Lazy, like applyPostMods: a non-empty route list is NOT the same as a route
+  // that changes anything. A project whose routes all target `post:*` (or a
+  // preset the user has since switched away from) reaches this with routes to
+  // spend and nothing to spend them on — and the eager `{ ...base }` cloned the
+  // param object every frame, in BOTH render loops, for zero effect. Returning
+  // `base` by identity also lets callers skip a redundant uniform upload.
+  let out: ParamValues | null = null;
   for (const route of routes) {
     const spec = specs.get(route.param);
     if (!spec) continue; // route to a param this preset doesn't have — skip
+    if (!out) out = { ...base };
     const value = sourceValue(features, route.source, stems);
     const range = spec.max - spec.min;
     const next = (out[route.param] ?? spec.default) + value * route.amount * range;
     out[route.param] = Math.min(spec.max, Math.max(spec.min, next));
   }
-  return out;
+  return out ?? base;
 }
 
 /**

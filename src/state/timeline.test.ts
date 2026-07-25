@@ -230,3 +230,28 @@ describe("timeline validation", () => {
     expect(clean.lanes[0].keyframes[0].id).toBe("kf-mine");
   });
 });
+
+describe("prototype-key hygiene", () => {
+  // Inert today (consumers only spread and Object.keys these maps), but they
+  // are keyed straight off an untrusted project file, and the next consumer
+  // that does `automation[key] ?? default` would read a Function instead.
+  it("builds the automation map with a null prototype", () => {
+    const frame = evalTimeline(timeline, 5);
+    expect(Object.getPrototypeOf(frame.automation)).toBeNull();
+    expect((frame.automation as Record<string, unknown>).constructor).toBeUndefined();
+  });
+
+  it("builds validated scene params with a null prototype", () => {
+    const clean = validTimeline({
+      enabled: true,
+      scenes: [{ id: "a", presetId: P0, start: 0, params: { hue: 1 } }],
+      lanes: [],
+    });
+    const params = clean.scenes[0].params!;
+    expect(Object.getPrototypeOf(params)).toBeNull();
+    expect((params as Record<string, unknown>).toString).toBeUndefined();
+    // Still a plain value map for every legitimate consumer.
+    expect(params.hue).toBe(1);
+    expect(JSON.parse(JSON.stringify(params))).toEqual({ hue: 1 });
+  });
+});

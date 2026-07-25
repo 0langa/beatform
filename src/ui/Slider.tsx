@@ -39,7 +39,13 @@ export function snapToStep(v: number, min: number, max: number, step: number): n
   // stop there too. The epsilon absorbs quotient drift (0.29 / 0.005 comes
   // out as 57.99999999999999, and flooring that would lose a whole step).
   const top = Math.floor((max - min) / step + 1e-9);
-  const snapped = min + Math.min(Math.round((clamped - min) / step), top) * step;
+  // Round the QUOTIENT through a fixed decimal too. Binary float puts an exact
+  // half-step just below .5 — (0.35 - 0.2) / 0.02 is 7.499999999999998 — so a
+  // bare Math.round snapped 0.35 DOWN to 0.34 where the native range input,
+  // which aligns steps with exact decimal arithmetic, gives 0.36. Typing "35"
+  // on a percent row read back 34%.
+  const q = Math.round(Number(((clamped - min) / step).toFixed(9)));
+  const snapped = min + Math.min(q, top) * step;
   return Number(snapped.toFixed(Math.max(decimalsOf(step), decimalsOf(min))));
 }
 

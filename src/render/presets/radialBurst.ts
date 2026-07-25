@@ -364,8 +364,11 @@ fn preset(uv: vec2f) -> vec4f {
   let len = max(tipSoft - inner, 0.0);
   let barHue = P_hue() + xs * P_hueSpread();
 
-  // Background wash
-  var col = hsl2rgb(P_hue() + 60.0, 0.5, 0.04 + u.mid * 0.04) * (1.0 - r * 0.8);
+  // Background wash. The max() is load-bearing: r reaches ~1.02 in the corners
+  // of a 16:9 frame and 1.27 at 21:9, where a bare (1.0 - r * 0.8) goes
+  // NEGATIVE and the wash starts subtracting light from whatever is behind the
+  // preset instead of fading out against it.
+  var col = hsl2rgb(P_hue() + 60.0, 0.5, 0.04 + u.mid * 0.04) * max(1.0 - r * 0.8, 0.0);
 
   // Radial bar body
   let inBar = step(inner, r) * step(r, inner + len);
@@ -387,7 +390,14 @@ fn preset(uv: vec2f) -> vec4f {
   // envelope; hard clamp keeps the core inside the bar ring.
   let pump = 1.0 + (u.drive * P_corePump() + beatP * P_coreBeat()) * u.pulse;
   let coreR = inner * P_coreSize() * pump;
-  let spin = u.time * (P_spinBase() + u.drive * P_spinEnergy()) * u.spin;
+  // What multiplies u.time is params-only. With u.drive inside the rate the
+  // wave phase was t*v(t), not the integral of v, so every transient whipped
+  // the crests by t*(rate change) — a fraction of a radian early in a track,
+  // several radians two minutes in. Loudness now adds a BOUNDED phase offset:
+  // it still visibly stirs the waves, and the error no longer grows with time.
+  // Both terms stay behind Motion->Rotation (u.spin), as before, so Rotation 0
+  // still means a dead-still edge.
+  let spin = (u.time * P_spinBase() + u.drive * P_spinEnergy() * 3.0) * u.spin;
   let amp = inner * (P_wobBase() + u.drive * P_wobAmp());
   var wob = sin(a * 3.0 + spin) * amp
           + sin(a * 6.0 - spin * 0.7 + 1.3) * amp * 0.35;
@@ -434,14 +444,21 @@ fn preset(uv: vec2f) -> vec4f {
     col += hsl2rgb(P_hue() + 50.0, 0.6, 0.65) * smoothstep(0.004, 0.0, abs(r - wr)) * core * 0.5;
   }
 
-  // Vignette
-  col *= 1.0 - r * r * P_vignette();
+  // Vignette. Clamped at zero because r*r reaches ~1.04 in the corners of a
+  // 16:9 frame (1.61 at 21:9) while Vignette goes to 1.2 — the bare
+  // 1.0 - r*r*amt lands at -0.25 there, and a negative multiplier makes the
+  // corners SUBTRACT light, denting the backdrop below black.
+  col *= max(1.0 - r * r * P_vignette(), 0.0);
   // NOTE: no global r=0.5 fade here. Frame-safety is enforced GEOMETRICALLY —
-  // bar length, peak arc and core are all hard-clamped to <=0.47 above — so a
-  // full-field multiply is redundant. It also cut the background wash and the
-  // tip glow off at r=0.5, which is well inside a 16:9 frame (corners reach
-  // r~1.02) and showed up as a hard black circle around the burst.
-  return vec4f(col, 1.0);
+  // bar length, peak arc and core are all soft-limited against the frame above
+  // (softLimit against frameReach/frameCircle, so they approach the border and
+  // never slice along it) — so a full-field multiply is redundant. It also cut
+  // the background wash and the tip glow off at r=0.5, which is well inside a
+  // 16:9 frame (corners reach r~1.02) and showed up as a hard black circle
+  // around the burst.
+  // The final max() is the same rule as the vignette: this preset must never
+  // hand the compositor a negative channel to subtract from the background.
+  return vec4f(max(col, vec3f(0.0)), 1.0);
 }
 `,
 };

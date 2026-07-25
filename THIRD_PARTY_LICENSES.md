@@ -50,9 +50,10 @@ These and their transitive dependencies are overwhelmingly dual-licensed
 complete list with exact versions is `src-tauri/Cargo.lock`; a full
 license manifest can be regenerated at any time with `cargo license` or
 `cargo about` against that lockfile. No crate in the tree carries a strong
-copyleft (GPL/AGPL) license; one transitive dependency (`option-ext`) is
-MPL-2.0, a weak file-level copyleft whose source-availability obligation is
-met by the unmodified crates.io distribution.
+copyleft (GPL/AGPL) license; five transitive dependencies (`option-ext`,
+`selectors`, `cssparser`, `cssparser-macros`, `dtoa-short`) are MPL-2.0, a
+weak file-level copyleft whose source-availability obligation is met by the
+unmodified crates.io distribution.
 
 The bundled **ffmpeg** sidecar is a separate LGPL binary, not linked — see
 `binaries/FFMPEG-LICENSE.txt`.

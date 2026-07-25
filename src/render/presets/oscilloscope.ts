@@ -19,7 +19,7 @@ export const oscilloscope: PresetDef = {
   styles: [
     { id: "neon", name: "Neon Green", values: {} },
     { id: "amber", name: "Amber CRT", values: { hue: 40, scanline: 0.2, fill: 0, glow: 0.35 } },
-    { id: "vapor", name: "Vapor", values: { hue: 290, glow: 0.8, hueWave: 60, persist: 0.55 } },
+    { id: "vapor", name: "Vapor", values: { hue: 290, glow: 0.8, hueWave: 60, persist: 0.56 } },
     {
       id: "clinical",
       name: "Clinical",
@@ -67,7 +67,7 @@ export const oscilloscope: PresetDef = {
         mirror: 0,
         gridLevel: 0.18,
         coreWidth: 0.0025,
-        gain: 0.74,
+        gain: 0.75,
         hueWave: 0,
         bgLevel: 0.02,
         vignette: 0.4,

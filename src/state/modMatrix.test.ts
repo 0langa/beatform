@@ -155,3 +155,40 @@ describe("post-processing modulation targets", () => {
     expect(params).toEqual(defaultParams(preset));
   });
 });
+
+describe("applyMods lazy clone", () => {
+  const routes = validModRoutes([
+    { id: "a", source: "bass", param: "post:chromatic", amount: 1 },
+    { id: "b", source: "treble", param: "post:bloom", amount: 1 },
+  ]);
+
+  it("returns base BY IDENTITY when every route targets post", () => {
+    // A non-empty route list is not the same as a route that changes anything.
+    // The eager `{ ...base }` cloned the param object every frame in both
+    // render loops for zero effect, and destroyed the identity check callers
+    // use to skip a redundant uniform upload.
+    const base = defaultParams(preset);
+    expect(applyMods(preset, base, routes, features({ bass: 1, treble: 1 }))).toBe(base);
+  });
+
+  it("returns base BY IDENTITY when every route names a param this preset lacks", () => {
+    const base = defaultParams(preset);
+    const foreign = validModRoutes([
+      { id: "c", source: "bass", param: "definitelyNotAParamOfThisPreset", amount: 1 },
+    ]);
+    expect(applyMods(preset, base, foreign, features({ bass: 1 }))).toBe(base);
+  });
+
+  it("still clones (never mutates base) as soon as ONE route matches", () => {
+    const base = defaultParams(preset);
+    const before = { ...base };
+    const mixed = validModRoutes([
+      { id: "a", source: "bass", param: "post:chromatic", amount: 1 },
+      { id: "b", source: "bass", param: spec.key, amount: 1 },
+    ]);
+    const out = applyMods(preset, base, mixed, features({ bass: 1 }));
+    expect(out).not.toBe(base);
+    expect(base).toEqual(before);
+    expect(out[spec.key]).toBeGreaterThan(before[spec.key]);
+  });
+});

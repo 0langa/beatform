@@ -409,6 +409,32 @@ function validColor(v: unknown): [number, number, number] {
   return [1, 1, 1];
 }
 
+/**
+ * One CSS font family: a letter, then letters/digits/spaces/`-`/`_`.
+ *
+ * A WHITELIST, not an escape. The family is pasted straight into `ctx.font`,
+ * and the 2D spec requires an unparseable font assignment to be IGNORED — no
+ * throw, no warning — so an imported .avproj/.avtheme whose family contains a
+ * `;`, a `}`, a quote or a leading digit silently renders the layer at the
+ * 10px sans-serif default in BOTH the preview and the export, with nothing
+ * reported. Unicode letter classes, so real families ("Noto Sans JP",
+ * "游ゴシック") pass; nothing that can terminate the shorthand does.
+ */
+const FONT_FAMILY_RE = /^\p{L}[\p{L}\p{N} _-]*$/u;
+
+/**
+ * Validate a font family (or a comma-separated stack), falling back to the
+ * same family defaultTextLayer uses. Each part is checked independently
+ * because ONE bad family invalidates the whole `ctx.font` shorthand —
+ * "Arial, 3Bad" is as dead as "3Bad" on its own.
+ */
+export function validFontFamily(v: unknown): string {
+  if (typeof v !== "string") return "Arial";
+  const s = v.trim().slice(0, 100);
+  if (!s) return "Arial";
+  return s.split(",").every((p) => FONT_FAMILY_RE.test(p.trim())) ? s : "Arial";
+}
+
 export function validLayers(v: unknown, assets: Record<string, OverlayAsset>): OverlayLayer[] {
   if (!Array.isArray(v)) return [];
   const out: OverlayLayer[] = [];
@@ -427,7 +453,7 @@ export function validLayers(v: unknown, assets: Record<string, OverlayAsset>): O
         id: l.id,
         type: "text",
         text: typeof t.text === "string" ? t.text.slice(0, 200) : "",
-        font: typeof t.font === "string" ? t.font.slice(0, 100) : "Arial",
+        font: validFontFamily(t.font),
         weight: num(t.weight, 700, 100, 1000),
         size: num(t.size, 0.06, 0.005, 0.5),
         color: validColor(t.color),

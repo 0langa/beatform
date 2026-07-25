@@ -162,7 +162,12 @@ export function evalTimeline(timeline: Timeline, t: number): TimelineFrame {
     prevScene = prev;
   }
 
-  const automation: ParamValues = {};
+  // Object.create(null), not {}: every other validator/param map in the app
+  // moved off the Object prototype so a lane or scene param named "constructor"
+  // or "__proto__" cannot read (or assign through to) a prototype member. Inert
+  // here today because consumers only spread and Object.keys it — the point is
+  // that the map is untrusted-keyed and the next consumer won't be careful.
+  const automation: ParamValues = Object.create(null) as ParamValues;
   for (const lane of timeline.lanes) {
     const v = laneValue(lane, t);
     if (v !== null) automation[lane.param] = v;
@@ -191,7 +196,8 @@ export function validTimeline(v: unknown): Timeline {
         Number.isFinite(s.start) &&
         s.start >= 0
       ) {
-        const params: ParamValues = {};
+        // Object.create(null) — the keys come straight off an untrusted file.
+        const params: ParamValues = Object.create(null) as ParamValues;
         if (typeof s.params === "object" && s.params !== null) {
           for (const [k, val] of Object.entries(s.params)) {
             if (typeof val === "number" && Number.isFinite(val)) params[k] = val;
