@@ -66,6 +66,38 @@ export const synthwave: PresetDef = {
         beatPulse: 0.35,
       },
     },
+    {
+      id: "chrome",
+      name: "Chrome Dawn",
+      values: {
+        hue: 205,
+        gridHue: 190,
+        sunR: 0.3,
+        sunRays: 0.35,
+        scan: 0.3,
+        mountains: 0.4,
+        gridGlow: 1.1,
+        speed: 0.8,
+        fog: 0.9,
+      },
+    },
+    {
+      id: "storm",
+      name: "Storm",
+      values: {
+        hue: 258,
+        gridHue: 278,
+        sunY: 0.16,
+        sunR: 0.2,
+        mountains: 0.7,
+        gridGlow: 0.7,
+        scan: 0.5,
+        fog: 1.2,
+        speed: 1.4,
+        beatPulse: 0.9,
+        stars: 0,
+      },
+    },
   ],
   params: [
     {
@@ -152,6 +184,15 @@ export const synthwave: PresetDef = {
       hint: "Starfield in the sky",
     },
     {
+      key: "starDensity",
+      label: "Star density",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.3,
+      hint: "How many stars fill the sky (needs Stars on)",
+    },
+    {
       key: "sunRays",
       label: "Sun rays",
       min: 0,
@@ -170,6 +211,15 @@ export const synthwave: PresetDef = {
       hint: "Vertical position of the sun above the horizon",
     },
     {
+      key: "sunX",
+      label: "Sun offset",
+      min: -0.6,
+      max: 0.6,
+      step: 0.02,
+      default: 0,
+      hint: "Horizontal position of the sun — 0 is centered, negative moves it left",
+    },
+    {
       key: "gridScale",
       label: "Grid density",
       min: 0.2,
@@ -177,6 +227,15 @@ export const synthwave: PresetDef = {
       step: 0.05,
       default: 0.7,
       hint: "How fine the grid lines are, in both directions",
+    },
+    {
+      key: "horizonY",
+      label: "Horizon height",
+      min: 0.35,
+      max: 0.62,
+      step: 0.01,
+      default: 0.5,
+      hint: "Height of the horizon line — lower shows more sky, higher gives more grid floor",
     },
     {
       key: "scan",
@@ -219,7 +278,7 @@ export const synthwave: PresetDef = {
 fn preset(uv: vec2f) -> vec4f {
   var col = vec3f(0.0);
   let cx = (uv.x - 0.5) * u.aspect;
-  let horizon = 0.5;
+  let horizon = P_horizonY();
   let drive = clamp(u.drive, 0.0, 1.5);
   // Pump on the tempo grid when the track has one (gridPulse falls back to
   // the flux pulse when it doesn't); flux onsets still add on top via max.
@@ -277,7 +336,7 @@ fn preset(uv: vec2f) -> vec4f {
     let mtn = smoothstep(ridgeTop - 0.004, ridgeTop, uv.y);
 
     // Sun with a vertical gradient + widening scanline gaps.
-    let sunCtr = vec2f(cx, uv.y - (horizon - P_sunY()));
+    let sunCtr = vec2f(cx - P_sunX(), uv.y - (horizon - P_sunY()));
     let sd = length(sunCtr);
     let sunBody = smoothstep(P_sunR(), P_sunR() - 0.008, sd);
     let scanPos = horizon - uv.y;
@@ -311,10 +370,14 @@ fn preset(uv: vec2f) -> vec4f {
       let gp = vec2f(uv.x * u.aspect, uv.y) * 60.0;
       let cell = floor(gp);
       let h = hash21(cell);
-      if (h > 0.972) {
+      // Density maps to the hash threshold: denser field = lower bar to clear.
+      // Brightness normalizes by the remaining headroom so stars stay a
+      // consistent brightness regardless of how many are lit.
+      let thr = mix(0.985, 0.94, P_starDensity());
+      if (h > thr) {
         let sp = vec2f(hash21(cell + 0.37), hash21(cell + 0.71));
         let star = smoothstep(0.13, 0.0, length(gp - cell - sp));
-        sky += vec3f(0.9, 0.92, 1.0) * star * (h - 0.972) * 22.0
+        sky += vec3f(0.9, 0.92, 1.0) * star * (h - thr) / max(1.0 - thr, 0.01) * 0.62
              * (0.5 + 0.5 * sin(u.time * 2.0 + h * 40.0)) * smoothstep(horizon, 0.0, uv.y);
       }
     }
