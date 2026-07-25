@@ -79,8 +79,12 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   continues without error. Then: close the app NORMALLY, relaunch —
   PASS: no recovery bar.
 - [✅] **Shortcuts on a non-US keyboard.** PHYSICAL PASS 2026-07-26 by the
-  owner on a real QWERTZ keyboard, v2.49.0: P/N/S/0/H and Esc all behave.
-  This supersedes the spoof below and closes audit finding HW-2.
+  owner on a real QWERTZ keyboard, v2.49.0: P/N/S/0/H and Esc all behave,
+  AND typing the AltGr chords `@ [ ] \ ~ EUR |` into the settings-panel
+  search box inserted them as literal text with no mode switch and no
+  Stage toggle (the AltGr = ctrl+alt guard from v2.44.1 holding). This
+  supersedes the spoof below and CLOSES audit finding HW-2 — the physical
+  layout mapping is now verified, not assumed.
 - [~] _(superseded, kept for provenance)_ **Spoofed keyboard run.** PASS 2026-07-25 on v2.47.0 via
   SPOOFED input (synthetic KeyboardEvent matrix in the dev harness —
   no physical keyboard needed): AltGr chords (ctrl+alt+letter, how
@@ -196,17 +200,16 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   player bar); enable Auto-play-next → seek near the end (player-bar
   click at ~95%) → PASS: the next track starts by itself.
 - [~] **Drag & drop (real Explorer drag, installed build).** Owner-tested
-  2026-07-26 on v2.49.0 — the `dragDropEnabled: false` fix WORKS: drops
-  now reach the app at all, which they never did before. - [✅] audio (.mp3/.wav) — loads and plays. - [✅] timed lyrics (.lrc/.srt) — attach to the current track. - [✅] `.avproj` — **FAILED on 2.49.0** with "Could not decode
-  ...avproj (Unable to decode audio data)": the drop handler
-  dispatched .avshader/.avtheme/.lrc/.srt and let everything else
-  fall through to the AUDIO loader, so projects were never handled.
-  Latent since the feature existed, unreachable until drops started
-  arriving. Fixed in v2.49.1 (`openProjectText` + an .avproj branch).
-  RETEST on >= 2.49.1. - [ ] `.avtheme` — retest with `D:\drop-test.avtheme` ("Drop Test —
-  Ember Six": hot-orange 6-fold Radial Burst, heavy bloom). PASS =
-  the look applies and a notice names it.
-  Also confirm the drop overlay appears while dragging and clears after.
+  2026-07-26 — the `dragDropEnabled: false` fix WORKS: drops reach the app
+  at all now, which they never did in any prior installed build. - [x] audio (.mp3/.wav) on v2.49.0 — loads and plays. - [x] timed lyrics (.lrc/.srt) on v2.49.0 — attach to the current track. - [x] `.avtheme` on v2.49.0 — dropped `D:\drop-test.avtheme`, the look
+  applied and the notice read `"Drop Test - Ember Six" by QA applied`. - [ ] `.avproj` — FAILED on v2.49.0 with "Could not decode ...
+  (Unable to decode audio data)": the handler dispatched
+  .avshader/.avtheme/.lrc/.srt and let everything else fall through to
+  the AUDIO loader, so projects were never handled. As old as the
+  feature, unreachable until drops started arriving. Fixed in v2.49.1
+  (`openProjectText` + an .avproj branch). **RETEST ON >= 2.49.1** —
+  still open, the fix is not in the tested build. - [x] drop overlay appears while dragging and clears after.
+
 - [✅] **Builder file round-trip.** PASS 2026-07-23 on v2.44.1: exported a
   six-layer stack to `C:\bf-test\out\stack.avbuilder`, removed the added
   `Orb core`, imported the file, and recovered all six layers with
