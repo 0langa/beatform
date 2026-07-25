@@ -1233,6 +1233,10 @@ button:disabled {
 /* segmented control */
 .segmented {
   display: flex;
+  /* Wrap instead of clipping: five options (Animated…Video) don't fit one
+     line on a narrow panel — labels were cut off at BOTH edges (owner
+     screenshot). Extra options flow to a second row. */
+  flex-wrap: wrap;
   background: rgba(255, 255, 255, 0.07);
   border-radius: var(--radius-sm);
   padding: 3px;
@@ -1240,8 +1244,9 @@ button:disabled {
 }
 
 .segment {
-  flex: 1;
-  padding: 6px 4px;
+  flex: 1 1 auto;
+  min-width: max-content;
+  padding: 6px 8px;
   border-radius: 6px;
   font-size: 12px;
   color: var(--text-dim);

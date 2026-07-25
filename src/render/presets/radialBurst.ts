@@ -70,13 +70,22 @@ export const radialBurst: PresetDef = {
       hint: "How many times the spectrum repeats around the circle",
     },
     {
+      key: "angle",
+      label: "Angle",
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 0,
+      hint: "Static orientation of the ring — place the bass fold wherever you want; works even with Motion→Rotation at 0",
+    },
+    {
       key: "rotSpeed",
       label: "Rotation",
       min: -1,
       max: 1,
       step: 0.02,
       default: 0.12,
-      hint: "Constant spin of the whole ring; negative = counter-clockwise",
+      hint: "Constant spin of the whole ring (scaled by Motion→Rotation); negative = counter-clockwise. Set 0 for a stationary ring — use Angle to aim it",
     },
     {
       key: "glow",
@@ -104,6 +113,15 @@ export const radialBurst: PresetDef = {
       step: 1,
       default: 1,
       hint: "Show the track's embedded cover art inside the core (falls back to the plain core)",
+    },
+    {
+      key: "coverHue",
+      label: "Match cover colors",
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 0,
+      hint: "Analyze the center image and set Hue + Hue spread to match it — reapplies automatically whenever a track with cover art loads",
     },
   ],
   advanced: [
@@ -149,7 +167,7 @@ export const radialBurst: PresetDef = {
       min: 0,
       max: 0.2,
       step: 0.01,
-      default: 0.04,
+      default: 0.08,
       hint: "Small core size kick on each beat",
     },
     {
@@ -158,7 +176,7 @@ export const radialBurst: PresetDef = {
       min: 0,
       max: 0.1,
       step: 0.005,
-      default: 0.03,
+      default: 0.015,
       hint: "Core edge waviness when music is quiet",
     },
     {
@@ -167,7 +185,7 @@ export const radialBurst: PresetDef = {
       min: 0,
       max: 0.3,
       step: 0.005,
-      default: 0.11,
+      default: 0.06,
       hint: "How much the edge waves grow in loud passages",
     },
     {
@@ -252,6 +270,15 @@ export const radialBurst: PresetDef = {
       hint: "Brightness of the cover art inside the core",
     },
     {
+      key: "rimBright",
+      label: "Core rim",
+      min: 0,
+      max: 1.5,
+      step: 0.05,
+      default: 0.7,
+      hint: "Glowing rim around the core — pulses with the music so the core reads as the beat anchor",
+    },
+    {
       key: "vignette",
       label: "Vignette",
       min: 0,
@@ -274,7 +301,13 @@ fn preset(uv: vec2f) -> vec4f {
   // ("rotation jumping back and forth", reported across many versions).
   // Angle offsets must be monotonic; beat energy stays in ring breathe,
   // core pump and bloom, which are radial and can decay without lying.
-  var a = atan2(p.y, p.x) + u.time * P_rotSpeed() * TAU * 0.1 * u.spin;
+  // Static Angle aims the ring (place the bass fold anywhere) and is
+  // deliberately NOT scaled by Motion->Rotation: the master gates MOTION,
+  // not orientation — with Rotation at 0 the ring stands still exactly
+  // where Angle points it (owner request: "right side at the top,
+  // stationary"). The time term stays master-gated and monotonic.
+  var a = atan2(p.y, p.x) + P_angle() * (TAU / 360.0)
+        + u.time * P_rotSpeed() * TAU * 0.1 * u.spin;
 
   // Fold into symmetric segments, mirrored inside each for seamless wrap
   let sym = max(1.0, P_symmetry());
@@ -331,11 +364,13 @@ fn preset(uv: vec2f) -> vec4f {
   let coreL = 0.12 + u.drive * P_coreBright() + beatP * P_beatBloom();
   var coreFill = hsl2rgb(P_hue() + 30.0, 0.75, coreL);
   if (P_cover() > 0.5 && hasCover()) {
-    // Map the core disc to the image using the STABLE (wobble-free) radius so
-    // the art itself doesn't jiggle — the wavy core mask crops its edge
-    // organically instead. Same top-down uv convention as Bass Circle: no y
-    // flip (centered()'s y already grows downward like the texture's v).
-    let artR = max(softLimit(coreR, frameCircle()), 1e-3);
+    // Map the core disc to the image using the MAXIMUM the wavy edge can
+    // reach (coreR + wobble limit), not the resting radius: mapping to the
+    // resting radius sampled past the image at every bulge and drew a ring
+    // of clamped edge color (audit R9). The art stays perfectly still —
+    // only the mask breathes — so the cover reads as a stable anchor while
+    // everything around it moves.
+    let artR = max(softLimit(coreR + lim, frameCircle()), 1e-3);
     let cuv = vec2f(p.x / artR, p.y / artR) * 0.5 + vec2f(0.5);
     // Loudness lift + beat bloom keep the art alive without recoloring it.
     let art = coverSample(cuv).rgb * P_coverBright()
@@ -343,6 +378,12 @@ fn preset(uv: vec2f) -> vec4f {
     coreFill = mix(coreFill, art, P_coverMix());
   }
   col = mix(col, coreFill, core);
+  // Pulsing rim on the core edge (rework): the old bare edge left the core
+  // reading as an unexplained blob — a rim that swells on the grid beat and
+  // with loudness makes it legible as THE beat anchor, cover or no cover.
+  let rim = exp(-abs(r - coreEdge) * 80.0);
+  col += hsl2rgb(P_hue() + 15.0, 0.85, 0.6) * rim * P_rimBright()
+       * (0.45 + u.drive * 0.55 + beatP * 0.7);
 
   // Thin waveform detail ring inside the core: fast micro-motion reads as
   // "alive" on a hairline without deforming the silhouette

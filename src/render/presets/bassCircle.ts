@@ -133,13 +133,22 @@ export const bassCircle: PresetDef = {
       hint: "How many times the spectrum repeats around the ring",
     },
     {
+      key: "angle",
+      label: "Ring angle",
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 0,
+      hint: "Static orientation of the bar ring — aim it anywhere; works even with Motion→Rotation at 0",
+    },
+    {
       key: "spin",
       label: "Ring spin",
       min: -1,
       max: 1,
       step: 0.02,
       default: 0,
-      hint: "Constant rotation of the bar ring (Motion→Rotation also scales this)",
+      hint: "Constant rotation of the bar ring (scaled by Motion→Rotation); 0 = stationary — use Ring angle to aim it",
     },
     {
       key: "hueSpread",
@@ -298,7 +307,10 @@ fn preset(uv: vec2f) -> vec4f {
 
   // --- Radial spectrum bars, mirrored around the ring (optional slow spin) ---
   let sym = max(1.0, P_symmetry());
-  let seg = fract(a / TAU * sym + u.time * P_spin() * 0.05 * u.spin + 0.5);
+  // Static Ring angle is NOT gated by the motion master (orientation, not
+  // motion) — the time-driven spin term still is.
+  let seg = fract((a + P_angle() * (TAU / 360.0)) / TAU * sym
+                  + u.time * P_spin() * 0.05 * u.spin + 0.5);
   let xs = abs(seg * 2.0 - 1.0);
   let v = binAt(xs);
   let barInner = circleR + P_gap();

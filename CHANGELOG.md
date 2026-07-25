@@ -11,6 +11,35 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.46.2] - 2026-07-25
+
+### Added
+
+- **Static Angle controls.** Radial Burst (main) and Bass Circle (Advanced)
+  gain an **Angle** slider that aims the bar ring anywhere — and it works
+  with Motion → Rotation at 0. Rotation used to be all-or-nothing: the
+  motion master gated the per-mode rotation entirely, so there was no way
+  to park the ring at a chosen orientation. Orientation is no longer
+  motion.
+- **Match cover colors in Radial Burst** — the same toggle Bass Circle has,
+  driven by whichever image the core actually shows (cover art or a custom
+  center image).
+
+### Changed
+
+- **Radial Burst's core got a rework.** The wobbling center read as random
+  — calmer default edge waviness, a stronger beat kick, and a new pulsing
+  rim (Advanced → Core rim) that swells with loudness and lands on the
+  tempo grid, so the core reads as the beat anchor with or without cover
+  art. The art itself now maps to the wobble's maximum reach, fixing the
+  ring of smeared edge color that appeared at high Wobble.
+
+### Fixed
+
+- The Background mode picker (Animated / Solid / Transparent / Image /
+  Video) wraps onto a second row on narrow panels instead of cutting
+  labels off at both edges.
+
 ## [2.46.1] - 2026-07-25
 
 Every finding from the independent v3-readiness audit that could be fixed
