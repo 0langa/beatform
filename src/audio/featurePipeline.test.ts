@@ -322,3 +322,42 @@ describe("analysed frequency span", () => {
     expect(f.bins.every((v) => Number.isFinite(v))).toBe(true);
   });
 });
+
+describe("band coverage (N1/N2 regression)", () => {
+  /**
+   * Consecutive bands must TILE the FFT axis: an earlier revision ended each
+   * band's interior at floor(x1) while the next began at ceil(x1), so the bin
+   * holding a fractional boundary belonged to neither and 61 of the 1364 bins
+   * in the default span were never read. A tone landing in one read barely a
+   * third of its true height.
+   */
+  it("reads every FFT bin in the analysed span — no bin belongs to no band", () => {
+    const p = makePipeline();
+    const misses: number[] = [];
+    // Probe each bin with a lone unit peak; a bin no band reads shows as a
+    // spectrum that stays flat at zero.
+    for (let bin = 4; bin < 600; bin++) {
+      const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+      magDb[bin] = MAX_DB;
+      const f = p.update(makeInput({ magDb }));
+      if (Math.max(...f.bins) <= 0) misses.push(bin);
+    }
+    expect(misses).toEqual([]);
+  });
+
+  it("gives a lone tone a comparable height wherever it lands", () => {
+    const p = makePipeline();
+    const heights: number[] = [];
+    for (let bin = 12; bin < 40; bin++) {
+      const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+      magDb[bin] = MAX_DB;
+      let f = p.update(makeInput({ magDb }));
+      for (let i = 0; i < 120; i++) f = p.update(makeInput({ magDb, time: i * DT }));
+      heights.push(Math.max(...f.bins));
+    }
+    // Before the fix a dropped bin read ~0.36 against ~1.0 for its neighbour.
+    const lo = Math.min(...heights);
+    const hi = Math.max(...heights);
+    expect(lo).toBeGreaterThan(hi * 0.8);
+  });
+});

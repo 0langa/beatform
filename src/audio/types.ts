@@ -125,8 +125,19 @@ export function sanitizeSync(v: unknown): SyncSettings {
       : null;
   const lo = hz(p.freqMin);
   const hi = hz(p.freqMax);
-  const span =
-    lo !== null && hi !== null && hi / lo >= MIN_SPAN_RATIO ? { freqMin: lo, freqMax: hi } : {};
+  // COERCE a too-narrow span rather than discarding it. Dropping the pair sent
+  // BOTH sliders back to their defaults, so dragging one edge into the other
+  // silently destroyed the setting the user had made on the OTHER slider.
+  let span: { freqMin: number; freqMax: number } | Record<string, never> = {};
+  if (lo !== null && hi !== null) {
+    let a = lo;
+    let b = hi;
+    if (b / a < MIN_SPAN_RATIO) {
+      b = Math.min(FREQ_LIMIT_HIGH, a * MIN_SPAN_RATIO);
+      if (b / a < MIN_SPAN_RATIO) a = b / MIN_SPAN_RATIO;
+    }
+    span = { freqMin: a, freqMax: b };
+  }
   return {
     mode: SYNC_MODES.includes(p.mode as SyncMode) ? (p.mode as SyncMode) : DEFAULT_SYNC.mode,
     smooth,

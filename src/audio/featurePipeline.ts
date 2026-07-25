@@ -220,32 +220,39 @@ export class FeaturePipeline {
     return out;
   }
 
-  /**
-   * Level of one display band from fractional FFT-bin edges.
-   *
-   * A band WIDER than one FFT bin takes the peak of the bins it covers (what
-   * the spectrum has always done — peaks are what reads musically). A band
-   * NARROWER than one bin — every band below ~40 Hz at 4096-point/48 kHz,
-   * where one bin spans 11.7 Hz — instead interpolates linearly between the
-   * two neighbouring bins at its centre. Without that, `round()`-ing both
-   * edges to the same integer bin gave several adjacent bands one identical
-   * value: the flat, over-wide bass block users reported.
-   */
-  private bandLevel(src: Float32Array, x0: number, x1: number): number {
-    const first = Math.ceil(x0);
-    const last = Math.floor(x1);
-    if (last > first) {
-      // Covers at least one whole bin: peak over the covered bins.
-      let v = 0;
-      for (let b = first; b < last; b++) v = Math.max(v, src[b] ?? 0);
-      return v;
-    }
-    // Sub-bin band: sample the spectrum at the band's centre.
-    const c = Math.max(0, Math.min(src.length - 1, (x0 + x1) * 0.5));
+  /** The spectrum at a FRACTIONAL bin position, linearly interpolated. */
+  private binAt(src: Float32Array, x: number): number {
+    // Bin 0 is the DC term: a file with any DC offset would otherwise light
+    // the lowest bar permanently once the low edge is dragged near 10 Hz.
+    const c = Math.max(1, Math.min(src.length - 1, x));
     const i0 = Math.floor(c);
     const i1 = Math.min(src.length - 1, i0 + 1);
     const t = c - i0;
     return (src[i0] ?? 0) * (1 - t) + (src[i1] ?? 0) * t;
+  }
+
+  /**
+   * Level of one display band from fractional FFT-bin edges.
+   *
+   * ONE rule for every width, because two rules had two bugs. The band's own
+   * edges are always sampled by interpolation — that is what resolves a band
+   * NARROWER than one FFT bin (every band below ~40 Hz at 4096-point/48 kHz,
+   * where a bin spans 11.7 Hz), which is what turned the bass into the flat,
+   * over-wide block users reported. The whole bins strictly inside the band
+   * then contribute their PEAK, because peaks are what reads musically.
+   *
+   * Interiors are half-open `[ceil(x0), ceil(x1))` so consecutive bands tile
+   * the axis exactly: the earlier `floor(x1)` end left the bin containing a
+   * fractional boundary in NEITHER band, silently dropping 61 of the 1364
+   * bins in the default span — a tone landing in one read barely a third of
+   * its true height. Sampling the edges also makes the value continuous as a
+   * band grows through one bin wide, instead of jumping between two rules.
+   */
+  private bandLevel(src: Float32Array, x0: number, x1: number): number {
+    let v = Math.max(this.binAt(src, x0), this.binAt(src, x1));
+    const last = Math.ceil(x1);
+    for (let b = Math.ceil(x0); b < last; b++) v = Math.max(v, src[b] ?? 0);
+    return v;
   }
 
   update(input: PipelineInput): AudioFeatures {

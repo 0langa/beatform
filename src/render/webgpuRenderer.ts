@@ -308,14 +308,17 @@ fn coverAspect() -> f32 {
  * across the letterbox — callers guard with inBox().
  */
 fn fitUV(boxUV: vec2f, texAspect: f32, boxAspect: f32, mode: f32, zoom: f32, offset: vec2f) -> vec2f {
-  var c = boxUV - vec2f(0.5);
+  // Pan is subtracted in BOX space, before the zoom divide: applying it after
+  // made the displacement scale with zoom, so at 4x an offset of 0.25 threw
+  // the image a whole frame away and the usable part of the slider collapsed.
+  var c = boxUV - vec2f(0.5) - offset;
   let ratio = texAspect / max(boxAspect, 1e-4);
   if (mode < 0.5) {
     if (ratio > 1.0) { c.x = c.x / ratio; } else { c.y = c.y * ratio; }
   } else if (mode < 1.5) {
     if (ratio > 1.0) { c.y = c.y * ratio; } else { c.x = c.x / ratio; }
   }
-  return c / max(zoom, 0.01) + vec2f(0.5) - offset;
+  return c / max(zoom, 0.01) + vec2f(0.5);
 }
 
 /** True when a fitted uv lands on the image — false inside a contain fit's

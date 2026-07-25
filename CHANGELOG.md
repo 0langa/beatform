@@ -11,6 +11,25 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.48.1] - 2026-07-25
+
+### Fixed
+
+- **The spectrum was silently ignoring 61 of its frequency bins.** Each drawn
+  band stopped one bin short of where the next began, so any bin holding a
+  band boundary belonged to neither — a tone landing in one drew barely a
+  third of its true height. Bands now tile the frequency axis exactly, and
+  the value stays continuous as a band grows past one bin wide (it could
+  jump between two different rules before). Introduced in 2.48.0.
+- **Dragging the Low edge into the High edge no longer resets both.** Too
+  narrow a span was thrown away wholesale, which also wiped whatever you had
+  set on the other slider; it is now nudged to the closest valid span.
+- **Background/centre-image pan no longer depends on zoom.** At 4x zoom a
+  quarter-turn of the X slider threw the image a whole frame away, leaving
+  most of the slider useless. Pan is now measured in frame widths at every
+  zoom level, as documented.
+- The lowest bar can no longer be lit permanently by a file's DC offset.
+
 ## [2.48.0] - 2026-07-25
 
 ### Added
