@@ -9,46 +9,27 @@ fn P_thick() -> f32 { return params[4u]; }
 fn P_baseY() -> f32 { return params[5u]; }
 fn P_layers() -> f32 { return params[6u]; }
 fn P_specAmt() -> f32 { return params[7u]; }
-fn P_beatPulse() -> f32 { return params[8u]; }
-fn P_wave() -> f32 { return params[9u]; }
-fn P_hueStep() -> f32 { return params[10u]; }
-fn P_hueSpread() -> f32 { return params[11u]; }
-fn P_rays() -> f32 { return params[12u]; }
-fn P_sat() -> f32 { return params[13u]; }
-fn P_stars() -> f32 { return params[14u]; }
-fn P_bgGlow() -> f32 { return params[15u]; }
-fn P_mirror() -> f32 { return params[16u]; }
+fn P_bassSwell() -> f32 { return params[8u]; }
+fn P_drift() -> f32 { return params[9u]; }
+fn P_reflect() -> f32 { return params[10u]; }
+fn P_horizon() -> f32 { return params[11u]; }
+fn P_reflectFade() -> f32 { return params[12u]; }
+fn P_beatPulse() -> f32 { return params[13u]; }
+fn P_wave() -> f32 { return params[14u]; }
+fn P_hueStep() -> f32 { return params[15u]; }
+fn P_hueSpread() -> f32 { return params[16u]; }
+fn P_rays() -> f32 { return params[17u]; }
+fn P_sat() -> f32 { return params[18u]; }
+fn P_stars() -> f32 { return params[19u]; }
+fn P_bgGlow() -> f32 { return params[20u]; }
+fn P_mirror() -> f32 { return params[21u]; }
 
-fn preset(uv: vec2f) -> vec4f {
-  let y = uv.y;
-
-  // Optional left/right symmetry — folds curtains AND stars together using
-  // the shared club-mirror fold at its bilateral setting (2). 1 = off.
-  let cx = (uv.x - 0.5) * u.aspect;
-  let foldedX = kaleido(vec2f(cx, 0.0), P_mirror()).x;
-  let x = clamp(foldedX / u.aspect + 0.5, 0.0, 1.0);
-
-  // Deep night sky: near-black but hued, not grey, so the curtains have
-  // real darkness to glow against instead of sitting on flat mid-grey fog.
-  let skyPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.025), vec3f(0.02), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
-  var col = skyPal;
-
-  // Optional starfield behind everything (small round points, twinkling).
-  if (P_stars() > 0.5) {
-    let gp = vec2f(x * u.aspect, y) * 54.0;
-    let cell = floor(gp);
-    let h = hash21(cell);
-    if (h > 0.972) {
-      let sp = vec2f(hash21(cell + 0.37), hash21(cell + 0.71));
-      let star = smoothstep(0.13, 0.0, length(gp - cell - sp));
-      let tw = 0.5 + 0.5 * sin(u.time * (1.0 + h * 6.0) + h * 40.0);
-      col += vec3f(0.7, 0.82, 1.0) * star * (h - 0.972) * 20.0 * tw * (1.0 - y * 0.4);
-    }
-  }
-
-  // Sync-reactive envelope + beat pulse: switching the sync source (bass /
-  // treble / kicks / ...) visibly changes the drive here.
-  let drive = clamp(u.drive, 0.0, 1.5);
+// One stack of aurora curtains sampled at horizontal position x and vertical
+// position y. Split out of preset() so the horizon reflection below can
+// re-evaluate the exact same field at a mirrored y — a real reflection, not a
+// second decal. Reads only globals (u.*, P_*), so it stays deterministic.
+fn auroraCurtains(x: f32, y: f32, drive: f32) -> vec3f {
+  var acc = vec3f(0.0);
   let layers = i32(P_layers());
   for (var i = 0; i < 3; i++) {
     if (i >= layers) { break; }
@@ -74,15 +55,19 @@ fn preset(uv: vec2f) -> vec4f {
     // is no hard seam where the sample index would roll over.
     let sx = clamp(x * 0.82 + fi * 0.09, 0.0, 1.0);
     let spec = binAt(sx);
-    // Wavy vertical center of the curtain, drifting slower with depth.
+    // Wavy vertical center of the curtain, drifting slower with depth. Drift
+    // slides the whole field sideways over time (monotonic, so it never reads
+    // as reversing), parallaxed by depth like the vertical churn.
     let flowT = u.time * P_flow() * 0.15 * mix(1.0, 0.6, depthT);
-    let wob = fbm(vec2f(x * (2.0 + fi) + fi * 7.0, flowT + fi * 3.0));
+    let driftX = u.time * P_drift() * 0.08 * mix(1.0, 0.6, depthT);
+    let wob = fbm(vec2f(x * (2.0 + fi) + fi * 7.0 + driftX, flowT + fi * 3.0));
     let cy = P_baseY() + 0.15 * fi + (wob - 0.5) * 0.35 * P_wave();
-    // Capped so a loud, bass-heavy passage (spec and drive can both sit near
-    // their ceiling at once) can't run this away to the point every curtain
-    // pixel blows past the hot-core threshold below — it stays a strong,
-    // legible reaction instead of a flat white-out.
-    let react = min(0.32 + spec * P_specAmt() + drive * P_react(), 2.2);
+    // Capped so a loud, bass-heavy passage (spec, drive and bass can all sit
+    // near their ceiling at once) can't run this away to the point every
+    // curtain pixel blows past the hot-core threshold below — it stays a
+    // strong, legible reaction instead of a flat white-out. Bass swell adds
+    // the low-end "breathing" of the sky on top of the sync source.
+    let react = min(0.32 + spec * P_specAmt() + drive * P_react() + u.bass * P_bassSwell(), 2.2);
     let thick = P_thick() * (0.55 + react * 0.9) * pulse;
     let d = (y - cy) / max(thick, 1e-3);
     let band = exp(-d * d);
@@ -115,7 +100,54 @@ fn preset(uv: vec2f) -> vec4f {
     layerCol = mix(layerCol, vec3f(1.0, 0.98, 0.95), hot * 0.6 * P_bright());
     layerCol *= 1.0 + hot * 1.0;
 
-    col += layerCol;
+    acc += layerCol;
+  }
+  return acc;
+}
+
+fn preset(uv: vec2f) -> vec4f {
+  let y = uv.y;
+
+  // Optional left/right symmetry — folds curtains AND stars together using
+  // the shared club-mirror fold at its bilateral setting (2). 1 = off.
+  let cx = (uv.x - 0.5) * u.aspect;
+  let foldedX = kaleido(vec2f(cx, 0.0), P_mirror()).x;
+  let x = clamp(foldedX / u.aspect + 0.5, 0.0, 1.0);
+
+  // Deep night sky: near-black but hued, not grey, so the curtains have
+  // real darkness to glow against instead of sitting on flat mid-grey fog.
+  let skyPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.025), vec3f(0.02), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  var col = skyPal;
+
+  // Optional starfield behind everything (small round points, twinkling).
+  if (P_stars() > 0.5) {
+    let gp = vec2f(x * u.aspect, y) * 54.0;
+    let cell = floor(gp);
+    let h = hash21(cell);
+    if (h > 0.972) {
+      let sp = vec2f(hash21(cell + 0.37), hash21(cell + 0.71));
+      let star = smoothstep(0.13, 0.0, length(gp - cell - sp));
+      let tw = 0.5 + 0.5 * sin(u.time * (1.0 + h * 6.0) + h * 40.0);
+      // Treble and hi-hats make the starfield crackle — the sky's own
+      // percussion. Additive over a 1.0 baseline so the resting brightness
+      // is unchanged; loud highs flare the stars brighter.
+      let spark = 1.0 + u.treble * 1.3 + u.hat * 0.8;
+      col += vec3f(0.7, 0.82, 1.0) * star * (h - 0.972) * 20.0 * tw * spark * (1.0 - y * 0.4);
+    }
+  }
+
+  // Sync-reactive envelope + beat pulse: switching the sync source (bass /
+  // treble / kicks / ...) visibly changes the drive here.
+  let drive = clamp(u.drive, 0.0, 1.5);
+  col += auroraCurtains(x, y, drive);
+
+  // Horizon reflection: below the horizon line the curtains are mirrored and
+  // dimmed with depth, like an aurora over still ice or water. Off by default
+  // (P_reflect() == 0), so existing projects are untouched.
+  if (P_reflect() > 0.01 && y > P_horizon()) {
+    let ry = P_horizon() - (y - P_horizon());
+    let fade = exp(-(y - P_horizon()) * P_reflectFade());
+    col += auroraCurtains(x, ry, drive) * P_reflect() * fade * 0.7;
   }
 
   // Soft sky glow rising from the horizon, lifted by the sync source.
@@ -162,6 +194,26 @@ exports[`shader golden baseline > aurora: param ABI (key + default, in order) is
   {
     "default": 1.6,
     "key": "specAmt",
+  },
+  {
+    "default": 0.45,
+    "key": "bassSwell",
+  },
+  {
+    "default": 0,
+    "key": "drift",
+  },
+  {
+    "default": 0,
+    "key": "reflect",
+  },
+  {
+    "default": 0.82,
+    "key": "horizon",
+  },
+  {
+    "default": 4,
+    "key": "reflectFade",
   },
   {
     "default": 0.4,
@@ -571,6 +623,9 @@ fn P_hueDrift() -> f32 { return params[11u]; }
 fn P_kickFlash() -> f32 { return params[12u]; }
 fn P_vignette() -> f32 { return params[13u]; }
 fn P_mirror() -> f32 { return params[14u]; }
+fn P_echoHue() -> f32 { return params[15u]; }
+fn P_sides() -> f32 { return params[16u]; }
+fn P_beatStar() -> f32 { return params[17u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   var c = centered(uv);              // aspect-corrected, centered at 0
@@ -597,6 +652,23 @@ fn preset(uv: vec2f) -> vec4f {
   // as the preview, and a 144 Hz display diverged the other way.
   var col = feedbackSample(puv).rgb * pow(P_decay(), u.dt * 60.0);
 
+  // Per-generation hue drift: rotate the fed-back color a little each frame
+  // about the grey (luminance) axis via Rodrigues rotation. A rotation is
+  // ORTHOGONAL — it preserves the color vector's magnitude exactly — so unlike
+  // an added tint it injects ZERO net energy into the accumulator and cannot
+  // wash the tunnel to white (provably as stable as plain decay). The oldest
+  // echoes have been rotated the most, so the tunnel becomes a gradient of hues
+  // from the fresh center outward. Scaled by fpsComp so drift-per-second
+  // matches at 30 / 60 / 144 fps.
+  if (P_echoHue() > 0.001) {
+    let ha = P_echoHue() * 0.5 * fpsComp;
+    let ax = vec3f(0.5773502691896);
+    let ca = cos(ha);
+    let sa = sin(ha);
+    col = col * ca + cross(ax, col) * sa + ax * dot(ax, col) * (1.0 - ca);
+    col = max(col, vec3f(0.0));
+  }
+
   // --- Inject a fresh audio-driven source over the trails ---
   // Spectrum ring: its radius per angle rides the spectrum + bass.
   let spec = binAt(fract(ang / TAU + 0.5));
@@ -604,7 +676,21 @@ fn preset(uv: vec2f) -> vec4f {
   // outward from — inject it on-screen (r<=0.45), or a loud/bright master at
   // high Ring size + Reactivity puts the whole source off-frame and the tunnel
   // has nothing to echo. The trails still extend past this via feedback.
-  let ringR = softLimit(P_radius() + spec * P_react() * (0.6 + u.bass * 0.8), frameCircle());
+  // Ring shape: morph the smooth circle into an N-lobed polygon/star. On each
+  // beat (grid-locked when a tempo grid exists) the lobes punch outward — a
+  // beat-stamped shape the feedback zoom then streams down the tunnel as an
+  // expanding star. This modulates only the ring's RADIUS per angle (a
+  // radial/beat response, never an angle offset, so the monotonic law holds)
+  // and reuses the SAME band energy as the plain ring, adding no net energy to
+  // the accumulator. Sides is a shape count (static orientation) — not scaled
+  // by the Rotation master.
+  var shape = 1.0;
+  if (P_sides() > 0.5) {
+    let beatP = max(u.driveBeat, gridPulse(7.0));
+    let lobe = cos(P_sides() * ang);
+    shape = 1.0 + (0.11 + P_beatStar() * beatP * u.pulse * 0.5) * lobe;
+  }
+  let ringR = softLimit((P_radius() + spec * P_react() * (0.6 + u.bass * 0.8)) * shape, frameCircle());
   let band = smoothstep(P_thick() + 0.02, 0.0, abs(rad - ringR));
   // Cosine palette instead of a raw hsl2rgb hue rotated by angle and drifted
   // by time: a continuously sweeping HSL hue walks through its desaturated
@@ -713,6 +799,18 @@ exports[`shader golden baseline > echo-trails: param ABI (key + default, in orde
     "default": 1,
     "key": "mirror",
   },
+  {
+    "default": 0,
+    "key": "echoHue",
+  },
+  {
+    "default": 0,
+    "key": "sides",
+  },
+  {
+    "default": 0.4,
+    "key": "beatStar",
+  },
 ]
 `;
 
@@ -726,16 +824,21 @@ fn P_rounded() -> f32 { return params[5u]; }
 fn P_peaks() -> f32 { return params[6u]; }
 fn P_hueLow() -> f32 { return params[7u]; }
 fn P_hueHigh() -> f32 { return params[8u]; }
-fn P_gradStart() -> f32 { return params[9u]; }
-fn P_gradEnd() -> f32 { return params[10u]; }
-fn P_litLevel() -> f32 { return params[11u]; }
-fn P_hotBoost() -> f32 { return params[12u]; }
-fn P_beatBoost() -> f32 { return params[13u]; }
-fn P_bassGlow() -> f32 { return params[14u]; }
-fn P_peakBright() -> f32 { return params[15u]; }
-fn P_bloom() -> f32 { return params[16u]; }
-fn P_panelVariance() -> f32 { return params[17u]; }
-fn P_vignette() -> f32 { return params[18u]; }
+fn P_spectrumColor() -> f32 { return params[9u]; }
+fn P_gradStart() -> f32 { return params[10u]; }
+fn P_gradEnd() -> f32 { return params[11u]; }
+fn P_litLevel() -> f32 { return params[12u]; }
+fn P_hotBoost() -> f32 { return params[13u]; }
+fn P_beatBoost() -> f32 { return params[14u]; }
+fn P_ghost() -> f32 { return params[15u]; }
+fn P_bassGlow() -> f32 { return params[16u]; }
+fn P_beatFlash() -> f32 { return params[17u]; }
+fn P_peakBright() -> f32 { return params[18u]; }
+fn P_bloom() -> f32 { return params[19u]; }
+fn P_scanline() -> f32 { return params[20u]; }
+fn P_flicker() -> f32 { return params[21u]; }
+fn P_panelVariance() -> f32 { return params[22u]; }
+fn P_vignette() -> f32 { return params[23u]; }
 
 fn ledCell(l: vec2f, gap: f32, rounded: f32) -> f32 {
   let c = l - 0.5;
@@ -783,10 +886,14 @@ fn preset(uv: vec2f) -> vec4f {
 
   let beatP = max(u.driveBeat, gridPulse(9.0));
 
-  // low hue -> high hue as cells climb (default classic green -> red), plus a
+  // Cell colour: low hue -> high hue as cells climb (default classic green ->
+  // red), optionally cross-faded toward a per-COLUMN frequency palette (bass at
+  // the red end, treble toward violet) for the full RGB video-wall look. Plus a
   // faint per-LED colour-temperature jitter so the wall doesn't read as one
   // flat sheet of colour.
-  let cellHue = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), frac))
+  let gradHue = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), frac));
+  let freqHue = (cx + 0.5) / cols * 300.0;
+  let cellHue = mix(gradHue, freqHue, P_spectrumColor())
               + P_hueShift() + jHue * 6.0 * pv;
 
   let mask = ledCell(vec2f(lx, ly), P_gap(), P_rounded());
@@ -809,6 +916,16 @@ fn preset(uv: vec2f) -> vec4f {
   // Unlit LEDs faintly visible
   col += hsl2rgb(cellHue, 0.5, 0.04) * mask * P_dim() * (1.0 - lit);
 
+  // Phosphor ghost trail: cells ABOVE the live top but BELOW the recent peak
+  // glow and fade with distance from the top, so a falling column leaves a
+  // decaying wake instead of snapping to black. Deterministic — it reads the
+  // peak-hold buffer, no per-frame state.
+  let pkLevel = pk * rows;
+  let ghostLit = step(cy + 0.5, pkLevel) * (1.0 - lit);
+  let ghostFade = exp(-max((cy + 0.5) - level, 0.0) * 0.6);
+  col += hsl2rgb(cellHue, 0.85, P_litLevel() * 0.55) * mask * ghostLit * ghostFade * P_ghost();
+  col += hsl2rgb(cellHue, 0.7, 0.5) * glow * ghostLit * ghostFade * P_ghost() * P_bloom() * 0.5;
+
   // Lit LEDs: flat mask body, brighter near the column's current top, plus
   // beat boost — then a soft bloom that bleeds past the mask into the gap,
   // which is what makes a dot read as EMITTING rather than printed.
@@ -826,16 +943,30 @@ fn preset(uv: vec2f) -> vec4f {
   col += ledCol;
 
   // Peak-hold dot (toggleable) — takes the column gradient's color at its
-  // own height, so it follows Cyan Wall/Purple Rain instead of staying the
-  // default red, plus the same soft bloom as the live cells.
+  // own height, so it follows the palette instead of staying the default red,
+  // plus the same soft bloom as the live cells.
   let pkRow = floor(pk * rows);
   if (cy == pkRow && pk > 0.02 && P_peaks() > 0.5) {
     let pkFrac = (pkRow + 0.5) / rows;
-    let pkHue = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), pkFrac))
-              + P_hueShift();
+    let pkGrad = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), pkFrac));
+    let pkHue = mix(pkGrad, freqHue, P_spectrumColor()) + P_hueShift();
     col += hsl2rgb(pkHue, 0.55, P_peakBright()) * mask;
     col += hsl2rgb(pkHue, 0.4, 0.75) * glow * P_bloom() * 0.5;
   }
+
+  // Beat border flash: the wall's outer frame pulses on the tempo grid — a
+  // whole-panel beat response distinct from the per-LED beat boost.
+  let bdist = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+  let border = smoothstep(0.07, 0.0, bdist);
+  col += hsl2rgb(P_hueHigh() + P_hueShift(), 0.85, 0.5) * border * beatP * P_beatFlash();
+
+  // CRT scanlines: fixed-frequency horizontal darkening, independent of the LED
+  // grid so it reads as a display overlay rather than the diode rows.
+  let scan = 1.0 - P_scanline() * (0.5 + 0.5 * sin(uv.y * 300.0)) * 0.5;
+  // Rolling powered-display flicker. sin() is bounded and deterministic (same
+  // track time -> same value in live and export), so it never desyncs.
+  let flick = 1.0 - P_flicker() * (0.5 + 0.5 * sin(u.time * 18.0 + uv.y * 40.0)) * 0.5;
+  col *= scan * flick;
 
   // Subtle screen curvature vignette
   let d = distance(uv, vec2f(0.5));
@@ -886,6 +1017,10 @@ exports[`shader golden baseline > led-matrix: param ABI (key + default, in order
     "key": "hueHigh",
   },
   {
+    "default": 0,
+    "key": "spectrumColor",
+  },
+  {
     "default": 0.45,
     "key": "gradStart",
   },
@@ -906,8 +1041,16 @@ exports[`shader golden baseline > led-matrix: param ABI (key + default, in order
     "key": "beatBoost",
   },
   {
+    "default": 0.12,
+    "key": "ghost",
+  },
+  {
     "default": 0.1,
     "key": "bassGlow",
+  },
+  {
+    "default": 0.2,
+    "key": "beatFlash",
   },
   {
     "default": 0.85,
@@ -916,6 +1059,14 @@ exports[`shader golden baseline > led-matrix: param ABI (key + default, in order
   {
     "default": 0.8,
     "key": "bloom",
+  },
+  {
+    "default": 0.12,
+    "key": "scanline",
+  },
+  {
+    "default": 0.05,
+    "key": "flicker",
   },
   {
     "default": 0.4,
@@ -935,19 +1086,22 @@ fn P_size() -> f32 { return params[2u]; }
 fn P_speed() -> f32 { return params[3u]; }
 fn P_glow() -> f32 { return params[4u]; }
 fn P_threshold() -> f32 { return params[5u]; }
-fn P_orbitX() -> f32 { return params[6u]; }
-fn P_orbitY() -> f32 { return params[7u]; }
-fn P_radiusFloor() -> f32 { return params[8u]; }
-fn P_energyGrow() -> f32 { return params[9u]; }
-fn P_radiusBand() -> f32 { return params[10u]; }
-fn P_beatSwell() -> f32 { return params[11u]; }
-fn P_rimStart() -> f32 { return params[12u]; }
-fn P_innerGrad() -> f32 { return params[13u]; }
-fn P_hueField() -> f32 { return params[14u]; }
-fn P_beatBright() -> f32 { return params[15u]; }
-fn P_bgLevel() -> f32 { return params[16u]; }
-fn P_vignette() -> f32 { return params[17u]; }
-fn P_mirror() -> f32 { return params[18u]; }
+fn P_gloss() -> f32 { return params[6u]; }
+fn P_orbitX() -> f32 { return params[7u]; }
+fn P_orbitY() -> f32 { return params[8u]; }
+fn P_radiusFloor() -> f32 { return params[9u]; }
+fn P_energyGrow() -> f32 { return params[10u]; }
+fn P_radiusBand() -> f32 { return params[11u]; }
+fn P_beatSwell() -> f32 { return params[12u]; }
+fn P_rimStart() -> f32 { return params[13u]; }
+fn P_innerGrad() -> f32 { return params[14u]; }
+fn P_hueField() -> f32 { return params[15u]; }
+fn P_beatBright() -> f32 { return params[16u]; }
+fn P_bgLevel() -> f32 { return params[17u]; }
+fn P_vignette() -> f32 { return params[18u]; }
+fn P_mirror() -> f32 { return params[19u]; }
+fn P_lightAngle() -> f32 { return params[20u]; }
+fn P_squash() -> f32 { return params[21u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   var p = centered(uv);
@@ -955,10 +1109,23 @@ fn preset(uv: vec2f) -> vec4f {
   // symmetric mandala. 1 = off.
   p = kaleido(p, P_mirror());
 
-  let count = i32(P_count());
+  // Blob count rides the Detail master (v2.44 masters law) so the strip's
+  // Detail knob thins or fills the lamp; clamped to the loop's safe range. At
+  // Detail = 1 this is exactly P_count(), so saved looks render unchanged.
+  let count = i32(clamp(round(P_count() * u.detail), 2.0, 8.0));
+
+  // Beat squash: the whole lamp squishes flatter for an instant on each beat
+  // (grid-locked when a tempo grid exists, flux fallback otherwise), like a
+  // gulping lava lamp. It is a per-axis SCALE of the sample point, never an
+  // angle offset, so it obeys the monotonic law; u.pulse gates it. Only the
+  // blob field reads this warped point — the background wash stays still.
+  let squashB = max(u.driveBeat, gridPulse(6.0)) * P_squash() * u.pulse;
+  let sq = 1.0 + squashB;
+  let pf = vec2f(p.x / sq, p.y * sq);
 
   var field = 0.0;
   var hueAcc = 0.0;
+  var nrm = vec2f(0.0);
   for (var i = 0; i < count; i++) {
     let fi = f32(i);
     let h = hash11(fi + 1.0);
@@ -991,10 +1158,15 @@ fn preset(uv: vec2f) -> vec4f {
     // blob smoothly instead of pinning every ball to one clipped radius.
     let rad = softLimit(P_size() * (P_radiusFloor() + u.drive * P_energyGrow()
             + band * P_radiusBand() + beatMul * P_beatSwell() * u.pulse), frameCircle() * 0.8);
-    let d2 = dot(p - pos, p - pos);
+    let diff = pf - pos;
+    let d2 = dot(diff, diff);
     let contrib = rad * rad / (d2 + 1e-5);
     field += contrib;
     hueAcc += contrib * fi * P_hueField();
+    // Accumulate the field gradient (points outward from the blobs) so the
+    // gloss pass below has a real surface normal to light — folded into this
+    // same loop, no extra neighbourhood walk.
+    nrm += diff * (contrib / (d2 + 1e-5));
   }
 
   // Cosine palette keyed by the same contribution-weighted blend that used
@@ -1018,6 +1190,16 @@ fn preset(uv: vec2f) -> vec4f {
   col = mix(col, pal * (0.55 + inner * 1.3 + u.driveBeat * P_beatBright()), surface);
   // Rim glow
   col += mix(pal, vec3f(1.0), 0.3) * rim * (0.4 + P_glow() * 0.9);
+
+  // Liquid-metal gloss: a specular highlight sliding across the blob surface,
+  // lit from a static direction (Light angle is an ORIENTATION, so it is not
+  // scaled by the Rotation master). The accumulated field gradient gives the
+  // outward surface normal; a tight power makes a sharp chrome/mercury sheen.
+  // Confined to the surface, with a little life from the drive envelope.
+  let N = normalize(nrm + vec2f(1e-5, 0.0));
+  let L = vec2f(cos(radians(P_lightAngle())), sin(radians(P_lightAngle())));
+  let sheen = pow(max(dot(N, L), 0.0), 6.0);
+  col += mix(pal, vec3f(1.0), 0.7) * sheen * surface * P_gloss() * (0.6 + u.drive * 0.5);
 
   // Hot core: the field's own 1/d^2 falloff spikes to huge values only very
   // near a blob's point-mass centre. The band must therefore start WELL above
@@ -1062,6 +1244,10 @@ exports[`shader golden baseline > metaballs: param ABI (key + default, in order)
   {
     "default": 1,
     "key": "threshold",
+  },
+  {
+    "default": 0.35,
+    "key": "gloss",
   },
   {
     "default": 0.28,
@@ -1115,6 +1301,14 @@ exports[`shader golden baseline > metaballs: param ABI (key + default, in order)
     "default": 1,
     "key": "mirror",
   },
+  {
+    "default": 125,
+    "key": "lightAngle",
+  },
+  {
+    "default": 0.18,
+    "key": "squash",
+  },
 ]
 `;
 
@@ -1127,19 +1321,22 @@ fn P_contrast() -> f32 { return params[4u]; }
 fn P_sparkle() -> f32 { return params[5u]; }
 fn P_beatRipple() -> f32 { return params[6u]; }
 fn P_warp() -> f32 { return params[7u]; }
-fn P_hueRange() -> f32 { return params[8u]; }
-fn P_midHueShift() -> f32 { return params[9u]; }
-fn P_brightFloor() -> f32 { return params[10u]; }
-fn P_bassBright() -> f32 { return params[11u]; }
-fn P_saturation() -> f32 { return params[12u]; }
-fn P_sparkleScale() -> f32 { return params[13u]; }
-fn P_sparkleSharp() -> f32 { return params[14u]; }
-fn P_rippleWidth() -> f32 { return params[15u]; }
-fn P_rippleWarp() -> f32 { return params[16u]; }
-fn P_beatBloom() -> f32 { return params[17u]; }
-fn P_driveGlow() -> f32 { return params[18u]; }
-fn P_vignette() -> f32 { return params[19u]; }
-fn P_hotCore() -> f32 { return params[20u]; }
+fn P_angle() -> f32 { return params[8u]; }
+fn P_spin() -> f32 { return params[9u]; }
+fn P_depth() -> f32 { return params[10u]; }
+fn P_hueRange() -> f32 { return params[11u]; }
+fn P_midHueShift() -> f32 { return params[12u]; }
+fn P_brightFloor() -> f32 { return params[13u]; }
+fn P_bassBright() -> f32 { return params[14u]; }
+fn P_saturation() -> f32 { return params[15u]; }
+fn P_sparkleScale() -> f32 { return params[16u]; }
+fn P_sparkleSharp() -> f32 { return params[17u]; }
+fn P_rippleWidth() -> f32 { return params[18u]; }
+fn P_rippleWarp() -> f32 { return params[19u]; }
+fn P_beatBloom() -> f32 { return params[20u]; }
+fn P_driveGlow() -> f32 { return params[21u]; }
+fn P_vignette() -> f32 { return params[22u]; }
+fn P_hotCore() -> f32 { return params[23u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   var p = centered(uv);
@@ -1149,7 +1346,11 @@ fn preset(uv: vec2f) -> vec4f {
   // the shared kaleido() convention used across every preset.
   let mirrorN = P_kaleido();
   if (mirrorN >= 1.5) {
-    p = rot2(u.time * P_flow() * 0.35 * u.spin) * p;
+    // Fold angle is a STATIC orientation (not gated by Motion→Rotation) so
+    // you can aim the mandala; the spin term is monotonic in u.time and
+    // gated by both the Mandala-spin knob and the Rotation master, so the
+    // pattern never reads as jumping backwards on a beat.
+    p = rot2(P_angle() * TAU / 360.0 + u.time * P_flow() * 0.35 * u.spin * P_spin()) * p;
     p = kaleido(p, mirrorN);
   }
 
@@ -1219,6 +1420,20 @@ fn preset(uv: vec2f) -> vec4f {
   // (v) that the audio gain drives. The soft layer is dim enough that gaps
   // still fall to the dark field.
   var col = bg + pal * vSoft * (0.35 + energyGain * 0.5) + pal * v * (0.5 + energyGain * 1.6);
+
+  // Depth: a second, larger-scale cloud layer drifting slower and offset,
+  // sitting dim behind the main filaments so the nebula reads as a volume
+  // with a front and a back rather than a single flat sheet. pow(.,2.2)
+  // keeps it sparse so gaps still fall to the dark field.
+  if (P_depth() > 0.01) {
+    let qb = p * P_scale() * 0.5 + flowOff * 0.45 + vec2f(4.1, -2.7);
+    let backRaw = warpFbm(qb, warpAmt * 0.85);
+    let backD = clamp((backRaw - 0.42) / 0.32, 0.0, 1.0);
+    let backT = fract(pow(backD, 1.4) * (P_hueRange() / 360.0) + P_hue() / 360.0 + 0.12
+             + (P_midHueShift() / 360.0) * u.mid * 0.3);
+    let backPal = cosPalette(backT, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+    col += backPal * pow(backD, 2.2) * P_depth() * (0.22 + energyGain * 0.5);
+  }
 
   // Hot core: filament peaks desaturate toward white and push past 1.0 so
   // tonemap() gives them a real emissive rolloff instead of a flat clip —
@@ -1292,6 +1507,18 @@ exports[`shader golden baseline > nebula: param ABI (key + default, in order) is
     "key": "warp",
   },
   {
+    "default": 0,
+    "key": "angle",
+  },
+  {
+    "default": 1,
+    "key": "spin",
+  },
+  {
+    "default": 0.45,
+    "key": "depth",
+  },
+  {
     "default": 110,
     "key": "hueRange",
   },
@@ -1351,22 +1578,24 @@ exports[`shader golden baseline > oscilloscope: accessors + body are stable 1`] 
 fn P_gain() -> f32 { return params[1u]; }
 fn P_calm() -> f32 { return params[2u]; }
 fn P_glow() -> f32 { return params[3u]; }
-fn P_fill() -> f32 { return params[4u]; }
-fn P_mirror() -> f32 { return params[5u]; }
-fn P_traceClamp() -> f32 { return params[6u]; }
-fn P_coreWidth() -> f32 { return params[7u]; }
-fn P_agFloor() -> f32 { return params[8u]; }
-fn P_agRange() -> f32 { return params[9u]; }
-fn P_hueWave() -> f32 { return params[10u]; }
-fn P_ghostDim() -> f32 { return params[11u]; }
-fn P_fillDim() -> f32 { return params[12u]; }
-fn P_gridLevel() -> f32 { return params[13u]; }
-fn P_scanline() -> f32 { return params[14u]; }
-fn P_beatLift() -> f32 { return params[15u]; }
-fn P_bgLevel() -> f32 { return params[16u]; }
-fn P_vignette() -> f32 { return params[17u]; }
-fn P_persist() -> f32 { return params[18u]; }
-fn P_kaleido() -> f32 { return params[19u]; }
+fn P_traceBright() -> f32 { return params[4u]; }
+fn P_fill() -> f32 { return params[5u]; }
+fn P_mirror() -> f32 { return params[6u]; }
+fn P_traceClamp() -> f32 { return params[7u]; }
+fn P_coreWidth() -> f32 { return params[8u]; }
+fn P_agFloor() -> f32 { return params[9u]; }
+fn P_agRange() -> f32 { return params[10u]; }
+fn P_hueWave() -> f32 { return params[11u]; }
+fn P_ghostDim() -> f32 { return params[12u]; }
+fn P_fillDim() -> f32 { return params[13u]; }
+fn P_gridLevel() -> f32 { return params[14u]; }
+fn P_gridBeat() -> f32 { return params[15u]; }
+fn P_scanline() -> f32 { return params[16u]; }
+fn P_beatLift() -> f32 { return params[17u]; }
+fn P_bgLevel() -> f32 { return params[18u]; }
+fn P_vignette() -> f32 { return params[19u]; }
+fn P_persist() -> f32 { return params[20u]; }
+fn P_kaleido() -> f32 { return params[21u]; }
 
 // Smoothed waveform sample: box blur over +/-4 taps scaled by calm
 fn calmWave(x: f32, calm: f32) -> f32 {
@@ -1412,13 +1641,16 @@ fn preset(uv: vec2f) -> vec4f {
   var grid = smoothstep(0.05, 0.0, gl.x) + smoothstep(0.05, 0.0, gl.y);
   grid += smoothstep(0.006, 0.0, abs(fuv.x - 0.5)) * 1.6
         + smoothstep(0.006, 0.0, abs(fuv.y - 0.5)) * 1.6;
-  col += hsl2rgb(P_hue(), 0.25, 0.32) * grid * P_gridLevel();
+  col += hsl2rgb(P_hue(), 0.25, 0.32) * grid * P_gridLevel() * (1.0 + beatP * P_gridBeat());
 
   let w = calmWave(fuv.x, P_calm()) * gain;
   // Trace height comes from Gain (× the fixed display scale); Height limit is
-  // the hard ceiling. (These were a redundant pair with a separate traceAmp
-  // multiplier — folded away so there's one amplitude knob, not two.)
-  let amp = clamp(w * 0.34, -P_traceClamp(), P_traceClamp());
+  // the SOFT ceiling (v2.44 law): loud peaks compress asymptotically toward it
+  // via softLimit instead of flat-topping against a hard clamp, so a maxed
+  // trace approaches the frame edge smoothly with no visible clipped plateau.
+  // Signed so both lobes limit symmetrically around the center line.
+  let raw = w * 0.34;
+  let amp = sign(raw) * softLimit(abs(raw), P_traceClamp());
   let y = 0.5 + amp;
 
   // Colour drifts gently along the sweep and with wave height — a bounded
@@ -1436,7 +1668,7 @@ fn preset(uv: vec2f) -> vec4f {
   var beam = hsl2rgb(traceHue, 0.85, 0.62) * core;
   beam = mix(beam, vec3f(1.0), hot);
   beam *= 1.0 + hot * 1.6;
-  col += beam;
+  col += beam * P_traceBright();
 
   // Two-tier glow: a tight bloom hugging the beam plus a much wider, softer
   // halo — one exp() reads as an outline, two at different reach reads as an
@@ -1444,7 +1676,7 @@ fn preset(uv: vec2f) -> vec4f {
   let glowTight = exp(-d * (170.0 - P_glow() * 90.0));
   let glowWide = exp(-d * 22.0) * 0.45;
   col += hsl2rgb(traceHue, 0.9, 0.55) * (glowTight * 0.6 + glowWide)
-       * (0.35 + P_glow() * 0.75) * (1.0 + beatP * 0.6);
+       * (0.35 + P_glow() * 0.75) * (1.0 + beatP * 0.6) * P_traceBright();
 
   // Mirrored ghost trace (dimmer, hue-shifted) — the vertical-flip toggle;
   // unrelated to the Kaleido fold above.
@@ -1502,6 +1734,10 @@ exports[`shader golden baseline > oscilloscope: param ABI (key + default, in ord
   },
   {
     "default": 1,
+    "key": "traceBright",
+  },
+  {
+    "default": 1,
     "key": "fill",
   },
   {
@@ -1539,6 +1775,10 @@ exports[`shader golden baseline > oscilloscope: param ABI (key + default, in ord
   {
     "default": 0.06,
     "key": "gridLevel",
+  },
+  {
+    "default": 0.4,
+    "key": "gridBeat",
   },
   {
     "default": 0.1,
@@ -3115,6 +3355,9 @@ fn P_beatFlash() -> f32 { return params[21u]; }
 fn P_bgLevel() -> f32 { return params[22u]; }
 fn P_vignette() -> f32 { return params[23u]; }
 fn P_mirror() -> f32 { return params[24u]; }
+fn P_sizeVar() -> f32 { return params[25u]; }
+fn P_bandColor() -> f32 { return params[26u]; }
+fn P_beatPop() -> f32 { return params[27u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   var p = kaleido(centered(uv), P_mirror());
@@ -3133,6 +3376,11 @@ fn preset(uv: vec2f) -> vec4f {
   col += bgPal * u.driveBeat * P_beatFlash() * u.pulse;
 
   let energy = P_speed() * (0.4 + u.drive * P_energyDrive());
+
+  // Grid-locked beat brightness pop applied to every particle's luminance in
+  // both modes. Frame-constant, so hoisted out of the cell loops. u.pulse gates
+  // it; default Beat brightness of 0 makes this exactly 1.0 (no change).
+  let beatPop = 1.0 + max(u.driveBeat, gridPulse(7.0)) * P_beatPop() * u.pulse;
 
   if (P_fly() > 0.5) {
     // ---- TRUE 3D STARFIELD: discrete stars stream from far to the camera ----
@@ -3176,10 +3424,14 @@ fn preset(uv: vec2f) -> vec4f {
           let starScreen = (rotT * starW) / (Z * gs);   // un-rotate back to screen
           let dvec = p - starScreen;
           var band = u.bass;
-          if (h4 < 0.3333) { band = u.mid; } else if (h4 < 0.6666) { band = u.treble; }
+          var bandTint = 0.0;
+          if (h4 < 0.3333) { band = u.mid; bandTint = 1.0; } else if (h4 < 0.6666) { band = u.treble; bandTint = 2.0; }
+          // Optional extra per-particle size spread on top of the existing depth
+          // spread. Neutral (1.0) at Size variance = 0 so the tuned look holds.
+          let szExtra = max(1.0 + (h1 - 0.5) * P_sizeVar() * 1.4, 0.1);
           // Small, crisp point; capped so a near star becomes a thin STREAK
           // flying past rather than a fat soft blob.
-          let rad = min(P_size() * (0.3 + h1) / (Z * gs) * (1.0 + band * P_sizePulse()), 0.05);
+          let rad = min(P_size() * (0.3 + h1) / (Z * gs) * (1.0 + band * P_sizePulse()) * szExtra, 0.05);
           let flight = normalize(starScreen + vec2f(1e-4, 0.0));
           let perp = vec2f(-flight.y, flight.x);
           let stretch = 1.0 + P_streak() * (1.0 - Z) * (2.5 + u.driveBeat * 3.0 * u.pulse);
@@ -3198,9 +3450,11 @@ fn preset(uv: vec2f) -> vec4f {
           let cd = dist / max(rad, 1e-5);
           let core = 1.0 / (1.0 + cd * cd * 10.0);
           let halo = exp(-cd * cd * 1.3) * P_glow() * 0.4;
-          let hueOff = (h3 - 0.5) * P_hueVariance();
+          // Band color: bass keeps the base hue, mids and treble step away from
+          // it by Band color degrees each — a legible bass/mid/treble split.
+          let hueOff = (h3 - 0.5) * P_hueVariance() + bandTint * P_bandColor();
           let sPal = cosPalette(1.0 - (P_hue() + hueOff) / 360.0, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
-          let lum = (core * 1.6 + halo) * fade * tw * (0.5 + band * 0.9);
+          let lum = (core * 1.6 + halo) * fade * tw * (0.5 + band * 0.9) * beatPop;
           let hot = smoothstep(0.26, 0.06, Z) * P_hotCore() * (0.4 + h1);
           col += mix(sPal, vec3f(1.0), hot * 0.7) * lum * P_brightness();
         }
@@ -3249,9 +3503,12 @@ fn preset(uv: vec2f) -> vec4f {
           let home = (base + vec2f(f32(ox), f32(oy)) + vec2f(0.5) + wob + scat) / scl;
           let d = p - home;
           var band = u.bass;
-          if (h4 < 0.3333) { band = u.mid; } else if (h4 < 0.6666) { band = u.treble; }
+          var bandTint = 0.0;
+          if (h4 < 0.3333) { band = u.mid; bandTint = 1.0; } else if (h4 < 0.6666) { band = u.treble; bandTint = 2.0; }
           let depthV = mix(0.5, 1.4, h1);
-          let rad = P_size() * 0.4 / scl * depthV * (0.7 + band * P_sizePulse());
+          // Extra per-particle size spread (neutral at Size variance = 0).
+          let szExtra = max(1.0 + (h1 - 0.5) * P_sizeVar() * 1.4, 0.1);
+          let rad = P_size() * 0.4 / scl * depthV * (0.7 + band * P_sizePulse()) * szExtra;
           let stretch = 1.0 + P_streak() * (0.2 + u.driveBeat * 1.0 * u.pulse);
           // EARLY DISTANCE CULL — the real speedup. A particle's glow reaches at
           // most ~2.8 core-radii; beyond that its contribution is under 1% yet
@@ -3276,9 +3533,11 @@ fn preset(uv: vec2f) -> vec4f {
           let cd = dist / max(rad, 1e-5);
           let core = 1.0 / (1.0 + cd * cd * 10.0);
           let bloom = exp(-cd * cd * 1.3) * P_glow() * 0.45;
-          let hueOff = (h3 - 0.5) * P_hueVariance();
+          // Band color: bass keeps the base hue, mids/treble step away by Band
+          // color degrees each — the same legible split as fly mode.
+          let hueOff = (h3 - 0.5) * P_hueVariance() + bandTint * P_bandColor();
           let sPal = cosPalette(1.0 - (P_hue() + hueOff) / 360.0, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
-          let lum = (core * 1.4 + bloom) * tw * depthV * (0.55 + band * 0.9);
+          let lum = (core * 1.4 + bloom) * tw * depthV * (0.55 + band * 0.9) * beatPop;
           let hot = smoothstep(0.6, 1.4, depthV) * P_hotCore() * (0.4 + h1);
           col += mix(sPal, vec3f(1.0), hot * 0.7) * lum * P_brightness();
         }
@@ -3396,6 +3655,18 @@ exports[`shader golden baseline > starfield: param ABI (key + default, in order)
     "default": 1,
     "key": "mirror",
   },
+  {
+    "default": 0,
+    "key": "sizeVar",
+  },
+  {
+    "default": 0,
+    "key": "bandColor",
+  },
+  {
+    "default": 0,
+    "key": "beatPop",
+  },
 ]
 `;
 
@@ -3409,18 +3680,21 @@ fn P_gridGlow() -> f32 { return params[5u]; }
 fn P_beatPulse() -> f32 { return params[6u]; }
 fn P_mountains() -> f32 { return params[7u]; }
 fn P_stars() -> f32 { return params[8u]; }
-fn P_sunRays() -> f32 { return params[9u]; }
-fn P_sunY() -> f32 { return params[10u]; }
-fn P_gridScale() -> f32 { return params[11u]; }
-fn P_scan() -> f32 { return params[12u]; }
-fn P_gridLock() -> f32 { return params[13u]; }
-fn P_fog() -> f32 { return params[14u]; }
-fn P_vignette() -> f32 { return params[15u]; }
+fn P_starDensity() -> f32 { return params[9u]; }
+fn P_sunRays() -> f32 { return params[10u]; }
+fn P_sunY() -> f32 { return params[11u]; }
+fn P_sunX() -> f32 { return params[12u]; }
+fn P_gridScale() -> f32 { return params[13u]; }
+fn P_horizonY() -> f32 { return params[14u]; }
+fn P_scan() -> f32 { return params[15u]; }
+fn P_gridLock() -> f32 { return params[16u]; }
+fn P_fog() -> f32 { return params[17u]; }
+fn P_vignette() -> f32 { return params[18u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   var col = vec3f(0.0);
   let cx = (uv.x - 0.5) * u.aspect;
-  let horizon = 0.5;
+  let horizon = P_horizonY();
   let drive = clamp(u.drive, 0.0, 1.5);
   // Pump on the tempo grid when the track has one (gridPulse falls back to
   // the flux pulse when it doesn't); flux onsets still add on top via max.
@@ -3478,7 +3752,7 @@ fn preset(uv: vec2f) -> vec4f {
     let mtn = smoothstep(ridgeTop - 0.004, ridgeTop, uv.y);
 
     // Sun with a vertical gradient + widening scanline gaps.
-    let sunCtr = vec2f(cx, uv.y - (horizon - P_sunY()));
+    let sunCtr = vec2f(cx - P_sunX(), uv.y - (horizon - P_sunY()));
     let sd = length(sunCtr);
     let sunBody = smoothstep(P_sunR(), P_sunR() - 0.008, sd);
     let scanPos = horizon - uv.y;
@@ -3512,10 +3786,14 @@ fn preset(uv: vec2f) -> vec4f {
       let gp = vec2f(uv.x * u.aspect, uv.y) * 60.0;
       let cell = floor(gp);
       let h = hash21(cell);
-      if (h > 0.972) {
+      // Density maps to the hash threshold: denser field = lower bar to clear.
+      // Brightness normalizes by the remaining headroom so stars stay a
+      // consistent brightness regardless of how many are lit.
+      let thr = mix(0.985, 0.94, P_starDensity());
+      if (h > thr) {
         let sp = vec2f(hash21(cell + 0.37), hash21(cell + 0.71));
         let star = smoothstep(0.13, 0.0, length(gp - cell - sp));
-        sky += vec3f(0.9, 0.92, 1.0) * star * (h - 0.972) * 22.0
+        sky += vec3f(0.9, 0.92, 1.0) * star * (h - thr) / max(1.0 - thr, 0.01) * 0.62
              * (0.5 + 0.5 * sin(u.time * 2.0 + h * 40.0)) * smoothstep(horizon, 0.0, uv.y);
       }
     }
@@ -3582,6 +3860,10 @@ exports[`shader golden baseline > synthwave: param ABI (key + default, in order)
     "key": "stars",
   },
   {
+    "default": 0.3,
+    "key": "starDensity",
+  },
+  {
     "default": 0,
     "key": "sunRays",
   },
@@ -3590,8 +3872,16 @@ exports[`shader golden baseline > synthwave: param ABI (key + default, in order)
     "key": "sunY",
   },
   {
+    "default": 0,
+    "key": "sunX",
+  },
+  {
     "default": 0.7,
     "key": "gridScale",
+  },
+  {
+    "default": 0.5,
+    "key": "horizonY",
   },
   {
     "default": 0.6,
@@ -3637,6 +3927,7 @@ fn P_mirror() -> f32 { return params[20u]; }
 fn P_twist() -> f32 { return params[21u]; }
 fn P_roundness() -> f32 { return params[22u]; }
 fn P_surfaceWarp() -> f32 { return params[23u]; }
+fn P_beatBright() -> f32 { return params[24u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   // Club mirror folds the tube into radial wedges. 1 = off.
@@ -3732,6 +4023,11 @@ fn preset(uv: vec2f) -> vec4f {
   // Hot vanishing core: the bright far point you are flying toward.
   col += mix(pal, vec3f(1.0), 0.6) * exp(-r * 14.0)
        * (P_centerGlow() + u.drive * 0.5 + kickP * 0.4);
+
+  // Whole-wall beat flash: a brief global lift on each grid beat (kickP is
+  // grid-locked with a flux fallback), stacked on top of the travelling ring
+  // and hot core — VJ punch that still reads on busy, spectrum-lit walls.
+  col *= 1.0 + kickP * P_beatBright() * u.pulse;
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.25);
@@ -3839,6 +4135,10 @@ exports[`shader golden baseline > tunnel-rings: param ABI (key + default, in ord
     "default": 1.2,
     "key": "surfaceWarp",
   },
+  {
+    "default": 0.15,
+    "key": "beatBright",
+  },
 ]
 `;
 
@@ -3858,14 +4158,16 @@ fn P_mode1() -> f32 { return params[11u]; }
 fn P_mode2() -> f32 { return params[12u]; }
 fn P_mode3() -> f32 { return params[13u]; }
 fn P_coreGlow() -> f32 { return params[14u]; }
-fn P_rimGlow() -> f32 { return params[15u]; }
-fn P_ringDist() -> f32 { return params[16u]; }
-fn P_ringWave() -> f32 { return params[17u]; }
-fn P_sparkleScale() -> f32 { return params[18u]; }
-fn P_bgLevel() -> f32 { return params[19u]; }
-fn P_vignette() -> f32 { return params[20u]; }
-fn P_flare() -> f32 { return params[21u]; }
-fn P_mirror() -> f32 { return params[22u]; }
+fn P_texture() -> f32 { return params[15u]; }
+fn P_breathGlow() -> f32 { return params[16u]; }
+fn P_rimGlow() -> f32 { return params[17u]; }
+fn P_ringDist() -> f32 { return params[18u]; }
+fn P_ringWave() -> f32 { return params[19u]; }
+fn P_sparkleScale() -> f32 { return params[20u]; }
+fn P_bgLevel() -> f32 { return params[21u]; }
+fn P_vignette() -> f32 { return params[22u]; }
+fn P_flare() -> f32 { return params[23u]; }
+fn P_mirror() -> f32 { return params[24u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   var p = centered(uv);
@@ -3881,7 +4183,12 @@ fn preset(uv: vec2f) -> vec4f {
   let speech = mix(raw, u.voice, P_voiceFocus());
   let level = clamp(speech * (0.6 + P_response() * 1.4), 0.0, 1.0);
   // Idle breathing keeps the orb alive during pauses, fades out when talking
-  let idle = (1.0 - smoothstep(0.03, 0.12, level)) * sin(u.time * 1.3) * P_idleBreath();
+  let silence = 1.0 - smoothstep(0.03, 0.12, level);
+  let idle = silence * sin(u.time * 1.3) * P_idleBreath();
+  // Breath GLOW is the brightness companion to the size breathing above: a
+  // slow 0..1 swell (never negative, so it only ever adds light) that fades
+  // out the instant speech begins.
+  let breathG = silence * (0.5 + 0.5 * sin(u.time * 1.3)) * P_breathGlow();
 
   // Surface wobble: three slowly-rotating sinusoidal modes whose amplitudes
   // track wide formant-band averages (~200 Hz - 3 kHz). The shape itself is
@@ -3921,6 +4228,13 @@ fn preset(uv: vec2f) -> vec4f {
   let coreGlow = exp(-r * (7.0 - level * 2.0));
   let bodyLevel = 0.16 + level * 0.30 + coreGlow * (P_coreGlow() + level * 0.25);
   var body = pal * bodyLevel;
+  // Surface texture: slowly-drifting fbm mottling read in orb-local space, so
+  // it folds with the club mirror and gives the body a cloudy / holographic /
+  // frosted character instead of a smooth even fill. Off by default.
+  if (P_texture() > 0.01) {
+    let tn = fbm(p * 7.0 + vec2f(u.time * 0.12, -u.time * 0.09));
+    body *= (1.0 - P_texture() * 0.55) + P_texture() * 0.55 * (0.35 + tn * 1.3);
+  }
   // Hot core: loud speech desaturates the very center toward white and pushes
   // it past 1.0 — the difference between "brighter" and actually emitting.
   let hot = smoothstep(0.5, 0.95, coreGlow * level) * P_flare();
@@ -3950,6 +4264,12 @@ fn preset(uv: vec2f) -> vec4f {
     col += ringPal * smoothstep(0.004, 0.0008, dRing) * (0.35 + level * 0.5);
     col += ringPal * exp(-dRing * 120.0) * 0.18;
   }
+
+  // Breath glow: during silence the orb body and its outer halo swell in
+  // brightness (size breathing is handled separately by idle), a calm 'alive'
+  // pulse for a resting mic that vanishes the moment speech starts.
+  col += pal * inside * breathG;
+  col += pal * exp(-max(r - edge, 0.0) * 20.0) * breathG * 0.6;
 
   // Vignette is the shared smooth full-field falloff (never a hard-edged
   // circle — the orb/rim/ring above are already clamped to r<=0.47).
@@ -4022,6 +4342,14 @@ exports[`shader golden baseline > voice-orb: param ABI (key + default, in order)
   {
     "default": 0.18,
     "key": "coreGlow",
+  },
+  {
+    "default": 0,
+    "key": "texture",
+  },
+  {
+    "default": 0.14,
+    "key": "breathGlow",
   },
   {
     "default": 0.3,

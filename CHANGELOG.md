@@ -11,6 +11,53 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.47.0] - 2026-07-25
+
+The gap-closing release: every visual mode brought up to the standard set
+by Spectrum Bars, Radial Burst and Bass Circle — richer styles, deeper
+controls, and beat-grid musicality — each in its own character.
+
+### Changed
+
+- **Oscilloscope** — trace peaks now soft-compress instead of flat-topping
+  against a hard clamp; new Trace brightness control, graticule beat flash,
+  and a Laser style (8 styles total).
+- **Tunnel** — new Ice Cave style and a whole-wall beat flash stacked on the
+  travelling beat rings (7 styles).
+- **Synthwave** — Sun offset, Horizon height and Star density controls; new
+  Chrome Dawn and Storm styles (9 styles). The one-line-per-beat grid
+  scroll is untouched.
+- **Particles** — Band color (bass/mid/treble tinting), Size variance and a
+  grid-locked Beat brightness pop, all at zero added per-pixel cost; new
+  Beat Dance / Warp / Rave / Deep Field / Embers styles.
+- **Metaballs** — a true specular Gloss with adjustable Light angle, a
+  grid-locked Beat squash (the lamp gulps on the beat), and blob count that
+  rides the Detail master; Mercury / Toxic / Abyss / Binary styles.
+- **Echo Trails** — per-generation Echo hue drift (energy-neutral, so the
+  feedback stays stable), Ring shape (N-lobed star) with Beat bloom; new
+  styles showcasing both.
+- **Kaleido Nebula** — static Angle (aim the fold, independent of
+  Motion→Rotation), Spin control, and a Depth layer for volume; re-curated
+  to 7 styles (Stained Glass, Mandala, Oil Slick, Fractal Ice, …).
+- **Aurora** — bass-swelled curtains, slow Drift, treble-crackled stars,
+  and an optional true horizon Reflection; 7 styles from Polar Night to
+  Pastel Dream.
+- **Voice Orb** — surface Texture and a silence-only Breath glow; 7
+  studio-oriented styles (Podcast Blue, Warm Studio, Hologram, …).
+- **LED Matrix** — per-column Spectrum color (the RGB-wall look), phosphor
+  Ghosting, CRT Scanlines, deterministic Flicker and a Beat flash border;
+  7 hardware looks from Hi-Fi Classic to Amber Terminal.
+- **Spectrum Scape** — 7 curated camera-and-palette styles (Night City,
+  Sunrise Metropolis, Cyber District, Top Down, …) and wider Height /
+  Distance / Glow ranges. Its 3D pipeline has a fixed parameter set, so the
+  upgrade is curation rather than new sliders — no dead controls.
+- **Particle Flow** — six new styles that actually explore the simulation's
+  range (Galaxy, Swarm, Ink Drop, Solar Wind, Blizzard, Firehose).
+
+Every upgraded mode was verified deterministic (double-export hash
+identical) with a clean GPU validation log, and every new parameter obeys
+the soft frame-limit and monotonic-rotation laws.
+
 ## [2.46.2] - 2026-07-25
 
 ### Added
