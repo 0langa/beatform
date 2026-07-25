@@ -6,7 +6,7 @@ import { APP_VERSION } from "../version";
 import type { UpdatePhase } from "../state/updater";
 import { useFocusTrap } from "./useFocusTrap";
 import { IconClose } from "./Icons";
-import { Segmented, SelectRow, SliderRow, ToggleRow } from "./kit";
+import { SECONDS, Segmented, SelectRow, SliderRow, ToggleRow } from "./kit";
 
 /**
  * App-level settings (Ctrl+,) — preferences about the APP, as opposed to the
@@ -77,7 +77,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 step={1}
                 value={prefs.autosaveIntervalSec}
                 onChange={(v) => apply({ autosaveIntervalSec: v })}
-                format={(v) => `${v} s`}
+                format={SECONDS}
               />
             )}
             <div className="field">

@@ -26,7 +26,7 @@ import {
   type PostSettings,
   type PresetDef,
 } from "../render/types";
-import { applyMods, type ModRoute } from "../state/modMatrix";
+import { applyMods, applyPostMods, type ModRoute } from "../state/modMatrix";
 import type { Timeline } from "../state/timeline";
 import { resolveActiveFrame } from "../state/frameResolve";
 import { presetById } from "../render/presets";
@@ -639,6 +639,8 @@ export async function runExportJob(
     // loop uses, which is what guarantees this file matches the preview.
     let currentPresetId = job.presetId;
     let fadeFromId: string | null = null;
+    /** True while the renderer holds MODULATED post settings — see services.ts. */
+    let postModulated = false;
     const frameInput = {
       timeline: job.timeline ?? { enabled: false as const, scenes: [], lanes: [] },
       basePresetId: job.presetId,
@@ -711,16 +713,21 @@ export async function runExportJob(
         renderer.setTransitionPreset(null);
         fadeFromId = null;
       }
+      const stemValues = job.stems ? stemValuesAt(job.stems, t) : undefined;
+      // Post-targeted routes animate the post chain. Identical rule to the
+      // live loop (services.ts) — applyPostMods returns the base object when
+      // nothing targets post, so an unmodulated export uploads nothing extra
+      // and stays byte-identical to before this feature existed.
+      if (job.post) {
+        const moddedPost = applyPostMods(job.post, rf.mods, features, stemValues);
+        if (moddedPost !== job.post) renderer.setPost(moddedPost);
+        else if (postModulated) renderer.setPost(job.post);
+        postModulated = moddedPost !== job.post;
+      }
       renderer.render(
         features,
         t,
-        applyMods(
-          presetById(rf.presetId),
-          rf.params,
-          rf.mods,
-          features,
-          job.stems ? stemValuesAt(job.stems, t) : undefined,
-        ),
+        applyMods(presetById(rf.presetId), rf.params, rf.mods, features, stemValues),
         transition,
       );
       // Ensure the GPU finished before snapshotting the canvas

@@ -1089,6 +1089,47 @@ button:disabled {
   color: var(--text-faint);
 }
 
+/* A slider's readout is also the way IN to typing an exact value (double-click,
+   or Enter/F2 when focused), so those readouts are real <button>s: focusable,
+   announced as controls, and — unlike a span with tabindex — not treated as
+   plain content by the wrapping <label>, which would forward the click to the
+   row's slider and move the thumb. This reset keeps them pixel-identical to
+   the plain spans that still use .row-value elsewhere. No font-size here: the
+   rule above must keep winning it. */
+button.row-value {
+  font-family: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  background: none;
+  border: 0;
+  min-width: 0;
+  cursor: pointer;
+}
+
+button.row-value:hover:not(:disabled),
+button.row-value:focus-visible {
+  color: var(--text);
+}
+
+button.row-value:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* The open editor. Sized to the value column it replaces (44px in .param-row)
+   so opening it can never reflow the panel — a long number scrolls inside the
+   field instead of pushing the grid around. */
+.row-value-input {
+  width: 100%;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 3px;
+  outline: none;
+}
+
 .toggle-row {
   justify-content: space-between;
 }

@@ -5,6 +5,7 @@ import {
   ProjectParseError,
   serializeProject,
   type ProjectDocument,
+  validBg,
   validBgByPreset,
   validCenterImages,
   validateDocument,
@@ -14,6 +15,11 @@ import { presets } from "../render/presets";
 
 const PIXEL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+/** The framing validBg fills in for a background that carries none — and, not
+ * by coincidence, the exact cover crop the composite shader used to hardcode.
+ * Every pre-BgFit file must come out of the validator wearing this. */
+const NEUTRAL_FIT = { fit: 0, zoom: 1, offsetX: 0, offsetY: 0 };
 
 const doc: ProjectDocument = {
   presetId: presets[2].id,
@@ -269,7 +275,7 @@ describe("project files (.avproj)", () => {
     file.document.bg = { mode: 3, color: [0, 0, 0], image: { assetId: "as-1", dim: 5, blur: -2 } };
     const parsed = parseProject(JSON.stringify(file));
     expect(parsed.bg.mode).toBe(3);
-    expect(parsed.bg.image).toEqual({ assetId: "as-1", dim: 0.9, blur: 0 }); // clamped
+    expect(parsed.bg.image).toEqual({ assetId: "as-1", dim: 0.9, blur: 0, ...NEUTRAL_FIT }); // clamped
   });
 
   it("v7: image background with a missing asset degrades to the preset bg", () => {
@@ -303,7 +309,7 @@ describe("project files (.avproj)", () => {
     const parsed = parseProject(JSON.stringify(file));
     expect(parsed.assets["vid-1"]?.dataUrl).toBe("data:video/mp4;base64,AA");
     expect(parsed.bg.mode).toBe(4);
-    expect(parsed.bg.video).toEqual({ assetId: "vid-1", dim: 0.4, blur: 12 });
+    expect(parsed.bg.video).toEqual({ assetId: "vid-1", dim: 0.4, blur: 12, ...NEUTRAL_FIT });
   });
 
   it("video background with a missing asset still degrades to the preset bg", () => {
@@ -354,7 +360,10 @@ describe("project files (.avproj)", () => {
       };
       const parsed = parseProject(JSON.stringify(file));
       expect(parsed.bg.mode).toBe(3);
-      expect(parsed.bg.image).toEqual({ assetId: "as-1", dim: 0.3, blur: 5 });
+      // The framing fields are filled in with the NEUTRAL values, which are
+      // the cover crop the shader hardcoded when this file was written — so
+      // the picture lands exactly where it did before they existed.
+      expect(parsed.bg.image).toEqual({ assetId: "as-1", dim: 0.3, blur: 5, ...NEUTRAL_FIT });
       expect(parsed.presetId).toBe(doc.presetId);
     });
 
@@ -376,7 +385,7 @@ describe("project files (.avproj)", () => {
       };
       const parsed = parseProject(JSON.stringify(file));
       expect(parsed.bg.mode).toBe(4);
-      expect(parsed.bg.video).toEqual({ assetId: "vid-1", dim: 0.4, blur: 12 });
+      expect(parsed.bg.video).toEqual({ assetId: "vid-1", dim: 0.4, blur: 12, ...NEUTRAL_FIT });
       expect(parsed.assets["vid-1"]?.dataUrl).toBe("data:video/mp4;base64,AA");
     });
 
@@ -477,5 +486,132 @@ describe("schema v11 (per-mode backgrounds + center images)", () => {
     const document = validateDocument({ presetId: "spectrum-bars" });
     expect(document.bgByPreset).toEqual({});
     expect(document.centerImageByPreset).toEqual({});
+  });
+});
+
+/**
+ * Background framing (BgFit) — added WITHOUT a schema bump, so the neutral
+ * defaults have to be exactly the cover crop the shader used to hardcode.
+ * These are the guards on that promise, plus the clamps that keep a
+ * hand-edited or hostile file from reaching the uniform with a value the
+ * shader would read as a different fit mode.
+ */
+describe("background fit / zoom / pan", () => {
+  it("defaults to the neutral (cover, unzoomed, centred) framing when absent", () => {
+    const bg = validBg({
+      mode: 3,
+      color: [0, 0, 0],
+      image: { assetId: "as-1", dim: 0.2, blur: 3 },
+    });
+    expect(bg.image).toEqual({ assetId: "as-1", dim: 0.2, blur: 3, ...NEUTRAL_FIT });
+    const vid = validBg({
+      mode: 4,
+      color: [0, 0, 0],
+      video: { assetId: "vid-1", dim: 0.3, blur: 0 },
+    });
+    expect(vid.video).toEqual({ assetId: "vid-1", dim: 0.3, blur: 0, ...NEUTRAL_FIT });
+  });
+
+  it("keeps values that are already in range", () => {
+    const bg = validBg({
+      mode: 3,
+      color: [0, 0, 0],
+      image: {
+        assetId: "as-1",
+        dim: 0.2,
+        blur: 0,
+        fit: 1,
+        zoom: 2.5,
+        offsetX: -0.4,
+        offsetY: 0.25,
+      },
+    });
+    expect(bg.image).toMatchObject({ fit: 1, zoom: 2.5, offsetX: -0.4, offsetY: 0.25 });
+  });
+
+  it("clamps zoom and pan to the ranges the UI offers", () => {
+    const bg = validBg({
+      mode: 3,
+      color: [0, 0, 0],
+      image: { assetId: "as-1", dim: 0, blur: 0, zoom: 99, offsetX: 12, offsetY: -12 },
+    });
+    expect(bg.image).toMatchObject({ zoom: 4, offsetX: 1, offsetY: -1 });
+    const low = validBg({
+      mode: 3,
+      color: [0, 0, 0],
+      image: { assetId: "as-1", dim: 0, blur: 0, zoom: 0 },
+    });
+    expect(low.image?.zoom).toBe(0.25);
+  });
+
+  it("SNAPS fit to 0/1/2 — the shader branches on it", () => {
+    // A fractional 1.4 reaching the uniform would silently select contain;
+    // clamping alone would not have caught it, which is why this rounds.
+    const of = (fit: unknown) =>
+      validBg({ mode: 3, color: [0, 0, 0], image: { assetId: "a", dim: 0, blur: 0, fit } }).image
+        ?.fit;
+    expect(of(1.4)).toBe(1);
+    expect(of(2.9)).toBe(2);
+    expect(of(-5)).toBe(0);
+  });
+
+  it("falls back to neutral for non-finite and non-numeric junk", () => {
+    const bg = validBg({
+      mode: 4,
+      color: [0, 0, 0],
+      video: {
+        assetId: "vid-1",
+        dim: 0.3,
+        blur: 0,
+        fit: NaN,
+        zoom: Infinity,
+        offsetX: "0.5",
+        offsetY: null,
+      },
+    });
+    expect(bg.video).toMatchObject(NEUTRAL_FIT);
+  });
+
+  it("survives a serialize/parse round-trip", () => {
+    const document = validateDocument({
+      presetId: "spectrum-bars",
+      assets: { "as-1": { id: "as-1", name: "x.png", dataUrl: PIXEL } },
+      bg: {
+        mode: 3,
+        color: [0, 0, 0],
+        image: {
+          assetId: "as-1",
+          dim: 0.2,
+          blur: 0,
+          fit: 1,
+          zoom: 1.75,
+          offsetX: 0.2,
+          offsetY: -0.1,
+        },
+      },
+    });
+    const parsed = parseProject(serializeProject(document, "rt"));
+    expect(parsed.bg.image).toMatchObject({ fit: 1, zoom: 1.75, offsetX: 0.2, offsetY: -0.1 });
+  });
+
+  it("per-mode overrides inherit the same validation (they call validBg)", () => {
+    const out = validBgByPreset(
+      {
+        "bass-circle": {
+          mode: 3,
+          color: [0, 0, 0],
+          image: { assetId: "as-1", dim: 0.3, blur: 5, fit: 2, zoom: 99, offsetY: 0.5 },
+        },
+        aurora: { mode: 3, color: [0, 0, 0], image: { assetId: "as-1", dim: 0.3, blur: 5 } },
+      },
+      { "as-1": { id: "as-1", name: "x.png", dataUrl: PIXEL } },
+    );
+    expect(out["bass-circle"].image).toMatchObject({
+      fit: 2,
+      zoom: 4, // clamped, exactly like the global bg
+      offsetX: 0,
+      offsetY: 0.5,
+    });
+    expect(out.aurora.image).toMatchObject(NEUTRAL_FIT);
   });
 });

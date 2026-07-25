@@ -52,6 +52,11 @@ curve_ spline which only rounds corners between still-spiky values — and
 shape the drawn bars only; the sync feel (attack/release, beat pulses) is
 untouched.
 
+**Low edge** and **High edge** set the frequency span the bars cover. The
+bars are spaced geometrically across it — equal width per octave — so
+raising the low edge stops spending bars on sub-bass a track doesn't have,
+and lowering the high edge gives the musical range more of the width.
+
 Two kinds of beat reaction work together:
 
 - **Onset pulses** fire on actual hits in the selected band.
@@ -64,6 +69,11 @@ Two kinds of beat reaction work together:
 **Motion masters** scale rotation, pulse strength, element count, and
 spectrum smoothing globally — dial the whole app calmer or wilder from one
 place.
+
+_Settings → Sync → Modulation_ routes any audio feature to any knob. The
+target list covers this visual's own parameters **and the post-processing
+chain** — so the kick can drive Chromatic, bass can breathe the Bloom, and
+the whole look moves with the track. Routes apply identically in exports.
 
 ## Layers
 

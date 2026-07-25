@@ -1,7 +1,7 @@
 import type { AudioFeatures } from "../audio/types";
 import { BUILDER_MAX_LAYERS } from "./builder2";
 import { getPrefs } from "../state/prefs";
-import { allParams, DEFAULT_MOTION, DEFAULT_POST, paramOr } from "./types";
+import { allParams, BG_VIDEO, DEFAULT_MOTION, DEFAULT_POST, paramOr } from "./types";
 import type {
   BgSettings,
   Mesh3DSpec,
@@ -22,8 +22,13 @@ const MAX_PARAMS = 48;
 const RT_IDLE_FRAMES = 300;
 /** Downsampled waveform points exposed to shaders */
 const WAVE_POINTS = 512;
-/** Uniform struct size in bytes (scalars + vec4 bgColor + sync block + motion) */
-const UNIFORM_SIZE = 128;
+/** Uniform struct size in bytes (scalars + vec4 bgColor + sync block + motion
+ * + the background fit block). 36 f32 lanes, but the struct is 144 not 140:
+ * bgOffset is a vec2f, whose 8-byte alignment lands it at byte 136, and WGSL
+ * rounds the struct up to a multiple of its largest member alignment (bgColor's
+ * 16). Keep this in step with the Uniforms struct below — a short buffer makes
+ * every read past it zero, which reads as "the background snapped to stretch". */
+const UNIFORM_SIZE = 144;
 /**
  * The scene (preset + background + overlay + crossfade) renders into an HDR
  * intermediate at this format; the post chain then tonemaps/blooms it to the
@@ -238,6 +243,13 @@ struct Uniforms {
   pulse: f32,
   detail: f32,
   specSmooth: f32,
+  // Background image/video framing (bgMode 3/4), fed from bg.image/bg.video.
+  // CSS object-fit: 0 cover, 1 contain, 2 stretch. Defaults (0 / 1 / 0,0)
+  // reproduce the crop the composite pass used to hardcode.
+  bgFit: f32,
+  bgZoom: f32,
+  // vec2f, so it aligns to 8 and sits at byte 136 — see UNIFORM_SIZE.
+  bgOffset: vec2f,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> bins: array<f32>;
@@ -271,6 +283,46 @@ fn coverSample(uv: vec2f) -> vec4f {
   return textureSampleLevel(coverTex, overlaySmp, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0);
 }
 fn hasCover() -> bool { return textureDimensions(coverTex).x > 1u; }
+
+/** Aspect (width/height) of the bound cover-art texture. */
+fn coverAspect() -> f32 {
+  let d = vec2f(textureDimensions(coverTex));
+  return d.x / max(d.y, 1.0);
+}
+
+/**
+ * Fit a box coordinate (0..1 across the destination) onto a texture of
+ * arbitrary aspect — CSS object-fit, in the shader.
+ *
+ * Presets used to map a square box straight onto the image's full 0..1, which
+ * silently STRETCHED every non-square cover: a 16:9 photo in a circular core
+ * came out squashed. Fitting needs the image aspect, which the texture itself
+ * carries, so no uniform is required.
+ *
+ * mode: 0 = cover (fill the box, crop the overflow), 1 = contain (whole image
+ * inside, letterboxed), 2 = stretch (ignore aspect — the old behaviour, kept
+ * so a look built on it can be reproduced). zoom magnifies about the centre
+ * and offset pans, both in box units.
+ *
+ * Sampling CLAMPS at the edges, so a contain fit would smear its edge pixels
+ * across the letterbox — callers guard with inBox().
+ */
+fn fitUV(boxUV: vec2f, texAspect: f32, boxAspect: f32, mode: f32, zoom: f32, offset: vec2f) -> vec2f {
+  var c = boxUV - vec2f(0.5);
+  let ratio = texAspect / max(boxAspect, 1e-4);
+  if (mode < 0.5) {
+    if (ratio > 1.0) { c.x = c.x / ratio; } else { c.y = c.y * ratio; }
+  } else if (mode < 1.5) {
+    if (ratio > 1.0) { c.y = c.y * ratio; } else { c.x = c.x / ratio; }
+  }
+  return c / max(zoom, 0.01) + vec2f(0.5) - offset;
+}
+
+/** True when a fitted uv lands on the image — false inside a contain fit's
+ * letterbox bars, where the caller should keep its own fill. */
+fn inBox(uv: vec2f) -> bool {
+  return uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
+}
 
 /** Previous frame's raw visual (HDR), for trails/feedback. A preset that
  * calls this opts into the feedback path: its output is captured and fed back
@@ -574,19 +626,19 @@ fn composite(color: vec4f, uv: vec2f) -> vec4f {
     if (u.bgMode == 1u) {
       out = vec4f(u.bgColor.rgb * (1.0 - a) + out.rgb, 1.0);
     } else if (u.bgMode == 3u || u.bgMode == 4u) {
-      // Image/video background, cover-fit: fill the frame, crop the excess.
-      // For images blur/dim were baked into the bitmap on the CPU; for video
-      // the current frame is uploaded to bgTex each rendered frame.
+      // Image/video background, framed by the shared fitUV (same helper, same
+      // semantics as the centre-image slot). For images blur/dim were baked
+      // into the bitmap on the CPU; for video the current frame is uploaded to
+      // bgTex each rendered frame.
       let dims = vec2f(textureDimensions(bgTex));
-      let texAspect = dims.x / max(dims.y, 1.0);
-      var buv = uv - 0.5;
-      if (texAspect > u.aspect) {
-        buv.x *= u.aspect / texAspect;
-      } else {
-        buv.y *= texAspect / u.aspect;
-      }
-      let bg = textureSampleLevel(bgTex, overlaySmp, buv + 0.5, 0.0);
-      out = vec4f(bg.rgb * (1.0 - a) + out.rgb, 1.0);
+      let buv = fitUV(uv, dims.x / max(dims.y, 1.0), u.aspect, u.bgFit, u.bgZoom, u.bgOffset);
+      // Contain (or a zoom below 1, or a pan past the edge) leaves bars where
+      // the image is not. Sampling CLAMPS, so those bars would be a smear of
+      // the edge pixels — paint the background COLOUR there instead, which is
+      // what a letterbox is supposed to be.
+      let src = textureSampleLevel(bgTex, overlaySmp, buv, 0.0).rgb;
+      let bg = select(u.bgColor.rgb, src, inBox(buv));
+      out = vec4f(bg * (1.0 - a) + out.rgb, 1.0);
     } else {
       out = vec4f(out.rgb, a); // premultiplied alpha
     }
@@ -2569,6 +2621,15 @@ export class WebGPURenderer implements Renderer {
     this.uniformF32[29] = this.motion.pulse;
     this.uniformF32[30] = this.motion.detail;
     this.uniformF32[31] = this.motion.spectrumSmooth;
+    // Background framing (bgMode 3/4). Read off THIS renderer's bg, which both
+    // the live loop and exportCore set from the same resolved BgSettings every
+    // frame — so preview and export cannot drift. Absent fields fall back to
+    // the values that reproduce the old hardcoded cover crop.
+    const bgFit = this.bg.mode === BG_VIDEO ? this.bg.video : this.bg.image;
+    this.uniformF32[32] = bgFit?.fit ?? 0;
+    this.uniformF32[33] = bgFit?.zoom ?? 1;
+    this.uniformF32[34] = bgFit?.offsetX ?? 0;
+    this.uniformF32[35] = bgFit?.offsetY ?? 0;
     // Feedback path is active only when the preset opts in AND we're not
     // mid-crossfade (feedback pauses during transitions). fs_main branches on
     // this: 1 => emit raw visual for the composite pass, 0 => inline composite.

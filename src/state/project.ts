@@ -1,5 +1,5 @@
 import type { SyncSettings } from "../audio/types";
-import type { BgSettings, MotionSettings, ParamValues, PostSettings } from "../render/types";
+import type { BgFit, BgSettings, MotionSettings, ParamValues, PostSettings } from "../render/types";
 import {
   BG_IMAGE,
   BG_PRESET,
@@ -63,6 +63,12 @@ import { validTimeline, type Timeline } from "./timeline";
  *        replace the track's cover art in modes that draw a center image
  *        (Bass Circle, Radial Burst). Older files lack both fields and the
  *        validators default them to empty.
+ *
+ * No bump for background fit/zoom/pan (bg.image / bg.video BgFit): the four
+ * fields are optional and their absent value is the cover-fit the shader
+ * already hardcoded, so a v11 file written before they existed renders
+ * byte-identically after loading. A version bump is for shape changes that
+ * older readers would MISREAD — this one they simply do not see.
  */
 
 export const PROJECT_VERSION = 11;
@@ -469,6 +475,19 @@ export function validBg(v: unknown): BgSettings {
   if (validMode && validColor) {
     const n = (x: unknown, def: number, lo: number, hi: number) =>
       typeof x === "number" && Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : def;
+    /** Framing (fit/zoom/pan), shared by image and video backgrounds. All four
+     * are optional-with-default: a file saved before they existed lands on
+     * cover / no zoom / centred, which is exactly what the composite pass used
+     * to hardcode — so old projects render identically and PROJECT_VERSION
+     * does not move (same treatment as SyncSettings' shapeMerge/contrast). */
+    const fitOf = (b: BgFit): Required<BgFit> => ({
+      // Snapped, not clamped: the shader branches on 0/1/2, so a hand-edited
+      // 1.4 would silently select contain instead of being rejected.
+      fit: Math.round(n(b.fit, 0, 0, 2)),
+      zoom: n(b.zoom, 1, 0.25, 4),
+      offsetX: n(b.offsetX, 0, -1, 1),
+      offsetY: n(b.offsetY, 0, -1, 1),
+    });
     const image =
       typeof bg!.image === "object" &&
       bg!.image !== null &&
@@ -478,6 +497,7 @@ export function validBg(v: unknown): BgSettings {
             assetId: bg!.image.assetId,
             dim: n(bg!.image.dim, 0.25, 0, 0.9),
             blur: n(bg!.image.blur, 0, 0, 60),
+            ...fitOf(bg!.image),
           }
         : undefined;
     const video =
@@ -489,6 +509,7 @@ export function validBg(v: unknown): BgSettings {
             assetId: bg!.video.assetId,
             dim: n(bg!.video.dim, 0.35, 0, 0.9),
             blur: n(bg!.video.blur, 0, 0, 60),
+            ...fitOf(bg!.video),
           }
         : undefined;
     return {

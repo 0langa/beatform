@@ -2,8 +2,8 @@ import { AudioEngine } from "../audio/engine";
 import { RealtimeAnalyzer } from "../audio/realtimeSource";
 import { Canvas2DRenderer } from "../render/canvas2dRenderer";
 import { WebGPURenderer } from "../render/webgpuRenderer";
-import type { BgSettings, ParamValues, PresetDef, Renderer } from "../render/types";
-import { applyMods } from "./modMatrix";
+import type { BgSettings, ParamValues, PostSettings, PresetDef, Renderer } from "../render/types";
+import { applyMods, applyPostMods } from "./modMatrix";
 import { resolveActiveFrame, type FrameResolveInput } from "./frameResolve";
 import { presetById } from "../render/presets";
 import { getPrefs } from "./prefs";
@@ -22,6 +22,9 @@ export interface ServiceHooks {
   /** Everything resolveActiveFrame needs, rebuilt from the store per frame. */
   getFrameInput(): FrameResolveInput;
   getBackground(): BgSettings;
+  /** The document's post settings, so the loop can apply post-targeted
+   * modulation routes per frame (they animate bloom/chromatic/etc.). */
+  getPost(): PostSettings;
   getSync(): SyncSettings;
   /** True while the user drags the seek bar — playback pushes pause then. */
   isSeeking(): boolean;
@@ -252,6 +255,9 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     let lastCapDraw = -1e9;
     let currentPreset: PresetDef | null = null;
     let fadeFromPreset: PresetDef | null = null;
+    /** True while the renderer holds MODULATED post settings, so the loop
+     * knows it still owes the renderer a reset once modulation stops. */
+    let postModulated = false;
     resyncRenderer = () => {
       currentPreset = null;
       fadeFromPreset = null;
@@ -344,10 +350,25 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         renderer?.setTransitionPreset(null);
         fadeFromPreset = null;
       }
+      const stemValues = hooks.getStemValues?.(trackTime);
+      // Post-targeted routes animate the post chain. applyPostMods returns the
+      // base object itself when nothing targets post, so an unmodulated
+      // project does no extra work — but once modulation stops we must push
+      // the un-modulated settings back exactly once, or the last animated
+      // frame's bloom/chromatic would stick.
+      const basePost = hooks.getPost();
+      const livePost = applyPostMods(basePost, rf.mods, features, stemValues);
+      if (livePost !== basePost) {
+        renderer?.setPost(livePost);
+        postModulated = true;
+      } else if (postModulated) {
+        renderer?.setPost(basePost);
+        postModulated = false;
+      }
       renderer?.render(
         features,
         trackTime,
-        applyMods(activePreset, rf.params, rf.mods, features, hooks.getStemValues?.(trackTime)),
+        applyMods(activePreset, rf.params, rf.mods, features, stemValues),
         transition,
       );
       hooks.onFrameTick?.(trackTime);

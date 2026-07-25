@@ -106,8 +106,18 @@ export class FeaturePipeline {
   private binScratch: Float32Array;
   private binScratch2: Float32Array;
   private prevMag: Float32Array;
-  /** [start, end) FFT-bin range per output bin, geometrically spaced */
+  /** [start, end) FFT-bin edges per output bin, geometrically spaced and
+   * FRACTIONAL. Integer edges used to be forced at least one bin wide, which
+   * made every display band below ~40 Hz read the SAME FFT bin — five bars of
+   * identical height, reported as "the bass line is very wide". Keeping the
+   * edges fractional lets `bandLevel` interpolate a sub-bin band instead of
+   * duplicating its neighbour. */
   private ranges: Array<[number, number]>;
+  /** Hz covered by one FFT bin — the interpolation needs it alongside `ranges`. */
+  private hzPerBin: number;
+  /** Analysed span the current `ranges` were built for, so `setSync` only
+   * rebuilds when the user actually moves the range. */
+  private rangeSpan: [number, number] = [MIN_FREQ, MAX_FREQ];
   private bassRange: [number, number];
   private midRange: [number, number];
   private trebleRange: [number, number];
@@ -144,18 +154,10 @@ export class FeaturePipeline {
 
     const nyquist = config.sampleRate / 2;
     const hzPerBin = nyquist / fftBins;
+    this.hzPerBin = hzPerBin;
     const toBin = (hz: number) => Math.max(0, Math.min(fftBins - 1, Math.round(hz / hzPerBin)));
 
-    // Geometric frequency edges -> FFT bin ranges, each at least 1 bin wide.
-    this.ranges = [];
-    const ratio = MAX_FREQ / MIN_FREQ;
-    for (let i = 0; i < this.binCount; i++) {
-      const f0 = MIN_FREQ * Math.pow(ratio, i / this.binCount);
-      const f1 = MIN_FREQ * Math.pow(ratio, (i + 1) / this.binCount);
-      const b0 = toBin(f0);
-      const b1 = Math.max(b0 + 1, toBin(f1));
-      this.ranges.push([b0, b1]);
-    }
+    this.ranges = this.buildRanges(MIN_FREQ, MAX_FREQ);
     this.bassRange = [toBin(30), toBin(150)];
     this.midRange = [toBin(150), toBin(2000)];
     this.trebleRange = [toBin(2000), toBin(16000)];
@@ -191,6 +193,61 @@ export class FeaturePipeline {
     };
   }
 
+  /**
+   * Geometric (constant-ratio) frequency edges for the drawn spectrum,
+   * expressed in FRACTIONAL FFT-bin space. Equal ratio per band is what makes
+   * a musical octave occupy the same width everywhere, so the bars can then be
+   * plotted at equal pixel width.
+   */
+  private buildRanges(freqMin: number, freqMax: number): Array<[number, number]> {
+    // Remember what was ASKED for, not what survives clamping: `setSync`
+    // compares against this to decide whether to rebuild, and storing the
+    // clamped value would make every later call look like a change.
+    this.rangeSpan = [freqMin, freqMax];
+    // Nothing above Nyquist exists in the transform, and asking for it would
+    // spend bands on bins that are always zero — a 22 kHz ceiling on a
+    // 44.1 kHz track is a real user setting, so clamp rather than trust it.
+    const nyquist = this.hzPerBin * this.mag.length;
+    const hi = Math.min(freqMax, nyquist * 0.99);
+    const lo = Math.min(freqMin, hi / 2);
+    const ratio = hi / lo;
+    const out: Array<[number, number]> = [];
+    for (let i = 0; i < this.binCount; i++) {
+      const f0 = lo * Math.pow(ratio, i / this.binCount);
+      const f1 = lo * Math.pow(ratio, (i + 1) / this.binCount);
+      out.push([f0 / this.hzPerBin, f1 / this.hzPerBin]);
+    }
+    return out;
+  }
+
+  /**
+   * Level of one display band from fractional FFT-bin edges.
+   *
+   * A band WIDER than one FFT bin takes the peak of the bins it covers (what
+   * the spectrum has always done — peaks are what reads musically). A band
+   * NARROWER than one bin — every band below ~40 Hz at 4096-point/48 kHz,
+   * where one bin spans 11.7 Hz — instead interpolates linearly between the
+   * two neighbouring bins at its centre. Without that, `round()`-ing both
+   * edges to the same integer bin gave several adjacent bands one identical
+   * value: the flat, over-wide bass block users reported.
+   */
+  private bandLevel(src: Float32Array, x0: number, x1: number): number {
+    const first = Math.ceil(x0);
+    const last = Math.floor(x1);
+    if (last > first) {
+      // Covers at least one whole bin: peak over the covered bins.
+      let v = 0;
+      for (let b = first; b < last; b++) v = Math.max(v, src[b] ?? 0);
+      return v;
+    }
+    // Sub-bin band: sample the spectrum at the band's centre.
+    const c = Math.max(0, Math.min(src.length - 1, (x0 + x1) * 0.5));
+    const i0 = Math.floor(c);
+    const i1 = Math.min(src.length - 1, i0 + 1);
+    const t = c - i0;
+    return (src[i0] ?? 0) * (1 - t) + (src[i1] ?? 0) * t;
+  }
+
   update(input: PipelineInput): AudioFeatures {
     const f = this.features;
     const dt = Math.min(0.1, Math.max(0.0001, input.dt));
@@ -220,9 +277,7 @@ export class FeaturePipeline {
     const raw = this.binScratch;
     for (let i = 0; i < this.binCount; i++) {
       const [b0, b1] = this.ranges[i];
-      let v = 0;
-      for (let b = b0; b < b1; b++) v = Math.max(v, magDisp[b]);
-      raw[i] = v;
+      raw[i] = this.bandLevel(magDisp, b0, b1);
     }
 
     // --- Spectrum SHAPE (drawn bins only; sync/bands read `mag`, untouched).
@@ -378,6 +433,14 @@ export class FeaturePipeline {
     if (safe.mode !== this.sync.mode) {
       this.syncFluxHistory.length = 0;
       this.syncBeatIntensity = 0;
+    }
+    // The analysed span is a user setting, so the geometric edges have to be
+    // rebuilt when it moves — but only then: this runs on every settings
+    // change, and rebuilding 96 bands per frame would be pure waste.
+    const freqMin = safe.freqMin ?? MIN_FREQ;
+    const freqMax = safe.freqMax ?? MAX_FREQ;
+    if (freqMin !== this.rangeSpan[0] || freqMax !== this.rangeSpan[1]) {
+      this.ranges = this.buildRanges(freqMin, freqMax);
     }
     this.sync = safe;
   }

@@ -75,6 +75,7 @@ vi.mock("../render/canvas2dRenderer", () => {
 import { getAnalyzer, getEngine, getRenderer, initServices, type ServiceHooks } from "./services";
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { PresetDef, BgSettings } from "../render/types";
+import { DEFAULT_POST } from "../render/types";
 import type { FrameResolveInput } from "./frameResolve";
 import { EMPTY_TIMELINE } from "./timeline";
 import { registerCustomPreset, unregisterCustomPreset } from "../render/presets/custom";
@@ -94,6 +95,7 @@ function fakeHooks(overrides: Partial<ServiceHooks> = {}): ServiceHooks {
     getPreset: () => ({}) as unknown as PresetDef,
     getFrameInput: () => ({}) as unknown as FrameResolveInput,
     getBackground: () => ({}) as unknown as BgSettings,
+    getPost: () => DEFAULT_POST,
     getSync: () => ({ mode: "kick", smooth: 0.5 }),
     isSeeking: () => false,
     onPlayback: () => {},

@@ -12,8 +12,12 @@ import {
   type Timeline,
 } from "../state/timeline";
 import { Slider } from "./Slider";
+import { SliderField, type ValueUnit } from "./kit";
 import { Switch } from "./Switch";
 import { IconClose } from "./Icons";
+
+/** Scene fades read "0.50s" — same string the row printed by hand. */
+const FADE_SECONDS: ValueUnit = { scale: 1, unit: "s" };
 
 const TRANSITION_LABELS: Record<(typeof TRANSITION_KINDS)[number], string> = {
   crossfade: "Crossfade",
@@ -583,11 +587,13 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
                 <span className="row-value">@ {s.start.toFixed(2)}s</span>
                 <label className="inline" title="Crossfade from the previous scene (0 = hard cut)">
                   Fade
-                  <Slider
+                  <SliderField
+                    label="Scene fade seconds"
                     min={0}
                     max={4}
                     step={0.25}
                     value={s.fadeSec ?? 0}
+                    format={FADE_SECONDS}
                     onChange={(v) => {
                       const fadeSec = v || undefined;
                       update({
@@ -595,7 +601,6 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
                       });
                     }}
                   />
-                  <span className="row-value">{(s.fadeSec ?? 0).toFixed(2)}s</span>
                 </label>
                 <label className="inline" title="How this scene's incoming fade renders">
                   Transition

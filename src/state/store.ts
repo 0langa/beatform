@@ -1030,6 +1030,7 @@ export const useVizStore = create<VizState>((set, get) => {
           };
         },
         getBackground: () => effBg(), // BG1: paused/initial bind must match the loop
+        getPost: () => get().post,
         getSync: () => get().sync,
         isSeeking: () => get().seeking,
         onPlayback: (playback) => set({ playback }),
@@ -1352,7 +1353,15 @@ export const useVizStore = create<VizState>((set, get) => {
       const bg: BgSettings = {
         ...prev,
         mode: BG_IMAGE,
-        image: { assetId: asset.id, dim: prev.image?.dim ?? 0.25, blur: prev.image?.blur ?? 0 },
+        // Spread first so the framing (fit/zoom/pan) survives a swap, exactly
+        // like dim/blur below: reframing is per-slot work, and losing it every
+        // time you try a different picture makes the fit controls unusable.
+        image: {
+          ...prev.image,
+          assetId: asset.id,
+          dim: prev.image?.dim ?? 0.25,
+          blur: prev.image?.blur ?? 0,
+        },
       };
       set({ assets });
       commitBg(bg);
@@ -1401,7 +1410,8 @@ export const useVizStore = create<VizState>((set, get) => {
       const bg: BgSettings = {
         ...prev,
         mode: BG_VIDEO,
-        video: { assetId: asset.id, dim: prev.video?.dim ?? 0.35, blur: 0 },
+        // Framing carries across a clip swap — see pickBackgroundImage.
+        video: { ...prev.video, assetId: asset.id, dim: prev.video?.dim ?? 0.35, blur: 0 },
       };
       set({ assets });
       commitBg(bg);
@@ -1437,7 +1447,12 @@ export const useVizStore = create<VizState>((set, get) => {
         ...prev,
         mode: BG_IMAGE,
         // Album art behind a visualizer usually wants softening by default
-        image: { assetId: asset.id, dim: prev.image?.dim ?? 0.35, blur: prev.image?.blur ?? 18 },
+        image: {
+          ...prev.image,
+          assetId: asset.id,
+          dim: prev.image?.dim ?? 0.35,
+          blur: prev.image?.blur ?? 18,
+        },
       };
       set({ assets });
       commitBg(bg);

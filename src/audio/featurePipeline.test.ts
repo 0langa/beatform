@@ -250,3 +250,75 @@ describe("FeaturePipeline", () => {
     expect(runs[0]).toEqual(runs[1]);
   });
 });
+
+describe("low-frequency band resolution", () => {
+  /**
+   * One FFT bin spans 11.7 Hz at 4096/48k, so the geometric bands below
+   * ~40 Hz are each NARROWER than a bin. Rounding both edges to the same
+   * integer bin used to hand several adjacent bands one identical value —
+   * the flat, over-wide bass block. Interpolating a sub-bin band at its
+   * centre must instead follow the underlying spectrum slope.
+   */
+  it("does not hand adjacent sub-bin bass bands one identical value", () => {
+    const p = makePipeline();
+    // A rising ramp across the bottom of the spectrum: every band that
+    // resolves honestly must differ from its neighbour.
+    // Stay well above the display floor: below it every band clamps to 0 and
+    // would be "identical" for a reason that has nothing to do with binning.
+    const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    for (let b = 0; b < 20; b++) magDb[b] = -70 + (DISPLAY_MAX_DB + 70) * (b / 20);
+    // Run to steady state so the attack envelope has caught up.
+    let f = p.update(makeInput({ magDb }));
+    for (let i = 0; i < 240; i++) f = p.update(makeInput({ magDb, time: i * DT }));
+
+    const bass = Array.from(f.bins.slice(0, 6));
+    const distinct = new Set(bass.map((v) => v.toFixed(6)));
+    expect(distinct.size).toBeGreaterThan(1);
+    // And it should be monotonically rising, like the ramp underneath it.
+    for (let i = 1; i < bass.length; i++) expect(bass[i]).toBeGreaterThan(bass[i - 1]);
+  });
+
+  it("keeps taking the peak where a band spans whole bins", () => {
+    const p = makePipeline();
+    // A single loud bin inside a wide high band must still read as the peak,
+    // not be averaged away by the interpolation path.
+    const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    magDb[hzToBin(8000)] = MAX_DB;
+    let f = p.update(makeInput({ magDb }));
+    for (let i = 0; i < 240; i++) f = p.update(makeInput({ magDb, time: i * DT }));
+    expect(Math.max(...f.bins)).toBeGreaterThan(0.5);
+  });
+});
+
+describe("analysed frequency span", () => {
+  it("re-spaces the bands when the user moves the span", () => {
+    const p = makePipeline();
+    const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    fillBand(magDb, 4000, 6000, MAX_DB);
+    const settle = (pipe: FeaturePipeline) => {
+      let f = pipe.update(makeInput({ magDb }));
+      for (let i = 0; i < 240; i++) f = pipe.update(makeInput({ magDb, time: i * DT }));
+      return f;
+    };
+    const wide = Array.from(settle(p).bins);
+
+    // Narrowing the span onto the 4-6 kHz content must move it to different
+    // bands — the same energy, re-spaced across the bar budget.
+    const q = makePipeline();
+    q.setSync({ mode: "kick", smooth: 0.5, freqMin: 2000, freqMax: 8000 });
+    const narrow = Array.from(settle(q).bins);
+    expect(narrow).not.toEqual(wide);
+    // The loud region should now occupy a wider slice of the bars.
+    const loud = (arr: number[]) => arr.filter((v) => v > 0.25).length;
+    expect(loud(narrow)).toBeGreaterThan(loud(wide));
+  });
+
+  it("survives a span that asks for more than Nyquist", () => {
+    const p = makePipeline();
+    p.setSync({ mode: "kick", smooth: 0.5, freqMin: 20, freqMax: 22050 });
+    const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    fillBand(magDb, 200, 400, MAX_DB);
+    const f = p.update(makeInput({ magDb }));
+    expect(f.bins.every((v) => Number.isFinite(v))).toBe(true);
+  });
+});

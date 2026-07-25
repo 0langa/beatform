@@ -11,6 +11,44 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.48.0] - 2026-07-25
+
+### Added
+
+- **Type an exact slider value.** Double-click any slider (or its number, or
+  press Enter/F2 on it) and type the value you want. Enter commits, Escape
+  cancels, and what you type is clamped and snapped exactly like dragging —
+  so landing precisely on 0, or on 1.00, no longer depends on your mouse
+  hand.
+- **Fit and align images in the centre of a mode.** Bass Circle and Radial
+  Burst can show cover art (or your own picture) in the middle, and it used
+  to be squashed to fill the circle whenever the image wasn't square. There
+  are now **Image fit** (Fill / Fit / Stretch), **Image zoom** and **Image
+  X/Y** controls: Fill crops to the circle keeping the proportions, Fit shows
+  the whole picture, and Stretch is the old distort-to-fill if you want it.
+  Zoom and X/Y let you frame exactly the part you want.
+- **Fit and align background images and videos** with the same Fill / Fit /
+  Stretch, zoom and X/Y controls, instead of the fixed crop-to-fill.
+- **Animate the post-processing chain.** Exposure, Bloom, Bloom threshold,
+  Vignette, Chromatic and Film grain are now modulation targets, so the kick
+  can drive the chromatic split or the bass can breathe the bloom. Pick them
+  under "Post-processing" in the Modulation target list; they render
+  identically in exports.
+- **Set the analysed frequency range.** _Settings → Sync_ gained **Low edge**
+  and **High edge**: the drawn bars are spaced geometrically across that
+  span, so you can stop spending bars on sub-bass a track doesn't have, or
+  give the musical range more of the width.
+
+### Fixed
+
+- **The bass end of the spectrum is no longer one wide flat block.** One FFT
+  bin covers ~12 Hz, so every drawn band below ~40 Hz landed on the _same_
+  bin and several neighbouring bars were handed one identical value. Bands
+  narrower than a bin are now interpolated at their centre, so the low end
+  follows the actual spectrum slope instead of stepping. Spectra render
+  slightly differently at the very bottom as a result — this is the fix, not
+  a regression.
+
 ## [2.47.1] - 2026-07-25
 
 ### Changed

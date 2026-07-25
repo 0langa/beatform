@@ -152,7 +152,8 @@ export function presetMasters(preset: PresetDef): MotionCaps {
  *  - transparent: luma-derived alpha; live preview shows checkerboard.
  *    H.264/MP4 cannot store alpha, so exports composite over black.
  *  - image: a user image (or the track's album art) behind the visualization,
- *    cover-fit, with blur/dim baked once on the CPU (deterministic).
+ *    framed by BgFit (cover by default), with blur/dim baked once on the CPU
+ *    (deterministic).
  */
 export type BgMode = 0 | 1 | 2 | 3 | 4;
 export const BG_PRESET: BgMode = 0;
@@ -161,8 +162,29 @@ export const BG_TRANSPARENT: BgMode = 2;
 export const BG_IMAGE: BgMode = 3;
 export const BG_VIDEO: BgMode = 4;
 
-/** Image-background settings: which document asset, and the baked look. */
-export interface BgImage {
+/**
+ * How a background image/video is framed — CSS object-fit, applied in the
+ * shader by fitUV() (the same helper the centre-image slot uses).
+ *
+ * Every field is OPTIONAL and its absence means the neutral value, which is
+ * exactly the cover-fit the composite pass hardcoded before these existed: a
+ * project saved without them renders identically, so the schema version does
+ * not move (same treatment as SyncSettings' shapeMerge/contrast).
+ */
+export interface BgFit {
+  /** 0 = cover (fill the frame, crop the overflow), 1 = contain (whole image,
+   * letterboxed in the background COLOUR), 2 = stretch (ignore aspect). */
+  fit?: number;
+  /** Magnification about the frame centre, 0.25..4 (1 = as fitted). */
+  zoom?: number;
+  /** Pan in frame widths, -1..1 (0 = centred). */
+  offsetX?: number;
+  /** Pan in frame heights, -1..1 (0 = centred). */
+  offsetY?: number;
+}
+
+/** Image-background settings: which document asset, the baked look, and the fit. */
+export interface BgImage extends BgFit {
   /** Key into the document's assets map (same store as overlay images). */
   assetId: string;
   /** Black overlay strength 0..0.9 — keeps the visualization readable. */
@@ -172,8 +194,8 @@ export interface BgImage {
 }
 
 /** Video-background settings: which document asset + the baked look. Frames
- * are decoded from the asset at load; the shader cover-fits like an image. */
-export interface BgVideo {
+ * are decoded from the asset at load; the shader fits them like an image. */
+export interface BgVideo extends BgFit {
   assetId: string;
   dim: number;
   blur: number;
@@ -206,6 +228,24 @@ export interface PostSettings {
   /** Chromatic aberration 0..1 (RGB split toward the edges). */
   chromatic: number;
 }
+/**
+ * The post-processing knobs the modulation matrix can drive, as ordinary
+ * ParamSpecs so routing/clamping reuses exactly the preset-param machinery.
+ * `tonemap` is absent on purpose: it is a boolean, and a continuously
+ * modulated on/off would strobe.
+ *
+ * Ranges mirror the panel's own sliders — the two must agree, or a modulated
+ * value could sit outside what the user can dial by hand.
+ */
+export const POST_MOD_TARGETS: ParamSpec[] = [
+  { key: "exposure", label: "Exposure", min: 0.2, max: 3, step: 0.01, default: 1 },
+  { key: "bloom", label: "Bloom", min: 0, max: 1, step: 0.01, default: 0 },
+  { key: "bloomThreshold", label: "Bloom threshold", min: 0.4, max: 1.6, step: 0.01, default: 1 },
+  { key: "vignette", label: "Vignette", min: 0, max: 1, step: 0.01, default: 0 },
+  { key: "chromatic", label: "Chromatic", min: 0, max: 1, step: 0.01, default: 0 },
+  { key: "grain", label: "Film grain", min: 0, max: 0.5, step: 0.01, default: 0 },
+];
+
 export const DEFAULT_POST: PostSettings = {
   bloom: 0,
   bloomThreshold: 1,
@@ -273,8 +313,9 @@ export interface Renderer {
   /** Upload the Builder Studio per-layer parameter block (builder2.ts). */
   setBuilderParams(data: Float32Array): void;
   /**
-   * Baked background image (blur/dim already applied), cover-fit behind the
-   * visualization when bg.mode is image. Takes ownership; null clears it.
+   * Baked background image (blur/dim already applied), fitted behind the
+   * visualization per bg.image's BgFit when bg.mode is image. Takes ownership;
+   * null clears it.
    */
   setBackgroundImage(source: ImageBitmap | null): void;
   /** Upload one video-background frame (bg.mode 4). Reuses the texture; does

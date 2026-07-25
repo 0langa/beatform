@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CollapsibleSection, Segmented, SelectRow, SliderRow, ToggleRow } from "./kit";
+import {
+  CollapsibleSection,
+  ParamRow,
+  PERCENT,
+  Segmented,
+  SelectRow,
+  SliderRow,
+  ToggleRow,
+} from "./kit";
 
 afterEach(cleanup);
 
@@ -77,6 +85,184 @@ describe("SliderRow", () => {
       />,
     );
     expect(screen.getByText("150%")).toBeTruthy();
+  });
+
+  it("prints a unit format identically to the hand-written one it replaced", () => {
+    render(<SliderRow label="Rot" min={0} max={2} step={0.05} value={1.5} onChange={() => 0} />);
+    render(
+      <SliderRow
+        label="Rot2"
+        min={0}
+        max={2}
+        step={0.05}
+        value={1.5}
+        onChange={() => 0}
+        format={PERCENT}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "150%" })).toBeTruthy();
+  });
+});
+
+/** Typing exact values — dragging lands next to 0, almost never on it. */
+describe("SliderRow numeric entry", () => {
+  const row = (over: Partial<Parameters<typeof SliderRow>[0]> = {}) => {
+    const onChange = vi.fn();
+    const utils = render(
+      <SliderRow
+        label="Amt"
+        min={0}
+        max={1}
+        step={0.01}
+        value={0.37}
+        onChange={onChange}
+        {...over}
+      />,
+    );
+    return { onChange, ...utils };
+  };
+  const readout = (text: string) => screen.getByRole("button", { name: text });
+  const editor = (name = "Amt") => screen.getByRole("textbox", { name }) as HTMLInputElement;
+
+  it("double-clicking the readout opens an editor seeded with the value, fully selected", async () => {
+    const { onChange } = row();
+    await userEvent.dblClick(readout("0.37"));
+    const input = editor();
+    expect(input.value).toBe("0.37");
+    expect(input.inputMode).toBe("decimal");
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, 4]);
+    // Opening is not an edit.
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("Enter commits, and typing 0 lands exactly on 0", async () => {
+    const { onChange } = row();
+    await userEvent.dblClick(readout("0.37"));
+    await userEvent.clear(editor());
+    await userEvent.type(editor(), "0{Enter}");
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(Object.is(onChange.mock.calls[0][0], 0)).toBe(true);
+    // The editor closes and hands focus back to the readout it came from.
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(document.activeElement).toBe(readout("0.37"));
+  });
+
+  it("Escape cancels and restores the previous value", async () => {
+    const { onChange } = row();
+    await userEvent.dblClick(readout("0.37"));
+    await userEvent.clear(editor());
+    await userEvent.type(editor(), "0.9{Escape}");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(readout("0.37")).toBeTruthy();
+  });
+
+  it("blur commits what was typed", async () => {
+    const { onChange } = row();
+    await userEvent.dblClick(readout("0.37"));
+    await userEvent.clear(editor());
+    await userEvent.type(editor(), "0.42");
+    await userEvent.click(document.body);
+    expect(onChange).toHaveBeenCalledWith(0.42);
+  });
+
+  it("clamps out-of-range input to the slider's own ends", async () => {
+    const { onChange } = row();
+    await userEvent.dblClick(readout("0.37"));
+    await userEvent.clear(editor());
+    await userEvent.type(editor(), "5{Enter}");
+    expect(onChange).toHaveBeenLastCalledWith(1);
+    await userEvent.dblClick(readout("0.37"));
+    await userEvent.clear(editor());
+    await userEvent.type(editor(), "-4{Enter}");
+    expect(onChange).toHaveBeenLastCalledWith(0);
+  });
+
+  it("snaps to step, so a typed value is one the thumb could sit on", async () => {
+    const { onChange } = row({ min: 0, max: 4, step: 0.25, value: 1 });
+    await userEvent.dblClick(readout("1.00"));
+    await userEvent.clear(editor());
+    await userEvent.type(editor(), "2.3{Enter}");
+    expect(onChange).toHaveBeenLastCalledWith(2.25);
+  });
+
+  it("accepts a comma decimal (German keyboards emit one)", async () => {
+    const { onChange } = row();
+    await userEvent.dblClick(readout("0.37"));
+    await userEvent.clear(editor());
+    await userEvent.type(editor(), "0,25{Enter}");
+    expect(onChange).toHaveBeenLastCalledWith(0.25);
+  });
+
+  it("reverts on garbage or empty input instead of writing NaN", async () => {
+    const { onChange } = row();
+    await userEvent.dblClick(readout("0.37"));
+    await userEvent.clear(editor());
+    await userEvent.type(editor(), "nope{Enter}");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(readout("0.37")).toBeTruthy();
+    await userEvent.dblClick(readout("0.37"));
+    await userEvent.clear(editor());
+    await userEvent.type(editor(), "{Enter}");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(readout("0.37")).toBeTruthy();
+  });
+
+  it("edits in the unit the readout shows, not the stored one", async () => {
+    const { onChange } = row({
+      label: "Rot",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      value: 1.5,
+      format: PERCENT,
+    });
+    await userEvent.dblClick(readout("150%"));
+    expect(editor("Rot").value).toBe("150");
+    await userEvent.clear(editor("Rot"));
+    await userEvent.type(editor("Rot"), "100{Enter}");
+    expect(onChange).toHaveBeenLastCalledWith(1);
+  });
+
+  it("opens from the keyboard with Enter and F2 without leaving the tab order", async () => {
+    row();
+    await userEvent.tab(); // the slider
+    expect(document.activeElement).toBe(screen.getByRole("slider"));
+    await userEvent.tab(); // the readout, right after it
+    expect(document.activeElement).toBe(readout("0.37"));
+    await userEvent.keyboard("{Enter}");
+    expect(editor()).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.keyboard("{F2}");
+    expect(editor()).toBeTruthy();
+  });
+
+  it("double-clicking the slider opens on the value from before the click", async () => {
+    const onChange = vi.fn();
+    const props = { label: "Amt", min: 0, max: 1, step: 0.01, onChange };
+    const { rerender } = render(<SliderRow {...props} value={0.2} />);
+    const slider = screen.getByRole("slider");
+    fireEvent.pointerDown(slider);
+    // A real first click has already dragged the thumb to the pointer.
+    rerender(<SliderRow {...props} value={0.9} />);
+    fireEvent.dblClick(slider);
+    expect(onChange).toHaveBeenLastCalledWith(0.2);
+    expect(editor().value).toBe("0.2");
+  });
+
+  it("ParamRow rows get the same editor", async () => {
+    const onChange = vi.fn();
+    render(
+      <ParamRow
+        spec={{ key: "size", label: "Size", min: 0, max: 1, step: 0.01, default: 0.5 }}
+        value={0.5}
+        onChange={onChange}
+        onHint={() => undefined}
+      />,
+    );
+    await userEvent.dblClick(readout("0.50"));
+    await userEvent.clear(editor("Size"));
+    await userEvent.type(editor("Size"), "0{Enter}");
+    expect(Object.is(onChange.mock.calls[0][0], 0)).toBe(true);
   });
 });
 

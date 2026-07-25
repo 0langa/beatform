@@ -6,7 +6,7 @@ import { DEFAULT_LYRIC_STYLE } from "../state/lyrics";
 import { DEFAULT_AUDIOGRAM } from "../state/audiogram";
 import type { ProjectDocument } from "../state/project";
 import { resolveActiveFrame } from "../state/frameResolve";
-import { BG_IMAGE, BG_SOLID, type BgSettings } from "../render/types";
+import { BG_IMAGE, BG_SOLID, BG_VIDEO, type BgSettings } from "../render/types";
 
 const FMT: FormatPreset = {
   id: "t",
@@ -172,6 +172,76 @@ describe("per-mode overrides (schema v11) resolve at the export chokepoint", () 
     });
     const o = buildExportOptions(d, FMT, track, undefined, {});
     expect(o.bgImage).toEqual({ dataUrl: asset.dataUrl, dim: 0.3, blur: 4 });
+  });
+
+  // Background framing (fit/zoom/pan) travels on `bg`, not on the bgImage /
+  // bgVideo bake blocks: exportCore pushes it with setBackground(rf.bg) every
+  // frame, the same call the live loop makes. These pin that it survives the
+  // chokepoint for BOTH background kinds — a dropped field here would export a
+  // differently-cropped picture than the preview showed, silently.
+  it("an image background's fit / zoom / pan reach the export options", () => {
+    const image = {
+      assetId: "as-x",
+      dim: 0.3,
+      blur: 4,
+      fit: 1,
+      zoom: 2,
+      offsetX: -0.25,
+      offsetY: 0.1,
+    };
+    const d = doc({
+      assets: { "as-x": asset },
+      bg: { mode: BG_IMAGE, color: [0, 0, 0], image },
+    });
+    const o = buildExportOptions(d, FMT, track, undefined, {});
+    expect(o.bg.image).toEqual(image);
+    // The bake block stays bake-only — one source of truth for the framing.
+    expect(o.bgImage).toEqual({ dataUrl: asset.dataUrl, dim: 0.3, blur: 4 });
+  });
+
+  it("a video background's fit / zoom / pan reach the export options", () => {
+    const video = {
+      assetId: "as-x",
+      dim: 0.4,
+      blur: 0,
+      fit: 2,
+      zoom: 1.5,
+      offsetX: 0.5,
+      offsetY: -0.5,
+    };
+    const d = doc({
+      assets: { "as-x": asset },
+      bgByPreset: {
+        "spectrum-bars": { mode: BG_VIDEO, color: [0, 0, 0], video },
+      },
+    });
+    const o = buildExportOptions(d, FMT, track, undefined, {});
+    expect(o.bg.video).toEqual(video);
+    expect(o.bgVideo).toEqual({ dataUrl: asset.dataUrl, dim: 0.4, blur: 0 });
+  });
+
+  it("LIVE PARITY: the framing the export sees is the framing frameResolve hands the preview", () => {
+    // The renderer reads fit/zoom/pan off the BgSettings it was last given —
+    // so as long as both paths resolve the same object, the crop cannot drift.
+    const image = { assetId: "as-x", dim: 0, blur: 0, fit: 1, zoom: 3, offsetX: 0.2, offsetY: 0 };
+    const d = doc({
+      assets: { "as-x": asset },
+      bgByPreset: { "spectrum-bars": { mode: BG_IMAGE, color: [0.2, 0, 0], image } },
+    });
+    const exported = buildExportOptions(d, FMT, track, undefined, {});
+    const rf = resolveActiveFrame(
+      {
+        timeline: d.timeline,
+        basePresetId: d.presetId,
+        baseParams: {},
+        baseMods: [],
+        baseBg: d.bgByPreset[d.presetId] ?? d.bg,
+        paramsByPreset: d.paramsByPreset,
+        modsByPreset: d.modsByPreset,
+      },
+      1.0,
+    );
+    expect(rf.bg.image).toEqual(exported.bg.image);
   });
 
   it("a center image wins over the track's cover art", () => {

@@ -276,7 +276,11 @@ fn P_partFloat() -> f32 { return params[17u]; }
 fn P_beatBurst() -> f32 { return params[18u]; }
 fn P_coverMix() -> f32 { return params[19u]; }
 fn P_coverBright() -> f32 { return params[20u]; }
-fn P_vignette() -> f32 { return params[21u]; }
+fn P_coverFit() -> f32 { return params[21u]; }
+fn P_coverZoom() -> f32 { return params[22u]; }
+fn P_coverX() -> f32 { return params[23u]; }
+fn P_coverY() -> f32 { return params[24u]; }
+fn P_vignette() -> f32 { return params[25u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   let c = centered(uv);
@@ -361,9 +365,14 @@ fn preset(uv: vec2f) -> vec4f {
     // y: uv already arrives top-down from the vertex stage, so centered()'s y
     // grows downward exactly like the texture's v does. Negating it here hung
     // the cover upside down.
-    let cuv = vec2f(c.x / circleR, c.y / circleR) * 0.5 + vec2f(0.5);
-    let art = coverSample(cuv).rgb * P_coverBright();
-    fill = mix(fill, art, P_coverMix());
+    let box = vec2f(c.x / circleR, c.y / circleR) * 0.5 + vec2f(0.5);
+    // The disc is square, so a non-square image needs fitting or it stretches.
+    let cuv = fitUV(box, coverAspect(), 1.0, P_coverFit(), P_coverZoom(),
+                    vec2f(P_coverX(), P_coverY()));
+    if (inBox(cuv)) {
+      let art = coverSample(cuv).rgb * P_coverBright();
+      fill = mix(fill, art, P_coverMix());
+    }
   }
   col = mix(col, fill, inner);
   let rim = exp(-abs(r - circleR) * 90.0);
@@ -461,6 +470,22 @@ exports[`shader golden baseline > bass-circle: param ABI (key + default, in orde
   {
     "default": 0.85,
     "key": "coverBright",
+  },
+  {
+    "default": 0,
+    "key": "coverFit",
+  },
+  {
+    "default": 1,
+    "key": "coverZoom",
+  },
+  {
+    "default": 0,
+    "key": "coverX",
+  },
+  {
+    "default": 0,
+    "key": "coverY",
   },
   {
     "default": 0.3,
@@ -1925,8 +1950,12 @@ fn P_detailPos() -> f32 { return params[22u]; }
 fn P_beatBloom() -> f32 { return params[23u]; }
 fn P_coverMix() -> f32 { return params[24u]; }
 fn P_coverBright() -> f32 { return params[25u]; }
-fn P_rimBright() -> f32 { return params[26u]; }
-fn P_vignette() -> f32 { return params[27u]; }
+fn P_coverFit() -> f32 { return params[26u]; }
+fn P_coverZoom() -> f32 { return params[27u]; }
+fn P_coverX() -> f32 { return params[28u]; }
+fn P_coverY() -> f32 { return params[29u]; }
+fn P_rimBright() -> f32 { return params[30u]; }
+fn P_vignette() -> f32 { return params[31u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   let p = centered(uv);
@@ -2010,11 +2039,17 @@ fn preset(uv: vec2f) -> vec4f {
     // only the mask breathes — so the cover reads as a stable anchor while
     // everything around it moves.
     let artR = max(softLimit(coreR + lim, frameCircle()), 1e-3);
-    let cuv = vec2f(p.x / artR, p.y / artR) * 0.5 + vec2f(0.5);
-    // Loudness lift + beat bloom keep the art alive without recoloring it.
-    let art = coverSample(cuv).rgb * P_coverBright()
-            * (0.85 + u.drive * P_coreBright() + beatP * P_beatBloom());
-    coreFill = mix(coreFill, art, P_coverMix());
+    let box = vec2f(p.x / artR, p.y / artR) * 0.5 + vec2f(0.5);
+    // The core is a disc (square box), so a non-square image needs fitting or
+    // it stretches — see fitUV.
+    let cuv = fitUV(box, coverAspect(), 1.0, P_coverFit(), P_coverZoom(),
+                    vec2f(P_coverX(), P_coverY()));
+    if (inBox(cuv)) {
+      // Loudness lift + beat bloom keep the art alive without recoloring it.
+      let art = coverSample(cuv).rgb * P_coverBright()
+              * (0.85 + u.drive * P_coreBright() + beatP * P_beatBloom());
+      coreFill = mix(coreFill, art, P_coverMix());
+    }
   }
   col = mix(col, coreFill, core);
   // Pulsing rim on the core edge (rework): the old bare edge left the core
@@ -2150,6 +2185,22 @@ exports[`shader golden baseline > radial-burst: param ABI (key + default, in ord
     "key": "coverBright",
   },
   {
+    "default": 0,
+    "key": "coverFit",
+  },
+  {
+    "default": 1,
+    "key": "coverZoom",
+  },
+  {
+    "default": 0,
+    "key": "coverX",
+  },
+  {
+    "default": 0,
+    "key": "coverY",
+  },
+  {
     "default": 0.7,
     "key": "rimBright",
   },
@@ -2255,19 +2306,19 @@ fn composite(color: vec4f, uv: vec2f) -> vec4f {
     if (u.bgMode == 1u) {
       out = vec4f(u.bgColor.rgb * (1.0 - a) + out.rgb, 1.0);
     } else if (u.bgMode == 3u || u.bgMode == 4u) {
-      // Image/video background, cover-fit: fill the frame, crop the excess.
-      // For images blur/dim were baked into the bitmap on the CPU; for video
-      // the current frame is uploaded to bgTex each rendered frame.
+      // Image/video background, framed by the shared fitUV (same helper, same
+      // semantics as the centre-image slot). For images blur/dim were baked
+      // into the bitmap on the CPU; for video the current frame is uploaded to
+      // bgTex each rendered frame.
       let dims = vec2f(textureDimensions(bgTex));
-      let texAspect = dims.x / max(dims.y, 1.0);
-      var buv = uv - 0.5;
-      if (texAspect > u.aspect) {
-        buv.x *= u.aspect / texAspect;
-      } else {
-        buv.y *= texAspect / u.aspect;
-      }
-      let bg = textureSampleLevel(bgTex, overlaySmp, buv + 0.5, 0.0);
-      out = vec4f(bg.rgb * (1.0 - a) + out.rgb, 1.0);
+      let buv = fitUV(uv, dims.x / max(dims.y, 1.0), u.aspect, u.bgFit, u.bgZoom, u.bgOffset);
+      // Contain (or a zoom below 1, or a pan past the edge) leaves bars where
+      // the image is not. Sampling CLAMPS, so those bars would be a smear of
+      // the edge pixels — paint the background COLOUR there instead, which is
+      // what a letterbox is supposed to be.
+      let src = textureSampleLevel(bgTex, overlaySmp, buv, 0.0).rgb;
+      let bg = select(u.bgColor.rgb, src, inBox(buv));
+      out = vec4f(bg * (1.0 - a) + out.rgb, 1.0);
     } else {
       out = vec4f(out.rgb, a); // premultiplied alpha
     }
@@ -2329,6 +2380,13 @@ struct Uniforms {
   pulse: f32,
   detail: f32,
   specSmooth: f32,
+  // Background image/video framing (bgMode 3/4), fed from bg.image/bg.video.
+  // CSS object-fit: 0 cover, 1 contain, 2 stretch. Defaults (0 / 1 / 0,0)
+  // reproduce the crop the composite pass used to hardcode.
+  bgFit: f32,
+  bgZoom: f32,
+  // vec2f, so it aligns to 8 and sits at byte 136 — see UNIFORM_SIZE.
+  bgOffset: vec2f,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> bins: array<f32>;
@@ -2362,6 +2420,46 @@ fn coverSample(uv: vec2f) -> vec4f {
   return textureSampleLevel(coverTex, overlaySmp, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0);
 }
 fn hasCover() -> bool { return textureDimensions(coverTex).x > 1u; }
+
+/** Aspect (width/height) of the bound cover-art texture. */
+fn coverAspect() -> f32 {
+  let d = vec2f(textureDimensions(coverTex));
+  return d.x / max(d.y, 1.0);
+}
+
+/**
+ * Fit a box coordinate (0..1 across the destination) onto a texture of
+ * arbitrary aspect — CSS object-fit, in the shader.
+ *
+ * Presets used to map a square box straight onto the image's full 0..1, which
+ * silently STRETCHED every non-square cover: a 16:9 photo in a circular core
+ * came out squashed. Fitting needs the image aspect, which the texture itself
+ * carries, so no uniform is required.
+ *
+ * mode: 0 = cover (fill the box, crop the overflow), 1 = contain (whole image
+ * inside, letterboxed), 2 = stretch (ignore aspect — the old behaviour, kept
+ * so a look built on it can be reproduced). zoom magnifies about the centre
+ * and offset pans, both in box units.
+ *
+ * Sampling CLAMPS at the edges, so a contain fit would smear its edge pixels
+ * across the letterbox — callers guard with inBox().
+ */
+fn fitUV(boxUV: vec2f, texAspect: f32, boxAspect: f32, mode: f32, zoom: f32, offset: vec2f) -> vec2f {
+  var c = boxUV - vec2f(0.5);
+  let ratio = texAspect / max(boxAspect, 1e-4);
+  if (mode < 0.5) {
+    if (ratio > 1.0) { c.x = c.x / ratio; } else { c.y = c.y * ratio; }
+  } else if (mode < 1.5) {
+    if (ratio > 1.0) { c.y = c.y * ratio; } else { c.x = c.x / ratio; }
+  }
+  return c / max(zoom, 0.01) + vec2f(0.5) - offset;
+}
+
+/** True when a fitted uv lands on the image — false inside a contain fit's
+ * letterbox bars, where the caller should keep its own fill. */
+fn inBox(uv: vec2f) -> bool {
+  return uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
+}
 
 /** Previous frame's raw visual (HDR), for trails/feedback. A preset that
  * calls this opts into the feedback path: its output is captured and fed back

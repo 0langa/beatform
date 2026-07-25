@@ -8,7 +8,7 @@ import {
   type BuilderLayer,
   type BuilderStack,
 } from "../render/builder2";
-import { ParamRow, SliderRow, Segmented } from "./kit";
+import { DEGREES, ParamRow, SliderRow, Segmented } from "./kit";
 
 const BLEND_OPTIONS: Array<{ value: BuilderBlend; label: string; hint: string }> = [
   {
@@ -27,8 +27,6 @@ const BLEND_OPTIONS: Array<{ value: BuilderBlend; label: string; hint: string }>
     hint: "Screen blend — brightens without blowing out, softer than Add",
   },
 ];
-
-const deg = (v: number) => `${Math.round(v)}°`;
 
 /**
  * Builder Studio layer-stack editor. Props-only (like LayersPanel): every
@@ -207,7 +205,7 @@ export function BuilderPanel(props: BuilderPanelProps) {
                   step={1}
                   value={l.hue}
                   onChange={(hue) => patch(l.id, { hue })}
-                  format={deg}
+                  format={DEGREES}
                   onHint={props.onHint}
                 />
                 <SliderRow
@@ -218,7 +216,7 @@ export function BuilderPanel(props: BuilderPanelProps) {
                   step={1}
                   value={l.hueSpread}
                   onChange={(hueSpread) => patch(l.id, { hueSpread })}
-                  format={deg}
+                  format={DEGREES}
                   onHint={props.onHint}
                 />
                 {selectedType.params.map((spec) => (

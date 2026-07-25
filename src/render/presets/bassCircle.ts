@@ -241,6 +241,42 @@ export const bassCircle: PresetDef = {
       hint: "Brightness of the cover art inside the circle",
     },
     {
+      key: "coverFit",
+      label: "Image fit",
+      min: 0,
+      max: 2,
+      step: 1,
+      default: 0,
+      hint: "Fill (crops to the circle) / Fit (whole image, no crop) / Stretch (distorts to fill)",
+    },
+    {
+      key: "coverZoom",
+      label: "Image zoom",
+      min: 0.25,
+      max: 3,
+      step: 0.01,
+      default: 1,
+      hint: "Scale the image inside the circle — zoom in on the part you want",
+    },
+    {
+      key: "coverX",
+      label: "Image X",
+      min: -0.5,
+      max: 0.5,
+      step: 0.005,
+      default: 0,
+      hint: "Slide the image sideways inside the circle",
+    },
+    {
+      key: "coverY",
+      label: "Image Y",
+      min: -0.5,
+      max: 0.5,
+      step: 0.005,
+      default: 0,
+      hint: "Slide the image up or down inside the circle",
+    },
+    {
       key: "vignette",
       label: "Vignette",
       min: 0,
@@ -334,9 +370,14 @@ fn preset(uv: vec2f) -> vec4f {
     // y: uv already arrives top-down from the vertex stage, so centered()'s y
     // grows downward exactly like the texture's v does. Negating it here hung
     // the cover upside down.
-    let cuv = vec2f(c.x / circleR, c.y / circleR) * 0.5 + vec2f(0.5);
-    let art = coverSample(cuv).rgb * P_coverBright();
-    fill = mix(fill, art, P_coverMix());
+    let box = vec2f(c.x / circleR, c.y / circleR) * 0.5 + vec2f(0.5);
+    // The disc is square, so a non-square image needs fitting or it stretches.
+    let cuv = fitUV(box, coverAspect(), 1.0, P_coverFit(), P_coverZoom(),
+                    vec2f(P_coverX(), P_coverY()));
+    if (inBox(cuv)) {
+      let art = coverSample(cuv).rgb * P_coverBright();
+      fill = mix(fill, art, P_coverMix());
+    }
   }
   col = mix(col, fill, inner);
   let rim = exp(-abs(r - circleR) * 90.0);

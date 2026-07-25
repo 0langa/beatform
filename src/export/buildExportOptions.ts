@@ -132,6 +132,13 @@ export function buildExportOptions(
     coverArt: centerImage ?? track.coverArt ?? undefined,
     // Image background: resolve the asset here (the export job carries the
     // bytes; the core bakes with the same function as the live view).
+    //
+    // BAKE parameters only. The framing (bg.image.fit/zoom/offsetX/offsetY) is
+    // deliberately NOT copied here: it is a shader uniform, and exportCore
+    // pushes it by calling setBackground(rf.bg) every frame — the same call the
+    // live loop makes with the same object. Duplicating it into this bake block
+    // would create a second source of truth that a timeline scene's own bg
+    // (frameResolve overrides rf.bg, not job.bgImage) would silently contradict.
     bgImage:
       bg.mode === BG_IMAGE && bg.image && doc.assets[bg.image.assetId]
         ? {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { applyMods, validModRoutes } from "./modMatrix";
+import { applyMods, applyPostMods, postTargetKey, validModRoutes } from "./modMatrix";
 import { presets } from "../render/presets";
-import { defaultParams } from "../render/types";
+import { DEFAULT_POST, defaultParams } from "../render/types";
 import type { AudioFeatures } from "../audio/types";
 
 const preset = presets[0];
@@ -87,5 +87,71 @@ describe("modulation matrix", () => {
     ]);
     expect(routes).toHaveLength(1);
     expect(routes[0].amount).toBe(1);
+  });
+});
+
+describe("post-processing modulation targets", () => {
+  const post = { ...DEFAULT_POST };
+
+  it("identifies namespaced post targets and ignores preset params", () => {
+    expect(postTargetKey("post:chromatic")).toBe("chromatic");
+    expect(postTargetKey("post:tonemap")).toBeNull(); // boolean — not modulatable
+    expect(postTargetKey("post:nope")).toBeNull();
+    expect(postTargetKey(spec.key)).toBeNull();
+  });
+
+  it("returns the SAME object when nothing targets post", () => {
+    // Identity is load-bearing: both render loops use it to skip a redundant
+    // per-frame GPU upload, so an unmodulated project costs nothing.
+    const routes = validModRoutes([{ id: "a", source: "bass", param: spec.key, amount: 1 }]);
+    expect(applyPostMods(post, routes, features({ bass: 1 }))).toBe(post);
+    expect(applyPostMods(post, [], features({ bass: 1 }))).toBe(post);
+  });
+
+  it("drives chromatic from a feature and leaves the base untouched", () => {
+    const routes = validModRoutes([
+      { id: "a", source: "bass", param: "post:chromatic", amount: 1 },
+    ]);
+    const out = applyPostMods(post, routes, features({ bass: 0.5 }));
+    expect(out).not.toBe(post);
+    expect(out.chromatic).toBeCloseTo(0.5, 5); // range 0..1, amount 1, feature .5
+    expect(post.chromatic).toBe(0); // pure — base object never mutated
+  });
+
+  it("clamps to the target's range in both directions", () => {
+    const up = applyPostMods(
+      { ...post, chromatic: 0.9 },
+      validModRoutes([{ id: "a", source: "bass", param: "post:chromatic", amount: 1 }]),
+      features({ bass: 1 }),
+    );
+    expect(up.chromatic).toBe(1);
+    const down = applyPostMods(
+      { ...post, bloom: 0.1 },
+      validModRoutes([{ id: "b", source: "bass", param: "post:bloom", amount: -1 }]),
+      features({ bass: 1 }),
+    );
+    expect(down.bloom).toBe(0);
+  });
+
+  it("stacks several post routes in one pass", () => {
+    const out = applyPostMods(
+      post,
+      validModRoutes([
+        { id: "a", source: "bass", param: "post:chromatic", amount: 1 },
+        { id: "b", source: "treble", param: "post:grain", amount: 1 },
+      ]),
+      features({ bass: 1, treble: 1 }),
+    );
+    expect(out.chromatic).toBe(1);
+    expect(out.grain).toBe(0.5); // grain range is 0..0.5
+  });
+
+  it("survives a project that routes to post while applyMods runs too", () => {
+    // applyMods must simply skip post routes — they are not preset params.
+    const routes = validModRoutes([
+      { id: "a", source: "bass", param: "post:chromatic", amount: 1 },
+    ]);
+    const params = applyMods(preset, defaultParams(preset), routes, features({ bass: 1 }));
+    expect(params).toEqual(defaultParams(preset));
   });
 });

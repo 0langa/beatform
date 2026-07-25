@@ -75,7 +75,22 @@ export interface SyncSettings {
   /** Contrast of the drawn spectrum: 0.5 = current look, lower = flatter/
    * fuller bars, higher = spikier peaks vs deeper valleys. */
   contrast?: number;
+  /** Low edge of the analysed span, Hz. The drawn bars are geometrically
+   * spaced across freqMin..freqMax, so raising this spends the whole bar
+   * budget on the range that actually carries the music (a track with no
+   * sub-bass wastes bars on silence below 60 Hz). Defaults to MIN_FREQ. */
+  freqMin?: number;
+  /** High edge of the analysed span, Hz. Defaults to MAX_FREQ. */
+  freqMax?: number;
 }
+
+/** Hard bounds for the user-settable analysed span. The low bound sits at the
+ * bottom of human hearing; the high bound is clamped against Nyquist by the
+ * pipeline itself. MIN_SPAN_RATIO keeps the two edges at least an octave and
+ * a half apart, so the geometric spacing can never collapse. */
+export const FREQ_LIMIT_LOW = 10;
+export const FREQ_LIMIT_HIGH = 22050;
+const MIN_SPAN_RATIO = 3;
 
 export const DEFAULT_SYNC: SyncSettings = { mode: "kick", smooth: 0.5 };
 
@@ -101,6 +116,17 @@ export function sanitizeSync(v: unknown): SyncSettings {
   const clamp01 = (n: unknown, fallback: number) =>
     typeof n === "number" && Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
   const smooth = clamp01(p.smooth, DEFAULT_SYNC.smooth);
+  // The analysed span travels as a PAIR: a lone edge, an inverted pair, or a
+  // collapsed one would divide by zero (or NaN) in the geometric spacing, so
+  // either both edges survive validation together or neither is carried.
+  const hz = (n: unknown): number | null =>
+    typeof n === "number" && Number.isFinite(n)
+      ? Math.min(FREQ_LIMIT_HIGH, Math.max(FREQ_LIMIT_LOW, n))
+      : null;
+  const lo = hz(p.freqMin);
+  const hi = hz(p.freqMax);
+  const span =
+    lo !== null && hi !== null && hi / lo >= MIN_SPAN_RATIO ? { freqMin: lo, freqMax: hi } : {};
   return {
     mode: SYNC_MODES.includes(p.mode as SyncMode) ? (p.mode as SyncMode) : DEFAULT_SYNC.mode,
     smooth,
@@ -109,6 +135,7 @@ export function sanitizeSync(v: unknown): SyncSettings {
     ...(p.shapeMerge !== undefined ? { shapeMerge: clamp01(p.shapeMerge, 0) } : {}),
     ...(p.shapeRound !== undefined ? { shapeRound: clamp01(p.shapeRound, 0) } : {}),
     ...(p.contrast !== undefined ? { contrast: clamp01(p.contrast, 0.5) } : {}),
+    ...span,
   };
 }
 

@@ -1,6 +1,6 @@
 import type { AudioFeatures } from "../audio/types";
-import type { PresetDef } from "../render/types";
-import { paramSpecMap, type ParamValues } from "../render/types";
+import type { PostSettings, PresetDef } from "../render/types";
+import { POST_MOD_TARGETS, paramSpecMap, type ParamValues } from "../render/types";
 
 /**
  * Modulation matrix: route any audio feature to any numeric parameter of the
@@ -105,6 +105,50 @@ export function applyMods(
     out[route.param] = Math.min(spec.max, Math.max(spec.min, next));
   }
   return out;
+}
+
+/**
+ * Post-processing targets are namespaced ("post:chromatic") inside the SAME
+ * `param` field rather than given their own route type: every existing route
+ * keeps validating unchanged, and a project written by an older build still
+ * loads. A preset param can never collide because preset keys are bare
+ * identifiers.
+ */
+export const POST_TARGET_PREFIX = "post:";
+
+const POST_SPECS = new Map(POST_MOD_TARGETS.map((s) => [s.key, s]));
+
+/** The PostSettings key a route drives, or null when it targets a preset param. */
+export function postTargetKey(param: string): string | null {
+  if (!param.startsWith(POST_TARGET_PREFIX)) return null;
+  const key = param.slice(POST_TARGET_PREFIX.length);
+  return POST_SPECS.has(key) ? key : null;
+}
+
+/**
+ * Apply post-targeted routes over the document's post settings. Pure, and
+ * returns `base` UNCHANGED (same object) when no route targets post — the
+ * caller uses that identity to skip a redundant GPU upload on the per-frame
+ * path, so projects without post modulation cost exactly nothing.
+ */
+export function applyPostMods(
+  base: PostSettings,
+  routes: ModRoute[],
+  features: AudioFeatures,
+  stems?: Record<string, number>,
+): PostSettings {
+  let out: PostSettings | null = null;
+  for (const route of routes) {
+    const key = postTargetKey(route.param);
+    if (!key) continue;
+    const spec = POST_SPECS.get(key)!;
+    if (!out) out = { ...base };
+    const current = (out as unknown as Record<string, number>)[key] ?? spec.default;
+    const value = sourceValue(features, route.source, stems);
+    const next = current + value * route.amount * (spec.max - spec.min);
+    (out as unknown as Record<string, number>)[key] = Math.min(spec.max, Math.max(spec.min, next));
+  }
+  return out ?? base;
 }
 
 /** Validate an unknown blob into clean routes (project files, localStorage). */

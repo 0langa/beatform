@@ -1,6 +1,8 @@
 import { Fragment, memo, useState, type ReactNode } from "react";
 import type { SyncMode, SyncSettings } from "../audio/types";
+import { MAX_FREQ, MIN_FREQ } from "../audio/featurePipeline";
 import type {
+  BgFit,
   BgMode,
   BgSettings,
   MotionSettings,
@@ -23,15 +25,24 @@ import { ASPECTS, type Aspect, type ProjectDocument } from "../state/project";
 import { FACTORY_THEMES } from "../state/factoryThemes";
 import type { ThemeMeta } from "../state/themes";
 import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
-import { MOD_SOURCES, type ModRoute, type ModSource } from "../state/modMatrix";
+import { MOD_SOURCES, POST_TARGET_PREFIX, type ModRoute, type ModSource } from "../state/modMatrix";
 import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../audio/stems";
 import { LYRIC_ANIMS, type LyricAnim, type LyricStyle } from "../state/lyrics";
 import type { AudiogramSettings } from "../state/audiogram";
-import { allParams, presetMasters } from "../render/types";
+import { allParams, POST_MOD_TARGETS, presetMasters } from "../render/types";
 import { QUANTIZE_MODES, type QuantizeMode } from "../state/quantize";
 import { bindingId, type MidiBinding, type MidiLearn } from "../state/midi";
-import { Slider } from "./Slider";
-import { ParamRow, SliderRow, Segmented, ToggleRow, CollapsibleSection } from "./kit";
+import {
+  HERTZ,
+  PERCENT,
+  ParamRow,
+  SliderField,
+  SliderRow,
+  Segmented,
+  ToggleRow,
+  CollapsibleSection,
+  type ValueUnit,
+} from "./kit";
 import type { AppPrefs } from "../state/prefs";
 import { getPrefs, setPrefs } from "../state/prefs";
 import { LayersPanel } from "./LayersPanel";
@@ -51,6 +62,14 @@ function rgbToHex([r, g, b]: [number, number, number]): string {
       .padStart(2, "0");
   return `#${c(r)}${c(g)}${c(b)}`;
 }
+
+/**
+ * The high-edge readout. Its slider starts at 1000 Hz, so the value is always
+ * in the kHz branch of what this row used to print by hand — and stating the
+ * unit as a scale (rather than a format function) is what lets the numeric
+ * editor read "18.05" back as 18050 Hz instead of 18 Hz.
+ */
+const KILOHERTZ: ValueUnit = { scale: 0.001, unit: " kHz", decimals: 1 };
 
 const SYNC_OPTIONS: Array<{ mode: SyncMode; label: string; hint: string }> = [
   {
@@ -98,7 +117,7 @@ const BG_OPTIONS_BASE: Array<{ mode: BgMode; label: string; hint: string }> = [
   {
     mode: BG_IMAGE,
     label: "Image",
-    hint: "Your artwork (or the album art) behind the visualization — cover-fit, with blur and dim",
+    hint: "Your artwork (or the album art) behind the visualization — fill or fit, with blur and dim",
   },
 ];
 
@@ -107,8 +126,117 @@ const BG_OPTIONS_BASE: Array<{ mode: BgMode; label: string; hint: string }> = [
 const BG_OPTION_VIDEO = {
   mode: BG_VIDEO,
   label: "Video",
-  hint: "A short local video looped behind the visualization — deterministic, cover-fit",
+  hint: "A short local video looped behind the visualization — deterministic, fill or fit",
 };
+
+/** CSS object-fit, in the words a musician uses. Order and values match the
+ * shader's fitUV modes (0/1/2) — see BgFit. */
+const BG_FIT_OPTIONS = [
+  { value: 0, label: "Fill", hint: "Cover the whole frame; whatever does not fit is cropped off" },
+  { value: 1, label: "Fit", hint: "Show all of it — the leftover bars take the background color" },
+  { value: 2, label: "Stretch", hint: "Squash it to fill the frame exactly (distorts the shape)" },
+];
+
+/** The background color picker plus the presets a keying workflow wants.
+ * Shared by Solid mode and by a FITTED image/video, whose letterbox bars the
+ * shader paints with this very color (u.bgColor) — reachable from both, or
+ * choosing Fit would strand the user with bars they cannot recolor. */
+function BgColorRow(props: {
+  value: [number, number, number];
+  onChange: (color: [number, number, number]) => void;
+  title: string;
+}) {
+  return (
+    <div className="row color-row">
+      <input
+        type="color"
+        className="bg-color"
+        value={rgbToHex(props.value)}
+        onChange={(e) => props.onChange(hexToRgb(e.target.value))}
+        title={props.title}
+      />
+      {["#000000", "#ffffff", "#00b140", "#ff00ff"].map((hex) => (
+        <button
+          key={hex}
+          className="swatch"
+          style={{ background: hex }}
+          title={hex === "#00b140" ? "Chroma green" : hex === "#ff00ff" ? "Chroma magenta" : hex}
+          onClick={() => props.onChange(hexToRgb(hex))}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Framing rows (fit / zoom / pan) for an image or video background. One
+ * component for both kinds so their ranges and wording cannot drift apart,
+ * and so the ranges stay in step with validBg's clamps (0.25..4, -1..1).
+ *
+ * Every field is read through a fallback: BgFit is optional, and a background
+ * that predates it — or one just created by picking a file — carries none.
+ */
+function BgFitRows(props: {
+  /** The noun for the hints: "image" or "video". */
+  what: string;
+  value: BgFit;
+  onChange: (patch: BgFit) => void;
+  /** The background color — only rendered for a Fit, where it is the bars. */
+  color: [number, number, number];
+  onColor: (color: [number, number, number]) => void;
+  onHint: (hint: string | null) => void;
+}) {
+  const { value, onChange, what } = props;
+  const fit = value.fit ?? 0;
+  return (
+    <>
+      <Segmented
+        value={fit}
+        onChange={(next) => onChange({ fit: next })}
+        onHint={props.onHint}
+        ariaLabel={`Background ${what} fit`}
+        options={BG_FIT_OPTIONS}
+      />
+      {fit === 1 && (
+        <BgColorRow
+          value={props.color}
+          onChange={props.onColor}
+          title={`Fills the bars beside the fitted ${what}`}
+        />
+      )}
+      <SliderRow
+        label="Zoom"
+        hint={`Scale the ${what} inside the frame — zoom in on the part you want`}
+        min={0.25}
+        max={4}
+        step={0.01}
+        value={value.zoom ?? 1}
+        onChange={(zoom) => onChange({ zoom })}
+        onHint={props.onHint}
+      />
+      <SliderRow
+        label="X"
+        hint={`Slide the ${what} sideways inside the frame`}
+        min={-1}
+        max={1}
+        step={0.005}
+        value={value.offsetX ?? 0}
+        onChange={(offsetX) => onChange({ offsetX })}
+        onHint={props.onHint}
+      />
+      <SliderRow
+        label="Y"
+        hint={`Slide the ${what} up or down inside the frame`}
+        min={-1}
+        max={1}
+        step={0.005}
+        value={value.offsetY ?? 0}
+        onChange={(offsetY) => onChange({ offsetY })}
+        onHint={props.onHint}
+      />
+    </>
+  );
+}
 
 type PostNumKey = "bloom" | "bloomThreshold" | "exposure" | "vignette" | "grain" | "chromatic";
 const POST_SLIDERS: Array<{
@@ -596,7 +724,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     step={0.05}
                     value={props.motion.rotation}
                     onChange={(v) => props.onMotion({ rotation: v })}
-                    format={(v) => `${Math.round(v * 100)}%`}
+                    format={PERCENT}
                     onHint={setHint}
                   />
                 )}
@@ -609,7 +737,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     step={0.05}
                     value={props.motion.pulse}
                     onChange={(v) => props.onMotion({ pulse: v })}
-                    format={(v) => `${Math.round(v * 100)}%`}
+                    format={PERCENT}
                     onHint={setHint}
                   />
                 )}
@@ -622,7 +750,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     step={0.02}
                     value={props.motion.detail}
                     onChange={(v) => props.onMotion({ detail: v })}
-                    format={(v) => `${Math.round(v * 100)}%`}
+                    format={PERCENT}
                     onHint={setHint}
                   />
                 )}
@@ -710,7 +838,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       title: "Sync",
       tab: "sync",
       search:
-        "sync react kick energy bass melody voice treble snare hats smoothing attack release spectrum smooth curve merge rounding contrast monstercat flatten shape",
+        "sync react kick energy bass melody voice treble snare hats smoothing attack release spectrum smooth curve merge rounding contrast monstercat flatten shape frequency range low high edge hz analyzer",
       body: (
         <>
           <div className="sync-grid">
@@ -771,7 +899,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 step={0.02}
                 value={props.motion.spectrumSmooth}
                 onChange={(v) => props.onMotion({ spectrumSmooth: v })}
-                format={(v) => `${Math.round(v * 100)}%`}
+                format={PERCENT}
                 onHint={setHint}
               />
               <ToggleRow
@@ -789,7 +917,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 step={0.01}
                 value={props.sync.shapeMerge ?? 0}
                 onChange={(v) => props.onSync({ ...props.sync, shapeMerge: v })}
-                format={(v) => `${Math.round(v * 100)}%`}
+                format={PERCENT}
                 onHint={setHint}
               />
               <SliderRow
@@ -800,7 +928,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 step={0.01}
                 value={props.sync.shapeRound ?? 0}
                 onChange={(v) => props.onSync({ ...props.sync, shapeRound: v })}
-                format={(v) => `${Math.round(v * 100)}%`}
+                format={PERCENT}
                 onHint={setHint}
               />
               <SliderRow
@@ -811,7 +939,41 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 step={0.01}
                 value={props.sync.contrast ?? 0.5}
                 onChange={(v) => props.onSync({ ...props.sync, contrast: v })}
-                format={(v) => `${Math.round(v * 100)}%`}
+                format={PERCENT}
+                onHint={setHint}
+              />
+              <SliderRow
+                label="Low edge"
+                hint="Lowest frequency the bars cover — raise it to stop spending bars on sub-bass the track doesn't have"
+                min={10}
+                max={500}
+                step={1}
+                value={props.sync.freqMin ?? MIN_FREQ}
+                onChange={(v) =>
+                  props.onSync({
+                    ...props.sync,
+                    freqMin: v,
+                    freqMax: props.sync.freqMax ?? MAX_FREQ,
+                  })
+                }
+                format={HERTZ}
+                onHint={setHint}
+              />
+              <SliderRow
+                label="High edge"
+                hint="Highest frequency the bars cover — lower it to give the musical range more of the width"
+                min={1000}
+                max={22050}
+                step={50}
+                value={props.sync.freqMax ?? MAX_FREQ}
+                onChange={(v) =>
+                  props.onSync({
+                    ...props.sync,
+                    freqMin: props.sync.freqMin ?? MIN_FREQ,
+                    freqMax: v,
+                  })
+                }
+                format={KILOHERTZ}
                 onHint={setHint}
               />
             </>
@@ -912,20 +1074,32 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 title="Which knob it moves"
                 onChange={(e) => props.onUpdateMod(r.id, { param: e.target.value })}
               >
-                {allParams(props.preset).map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.label}
-                  </option>
-                ))}
+                <optgroup label="This visual">
+                  {allParams(props.preset).map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.label}
+                    </option>
+                  ))}
+                </optgroup>
+                {/* Post targets are namespaced ("post:chromatic") so they can
+                    live in the same route list as preset params — animating
+                    the post chain was a direct user request. */}
+                <optgroup label="Post-processing">
+                  {POST_MOD_TARGETS.map((p) => (
+                    <option key={p.key} value={`${POST_TARGET_PREFIX}${p.key}`}>
+                      {p.label}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
-              <Slider
+              <SliderField
+                label={`${r.source} to ${r.param} amount`}
                 min={-1}
                 max={1}
                 step={0.01}
                 value={r.amount}
                 onChange={(amount) => props.onUpdateMod(r.id, { amount })}
               />
-              <span className="row-value">{r.amount.toFixed(2)}</span>
               <button
                 className="chip-x"
                 title="Remove route"
@@ -953,7 +1127,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       title: "Background",
       tab: "scene",
       search:
-        "background animated solid transparent image video color dim blur album art chroma green magenta keying per-mode this mode scope override",
+        "background animated solid transparent image video color dim blur album art chroma green magenta keying per-mode this mode scope override fit fill contain stretch cover crop letterbox zoom pan align position offset x y",
       body: (
         <>
           <Segmented
@@ -989,26 +1163,11 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             }}
           />
           {props.bg.mode === BG_SOLID && (
-            <div className="row color-row">
-              <input
-                type="color"
-                className="bg-color"
-                value={rgbToHex(props.bg.color)}
-                onChange={(e) => props.onBg({ ...props.bg, color: hexToRgb(e.target.value) })}
-                title="Custom background color"
-              />
-              {["#000000", "#ffffff", "#00b140", "#ff00ff"].map((hex) => (
-                <button
-                  key={hex}
-                  className="swatch"
-                  style={{ background: hex }}
-                  title={
-                    hex === "#00b140" ? "Chroma green" : hex === "#ff00ff" ? "Chroma magenta" : hex
-                  }
-                  onClick={() => props.onBg({ ...props.bg, color: hexToRgb(hex) })}
-                />
-              ))}
-            </div>
+            <BgColorRow
+              value={props.bg.color}
+              onChange={(color) => props.onBg({ ...props.bg, color })}
+              title="Custom background color"
+            />
           )}
           {props.bg.mode === BG_IMAGE && props.bg.image && (
             <>
@@ -1033,35 +1192,36 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   Use album art
                 </button>
               </div>
-              <label
-                className="row param-row"
-                title="Darken the image so the visualization stays readable"
-              >
-                <span className="row-label">Dim</span>
-                <Slider
-                  min={0}
-                  max={0.9}
-                  step={0.01}
-                  value={props.bg.image.dim}
-                  onChange={(dim) =>
-                    props.onBg({ ...props.bg, image: { ...props.bg.image!, dim } })
-                  }
-                />
-                <span className="row-value">{props.bg.image.dim.toFixed(2)}</span>
-              </label>
-              <label className="row param-row" title="Soften the image behind the visualization">
-                <span className="row-label">Blur</span>
-                <Slider
-                  min={0}
-                  max={60}
-                  step={1}
-                  value={props.bg.image.blur}
-                  onChange={(blur) =>
-                    props.onBg({ ...props.bg, image: { ...props.bg.image!, blur } })
-                  }
-                />
-                <span className="row-value">{props.bg.image.blur.toFixed(0)}</span>
-              </label>
+              <SliderRow
+                label="Dim"
+                hint="Darken the image so the visualization stays readable"
+                min={0}
+                max={0.9}
+                step={0.01}
+                value={props.bg.image.dim}
+                onChange={(dim) => props.onBg({ ...props.bg, image: { ...props.bg.image!, dim } })}
+              />
+              <SliderRow
+                label="Blur"
+                hint="Soften the image behind the visualization"
+                min={0}
+                max={60}
+                step={1}
+                value={props.bg.image.blur}
+                onChange={(blur) =>
+                  props.onBg({ ...props.bg, image: { ...props.bg.image!, blur } })
+                }
+              />
+              <BgFitRows
+                what="image"
+                value={props.bg.image}
+                onChange={(patch) =>
+                  props.onBg({ ...props.bg, image: { ...props.bg.image!, ...patch } })
+                }
+                color={props.bg.color}
+                onColor={(color) => props.onBg({ ...props.bg, color })}
+                onHint={setHint}
+              />
             </>
           )}
           {props.bg.mode === BG_VIDEO && (
@@ -1076,40 +1236,42 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 </button>
               </div>
               {props.bg.video && (
-                <label
-                  className="row param-row"
-                  title="Darken the video so the visualization stays readable (re-decodes)"
-                >
-                  <span className="row-label">Dim</span>
-                  <Slider
-                    min={0}
-                    max={0.9}
-                    step={0.01}
-                    value={props.bg.video.dim}
-                    onChange={(dim) =>
-                      props.onBg({ ...props.bg, video: { ...props.bg.video!, dim } })
-                    }
-                  />
-                  <span className="row-value">{props.bg.video.dim.toFixed(2)}</span>
-                </label>
+                <SliderRow
+                  label="Dim"
+                  hint="Darken the video so the visualization stays readable (re-decodes)"
+                  min={0}
+                  max={0.9}
+                  step={0.01}
+                  value={props.bg.video.dim}
+                  onChange={(dim) =>
+                    props.onBg({ ...props.bg, video: { ...props.bg.video!, dim } })
+                  }
+                />
               )}
               {props.bg.video && (
-                <label
-                  className="row param-row"
-                  title="Soften the video behind the visualization (baked once per loop; re-decodes)"
-                >
-                  <span className="row-label">Blur</span>
-                  <Slider
-                    min={0}
-                    max={60}
-                    step={1}
-                    value={props.bg.video.blur}
-                    onChange={(blur) =>
-                      props.onBg({ ...props.bg, video: { ...props.bg.video!, blur } })
-                    }
-                  />
-                  <span className="row-value">{props.bg.video.blur.toFixed(0)}</span>
-                </label>
+                <SliderRow
+                  label="Blur"
+                  hint="Soften the video behind the visualization (baked once per loop; re-decodes)"
+                  min={0}
+                  max={60}
+                  step={1}
+                  value={props.bg.video.blur}
+                  onChange={(blur) =>
+                    props.onBg({ ...props.bg, video: { ...props.bg.video!, blur } })
+                  }
+                />
+              )}
+              {props.bg.video && (
+                <BgFitRows
+                  what="video"
+                  value={props.bg.video}
+                  onChange={(patch) =>
+                    props.onBg({ ...props.bg, video: { ...props.bg.video!, ...patch } })
+                  }
+                  color={props.bg.color}
+                  onColor={(color) => props.onBg({ ...props.bg, color })}
+                  onHint={setHint}
+                />
               )}
               <p className="section-hint">
                 A short clip loops behind the visualization (first {12}s, decoded to a fixed loop).
