@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { changelogBetween, compareVersions } from "./changelogNotes";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  changelogBetween,
+  compareVersions,
+  fetchNotesBetween,
+  hasVersionSection,
+} from "./changelogNotes";
 
 const MD = `# Changelog
 
@@ -37,6 +42,56 @@ describe("compareVersions", () => {
     expect(compareVersions("2.46.2", "2.47.0")).toBeLessThan(0);
     expect(compareVersions("2.10.0", "2.9.9")).toBeGreaterThan(0);
     expect(compareVersions("2.47.0", "2.47.0")).toBe(0);
+  });
+
+  // A hand-uploaded latest.json using a `v` prefix used to parse as 0.0.0 and
+  // silently kill the whole notes feature.
+  it("tolerates a leading v and prerelease/build suffixes", () => {
+    expect(compareVersions("v2.48.0", "2.48.0")).toBe(0);
+    expect(compareVersions("2.47.1-rc1", "2.47.1")).toBe(0);
+    expect(compareVersions("v2.48.0", "2.47.1")).toBeGreaterThan(0);
+  });
+});
+
+describe("hasVersionSection", () => {
+  it("detects the offered version's own section", () => {
+    expect(hasVersionSection(MD, "2.47.0")).toBe(true);
+    expect(hasVersionSection(MD, "v2.47.0")).toBe(true);
+    expect(hasVersionSection(MD, "2.48.0")).toBe(false);
+  });
+});
+
+describe("fetchNotesBetween", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it("prefers the offered release's TAG over the branch", async () => {
+    const seen: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      seen.push(String(url));
+      return { ok: true, text: async () => MD } as Response;
+    }) as typeof fetch;
+    const out = await fetchNotesBetween("2.46.2", "2.47.0");
+    expect(seen[0]).toContain("/v2.47.0/");
+    expect(out).toContain("What's new in v2.47.0");
+  });
+
+  // The branch copy can lag a freshly pushed tag. Rendering it anyway would
+  // present OLDER releases as "what's new", so a document without the offered
+  // version's section is discarded and the caller shows the blurb.
+  it("fails closed when no document carries the offered version", async () => {
+    globalThis.fetch = (async () =>
+      ({ ok: true, text: async () => MD }) as Response) as typeof fetch;
+    expect(await fetchNotesBetween("2.46.0", "2.48.0")).toBeNull();
+  });
+
+  it("resolves null (never throws) when the network fails", async () => {
+    globalThis.fetch = (async () => {
+      throw new Error("offline");
+    }) as typeof fetch;
+    await expect(fetchNotesBetween("2.46.0", "2.47.0")).resolves.toBeNull();
   });
 });
 

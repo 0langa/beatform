@@ -84,13 +84,18 @@ export function UpdatePrompt({ update, onInstall, onRelaunch, onDismiss }: Updat
   // so pull the real changelog and show every section between the installed
   // and the offered version. Falls back to the blurb offline. The target
   // audience isn't expected to go read GitHub.
-  const [fullNotes, setFullNotes] = useState<string | null>(null);
+  // Cached WITH the version it describes: if a later check offers a different
+  // version and that fetch fails, the previous version's sections must not
+  // stay on screen under the new version's chip — the guard below drops them
+  // without needing to reset state from inside the effect.
+  const [fetched, setFetched] = useState<{ version: string; notes: string } | null>(null);
   const availableVersion = update.state === "available" ? update.version : null;
+  const fullNotes = fetched && fetched.version === availableVersion ? fetched.notes : null;
   useEffect(() => {
     if (!availableVersion) return;
     let alive = true;
     void fetchNotesBetween(APP_VERSION, availableVersion).then((notes) => {
-      if (alive && notes) setFullNotes(notes);
+      if (alive && notes) setFetched({ version: availableVersion, notes });
     });
     return () => {
       alive = false;

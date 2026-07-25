@@ -82,11 +82,29 @@ jobs:
           export SIG="$(cat "$SIG_FILE")"
           export URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/Beatform_${VERSION}_x64-setup.exe"
           export PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # notes = this version's own CHANGELOG section. The dialog normally
+          # fetches the full cumulative changelog, but this blurb is what an
+          # OFFLINE user reads, so it must be real human copy rather than a
+          # bare link (which the notes renderer cannot make clickable).
           node -e "
             const fs = require('fs');
+            const v = process.env.V;
+            const lines = fs.readFileSync('CHANGELOG.md', 'utf8').split('\n');
+            const head = '## [' + v + ']';
+            let notes = '';
+            const i = lines.findIndex((l) => l.startsWith(head));
+            if (i >= 0) {
+              let j = i + 1;
+              while (j < lines.length && !lines[j].startsWith('## [')) j++;
+              notes = lines.slice(i + 1, j).join('\n').trim();
+            }
+            if (!notes) {
+              console.log('::warning::no CHANGELOG section for ' + v + ' — falling back to a link');
+              notes = 'See the release notes: https://github.com/' + process.env.GITHUB_REPOSITORY + '/releases/tag/v' + v;
+            }
             fs.writeFileSync('dist-release/latest.json', JSON.stringify({
-              version: process.env.V,
-              notes: 'See the release notes: https://github.com/' + process.env.GITHUB_REPOSITORY + '/releases/tag/v' + process.env.V,
+              version: v,
+              notes,
               pub_date: process.env.PUB_DATE,
               platforms: { 'windows-x86_64': { signature: process.env.SIG, url: process.env.URL } },
             }, null, 2));
