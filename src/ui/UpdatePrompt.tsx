@@ -1,8 +1,9 @@
-import { Fragment, useEffect } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { APP_VERSION } from "../version";
 import type { UpdatePhase } from "../state/updater";
 import { IconClose } from "./Icons";
 import { useFocusTrap } from "./useFocusTrap";
+import { fetchNotesBetween } from "../state/changelogNotes";
 
 /**
  * The startup "a new version is here" dialog (v2.45.0, redesigned v2.46.0).
@@ -78,6 +79,24 @@ export function UpdatePrompt({ update, onInstall, onRelaunch, onDismiss }: Updat
   // focus restores on close. Hooks run unconditionally (before the early
   // return) per the rules of hooks.
   const trapRef = useFocusTrap(visible);
+  // Cumulative notes: the transport blurb (latest.json) only describes the
+  // newest release, but a user several versions behind gets ALL of them —
+  // so pull the real changelog and show every section between the installed
+  // and the offered version. Falls back to the blurb offline. The target
+  // audience isn't expected to go read GitHub.
+  const [fullNotes, setFullNotes] = useState<string | null>(null);
+  const availableVersion = update.state === "available" ? update.version : null;
+  useEffect(() => {
+    if (!availableVersion) return;
+    let alive = true;
+    void fetchNotesBetween(APP_VERSION, availableVersion).then((notes) => {
+      if (alive && notes) setFullNotes(notes);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [availableVersion]);
+
   // The global Esc handler only clears STORE flags; this dialog's open flag
   // is App-local state, so it closes itself (also audit UP1).
   useEffect(() => {
@@ -185,7 +204,9 @@ export function UpdatePrompt({ update, onInstall, onRelaunch, onDismiss }: Updat
 
         {update.state === "available" && (
           <>
-            {update.notes && <div className="update-notes">{renderNotes(update.notes)}</div>}
+            {(fullNotes ?? update.notes) && (
+              <div className="update-notes">{renderNotes(fullNotes ?? update.notes ?? "")}</div>
+            )}
             <p className="update-fineprint">
               Downloads in the background from GitHub Releases and is verified against Beatform's
               signing key before it installs. Applies on restart.

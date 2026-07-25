@@ -11,6 +11,18 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.47.1] - 2026-07-25
+
+### Changed
+
+- **The update dialog now shows the real release notes** — the full,
+  human-written bullet list for every version between the one you're on
+  and the one being offered, pulled straight from the changelog and
+  rendered in the dialog (headings, bullets, bold). No more one-line
+  blurb with a GitHub link: if you're four versions behind, you see all
+  four "What's new in …" sections before deciding. Offline, the short
+  summary still shows as a fallback.
+
 ## [2.47.0] - 2026-07-25
 
 The gap-closing release: every visual mode brought up to the standard set
