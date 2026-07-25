@@ -12,25 +12,51 @@ import type { PresetDef } from "../types";
  * so the wall reads as individual diodes, and a coarse per-tile brightness
  * band standing in for uneven panel assembly — real LED walls are built from
  * physical tiles and are never perfectly uniform.
+ *
+ * v2.47: phosphor ghost trail (recently-vacated cells fade instead of cutting
+ * to black), an optional per-column frequency palette (RGB Wall), CRT
+ * scanlines + a subtle deterministic flicker, and a beat-driven border flash —
+ * so the wall reacts on all three timescales (beat flash / boost, band energy
+ * backlight, spectrum + peak texture) and covers the full retro-hardware range
+ * from hi-fi VU to amber terminal to Matrix console to a full RGB video wall.
  */
 export const ledMatrix: PresetDef = {
   id: "led-matrix",
   name: "LED Matrix",
   description:
-    "Retro hi-fi LED wall: columns light bottom-up with the spectrum, green through red.",
+    "Retro hi-fi LED wall: columns light bottom-up with the spectrum, green through red, with phosphor trails, scanlines and a beat-flash border.",
   styles: [
-    { id: "vu", name: "Classic VU", values: {} },
-    { id: "cyan", name: "Cyan Wall", values: { hueLow: 190, hueHigh: 210 } },
-    { id: "purple", name: "Purple Rain", values: { hueShift: 250 } },
-    { id: "bigpixel", name: "Big Pixels", values: { cols: 24, rows: 12, gap: 0.28, rounded: 0 } },
+    { id: "vu", name: "Hi-Fi Classic", values: {} },
+    {
+      id: "cyan",
+      name: "Ice Blue",
+      values: { hueLow: 190, hueHigh: 210, ghost: 0.18, scanline: 0.08 },
+    },
+    { id: "purple", name: "Purple Rain", values: { hueShift: 250, ghost: 0.24, bloom: 1.0 } },
+    {
+      id: "bigpixel",
+      name: "Big Pixels",
+      values: { cols: 24, rows: 12, gap: 0.28, rounded: 0, bloom: 1.0, beatFlash: 0.3 },
+    },
     {
       id: "amber",
-      name: "Amber Meter",
-      values: { hueLow: 45, hueHigh: 10, gradStart: 0.5, gradEnd: 0.95, bassGlow: 0.16 },
+      name: "Amber Terminal",
+      values: {
+        hueLow: 45,
+        hueHigh: 10,
+        gradStart: 0.5,
+        gradEnd: 0.95,
+        bassGlow: 0.16,
+        rounded: 0,
+        gap: 0.12,
+        scanline: 0.34,
+        flicker: 0.12,
+        ghost: 0.2,
+      },
     },
     {
       id: "terminal",
-      name: "Terminal",
+      name: "Matrix",
       values: {
         hueLow: 120,
         hueHigh: 95,
@@ -40,6 +66,21 @@ export const ledMatrix: PresetDef = {
         rounded: 0,
         dim: 0.2,
         bassGlow: 0.05,
+        ghost: 0.32,
+        scanline: 0.24,
+        flicker: 0.08,
+      },
+    },
+    {
+      id: "rgb",
+      name: "RGB Wall",
+      values: {
+        spectrumColor: 1,
+        bloom: 1.15,
+        beatFlash: 0.4,
+        panelVariance: 0.5,
+        gap: 0.16,
+        ghost: 0.14,
       },
     },
   ],
@@ -128,6 +169,15 @@ export const ledMatrix: PresetDef = {
       hint: "Color of the top (loud) cells — default red",
     },
     {
+      key: "spectrumColor",
+      label: "Frequency palette",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0,
+      hint: "Blend cell color from the height gradient toward a per-column rainbow (bass red, treble violet) — 1.0 is the full RGB video-wall look",
+    },
+    {
       key: "gradStart",
       label: "Gradient start",
       min: 0,
@@ -173,6 +223,15 @@ export const ledMatrix: PresetDef = {
       hint: "All lit LEDs brighten on beats",
     },
     {
+      key: "ghost",
+      label: "Phosphor trail",
+      min: 0,
+      max: 0.6,
+      step: 0.01,
+      default: 0.12,
+      hint: "Recently-vacated cells above the live top glow and fade toward the peak, like slow phosphor decay",
+    },
+    {
       key: "bassGlow",
       label: "Bass backlight",
       min: 0,
@@ -180,6 +239,15 @@ export const ledMatrix: PresetDef = {
       step: 0.01,
       default: 0.1,
       hint: "Panel background breathes with the bass",
+    },
+    {
+      key: "beatFlash",
+      label: "Beat border",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.2,
+      hint: "The wall's outer border flashes on each beat",
     },
     {
       key: "peakBright",
@@ -198,6 +266,24 @@ export const ledMatrix: PresetDef = {
       step: 0.05,
       default: 0.8,
       hint: "Soft light bleeding from each lit LED into the gap around it",
+    },
+    {
+      key: "scanline",
+      label: "Scanlines",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.12,
+      hint: "CRT-style horizontal scanline darkening across the panel",
+    },
+    {
+      key: "flicker",
+      label: "Flicker",
+      min: 0,
+      max: 0.6,
+      step: 0.02,
+      default: 0.05,
+      hint: "Subtle rolling brightness flicker, like an old powered display (deterministic)",
     },
     {
       key: "panelVariance",
@@ -265,10 +351,14 @@ fn preset(uv: vec2f) -> vec4f {
 
   let beatP = max(u.driveBeat, gridPulse(9.0));
 
-  // low hue -> high hue as cells climb (default classic green -> red), plus a
+  // Cell colour: low hue -> high hue as cells climb (default classic green ->
+  // red), optionally cross-faded toward a per-COLUMN frequency palette (bass at
+  // the red end, treble toward violet) for the full RGB video-wall look. Plus a
   // faint per-LED colour-temperature jitter so the wall doesn't read as one
   // flat sheet of colour.
-  let cellHue = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), frac))
+  let gradHue = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), frac));
+  let freqHue = (cx + 0.5) / cols * 300.0;
+  let cellHue = mix(gradHue, freqHue, P_spectrumColor())
               + P_hueShift() + jHue * 6.0 * pv;
 
   let mask = ledCell(vec2f(lx, ly), P_gap(), P_rounded());
@@ -291,6 +381,16 @@ fn preset(uv: vec2f) -> vec4f {
   // Unlit LEDs faintly visible
   col += hsl2rgb(cellHue, 0.5, 0.04) * mask * P_dim() * (1.0 - lit);
 
+  // Phosphor ghost trail: cells ABOVE the live top but BELOW the recent peak
+  // glow and fade with distance from the top, so a falling column leaves a
+  // decaying wake instead of snapping to black. Deterministic — it reads the
+  // peak-hold buffer, no per-frame state.
+  let pkLevel = pk * rows;
+  let ghostLit = step(cy + 0.5, pkLevel) * (1.0 - lit);
+  let ghostFade = exp(-max((cy + 0.5) - level, 0.0) * 0.6);
+  col += hsl2rgb(cellHue, 0.85, P_litLevel() * 0.55) * mask * ghostLit * ghostFade * P_ghost();
+  col += hsl2rgb(cellHue, 0.7, 0.5) * glow * ghostLit * ghostFade * P_ghost() * P_bloom() * 0.5;
+
   // Lit LEDs: flat mask body, brighter near the column's current top, plus
   // beat boost — then a soft bloom that bleeds past the mask into the gap,
   // which is what makes a dot read as EMITTING rather than printed.
@@ -308,16 +408,30 @@ fn preset(uv: vec2f) -> vec4f {
   col += ledCol;
 
   // Peak-hold dot (toggleable) — takes the column gradient's color at its
-  // own height, so it follows Cyan Wall/Purple Rain instead of staying the
-  // default red, plus the same soft bloom as the live cells.
+  // own height, so it follows the palette instead of staying the default red,
+  // plus the same soft bloom as the live cells.
   let pkRow = floor(pk * rows);
   if (cy == pkRow && pk > 0.02 && P_peaks() > 0.5) {
     let pkFrac = (pkRow + 0.5) / rows;
-    let pkHue = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), pkFrac))
-              + P_hueShift();
+    let pkGrad = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), pkFrac));
+    let pkHue = mix(pkGrad, freqHue, P_spectrumColor()) + P_hueShift();
     col += hsl2rgb(pkHue, 0.55, P_peakBright()) * mask;
     col += hsl2rgb(pkHue, 0.4, 0.75) * glow * P_bloom() * 0.5;
   }
+
+  // Beat border flash: the wall's outer frame pulses on the tempo grid — a
+  // whole-panel beat response distinct from the per-LED beat boost.
+  let bdist = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+  let border = smoothstep(0.07, 0.0, bdist);
+  col += hsl2rgb(P_hueHigh() + P_hueShift(), 0.85, 0.5) * border * beatP * P_beatFlash();
+
+  // CRT scanlines: fixed-frequency horizontal darkening, independent of the LED
+  // grid so it reads as a display overlay rather than the diode rows.
+  let scan = 1.0 - P_scanline() * (0.5 + 0.5 * sin(uv.y * 300.0)) * 0.5;
+  // Rolling powered-display flicker. sin() is bounded and deterministic (same
+  // track time -> same value in live and export), so it never desyncs.
+  let flick = 1.0 - P_flicker() * (0.5 + 0.5 * sin(u.time * 18.0 + uv.y * 40.0)) * 0.5;
+  col *= scan * flick;
 
   // Subtle screen curvature vignette
   let d = distance(uv, vec2f(0.5));

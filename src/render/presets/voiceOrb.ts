@@ -26,16 +26,15 @@ export const voiceOrb: PresetDef = {
     "Made for voiceovers: an orb that breathes with speech, ripples with vowels, sparkles on S-sounds.",
   styles: [
     { id: "aqua", name: "Aqua Calm", values: {} },
-    { id: "warm", name: "Warm Host", values: { hue: 25, sparkle: 0.35 } },
     {
-      id: "midnight",
-      name: "Midnight",
-      values: { hue: 260, sparkle: 0.8, rimGlow: 0.5, flare: 0.3 },
+      id: "podcastBlue",
+      name: "Podcast Blue",
+      values: { hue: 210, sparkle: 0.4, rimGlow: 0.35, breathGlow: 0.22, flare: 0.35 },
     },
     {
-      id: "minimal",
-      name: "Minimal",
-      values: { ring: 0, sparkle: 0.1, wobble: 0.25, flare: 0.15 },
+      id: "warm",
+      name: "Warm Studio",
+      values: { hue: 30, sparkle: 0.35, rimGlow: 0.4, flare: 0.45, breathGlow: 0.18 },
     },
     {
       id: "broadcast",
@@ -51,9 +50,43 @@ export const voiceOrb: PresetDef = {
       },
     },
     {
-      id: "forest",
-      name: "Forest",
-      values: { hue: 140, sparkle: 0.4, wobble: 0.7, size: 0.19, ring: 1, flare: 0.4 },
+      id: "hologram",
+      name: "Hologram",
+      values: {
+        hue: 175,
+        texture: 0.7,
+        sparkle: 0.6,
+        rimGlow: 0.5,
+        flare: 0.3,
+        ring: 1,
+        breathGlow: 0.15,
+      },
+    },
+    {
+      id: "candlelight",
+      name: "Candlelight",
+      values: {
+        hue: 30,
+        sparkle: 0.2,
+        wobble: 0.6,
+        flare: 0.5,
+        breathGlow: 0.32,
+        texture: 0.3,
+        coreGlow: 0.34,
+        ring: 0,
+      },
+    },
+    {
+      id: "frost",
+      name: "Frost",
+      values: {
+        hue: 195,
+        texture: 0.5,
+        sparkle: 0.8,
+        sparkleScale: 46,
+        rimGlow: 0.4,
+        wobble: 0.35,
+      },
     },
   ],
   params: [
@@ -187,6 +220,24 @@ export const voiceOrb: PresetDef = {
       hint: "Inner light at the orb's center",
     },
     {
+      key: "texture",
+      label: "Surface texture",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0,
+      hint: "Cloudy, slowly-drifting mottling across the orb body — 0 = smooth glass, high = hologram/frosted",
+    },
+    {
+      key: "breathGlow",
+      label: "Breath glow",
+      min: 0,
+      max: 0.6,
+      step: 0.02,
+      default: 0.14,
+      hint: "Slow brightness breathing of the orb and its aura during silence — fades out while talking",
+    },
+    {
       key: "rimGlow",
       label: "Rim glow",
       min: 0,
@@ -274,7 +325,12 @@ fn preset(uv: vec2f) -> vec4f {
   let speech = mix(raw, u.voice, P_voiceFocus());
   let level = clamp(speech * (0.6 + P_response() * 1.4), 0.0, 1.0);
   // Idle breathing keeps the orb alive during pauses, fades out when talking
-  let idle = (1.0 - smoothstep(0.03, 0.12, level)) * sin(u.time * 1.3) * P_idleBreath();
+  let silence = 1.0 - smoothstep(0.03, 0.12, level);
+  let idle = silence * sin(u.time * 1.3) * P_idleBreath();
+  // Breath GLOW is the brightness companion to the size breathing above: a
+  // slow 0..1 swell (never negative, so it only ever adds light) that fades
+  // out the instant speech begins.
+  let breathG = silence * (0.5 + 0.5 * sin(u.time * 1.3)) * P_breathGlow();
 
   // Surface wobble: three slowly-rotating sinusoidal modes whose amplitudes
   // track wide formant-band averages (~200 Hz - 3 kHz). The shape itself is
@@ -314,6 +370,13 @@ fn preset(uv: vec2f) -> vec4f {
   let coreGlow = exp(-r * (7.0 - level * 2.0));
   let bodyLevel = 0.16 + level * 0.30 + coreGlow * (P_coreGlow() + level * 0.25);
   var body = pal * bodyLevel;
+  // Surface texture: slowly-drifting fbm mottling read in orb-local space, so
+  // it folds with the club mirror and gives the body a cloudy / holographic /
+  // frosted character instead of a smooth even fill. Off by default.
+  if (P_texture() > 0.01) {
+    let tn = fbm(p * 7.0 + vec2f(u.time * 0.12, -u.time * 0.09));
+    body *= (1.0 - P_texture() * 0.55) + P_texture() * 0.55 * (0.35 + tn * 1.3);
+  }
   // Hot core: loud speech desaturates the very center toward white and pushes
   // it past 1.0 — the difference between "brighter" and actually emitting.
   let hot = smoothstep(0.5, 0.95, coreGlow * level) * P_flare();
@@ -343,6 +406,12 @@ fn preset(uv: vec2f) -> vec4f {
     col += ringPal * smoothstep(0.004, 0.0008, dRing) * (0.35 + level * 0.5);
     col += ringPal * exp(-dRing * 120.0) * 0.18;
   }
+
+  // Breath glow: during silence the orb body and its outer halo swell in
+  // brightness (size breathing is handled separately by idle), a calm 'alive'
+  // pulse for a resting mic that vanishes the moment speech starts.
+  col += pal * inside * breathG;
+  col += pal * exp(-max(r - edge, 0.0) * 20.0) * breathG * 0.6;
 
   // Vignette is the shared smooth full-field falloff (never a hard-edged
   // circle — the orb/rim/ring above are already clamped to r<=0.47).

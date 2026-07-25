@@ -58,6 +58,23 @@ export const tunnelRings: PresetDef = {
         tileLevel: 0.14,
       },
     },
+    {
+      id: "ice",
+      name: "Ice Cave",
+      values: {
+        hue: 195,
+        hueSpread: 34,
+        speed: 0.12,
+        twist: 0.2,
+        roundness: 0.9,
+        tileSat: 0.3,
+        groutLevel: 0.28,
+        surfaceWarp: 2.2,
+        centerGlow: 0.35,
+        beatPulse: 0.5,
+        fogFar: 0.85,
+      },
+    },
   ],
   params: [
     { key: "hue", label: "Hue", min: 0, max: 360, step: 1, default: 15, hint: "Base tunnel color" },
@@ -270,6 +287,15 @@ export const tunnelRings: PresetDef = {
       default: 1.2,
       hint: "Worn/wet surface detail on the tube wall",
     },
+    {
+      key: "beatBright",
+      label: "Beat flash",
+      min: 0,
+      max: 0.6,
+      step: 0.02,
+      default: 0.15,
+      hint: "Whole tunnel wall brightens on each beat, on top of the travelling ring",
+    },
   ],
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
@@ -366,6 +392,11 @@ fn preset(uv: vec2f) -> vec4f {
   // Hot vanishing core: the bright far point you are flying toward.
   col += mix(pal, vec3f(1.0), 0.6) * exp(-r * 14.0)
        * (P_centerGlow() + u.drive * 0.5 + kickP * 0.4);
+
+  // Whole-wall beat flash: a brief global lift on each grid beat (kickP is
+  // grid-locked with a flux fallback), stacked on top of the travelling ring
+  // and hot core — VJ punch that still reads on busy, spectrum-lit walls.
+  col *= 1.0 + kickP * P_beatBright() * u.pulse;
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.25);

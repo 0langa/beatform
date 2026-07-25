@@ -14,22 +14,67 @@ export const nebula: PresetDef = {
     "Flowing cosmic filaments in a kaleidoscope — bass lights them up, beats send a ripple wave.",
   styles: [
     { id: "magenta", name: "Magenta Storm", values: {} },
-    { id: "aurora", name: "Aurora", values: { hue: 140, kaleido: 1, flow: 0.2, hueRange: 60 } },
-    { id: "ink", name: "Ink", values: { hue: 220, contrast: 0.8, sparkle: 0.2, saturation: 0.45 } },
-    { id: "prism", name: "Prism Eight", values: { kaleido: 8, hueRange: 240, sparkle: 0.7 } },
     {
-      id: "ultraviolet",
-      name: "Ultraviolet",
+      id: "stainedGlass",
+      name: "Stained Glass",
       values: {
-        hue: 265,
-        hueRange: 40,
-        kaleido: 1,
-        scale: 1.6,
-        contrast: 0.7,
-        flow: 0.08,
-        driveGlow: 0.22,
-        beatRipple: 0.8,
+        kaleido: 8,
+        contrast: 0.85,
+        hueRange: 220,
+        saturation: 0.95,
+        scale: 1.9,
+        warp: 2.4,
+        depth: 0.55,
+        angle: 12,
       },
+    },
+    {
+      id: "mandala",
+      name: "Mandala",
+      values: {
+        kaleido: 12,
+        flow: 0.05,
+        spin: 0.5,
+        hueRange: 90,
+        scale: 2.2,
+        contrast: 0.6,
+        depth: 0.75,
+        sparkle: 0.35,
+      },
+    },
+    {
+      id: "oilSlick",
+      name: "Oil Slick",
+      values: {
+        hue: 205,
+        hueRange: 285,
+        contrast: 0.3,
+        flow: 0.22,
+        saturation: 0.9,
+        kaleido: 1,
+        depth: 0.65,
+        warp: 2.6,
+      },
+    },
+    {
+      id: "fractalIce",
+      name: "Fractal Ice",
+      values: {
+        hue: 200,
+        hueRange: 60,
+        scale: 3.8,
+        contrast: 0.72,
+        sparkle: 0.9,
+        sparkleSharp: 26,
+        saturation: 0.55,
+        kaleido: 6,
+        depth: 0.4,
+      },
+    },
+    {
+      id: "aurora",
+      name: "Aurora",
+      values: { hue: 140, kaleido: 1, flow: 0.2, hueRange: 60, depth: 0.6 },
     },
     {
       id: "solar",
@@ -43,6 +88,7 @@ export const nebula: PresetDef = {
         sparkle: 0.85,
         contrast: 0.35,
         beatBloom: 0.35,
+        spin: 1.6,
       },
     },
   ],
@@ -118,6 +164,33 @@ export const nebula: PresetDef = {
       step: 0.1,
       default: 1.8,
       hint: "How much the clouds fold into filaments",
+    },
+    {
+      key: "angle",
+      label: "Fold angle",
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 0,
+      hint: "Static orientation of the mandala fold — rotate the whole pattern without spinning it",
+    },
+    {
+      key: "spin",
+      label: "Mandala spin",
+      min: 0,
+      max: 3,
+      step: 0.05,
+      default: 1,
+      hint: "How fast the mandala rotates (only when Kaleido is on; Motion→Rotation also scales this) — 0 freezes it",
+    },
+    {
+      key: "depth",
+      label: "Depth layer",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.45,
+      hint: "A second, larger cloud layer drifting slower behind the filaments for a sense of volume",
     },
     {
       key: "hueRange",
@@ -246,7 +319,11 @@ fn preset(uv: vec2f) -> vec4f {
   // the shared kaleido() convention used across every preset.
   let mirrorN = P_kaleido();
   if (mirrorN >= 1.5) {
-    p = rot2(u.time * P_flow() * 0.35 * u.spin) * p;
+    // Fold angle is a STATIC orientation (not gated by Motion→Rotation) so
+    // you can aim the mandala; the spin term is monotonic in u.time and
+    // gated by both the Mandala-spin knob and the Rotation master, so the
+    // pattern never reads as jumping backwards on a beat.
+    p = rot2(P_angle() * TAU / 360.0 + u.time * P_flow() * 0.35 * u.spin * P_spin()) * p;
     p = kaleido(p, mirrorN);
   }
 
@@ -316,6 +393,20 @@ fn preset(uv: vec2f) -> vec4f {
   // (v) that the audio gain drives. The soft layer is dim enough that gaps
   // still fall to the dark field.
   var col = bg + pal * vSoft * (0.35 + energyGain * 0.5) + pal * v * (0.5 + energyGain * 1.6);
+
+  // Depth: a second, larger-scale cloud layer drifting slower and offset,
+  // sitting dim behind the main filaments so the nebula reads as a volume
+  // with a front and a back rather than a single flat sheet. pow(.,2.2)
+  // keeps it sparse so gaps still fall to the dark field.
+  if (P_depth() > 0.01) {
+    let qb = p * P_scale() * 0.5 + flowOff * 0.45 + vec2f(4.1, -2.7);
+    let backRaw = warpFbm(qb, warpAmt * 0.85);
+    let backD = clamp((backRaw - 0.42) / 0.32, 0.0, 1.0);
+    let backT = fract(pow(backD, 1.4) * (P_hueRange() / 360.0) + P_hue() / 360.0 + 0.12
+             + (P_midHueShift() / 360.0) * u.mid * 0.3);
+    let backPal = cosPalette(backT, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+    col += backPal * pow(backD, 2.2) * P_depth() * (0.22 + energyGain * 0.5);
+  }
 
   // Hot core: filament peaks desaturate toward white and push past 1.0 so
   // tonemap() gives them a real emissive rolloff instead of a flat clip —

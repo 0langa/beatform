@@ -14,8 +14,16 @@ export const metaballs: PresetDef = {
     "Lava-lamp blobs that merge and split — each blob's size follows bass, mids or treble.",
   styles: [
     { id: "lava", name: "Lava", values: {} },
-    { id: "mercury", name: "Mercury", values: { hue: 210, hueField: 4, glow: 0.3 } },
-    { id: "toxic", name: "Toxic", values: { hue: 100, count: 6, speed: 0.5, hueField: 40 } },
+    {
+      id: "mercury",
+      name: "Mercury",
+      values: { hue: 210, hueField: 4, glow: 0.3, gloss: 0.85, squash: 0.08 },
+    },
+    {
+      id: "toxic",
+      name: "Toxic",
+      values: { hue: 100, count: 6, speed: 0.5, hueField: 40, gloss: 0.15, squash: 0.35 },
+    },
     { id: "sunspot", name: "Sunspot", values: { hue: 40, size: 0.2, threshold: 1.3, count: 3 } },
     {
       id: "abyss",
@@ -28,6 +36,7 @@ export const metaballs: PresetDef = {
         hueField: 10,
         bgLevel: 0.015,
         vignette: 0.7,
+        gloss: 0.55,
       },
     },
     {
@@ -60,6 +69,7 @@ export const metaballs: PresetDef = {
         orbitY: 0.15,
         radiusFloor: 0.8,
         innerGrad: 0.5,
+        gloss: 0.6,
       },
     },
   ],
@@ -109,6 +119,15 @@ export const metaballs: PresetDef = {
       step: 0.02,
       default: 1.0,
       hint: "Lower = blobs fuse together sooner and blobbier",
+    },
+    {
+      key: "gloss",
+      label: "Gloss",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.35,
+      hint: "Liquid-metal specular sheen that slides across the blob surfaces — high reads as mercury/chrome",
     },
   ],
   advanced: [
@@ -229,6 +248,24 @@ export const metaballs: PresetDef = {
       default: 1,
       hint: "Fold the blob field into mirrored wedges — 1 is off, 2 mirrors left/right, higher makes a kaleidoscope",
     },
+    {
+      key: "lightAngle",
+      label: "Light angle",
+      min: 0,
+      max: 360,
+      step: 5,
+      default: 125,
+      hint: "Direction the gloss highlight comes from (a fixed orientation — Motion does not spin it)",
+    },
+    {
+      key: "squash",
+      label: "Beat squash",
+      min: 0,
+      max: 0.6,
+      step: 0.02,
+      default: 0.18,
+      hint: "The whole lamp squishes flatter for an instant on each beat, like a gulping lava lamp",
+    },
   ],
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
@@ -237,10 +274,23 @@ fn preset(uv: vec2f) -> vec4f {
   // symmetric mandala. 1 = off.
   p = kaleido(p, P_mirror());
 
-  let count = i32(P_count());
+  // Blob count rides the Detail master (v2.44 masters law) so the strip's
+  // Detail knob thins or fills the lamp; clamped to the loop's safe range. At
+  // Detail = 1 this is exactly P_count(), so saved looks render unchanged.
+  let count = i32(clamp(round(P_count() * u.detail), 2.0, 8.0));
+
+  // Beat squash: the whole lamp squishes flatter for an instant on each beat
+  // (grid-locked when a tempo grid exists, flux fallback otherwise), like a
+  // gulping lava lamp. It is a per-axis SCALE of the sample point, never an
+  // angle offset, so it obeys the monotonic law; u.pulse gates it. Only the
+  // blob field reads this warped point — the background wash stays still.
+  let squashB = max(u.driveBeat, gridPulse(6.0)) * P_squash() * u.pulse;
+  let sq = 1.0 + squashB;
+  let pf = vec2f(p.x / sq, p.y * sq);
 
   var field = 0.0;
   var hueAcc = 0.0;
+  var nrm = vec2f(0.0);
   for (var i = 0; i < count; i++) {
     let fi = f32(i);
     let h = hash11(fi + 1.0);
@@ -273,10 +323,15 @@ fn preset(uv: vec2f) -> vec4f {
     // blob smoothly instead of pinning every ball to one clipped radius.
     let rad = softLimit(P_size() * (P_radiusFloor() + u.drive * P_energyGrow()
             + band * P_radiusBand() + beatMul * P_beatSwell() * u.pulse), frameCircle() * 0.8);
-    let d2 = dot(p - pos, p - pos);
+    let diff = pf - pos;
+    let d2 = dot(diff, diff);
     let contrib = rad * rad / (d2 + 1e-5);
     field += contrib;
     hueAcc += contrib * fi * P_hueField();
+    // Accumulate the field gradient (points outward from the blobs) so the
+    // gloss pass below has a real surface normal to light — folded into this
+    // same loop, no extra neighbourhood walk.
+    nrm += diff * (contrib / (d2 + 1e-5));
   }
 
   // Cosine palette keyed by the same contribution-weighted blend that used
@@ -300,6 +355,16 @@ fn preset(uv: vec2f) -> vec4f {
   col = mix(col, pal * (0.55 + inner * 1.3 + u.driveBeat * P_beatBright()), surface);
   // Rim glow
   col += mix(pal, vec3f(1.0), 0.3) * rim * (0.4 + P_glow() * 0.9);
+
+  // Liquid-metal gloss: a specular highlight sliding across the blob surface,
+  // lit from a static direction (Light angle is an ORIENTATION, so it is not
+  // scaled by the Rotation master). The accumulated field gradient gives the
+  // outward surface normal; a tight power makes a sharp chrome/mercury sheen.
+  // Confined to the surface, with a little life from the drive envelope.
+  let N = normalize(nrm + vec2f(1e-5, 0.0));
+  let L = vec2f(cos(radians(P_lightAngle())), sin(radians(P_lightAngle())));
+  let sheen = pow(max(dot(N, L), 0.0), 6.0);
+  col += mix(pal, vec3f(1.0), 0.7) * sheen * surface * P_gloss() * (0.6 + u.drive * 0.5);
 
   // Hot core: the field's own 1/d^2 falloff spikes to huge values only very
   // near a blob's point-mass centre. The band must therefore start WELL above

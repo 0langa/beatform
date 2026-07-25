@@ -74,6 +74,23 @@ export const oscilloscope: PresetDef = {
         persist: 0,
       },
     },
+    {
+      id: "laser",
+      name: "Laser",
+      values: {
+        hue: 350,
+        calm: 0.2,
+        glow: 1,
+        coreWidth: 0.0015,
+        traceBright: 1.9,
+        fill: 0,
+        mirror: 0,
+        scanline: 0,
+        gridLevel: 0.03,
+        persist: 0.22,
+        vignette: 0.7,
+      },
+    },
   ],
   params: [
     {
@@ -111,6 +128,15 @@ export const oscilloscope: PresetDef = {
       step: 0.01,
       default: 0.5,
       hint: "Neon halo around the trace line — a tight bloom plus a wide soft reach",
+    },
+    {
+      key: "traceBright",
+      label: "Trace brightness",
+      min: 0.3,
+      max: 2.5,
+      step: 0.05,
+      default: 1,
+      hint: "Overall intensity of the beam and its halo — push high for a hot laser line",
     },
     {
       key: "fill",
@@ -203,6 +229,15 @@ export const oscilloscope: PresetDef = {
       step: 0.01,
       default: 0.06,
       hint: "Visibility of the background graticule",
+    },
+    {
+      key: "gridBeat",
+      label: "Graticule beat flash",
+      min: 0,
+      max: 1.5,
+      step: 0.05,
+      default: 0.4,
+      hint: "Graticule lines brighten on each beat — subtle life in the grid",
     },
     {
       key: "scanline",
@@ -304,13 +339,16 @@ fn preset(uv: vec2f) -> vec4f {
   var grid = smoothstep(0.05, 0.0, gl.x) + smoothstep(0.05, 0.0, gl.y);
   grid += smoothstep(0.006, 0.0, abs(fuv.x - 0.5)) * 1.6
         + smoothstep(0.006, 0.0, abs(fuv.y - 0.5)) * 1.6;
-  col += hsl2rgb(P_hue(), 0.25, 0.32) * grid * P_gridLevel();
+  col += hsl2rgb(P_hue(), 0.25, 0.32) * grid * P_gridLevel() * (1.0 + beatP * P_gridBeat());
 
   let w = calmWave(fuv.x, P_calm()) * gain;
   // Trace height comes from Gain (× the fixed display scale); Height limit is
-  // the hard ceiling. (These were a redundant pair with a separate traceAmp
-  // multiplier — folded away so there's one amplitude knob, not two.)
-  let amp = clamp(w * 0.34, -P_traceClamp(), P_traceClamp());
+  // the SOFT ceiling (v2.44 law): loud peaks compress asymptotically toward it
+  // via softLimit instead of flat-topping against a hard clamp, so a maxed
+  // trace approaches the frame edge smoothly with no visible clipped plateau.
+  // Signed so both lobes limit symmetrically around the center line.
+  let raw = w * 0.34;
+  let amp = sign(raw) * softLimit(abs(raw), P_traceClamp());
   let y = 0.5 + amp;
 
   // Colour drifts gently along the sweep and with wave height — a bounded
@@ -328,7 +366,7 @@ fn preset(uv: vec2f) -> vec4f {
   var beam = hsl2rgb(traceHue, 0.85, 0.62) * core;
   beam = mix(beam, vec3f(1.0), hot);
   beam *= 1.0 + hot * 1.6;
-  col += beam;
+  col += beam * P_traceBright();
 
   // Two-tier glow: a tight bloom hugging the beam plus a much wider, softer
   // halo — one exp() reads as an outline, two at different reach reads as an
@@ -336,7 +374,7 @@ fn preset(uv: vec2f) -> vec4f {
   let glowTight = exp(-d * (170.0 - P_glow() * 90.0));
   let glowWide = exp(-d * 22.0) * 0.45;
   col += hsl2rgb(traceHue, 0.9, 0.55) * (glowTight * 0.6 + glowWide)
-       * (0.35 + P_glow() * 0.75) * (1.0 + beatP * 0.6);
+       * (0.35 + P_glow() * 0.75) * (1.0 + beatP * 0.6) * P_traceBright();
 
   // Mirrored ghost trace (dimmer, hue-shifted) — the vertical-flip toggle;
   // unrelated to the Kaleido fold above.

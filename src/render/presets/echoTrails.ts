@@ -40,12 +40,20 @@ export const echoTrails: PresetDef = {
     {
       id: "vortex",
       name: "Vortex",
-      values: { swirl: 0.7, zoom: 0.3, decay: 0.9, hueSpin: 0.5 },
+      values: { swirl: 0.7, zoom: 0.3, decay: 0.9, hueSpin: 0.5, echoHue: 0.35 },
     },
     {
       id: "supernova",
       name: "Supernova",
-      values: { zoom: 0.85, decay: 0.88, react: 0.4, inject: 1.4, kickFlash: 0.9 },
+      values: {
+        zoom: 0.85,
+        decay: 0.88,
+        react: 0.4,
+        inject: 1.4,
+        kickFlash: 0.9,
+        sides: 6,
+        beatStar: 0.8,
+      },
     },
     {
       id: "glacier",
@@ -76,6 +84,9 @@ export const echoTrails: PresetDef = {
         beatZoom: 0.6,
         flowSwirl: 0.6,
         hueSpin: 0.3,
+        echoHue: 0.25,
+        sides: 5,
+        beatStar: 0.5,
       },
     },
     {
@@ -93,6 +104,7 @@ export const echoTrails: PresetDef = {
         flowSwirl: 0.2,
         hueDrift: 0.1,
         kickFlash: 0.2,
+        echoHue: 0.2,
       },
     },
   ],
@@ -226,6 +238,33 @@ export const echoTrails: PresetDef = {
       default: 1,
       hint: "Fold the trails into mirrored wedges around the center — 1 is off, 2 mirrors left/right, higher makes a kaleidoscope",
     },
+    {
+      key: "echoHue",
+      label: "Echo hue drift",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0,
+      hint: "Each echo rotates its color as it ages, turning the tunnel into a gradient of hues from the fresh center outward",
+    },
+    {
+      key: "sides",
+      label: "Ring shape",
+      min: 0,
+      max: 8,
+      step: 1,
+      default: 0,
+      hint: "Morph the injected ring into an N-lobed polygon or star — 0 is a smooth circle",
+    },
+    {
+      key: "beatStar",
+      label: "Beat bloom",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.4,
+      hint: "The ring's lobes punch outward into a star on every beat (needs Ring shape above 0)",
+    },
   ],
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
@@ -253,6 +292,23 @@ fn preset(uv: vec2f) -> vec4f {
   // as the preview, and a 144 Hz display diverged the other way.
   var col = feedbackSample(puv).rgb * pow(P_decay(), u.dt * 60.0);
 
+  // Per-generation hue drift: rotate the fed-back color a little each frame
+  // about the grey (luminance) axis via Rodrigues rotation. A rotation is
+  // ORTHOGONAL — it preserves the color vector's magnitude exactly — so unlike
+  // an added tint it injects ZERO net energy into the accumulator and cannot
+  // wash the tunnel to white (provably as stable as plain decay). The oldest
+  // echoes have been rotated the most, so the tunnel becomes a gradient of hues
+  // from the fresh center outward. Scaled by fpsComp so drift-per-second
+  // matches at 30 / 60 / 144 fps.
+  if (P_echoHue() > 0.001) {
+    let ha = P_echoHue() * 0.5 * fpsComp;
+    let ax = vec3f(0.5773502691896);
+    let ca = cos(ha);
+    let sa = sin(ha);
+    col = col * ca + cross(ax, col) * sa + ax * dot(ax, col) * (1.0 - ca);
+    col = max(col, vec3f(0.0));
+  }
+
   // --- Inject a fresh audio-driven source over the trails ---
   // Spectrum ring: its radius per angle rides the spectrum + bass.
   let spec = binAt(fract(ang / TAU + 0.5));
@@ -260,7 +316,21 @@ fn preset(uv: vec2f) -> vec4f {
   // outward from — inject it on-screen (r<=0.45), or a loud/bright master at
   // high Ring size + Reactivity puts the whole source off-frame and the tunnel
   // has nothing to echo. The trails still extend past this via feedback.
-  let ringR = softLimit(P_radius() + spec * P_react() * (0.6 + u.bass * 0.8), frameCircle());
+  // Ring shape: morph the smooth circle into an N-lobed polygon/star. On each
+  // beat (grid-locked when a tempo grid exists) the lobes punch outward — a
+  // beat-stamped shape the feedback zoom then streams down the tunnel as an
+  // expanding star. This modulates only the ring's RADIUS per angle (a
+  // radial/beat response, never an angle offset, so the monotonic law holds)
+  // and reuses the SAME band energy as the plain ring, adding no net energy to
+  // the accumulator. Sides is a shape count (static orientation) — not scaled
+  // by the Rotation master.
+  var shape = 1.0;
+  if (P_sides() > 0.5) {
+    let beatP = max(u.driveBeat, gridPulse(7.0));
+    let lobe = cos(P_sides() * ang);
+    shape = 1.0 + (0.11 + P_beatStar() * beatP * u.pulse * 0.5) * lobe;
+  }
+  let ringR = softLimit((P_radius() + spec * P_react() * (0.6 + u.bass * 0.8)) * shape, frameCircle());
   let band = smoothstep(P_thick() + 0.02, 0.0, abs(rad - ringR));
   // Cosine palette instead of a raw hsl2rgb hue rotated by angle and drifted
   // by time: a continuously sweeping HSL hue walks through its desaturated
