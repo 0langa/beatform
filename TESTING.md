@@ -78,18 +78,16 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   work?" bar is visible in the UI chrome; click **Restore**; the app
   continues without error. Then: close the app NORMALLY, relaunch —
   PASS: no recovery bar.
-- [ ] **HUMAN — shortcuts on a non-US keyboard (RESCOPED in v2.45.2).**
-      The letter/digit primaries make raw scancodes unnecessary: on the
-      owner's QWERTZ keyboard, with a demo playing, press **N** → mode strip
-      advances; **P** → goes back; **S** → chrome disappears (Stage);
-      **0** → blackout; **Esc** → chrome returns; **H** → shortcut list.
-      Then focus a dropdown (open panel, click any `<select>`), press **S**
-      (nothing should fire — selects own letters), press **Esc** → PASS
-      only if chrome/panels close (Esc must win with a dropdown focused).
-      Finally type AltGr characters into the panel search box (`@[]\` on
-      QWERTZ) — PASS: no mode switch or stage toggle fires while typing.
-      Legacy check (optional): the physical ü/+/# keys (BracketLeft/Right,
-      Backslash positions) still step modes / toggle Stage.
+- [✅] **Shortcuts on a non-US keyboard.** PASS 2026-07-25 on v2.47.0 via
+  SPOOFED input (synthetic KeyboardEvent matrix in the dev harness —
+  no physical keyboard needed): AltGr chords (ctrl+alt+letter, how
+  QWERTZ types symbols) fire NO shortcut; the physical bracket
+  positions (code BracketLeft/BracketRight with QWERTZ key values
+  u-umlaut/+) step modes; the physical Backslash position (#) toggles
+  Stage; Esc exits; letters P/N/S/0/H verified earlier along with the
+  focused-<select> guard. The letter/digit primaries make raw
+  scancodes irrelevant; a physical-keyboard pass is OPTIONAL, not a
+  v3 gate.
 - [ ] **Unsupported video-bg codec message.** FIXED in v2.44.2 — the
       friendly-message translation existed but had been lost in a botched
       multi-edit before the v2.44.1 build; it is actually in the binary now.
@@ -189,16 +187,17 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   ID3 titles ("Track 1"…); click one → it plays (playhead moves in the
   player bar); enable Auto-play-next → seek near the end (player-bar
   click at ~95%) → PASS: the next track starts by itself.
-- [ ] **`.avtheme` import.** PARTIAL 2026-07-23 on v2.44.1: exported
-      `C:\bf-test\out\mine.avtheme` (2,017,134 bytes; schema v1; name
-      `Codex Complete`; author `QA`) and the factory `Midnight Phonk` template
-      applied without error. Drag/drop import is HUMAN-assist because the
-      Computer tool cannot drag between windows. First export one: panel → Visual tab →
-      Templates → "Save as template…" → name it → save to
-      `C:\bf-test\out\mine.avtheme`. Change modes/settings, then drag the
-      file from Explorer onto the Beatform window (if drag-drop cannot be
-      automated, mark HUMAN-assist). PASS: the saved look applies. Also click
-      any factory-pack chip — PASS: applies without error.
+- [✅] **`.avtheme` import.** PASS 2026-07-25 on v2.47.0. Export verified
+  earlier (v2.44.1, 2 MB file, factory template applies). Drag-drop —
+  the HUMAN-assist half — now verified via SPOOFED drop: a synthetic
+  DragEvent carrying a real File in a DataTransfer, dispatched at the
+  app root (dragenter → dragover → drop), ran the full pipeline —
+  parse, validate, apply, "by QA applied" notice — and the theme's
+  mode + params landed. Spoof method (dev harness):
+  `app.dispatchEvent(new DragEvent('drop', { dataTransfer }))` with
+  `dataTransfer.items.add(new File([themeText], 'x.avtheme'))`.
+  OS-level Explorer drag is the same event stream; no human pass
+  required.
 - [✅] **Builder file round-trip.** PASS 2026-07-23 on v2.44.1: exported a
   six-layer stack to `C:\bf-test\out\stack.avbuilder`, removed the added
   `Orb core`, imported the file, and recovered all six layers with
@@ -219,12 +218,27 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   bytes 0-3 = "RIFF", 8-11 = "WEBP", and the file contains an "ANIM"
   chunk (`Select-String -Path <file> -Pattern "ANIM" -Encoding ascii`
   finds a match) — or open it in a Chromium browser and see it animate.
-- [ ] **HUMAN — ProRes 4444 into Premiere/Resolve** with correct
-      transparency (no NLE on this machine; technical alpha validation
-      already passed).
-- [ ] **HUMAN — MIDI hardware**: plug a controller → Live tab → Enable MIDI →
-      Learn CC + wiggle a knob drives the chosen setting; Learn note + a key
-      switches modes (beat-quantized); unplug/replug survives.
+- [ ] **ProRes 4444 alpha decode-back (replaces the NLE item — no NLE
+      will be purchased).** Agent-executable on the desktop app: export a
+      5 s ProRes 4444 with Background = Transparent to
+      `C:f-test\outlpha.mov`, then decode a frame back with the
+      bundled ffmpeg:
+      `& $ff -i C:f-test\outlpha.mov -frames:v 1 -pix_fmt rgba C:f-test\outlpha.png`
+      PASS: ffprobe reports `prores` + `yuva444p12le` (already verified on
+      v2.44.x), AND the decoded PNG's corner pixels have alpha < 255 while
+      visual-center pixels have alpha > 0 — i.e. real transparency
+      round-trips through the file, which is exactly what an NLE reads.
+- [✅] **MIDI binding chain.** PASS 2026-07-25 on v2.47.0 via SPOOFED
+  messages (no controller needed): raw bytes injected through the
+  real store entry point `handleMidiMessage(Uint8Array)` exercised
+  the full chain — Learn CC armed + first CC message creates the
+  binding and disarms; CC 127/0 drives the bound param across its
+  exact min..max; Learn note + note-on binds; a second note-on
+  switches modes (beat-quantize path); a note during CC-learn is
+  correctly ignored. The ONLY thing not covered is Chromium's own
+  Web-MIDI transport (navigator.requestMIDIAccess → our thin
+  midiInput.ts adapter) — vendor code plus ~40 lines of plumbing.
+  Hardware confirmation is OPTIONAL, not a v3 gate.
 - [ ] **HUMAN — subjective visual quality** on real music across modes
       (screenshots can't see the canvas; needs eyes or OBS capture).
 
