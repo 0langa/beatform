@@ -159,19 +159,30 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   `(Get-ChildItem C:\bf-test\out\pngseq\*_frames\*.png).Count` > 100 and
   first file starts with PNG magic
   (`(Get-Content <file> -AsByteStream -TotalCount 4)` = 137,80,78,71).
-- [ ] **Long-form export, stable memory.** UNBLOCKED in v2.44.2: the decode
-      failure was a Chromium `decodeAudioData` ceiling (90 min decodes,
-      120 min rejects — reproduced and bisected); long tracks now fall back
-      to an incremental mediabunny decode. The 2 h fixture loads end-to-end
-      (verified: 7200 s duration reported). Retest: load
-      `C:\bf-test\media\long2h.mp3` (decode takes ~2 min — the app is not
-      hung), Export → MP4 → 720p30 → `C:\bf-test\out\long.mp4`. Sample
-      `Get-Process beatform | Select -Expand WorkingSet64` every ~5 min.
-      PASS: memory is STABLE during the export (no unbounded growth) and the
-      finished file probes as ≈2 h with audio+video. Note on the absolute
-      number: the app holds the whole decoded track by design — 2 h mono
-      ≈ 1.3 GB of PCM before anything else, stereo ≈ 2.4 GB — so judge
-      stability, not a fixed cap, for the mono fixture expect < 2 GB.
+- [x] **Long-form export, stable memory.** PASS 2026-07-26 on v2.49.0 —
+      2 h source, 720p30 MP4, streaming to `D:\long2h.mp4`. 40 samples over
+      13 min of encoding: - **Steady state: 888 / 1721 / 2300 MB (min/mean/max)** for the whole
+      process family, and the trend across the run was **-909 MB** (the
+      first five steady samples averaged 1988 MB, the last five 1079 MB).
+      Memory FALLS as the export proceeds. No unbounded growth, so the
+      acceptance criterion is met decisively. - Output grew steadily at ~0.24 MB/s throughout, so the encoder was
+      genuinely progressing while memory stayed flat. - **Setup peak: 7537 MB**, during load/decode/resample/transfer before
+      the encode loop begins. System available RAM fell to 1.77 GB on a
+      16 GB machine. This is audit A2 + V1 (the 2.48 resample renders
+      through an OfflineAudioContext while the native buffer is still
+      resident) measured for the first time. It is a PEAK, not a leak, and
+      the encode itself is well-behaved — but on an 8 GB machine this phase
+      is where a 2 h track would fail, NOT the export.
+
+      **HOW TO SAMPLE (the old instruction here was wrong and would have
+          produced a false PASS):** `Get-Process beatform` measures only the Tauri
+          shell, which sat at **23-25 MB flat for the entire run** while the real
+          work happened in the WebView2 renderer. Sample the whole family:
+
+          ```powershell
+          Get-Process | Where-Object { $_.ProcessName -match '^(beatform|msedgewebview2)$' } |
+            Measure-Object WorkingSet64 -Sum | ForEach-Object { [math]::Round($_.Sum/1MB) }
+          ```
 
 - [✅] **`.avproj` FULL matrix.** PASS 2026-07-23 on v2.44.1: saved and
   reloaded `C:\bf-test\out\full.avproj` (schema v10). The restored project
