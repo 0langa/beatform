@@ -78,7 +78,10 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   work?" bar is visible in the UI chrome; click **Restore**; the app
   continues without error. Then: close the app NORMALLY, relaunch —
   PASS: no recovery bar.
-- [~] **Shortcuts on a non-US keyboard.** PASS 2026-07-25 on v2.47.0 via
+- [✅] **Shortcuts on a non-US keyboard.** PHYSICAL PASS 2026-07-26 by the
+  owner on a real QWERTZ keyboard, v2.49.0: P/N/S/0/H and Esc all behave.
+  This supersedes the spoof below and closes audit finding HW-2.
+- [~] _(superseded, kept for provenance)_ **Spoofed keyboard run.** PASS 2026-07-25 on v2.47.0 via
   SPOOFED input (synthetic KeyboardEvent matrix in the dev harness —
   no physical keyboard needed): AltGr chords (ctrl+alt+letter, how
   QWERTZ types symbols) fire NO shortcut; the physical bracket
@@ -192,20 +195,18 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   ID3 titles ("Track 1"…); click one → it plays (playhead moves in the
   player bar); enable Auto-play-next → seek near the end (player-bar
   click at ~95%) → PASS: the next track starts by itself.
-- [ ] **`.avtheme` import.** Export half PASSES (v2.44.1, 2 MB file,
-      factory template applies). **Drag-drop is UNVERIFIED and was wrongly
-      marked PASS** — the v3 audit (HW-1) found the synthetic-DragEvent
-      spoof only proves the React `onDrop` handler works IN A BROWSER. It
-      says nothing about WebView2, where Tauri itself consumes the OS drop:
-      the window config left `dragDropEnabled` at its default `true`, and
-      tauri-utils' own doc states disabling it "is required to use HTML5
-      drag and drop on the frontend on Windows" — with no
-      `onDragDropEvent` listener anywhere in `src/`, a real Explorer drag
-      reached nothing. Fixed in v2.48.2 by setting `dragDropEnabled: false`.
-      RETEST ON THE INSTALLED BUILD, with a real mouse: drag an audio file
-      from Explorer onto the window (it should load), then a `.avtheme`
-      (it should apply), and confirm the drop overlay appears and clears.
-      A synthetic DragEvent does NOT satisfy this item.
+- [~] **Drag & drop (real Explorer drag, installed build).** Owner-tested
+  2026-07-26 on v2.49.0 — the `dragDropEnabled: false` fix WORKS: drops
+  now reach the app at all, which they never did before. - [✅] audio (.mp3/.wav) — loads and plays. - [✅] timed lyrics (.lrc/.srt) — attach to the current track. - [✅] `.avproj` — **FAILED on 2.49.0** with "Could not decode
+  ...avproj (Unable to decode audio data)": the drop handler
+  dispatched .avshader/.avtheme/.lrc/.srt and let everything else
+  fall through to the AUDIO loader, so projects were never handled.
+  Latent since the feature existed, unreachable until drops started
+  arriving. Fixed in v2.49.1 (`openProjectText` + an .avproj branch).
+  RETEST on >= 2.49.1. - [ ] `.avtheme` — retest with `D:\drop-test.avtheme` ("Drop Test —
+  Ember Six": hot-orange 6-fold Radial Burst, heavy bloom). PASS =
+  the look applies and a notice names it.
+  Also confirm the drop overlay appears while dragging and clears after.
 - [✅] **Builder file round-trip.** PASS 2026-07-23 on v2.44.1: exported a
   six-layer stack to `C:\bf-test\out\stack.avbuilder`, removed the added
   `Orb core`, imported the file, and recovered all six layers with
@@ -226,12 +227,12 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   bytes 0-3 = "RIFF", 8-11 = "WEBP", and the file contains an "ANIM"
   chunk (`Select-String -Path <file> -Pattern "ANIM" -Encoding ascii`
   finds a match) — or open it in a Chromium browser and see it animate.
-- [ ] **ProRes 4444 alpha decode-back (replaces the NLE item — no NLE
-      will be purchased).** Agent-executable on the desktop app: export a
+- [ ] **ProRes 4444 alpha decode-back.** (The NLE round-trip itself is
+      POSTPONED — owner will install Resolve later; not a v3 blocker.) Agent-executable on the desktop app: export a
       5 s ProRes 4444 with Background = Transparent to
-      `C:f-test\outlpha.mov`, then decode a frame back with the
+      `C:\bf-test\out\alpha.mov`, then decode a frame back with the
       bundled ffmpeg:
-      `& $ff -i C:f-test\outlpha.mov -frames:v 1 -pix_fmt rgba C:f-test\outlpha.png`
+      `& $ff -i C:\bf-test\out\alpha.mov -frames:v 1 -pix_fmt rgba C:\bf-test\out\alpha.png`
       PASS: ffprobe reports `prores` + `yuva444p12le` (already verified on
       v2.44.x), AND the decoded PNG's corner pixels have alpha < 255 while
       visual-center pixels have alpha > 0 — i.e. real transparency
@@ -246,7 +247,9 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   correctly ignored. The ONLY thing not covered is Chromium's own
   Web-MIDI transport (navigator.requestMIDIAccess → our thin
   midiInput.ts adapter) — vendor code plus ~40 lines of plumbing.
-  Hardware confirmation is OPTIONAL, not a v3 gate.
+  Hardware confirmation is REMOVED from the v3 requirements (owner
+  decision 2026-07-26: no controller will be purchased). A virtual MIDI
+  loopback could close the transport gap later at no cost.
 - [ ] **HUMAN — subjective visual quality** on real music across modes
       (screenshots can't see the canvas; needs eyes or OBS capture).
 

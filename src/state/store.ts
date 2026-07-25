@@ -451,6 +451,8 @@ interface Actions {
   newProject(): void;
   saveProject(): Promise<void>;
   openProject(): Promise<void>;
+  /** Open a project from already-read text (the drag-drop path). */
+  openProjectText(name: string, contents: string): void;
   applyDocument(doc: ProjectDocument): void;
   checkAutosaveRecovery(): Promise<void>;
   restoreAutosave(): void;

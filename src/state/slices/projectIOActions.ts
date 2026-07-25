@@ -98,6 +98,32 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       }
     },
 
+    /**
+     * Open a project from text the caller already has — the drag-drop path.
+     * Shares every rule with openProject(): parse BEFORE clearHistory so a
+     * corrupt file can't cost the undo stack, then applyDocument.
+     *
+     * Without this, a dropped .avproj fell through the drop handler's
+     * extension dispatch to loadFile() and was handed to the AUDIO decoder,
+     * which reported the baffling "Unable to decode audio data".
+     */
+    openProjectText(name, contents) {
+      try {
+        const doc = parseProject(contents);
+        clearHistory();
+        get().applyDocument(doc);
+        set({ undoDepth: 0, redoDepth: 0 });
+        ctx.flashNotice(`Project "${name}" loaded`);
+      } catch (e) {
+        set({
+          error:
+            e instanceof ProjectParseError
+              ? `Could not open project: ${e.message}`
+              : `Could not open project: ${(e as Error).message}`,
+        });
+      }
+    },
+
     async openProject() {
       try {
         const picked = await openTextFile([

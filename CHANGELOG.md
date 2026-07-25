@@ -11,6 +11,19 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.49.1] - 2026-07-26
+
+### Fixed
+
+- **Dropping a project file onto the window opens it.** It reported "Could
+  not decode ... (Unable to decode audio data)" instead: the drop handler
+  recognised shaders, templates and lyrics, then handed everything else to the
+  audio loader — so a `.avproj` was fed to the audio decoder. The bug had been
+  there as long as the feature, but was unreachable until 2.49.0 made drops
+  arrive at all on Windows.
+- The drop overlay says "Drop to load" rather than "Drop to play", since audio
+  is only one of the five things you can drop.
+
 ## [2.49.0] - 2026-07-25
 
 The audit-remediation release. An independent five-part audit read every

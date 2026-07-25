@@ -644,6 +644,15 @@ export default function App() {
           void theme.text().then((t) => store().importThemeText(t));
           return;
         }
+        // Projects open by drag too. Without this the file fell through to
+        // loadFile() below and the AUDIO decoder rejected it with "Unable to
+        // decode audio data" — invisible until v2.49.0 made drops arrive at
+        // all on Windows.
+        const project = files.find((f) => f.name.toLowerCase().endsWith(".avproj"));
+        if (project) {
+          void project.text().then((t) => store().openProjectText(project.name, t));
+          return;
+        }
         // Timed lyrics: drop an .lrc/.srt alone (attaches to the current
         // track) or together with an audio file (applied AFTER the track
         // loads — loading clears per-track lyrics, so order matters).
@@ -719,7 +728,7 @@ export default function App() {
       {dragOver && (
         <div className="drop-overlay">
           <IconMusic size={44} />
-          <span>{showBatch ? "Drop to add to the batch queue" : "Drop to play"}</span>
+          <span>{showBatch ? "Drop to add to the batch queue" : "Drop to load"}</span>
         </div>
       )}
 
