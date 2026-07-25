@@ -38,7 +38,7 @@ export const starfield: PresetDef = {
         hotCore: 0.35,
       },
     },
-    { id: "dance", name: "Beat Dance", values: {} },
+    { id: "dance", name: "Beat Dance", values: { bandColor: 30, beatPop: 0.5 } },
     {
       id: "warp",
       name: "Warp",
@@ -50,6 +50,7 @@ export const starfield: PresetDef = {
         streak: 0.9,
         hotCore: 0.7,
         clump: 0.4,
+        beatPop: 0.6,
       },
     },
     {
@@ -77,6 +78,9 @@ export const starfield: PresetDef = {
         streak: 1.1,
         hotCore: 0.9,
         clump: 0.6,
+        bandColor: 60,
+        beatPop: 0.9,
+        sizeVar: 0.6,
       },
     },
     {
@@ -97,6 +101,8 @@ export const starfield: PresetDef = {
         clump: 0.7,
         streak: 0.05,
         hotCore: 0.5,
+        sizeVar: 1.2,
+        bandColor: 20,
       },
     },
     {
@@ -118,6 +124,8 @@ export const starfield: PresetDef = {
         streak: 0.6,
         hotCore: 0.8,
         clump: 0.55,
+        sizeVar: 0.8,
+        bandColor: 15,
       },
     },
   ],
@@ -349,6 +357,33 @@ export const starfield: PresetDef = {
       default: 1,
       hint: "Fold the field into mirrored wedges around the center — 1 is off, 2 mirrors left/right, higher makes a kaleidoscope",
     },
+    {
+      key: "sizeVar",
+      label: "Size variance",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      default: 0,
+      hint: "Extra spread in particle sizes — 0 is even, higher mixes tiny sparks with big soft ones",
+    },
+    {
+      key: "bandColor",
+      label: "Band color",
+      min: 0,
+      max: 120,
+      step: 5,
+      default: 0,
+      hint: "Tint each particle by the frequency it follows — bass, mids and treble each take their own hue",
+    },
+    {
+      key: "beatPop",
+      label: "Beat brightness",
+      min: 0,
+      max: 1.5,
+      step: 0.05,
+      default: 0,
+      hint: "Every particle flares brighter on each beat, grid-locked to the tempo",
+    },
   ],
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
@@ -368,6 +403,11 @@ fn preset(uv: vec2f) -> vec4f {
   col += bgPal * u.driveBeat * P_beatFlash() * u.pulse;
 
   let energy = P_speed() * (0.4 + u.drive * P_energyDrive());
+
+  // Grid-locked beat brightness pop applied to every particle's luminance in
+  // both modes. Frame-constant, so hoisted out of the cell loops. u.pulse gates
+  // it; default Beat brightness of 0 makes this exactly 1.0 (no change).
+  let beatPop = 1.0 + max(u.driveBeat, gridPulse(7.0)) * P_beatPop() * u.pulse;
 
   if (P_fly() > 0.5) {
     // ---- TRUE 3D STARFIELD: discrete stars stream from far to the camera ----
@@ -411,10 +451,14 @@ fn preset(uv: vec2f) -> vec4f {
           let starScreen = (rotT * starW) / (Z * gs);   // un-rotate back to screen
           let dvec = p - starScreen;
           var band = u.bass;
-          if (h4 < 0.3333) { band = u.mid; } else if (h4 < 0.6666) { band = u.treble; }
+          var bandTint = 0.0;
+          if (h4 < 0.3333) { band = u.mid; bandTint = 1.0; } else if (h4 < 0.6666) { band = u.treble; bandTint = 2.0; }
+          // Optional extra per-particle size spread on top of the existing depth
+          // spread. Neutral (1.0) at Size variance = 0 so the tuned look holds.
+          let szExtra = max(1.0 + (h1 - 0.5) * P_sizeVar() * 1.4, 0.1);
           // Small, crisp point; capped so a near star becomes a thin STREAK
           // flying past rather than a fat soft blob.
-          let rad = min(P_size() * (0.3 + h1) / (Z * gs) * (1.0 + band * P_sizePulse()), 0.05);
+          let rad = min(P_size() * (0.3 + h1) / (Z * gs) * (1.0 + band * P_sizePulse()) * szExtra, 0.05);
           let flight = normalize(starScreen + vec2f(1e-4, 0.0));
           let perp = vec2f(-flight.y, flight.x);
           let stretch = 1.0 + P_streak() * (1.0 - Z) * (2.5 + u.driveBeat * 3.0 * u.pulse);
@@ -433,9 +477,11 @@ fn preset(uv: vec2f) -> vec4f {
           let cd = dist / max(rad, 1e-5);
           let core = 1.0 / (1.0 + cd * cd * 10.0);
           let halo = exp(-cd * cd * 1.3) * P_glow() * 0.4;
-          let hueOff = (h3 - 0.5) * P_hueVariance();
+          // Band color: bass keeps the base hue, mids and treble step away from
+          // it by Band color degrees each — a legible bass/mid/treble split.
+          let hueOff = (h3 - 0.5) * P_hueVariance() + bandTint * P_bandColor();
           let sPal = cosPalette(1.0 - (P_hue() + hueOff) / 360.0, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
-          let lum = (core * 1.6 + halo) * fade * tw * (0.5 + band * 0.9);
+          let lum = (core * 1.6 + halo) * fade * tw * (0.5 + band * 0.9) * beatPop;
           let hot = smoothstep(0.26, 0.06, Z) * P_hotCore() * (0.4 + h1);
           col += mix(sPal, vec3f(1.0), hot * 0.7) * lum * P_brightness();
         }
@@ -484,9 +530,12 @@ fn preset(uv: vec2f) -> vec4f {
           let home = (base + vec2f(f32(ox), f32(oy)) + vec2f(0.5) + wob + scat) / scl;
           let d = p - home;
           var band = u.bass;
-          if (h4 < 0.3333) { band = u.mid; } else if (h4 < 0.6666) { band = u.treble; }
+          var bandTint = 0.0;
+          if (h4 < 0.3333) { band = u.mid; bandTint = 1.0; } else if (h4 < 0.6666) { band = u.treble; bandTint = 2.0; }
           let depthV = mix(0.5, 1.4, h1);
-          let rad = P_size() * 0.4 / scl * depthV * (0.7 + band * P_sizePulse());
+          // Extra per-particle size spread (neutral at Size variance = 0).
+          let szExtra = max(1.0 + (h1 - 0.5) * P_sizeVar() * 1.4, 0.1);
+          let rad = P_size() * 0.4 / scl * depthV * (0.7 + band * P_sizePulse()) * szExtra;
           let stretch = 1.0 + P_streak() * (0.2 + u.driveBeat * 1.0 * u.pulse);
           // EARLY DISTANCE CULL — the real speedup. A particle's glow reaches at
           // most ~2.8 core-radii; beyond that its contribution is under 1% yet
@@ -511,9 +560,11 @@ fn preset(uv: vec2f) -> vec4f {
           let cd = dist / max(rad, 1e-5);
           let core = 1.0 / (1.0 + cd * cd * 10.0);
           let bloom = exp(-cd * cd * 1.3) * P_glow() * 0.45;
-          let hueOff = (h3 - 0.5) * P_hueVariance();
+          // Band color: bass keeps the base hue, mids/treble step away by Band
+          // color degrees each — the same legible split as fly mode.
+          let hueOff = (h3 - 0.5) * P_hueVariance() + bandTint * P_bandColor();
           let sPal = cosPalette(1.0 - (P_hue() + hueOff) / 360.0, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
-          let lum = (core * 1.4 + bloom) * tw * depthV * (0.55 + band * 0.9);
+          let lum = (core * 1.4 + bloom) * tw * depthV * (0.55 + band * 0.9) * beatPop;
           let hot = smoothstep(0.6, 1.4, depthV) * P_hotCore() * (0.4 + h1);
           col += mix(sPal, vec3f(1.0), hot * 0.7) * lum * P_brightness();
         }
