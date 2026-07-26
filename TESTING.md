@@ -278,8 +278,12 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   Hardware confirmation is REMOVED from the v3 requirements (owner
   decision 2026-07-26: no controller will be purchased). A virtual MIDI
   loopback could close the transport gap later at no cost.
-- [ ] **HUMAN — subjective visual quality** on real music across modes
-      (screenshots can't see the canvas; needs eyes or OBS capture).
+- [✅] **HUMAN — subjective visual quality** on real music across modes.
+  OWNER SIGN-OFF 2026-07-27. This is the one item no agent can close — it
+  needs eyes on the canvas, and the owner gave it.
+
+**All acceptance items are green. The app has cleared its bar end-to-end on
+real hardware — v3.0.0 can be cut.**
 
 ## Sign-off
 

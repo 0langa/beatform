@@ -354,6 +354,19 @@ pub fn prores_audio_end(state: tauri::State<'_, ProresState>) -> Result<(), Stri
     Ok(())
 }
 
+/// Everything that can reject a ProRes start, evaluated BEFORE the staged WAV
+/// is consumed. Pure and total so a test can assert every rejection, and so the
+/// single caller pairs all of them with one drop_stale_audio().
+fn begin_guards(job_running: bool, fps: u32, scope_allows: bool, out: &Path) -> Result<(), String> {
+    if job_running {
+        return Err("A ProRes export is already running".into());
+    }
+    if !(1..=240).contains(&fps) {
+        return Err(format!("Unreasonable fps: {fps}"));
+    }
+    check_out_path(scope_allows, out, "mov")
+}
+
 #[tauri::command]
 pub fn prores_begin(
     app: tauri::AppHandle,
@@ -362,23 +375,24 @@ pub fn prores_begin(
     out_path: String,
 ) -> Result<(), String> {
     let mut job_guard = state.job.lock().map_err(|_| "state poisoned")?;
-    // Every rejection below must drop the staged mezzanine WAV. It was written
-    // by prores_audio_end BEFORE we got here, so returning early without it
-    // strands the whole file in %TEMP% until the next prores_audio_begin — and
-    // if the user never retries, until the app exits, which never removes it.
-    // For an hour-long track that is ~691 MB abandoned on the SYSTEM drive,
-    // i.e. the exact drive whose exhaustion the pre-flight check exists to
-    // catch. Four orphans were observed accumulating during one test session.
-    if job_guard.is_some() {
-        drop_stale_audio(&state);
-        return Err("A ProRes export is already running".into());
-    }
-    if !(1..=240).contains(&fps) {
-        drop_stale_audio(&state);
-        return Err(format!("Unreasonable fps: {fps}"));
-    }
     let out = PathBuf::from(&out_path);
-    if let Err(e) = check_out_path(app.fs_scope().is_allowed(&out), &out, "mov") {
+    // ONE rejection point, so the cleanup cannot be forgotten. Every guard runs
+    // while the staged mezzanine WAV is still in state.pending_wav:
+    // prores_audio_end wrote the whole PCM file to %TEMP% before we were
+    // called, so any early return that skips drop_stale_audio strands it there
+    // until the next prores_audio_begin — or, if the user never retries, until
+    // the app exits, which never removes it. That is 192 KB/s of track, ~691 MB
+    // for an hour of 48 kHz stereo, abandoned on the SYSTEM drive: the exact
+    // drive whose exhaustion the export pre-flight exists to catch. Four
+    // orphans were observed accumulating in one session where check_out_path
+    // rejected the destination. The guards live in begin_guards() so a new one
+    // physically cannot be added on a path that forgets this cleanup.
+    if let Err(e) = begin_guards(
+        job_guard.is_some(),
+        fps,
+        app.fs_scope().is_allowed(&out),
+        &out,
+    ) {
         drop_stale_audio(&state);
         return Err(e);
     }
@@ -721,6 +735,50 @@ mod tests {
                 "0",
                 "C:/t/out.gif",
             ]
+        );
+    }
+
+    #[test]
+    fn begin_guards_reject_before_the_wav_is_consumed() {
+        let ok = Path::new(r"C:\out\x.mov");
+        // Happy path first, so the rejections below mean something.
+        assert!(begin_guards(false, 60, true, ok).is_ok());
+        // Each rejection the caller must pair with drop_stale_audio(). A staged
+        // mezzanine WAV is already on disk here, so a path that returns without
+        // cleanup leaks up to ~691 MB into %TEMP% on the system drive.
+        assert!(begin_guards(true, 60, true, ok).is_err(), "already running");
+        assert!(begin_guards(false, 0, true, ok).is_err(), "fps 0");
+        assert!(begin_guards(false, 241, true, ok).is_err(), "fps 241");
+        assert!(begin_guards(false, 60, false, ok).is_err(), "outside fs scope");
+        assert!(
+            begin_guards(false, 60, true, Path::new("relative.mov")).is_err(),
+            "relative path"
+        );
+        assert!(
+            begin_guards(false, 60, true, Path::new(r"C:\out\x.mp4")).is_err(),
+            "wrong extension"
+        );
+    }
+
+    #[test]
+    fn drop_stale_audio_removes_the_staged_file_from_disk() {
+        // The cleanup must actually unlink, not merely clear the handle — the
+        // bug was a real file left behind on the drive that fills up.
+        let state = ProresState::default();
+        let (file, path) = create_temp_new("test-stale.wav").expect("temp file");
+        drop(file);
+        assert!(path.exists(), "precondition: staged file is on disk");
+        *state.pending_wav.lock().unwrap() = Some(path.clone());
+
+        drop_stale_audio(&state);
+
+        assert!(
+            !path.exists(),
+            "staged WAV must be unlinked, not just dropped from state"
+        );
+        assert!(
+            state.pending_wav.lock().unwrap().is_none(),
+            "staged WAV must be cleared from state"
         );
     }
 
