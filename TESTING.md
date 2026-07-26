@@ -159,30 +159,35 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   `(Get-ChildItem C:\bf-test\out\pngseq\*_frames\*.png).Count` > 100 and
   first file starts with PNG magic
   (`(Get-Content <file> -AsByteStream -TotalCount 4)` = 137,80,78,71).
-- [x] **Long-form export, stable memory.** PASS 2026-07-26 on v2.49.0 —
-      2 h source, 720p30 MP4, streaming to `D:\long2h.mp4`. 40 samples over
-      13 min of encoding: - **Steady state: 888 / 1721 / 2300 MB (min/mean/max)** for the whole
-      process family, and the trend across the run was **-909 MB** (the
-      first five steady samples averaged 1988 MB, the last five 1079 MB).
-      Memory FALLS as the export proceeds. No unbounded growth, so the
-      acceptance criterion is met decisively. - Output grew steadily at ~0.24 MB/s throughout, so the encoder was
-      genuinely progressing while memory stayed flat. - **Setup peak: 7537 MB**, during load/decode/resample/transfer before
-      the encode loop begins. System available RAM fell to 1.77 GB on a
-      16 GB machine. This is audit A2 + V1 (the 2.48 resample renders
-      through an OfflineAudioContext while the native buffer is still
-      resident) measured for the first time. It is a PEAK, not a leak, and
-      the encode itself is well-behaved — but on an 8 GB machine this phase
-      is where a 2 h track would fail, NOT the export.
+- [❌] **Long-form export, stable memory. FAILS — memory grows linearly and
+  the render rate decays with it.** Measured 2026-07-26 on v2.49.0, 2 h
+  source, 720p30 MP4 streaming to `D:\long2h.mp4`, 265 samples over 91 min. - **Growth: +152 MB per 10 min, monotonic.** 10-min bucket means:
+  1439 MB (t=10-20) -> 1560 -> 1840 -> 1989 -> 2206 -> 2392 -> 2514 ->
+  2688 -> **2862 MB (t=90-100)**. Linear-fit slope +0.253 MB/s. - **Owner observed the render rate decaying with it: ~130 fps at the
+  start, ~30 fps by the 90-minute mark**, dropping steadily throughout. - Setup peak before the encode loop: 7537 MB (system available RAM fell
+  to 1.77 GB on a 16 GB machine) — audit A2 + V1, the 2.48 resample
+  holding the native buffer and the OfflineAudioContext render at once. - CAUSE (read in `node_modules/mp4-muxer/build/mp4-muxer.mjs`): even with
+  `fastStart: "fragmented"`, `finalizeFragment` pushes every finalized
+  chunk onto BOTH `track.finalizedChunks` and the muxer's
+  `#finalizedChunks`, and never clears them. The `tfra` box builder then
+  does `track.finalizedChunks.map(...)` across the whole array. So the
+  retained chunk list grows for the entire export and is also scanned,
+  which matches both the linear memory growth and the rate decay.
+  `exportCore.ts`'s comment "Streaming writes fragmented MP4: strictly
+  forward, memory stays flat" is therefore FALSE. - NOT a blocker for finishing a 2 h export on a 16 GB machine (it
+  completes, just slowly), but it scales with length and would fail on a
+  smaller machine or a longer track.
 
-      **HOW TO SAMPLE (the old instruction here was wrong and would have
-          produced a false PASS):** `Get-Process beatform` measures only the Tauri
-          shell, which sat at **23-25 MB flat for the entire run** while the real
-          work happened in the WebView2 renderer. Sample the whole family:
+      **HOW TO SAMPLE (the previous instruction here was wrong and produced a
+      false PASS):** `Get-Process beatform` measures only the Tauri shell,
+      which sat at **23-25 MB flat for the entire run** while the WebView2
+      renderer did all the work. It would show a perfectly stable 25 MB and
+      never see either the 7.5 GB peak or the growth. Sample the family:
 
-          ```powershell
-          Get-Process | Where-Object { $_.ProcessName -match '^(beatform|msedgewebview2)$' } |
-            Measure-Object WorkingSet64 -Sum | ForEach-Object { [math]::Round($_.Sum/1MB) }
-          ```
+      ```powershell
+      Get-Process | Where-Object { $_.ProcessName -match '^(beatform|msedgewebview2)$' } |
+        Measure-Object WorkingSet64 -Sum | ForEach-Object { [math]::Round($_.Sum/1MB) }
+      ```
 
 - [✅] **`.avproj` FULL matrix.** PASS 2026-07-23 on v2.44.1: saved and
   reloaded `C:\bf-test\out\full.avproj` (schema v10). The restored project
