@@ -1,5 +1,47 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { exportVideo, makePngSequenceWriter, type PngFsOps } from "./videoExporter";
+
+/**
+ * Stub for the Tauri fs plugin that createTauriWriter dynamically imports, so
+ * the stream lane can be driven from a test: `gate` holds a write open, and
+ * `failNext` makes one fail like a full disk.
+ */
+const tauriFs = vi.hoisted(() => ({
+  writes: [] as { length: number; position: number }[],
+  removed: [] as string[],
+  closed: 0,
+  gate: null as Promise<void> | null,
+  failNext: null as Error | null,
+  cursor: 0,
+}));
+
+vi.mock("@tauri-apps/plugin-fs", () => ({
+  SeekMode: { Start: 0 },
+  open: async () => ({
+    async seek(position: number) {
+      tauriFs.cursor = position;
+    },
+    async write(data: Uint8Array) {
+      if (tauriFs.gate) await tauriFs.gate;
+      if (tauriFs.failNext) {
+        const e = tauriFs.failNext;
+        tauriFs.failNext = null;
+        throw e;
+      }
+      tauriFs.writes.push({ length: data.length, position: tauriFs.cursor });
+      tauriFs.cursor += data.length;
+      return data.length;
+    },
+    async close() {
+      tauriFs.closed++;
+    },
+  }),
+  remove: async (path: string) => {
+    tauriFs.removed.push(path);
+  },
+  writeFile: async () => undefined,
+  mkdir: async () => undefined,
+}));
 
 /**
  * H5 regression: the sequence writer used to store a write failure in a local
@@ -236,5 +278,171 @@ describe("stream writer backpressure", () => {
     release();
     await p;
     expect(written).toEqual([4]);
+  });
+});
+
+/**
+ * The worker's stream lane had the same unbounded-buffer hole the PNG lane
+ * closed with frame/frameAck: the main thread called writer.write() and
+ * returned, so the worker kept posting chunks at encode speed while every
+ * closure waiting in the writer's queue held its data alive (up to ~16 MiB
+ * each — the entire encoded bitstream, ~2 GB on a 2-hour export). The chunk is
+ * now acked only once it is on disk, which paces the encoders through
+ * mediabunny's StreamTarget.
+ */
+describe("worker chunk lane backpressure", () => {
+  class FakeWorker {
+    static instances: FakeWorker[] = [];
+    onerror: (() => void) | null = null;
+    onmessage:
+      | ((e: {
+          data:
+            | { type: "chunk"; data: Uint8Array; position: number }
+            | { type: "done"; result: unknown }
+            | { type: "error"; message: string; name: string };
+        }) => void)
+      | null = null;
+    onmessageerror: (() => void) | null = null;
+    postMessage = vi.fn();
+    terminate = vi.fn();
+    constructor() {
+      FakeWorker.instances.push(this);
+    }
+    /** Messages this worker was sent, by tag. */
+    sent(type: string) {
+      return this.postMessage.mock.calls.filter((c) => (c[0] as { type: string }).type === type);
+    }
+  }
+
+  const options = {
+    width: 256,
+    height: 144,
+    fps: 30,
+    bitrate: 1_000_000,
+    presetId: "spectrum-bars",
+    params: {},
+    bg: { kind: "solid", colorA: "#000", colorB: "#000", angle: 0, alpha: 1 } as never,
+    streamToPath: "out.mp4",
+  };
+
+  function fakeAudioBuffer(): AudioBuffer {
+    return {
+      sampleRate: 48000,
+      length: 480,
+      duration: 480 / 48000,
+      numberOfChannels: 2,
+      getChannelData: () => new Float32Array(480),
+    } as unknown as AudioBuffer;
+  }
+
+  /** Let the dynamic import + promise chains settle (no fake timers here). */
+  const tick = async (n = 4) => {
+    for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  let realWorker: typeof Worker | undefined;
+
+  beforeEach(() => {
+    tauriFs.writes.length = 0;
+    tauriFs.removed.length = 0;
+    tauriFs.closed = 0;
+    tauriFs.cursor = 0;
+    tauriFs.gate = null;
+    tauriFs.failNext = null;
+    realWorker = (globalThis as { Worker?: typeof Worker }).Worker;
+    (globalThis as { Worker: unknown }).Worker = FakeWorker;
+  });
+
+  afterEach(() => {
+    if (realWorker !== undefined) (globalThis as { Worker?: unknown }).Worker = realWorker;
+    FakeWorker.instances.length = 0;
+  });
+
+  it("acks a chunk only after the bytes are on disk", async () => {
+    let release!: () => void;
+    tauriFs.gate = new Promise<void>((r) => (release = r));
+
+    const promise = exportVideo(fakeAudioBuffer(), { ...options });
+    await tick();
+    const worker = FakeWorker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker.onmessage?.({ data: { type: "chunk", data: new Uint8Array(8), position: 0 } });
+    await tick();
+    // Still blocked on the disk: nothing written, nothing acked, so the worker
+    // is parked instead of racing ahead and queueing more chunks here.
+    expect(tauriFs.writes).toHaveLength(0);
+    expect(worker.sent("chunkAck")).toHaveLength(0);
+
+    release();
+    await tick();
+    expect(tauriFs.writes).toEqual([{ length: 8, position: 0 }]);
+    expect(worker.sent("chunkAck")).toHaveLength(1);
+
+    worker.onmessage?.({
+      data: { type: "done", result: { bytes: 8, seconds: 1, audioCodec: "aac" } },
+    });
+    await expect(promise).resolves.toMatchObject({ bytes: 8, blob: undefined });
+    expect(tauriFs.closed).toBe(1);
+  });
+
+  it("does not trip the watchdog while parked on a slow disk write", async () => {
+    // The ack flow control makes the worker DELIBERATELY silent while the main
+    // thread writes. The watchdog watches for worker silence, so without
+    // discounting our own I/O any write slower than WORKER_WATCHDOG_MS (30 s —
+    // i.e. a 16 MiB chunk under ~0.5 MB/s, a stalled network or sleeping USB
+    // drive) would kill a perfectly healthy export mid-render.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let release!: () => void;
+      tauriFs.gate = new Promise<void>((r) => (release = r));
+
+      const promise = exportVideo(fakeAudioBuffer(), { ...options });
+      let failure: Error | null = null;
+      void promise.catch((e: Error) => (failure = e));
+      await tick();
+      const worker = FakeWorker.instances[0];
+      worker.onmessage?.({ data: { type: "chunk", data: new Uint8Array(8), position: 0 } });
+      await tick();
+
+      // Three full watchdog periods parked on the disk.
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(failure).toBeNull();
+
+      release();
+      await tick();
+      expect(worker.sent("chunkAck")).toHaveLength(1);
+
+      worker.onmessage?.({
+        data: { type: "done", result: { bytes: 8, seconds: 1, audioCodec: "aac" } },
+      });
+      await expect(promise).resolves.toMatchObject({ bytes: 8 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still acks after a write failure, and aborts with the disk error (H5)", async () => {
+    const promise = exportVideo(fakeAudioBuffer(), { ...options });
+    await tick();
+    const worker = FakeWorker.instances[0];
+
+    tauriFs.failNext = new Error("There is not enough space on the disk. (os error 112)");
+    worker.onmessage?.({ data: { type: "chunk", data: new Uint8Array(8), position: 0 } });
+    await tick();
+
+    // The failure trips the export's abort signal immediately (H5) AND the
+    // chunk is still acked — without the ack the worker would sit forever
+    // waiting on a write that already failed.
+    expect(worker.sent("abort")).toHaveLength(1);
+    expect(worker.sent("chunkAck")).toHaveLength(1);
+
+    worker.onmessage?.({
+      data: { type: "error", message: "Export cancelled", name: "AbortError" },
+    });
+    // The self-inflicted abort must surface as the original disk error, not a
+    // generic cancel — that is what classifyError keys off downstream.
+    await expect(promise).rejects.toThrow(/os error 112/);
+    expect(tauriFs.removed).toEqual(["out.mp4"]); // partial file cleaned up
   });
 });

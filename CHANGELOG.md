@@ -11,6 +11,26 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.51.0] - 2026-07-26
+
+### Fixed
+
+- **Long exports now hold steady instead of growing.** 2.50.0 made the encoders
+  wait for the disk, which nearly doubled export speed — but exports run on a
+  background thread, and on that path handing a chunk to the main thread
+  returned immediately, so there was still nothing real to wait for. A
+  measured 2-hour export improved but kept climbing. The background thread now
+  waits for each chunk to actually reach the disk before producing the next
+  one, so only one chunk is ever in flight. This is the same handshake the PNG
+  image-sequence lane has always used; the video lane never had it.
+- **A slow drive no longer aborts a healthy export.** Because the export thread
+  now deliberately waits while a chunk is written, the "worker stopped
+  responding" safety check could mistake that wait for a hang and kill the
+  export. It now ignores time spent waiting on our own disk writes. This
+  affected the image-sequence lane too, ever since it gained the same
+  handshake — a single frame or chunk slower than 30 seconds (a stalled
+  network share, a sleeping USB drive) was enough to trigger it.
+
 ## [2.50.0] - 2026-07-26
 
 ### Fixed

@@ -487,7 +487,20 @@ function runInWorker(
       );
 
     let lastMessageAt = Date.now();
+    // Writes we owe an ack for. While this is non-zero the worker is parked on
+    // US by design (flow control), not wedged — so its silence is expected and
+    // must not count toward the watchdog. Without this, any single frame or
+    // 16 MiB chunk write slower than WORKER_WATCHDOG_MS (~0.5 MB/s — a stalled
+    // network drive, a sleeping USB disk) would be misread as "stopped
+    // responding" and kill a healthy export. Safe: once the write lands we ack
+    // and the timer resumes, so a genuinely dead worker still trips on the
+    // silence that follows.
+    let sinkBusy = 0;
     watchdog = setInterval(() => {
+      if (sinkBusy > 0) {
+        lastMessageAt = Date.now();
+        return;
+      }
       if (Date.now() - lastMessageAt >= WORKER_WATCHDOG_MS) dead("stopped responding");
     }, 1000);
 
@@ -519,7 +532,20 @@ function runInWorker(
           break;
         case "chunk":
           wroteAnything = true;
-          writer?.write(msg.data, msg.position);
+          // Ack only once the bytes are on disk — the stream lane's twin of
+          // frame/frameAck below. Fire-and-forget here let the worker produce
+          // chunks at encode speed while each queued closure kept its (up to
+          // ~16 MiB) data alive, so the process retained the entire encoded
+          // bitstream: ~2 GB for a 2-hour export. Ack even on failure, or a
+          // disk error would wedge the worker instead of surfacing through
+          // onWriteError (which aborts the export).
+          sinkBusy++;
+          void Promise.resolve(writer?.write(msg.data, msg.position))
+            .catch(() => undefined)
+            .then(() => {
+              sinkBusy--;
+              worker.postMessage({ type: "chunkAck" });
+            });
           break;
         case "frame":
           wroteAnything = true;
@@ -528,9 +554,13 @@ function runInWorker(
           // PNG/ProRes/GIF/WebP lane, which has no encoder queue to throttle
           // on). Ack even on failure, or the export would wedge instead of
           // surfacing the error.
+          sinkBusy++;
           void Promise.resolve(onFrame?.(msg.data, msg.index))
             .catch(() => undefined)
-            .then(() => worker.postMessage({ type: "frameAck" }));
+            .then(() => {
+              sinkBusy--;
+              worker.postMessage({ type: "frameAck" });
+            });
           break;
         case "done":
           resolve(msg.result);
