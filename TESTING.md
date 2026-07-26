@@ -1,6 +1,6 @@
 # Beatform — Manual Testing Batch (agent-executable)
 
-State as of **v2.44.2** (2026-07-24). Written so a computer-controlling agent
+State as of **v2.51.0** (2026-07-26). Written so a computer-controlling agent
 with full PC access can execute it; items that genuinely need human senses or
 hardware are marked **HUMAN**. Mark each item ✅/❌ with a one-line note.
 
@@ -100,13 +100,11 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   quirks). Handler logic: verified. Physical layout mapping: unverified —
   one real pass on a QWERTZ layout still recommended before the v3 tag
   (costs a layout switch, not hardware).
-- [ ] **Unsupported video-bg codec message.** FIXED in v2.44.2 — the
-      friendly-message translation existed but had been lost in a botched
-      multi-edit before the v2.44.1 build; it is actually in the binary now.
-      Retest: Panel (G) → Scene tab → Background → Video → pick
-      `C:\bf-test\media\bg-bad.mp4`. PASS: the error toast names a codec
-      problem and suggests H.264/VP9 — NOT "Assertion failed". `bg-good.mp4`
-      still loads clean.
+- [✅] **Unsupported video-bg codec message.** PASS 2026-07-26 on installed
+  v2.51.0: Panel (G) → Scene → Background → Video →
+  `C:\bf-test\media\bg-bad.mp4` produced `Could not load video
+background: this clip's video codec isn't supported — re-encode it as
+H.264 or VP9 and try again`. No "Assertion failed" appeared.
 
 ## ⬜ Still to test
 
@@ -121,25 +119,29 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   **Restart now** boots the new version. Manual checks from
   Settings → Updates must NOT pop the modal. Requires the auto-check
   toggle ON (default).
-- [ ] **Per-mode backgrounds (new in v2.46.0).** Open panel (G) → Scene →
-      Background. Default scope is "All modes". Select a mode (e.g. Spectrum
-      Bars), switch scope to "This mode" (nothing should change visually),
-      pick Image → choose any picture. PASS: Spectrum Bars shows the image
-      background; switching to any other mode shows the shared background;
-      switching back shows the image again; an export of each mode matches
-      what its preview showed; app restart keeps the override. Switching the
-      scope back to "All modes" discards the override (shared bg returns).
-- [ ] **Custom center image (new in v2.46.0).** On Bass Circle or Radial
-      Burst: panel (G) → Visual → "Center image" row (absent in other
-      modes). Choose… → pick an image. PASS: the center shows the chosen
-      image instead of the cover art (also with no track cover present),
-      exports match, "Match cover colors" (Bass Circle) matches the chosen
-      image's colors, ✕ restores the track's cover art. Saved per mode and
-      in .avproj round-trips.
-- [ ] **In-app user guide (new in v2.46.0).** Press H → "User guide…".
-      PASS: a 12-section guide dialog opens, every TOC entry renders real
-      content, pager works, Esc closes. Spot-check accuracy of any two
-      sections against the running app.
+- [✅] **Per-mode backgrounds (new in v2.46.0).** PASS 2026-07-26 on
+  installed v2.51.0. Spectrum Bars → This mode → Image loaded
+  `C:\bf-test\media\test-bg.png`; Radial Burst retained All modes →
+  Animated; switching back restored the image override. H.264/AAC
+  1280×720/30 fps exports `spectrum-bg.mp4` and `radial-bg.mp4` decoded
+  to frames matching their previews. A full app restart retained the
+  Spectrum Bars override. Changing its scope to All modes discarded the
+  override and restored shared Animated.
+- [✅] **Custom center image (new in v2.46.0).** PASS 2026-07-26 on installed
+  v2.51.0. With no-cover `track5.wav`, Radial Burst → Visual → Center
+  image → `test-bg.png` showed the magenta/cyan grid; ✕ restored the
+  `Track cover art` fallback. H.264/AAC 1280×720/30 fps export
+  `radial-center.mp4` decoded with the custom center matching preview.
+  Bass Circle remained independent until separately assigned; with Match
+  cover colors enabled, custom image changed Hue 155→335 and the visual
+  from green to magenta. Saving both mode-specific images to
+  `center-roundtrip.avproj`, removing them, and reopening the project
+  restored both. Final cleanup returned both modes to track-cover fallback.
+- [✅] **In-app user guide (new in v2.46.0).** PASS 2026-07-26 on installed
+  v2.51.0: H opened Keyboard shortcuts → User guide; all 12 TOC sections
+  rendered distinct content, the Visual modes → Builder pager worked,
+  and Esc closed the dialog. Backgrounds and App settings sections were
+  spot-checked against the running controls.
 - [x] **Update dialog redesign (new in v2.46.0).** PASS 2026-07-26, owner-
       confirmed on the real 2.50.0 -> 2.51.0 update offer: hero band with version
       chips, formatted release notes (headings/bullets/bold rather than a raw text
@@ -147,11 +149,11 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
       This is the first time it was checked against a genuine offer — the earlier
       screenshot attempt was inconclusive because the installed build predated the
       feature.
-- [ ] **App-settings gear discoverability (new in v2.45.0).** Top bar shows
-      a gear icon between the sliders icon (visual settings) and the ?
-      (shortcuts). PASS: clicking it opens the App settings dialog
-      (same one as Ctrl+,), tooltip reads "App settings — autosave,
-      performance, updates (Ctrl+,)", and clicking again (or Esc) closes it.
+- [✅] **App-settings gear discoverability (new in v2.45.0).** PASS
+  2026-07-26 on installed v2.51.0: the gear sits between Visual settings
+  and Keyboard shortcuts; its tooltip/accessibility description is
+  exactly `App settings — autosave, performance, updates (Ctrl+,)`;
+  clicking opened App settings and Esc closed it.
 
 - [✅] **PNG sequence export.** PASS 2026-07-23 on v2.44.1: a 5 s,
   720p30 fixture exported 150 PNGs (360,833,706 bytes) to
@@ -254,16 +256,15 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   bytes 0-3 = "RIFF", 8-11 = "WEBP", and the file contains an "ANIM"
   chunk (`Select-String -Path <file> -Pattern "ANIM" -Encoding ascii`
   finds a match) — or open it in a Chromium browser and see it animate.
-- [ ] **ProRes 4444 alpha decode-back.** (The NLE round-trip itself is
-      POSTPONED — owner will install Resolve later; not a v3 blocker.) Agent-executable on the desktop app: export a
-      5 s ProRes 4444 with Background = Transparent to
-      `C:\bf-test\out\alpha.mov`, then decode a frame back with the
-      bundled ffmpeg:
-      `& $ff -i C:\bf-test\out\alpha.mov -frames:v 1 -pix_fmt rgba C:\bf-test\out\alpha.png`
-      PASS: ffprobe reports `prores` + `yuva444p12le` (already verified on
-      v2.44.x), AND the decoded PNG's corner pixels have alpha < 255 while
-      visual-center pixels have alpha > 0 — i.e. real transparency
-      round-trips through the file, which is exactly what an NLE reads.
+- [✅] **ProRes 4444 alpha decode-back.** PASS 2026-07-26 on installed
+  v2.51.0. Exported the full 5 s `track5.wav` at 1280×720/30 fps with
+  Background = Transparent to `C:\bf-test\out\alpha.mov` (208,381,727
+  bytes). ffprobe reports 150 `prores` frames, `yuva444p12le`, exactly
+  5.000 s, plus `pcm_s16le` 48 kHz audio. Bundled ffmpeg decoded frame 1
+  to `C:\bf-test\out\alpha.png`; all four corner alpha values are 1
+  (<255), while center `(640,360)` alpha is 108 (>0). Real transparency
+  therefore survives file decode-back. NLE UI round-trip remains
+  POSTPONED until Resolve is installed; not a v3 blocker.
 - [✅] **MIDI binding chain.** PASS 2026-07-25 on v2.47.0 via SPOOFED
   messages (no controller needed): raw bytes injected through the
   real store entry point `handleMidiMessage(Uint8Array)` exercised

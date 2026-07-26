@@ -362,14 +362,26 @@ pub fn prores_begin(
     out_path: String,
 ) -> Result<(), String> {
     let mut job_guard = state.job.lock().map_err(|_| "state poisoned")?;
+    // Every rejection below must drop the staged mezzanine WAV. It was written
+    // by prores_audio_end BEFORE we got here, so returning early without it
+    // strands the whole file in %TEMP% until the next prores_audio_begin — and
+    // if the user never retries, until the app exits, which never removes it.
+    // For an hour-long track that is ~691 MB abandoned on the SYSTEM drive,
+    // i.e. the exact drive whose exhaustion the pre-flight check exists to
+    // catch. Four orphans were observed accumulating during one test session.
     if job_guard.is_some() {
+        drop_stale_audio(&state);
         return Err("A ProRes export is already running".into());
     }
     if !(1..=240).contains(&fps) {
+        drop_stale_audio(&state);
         return Err(format!("Unreasonable fps: {fps}"));
     }
     let out = PathBuf::from(&out_path);
-    check_out_path(app.fs_scope().is_allowed(&out), &out, "mov")?;
+    if let Err(e) = check_out_path(app.fs_scope().is_allowed(&out), &out, "mov") {
+        drop_stale_audio(&state);
+        return Err(e);
+    }
     let wav_path = state
         .pending_wav
         .lock()

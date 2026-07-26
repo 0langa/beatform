@@ -1,3 +1,4 @@
+mod diskspace;
 mod loopback;
 mod prores;
 
@@ -122,7 +123,9 @@ pub fn run() {
             prores::anim_begin,
             prores::prores_write,
             prores::prores_finish,
-            prores::prores_abort
+            prores::prores_abort,
+            diskspace::disk_space,
+            diskspace::scratch_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1166,7 +1166,7 @@ export default function App() {
               </button>
               <button
                 className="ghost-btn"
-                title="App preferences: autosave, performance, updates (Ctrl+,)"
+                title="App settings — autosave, performance, updates (Ctrl+,)"
                 onClick={() => {
                   store().setShowHelp(false);
                   store().setShowSettings(true);

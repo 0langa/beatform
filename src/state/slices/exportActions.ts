@@ -9,6 +9,8 @@ import { safeName } from "../batch";
 import { autoBitrateMbps, RESOLUTIONS, SIMPLIFIED_EXPORT_REASON } from "../exportConfig";
 import {
   animBegin,
+  askConfirm,
+  diskSpace,
   downloadBlob,
   isTauri,
   pickFolder,
@@ -18,7 +20,14 @@ import {
   proresFinish,
   proresSetAudio,
   proresWrite,
+  scratchDir,
 } from "../platform";
+import {
+  estimateExportBytes,
+  preflightWarning,
+  translateExportError,
+  type ExportFormatKind,
+} from "../../export/diskPreflight";
 import { saveStoredExportSettings } from "../persistence";
 import { getEngine } from "../services";
 import type { VizState } from "../store";
@@ -119,6 +128,8 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       const genAtStart = shared.trackLoadGen;
       let savePath: string | null = null;
       let pngDir: string | null = null;
+      /** Volume holding %TEMP%, remembered so a disk failure can name it. */
+      let scratchRoot: string | null = null;
       if (isTauri()) {
         if (pngMode) {
           const dir = await pickFolder("Choose a folder for the PNG sequence");
@@ -165,6 +176,49 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         shared.exportStarting = false;
         return;
       }
+
+      // Disk pre-flight. The export that motivated this rendered for eleven
+      // minutes and wrote 7.5 GB before dying, because the SYSTEM drive was
+      // full — the output drive had 518 GB free and was never the problem.
+      // Both volumes are checked, and the warning names whichever is short.
+      // Warn-and-override: the estimate is an estimate, and the user may know
+      // about space we cannot see.
+      const destination = savePath ?? pngDir;
+      if (destination) {
+        const scratchPath = await scratchDir();
+        const [outVol, scratchVol] = await Promise.all([
+          diskSpace(destination),
+          scratchPath ? diskSpace(scratchPath) : Promise.resolve(null),
+        ]);
+        const kind: ExportFormatKind = pngMode
+          ? "png"
+          : proresMode
+            ? "prores"
+            : (animFormat ?? (webmMode ? "webm" : "mp4"));
+        const warning = preflightWarning(
+          estimateExportBytes({
+            format: kind,
+            width: res.w,
+            height: res.h,
+            fps,
+            seconds: segment ? segment.duration : buf.duration,
+            bitrate: mbps * 1e6,
+            sampleRate: buf.sampleRate,
+            channels: buf.numberOfChannels,
+          }),
+          outVol,
+          scratchVol,
+        );
+        if (warning && !(await askConfirm(warning, "Low disk space"))) {
+          shared.exportStarting = false;
+          return;
+        }
+        // Kept for the failure path: a NotReadableError has to name the drive
+        // that actually ran out, and by then the volume is not re-queryable
+        // in the catch without another round trip.
+        scratchRoot = scratchVol?.root ?? null;
+      }
+
       const ac = new AbortController();
       shared.exportAbort = ac;
       exportStartedAt = performance.now();
@@ -325,10 +379,14 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         // A dead sidecar aborts the render, so the surfaced error arrives
         // wearing an AbortError coat — check the sidecar failure FIRST or a
         // mid-render ffmpeg death reads as a user cancel and shows nothing.
-        if (proresFail.err != null) {
-          set({ exportError: errText(proresFail.err) });
-        } else if ((e as Error)?.name !== "AbortError") {
-          set({ exportError: errText(e) });
+        // Disk failures arrive wearing the wrong label — most notably the Blob
+        // API's NotReadableError, whose stock text blames "permission
+        // problems" and points the user at the drive they exported TO, which
+        // is the one drive known to be fine. Translate first, fall back to the
+        // raw text when it is not a disk problem.
+        const raw = proresFail.err ?? e;
+        if (proresFail.err != null || (e as Error)?.name !== "AbortError") {
+          set({ exportError: translateExportError(raw, scratchRoot) ?? errText(raw) });
         }
       } finally {
         overlayBitmap?.close();

@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for the main window. dialog:allow-ask is listed on its own because dialog:default covers message/save/open but NOT ask, and the export disk pre-flight needs a yes/no prompt (warn-and-override, never a hard block).",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "dialog:default",
+    "dialog:allow-ask",
     "fs:default",
     "fs:allow-read-file",
     "fs:allow-read-dir",

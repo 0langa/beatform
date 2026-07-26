@@ -208,6 +208,46 @@ export async function proresAbort(): Promise<void> {
   await invoke("prores_abort");
 }
 
+// --- Disk pre-flight (desktop only) ---
+
+/** Free/total bytes on the volume holding `path`; `path` need not exist yet.
+ * Returns null off the desktop, or when the volume cannot be queried at all
+ * (an unmounted drive) — a pre-flight that cannot measure must stay silent
+ * rather than invent a number. */
+export async function diskSpace(
+  path: string,
+): Promise<{ freeBytes: number; totalBytes: number; root: string } | null> {
+  if (!isTauri()) return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<{ free_bytes: number; total_bytes: number; root: string }>("disk_space", {
+      path,
+    }).then((d) => ({ freeBytes: d.free_bytes, totalBytes: d.total_bytes, root: d.root }));
+  } catch {
+    return null;
+  }
+}
+
+/** %TEMP% — where the mezzanine WAV is staged and where the engine spills
+ * blobs. Usually the system drive, and usually NOT the export destination. */
+export async function scratchDir(): Promise<string | null> {
+  if (!isTauri()) return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<string>("scratch_dir");
+  } catch {
+    return null;
+  }
+}
+
+/** Yes/no prompt. Native on desktop; `window.confirm` in the browser build
+ * (the same fallback ShaderEditor's discard prompt uses). */
+export async function askConfirm(message: string, title: string): Promise<boolean> {
+  if (!isTauri()) return window.confirm(message);
+  const { ask } = await import("@tauri-apps/plugin-dialog");
+  return ask(message, { title, kind: "warning" });
+}
+
 /** Open a text file via dialog. Returns {name, contents}, null on cancel. */
 export async function openTextFile(
   filters: FileFilter[],

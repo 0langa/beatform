@@ -11,6 +11,33 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.52.0] - 2026-07-27
+
+### Added
+
+- **Exports now check for disk space before they start, on both drives that
+  matter.** A ProRes export can spend ten minutes rendering only to fail
+  because the _system_ drive filled up — even when the drive you chose has
+  hundreds of gigabytes free. The pre-flight estimates what the job needs and
+  warns if either the destination or the scratch space is short, so you find
+  out in a second rather than after the work is gone. It warns; it does not
+  block, because you may know something it does not.
+
+### Fixed
+
+- **Disk-full during export said "permission problems".** The underlying error
+  is worded that way by the browser engine, and it was shown verbatim — sending
+  you to check file permissions when the real problem was a full drive. It now
+  names the drive that actually ran out, and says plainly that the original
+  wording is misleading.
+- **A cancelled or rejected ProRes export left its staged audio behind.** The
+  prepared audio track — up to ~691 MB for an hour-long song — stayed in the
+  temporary folder on the system drive, the very drive most likely to be
+  short of space. Repeated attempts stacked up more copies.
+- **Two different tooltips for the same button.** The gear in the top bar and
+  the button in the help dialog both open App settings but described it
+  differently.
+
 ## [2.51.0] - 2026-07-26
 
 ### Fixed
