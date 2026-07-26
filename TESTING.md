@@ -140,10 +140,13 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
       PASS: a 12-section guide dialog opens, every TOC entry renders real
       content, pager works, Esc closes. Spot-check accuracy of any two
       sections against the running app.
-- [ ] **Update dialog redesign (new in v2.46.0).** At the next release
-      offer: PASS = hero band with version chips (current → new), formatted
-      release notes (headings/bullets/bold, not a raw text dump), a real
-      progress bar while downloading, Restart now when done.
+- [x] **Update dialog redesign (new in v2.46.0).** PASS 2026-07-26, owner-
+      confirmed on the real 2.50.0 -> 2.51.0 update offer: hero band with version
+      chips, formatted release notes (headings/bullets/bold rather than a raw text
+      dump), a real progress bar while downloading, and Restart now on completion.
+      This is the first time it was checked against a genuine offer — the earlier
+      screenshot attempt was inconclusive because the installed build predated the
+      feature.
 - [ ] **App-settings gear discoverability (new in v2.45.0).** Top bar shows
       a gear icon between the sliders icon (visual settings) and the ?
       (shortcuts). PASS: clicking it opens the App settings dialog
