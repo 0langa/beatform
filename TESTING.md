@@ -226,17 +226,15 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   ID3 titles ("Track 1"…); click one → it plays (playhead moves in the
   player bar); enable Auto-play-next → seek near the end (player-bar
   click at ~95%) → PASS: the next track starts by itself.
-- [~] **Drag & drop (real Explorer drag, installed build).** Owner-tested
-  2026-07-26 — the `dragDropEnabled: false` fix WORKS: drops reach the app
-  at all now, which they never did in any prior installed build. - [x] audio (.mp3/.wav) on v2.49.0 — loads and plays. - [x] timed lyrics (.lrc/.srt) on v2.49.0 — attach to the current track. - [x] `.avtheme` on v2.49.0 — dropped `D:\drop-test.avtheme`, the look
-  applied and the notice read `"Drop Test - Ember Six" by QA applied`. - [ ] `.avproj` — FAILED on v2.49.0 with "Could not decode ...
-  (Unable to decode audio data)": the handler dispatched
-  .avshader/.avtheme/.lrc/.srt and let everything else fall through to
-  the AUDIO loader, so projects were never handled. As old as the
-  feature, unreachable until drops started arriving. Fixed in v2.49.1
-  (`openProjectText` + an .avproj branch). **RETEST ON >= 2.49.1** —
-  still open, the fix is not in the tested build. - [x] drop overlay appears while dragging and clears after.
-
+- [x] **Drag & drop (real Explorer drag, installed build).** ALL FORMATS PASS. Owner-tested
+      2026-07-26 — the `dragDropEnabled: false` fix WORKS: drops reach the app
+      at all now, which they never did in any prior installed build. - [x] audio (.mp3/.wav) on v2.49.0 — loads and plays. - [x] timed lyrics (.lrc/.srt) on v2.49.0 — attach to the current track. - [x] `.avtheme` on v2.49.0 — dropped `D:\drop-test.avtheme`, the look
+      applied and the notice read `"Drop Test - Ember Six" by QA applied`. - [x] `.avproj` — PASS 2026-07-26 on v2.50.0, owner-tested: drops in with no
+      issues. Failed on 2.49.0 with "Could not decode ... (Unable to decode audio
+      data)" because the handler dispatched .avshader/.avtheme/.lrc/.srt and let
+      everything else fall through to the AUDIO loader, so projects were never
+      handled — as old as the feature and unreachable until drops started
+      arriving at all. Fixed in 2.49.1 (`openProjectText` + an .avproj branch).
 - [✅] **Builder file round-trip.** PASS 2026-07-23 on v2.44.1: exported a
   six-layer stack to `C:\bf-test\out\stack.avbuilder`, removed the added
   `Orb core`, imported the file, and recovered all six layers with
