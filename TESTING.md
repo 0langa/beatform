@@ -176,7 +176,18 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   `exportCore.ts`'s comment "Streaming writes fragmented MP4: strictly
   forward, memory stays flat" is therefore FALSE. - NOT a blocker for finishing a 2 h export on a 16 GB machine (it
   completes, just slowly), but it scales with length and would fail on a
-  smaller machine or a longer track.
+  smaller machine or a longer track. - **OUTPUT IS
+  CORRECT.** The run completed: `D:\long2h.mp4`, 1.88 GB, `Duration:
+02:00:00.04`, H.264 High 1280x720 @ 30 fps (2042 kb/s), AAC-LC 48 kHz mono
+  192 kb/s. Decoding the last 10 s returns exit 0, so the file is complete and
+  not truncated. The DELIVERABLE passes — this item fails on throughput and
+  memory, not correctness. - **Memory is fully released at finalize:** the
+  family fell from its 2862 MB peak to **552 MB** once the export ended. This
+  is bounded per-export retention the muxer frees when it writes its trailer,
+  NOT a permanent leak — exactly what the mp4-muxer cause predicts. -
+  Practical ceiling: ~1.8 GB of growth per 2 h of output, stacked on the
+  ~2.4 GB the decoded track holds and the 7.5 GB setup peak. 2 h finishes on
+  16 GB; 4 h+, or a smaller machine, is where slow becomes fatal.
 
       **HOW TO SAMPLE (the previous instruction here was wrong and produced a
       false PASS):** `Get-Process beatform` measures only the Tauri shell,
