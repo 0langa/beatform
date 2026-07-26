@@ -114,7 +114,10 @@ export interface ExportResult {
 }
 
 interface FileWriter {
-  write(data: Uint8Array, position: number): void;
+  /** Resolves when the bytes are actually on disk — the export core awaits
+   * this, which is what throttles the encoders when the disk is the slow
+   * part. Returning void here silently reintroduced unbounded buffering. */
+  write(data: Uint8Array, position: number): Promise<void>;
   close(): Promise<void>;
   /** Best-effort cleanup of a partial file after abort/failure. */
   discard(): Promise<void>;
@@ -201,6 +204,9 @@ async function createTauriWriter(path: string, onError?: (e: Error) => void): Pr
 
   return {
     write(data, position) {
+      // RETURN the queue, don't just extend it. While this returned void the
+      // core could not await the disk, so undrained chunks accumulated in this
+      // promise chain — the whole bitstream, for a long export.
       queue = queue.then(async () => {
         if (failed) return;
         try {
@@ -222,6 +228,7 @@ async function createTauriWriter(path: string, onError?: (e: Error) => void): Pr
           onError?.(failed);
         }
       });
+      return queue;
     },
     async close() {
       await queue;

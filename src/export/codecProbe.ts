@@ -11,10 +11,10 @@
 
 export type VideoCodecId = "h264" | "hevc" | "av1" | "vp9a";
 
-/** The codecs that mux into MP4 via mp4-muxer. "vp9a" is the odd one out: it
- * encodes VP9 with an alpha plane and muxes into WebM via mediabunny — the
- * only browser-encodable path to a transparent *video* (PNG sequences and
- * ProRes 4444 cover the editorial hand-off; this covers OBS/web overlays). */
+/** The codecs that mux into MP4. "vp9a" is the odd one out: it encodes VP9
+ * with an alpha plane and muxes into WebM instead — the only browser-encodable
+ * path to a transparent *video* (PNG sequences and ProRes 4444 cover the
+ * editorial hand-off; this covers OBS/web overlays). */
 export type Mp4CodecId = Exclude<VideoCodecId, "vp9a">;
 
 export const CODEC_LABELS: Record<VideoCodecId, string> = {
@@ -24,7 +24,9 @@ export const CODEC_LABELS: Record<VideoCodecId, string> = {
   vp9a: "VP9 + alpha — transparent WebM overlay",
 };
 
-/** mp4-muxer track codec ids. */
+/** Muxer track codec ids — mediabunny's `VideoCodec` vocabulary, which names
+ * H.264 "avc". The union is spelled out rather than imported so this module
+ * stays a pure capability table with no dependency on the mux library. */
 export const MUXER_CODEC: Record<Mp4CodecId, "avc" | "hevc" | "av1"> = {
   h264: "avc",
   hevc: "hevc",

@@ -26,7 +26,7 @@ decodeAudioData(track)                 ── one decoded AudioBuffer is the
              → VideoEncoder (H.264 avc1.64xx, hardware accelerated)
                timestamps = N/fps exactly
         ▼
-mp4-muxer (npm, pure TS) → File System Access API stream to disk
+mediabunny (npm, pure TS) → fragmented MP4 streamed to disk
 ```
 
 Sync argument: video frame N is _defined_ as t = N/fps of the decoded buffer;
@@ -50,7 +50,7 @@ structurally impossible — there is no clock, only indices.
 
 Shipped: frame loop with encode-queue backpressure, per-frame
 `queue.onSubmittedWorkDone` sync before canvas snapshot, AAC probe with Opus
-fallback, mp4-muxer in-memory fastStart, progress + AbortSignal cancel,
+fallback, mediabunny in-memory fastStart, progress + AbortSignal cancel,
 export dialog (resolution 720p→4K/square/vertical, 30/60 fps, auto/manual
 bitrate), anchor-download save. Verified E2E: 16 s track → valid MP4,
 decodes with duration exactly 16.00 s, seekable; ~140 fps export throughput

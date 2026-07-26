@@ -11,6 +11,38 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.50.0] - 2026-07-26
+
+### Fixed
+
+- **Long exports no longer balloon in memory or slow to a crawl.** A 2-hour
+  720p30 export was measured growing **+152 MB every 10 minutes** while its
+  render rate decayed from ~130 fps to ~30 fps. The file it produced was
+  always correct — this was throughput and memory, not corruption.
+  The cause was a missing brake: chunks were handed to the file writer without
+  ever waiting for the disk, so whatever the disk had not yet flushed stayed
+  in memory. At the 720p30 default that is roughly the entire encoded video,
+  about 16 MB per minute, and the resulting garbage-collector pressure is what
+  dragged the frame rate down. The encoders now wait for the disk, so a slow
+  drive slows the export instead of filling RAM.
+
+### Changed
+
+- **The MP4 writer moved to mediabunny**, which already produced the app's
+  WebM files. The previous library was deprecated by its own author in favour
+  of mediabunny, and shipping one maintained muxer instead of two removes a
+  dependency. Exports are byte-identical in content; every codec was
+  re-verified end to end (H.264, HEVC, AV1 in MP4 with AAC, plus VP9+alpha in
+  WebM with Opus), along with frame counts, durations and PNG-sequence
+  determinism.
+
+### Note
+
+- Exporting to a **file** streams to disk and stays flat. The in-browser
+  preview export has nowhere to stream to and must hold the whole file in
+  memory by definition, so it is only suitable for short clips — the desktop
+  app always uses the streaming path.
+
 ## [2.49.1] - 2026-07-26
 
 ### Fixed

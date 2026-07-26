@@ -204,3 +204,37 @@ describe("exportVideo worker-death handling", () => {
     expect(instance.terminate).toHaveBeenCalled();
   });
 });
+
+describe("stream writer backpressure", () => {
+  /**
+   * The core awaits onChunk so a slow disk throttles the encoders. While
+   * write() returned void, nothing could await it: undrained chunks piled up
+   * in the writer's promise chain and the export retained the whole
+   * bitstream (measured as +152 MB/10 min on a 2 h export, with the render
+   * rate decaying 130 -> 30 fps from the GC pressure).
+   */
+  it("write() resolves only after the bytes are actually written", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const written: number[] = [];
+    const writer = makePngSequenceWriter(
+      {
+        writeFile: async (_p, d) => {
+          await gate;
+          written.push(d.length);
+        },
+        remove: async () => undefined,
+      },
+      "/out",
+    );
+    const p = writer.write(new Uint8Array(4), 0);
+    let settled = false;
+    void p.then(() => (settled = true));
+    await Promise.resolve();
+    expect(settled).toBe(false); // still blocked on the sink
+    expect(written).toHaveLength(0);
+    release();
+    await p;
+    expect(written).toEqual([4]);
+  });
+});

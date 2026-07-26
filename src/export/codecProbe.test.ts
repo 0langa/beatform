@@ -29,7 +29,7 @@ describe("codecString", () => {
 });
 
 describe("codec plumbing tables", () => {
-  it("maps every MP4 codec to an mp4-muxer track codec (vp9a is WebM-only)", () => {
+  it("maps every MP4 codec to a muxer track codec (vp9a is WebM-only)", () => {
     expect(MUXER_CODEC).toEqual({ h264: "avc", hevc: "hevc", av1: "av1" });
     expect("vp9a" in MUXER_CODEC).toBe(false);
   });

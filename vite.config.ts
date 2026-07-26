@@ -34,7 +34,7 @@ export default defineConfig(async () => ({
     rollupOptions: {
       output: {
         // Without this the whole app — React, zustand, the WebGPU renderer,
-        // every preset, and the mediabunny/mp4-muxer codec stack used by
+        // every preset, and the mediabunny codec stack used by
         // export and video backgrounds — lands in one >1 MB entry chunk
         // (past Vite's 500 kB warning). None of that is lazy: the app is a
         // single-page desktop shell, so splitting here is about caching and
@@ -48,10 +48,10 @@ export default defineConfig(async () => ({
           if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) {
             return "vendor-react";
           }
-          // mediabunny + mp4-muxer are the heavy codec/mux dependencies
-          // behind export and video backgrounds — the biggest single
-          // contributor to the oversized chunk.
-          if (/[\\/]node_modules[\\/](mediabunny|mp4-muxer)[\\/]/.test(id)) {
+          // mediabunny is the heavy codec/mux dependency behind export,
+          // video backgrounds and decode — the biggest single contributor
+          // to the oversized chunk.
+          if (/[\\/]node_modules[\\/]mediabunny[\\/]/.test(id)) {
             return "vendor-codec";
           }
           return undefined;
