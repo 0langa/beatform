@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Slider, decimalsOf, snapToStep, useDoubleTap } from "./Slider";
 import { Switch } from "./Switch";
-import type { ParamSpec } from "../render/types";
+import type { AngleParamSpec, EnumParamSpec, ParamSpec } from "../render/types";
 
 /**
  * The shared control kit. Every settings surface builds rows from these —
@@ -141,6 +141,8 @@ export function SliderField(props: {
   format?: ValueFormat;
   hint?: string;
   disabled?: boolean;
+  /** Extra class on the range input — the hue row repaints its track with it. */
+  trackClass?: string;
 }) {
   const { min, max, step, value, disabled } = props;
   const scale = unitScale(props.format);
@@ -198,6 +200,7 @@ export function SliderField(props: {
         step={step}
         value={value}
         disabled={disabled}
+        className={props.trackClass}
         onChange={props.onChange}
         onEditRequest={open}
       />
@@ -305,8 +308,151 @@ export function SliderRow(
   );
 }
 
-/** A ParamSpec-driven row: 0/1 step-1 specs render as a switch, everything
- * else as a slider — the auto-UI behind every preset parameter. */
+/**
+ * A dropdown row for an `enum` param.
+ *
+ * The stored value is still the plain number the shader reads, so a saved
+ * project written before this control existed selects the right option with
+ * no migration. A value that matches NO option (a hand-edited project, a
+ * range that shrank) gets its own transient option rather than silently
+ * snapping the select to the first entry and writing that back on the next
+ * unrelated edit.
+ */
+export function EnumRow(props: {
+  spec: EnumParamSpec;
+  value: number;
+  onChange: (v: number) => void;
+  onHint?: (hint: string | null) => void;
+}) {
+  const { spec, value } = props;
+  const known = spec.options.some((o) => o.value === value);
+  const active = spec.options.find((o) => o.value === value);
+  return (
+    <label
+      className="row select-row"
+      {...hintProps(active?.hint ?? spec.hint, props.onHint)}
+      // A <label> around a <select> already labels it; the aria-label on the
+      // select itself is what the row's accessible name is read from in tests
+      // and by screen readers when the label text is visually truncated.
+    >
+      <span className="row-label">{spec.label}</span>
+      <select
+        className="select"
+        aria-label={spec.label}
+        value={String(value)}
+        onChange={(e) => props.onChange(Number(e.target.value))}
+      >
+        {!known && <option value={String(value)}>{`Custom (${value})`}</option>}
+        {spec.options.map((o) => (
+          <option key={o.value} value={String(o.value)} title={o.hint}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/**
+ * A dial for an angle param, drawn as the direction it actually points.
+ *
+ * Deliberately NOT focusable: it sits beside the same param's real slider,
+ * which owns the keyboard (arrows, Home/End) and the accessible name. A second
+ * focusable control for one value would double every tab stop in the panel and
+ * announce the setting twice.
+ */
+function Dial(props: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+  title: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const set = (e: React.PointerEvent) => {
+    const box = ref.current?.getBoundingClientRect();
+    if (!box) return;
+    // Screen y grows downward; negate it so the dial's maths match the
+    // shaders', where these degrees are added to an atan2 (0 = right, angle
+    // increases counter-clockwise).
+    const deg =
+      (Math.atan2(-(e.clientY - box.top - box.height / 2), e.clientX - box.left - box.width / 2) *
+        180) /
+      Math.PI;
+    props.onChange(snapToStep(deg < 0 ? deg + 360 : deg, props.min, props.max, props.step));
+  };
+  return (
+    <div
+      ref={ref}
+      className="dial"
+      title={props.title}
+      aria-hidden="true"
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        set(e);
+      }}
+      onPointerMove={(e) => {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) set(e);
+      }}
+    >
+      <span
+        className="dial-needle"
+        // The needle hangs DOWNWARD from the dial's centre (transform-origin
+        // is its top edge), so pointing it at `value` is one rotation:
+        // CSS rotates clockwise, screen-down is -90° in the shaders' y-up
+        // convention, hence -90 - value. A translate() cannot do this job —
+        // percentages there resolve against the NEEDLE's own 2x9 box, not the
+        // dial's radius, which is how the first attempt moved it 2px.
+        style={{ transform: `rotate(${-90 - props.value}deg)` }}
+      />
+    </div>
+  );
+}
+
+/** Angle row: the dial for pointing, the slider for nudging, one value. */
+export function AngleRow(props: {
+  spec: AngleParamSpec;
+  value: number;
+  onChange: (v: number) => void;
+  onHint?: (hint: string | null) => void;
+}) {
+  const { spec, value } = props;
+  return (
+    <label className="row angle-row" {...hintProps(spec.hint, props.onHint)}>
+      <span className="row-label">{spec.label}</span>
+      <Dial
+        value={value}
+        min={spec.min}
+        max={spec.max}
+        step={spec.step}
+        onChange={props.onChange}
+        title={`${spec.label} — drag to point`}
+      />
+      <SliderField
+        label={spec.label}
+        hint={spec.hint}
+        min={spec.min}
+        max={spec.max}
+        step={spec.step}
+        value={value}
+        onChange={props.onChange}
+        format={DEGREES}
+      />
+    </label>
+  );
+}
+
+/**
+ * A ParamSpec-driven row — the auto-UI behind every preset parameter.
+ *
+ * The `switch` is exhaustive against the ParamSpec union (see the `never` in
+ * the default arm), so adding a control type to the model is a compile error
+ * here until it has a widget. That is the whole point of making ParamSpec a
+ * discriminated union: the old single "is it 0..1 step 1?" heuristic silently
+ * rendered every discrete choice — symmetry counts, image fit, kaleidoscope
+ * segments — as a slider you had to hunt values on.
+ */
 export function ParamRow(props: {
   spec: ParamSpec;
   value: number;
@@ -314,31 +460,81 @@ export function ParamRow(props: {
   onHint: (hint: string | null) => void;
 }) {
   const { spec: p, value } = props;
-  const isToggle = p.step === 1 && p.min === 0 && p.max === 1;
-  return isToggle ? (
-    <label className="row toggle-row" {...hintProps(p.hint, props.onHint)}>
-      <span className="row-label">{p.label}</span>
-      <button
-        className={`switch ${value > 0.5 ? "on" : ""}`}
-        role="switch"
-        aria-checked={value > 0.5}
-        aria-label={p.label}
-        onClick={() => props.onChange(value > 0.5 ? 0 : 1)}
-      >
-        <span className="knob" />
-      </button>
-    </label>
-  ) : (
-    <label className="row param-row" {...hintProps(p.hint, props.onHint)}>
-      <span className="row-label">{p.label}</span>
-      <SliderField
-        label={p.label}
-        hint={p.hint}
-        min={p.min}
-        max={p.max}
-        step={p.step}
-        value={value}
-        onChange={props.onChange}
+  switch (p.control) {
+    case "toggle":
+      return (
+        <ToggleRow
+          label={p.label}
+          hint={p.hint}
+          checked={value > 0.5}
+          onChange={(on) => props.onChange(on ? 1 : 0)}
+          onHint={props.onHint}
+        />
+      );
+    case "enum":
+      return <EnumRow spec={p} value={value} onChange={props.onChange} onHint={props.onHint} />;
+    case "angle":
+      return <AngleRow spec={p} value={value} onChange={props.onChange} onHint={props.onHint} />;
+    case "hue":
+    case "slider":
+    case undefined:
+      // A 0..1 step-1 numeric spec is a boolean that predates the toggle
+      // control. Custom shaders built in the in-app editor still declare them
+      // that way (the editor only writes min/max/step/default), so the legacy
+      // reading has to survive the model change or every user shader with an
+      // on/off knob would regress to a two-position slider.
+      if (p.control === undefined && p.min === 0 && p.max === 1 && p.step === 1) {
+        return (
+          <ToggleRow
+            label={p.label}
+            hint={p.hint}
+            checked={value > 0.5}
+            onChange={(on) => props.onChange(on ? 1 : 0)}
+            onHint={props.onHint}
+          />
+        );
+      }
+      return (
+        <label className="row param-row" {...hintProps(p.hint, props.onHint)}>
+          <span className="row-label">{p.label}</span>
+          <SliderField
+            label={p.label}
+            hint={p.hint}
+            min={p.min}
+            max={p.max}
+            step={p.step}
+            value={value}
+            onChange={props.onChange}
+            format={p.control === "hue" ? DEGREES : undefined}
+            trackClass={p.control === "hue" ? "hue" : undefined}
+          />
+        </label>
+      );
+    default: {
+      const unhandled: never = p;
+      return unhandled;
+    }
+  }
+}
+
+/** Labelled colour swatch row — the one colour idiom outside the background
+ * picker (which additionally carries its chroma-key presets). */
+export function ColorRow(props: {
+  label: string;
+  hint?: string;
+  value: string;
+  onChange: (hex: string) => void;
+  onHint?: (hint: string | null) => void;
+}) {
+  return (
+    <label className="row color-field-row" {...hintProps(props.hint, props.onHint)}>
+      <span className="row-label">{props.label}</span>
+      <input
+        type="color"
+        className="bg-color"
+        aria-label={props.label}
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
       />
     </label>
   );
@@ -353,10 +549,12 @@ export function SelectRow<T extends string | number>(props: {
   onChange: (v: T) => void;
   disabled?: boolean;
   parse?: (raw: string) => T;
+  /** Footer-hint sink, so a dropdown explains itself like every slider row. */
+  onHint?: (hint: string | null) => void;
 }) {
   const parse = props.parse ?? ((raw: string) => raw as T);
   return (
-    <label className="field" title={props.hint}>
+    <label className="field" {...hintProps(props.hint, props.onHint)}>
       <span>{props.label}</span>
       <select
         className="select"

@@ -36,6 +36,8 @@ export const radialBurst: PresetDef = {
     {
       key: "hue",
       label: "Hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -45,6 +47,7 @@ export const radialBurst: PresetDef = {
     {
       key: "hueSpread",
       label: "Hue spread",
+      group: "color",
       min: 0,
       max: 240,
       step: 1,
@@ -54,6 +57,7 @@ export const radialBurst: PresetDef = {
     {
       key: "innerRadius",
       label: "Core size",
+      group: "shape",
       min: 0.08,
       max: 0.35,
       step: 0.005,
@@ -63,6 +67,18 @@ export const radialBurst: PresetDef = {
     {
       key: "symmetry",
       label: "Symmetry",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 1, label: "1×" },
+        { value: 2, label: "2×" },
+        { value: 3, label: "3×" },
+        { value: 4, label: "4×" },
+        { value: 5, label: "5×" },
+        { value: 6, label: "6×" },
+        { value: 7, label: "7×" },
+        { value: 8, label: "8×" },
+      ],
       min: 1,
       max: 8,
       step: 1,
@@ -72,6 +88,8 @@ export const radialBurst: PresetDef = {
     {
       key: "angle",
       label: "Angle",
+      group: "motion",
+      control: "angle",
       min: 0,
       max: 360,
       step: 1,
@@ -81,6 +99,7 @@ export const radialBurst: PresetDef = {
     {
       key: "rotSpeed",
       label: "Rotation",
+      group: "motion",
       min: -1,
       max: 1,
       step: 0.02,
@@ -90,6 +109,7 @@ export const radialBurst: PresetDef = {
     {
       key: "glow",
       label: "Glow",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.01,
@@ -99,6 +119,8 @@ export const radialBurst: PresetDef = {
     {
       key: "peaks",
       label: "Peak arcs",
+      group: "shape",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -108,6 +130,8 @@ export const radialBurst: PresetDef = {
     {
       key: "cover",
       label: "Cover art",
+      group: "image",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -117,6 +141,8 @@ export const radialBurst: PresetDef = {
     {
       key: "coverHue",
       label: "Match cover colors",
+      group: "image",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -128,6 +154,7 @@ export const radialBurst: PresetDef = {
     {
       key: "barLen",
       label: "Bar length",
+      group: "shape",
       min: 0.1,
       max: 0.4,
       step: 0.01,
@@ -137,6 +164,7 @@ export const radialBurst: PresetDef = {
     {
       key: "ringBreathe",
       label: "Ring breathe",
+      group: "reaction",
       min: 0,
       max: 0.4,
       step: 0.01,
@@ -146,6 +174,7 @@ export const radialBurst: PresetDef = {
     {
       key: "coreSize",
       label: "Core scale",
+      group: "shape",
       min: 0.3,
       max: 0.95,
       step: 0.01,
@@ -155,6 +184,7 @@ export const radialBurst: PresetDef = {
     {
       key: "corePump",
       label: "Core pump",
+      group: "reaction",
       min: 0,
       max: 0.3,
       step: 0.01,
@@ -164,6 +194,7 @@ export const radialBurst: PresetDef = {
     {
       key: "coreBeat",
       label: "Core beat kick",
+      group: "reaction",
       min: 0,
       max: 0.2,
       step: 0.01,
@@ -173,6 +204,7 @@ export const radialBurst: PresetDef = {
     {
       key: "wobBase",
       label: "Wobble base",
+      group: "motion",
       min: 0,
       max: 0.1,
       step: 0.005,
@@ -182,6 +214,7 @@ export const radialBurst: PresetDef = {
     {
       key: "wobAmp",
       label: "Wobble swell",
+      group: "reaction",
       min: 0,
       max: 0.3,
       step: 0.005,
@@ -191,6 +224,7 @@ export const radialBurst: PresetDef = {
     {
       key: "wobClamp",
       label: "Wobble limit",
+      group: "motion",
       min: 0,
       max: 0.25,
       step: 0.005,
@@ -200,6 +234,7 @@ export const radialBurst: PresetDef = {
     {
       key: "spinBase",
       label: "Wobble spin",
+      group: "motion",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -209,6 +244,7 @@ export const radialBurst: PresetDef = {
     {
       key: "spinEnergy",
       label: "Spin energy",
+      group: "reaction",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -218,6 +254,7 @@ export const radialBurst: PresetDef = {
     {
       key: "coreBright",
       label: "Core brightness",
+      group: "glow",
       min: 0,
       max: 0.8,
       step: 0.02,
@@ -227,6 +264,8 @@ export const radialBurst: PresetDef = {
     {
       key: "detailRing",
       label: "Detail ring",
+      group: "shape",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -236,6 +275,7 @@ export const radialBurst: PresetDef = {
     {
       key: "detailPos",
       label: "Detail position",
+      group: "shape",
       min: 0.2,
       max: 0.9,
       step: 0.01,
@@ -245,6 +285,7 @@ export const radialBurst: PresetDef = {
     {
       key: "beatBloom",
       label: "Beat bloom",
+      group: "reaction",
       min: 0,
       max: 0.4,
       step: 0.01,
@@ -254,6 +295,7 @@ export const radialBurst: PresetDef = {
     {
       key: "coverMix",
       label: "Cover blend",
+      group: "image",
       min: 0,
       max: 1,
       step: 0.02,
@@ -263,6 +305,7 @@ export const radialBurst: PresetDef = {
     {
       key: "coverBright",
       label: "Cover brightness",
+      group: "image",
       min: 0.1,
       max: 2,
       step: 0.05,
@@ -272,6 +315,17 @@ export const radialBurst: PresetDef = {
     {
       key: "coverFit",
       label: "Image fit",
+      group: "image",
+      control: "enum",
+      options: [
+        {
+          value: 0,
+          label: "Fill",
+          hint: "Cover the whole slot; whatever does not fit is cropped off",
+        },
+        { value: 1, label: "Fit", hint: "Show all of it, letterboxed" },
+        { value: 2, label: "Stretch", hint: "Squash it to fill the slot exactly" },
+      ],
       min: 0,
       max: 2,
       step: 1,
@@ -281,6 +335,7 @@ export const radialBurst: PresetDef = {
     {
       key: "coverZoom",
       label: "Image zoom",
+      group: "image",
       min: 0.25,
       max: 3,
       step: 0.01,
@@ -290,6 +345,7 @@ export const radialBurst: PresetDef = {
     {
       key: "coverX",
       label: "Image X",
+      group: "image",
       min: -0.5,
       max: 0.5,
       step: 0.005,
@@ -299,6 +355,7 @@ export const radialBurst: PresetDef = {
     {
       key: "coverY",
       label: "Image Y",
+      group: "image",
       min: -0.5,
       max: 0.5,
       step: 0.005,
@@ -308,6 +365,7 @@ export const radialBurst: PresetDef = {
     {
       key: "rimBright",
       label: "Core rim",
+      group: "glow",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -317,6 +375,7 @@ export const radialBurst: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1.2,
       step: 0.05,

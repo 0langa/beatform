@@ -139,6 +139,8 @@ export const particleFlow: PresetDef = {
     {
       key: "hue",
       label: "Hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -148,6 +150,7 @@ export const particleFlow: PresetDef = {
     {
       key: "flowStrength",
       label: "Flow",
+      group: "motion",
       min: 0,
       max: 2,
       step: 0.05,
@@ -157,6 +160,7 @@ export const particleFlow: PresetDef = {
     {
       key: "swirl",
       label: "Swirl",
+      group: "motion",
       min: 0,
       max: 2,
       step: 0.05,
@@ -166,6 +170,7 @@ export const particleFlow: PresetDef = {
     {
       key: "beatBurst",
       label: "Beat burst",
+      group: "reaction",
       min: 0,
       max: 3,
       step: 0.05,
@@ -175,6 +180,7 @@ export const particleFlow: PresetDef = {
     {
       key: "size",
       label: "Particle size",
+      group: "shape",
       min: 0.002,
       max: 0.03,
       step: 0.001,
@@ -184,6 +190,7 @@ export const particleFlow: PresetDef = {
     {
       key: "brightness",
       label: "Brightness",
+      group: "glow",
       min: 0.1,
       max: 1.5,
       step: 0.05,
@@ -193,6 +200,7 @@ export const particleFlow: PresetDef = {
     {
       key: "density",
       label: "Density",
+      group: "shape",
       min: 0.1,
       max: 1,
       step: 0.05,
@@ -204,6 +212,7 @@ export const particleFlow: PresetDef = {
     {
       key: "flowScale",
       label: "Flow scale",
+      group: "motion",
       min: 0.3,
       max: 4,
       step: 0.1,
@@ -213,6 +222,7 @@ export const particleFlow: PresetDef = {
     {
       key: "damping",
       label: "Damping",
+      group: "motion",
       min: 0.8,
       max: 0.99,
       step: 0.005,
@@ -222,6 +232,7 @@ export const particleFlow: PresetDef = {
     {
       key: "gravity",
       label: "Center pull",
+      group: "motion",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -231,6 +242,7 @@ export const particleFlow: PresetDef = {
     {
       key: "audioFlow",
       label: "Bass drive",
+      group: "reaction",
       min: 0,
       max: 4,
       step: 0.1,
@@ -240,6 +252,7 @@ export const particleFlow: PresetDef = {
     {
       key: "sizePulse",
       label: "Speed size",
+      group: "shape",
       min: 0,
       max: 2,
       step: 0.05,
@@ -249,6 +262,7 @@ export const particleFlow: PresetDef = {
     {
       key: "hueSpread",
       label: "Hue spread",
+      group: "color",
       min: 0,
       max: 180,
       step: 5,
@@ -258,6 +272,7 @@ export const particleFlow: PresetDef = {
     {
       key: "speedColor",
       label: "Speed color",
+      group: "color",
       min: 0,
       max: 1,
       step: 0.02,
@@ -267,6 +282,7 @@ export const particleFlow: PresetDef = {
     {
       key: "sat",
       label: "Saturation",
+      group: "color",
       min: 0,
       max: 1,
       step: 0.02,
@@ -276,6 +292,7 @@ export const particleFlow: PresetDef = {
     {
       key: "spawnRadius",
       label: "Respawn radius",
+      group: "shape",
       min: 0.02,
       max: 0.6,
       step: 0.02,

@@ -96,6 +96,8 @@ export const oscilloscope: PresetDef = {
     {
       key: "hue",
       label: "Hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -105,6 +107,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "gain",
       label: "Gain",
+      group: "reaction",
       min: 0.2,
       max: 2,
       step: 0.05,
@@ -114,6 +117,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "calm",
       label: "Calm",
+      group: "reaction",
       min: 0,
       max: 1,
       step: 0.01,
@@ -123,6 +127,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "glow",
       label: "Glow",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.01,
@@ -132,6 +137,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "traceBright",
       label: "Trace brightness",
+      group: "glow",
       min: 0.3,
       max: 2.5,
       step: 0.05,
@@ -141,6 +147,8 @@ export const oscilloscope: PresetDef = {
     {
       key: "fill",
       label: "Fill",
+      group: "shape",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -150,6 +158,8 @@ export const oscilloscope: PresetDef = {
     {
       key: "mirror",
       label: "Mirror",
+      group: "shape",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -161,6 +171,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "traceClamp",
       label: "Height limit",
+      group: "shape",
       min: 0.2,
       max: 0.5,
       step: 0.01,
@@ -170,6 +181,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "coreWidth",
       label: "Core width",
+      group: "shape",
       min: 0.001,
       max: 0.01,
       step: 0.0005,
@@ -179,6 +191,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "agFloor",
       label: "Auto-gain floor",
+      group: "reaction",
       min: 0.1,
       max: 1,
       step: 0.05,
@@ -188,6 +201,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "agRange",
       label: "Auto-gain range",
+      group: "reaction",
       min: 0,
       max: 3,
       step: 0.1,
@@ -197,6 +211,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "hueWave",
       label: "Hue by wave",
+      group: "color",
       min: 0,
       max: 80,
       step: 1,
@@ -206,6 +221,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "ghostDim",
       label: "Mirror ghost",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.05,
@@ -215,6 +231,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "fillDim",
       label: "Fill strength",
+      group: "glow",
       min: 0,
       max: 0.5,
       step: 0.01,
@@ -224,6 +241,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "gridLevel",
       label: "Grid level",
+      group: "backdrop",
       min: 0,
       max: 0.3,
       step: 0.01,
@@ -233,6 +251,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "gridBeat",
       label: "Graticule beat flash",
+      group: "backdrop",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -242,6 +261,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "scanline",
       label: "Scanlines",
+      group: "backdrop",
       min: 0,
       max: 0.3,
       step: 0.01,
@@ -251,6 +271,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "beatLift",
       label: "Beat lift",
+      group: "reaction",
       min: 0,
       max: 0.5,
       step: 0.01,
@@ -260,6 +281,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "bgLevel",
       label: "Bg level",
+      group: "backdrop",
       min: 0,
       max: 0.12,
       step: 0.004,
@@ -269,6 +291,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1.2,
       step: 0.05,
@@ -278,6 +301,7 @@ export const oscilloscope: PresetDef = {
     {
       key: "persist",
       label: "Phosphor persist",
+      group: "motion",
       min: 0,
       max: 0.85,
       step: 0.02,
@@ -287,6 +311,12 @@ export const oscilloscope: PresetDef = {
     {
       key: "kaleido",
       label: "Kaleidoscope",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 1, label: "Off" },
+        { value: 2, label: "Mirrored" },
+      ],
       min: 1,
       max: 2,
       step: 1,

@@ -76,10 +76,26 @@ export const builder: PresetDef = {
       },
     },
   ],
+  // Builder composites seven independent layers, so its knobs sort by LAYER,
+  // not by the shared Shape/Motion/Glow axes — "Bars: gap" and "Orb: wobble"
+  // are not two shape settings, they belong to two different pictures. Ranks
+  // 21..28 slot the whole run between the shared Color (20) and Motion (30).
+  groups: [
+    { id: "layers", label: "Layers", hint: "Which layers are drawn at all", rank: 21 },
+    { id: "lbars", label: "Bars", hint: "The spectrum-bar layer", rank: 22 },
+    { id: "lradial", label: "Radial", hint: "The radial spectrum layer", rank: 23 },
+    { id: "lline", label: "Wave line", hint: "The horizontal waveform layer", rank: 24 },
+    { id: "lcircle", label: "Wave circle", hint: "The circular waveform layer", rank: 25 },
+    { id: "lorb", label: "Orb", hint: "The centre orb layer", rank: 26 },
+    { id: "lstars", label: "Stars", hint: "The starfield layer", rank: 27 },
+    { id: "lrings", label: "Pulse rings", hint: "The beat-launched ring layer", rank: 28 },
+  ],
   params: [
     {
       key: "hue",
       label: "Hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -89,6 +105,7 @@ export const builder: PresetDef = {
     {
       key: "hueSpread",
       label: "Hue spread",
+      group: "color",
       min: 0,
       max: 240,
       step: 1,
@@ -98,6 +115,7 @@ export const builder: PresetDef = {
     {
       key: "bgGlow",
       label: "Background",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.01,
@@ -107,6 +125,7 @@ export const builder: PresetDef = {
     {
       key: "beatFlash",
       label: "Beat flash",
+      group: "backdrop",
       min: 0,
       max: 0.5,
       step: 0.01,
@@ -116,6 +135,8 @@ export const builder: PresetDef = {
     {
       key: "bars",
       label: "Layer: Bars",
+      group: "layers",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -125,6 +146,8 @@ export const builder: PresetDef = {
     {
       key: "radial",
       label: "Layer: Radial",
+      group: "layers",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -134,6 +157,8 @@ export const builder: PresetDef = {
     {
       key: "waveLine",
       label: "Layer: Wave line",
+      group: "layers",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -143,6 +168,8 @@ export const builder: PresetDef = {
     {
       key: "waveCircle",
       label: "Layer: Wave circle",
+      group: "layers",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -152,6 +179,8 @@ export const builder: PresetDef = {
     {
       key: "orb",
       label: "Layer: Orb",
+      group: "layers",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -161,6 +190,8 @@ export const builder: PresetDef = {
     {
       key: "stars",
       label: "Layer: Stars",
+      group: "layers",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -170,6 +201,8 @@ export const builder: PresetDef = {
     {
       key: "rings",
       label: "Layer: Pulse rings",
+      group: "layers",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -181,6 +214,7 @@ export const builder: PresetDef = {
     {
       key: "barsHeight",
       label: "Bars: height",
+      group: "lbars",
       min: 0.1,
       max: 1,
       step: 0.01,
@@ -190,6 +224,7 @@ export const builder: PresetDef = {
     {
       key: "barsGap",
       label: "Bars: gap",
+      group: "lbars",
       min: 0,
       max: 0.6,
       step: 0.01,
@@ -199,6 +234,7 @@ export const builder: PresetDef = {
     {
       key: "barsGlow",
       label: "Bars: glow",
+      group: "lbars",
       min: 0,
       max: 1,
       step: 0.01,
@@ -208,6 +244,8 @@ export const builder: PresetDef = {
     {
       key: "barsPeaks",
       label: "Bars: peaks",
+      group: "lbars",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -217,6 +255,7 @@ export const builder: PresetDef = {
     {
       key: "radialR",
       label: "Radial: radius",
+      group: "lradial",
       min: 0.1,
       max: 0.4,
       step: 0.005,
@@ -226,6 +265,7 @@ export const builder: PresetDef = {
     {
       key: "radialLen",
       label: "Radial: length",
+      group: "lradial",
       min: 0.05,
       max: 0.5,
       step: 0.01,
@@ -235,6 +275,18 @@ export const builder: PresetDef = {
     {
       key: "radialSym",
       label: "Radial: symmetry",
+      group: "lradial",
+      control: "enum",
+      options: [
+        { value: 1, label: "1×" },
+        { value: 2, label: "2×" },
+        { value: 3, label: "3×" },
+        { value: 4, label: "4×" },
+        { value: 5, label: "5×" },
+        { value: 6, label: "6×" },
+        { value: 7, label: "7×" },
+        { value: 8, label: "8×" },
+      ],
       min: 1,
       max: 8,
       step: 1,
@@ -244,6 +296,7 @@ export const builder: PresetDef = {
     {
       key: "lineY",
       label: "Line: position",
+      group: "lline",
       min: 0.15,
       max: 0.85,
       step: 0.01,
@@ -253,6 +306,7 @@ export const builder: PresetDef = {
     {
       key: "lineAmp",
       label: "Line: height",
+      group: "lline",
       min: 0.05,
       max: 0.5,
       step: 0.01,
@@ -262,6 +316,7 @@ export const builder: PresetDef = {
     {
       key: "lineGlow",
       label: "Line: glow",
+      group: "lline",
       min: 0,
       max: 1,
       step: 0.01,
@@ -271,6 +326,7 @@ export const builder: PresetDef = {
     {
       key: "circleR",
       label: "Circle: radius",
+      group: "lcircle",
       min: 0.1,
       max: 0.45,
       step: 0.005,
@@ -280,6 +336,7 @@ export const builder: PresetDef = {
     {
       key: "circleAmp",
       label: "Circle: wave",
+      group: "lcircle",
       min: 0,
       max: 0.15,
       step: 0.005,
@@ -289,6 +346,7 @@ export const builder: PresetDef = {
     {
       key: "orbSize",
       label: "Orb: size",
+      group: "lorb",
       min: 0.05,
       max: 0.3,
       step: 0.005,
@@ -298,6 +356,7 @@ export const builder: PresetDef = {
     {
       key: "orbPump",
       label: "Orb: pump",
+      group: "lorb",
       min: 0,
       max: 1,
       step: 0.02,
@@ -307,6 +366,7 @@ export const builder: PresetDef = {
     {
       key: "orbWobble",
       label: "Orb: wobble",
+      group: "lorb",
       min: 0,
       max: 1,
       step: 0.02,
@@ -316,6 +376,7 @@ export const builder: PresetDef = {
     {
       key: "starDensity",
       label: "Stars: density",
+      group: "lstars",
       min: 2,
       max: 14,
       step: 0.5,
@@ -325,6 +386,7 @@ export const builder: PresetDef = {
     {
       key: "starSpeed",
       label: "Stars: speed",
+      group: "lstars",
       min: 0.02,
       max: 1.2,
       step: 0.02,
@@ -334,6 +396,7 @@ export const builder: PresetDef = {
     {
       key: "starStreak",
       label: "Stars: scatter",
+      group: "lstars",
       min: 0,
       max: 1,
       step: 0.01,
@@ -343,6 +406,7 @@ export const builder: PresetDef = {
     {
       key: "ringStart",
       label: "Rings: launch radius",
+      group: "lrings",
       min: 0.02,
       max: 0.4,
       step: 0.01,
@@ -352,6 +416,7 @@ export const builder: PresetDef = {
     {
       key: "ringEnd",
       label: "Rings: reach",
+      group: "lrings",
       min: 0.3,
       max: 1.2,
       step: 0.02,
@@ -361,6 +426,7 @@ export const builder: PresetDef = {
     {
       key: "ringSharp",
       label: "Rings: sharpness",
+      group: "lrings",
       min: 0,
       max: 1,
       step: 0.02,
@@ -370,6 +436,7 @@ export const builder: PresetDef = {
     {
       key: "ringBright",
       label: "Rings: brightness",
+      group: "lrings",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -379,6 +446,7 @@ export const builder: PresetDef = {
     {
       key: "orbBeat",
       label: "Orb: beat kick",
+      group: "lorb",
       min: 0,
       max: 0.6,
       step: 0.02,
@@ -388,6 +456,7 @@ export const builder: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1.2,
       step: 0.05,

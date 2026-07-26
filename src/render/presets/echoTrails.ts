@@ -109,10 +109,21 @@ export const echoTrails: PresetDef = {
     },
   ],
   params: [
-    { key: "hue", label: "Hue", min: 0, max: 360, step: 1, default: 200, hint: "Base color" },
+    {
+      key: "hue",
+      label: "Hue",
+      group: "color",
+      control: "hue",
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 200,
+      hint: "Base color",
+    },
     {
       key: "decay",
       label: "Trail length",
+      group: "motion",
       min: 0.6,
       max: 0.99,
       step: 0.01,
@@ -122,6 +133,7 @@ export const echoTrails: PresetDef = {
     {
       key: "zoom",
       label: "Zoom",
+      group: "motion",
       min: 0,
       max: 1,
       step: 0.01,
@@ -131,6 +143,7 @@ export const echoTrails: PresetDef = {
     {
       key: "swirl",
       label: "Swirl",
+      group: "motion",
       min: -1,
       max: 1,
       step: 0.01,
@@ -140,6 +153,7 @@ export const echoTrails: PresetDef = {
     {
       key: "radius",
       label: "Ring size",
+      group: "shape",
       min: 0.05,
       max: 0.6,
       step: 0.01,
@@ -149,6 +163,7 @@ export const echoTrails: PresetDef = {
     {
       key: "react",
       label: "Reactivity",
+      group: "reaction",
       min: 0,
       max: 0.5,
       step: 0.01,
@@ -158,6 +173,7 @@ export const echoTrails: PresetDef = {
     {
       key: "inject",
       label: "Brightness",
+      group: "glow",
       min: 0,
       max: 2,
       step: 0.05,
@@ -169,6 +185,7 @@ export const echoTrails: PresetDef = {
     {
       key: "beatZoom",
       label: "Beat zoom",
+      group: "reaction",
       min: 0,
       max: 1,
       step: 0.02,
@@ -178,6 +195,7 @@ export const echoTrails: PresetDef = {
     {
       key: "flowSwirl",
       label: "Flow swirl",
+      group: "motion",
       min: 0,
       max: 1,
       step: 0.02,
@@ -187,6 +205,7 @@ export const echoTrails: PresetDef = {
     {
       key: "thick",
       label: "Ring thickness",
+      group: "shape",
       min: 0.005,
       max: 0.1,
       step: 0.005,
@@ -196,6 +215,7 @@ export const echoTrails: PresetDef = {
     {
       key: "hueSpin",
       label: "Hue spin",
+      group: "color",
       min: 0,
       max: 1,
       step: 0.02,
@@ -205,6 +225,7 @@ export const echoTrails: PresetDef = {
     {
       key: "hueDrift",
       label: "Hue drift",
+      group: "color",
       min: 0,
       max: 1,
       step: 0.02,
@@ -214,6 +235,7 @@ export const echoTrails: PresetDef = {
     {
       key: "kickFlash",
       label: "Kick flash",
+      group: "reaction",
       min: 0,
       max: 1,
       step: 0.02,
@@ -223,6 +245,7 @@ export const echoTrails: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.05,
@@ -232,6 +255,22 @@ export const echoTrails: PresetDef = {
     {
       key: "mirror",
       label: "Club mirror",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 1, label: "Off" },
+        { value: 2, label: "Mirrored" },
+        { value: 3, label: "3 segments" },
+        { value: 4, label: "4 segments" },
+        { value: 5, label: "5 segments" },
+        { value: 6, label: "6 segments" },
+        { value: 7, label: "7 segments" },
+        { value: 8, label: "8 segments" },
+        { value: 9, label: "9 segments" },
+        { value: 10, label: "10 segments" },
+        { value: 11, label: "11 segments" },
+        { value: 12, label: "12 segments" },
+      ],
       min: 1,
       max: 12,
       step: 1,
@@ -241,6 +280,7 @@ export const echoTrails: PresetDef = {
     {
       key: "echoHue",
       label: "Echo hue drift",
+      group: "color",
       min: 0,
       max: 1,
       step: 0.02,
@@ -250,6 +290,19 @@ export const echoTrails: PresetDef = {
     {
       key: "sides",
       label: "Ring shape",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 0, label: "Round" },
+        { value: 1, label: "1 lobe" },
+        { value: 2, label: "2 lobes" },
+        { value: 3, label: "3 lobes" },
+        { value: 4, label: "4 lobes" },
+        { value: 5, label: "5 lobes" },
+        { value: 6, label: "6 lobes" },
+        { value: 7, label: "7 lobes" },
+        { value: 8, label: "8 lobes" },
+      ],
       min: 0,
       max: 8,
       step: 1,
@@ -259,6 +312,7 @@ export const echoTrails: PresetDef = {
     {
       key: "beatStar",
       label: "Beat bloom",
+      group: "reaction",
       min: 0,
       max: 1,
       step: 0.02,

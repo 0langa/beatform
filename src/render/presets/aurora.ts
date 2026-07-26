@@ -105,6 +105,8 @@ export const aurora: PresetDef = {
     {
       key: "hue",
       label: "Hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -114,6 +116,7 @@ export const aurora: PresetDef = {
     {
       key: "bright",
       label: "Brightness",
+      group: "glow",
       min: 0.2,
       max: 2,
       step: 0.05,
@@ -123,6 +126,7 @@ export const aurora: PresetDef = {
     {
       key: "react",
       label: "Reactivity",
+      group: "reaction",
       min: 0,
       max: 2,
       step: 0.05,
@@ -132,6 +136,7 @@ export const aurora: PresetDef = {
     {
       key: "flow",
       label: "Flow",
+      group: "motion",
       min: 0,
       max: 3,
       step: 0.05,
@@ -141,6 +146,7 @@ export const aurora: PresetDef = {
     {
       key: "thick",
       label: "Thickness",
+      group: "shape",
       min: 0.04,
       max: 0.3,
       step: 0.01,
@@ -150,6 +156,7 @@ export const aurora: PresetDef = {
     {
       key: "baseY",
       label: "Height",
+      group: "shape",
       min: 0.2,
       max: 0.8,
       step: 0.01,
@@ -161,6 +168,13 @@ export const aurora: PresetDef = {
     {
       key: "layers",
       label: "Curtains",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 1, label: "1" },
+        { value: 2, label: "2" },
+        { value: 3, label: "3" },
+      ],
       min: 1,
       max: 3,
       step: 1,
@@ -170,6 +184,7 @@ export const aurora: PresetDef = {
     {
       key: "specAmt",
       label: "Spectrum shape",
+      group: "reaction",
       min: 0,
       max: 3,
       step: 0.05,
@@ -179,6 +194,7 @@ export const aurora: PresetDef = {
     {
       key: "bassSwell",
       label: "Bass swell",
+      group: "reaction",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -188,6 +204,7 @@ export const aurora: PresetDef = {
     {
       key: "drift",
       label: "Drift",
+      group: "motion",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -197,6 +214,7 @@ export const aurora: PresetDef = {
     {
       key: "reflect",
       label: "Reflection",
+      group: "shape",
       min: 0,
       max: 1,
       step: 0.02,
@@ -206,6 +224,7 @@ export const aurora: PresetDef = {
     {
       key: "horizon",
       label: "Horizon",
+      group: "shape",
       min: 0.55,
       max: 0.98,
       step: 0.01,
@@ -215,6 +234,7 @@ export const aurora: PresetDef = {
     {
       key: "reflectFade",
       label: "Reflection fade",
+      group: "shape",
       min: 1,
       max: 12,
       step: 0.5,
@@ -224,6 +244,7 @@ export const aurora: PresetDef = {
     {
       key: "beatPulse",
       label: "Beat pulse",
+      group: "reaction",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -233,6 +254,7 @@ export const aurora: PresetDef = {
     {
       key: "wave",
       label: "Waviness",
+      group: "shape",
       min: 0,
       max: 2,
       step: 0.05,
@@ -242,6 +264,7 @@ export const aurora: PresetDef = {
     {
       key: "hueStep",
       label: "Hue step",
+      group: "color",
       min: 0,
       max: 120,
       step: 5,
@@ -251,6 +274,7 @@ export const aurora: PresetDef = {
     {
       key: "hueSpread",
       label: "Hue spread",
+      group: "color",
       min: 0,
       max: 220,
       step: 5,
@@ -260,6 +284,7 @@ export const aurora: PresetDef = {
     {
       key: "rays",
       label: "Rays",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.02,
@@ -269,6 +294,7 @@ export const aurora: PresetDef = {
     {
       key: "sat",
       label: "Saturation",
+      group: "color",
       min: 0,
       max: 1,
       step: 0.02,
@@ -278,6 +304,8 @@ export const aurora: PresetDef = {
     {
       key: "stars",
       label: "Stars",
+      group: "backdrop",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -287,6 +315,7 @@ export const aurora: PresetDef = {
     {
       key: "bgGlow",
       label: "Sky glow",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.02,
@@ -296,6 +325,12 @@ export const aurora: PresetDef = {
     {
       key: "mirror",
       label: "Symmetric",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 1, label: "Off" },
+        { value: 2, label: "Mirrored" },
+      ],
       min: 1,
       max: 2,
       step: 1,

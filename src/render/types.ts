@@ -4,8 +4,19 @@ import type { AudioFeatures } from "../audio/types";
  * Preset = one visual. Declares its tweakable parameters as a schema so the
  * UI can auto-generate controls and presets stay serializable (JSON in/out) —
  * this is the extension point for future visual customization.
+ *
+ * EVERY param is one f32, always. `control` picks the WIDGET, never the
+ * storage: a toggle stores 0/1, an enum stores its option's number, a hue
+ * stores degrees. That is not a style choice — the params buffer packs
+ * `params[key] ?? default` at the spec's ABI index (see presetPrefix), saved
+ * projects are `Record<string, number>`, and the modulation/MIDI/automation
+ * paths clamp against min..max. A control type that needed a second float
+ * would break all four at once.
+ *
+ * Consequence for migrations: changing a param's `control` NEVER changes a
+ * saved value. A 0/1 slider that becomes a toggle reads the same 0/1 back.
  */
-export interface ParamSpec {
+interface ParamSpecBase {
   key: string;
   label: string;
   min: number;
@@ -14,7 +25,123 @@ export interface ParamSpec {
   default: number;
   /** One-line, user-facing: what turning this knob visibly does. */
   hint?: string;
+  /**
+   * Which panel group this knob belongs to — see PARAM_GROUPS (or the
+   * preset's own `groups`). This is the ONE place a param's placement is
+   * declared: the settings panel never carries a list of keys, so a new
+   * param lands in the right group by declaring it here and nowhere else.
+   * Absent = the catch-all "More" group, so a param can never go missing.
+   */
+  group?: string;
+  /**
+   * Sort weight inside the group; lower sorts first, ties fall back to
+   * declaration order. Only needed to pull one knob to the top of its group —
+   * authoring order already reads as intent for everything else.
+   */
+  order?: number;
 }
+
+/** One choice of an `enum` param. `value` is the number actually stored. */
+export interface ParamOption {
+  value: number;
+  label: string;
+  /** Optional per-option explanation, shown in the row's title. */
+  hint?: string;
+}
+
+/** A continuous number: the default, and what every param was before v2.53. */
+export interface SliderParamSpec extends ParamSpecBase {
+  control?: "slider";
+}
+
+/**
+ * A boolean. Typed to 0/1/step-1 so a "toggle" that could hold 0.5 is a
+ * compile error rather than a switch that silently reads back as off.
+ */
+export interface ToggleParamSpec extends Omit<ParamSpecBase, "min" | "max" | "step"> {
+  control: "toggle";
+  min: 0;
+  max: 1;
+  step: 1;
+  default: 0 | 1;
+}
+
+/**
+ * A small set of named choices. Renders as a dropdown, because a slider over
+ * "1..12 segments" or "0..2 image fit" makes the user hunt for values that
+ * have names — the exact clutter this control exists to remove.
+ */
+export interface EnumParamSpec extends ParamSpecBase {
+  control: "enum";
+  options: ParamOption[];
+}
+
+/** A position on the colour wheel (degrees). Rainbow track, same f32. */
+export interface HueParamSpec extends ParamSpecBase {
+  control: "hue";
+}
+
+/** A direction in degrees. Gets a draggable dial next to its slider. */
+export interface AngleParamSpec extends ParamSpecBase {
+  control: "angle";
+}
+
+export type ParamSpec =
+  SliderParamSpec | ToggleParamSpec | EnumParamSpec | HueParamSpec | AngleParamSpec;
+
+/** The resolved widget kind — `control` with the slider default filled in. */
+export type ParamControl = NonNullable<ParamSpec["control"]>;
+
+/**
+ * A group of related knobs inside one visual's settings.
+ *
+ * `rank` — not array position — is what orders the panel. Ranks are spaced by
+ * 10 so a preset can slot its own group between two shared ones (Builder does
+ * exactly that for its per-layer groups) without renumbering anything, and so
+ * the order stays deterministic when groups arrive from two sources.
+ */
+export interface ParamGroupDef {
+  id: string;
+  label: string;
+  hint?: string;
+  rank: number;
+}
+
+/**
+ * The shared vocabulary every visual sorts its knobs into. Ordered the way a
+ * user builds a look: pick the form, colour it, make it move, make it react,
+ * light it, then the trimmings.
+ *
+ * Adding a visual setting later means picking one of these ids — no panel
+ * edit, no list to keep in sync. Adding a NEW axis means one entry here.
+ */
+export const PARAM_GROUPS: ParamGroupDef[] = [
+  { id: "shape", label: "Shape", hint: "Size, count and layout of what is drawn", rank: 10 },
+  { id: "color", label: "Color", hint: "Hue, spread and saturation", rank: 20 },
+  { id: "motion", label: "Motion", hint: "Speed, spin and drift of this visual", rank: 30 },
+  { id: "reaction", label: "Reaction", hint: "How hard the audio moves it", rank: 40 },
+  { id: "glow", label: "Glow", hint: "Brightness, bloom and highlights", rank: 50 },
+  { id: "image", label: "Image", hint: "Cover art drawn inside the visual", rank: 60 },
+  { id: "camera", label: "Camera", hint: "Where the 3D camera sits and looks", rank: 70 },
+  {
+    id: "backdrop",
+    label: "Backdrop",
+    hint: "Behind and around it — wash, fog, vignette",
+    rank: 80,
+  },
+];
+
+/**
+ * Where a param with an unknown (or missing) `group` goes. Deliberately a real
+ * group and not a silent drop: an un-grouped knob still has to be reachable,
+ * and landing in a visibly-named bucket is what makes the omission obvious.
+ */
+export const FALLBACK_GROUP: ParamGroupDef = {
+  id: "more",
+  label: "More",
+  hint: "Knobs that have not been sorted into a group yet",
+  rank: 900,
+};
 
 /** A factory look for a preset: named partial parameter override. */
 export interface StyleDef {
@@ -31,6 +158,13 @@ export interface PresetDef {
   description?: string;
   /** Factory looks — applied as defaults + values. First entry ≙ defaults. */
   styles?: StyleDef[];
+  /**
+   * Extra (or re-ranked) parameter groups for THIS visual, merged over
+   * PARAM_GROUPS by id. Builder uses it to give each of its seven layers a
+   * group of its own — sorting those by "Color / Motion / Glow" would scatter
+   * one layer's knobs across the whole panel.
+   */
+  groups?: ParamGroupDef[];
   params: ParamSpec[];
   /**
    * Expert knobs: every internal constant worth touching. Rendered collapsed
@@ -102,6 +236,85 @@ export function paramSpecMap(preset: PresetDef): Map<string, ParamSpec> {
     paramMapCache.set(preset, map);
   }
   return map;
+}
+
+/** Keys that live in `advanced` — the expert tier. Memoized per preset def. */
+const advancedKeyCache = new WeakMap<PresetDef, Set<string>>();
+export function advancedKeys(preset: PresetDef): Set<string> {
+  let set = advancedKeyCache.get(preset);
+  if (!set) {
+    set = new Set((preset.advanced ?? []).map((p) => p.key));
+    advancedKeyCache.set(preset, set);
+  }
+  return set;
+}
+
+/** Every group this preset can place a param into, keyed by id. */
+const groupDefCache = new WeakMap<PresetDef, Map<string, ParamGroupDef>>();
+export function presetGroups(preset: PresetDef): Map<string, ParamGroupDef> {
+  let map = groupDefCache.get(preset);
+  if (!map) {
+    map = new Map(PARAM_GROUPS.map((g) => [g.id, g]));
+    // Preset-declared groups win on id collision, so a visual can re-rank or
+    // re-label a shared group without forking the registry.
+    for (const g of preset.groups ?? []) map.set(g.id, g);
+    groupDefCache.set(preset, map);
+  }
+  return map;
+}
+
+/** One group with the params that landed in it, ready to render. */
+export interface ParamGroupView {
+  group: ParamGroupDef;
+  params: ParamSpec[];
+}
+
+/**
+ * Sort `specs` into their declared groups, deterministically.
+ *
+ * The order is intentional at every level and never "whatever the array said":
+ *  1. groups by their declared `rank`, ties broken by id so two groups sharing
+ *     a rank can never swap places between renders;
+ *  2. params by their declared `order` (default 0);
+ *  3. ties by ABI index — authoring order WITHIN one group, which is the one
+ *     place source order is meaningful (authors write related knobs together).
+ *
+ * `specs` is whatever the panel wants shown (a tier filter, a search hit list),
+ * so the same rules apply to the essentials view, the full view and search.
+ * Empty groups are dropped — a group only exists where params opted into it.
+ */
+export function groupParams(preset: PresetDef, specs: ParamSpec[]): ParamGroupView[] {
+  const defs = presetGroups(preset);
+  const abi = new Map(allParams(preset).map((p, i) => [p.key, i]));
+  const buckets = new Map<string, ParamSpec[]>();
+  for (const spec of specs) {
+    const id = spec.group && defs.has(spec.group) ? spec.group : FALLBACK_GROUP.id;
+    const bucket = buckets.get(id);
+    if (bucket) bucket.push(spec);
+    else buckets.set(id, [spec]);
+  }
+  const out: ParamGroupView[] = [];
+  for (const [id, params] of buckets) {
+    params.sort(
+      (a, b) =>
+        (a.order ?? 0) - (b.order ?? 0) ||
+        (abi.get(a.key) ?? 0) - (abi.get(b.key) ?? 0) ||
+        a.key.localeCompare(b.key),
+    );
+    out.push({ group: defs.get(id) ?? FALLBACK_GROUP, params });
+  }
+  out.sort((a, b) => a.group.rank - b.group.rank || a.group.id.localeCompare(b.group.id));
+  return out;
+}
+
+/**
+ * The searchable text of one param: everything a user might type looking for
+ * it — its label, its hint, its key (power users know these from the WGSL
+ * ABI) and, for an enum, the names of its choices.
+ */
+export function paramSearchText(spec: ParamSpec): string {
+  const options = spec.control === "enum" ? spec.options.map((o) => o.label).join(" ") : "";
+  return `${spec.label} ${spec.hint ?? ""} ${spec.key} ${options}`.toLowerCase();
 }
 
 /**

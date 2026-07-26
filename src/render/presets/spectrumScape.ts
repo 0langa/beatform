@@ -115,6 +115,8 @@ export const spectrumScape: PresetDef = {
     {
       key: "hue",
       label: "Hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -124,6 +126,7 @@ export const spectrumScape: PresetDef = {
     {
       key: "heightScale",
       label: "Height",
+      group: "shape",
       min: 1,
       max: 18,
       step: 0.5,
@@ -133,6 +136,7 @@ export const spectrumScape: PresetDef = {
     {
       key: "camPitch",
       label: "Camera pitch",
+      group: "camera",
       min: 5,
       max: 85,
       step: 1,
@@ -142,6 +146,7 @@ export const spectrumScape: PresetDef = {
     {
       key: "camDist",
       label: "Camera distance",
+      group: "camera",
       min: 8,
       max: 30,
       step: 0.5,
@@ -151,6 +156,7 @@ export const spectrumScape: PresetDef = {
     {
       key: "camSpin",
       label: "Orbit speed",
+      group: "camera",
       min: -60,
       max: 60,
       step: 1,
@@ -160,6 +166,7 @@ export const spectrumScape: PresetDef = {
     {
       key: "emissive",
       label: "Glow",
+      group: "glow",
       min: 0,
       max: 2,
       step: 0.05,
@@ -171,6 +178,7 @@ export const spectrumScape: PresetDef = {
     {
       key: "fov",
       label: "Field of view",
+      group: "camera",
       min: 25,
       max: 90,
       step: 1,
@@ -180,6 +188,7 @@ export const spectrumScape: PresetDef = {
     {
       key: "hueRange",
       label: "Hue spread",
+      group: "color",
       min: 0,
       max: 300,
       step: 5,
@@ -189,6 +198,7 @@ export const spectrumScape: PresetDef = {
     {
       key: "barWidth",
       label: "Bar width",
+      group: "shape",
       min: 0.1,
       max: 0.9,
       step: 0.02,
@@ -198,6 +208,7 @@ export const spectrumScape: PresetDef = {
     {
       key: "spacing",
       label: "Spacing",
+      group: "shape",
       min: 0.3,
       max: 1.2,
       step: 0.05,
@@ -207,6 +218,7 @@ export const spectrumScape: PresetDef = {
     {
       key: "light",
       label: "Light",
+      group: "glow",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -216,6 +228,8 @@ export const spectrumScape: PresetDef = {
     {
       key: "camYaw",
       label: "Camera angle",
+      group: "camera",
+      control: "angle",
       min: 0,
       max: 360,
       step: 1,
@@ -225,6 +239,7 @@ export const spectrumScape: PresetDef = {
     {
       key: "targetY",
       label: "Look height",
+      group: "camera",
       min: 0,
       max: 4,
       step: 0.1,

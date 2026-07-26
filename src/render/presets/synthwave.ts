@@ -103,6 +103,8 @@ export const synthwave: PresetDef = {
     {
       key: "hue",
       label: "Sun hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -112,6 +114,8 @@ export const synthwave: PresetDef = {
     {
       key: "gridHue",
       label: "Grid hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -121,6 +125,7 @@ export const synthwave: PresetDef = {
     {
       key: "speed",
       label: "Speed",
+      group: "motion",
       min: 0,
       max: 3,
       step: 0.05,
@@ -130,6 +135,7 @@ export const synthwave: PresetDef = {
     {
       key: "react",
       label: "Reactivity",
+      group: "reaction",
       min: 0,
       max: 2,
       step: 0.05,
@@ -139,6 +145,7 @@ export const synthwave: PresetDef = {
     {
       key: "sunR",
       label: "Sun size",
+      group: "shape",
       min: 0.1,
       max: 0.4,
       step: 0.01,
@@ -148,6 +155,7 @@ export const synthwave: PresetDef = {
     {
       key: "gridGlow",
       label: "Grid glow",
+      group: "glow",
       min: 0,
       max: 2,
       step: 0.05,
@@ -159,6 +167,7 @@ export const synthwave: PresetDef = {
     {
       key: "beatPulse",
       label: "Beat pulse",
+      group: "reaction",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -168,6 +177,7 @@ export const synthwave: PresetDef = {
     {
       key: "mountains",
       label: "Mountains",
+      group: "shape",
       min: 0,
       max: 1,
       step: 0.02,
@@ -177,6 +187,8 @@ export const synthwave: PresetDef = {
     {
       key: "stars",
       label: "Stars",
+      group: "backdrop",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -186,6 +198,7 @@ export const synthwave: PresetDef = {
     {
       key: "starDensity",
       label: "Star density",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.02,
@@ -195,6 +208,7 @@ export const synthwave: PresetDef = {
     {
       key: "sunRays",
       label: "Sun rays",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.02,
@@ -204,6 +218,7 @@ export const synthwave: PresetDef = {
     {
       key: "sunY",
       label: "Sun height",
+      group: "shape",
       min: 0.1,
       max: 0.45,
       step: 0.01,
@@ -213,6 +228,7 @@ export const synthwave: PresetDef = {
     {
       key: "sunX",
       label: "Sun offset",
+      group: "shape",
       min: -0.6,
       max: 0.6,
       step: 0.02,
@@ -222,6 +238,7 @@ export const synthwave: PresetDef = {
     {
       key: "gridScale",
       label: "Grid density",
+      group: "shape",
       min: 0.2,
       max: 2,
       step: 0.05,
@@ -231,6 +248,7 @@ export const synthwave: PresetDef = {
     {
       key: "horizonY",
       label: "Horizon height",
+      group: "shape",
       min: 0.35,
       max: 0.62,
       step: 0.01,
@@ -240,6 +258,7 @@ export const synthwave: PresetDef = {
     {
       key: "scan",
       label: "Sun scanlines",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.02,
@@ -249,6 +268,8 @@ export const synthwave: PresetDef = {
     {
       key: "gridLock",
       label: "Beat-locked grid",
+      group: "motion",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -258,6 +279,7 @@ export const synthwave: PresetDef = {
     {
       key: "fog",
       label: "Atmospheric fog",
+      group: "backdrop",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -267,6 +289,7 @@ export const synthwave: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.05,

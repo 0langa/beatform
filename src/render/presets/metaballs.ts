@@ -74,10 +74,30 @@ export const metaballs: PresetDef = {
     },
   ],
   params: [
-    { key: "hue", label: "Hue", min: 0, max: 360, step: 1, default: 25, hint: "Base blob color" },
+    {
+      key: "hue",
+      label: "Hue",
+      group: "color",
+      control: "hue",
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 25,
+      hint: "Base blob color",
+    },
     {
       key: "count",
       label: "Blobs",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 2, label: "2" },
+        { value: 3, label: "3" },
+        { value: 4, label: "4" },
+        { value: 5, label: "5" },
+        { value: 6, label: "6" },
+        { value: 7, label: "7" },
+      ],
       min: 2,
       max: 7,
       step: 1,
@@ -87,6 +107,7 @@ export const metaballs: PresetDef = {
     {
       key: "size",
       label: "Size",
+      group: "shape",
       min: 0.05,
       max: 0.3,
       step: 0.005,
@@ -96,6 +117,7 @@ export const metaballs: PresetDef = {
     {
       key: "speed",
       label: "Speed",
+      group: "motion",
       min: 0.05,
       max: 1,
       step: 0.05,
@@ -105,6 +127,7 @@ export const metaballs: PresetDef = {
     {
       key: "glow",
       label: "Glow",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.01,
@@ -114,6 +137,7 @@ export const metaballs: PresetDef = {
     {
       key: "threshold",
       label: "Merge",
+      group: "shape",
       min: 0.6,
       max: 1.6,
       step: 0.02,
@@ -123,6 +147,7 @@ export const metaballs: PresetDef = {
     {
       key: "gloss",
       label: "Gloss",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.02,
@@ -134,6 +159,7 @@ export const metaballs: PresetDef = {
     {
       key: "orbitX",
       label: "Orbit width",
+      group: "motion",
       min: 0.1,
       max: 0.5,
       step: 0.01,
@@ -143,6 +169,7 @@ export const metaballs: PresetDef = {
     {
       key: "orbitY",
       label: "Orbit height",
+      group: "motion",
       min: 0.1,
       max: 0.5,
       step: 0.01,
@@ -152,6 +179,7 @@ export const metaballs: PresetDef = {
     {
       key: "radiusFloor",
       label: "Size floor",
+      group: "shape",
       min: 0.1,
       max: 1.5,
       step: 0.05,
@@ -161,6 +189,7 @@ export const metaballs: PresetDef = {
     {
       key: "energyGrow",
       label: "Energy growth",
+      group: "reaction",
       min: 0,
       max: 2,
       step: 0.05,
@@ -170,6 +199,7 @@ export const metaballs: PresetDef = {
     {
       key: "radiusBand",
       label: "Band swell",
+      group: "reaction",
       min: 0,
       max: 2.5,
       step: 0.05,
@@ -179,6 +209,7 @@ export const metaballs: PresetDef = {
     {
       key: "beatSwell",
       label: "Beat swell",
+      group: "reaction",
       min: 0,
       max: 0.6,
       step: 0.02,
@@ -188,6 +219,7 @@ export const metaballs: PresetDef = {
     {
       key: "rimStart",
       label: "Rim start",
+      group: "glow",
       min: 0.2,
       max: 1,
       step: 0.02,
@@ -197,6 +229,7 @@ export const metaballs: PresetDef = {
     {
       key: "innerGrad",
       label: "Inner gradient",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.02,
@@ -206,6 +239,7 @@ export const metaballs: PresetDef = {
     {
       key: "hueField",
       label: "Hue per blob",
+      group: "color",
       min: 0,
       max: 60,
       step: 1,
@@ -215,6 +249,7 @@ export const metaballs: PresetDef = {
     {
       key: "beatBright",
       label: "Beat brighten",
+      group: "reaction",
       min: 0,
       max: 0.3,
       step: 0.01,
@@ -224,6 +259,7 @@ export const metaballs: PresetDef = {
     {
       key: "bgLevel",
       label: "Bg level",
+      group: "backdrop",
       min: 0,
       max: 0.15,
       step: 0.005,
@@ -233,6 +269,7 @@ export const metaballs: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.05,
@@ -242,6 +279,22 @@ export const metaballs: PresetDef = {
     {
       key: "mirror",
       label: "Club mirror",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 1, label: "Off" },
+        { value: 2, label: "Mirrored" },
+        { value: 3, label: "3 segments" },
+        { value: 4, label: "4 segments" },
+        { value: 5, label: "5 segments" },
+        { value: 6, label: "6 segments" },
+        { value: 7, label: "7 segments" },
+        { value: 8, label: "8 segments" },
+        { value: 9, label: "9 segments" },
+        { value: 10, label: "10 segments" },
+        { value: 11, label: "11 segments" },
+        { value: 12, label: "12 segments" },
+      ],
       min: 1,
       max: 12,
       step: 1,
@@ -251,6 +304,8 @@ export const metaballs: PresetDef = {
     {
       key: "lightAngle",
       label: "Light angle",
+      group: "glow",
+      control: "angle",
       min: 0,
       max: 360,
       step: 5,
@@ -260,6 +315,7 @@ export const metaballs: PresetDef = {
     {
       key: "squash",
       label: "Beat squash",
+      group: "reaction",
       min: 0,
       max: 0.6,
       step: 0.02,

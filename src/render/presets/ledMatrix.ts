@@ -88,6 +88,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "cols",
       label: "Columns",
+      group: "shape",
       min: 16,
       max: 96,
       step: 1,
@@ -97,6 +98,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "rows",
       label: "Rows",
+      group: "shape",
       min: 8,
       max: 48,
       step: 1,
@@ -106,6 +108,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "gap",
       label: "Cell gap",
+      group: "shape",
       min: 0.05,
       max: 0.5,
       step: 0.01,
@@ -115,6 +118,8 @@ export const ledMatrix: PresetDef = {
     {
       key: "hueShift",
       label: "Hue shift",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -124,6 +129,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "dim",
       label: "Unlit glow",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.01,
@@ -133,6 +139,8 @@ export const ledMatrix: PresetDef = {
     {
       key: "rounded",
       label: "Rounded",
+      group: "shape",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -142,6 +150,8 @@ export const ledMatrix: PresetDef = {
     {
       key: "peaks",
       label: "Peak dots",
+      group: "shape",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -153,6 +163,8 @@ export const ledMatrix: PresetDef = {
     {
       key: "hueLow",
       label: "Low hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -162,6 +174,8 @@ export const ledMatrix: PresetDef = {
     {
       key: "hueHigh",
       label: "High hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -171,6 +185,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "spectrumColor",
       label: "Frequency palette",
+      group: "color",
       min: 0,
       max: 1,
       step: 0.02,
@@ -180,6 +195,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "gradStart",
       label: "Gradient start",
+      group: "color",
       min: 0,
       max: 1,
       step: 0.02,
@@ -189,6 +205,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "gradEnd",
       label: "Gradient end",
+      group: "color",
       min: 0.3,
       max: 1,
       step: 0.02,
@@ -198,6 +215,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "litLevel",
       label: "Lit brightness",
+      group: "glow",
       min: 0.2,
       max: 0.8,
       step: 0.02,
@@ -207,6 +225,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "hotBoost",
       label: "Top-cell boost",
+      group: "glow",
       min: 0,
       max: 0.4,
       step: 0.02,
@@ -216,6 +235,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "beatBoost",
       label: "Beat boost",
+      group: "reaction",
       min: 0,
       max: 0.3,
       step: 0.01,
@@ -225,6 +245,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "ghost",
       label: "Phosphor trail",
+      group: "motion",
       min: 0,
       max: 0.6,
       step: 0.01,
@@ -234,6 +255,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "bassGlow",
       label: "Bass backlight",
+      group: "reaction",
       min: 0,
       max: 0.5,
       step: 0.01,
@@ -243,6 +265,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "beatFlash",
       label: "Beat border",
+      group: "reaction",
       min: 0,
       max: 1,
       step: 0.01,
@@ -252,6 +275,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "peakBright",
       label: "Peak brightness",
+      group: "glow",
       min: 0.3,
       max: 1.2,
       step: 0.05,
@@ -261,6 +285,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "bloom",
       label: "LED bloom",
+      group: "glow",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -270,6 +295,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "scanline",
       label: "Scanlines",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.02,
@@ -279,6 +305,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "flicker",
       label: "Flicker",
+      group: "backdrop",
       min: 0,
       max: 0.6,
       step: 0.02,
@@ -288,6 +315,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "panelVariance",
       label: "Panel variance",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.02,
@@ -297,6 +325,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.05,

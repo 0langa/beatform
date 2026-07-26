@@ -57,10 +57,21 @@ export const bassCircle: PresetDef = {
     },
   ],
   params: [
-    { key: "hue", label: "Hue", min: 0, max: 360, step: 1, default: 280, hint: "Base color" },
+    {
+      key: "hue",
+      label: "Hue",
+      group: "color",
+      control: "hue",
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 280,
+      hint: "Base color",
+    },
     {
       key: "radius",
       label: "Circle size",
+      group: "shape",
       min: 0.08,
       max: 0.42,
       step: 0.005,
@@ -70,6 +81,7 @@ export const bassCircle: PresetDef = {
     {
       key: "pump",
       label: "Pump",
+      group: "reaction",
       min: 0,
       max: 0.6,
       step: 0.01,
@@ -79,6 +91,7 @@ export const bassCircle: PresetDef = {
     {
       key: "barLen",
       label: "Bar length",
+      group: "shape",
       min: 0.05,
       max: 0.32,
       step: 0.01,
@@ -88,6 +101,7 @@ export const bassCircle: PresetDef = {
     {
       key: "particles",
       label: "Particles",
+      group: "shape",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -97,6 +111,7 @@ export const bassCircle: PresetDef = {
     {
       key: "rimBright",
       label: "Rim glow",
+      group: "glow",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -106,6 +121,8 @@ export const bassCircle: PresetDef = {
     {
       key: "cover",
       label: "Cover art",
+      group: "image",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -115,6 +132,8 @@ export const bassCircle: PresetDef = {
     {
       key: "coverHue",
       label: "Match cover colors",
+      group: "image",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -126,6 +145,18 @@ export const bassCircle: PresetDef = {
     {
       key: "symmetry",
       label: "Symmetry",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 1, label: "1×" },
+        { value: 2, label: "2×" },
+        { value: 3, label: "3×" },
+        { value: 4, label: "4×" },
+        { value: 5, label: "5×" },
+        { value: 6, label: "6×" },
+        { value: 7, label: "7×" },
+        { value: 8, label: "8×" },
+      ],
       min: 1,
       max: 8,
       step: 1,
@@ -135,6 +166,8 @@ export const bassCircle: PresetDef = {
     {
       key: "angle",
       label: "Ring angle",
+      group: "motion",
+      control: "angle",
       min: 0,
       max: 360,
       step: 1,
@@ -144,6 +177,7 @@ export const bassCircle: PresetDef = {
     {
       key: "spin",
       label: "Ring spin",
+      group: "motion",
       min: -1,
       max: 1,
       step: 0.02,
@@ -153,6 +187,7 @@ export const bassCircle: PresetDef = {
     {
       key: "hueSpread",
       label: "Hue spread",
+      group: "color",
       min: 0,
       max: 240,
       step: 5,
@@ -162,6 +197,7 @@ export const bassCircle: PresetDef = {
     {
       key: "beatPump",
       label: "Beat pump",
+      group: "reaction",
       min: 0,
       max: 0.5,
       step: 0.01,
@@ -171,6 +207,7 @@ export const bassCircle: PresetDef = {
     {
       key: "gap",
       label: "Ring gap",
+      group: "shape",
       min: 0,
       max: 0.12,
       step: 0.005,
@@ -180,6 +217,7 @@ export const bassCircle: PresetDef = {
     {
       key: "barGlow",
       label: "Bar glow",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.02,
@@ -189,6 +227,7 @@ export const bassCircle: PresetDef = {
     {
       key: "partDensity",
       label: "Particle size",
+      group: "shape",
       min: 3,
       max: 16,
       step: 0.5,
@@ -198,6 +237,7 @@ export const bassCircle: PresetDef = {
     {
       key: "partFill",
       label: "Particle amount",
+      group: "shape",
       min: 0.1,
       max: 0.9,
       step: 0.05,
@@ -207,6 +247,7 @@ export const bassCircle: PresetDef = {
     {
       key: "partFloat",
       label: "Float speed",
+      group: "motion",
       min: 0,
       max: 2,
       step: 0.05,
@@ -216,6 +257,7 @@ export const bassCircle: PresetDef = {
     {
       key: "beatBurst",
       label: "Beat burst",
+      group: "reaction",
       min: 0,
       max: 2,
       step: 0.05,
@@ -225,6 +267,7 @@ export const bassCircle: PresetDef = {
     {
       key: "coverMix",
       label: "Cover blend",
+      group: "image",
       min: 0,
       max: 1,
       step: 0.02,
@@ -234,6 +277,7 @@ export const bassCircle: PresetDef = {
     {
       key: "coverBright",
       label: "Cover brightness",
+      group: "image",
       min: 0.1,
       max: 2,
       step: 0.05,
@@ -243,6 +287,17 @@ export const bassCircle: PresetDef = {
     {
       key: "coverFit",
       label: "Image fit",
+      group: "image",
+      control: "enum",
+      options: [
+        {
+          value: 0,
+          label: "Fill",
+          hint: "Cover the whole slot; whatever does not fit is cropped off",
+        },
+        { value: 1, label: "Fit", hint: "Show all of it, letterboxed" },
+        { value: 2, label: "Stretch", hint: "Squash it to fill the slot exactly" },
+      ],
       min: 0,
       max: 2,
       step: 1,
@@ -252,6 +307,7 @@ export const bassCircle: PresetDef = {
     {
       key: "coverZoom",
       label: "Image zoom",
+      group: "image",
       min: 0.25,
       max: 3,
       step: 0.01,
@@ -261,6 +317,7 @@ export const bassCircle: PresetDef = {
     {
       key: "coverX",
       label: "Image X",
+      group: "image",
       min: -0.5,
       max: 0.5,
       step: 0.005,
@@ -270,6 +327,7 @@ export const bassCircle: PresetDef = {
     {
       key: "coverY",
       label: "Image Y",
+      group: "image",
       min: -0.5,
       max: 0.5,
       step: 0.005,
@@ -279,6 +337,7 @@ export const bassCircle: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1.2,
       step: 0.05,

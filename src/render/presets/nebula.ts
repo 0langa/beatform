@@ -93,10 +93,21 @@ export const nebula: PresetDef = {
     },
   ],
   params: [
-    { key: "hue", label: "Hue", min: 0, max: 360, step: 1, default: 60, hint: "Base cloud color" },
+    {
+      key: "hue",
+      label: "Hue",
+      group: "color",
+      control: "hue",
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 60,
+      hint: "Base cloud color",
+    },
     {
       key: "scale",
       label: "Scale",
+      group: "shape",
       min: 0.8,
       max: 6,
       step: 0.1,
@@ -106,6 +117,7 @@ export const nebula: PresetDef = {
     {
       key: "flow",
       label: "Flow speed",
+      group: "motion",
       min: 0,
       max: 0.6,
       step: 0.01,
@@ -121,15 +133,37 @@ export const nebula: PresetDef = {
       // off, so 0 and 1 both mean "natural clouds" — harmless overlap, and it
       // keeps every old file loading.
       label: "Kaleido",
+      group: "shape",
+      // Both 0 and 1 are listed and both read "no fold", because both are
+      // REACHABLE data: 0 from the range floor above, 1 from two shipped
+      // styles (Slow Drift, Lo-fi Haze). Collapsing them to one option would
+      // make those styles select nothing and print "Custom (1)".
+      control: "enum",
+      options: [
+        { value: 0, label: "None" },
+        { value: 1, label: "1 segment" },
+        { value: 2, label: "Mirrored" },
+        { value: 3, label: "3 segments" },
+        { value: 4, label: "4 segments" },
+        { value: 5, label: "5 segments" },
+        { value: 6, label: "6 segments" },
+        { value: 7, label: "7 segments" },
+        { value: 8, label: "8 segments" },
+        { value: 9, label: "9 segments" },
+        { value: 10, label: "10 segments" },
+        { value: 11, label: "11 segments" },
+        { value: 12, label: "12 segments" },
+      ],
       min: 0,
       max: 12,
       step: 1,
       default: 6,
-      hint: "Mirror segments — 0-1 = natural clouds, higher = mandala",
+      hint: "Mirror segments — none or 1 leaves natural clouds, higher folds a mandala",
     },
     {
       key: "contrast",
       label: "Contrast",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.01,
@@ -139,6 +173,7 @@ export const nebula: PresetDef = {
     {
       key: "sparkle",
       label: "Sparkle",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.01,
@@ -148,6 +183,7 @@ export const nebula: PresetDef = {
     {
       key: "beatRipple",
       label: "Beat ripple",
+      group: "reaction",
       min: 0,
       max: 1,
       step: 0.01,
@@ -159,6 +195,7 @@ export const nebula: PresetDef = {
     {
       key: "warp",
       label: "Domain warp",
+      group: "shape",
       min: 0,
       max: 4,
       step: 0.1,
@@ -168,6 +205,8 @@ export const nebula: PresetDef = {
     {
       key: "angle",
       label: "Fold angle",
+      group: "motion",
+      control: "angle",
       min: 0,
       max: 360,
       step: 1,
@@ -177,6 +216,7 @@ export const nebula: PresetDef = {
     {
       key: "spin",
       label: "Mandala spin",
+      group: "motion",
       min: 0,
       max: 3,
       step: 0.05,
@@ -186,6 +226,7 @@ export const nebula: PresetDef = {
     {
       key: "depth",
       label: "Depth layer",
+      group: "shape",
       min: 0,
       max: 1,
       step: 0.02,
@@ -195,6 +236,7 @@ export const nebula: PresetDef = {
     {
       key: "hueRange",
       label: "Hue range",
+      group: "color",
       min: 0,
       max: 300,
       step: 5,
@@ -204,6 +246,7 @@ export const nebula: PresetDef = {
     {
       key: "midHueShift",
       label: "Mid hue shift",
+      group: "color",
       min: 0,
       max: 200,
       step: 5,
@@ -213,6 +256,7 @@ export const nebula: PresetDef = {
     {
       key: "brightFloor",
       label: "Brightness floor",
+      group: "glow",
       min: 0,
       max: 0.6,
       step: 0.01,
@@ -222,6 +266,7 @@ export const nebula: PresetDef = {
     {
       key: "bassBright",
       label: "Bass brighten",
+      group: "reaction",
       min: 0,
       max: 1,
       step: 0.02,
@@ -231,6 +276,7 @@ export const nebula: PresetDef = {
     {
       key: "saturation",
       label: "Saturation",
+      group: "color",
       min: 0,
       max: 1,
       step: 0.02,
@@ -240,6 +286,7 @@ export const nebula: PresetDef = {
     {
       key: "sparkleScale",
       label: "Sparkle scale",
+      group: "glow",
       min: 2,
       max: 30,
       step: 1,
@@ -249,6 +296,7 @@ export const nebula: PresetDef = {
     {
       key: "sparkleSharp",
       label: "Sparkle sharpness",
+      group: "glow",
       min: 4,
       max: 40,
       step: 1,
@@ -258,6 +306,7 @@ export const nebula: PresetDef = {
     {
       key: "rippleWidth",
       label: "Ripple width",
+      group: "reaction",
       min: 4,
       max: 40,
       step: 1,
@@ -267,6 +316,7 @@ export const nebula: PresetDef = {
     {
       key: "rippleWarp",
       label: "Ripple distortion",
+      group: "reaction",
       min: 0,
       max: 0.3,
       step: 0.01,
@@ -276,6 +326,7 @@ export const nebula: PresetDef = {
     {
       key: "beatBloom",
       label: "Beat bloom",
+      group: "reaction",
       min: 0,
       max: 0.6,
       step: 0.02,
@@ -285,6 +336,7 @@ export const nebula: PresetDef = {
     {
       key: "driveGlow",
       label: "Drive glow",
+      group: "reaction",
       min: 0,
       max: 0.5,
       step: 0.02,
@@ -294,6 +346,7 @@ export const nebula: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.05,
@@ -303,6 +356,7 @@ export const nebula: PresetDef = {
     {
       key: "hotCore",
       label: "Hot core",
+      group: "glow",
       min: 0,
       max: 1.5,
       step: 0.05,

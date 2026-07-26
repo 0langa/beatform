@@ -27,15 +27,22 @@ import type { ThemeMeta } from "../state/themes";
 import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
 import { MOD_SOURCES, POST_TARGET_PREFIX, type ModRoute, type ModSource } from "../state/modMatrix";
 import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../audio/stems";
-import { LYRIC_ANIMS, type LyricAnim, type LyricStyle } from "../state/lyrics";
+import { LYRIC_ANIMS, type LyricStyle } from "../state/lyrics";
 import type { AudiogramSettings } from "../state/audiogram";
-import { allParams, POST_MOD_TARGETS, presetMasters } from "../render/types";
+import {
+  allParams,
+  groupParams,
+  paramSearchText,
+  POST_MOD_TARGETS,
+  presetMasters,
+} from "../render/types";
 import { QUANTIZE_MODES, type QuantizeMode } from "../state/quantize";
 import { bindingId, type MidiBinding, type MidiLearn } from "../state/midi";
 import {
   HERTZ,
   PERCENT,
-  ParamRow,
+  ColorRow,
+  SelectRow,
   SliderField,
   SliderRow,
   Segmented,
@@ -43,12 +50,13 @@ import {
   CollapsibleSection,
   type ValueUnit,
 } from "./kit";
+import { GROUP_KEY, ParamGroups, type ParamGroupExtra } from "./ParamGroups";
 import type { AppPrefs } from "../state/prefs";
 import { getPrefs, setPrefs } from "../state/prefs";
 import { LayersPanel } from "./LayersPanel";
 import { BuilderPanel } from "./BuilderPanel";
 import { BUILDER2_ID, BUILDER_LAYER_TYPES, type BuilderStack } from "../render/builder2";
-import { IconChevronRight, IconClose } from "./Icons";
+import { IconClose } from "./Icons";
 
 function hexToRgb(hex: string): [number, number, number] {
   const v = parseInt(hex.slice(1), 16);
@@ -430,6 +438,14 @@ export interface ParamsPanelProps {
  * `standalone` sections render their own `.panel-section` (LayersPanel) and
  * are not wrapped in a CollapsibleSection. */
 interface SectionDef {
+  /**
+   * Stable identity for collapse state and React keys — NOT the title.
+   * Retitling a section (Motion → Global motion) must not silently drop the
+   * user's collapsed/expanded choice for it, which keying by title did. The
+   * ids below are the pre-v2.53 titles verbatim so state persisted under the
+   * old scheme keeps applying.
+   */
+  id: string;
   title: string;
   tab: ParamsTab;
   /** Lowercased title + control labels/hints, matched by the search box. */
@@ -466,18 +482,21 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
     setTab(t);
     setPrefs({ paramsTab: t });
   };
-  const toggleSection = (title: string, open: boolean) => {
+  /** Collapse state for one section or one param group. Sections pass their
+   * stable `id`, groups a GROUP_KEY-prefixed one — same persisted list, no
+   * chance of a group named "Post" closing the Post section. */
+  const toggleCollapsed = (key: string, open: boolean) => {
     setCollapsed((prev) => {
-      const next = open ? prev.filter((t) => t !== title) : [...prev, title];
+      const next = open ? prev.filter((t) => t !== key) : [...prev, key];
       setPrefs({ collapsedSections: next });
       return next;
     });
   };
-  const toggleAdvanced = () => {
-    setShowAdvanced((v) => {
-      setPrefs({ advancedOpen: !v });
-      return !v;
-    });
+  const toggleGroup = (groupId: string, open: boolean) =>
+    toggleCollapsed(GROUP_KEY + groupId, open);
+  const setAdvanced = (on: boolean) => {
+    setShowAdvanced(on);
+    setPrefs({ advancedOpen: on });
   };
   const postChanged = (Object.keys(DEFAULT_POST) as Array<keyof PostSettings>).some(
     (k) => props.post[k] !== DEFAULT_POST[k],
@@ -512,17 +531,61 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
 
   const q = query.trim().toLowerCase();
   const searching = q.length > 0;
-  const presetParamText = allParams(props.preset)
-    .map((p) => p.label)
-    .join(" ");
+  // Every word of every knob — label, hint, key and enum choices — plus the
+  // names of the groups they sit in. The old blob carried labels only, so
+  // searching a hint's wording ("monstercat", "letterbox") found nothing even
+  // though the row was right there.
+  const presetParamText = allParams(props.preset).map(paramSearchText).join(" ");
+  /** Every knob of this visual, grouped — reused by the panel's own layout
+   * search blob and by the Modulation/MIDI target dropdowns. */
+  const paramGroupViews = groupParams(props.preset, allParams(props.preset));
+  const presetGroupText = paramGroupViews.map((g) => g.group.label).join(" ");
+
+  /** The centre-image picker belongs with the Image knobs it affects. */
+  const centerImageExtras: ParamGroupExtra[] = props.preset.params.some((p) => p.key === "cover")
+    ? [
+        {
+          group: "image",
+          search: "center image cover art album artwork choose custom picture",
+          node: (
+            <div
+              className="row center-image-row"
+              title="What this mode draws in its center: the track's embedded cover art, or any image you choose"
+            >
+              <span className="row-label">Center image</span>
+              <span className="center-image-value">
+                {props.centerImageName ?? "Track cover art"}
+              </span>
+              <button
+                className="text-btn"
+                title="Choose a custom image for this mode's center"
+                onClick={props.onPickCenterImage}
+              >
+                Choose…
+              </button>
+              {props.centerImageName && (
+                <button
+                  className="text-btn"
+                  title="Back to the track's embedded cover art"
+                  onClick={props.onClearCenterImage}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ),
+        },
+      ]
+    : [];
 
   const sections: SectionDef[] = [
     // ---------------- Visual ----------------
     {
+      id: props.preset.name,
       title: props.preset.name,
       tab: "visual",
       search:
-        `${props.preset.name} ${props.preset.description ?? ""} preset style look custom save import advanced reset center image cover ${presetParamText}`.toLowerCase(),
+        `${props.preset.name} ${props.preset.description ?? ""} preset style look custom save import advanced essentials reset center image cover ${presetGroupText} ${presetParamText}`.toLowerCase(),
       headerExtra: (
         <button
           className="text-btn"
@@ -632,78 +695,60 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             )}
           </div>
 
-          {props.preset.params.map((p) => (
-            <ParamRow
-              key={p.key}
-              spec={p}
-              value={props.params[p.key] ?? p.default}
-              onChange={(v) => props.onParam(p.key, v)}
-              onHint={setHint}
-            />
-          ))}
-
-          {props.preset.params.some((p) => p.key === "cover") && (
-            <div
-              className="row center-image-row"
-              title="What this mode draws in its center: the track's embedded cover art, or any image you choose"
-            >
-              <span className="row-label">Center image</span>
-              <span className="center-image-value">
-                {props.centerImageName ?? "Track cover art"}
-              </span>
-              <button
-                className="text-btn"
-                title="Choose a custom image for this mode's center"
-                onClick={props.onPickCenterImage}
-              >
-                Choose…
-              </button>
-              {props.centerImageName && (
-                <button
-                  className="text-btn"
-                  title="Back to the track's embedded cover art"
-                  onClick={props.onClearCenterImage}
+          {/* Density, not a drawer. "Advanced" used to be a second flat list
+              bolted under the first; as one switch over the SAME grouped view
+              it stays one mental model — every knob is always in the group it
+              belongs to, you only choose how many of them you see. Search
+              ignores it entirely (see ParamGroups). */}
+          {advanced.length > 0 && (
+            <div className="param-density">
+              <Segmented
+                value={showAdvanced ? 1 : 0}
+                onChange={(v) => setAdvanced(v === 1)}
+                onHint={setHint}
+                ariaLabel="Setting detail"
+                options={[
+                  {
+                    value: 0,
+                    label: "Essentials",
+                    hint: `The ${props.preset.params.length} knobs that shape this visual most`,
+                  },
+                  {
+                    value: 1,
+                    label: "All",
+                    hint: `Every knob, including the ${advanced.length} expert constants`,
+                  },
+                ]}
+              />
+              {changedCount > 0 && (
+                <span
+                  className="advanced-count"
+                  title="Expert knobs that no longer sit at their factory value"
                 >
-                  ✕
-                </button>
+                  {changedCount} changed
+                </span>
               )}
             </div>
           )}
 
-          {advanced.length > 0 && (
-            <>
-              <button
-                className={`advanced-toggle ${showAdvanced ? "open" : ""}`}
-                onClick={toggleAdvanced}
-                title="Expert knobs — every internal constant of this visual"
-              >
-                <IconChevronRight size={13} />
-                Advanced
-                <span className="advanced-count">
-                  {changedCount > 0 ? `${changedCount} changed` : `${advanced.length}`}
-                </span>
-              </button>
-              {showAdvanced && (
-                <div className="advanced-body">
-                  {advanced.map((p) => (
-                    <ParamRow
-                      key={p.key}
-                      spec={p}
-                      value={props.params[p.key] ?? p.default}
-                      onChange={(v) => props.onParam(p.key, v)}
-                      onHint={setHint}
-                    />
-                  ))}
-                </div>
-              )}
-            </>
-          )}
+          <ParamGroups
+            preset={props.preset}
+            params={props.params}
+            onParam={props.onParam}
+            onHint={setHint}
+            showAdvanced={showAdvanced}
+            query={q}
+            collapsed={collapsed}
+            onToggleGroup={toggleGroup}
+            extras={centerImageExtras}
+          />
         </>
       ),
     },
     ...(props.preset.id === BUILDER2_ID
       ? [
           {
+            id: "Builder layers",
             title: "Builder layers",
             tab: "visual" as const,
             search:
@@ -735,7 +780,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
     ...(showMotion
       ? [
           {
-            title: "Motion",
+            id: "Motion",
+            title: "Global motion",
             tab: "visual" as const,
             search: "motion rotation pulse detail spin global",
             headerExtra:
@@ -803,6 +849,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
         ]
       : []),
     {
+      id: "Templates",
       title: "Templates",
       tab: "visual",
       search:
@@ -877,6 +924,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
     },
     // ---------------- Sync ----------------
     {
+      id: "Sync",
       title: "Sync",
       tab: "sync",
       search:
@@ -1027,6 +1075,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       ),
     },
     {
+      id: "Modulation",
       title: "Modulation",
       tab: "sync",
       search: "modulation route stem source amount kick hats auto-route feature knob",
@@ -1116,13 +1165,18 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 title="Which knob it moves"
                 onChange={(e) => props.onUpdateMod(r.id, { param: e.target.value })}
               >
-                <optgroup label="This visual">
-                  {allParams(props.preset).map((p) => (
-                    <option key={p.key} value={p.key}>
-                      {p.label}
-                    </option>
-                  ))}
-                </optgroup>
+                {/* Grouped by the SAME ParamSpec.group the panel lays out, so
+                    a 35-knob visual reads as eight short lists instead of one
+                    unsearchable run of options. */}
+                {paramGroupViews.map(({ group, params }) => (
+                  <optgroup key={group.id} label={group.label}>
+                    {params.map((p) => (
+                      <option key={p.key} value={p.key}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
                 {/* Post targets are namespaced ("post:chromatic") so they can
                     live in the same route list as preset params — animating
                     the post chain was a direct user request. */}
@@ -1166,6 +1220,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
     },
     // ---------------- Scene ----------------
     {
+      id: "Background",
       title: "Background",
       tab: "scene",
       search:
@@ -1345,6 +1400,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       ),
     },
     {
+      id: "Frame",
       title: "Frame",
       tab: "scene",
       search:
@@ -1365,6 +1421,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       ),
     },
     {
+      id: "Post",
       title: "Post",
       tab: "scene",
       search:
@@ -1412,6 +1469,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       ),
     },
     {
+      id: "Layers",
       title: "Layers",
       tab: "scene",
       search: "layers text image overlay album art drawn over visuals",
@@ -1431,6 +1489,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
     },
     // ---------------- Text ----------------
     {
+      id: "Lyrics",
       title: "Lyrics",
       tab: "text",
       search: "lyrics lrc srt karaoke position animation slide pop size fade color import timed",
@@ -1479,42 +1538,36 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 onChange={(v) => props.onLyricStyle({ enabled: v })}
                 onHint={setHint}
               />
-              <label className="field">
-                <span>Position</span>
-                <select
-                  className="select"
-                  value={props.lyricStyle.position}
-                  title="Where the lines sit in the frame"
-                  onChange={(e) =>
-                    props.onLyricStyle({ position: e.target.value as LyricStyle["position"] })
-                  }
-                >
-                  <option value="bottom">Bottom</option>
-                  <option value="center">Center</option>
-                  <option value="top">Top</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Animation</span>
-                <select
-                  className="select"
-                  value={props.lyricStyle.anim ?? "plain"}
-                  title="How each line enters — plain fade, slide up, or a scale pop"
-                  onChange={(e) => props.onLyricStyle({ anim: e.target.value as LyricAnim })}
-                >
-                  {LYRIC_ANIMS.map((a) => (
-                    <option key={a} value={a}>
-                      {a === "plain"
-                        ? "Plain"
-                        : a === "slide"
-                          ? "Slide up"
-                          : a === "pop"
-                            ? "Pop"
-                            : "Karaoke"}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <SelectRow
+                label="Position"
+                hint="Where the lines sit in the frame"
+                value={props.lyricStyle.position}
+                onChange={(position) => props.onLyricStyle({ position })}
+                onHint={setHint}
+                options={[
+                  { value: "bottom" as const, label: "Bottom" },
+                  { value: "center" as const, label: "Center" },
+                  { value: "top" as const, label: "Top" },
+                ]}
+              />
+              <SelectRow
+                label="Animation"
+                hint="How each line enters — plain fade, slide up, or a scale pop"
+                value={props.lyricStyle.anim ?? "plain"}
+                onChange={(anim) => props.onLyricStyle({ anim })}
+                onHint={setHint}
+                options={LYRIC_ANIMS.map((a) => ({
+                  value: a,
+                  label:
+                    a === "plain"
+                      ? "Plain"
+                      : a === "slide"
+                        ? "Slide up"
+                        : a === "pop"
+                          ? "Pop"
+                          : "Karaoke",
+                }))}
+              />
               <SliderRow
                 label="Size"
                 hint="Lyric text size"
@@ -1535,15 +1588,13 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 onChange={(v) => props.onLyricStyle({ fadeSec: v })}
                 onHint={setHint}
               />
-              <label className="field">
-                <span>Color</span>
-                <input
-                  type="color"
-                  value={props.lyricStyle.color}
-                  title="Lyric text color"
-                  onChange={(e) => props.onLyricStyle({ color: e.target.value })}
-                />
-              </label>
+              <ColorRow
+                label="Color"
+                hint="Lyric text color"
+                value={props.lyricStyle.color}
+                onChange={(color) => props.onLyricStyle({ color })}
+                onHint={setHint}
+              />
             </>
           )}
           {!props.lyricFileName && (
@@ -1556,6 +1607,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       ),
     },
     {
+      id: "Audiogram",
       title: "Audiogram",
       tab: "text",
       search: "audiogram progress bar time readout waveform strip position accent podcast reel",
@@ -1590,28 +1642,24 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             props.audiogram.timeReadout ||
             props.audiogram.waveformStrip) && (
             <>
-              <label className="field">
-                <span>Position</span>
-                <select
-                  className="select"
-                  value={props.audiogram.position}
-                  onChange={(e) =>
-                    props.onAudiogram({ position: e.target.value as AudiogramSettings["position"] })
-                  }
-                >
-                  <option value="bottom">Bottom</option>
-                  <option value="top">Top</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Accent</span>
-                <input
-                  type="color"
-                  value={props.audiogram.color}
-                  title="Bar fill, playhead and played-waveform color"
-                  onChange={(e) => props.onAudiogram({ color: e.target.value })}
-                />
-              </label>
+              <SelectRow
+                label="Position"
+                hint="Which edge of the frame the audiogram elements sit against"
+                value={props.audiogram.position}
+                onChange={(position) => props.onAudiogram({ position })}
+                onHint={setHint}
+                options={[
+                  { value: "bottom" as const, label: "Bottom" },
+                  { value: "top" as const, label: "Top" },
+                ]}
+              />
+              <ColorRow
+                label="Accent"
+                hint="Bar fill, playhead and played-waveform color"
+                value={props.audiogram.color}
+                onChange={(color) => props.onAudiogram({ color })}
+                onHint={setHint}
+              />
             </>
           )}
         </>
@@ -1619,6 +1667,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
     },
     // ---------------- Live ----------------
     {
+      id: "Live",
       title: "Live",
       tab: "live",
       search: "live switch quantize off beat bar boundary ableton number keys performance",
@@ -1648,6 +1697,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
     ...(props.midiSupported
       ? [
           {
+            id: "MIDI",
             title: "MIDI",
             tab: "live" as const,
             search: "midi controller cc note learn knob fader device mapping performance",
@@ -1690,10 +1740,14 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     title="Which setting a knob/fader should control"
                     onChange={(e) => setMidiParam(e.target.value)}
                   >
-                    {allParams(props.preset).map((p) => (
-                      <option key={p.key} value={p.key}>
-                        {p.label}
-                      </option>
+                    {paramGroupViews.map(({ group, params }) => (
+                      <optgroup key={group.id} label={group.label}>
+                        {params.map((p) => (
+                          <option key={p.key} value={p.key}>
+                            {p.label}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                   <button
@@ -1790,15 +1844,23 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       />
 
       <div className="panel-scroll">
+        {searching && visibleSections.length > 0 && (
+          <p className="search-summary">
+            {visibleSections.length === 1
+              ? "1 section matches"
+              : `${visibleSections.length} sections match`}{" "}
+            “{query.trim()}” — tabs are bypassed while searching.
+          </p>
+        )}
         {visibleSections.map((s) =>
           s.standalone ? (
-            <Fragment key={s.title}>{s.body}</Fragment>
+            <Fragment key={s.id}>{s.body}</Fragment>
           ) : (
             <CollapsibleSection
-              key={s.title}
+              key={s.id}
               title={s.title}
-              open={searching ? true : !collapsed.includes(s.title)}
-              onToggle={searching ? undefined : (open) => toggleSection(s.title, open)}
+              open={searching ? true : !collapsed.includes(s.id)}
+              onToggle={searching ? undefined : (open) => toggleCollapsed(s.id, open)}
               headerExtra={s.headerExtra}
             >
               {s.body}

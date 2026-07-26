@@ -90,10 +90,21 @@ export const voiceOrb: PresetDef = {
     },
   ],
   params: [
-    { key: "hue", label: "Hue", min: 0, max: 360, step: 1, default: 195, hint: "Orb color" },
+    {
+      key: "hue",
+      label: "Hue",
+      group: "color",
+      control: "hue",
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 195,
+      hint: "Orb color",
+    },
     {
       key: "size",
       label: "Size",
+      group: "shape",
       min: 0.08,
       max: 0.3,
       step: 0.005,
@@ -103,6 +114,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "response",
       label: "Response",
+      group: "reaction",
       min: 0,
       max: 1,
       step: 0.01,
@@ -112,6 +124,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "wobble",
       label: "Wobble",
+      group: "motion",
       min: 0,
       max: 1,
       step: 0.01,
@@ -121,6 +134,8 @@ export const voiceOrb: PresetDef = {
     {
       key: "ring",
       label: "Wave ring",
+      group: "shape",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -130,6 +145,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "sparkle",
       label: "Sibilance",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.01,
@@ -141,6 +157,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "rmsBlend",
       label: "Instant blend",
+      group: "reaction",
       min: 0,
       max: 1,
       step: 0.02,
@@ -150,6 +167,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "voiceFocus",
       label: "Voice focus",
+      group: "reaction",
       min: 0,
       max: 1,
       step: 0.02,
@@ -159,6 +177,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "growth",
       label: "Level growth",
+      group: "reaction",
       min: 0,
       max: 1.4,
       step: 0.05,
@@ -168,6 +187,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "idleBreath",
       label: "Idle breathing",
+      group: "motion",
       min: 0,
       max: 0.05,
       step: 0.002,
@@ -177,6 +197,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "wobScale",
       label: "Wobble scale",
+      group: "motion",
       min: 0,
       max: 0.08,
       step: 0.002,
@@ -186,6 +207,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "mode1",
       label: "Mode 3 amp",
+      group: "motion",
       min: 0,
       max: 2,
       step: 0.05,
@@ -195,6 +217,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "mode2",
       label: "Mode 5 amp",
+      group: "motion",
       min: 0,
       max: 2,
       step: 0.05,
@@ -204,6 +227,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "mode3",
       label: "Mode 8 amp",
+      group: "motion",
       min: 0,
       max: 2,
       step: 0.05,
@@ -213,6 +237,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "coreGlow",
       label: "Core glow",
+      group: "glow",
       min: 0,
       max: 0.6,
       step: 0.02,
@@ -222,6 +247,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "texture",
       label: "Surface texture",
+      group: "shape",
       min: 0,
       max: 1,
       step: 0.02,
@@ -231,6 +257,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "breathGlow",
       label: "Breath glow",
+      group: "glow",
       min: 0,
       max: 0.6,
       step: 0.02,
@@ -240,6 +267,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "rimGlow",
       label: "Rim glow",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.02,
@@ -249,6 +277,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "ringDist",
       label: "Ring distance",
+      group: "shape",
       min: 1.1,
       max: 1.9,
       step: 0.05,
@@ -258,6 +287,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "ringWave",
       label: "Ring wave",
+      group: "shape",
       min: 0,
       max: 0.12,
       step: 0.005,
@@ -267,6 +297,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "sparkleScale",
       label: "Sparkle scale",
+      group: "glow",
       min: 10,
       max: 80,
       step: 2,
@@ -276,6 +307,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "bgLevel",
       label: "Bg level",
+      group: "backdrop",
       min: 0,
       max: 0.12,
       step: 0.005,
@@ -285,6 +317,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.05,
@@ -294,6 +327,7 @@ export const voiceOrb: PresetDef = {
     {
       key: "flare",
       label: "Hot flare",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.02,
@@ -303,6 +337,22 @@ export const voiceOrb: PresetDef = {
     {
       key: "mirror",
       label: "Club mirror",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 1, label: "Off" },
+        { value: 2, label: "Mirrored" },
+        { value: 3, label: "3 segments" },
+        { value: 4, label: "4 segments" },
+        { value: 5, label: "5 segments" },
+        { value: 6, label: "6 segments" },
+        { value: 7, label: "7 segments" },
+        { value: 8, label: "8 segments" },
+        { value: 9, label: "9 segments" },
+        { value: 10, label: "10 segments" },
+        { value: 11, label: "11 segments" },
+        { value: 12, label: "12 segments" },
+      ],
       min: 1,
       max: 12,
       step: 1,

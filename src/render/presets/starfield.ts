@@ -133,6 +133,8 @@ export const starfield: PresetDef = {
     {
       key: "hue",
       label: "Hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -142,6 +144,7 @@ export const starfield: PresetDef = {
     {
       key: "density",
       label: "Density",
+      group: "shape",
       min: 4,
       max: 24,
       step: 1,
@@ -151,6 +154,7 @@ export const starfield: PresetDef = {
     {
       key: "size",
       label: "Particle size",
+      group: "shape",
       min: 0.05,
       max: 0.4,
       step: 0.01,
@@ -160,6 +164,7 @@ export const starfield: PresetDef = {
     {
       key: "speed",
       label: "Motion",
+      group: "motion",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -169,6 +174,8 @@ export const starfield: PresetDef = {
     {
       key: "direction",
       label: "Direction",
+      group: "motion",
+      control: "angle",
       min: 0,
       max: 360,
       step: 5,
@@ -178,6 +185,7 @@ export const starfield: PresetDef = {
     {
       key: "beatDance",
       label: "Beat dance",
+      group: "reaction",
       min: 0,
       max: 1,
       step: 0.01,
@@ -187,6 +195,7 @@ export const starfield: PresetDef = {
     {
       key: "sizePulse",
       label: "Size pulse",
+      group: "reaction",
       min: 0,
       max: 2,
       step: 0.05,
@@ -196,6 +205,8 @@ export const starfield: PresetDef = {
     {
       key: "fly",
       label: "Fly mode",
+      group: "motion",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -205,6 +216,7 @@ export const starfield: PresetDef = {
     {
       key: "clump",
       label: "Clumping",
+      group: "shape",
       min: 0,
       max: 1,
       step: 0.02,
@@ -214,6 +226,7 @@ export const starfield: PresetDef = {
     {
       key: "streak",
       label: "Motion streaks",
+      group: "motion",
       min: 0,
       max: 1.5,
       step: 0.02,
@@ -223,6 +236,7 @@ export const starfield: PresetDef = {
     {
       key: "hotCore",
       label: "Hot cores",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.02,
@@ -234,6 +248,7 @@ export const starfield: PresetDef = {
     {
       key: "energyDrive",
       label: "Sync drive",
+      group: "reaction",
       min: 0,
       max: 2,
       step: 0.05,
@@ -243,6 +258,7 @@ export const starfield: PresetDef = {
     {
       key: "wander",
       label: "Wander",
+      group: "motion",
       min: 0,
       max: 1,
       step: 0.02,
@@ -252,6 +268,7 @@ export const starfield: PresetDef = {
     {
       key: "wanderSpeed",
       label: "Wander speed",
+      group: "motion",
       min: 0,
       max: 2,
       step: 0.05,
@@ -261,6 +278,7 @@ export const starfield: PresetDef = {
     {
       key: "fill",
       label: "Fill",
+      group: "shape",
       min: 0.2,
       max: 1,
       step: 0.02,
@@ -270,6 +288,13 @@ export const starfield: PresetDef = {
     {
       key: "layers",
       label: "Layers",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 1, label: "1" },
+        { value: 2, label: "2" },
+        { value: 3, label: "3" },
+      ],
       min: 1,
       max: 3,
       step: 1,
@@ -279,6 +304,7 @@ export const starfield: PresetDef = {
     {
       key: "parallax",
       label: "Parallax",
+      group: "motion",
       min: 0,
       max: 1,
       step: 0.02,
@@ -288,6 +314,7 @@ export const starfield: PresetDef = {
     {
       key: "hueVariance",
       label: "Hue variance",
+      group: "color",
       min: 0,
       max: 180,
       step: 5,
@@ -297,6 +324,7 @@ export const starfield: PresetDef = {
     {
       key: "twinkle",
       label: "Twinkle",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.02,
@@ -306,6 +334,7 @@ export const starfield: PresetDef = {
     {
       key: "glow",
       label: "Glow halo",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.02,
@@ -315,6 +344,7 @@ export const starfield: PresetDef = {
     {
       key: "brightness",
       label: "Brightness",
+      group: "glow",
       min: 0.2,
       max: 1.5,
       step: 0.05,
@@ -324,6 +354,7 @@ export const starfield: PresetDef = {
     {
       key: "beatFlash",
       label: "Beat flash",
+      group: "reaction",
       min: 0,
       max: 0.5,
       step: 0.01,
@@ -333,6 +364,7 @@ export const starfield: PresetDef = {
     {
       key: "bgLevel",
       label: "Bg level",
+      group: "backdrop",
       min: 0,
       max: 0.1,
       step: 0.005,
@@ -342,6 +374,7 @@ export const starfield: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1,
       step: 0.05,
@@ -351,6 +384,22 @@ export const starfield: PresetDef = {
     {
       key: "mirror",
       label: "Club mirror",
+      group: "shape",
+      control: "enum",
+      options: [
+        { value: 1, label: "Off" },
+        { value: 2, label: "Mirrored" },
+        { value: 3, label: "3 segments" },
+        { value: 4, label: "4 segments" },
+        { value: 5, label: "5 segments" },
+        { value: 6, label: "6 segments" },
+        { value: 7, label: "7 segments" },
+        { value: 8, label: "8 segments" },
+        { value: 9, label: "9 segments" },
+        { value: 10, label: "10 segments" },
+        { value: 11, label: "11 segments" },
+        { value: 12, label: "12 segments" },
+      ],
       min: 1,
       max: 12,
       step: 1,
@@ -360,6 +409,7 @@ export const starfield: PresetDef = {
     {
       key: "sizeVar",
       label: "Size variance",
+      group: "shape",
       min: 0,
       max: 2,
       step: 0.05,
@@ -369,6 +419,7 @@ export const starfield: PresetDef = {
     {
       key: "bandColor",
       label: "Band color",
+      group: "color",
       min: 0,
       max: 120,
       step: 5,
@@ -378,6 +429,7 @@ export const starfield: PresetDef = {
     {
       key: "beatPop",
       label: "Beat brightness",
+      group: "reaction",
       min: 0,
       max: 1.5,
       step: 0.05,

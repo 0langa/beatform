@@ -68,6 +68,8 @@ export const spectrumBars: PresetDef = {
     {
       key: "hue",
       label: "Hue",
+      group: "color",
+      control: "hue",
       min: 0,
       max: 360,
       step: 1,
@@ -77,6 +79,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "hueSpread",
       label: "Hue spread",
+      group: "color",
       min: 0,
       max: 180,
       step: 1,
@@ -86,6 +89,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "glow",
       label: "Glow",
+      group: "glow",
       min: 0,
       max: 1,
       step: 0.01,
@@ -95,6 +99,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "barGap",
       label: "Bar gap",
+      group: "shape",
       min: 0,
       max: 0.6,
       step: 0.01,
@@ -104,6 +109,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "beatZoom",
       label: "Beat zoom",
+      group: "reaction",
       min: 0,
       max: 0.15,
       step: 0.005,
@@ -113,6 +119,8 @@ export const spectrumBars: PresetDef = {
     {
       key: "mirror",
       label: "Mirror",
+      group: "shape",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -122,6 +130,8 @@ export const spectrumBars: PresetDef = {
     {
       key: "peaks",
       label: "Peak caps",
+      group: "shape",
+      control: "toggle",
       min: 0,
       max: 1,
       step: 1,
@@ -133,6 +143,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "barHeight",
       label: "Bar height",
+      group: "shape",
       min: 0.3,
       max: 0.92,
       step: 0.01,
@@ -142,6 +153,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "barSat",
       label: "Bar saturation",
+      group: "color",
       min: 0,
       max: 1,
       step: 0.01,
@@ -151,6 +163,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "barLift",
       label: "Bar gradient",
+      group: "glow",
       min: 0,
       max: 0.6,
       step: 0.01,
@@ -160,6 +173,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "glowReach",
       label: "Glow reach",
+      group: "glow",
       min: 2,
       max: 14,
       step: 0.5,
@@ -169,6 +183,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "capBright",
       label: "Cap brightness",
+      group: "glow",
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -178,6 +193,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "bgLevel",
       label: "Bg level",
+      group: "backdrop",
       min: 0,
       max: 0.2,
       step: 0.005,
@@ -187,6 +203,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "bgBassGlow",
       label: "Bg bass glow",
+      group: "backdrop",
       min: 0,
       max: 0.2,
       step: 0.005,
@@ -196,6 +213,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "beatFlash",
       label: "Beat flash",
+      group: "reaction",
       min: 0,
       max: 0.4,
       step: 0.01,
@@ -205,6 +223,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "beatBright",
       label: "Beat brighten",
+      group: "reaction",
       min: 0,
       max: 0.3,
       step: 0.01,
@@ -214,6 +233,7 @@ export const spectrumBars: PresetDef = {
     {
       key: "vignette",
       label: "Vignette",
+      group: "backdrop",
       min: 0,
       max: 1.2,
       step: 0.05,
