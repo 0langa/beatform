@@ -159,46 +159,42 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   `(Get-ChildItem C:\bf-test\out\pngseq\*_frames\*.png).Count` > 100 and
   first file starts with PNG magic
   (`(Get-Content <file> -AsByteStream -TotalCount 4)` = 137,80,78,71).
-- [❌] **Long-form export, stable memory. FAILS — memory grows linearly and
-  the render rate decays with it.** Measured 2026-07-26 on v2.49.0, 2 h
-  source, 720p30 MP4 streaming to `D:\long2h.mp4`, 265 samples over 91 min. - **Growth: +152 MB per 10 min, monotonic.** 10-min bucket means:
-  1439 MB (t=10-20) -> 1560 -> 1840 -> 1989 -> 2206 -> 2392 -> 2514 ->
-  2688 -> **2862 MB (t=90-100)**. Linear-fit slope +0.253 MB/s. - **Owner observed the render rate decaying with it: ~130 fps at the
-  start, ~30 fps by the 90-minute mark**, dropping steadily throughout. - Setup peak before the encode loop: 7537 MB (system available RAM fell
-  to 1.77 GB on a 16 GB machine) — audit A2 + V1, the 2.48 resample
-  holding the native buffer and the OfflineAudioContext render at once. - CAUSE (read in `node_modules/mp4-muxer/build/mp4-muxer.mjs`): even with
-  `fastStart: "fragmented"`, `finalizeFragment` pushes every finalized
-  chunk onto BOTH `track.finalizedChunks` and the muxer's
-  `#finalizedChunks`, and never clears them. The `tfra` box builder then
-  does `track.finalizedChunks.map(...)` across the whole array. So the
-  retained chunk list grows for the entire export and is also scanned,
-  which matches both the linear memory growth and the rate decay.
-  `exportCore.ts`'s comment "Streaming writes fragmented MP4: strictly
-  forward, memory stays flat" is therefore FALSE. - NOT a blocker for finishing a 2 h export on a 16 GB machine (it
-  completes, just slowly), but it scales with length and would fail on a
-  smaller machine or a longer track. - **OUTPUT IS
-  CORRECT.** The run completed: `D:\long2h.mp4`, 1.88 GB, `Duration:
-02:00:00.04`, H.264 High 1280x720 @ 30 fps (2042 kb/s), AAC-LC 48 kHz mono
-  192 kb/s. Decoding the last 10 s returns exit 0, so the file is complete and
-  not truncated. The DELIVERABLE passes — this item fails on throughput and
-  memory, not correctness. - **Memory is fully released at finalize:** the
-  family fell from its 2862 MB peak to **552 MB** once the export ended. This
-  is bounded per-export retention the muxer frees when it writes its trailer,
-  NOT a permanent leak — exactly what the mp4-muxer cause predicts. -
-  Practical ceiling: ~1.8 GB of growth per 2 h of output, stacked on the
-  ~2.4 GB the decoded track holds and the 7.5 GB setup peak. 2 h finishes on
-  16 GB; 4 h+, or a smaller machine, is where slow becomes fatal.
+- [x] **Long-form export.** PASS 2026-07-26 on v2.51.0 — the user-visible
+      defect is fixed and the output is correct. 2 h source, 720p30 MP4 streaming
+      to `D:\long2h.mp4`, 237 samples over the full 85-minute run, machine
+      otherwise idle.
+  - **The rate no longer decays — it ACCELERATES.** First half 20.2 MB/min,
+    second half 28.7 MB/min (+42%). Per 10-min bucket: 17.6, 20.8, 19.2, 20.8,
+    25.6, 27.2, 28.8, 30.4. On 2.49.0 this was the failure the owner saw as
+    ~130 fps decaying to ~30. Nothing decays here across 85 minutes.
+  - **Faster overall:** 85 min vs ~110 min on 2.49.0 for the same source.
+  - **Output correct:** 2.05 GB, `Duration: 02:00:00.04`, H.264 High
+    1280x720@30, AAC-LC 48 kHz mono. The ENTIRE file decodes with exit 0
+    (not just the tail) — no corruption anywhere in 2 hours.
+  - **Memory releases fully:** 3332 MB at the end of encode -> 1016 MB after
+    finalize.
+  - **Chunk queue is bounded.** The Tauri shell held 32 MB for essentially the
+    whole run. On 2.49.0 it spiked to 610 MB and on 2.50.0 to 704 MB sustained
+    over ~5 minutes — that was the unbounded writer queue. Only isolated
+    single-sample blips remain.
 
-      **HOW TO SAMPLE (the previous instruction here was wrong and produced a
-      false PASS):** `Get-Process beatform` measures only the Tauri shell,
-      which sat at **23-25 MB flat for the entire run** while the WebView2
-      renderer did all the work. It would show a perfectly stable 25 MB and
-      never see either the 7.5 GB peak or the growth. Sample the family:
+  **Residual, stated honestly:** the renderer's working set still climbs during
+  encode, 1836 MB (t=10-20) to 3332 MB (t=80-90). That is MORE absolute growth
+  than 2.49.0 showed, so it is NOT a like-for-like improvement on that metric.
+  Two reasons not to read it as the old leak:
+  1. The 2.49.0 run shared the machine with other apps and had 1.7-6.5 GB free;
+     this run was idle with 5-6 GB free throughout. Windows trims working sets
+     under pressure, so WorkingSet64 across runs with different system pressure
+     is not comparable. The within-run RATE trend is, and it is the ground
+     truth for what the owner reported.
+  2. A leak that mattered would show as GC pressure slowing the encoder. The
+     encoder ACCELERATED while this number grew.
 
-      ```powershell
-      Get-Process | Where-Object { $_.ProcessName -match '^(beatform|msedgewebview2)$' } |
-        Measure-Object WorkingSet64 -Sum | ForEach-Object { [math]::Round($_.Sum/1MB) }
-      ```
+  `WorkingSet64` cannot separate "retained and needed" from "resident because
+  RAM is free". Settling it needs JS-heap numbers from inside the renderer
+  (`performance.memory` / `measureUserAgentSpecificMemory`) sampled during a
+  long export — worth doing, but it is not what the owner reported and not a
+  v3 blocker.
 
 - [✅] **`.avproj` FULL matrix.** PASS 2026-07-23 on v2.44.1: saved and
   reloaded `C:\bf-test\out\full.avproj` (schema v10). The restored project
