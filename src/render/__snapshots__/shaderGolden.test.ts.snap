@@ -724,12 +724,67 @@ fn preset(uv: vec2f) -> vec4f {
   let swirl = (P_swirl() * 0.15 + u.drive * P_flowSwirl() * 0.1) * u.spin * fpsComp;
   let w = rot2(swirl) * (c / zoom);
   let puv = vec2f(w.x / u.aspect + 0.5, w.y + 0.5);
+
+  // --- Frame-rate normalisation, part 2: what is ADDED to the loop ---
+  // The per-second decay below is only half of the law. This preset
+  // ACCUMULATES, so its steady state is injection / (1 - loopGain): scaling
+  // the decay per second while the injection stays per RENDERED frame does not
+  // remove the frame-rate dependence, it moves it into the LEVEL. Measured
+  // through the real export path at matched track times, the shipped Supernova
+  // style came out at 0.64x the 60 Hz mean luminance at 30 fps and 1.35x at
+  // 120 fps — one picture, three exposures, which is preview-equals-export
+  // broken by the frame rate alone. (Glacier looked milder, 0.91x, only
+  // because 18% of its pixels are already clipped white; dropped below the
+  // clip its own numbers are 0.70x / 1.32x.)
+  //
+  // The per-frame loop gain is decay * VIGNETTE, not decay. This frame's
+  // output IS next frame's feedbackSample(), and the col *= vg at the bottom
+  // lands on the fed-back value too, so the vignette compounds exactly like
+  // the decay does — and at Glacier's 0.98 trail against a 0.5 vignette it is
+  // the DOMINANT term: in a 1-D model of this recurrence the vignette alone
+  // left the trail's far end 2.4x brighter at 30 fps than at 60. So it gets
+  // the same per-second treatment: vgFade on the feedback line plus the
+  // unchanged multiply at the bottom together make it vg^fpsComp, while a
+  // FRESH source still only ever takes the one vg it should.
+  //
+  // deposit is the geometric sum of that loop gain over one frame interval,
+  // (1 - L^fpsComp) / (1 - L) — the zero-order-hold equivalent, i.e. exactly
+  // what makes one 30 fps frame deposit what the two 60 Hz frames it stands in
+  // for would have deposited AND decayed between (1 + L). Both sources take
+  // it: the kick core reads like an impulse, but u.kick is a multi-frame
+  // envelope sampled at TRACK time rather than a one-frame spike, so it wants
+  // the same per-second deposit the ring does — and one shared factor keeps
+  // ring and core in the authored balance at every rate instead of letting
+  // them drift several percent apart.
+  //
+  // 60 fps is the rate every style was authored at, and an export at it has to
+  // stay BIT-identical to what shipped — so both terms take the literal 1.0
+  // there rather than trusting the hardware to hand it back. u.dt * 60.0 is
+  // exactly 1.0 at 60 fps in f32 (measured, and the exponents are written
+  // 'fpsComp - 1.0' so that lands on exactly 0.0), and pow(x, 0.0) does come
+  // back as exactly 1.0 — but the DIVISION does not: GPUs lower f32 divide to
+  // a reciprocal approximation, and (1 - L) / (1 - L) was measured missing 1.0
+  // by an ulp on 18% of the frame here. In a feedback accumulator that ulp
+  // compounds until it crosses an 8-bit boundary: 74 frames of a 600-frame
+  // 60 fps export came out different before this select existed. The select
+  // also keeps the no-op independent of any driver's pow/divide rounding.
+  let vg = vignette(uv, P_vignette());
+  // min(): 1.0 - loopGain is a divisor. Trail length stops at 0.99 and the
+  // vignette at 1.0, so nothing reachable through the sliders or the mod
+  // matrix (which clamps to the same spec) comes near — this only stops a
+  // hand-edited project carrying decay 1.0 from dividing by zero.
+  let loopGain = min(P_decay() * vg, 0.999);
+  let authored = fpsComp == 1.0;
+  let vgFade = select(pow(vg, fpsComp - 1.0), 1.0, authored);
+  let deposit = select((1.0 - loopGain * pow(loopGain, fpsComp - 1.0)) / (1.0 - loopGain), 1.0, authored);
+
   // Decay expressed PER SECOND, not per rendered frame. P_decay() remains the
   // per-frame factor at 60 fps (so the tuned look is unchanged there), but at
   // 30 fps the exponent doubles and the trail fades over the same amount of
   // TRACK time. Previously a 30 fps export held trails roughly twice as long
-  // as the preview, and a 144 Hz display diverged the other way.
-  var col = feedbackSample(puv).rgb * pow(P_decay(), u.dt * 60.0);
+  // as the preview, and a 144 Hz display diverged the other way. The trailing
+  // vgFade is the vignette's share of the same per-second loop gain.
+  var col = feedbackSample(puv).rgb * pow(P_decay(), u.dt * 60.0) * vgFade;
 
   // Per-generation hue drift: rotate the fed-back color a little each frame
   // about the grey (luminance) axis via Rodrigues rotation, then rescale the
@@ -807,7 +862,7 @@ fn preset(uv: vec2f) -> vec4f {
   let pk = peakAt(fract(ang / TAU + 0.5));
   let ringPal = cosPalette(ringT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
   let ringHot = mix(ringPal, vec3f(1.0, 0.98, 0.95), pk * pk * 0.7);
-  col += ringHot * band * (0.5 + spec) * P_inject();
+  col += ringHot * band * (0.5 + spec) * P_inject() * deposit;
 
   // Kick core: a bright central burst on kick hits, desaturating toward
   // white for a hot-flash look (bounded — see the note above; no push past
@@ -817,14 +872,22 @@ fn preset(uv: vec2f) -> vec4f {
     vec3f(1.0),
     0.55
   );
-  col += corePal * smoothstep(P_radius() * 0.7, 0.0, rad) * u.kick * P_kickFlash();
+  col += corePal * smoothstep(P_radius() * 0.7, 0.0, rad) * u.kick * P_kickFlash() * deposit;
 
   // No tonemap() here: with a feedback accumulator, tonemap's own output
   // feeds back in as next frame's input and compounds — measured to slowly
   // ratchet the whole tunnel up to a flat white/gray wash over a few seconds
   // instead of settling. vignette (a bounded <=1 multiply) and grain (a tiny
-  // bounded dither) are stable either way and stay.
-  col *= vignette(uv, P_vignette());
+  // bounded dither) cannot run away like that and stay. The vignette DOES
+  // compound though, which is why it is hoisted into the loop-gain block
+  // above and carries a per-second exponent rather than being a plain
+  // finishing multiply.
+  col *= vg;
+  // Grain lands in the accumulator too, but its amplitude is deliberately
+  // left per-frame: scaling a DITHER by deposit would nearly double its
+  // visible size at 30 fps to fix a floor that is +-0.006 and zero-mean.
+  // The residue is a fractionally different noise floor in near-black areas
+  // across frame rates, two orders below the injection error fixed above.
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
