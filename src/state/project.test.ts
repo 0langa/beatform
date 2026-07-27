@@ -6,6 +6,7 @@ import {
   serializeProject,
   type ProjectDocument,
   validBg,
+  validSyncByPreset,
   validBgByPreset,
   validCenterImages,
   validLayers,
@@ -675,5 +676,26 @@ describe("text layer font family", () => {
 
   it("still caps the family length", () => {
     expect(fontOf("A".repeat(500))).toHaveLength(100);
+  });
+});
+
+describe("per-preset sync survives a save/load round trip", () => {
+  /**
+   * validSyncByPreset used to rebuild SyncSettings field by field, and that
+   * hand-rolled list had drifted out of sync with the type: freqMin/freqMax
+   * were missing. Every .avproj/.avtheme therefore reopened with the user's
+   * analysed frequency range silently reset to the defaults. Reusing
+   * sanitizeSync makes the omission impossible to reintroduce.
+   */
+  it("keeps a custom analysed frequency range", () => {
+    const out = validSyncByPreset({
+      "spectrum-bars": { mode: "bass", smooth: 0.5, freqMin: 60, freqMax: 12000 },
+    });
+    expect(out["spectrum-bars"].freqMin).toBe(60);
+    expect(out["spectrum-bars"].freqMax).toBe(12000);
+  });
+
+  it("still rejects an entry with an unknown mode", () => {
+    expect(validSyncByPreset({ x: { mode: "not-a-mode", smooth: 0.5 } })).toEqual({});
   });
 });

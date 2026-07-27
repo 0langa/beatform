@@ -1,4 +1,4 @@
-import type { SyncSettings } from "../audio/types";
+import { sanitizeSync, type SyncSettings } from "../audio/types";
 import type { BgFit, BgSettings, MotionSettings, ParamValues, PostSettings } from "../render/types";
 import {
   BG_IMAGE,
@@ -344,17 +344,14 @@ export function validSyncByPreset(v: unknown): Record<string, SyncSettings> {
       typeof s.smooth === "number" &&
       Number.isFinite(s.smooth)
     ) {
-      const clamp01 = (x: unknown) =>
-        typeof x === "number" && Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : undefined;
-      out[presetId] = {
-        mode: s.mode,
-        smooth: Math.min(1, Math.max(0, s.smooth)),
-        attack: clamp01(s.attack),
-        release: clamp01(s.release),
-        shapeMerge: clamp01(s.shapeMerge),
-        shapeRound: clamp01(s.shapeRound),
-        contrast: clamp01(s.contrast),
-      };
+      // Normalize through the SAME sanitizer the live pipeline uses instead of
+      // rebuilding the field list here. This copy had drifted: it omitted
+      // freqMin/freqMax, so every saved .avproj/.avtheme silently discarded the
+      // user's analysed-frequency-range setting and reopened at the defaults.
+      // A parallel list also loses the NEXT field added to SyncSettings; there
+      // is one canonical normalizer and this is it. The guard above still
+      // rejects malformed entries rather than turning them into defaults.
+      out[presetId] = sanitizeSync(s);
     }
   }
   return out;
