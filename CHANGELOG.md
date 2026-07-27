@@ -11,6 +11,36 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.53.0] - 2026-07-27
+
+### Added
+
+- **A settings panel built to grow.** Parameters that are really a _choice_ —
+  symmetry, mirror mode, image fit — are now dropdowns instead of sliders, and
+  on/off settings are switches. Colours get a proper colour picker, hues get a
+  rainbow track, and angles get a dial you can drag. Settings are grouped by
+  what they do (Shape, Colour, Motion, Reaction, Glow, Image, Camera,
+  Backdrop) rather than by the order they happened to be written in.
+- **Search now finds everything.** Typing in the settings search box filters
+  individual settings and opens whichever groups contain them. Previously the
+  advanced tier was never searched at all, so most settings could not be found
+  by name.
+- **112 new looks across every mode**, replacing the old set. These change how
+  a mode _behaves_ — mirroring, symmetry, layer counts, trails, camera framing,
+  reaction curves — instead of only recolouring it. Every mode also gets at
+  least one clean, minimal look for when the music should lead.
+- **13 new templates**, replacing all the old ones. Each is a complete
+  starting point: Cover Story repaints itself from your artwork, Hyperlane
+  makes a drop lurch forward, Liquid Chrome splits the light on a wide mix,
+  Polar Night never strobes, Editorial Ink is deliberately restrained, On Air
+  is a square podcast deliverable, Pocket Rave is vertical for phones.
+
+### Fixed
+
+- **Saving a project no longer forgets your analysed frequency range.** If you
+  narrowed the range the visuals listen to, that setting was silently reset to
+  the default every time the file was reopened.
+
 ## [2.52.0] - 2026-07-27
 
 ### Added
