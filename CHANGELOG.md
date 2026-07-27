@@ -11,6 +11,32 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.54.0] - 2026-07-27
+
+### Fixed
+
+- **The Oscilloscope no longer turns into a solid slab.** Two looks —
+  Lissajous and Smoke Signal — filled the whole frame with a bright block
+  instead of drawing a trace. The afterglow was set high enough that the trail
+  outlived the time the beam needed to sweep the display, so every pixel it
+  had recently touched stayed lit at full brightness. The two looks are
+  retuned, and the afterglow slider no longer goes into the range where this
+  happens — no position it can still reach behaves differently than before.
+- **The same project now looks the same on a high-refresh screen.** The
+  Oscilloscope's afterglow got thicker the higher your monitor's refresh rate
+  went, so a 120 Hz preview did not match a 30 fps export. It is now pinned to
+  the density it was designed at. Exports are unaffected.
+- **Spectrum Scape stopped washing out to white on loud tracks.** All seven of
+  its looks lost their colour and depth on a loud master. Three separate
+  causes: the loudness boost was being applied twice, the Glow amount silently
+  scaled with the Height setting, and the highlight on tall bars triggered on
+  every bar at once instead of only the peaks. Quiet material renders exactly
+  as it did before.
+- **Four Spectrum Scape looks rebuilt.** Street Level, Neon Grid, Canyon and
+  Top Down were showing a flat wall, a fused mass, a single bar face and a
+  pale plate respectively. All four now read as legible 3D geometry on
+  everything from a −2.9 LUFS master to a −16.9 LUFS one.
+
 ## [2.53.0] - 2026-07-27
 
 ### Added
