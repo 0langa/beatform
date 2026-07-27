@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { echoTrails } from "./echoTrails";
+import { SHADER_SOURCES } from "../webgpuRenderer";
+
+/** The prelude's own TAU, so nothing here can drift from the shader's. */
+const TAU = Number(/const TAU: f32 = ([0-9.]+);/.exec(SHADER_SOURCES.header)?.[1]);
+
+/** WGSL builtins the lifted expressions call, in the shader's spelling. */
+const WGSL_SHIM = `const TAU = ${TAU};
+  const min = Math.min, max = Math.max, abs = Math.abs, floor = Math.floor;
+  const mix = (a, b, t) => a + (b - a) * t;
+  const select = (f, t, c) => (c ? t : f);
+  const fract = (x) => x - Math.floor(x);
+  const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+  const smoothstep = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };`;
 
 /**
  * The frame-rate law for the one preset that ACCUMULATES.
@@ -135,7 +148,9 @@ describe("echo-trails frame-rate compensation", () => {
 });
 
 /**
- * The wrap seam.
+ * The wrap seam — the UNFOLDED ring (Club mirror 1, the default and six of the
+ * eight styles). The folded ring is a different mapping and has its own suite
+ * below; every `folded` argument here is therefore false.
  *
  * Angle maps onto the spectrum linearly here, so the ring's two ends meet at
  * ang = pi with bin N-1 against bin 0 — and the feedback tunnel advects that
@@ -163,13 +178,14 @@ describe("echo-trails spectrum wrap seam", () => {
     if (src === undefined) throw new Error(`${name} expression not found in the WGSL`);
     return new Function(
       ...args,
-      `const min = Math.min, mix = (a, b, t) => a + (b - a) * t;
-       const smoothstep = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+      `${WGSL_SHIM}
        return ${src.replace(/\s+/g, " ")};`,
     ) as (...a: never[]) => number;
   };
 
-  const seamK = lift("seamK", ["specX"]) as (specX: number) => number;
+  const seamKof = lift("seamK", ["specX", "folded"]) as (specX: number, folded: boolean) => number;
+  /** Club mirror 1: no fold, so the crossfade is live. */
+  const seamK = (specX: number) => seamKof(specX, false);
   // binAt is the array sampler; the lifted `spec` line calls it by name.
   const specOf = (() => {
     const f = lift("spec", ["specX", "seamK", "binAt"]) as (
@@ -237,6 +253,204 @@ describe("echo-trails spectrum wrap seam", () => {
       // ...and away from the arc it is still the plain ang/TAU sweep, so no
       // shipped style's colours rotate.
       for (const x of [0.2, 0.5, 0.8]) expect(spinT(x, spin)).toBeCloseTo((x - 0.5) * spin, 12);
+    }
+  });
+});
+
+/**
+ * The club mirror and the spectrum.
+ *
+ * kaleido() collapses the whole circle onto one wedge, so the angle the preset
+ * reads back is NOT in [-pi, pi] any more: it is in [-pi/2, pi/2] at mirror 2
+ * and [0, pi/N] at N >= 3. Sending that through the unfolded
+ * fract(ang / TAU + 0.5) addressed a slice of the bins and nothing else — 12 of
+ * the 96 at the shipped Prism (mirror 4), 6 at the shipped Rose Window
+ * (mirror 8), all of them mid. Both styles were blind to bass and treble.
+ *
+ * The mapping is composed here out of the shader's OWN two pieces — kaleido()'s
+ * fold, lifted from the shared prelude, and the preset's specX line — so this
+ * measures the shipped arithmetic rather than a restatement of it. Coverage is
+ * counted through binAt()'s bin-centre anchor, i.e. the indices the ring can
+ * actually address, not an interval in the abstract.
+ */
+describe("echo-trails club mirror spectrum coverage", () => {
+  const body = echoTrails.wgsl;
+  const BINS = 96; // featurePipeline's binCount
+
+  const kaleidoSrc = /fn kaleido\(p: vec2f, segments: f32\) -> vec2f \{([\s\S]*?)\n\}/.exec(
+    SHADER_SOURCES.header,
+  )?.[1];
+
+  it("the shared fold still has the shape this suite composes", () => {
+    // Guards the transcription below: if kaleido()'s branch structure or its
+    // reconstruction changes, this fails instead of the suite quietly measuring
+    // a fold the renderer no longer performs.
+    expect(kaleidoSrc, "kaleido() not found in the prelude").toBeTruthy();
+    expect(kaleidoSrc).toContain("if (segments < 1.5) { return p; }");
+    expect(kaleidoSrc).toContain("if (segments < 2.5) { return vec2f(abs(p.x), p.y); }");
+    // The reconstruction is angle-preserving — it re-emits the folded angle at
+    // the original radius — so folding the ANGLE is the whole of the fold as
+    // far as a spectrum index is concerned, which is what lets this suite work
+    // in angles rather than in vectors.
+    expect(kaleidoSrc).toContain("return vec2f(cos(a), sin(a)) * length(p);");
+    // ...and the preset's own thresholds have to agree with those two, or the
+    // wedge it rescales is not the wedge the fold produced.
+    expect(body).toContain("let folded = mirrorN >= 1.5;");
+    expect(body).toMatch(/let foldLo = select\([^;]*mirrorN >= 2\.5\);/);
+    expect(body).toMatch(/let foldSpan = select\([^;]*mirrorN >= 2\.5\);/);
+  });
+
+  /**
+   * kaleido()'s angle fold. The N >= 3 branch is the prelude's own line, lifted;
+   * the mirror-2 branch is vec2f(abs(p.x), p.y) expressed on the angle, which
+   * is the one transcription here and is pinned by the text assertion above.
+   */
+  const foldAngle = (() => {
+    const seg = /let seg = ([^;]*);/.exec(kaleidoSrc ?? "")?.[1];
+    const fold = /\n\s*a = ([^;]*);/.exec(kaleidoSrc ?? "")?.[1];
+    if (!seg || !fold) throw new Error("kaleido()'s fold not found in the prelude");
+    return new Function(
+      "a",
+      "segments",
+      `${WGSL_SHIM}
+       if (segments < 1.5) { return a; }
+       if (segments < 2.5) { return Math.atan2(Math.sin(a), Math.abs(Math.cos(a))); }
+       const seg = ${seg};
+       return ${fold.replace(/\s+/g, " ")};`,
+    ) as (a: number, segments: number) => number;
+  })();
+
+  /** Compile a chain of `let <name> = <expr>;` lines, in order, into one fn. */
+  const liftChain = (names: string[], args: string[]) => {
+    const decls = names.map((n) => {
+      const src = new RegExp(`let ${n} = ([^;]*);`).exec(body)?.[1];
+      if (src === undefined) throw new Error(`${n} expression not found in the WGSL`);
+      return `const ${n} = ${src.replace(/\s+/g, " ")};`;
+    });
+    return new Function(
+      ...args,
+      `${WGSL_SHIM}
+       ${decls.join("\n       ")}
+       return ${names[names.length - 1]};`,
+    ) as (...a: never[]) => number;
+  };
+
+  const specXof = liftChain(["folded", "foldLo", "foldSpan", "specX"], ["ang", "mirrorN"]) as (
+    ang: number,
+    mirrorN: number,
+  ) => number;
+  const foldedOf = liftChain(["folded"], ["mirrorN"]) as unknown as (m: number) => boolean;
+  const seamKof = liftChain(["seamK"], ["specX", "folded"]) as (
+    specX: number,
+    folded: boolean,
+  ) => number;
+
+  /** The mapping this replaced, for the before/after contrast. */
+  const sliced = (ang: number) => ang / TAU + 0.5 - Math.floor(ang / TAU + 0.5);
+
+  /** binAt()'s bin-centre anchor: which index x actually addresses. */
+  const binIndex = (x: number) =>
+    Math.min(BINS - 1, Math.max(0, Math.round(Math.min(Math.max(x, 0), 0.999) * BINS - 0.5)));
+
+  /** Every index the ring addresses over one full trip round the screen. */
+  const reached = (map: (ang: number, m: number) => number, m: number, steps = 200_000) => {
+    const hit = new Set<number>();
+    for (let i = 0; i < steps; i++)
+      hit.add(binIndex(map(foldAngle(-Math.PI + (TAU * i) / steps, m), m)));
+    return hit;
+  };
+
+  it("every club-mirror setting now reaches the whole spectrum", () => {
+    for (let m = 1; m <= 12; m++) {
+      const hit = reached(specXof, m);
+      expect(hit.size, `mirror ${m} reaches ${hit.size} of ${BINS} bins`).toBe(BINS);
+    }
+  });
+
+  it("...and the mapping it replaced reached almost none of it", () => {
+    // Non-vacuity, and the defect's actual size. Unfolded is unaffected (96);
+    // every folded setting starved, and the harder the fold the worse it got.
+    const before = (m: number) => reached((ang) => sliced(ang), m).size;
+    expect(before(1)).toBe(96);
+    expect(before(2)).toBe(48);
+    expect(before(4)).toBe(12); // shipped Prism
+    expect(before(8)).toBe(6); // shipped Rose Window
+    expect(before(12)).toBe(4);
+    // ...and it was a MID slice: the fold pins one edge of the window at the
+    // exact centre of the spectrum, so neither end was ever within reach.
+    for (const m of [3, 4, 6, 8, 12]) {
+      const hit = [...reached((ang) => sliced(ang), m)];
+      expect(Math.min(...hit), `mirror ${m} low edge`).toBe(48);
+      expect(Math.max(...hit), `mirror ${m} high edge`).toBeLessThan(64);
+    }
+  });
+
+  /**
+   * The risk this change introduces is a seam at the wedge boundaries, so it is
+   * measured rather than argued. Proved by refinement, the same way the wrap
+   * suite above does it: sample the sweep twice as finely and a continuous
+   * function's largest step halves, while a genuine jump keeps its height.
+   */
+  it("closes every wedge boundary — the fold makes bass meet bass", () => {
+    const worstStep = (m: number, n: number) => {
+      let worst = 0;
+      let prev = specXof(foldAngle(-Math.PI, m), m);
+      for (let i = 1; i <= n; i++) {
+        const cur = specXof(foldAngle(-Math.PI + (TAU * i) / n, m), m);
+        worst = Math.max(worst, Math.abs(cur - prev));
+        prev = cur;
+      }
+      return worst;
+    };
+    for (const m of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
+      expect(worstStep(m, 4096) / worstStep(m, 8192), `mirror ${m}`).toBeGreaterThan(1.9);
+    }
+    // Non-vacuity: the unfolded sweep does NOT halve, because its wrap at
+    // ang = pi is a real discontinuity — which is exactly why mirror 1 keeps
+    // the crossfade and the folded settings do not need it.
+    expect(worstStep(1, 4096) / worstStep(1, 8192)).toBeCloseTo(1, 3);
+  });
+
+  it("leaves club mirror 1 on the exact mapping it always had", () => {
+    // Bit-equal, not close: six of the eight shipped styles render through
+    // this branch and none of them may move.
+    expect(foldedOf(1)).toBe(false);
+    for (let i = 0; i <= 512; i++) {
+      const ang = -Math.PI + (TAU * i) / 512;
+      expect(specXof(ang, 1)).toBe(sliced(ang));
+    }
+    // ...and the crossfade there is still the live smoothstep.
+    expect(seamKof(0, false)).toBe(0);
+    expect(seamKof(0.045, false)).toBeCloseTo(0.5, 12);
+    expect(seamKof(0.5, false)).toBe(1);
+  });
+
+  it("switches the wrap crossfade off wherever the fold makes it wrong", () => {
+    for (const m of [2, 4, 8, 12]) expect(foldedOf(m)).toBe(true);
+    // 1 everywhere on a folded ring — no blend, the raw sweep.
+    for (const x of [0, 0.02, 0.09, 0.5, 0.95, 1]) expect(seamKof(x, true)).toBe(1);
+
+    // That is not a free choice. Left live under the full-range mapping the
+    // crossfade would reach the ends of the spectrum for the first time and
+    // replace each wedge's bass end with the bass/treble MEAN — throwing away
+    // most of the dynamics the fold's rescale exists to restore, over 18% of
+    // every wedge. A bass-heavy spectrum, i.e. the ordinary case:
+    const bins = Array.from({ length: BINS }, (_, i) => Math.exp(-i / 9) * 0.95 + 0.02);
+    const at = (x: number) => bins[binIndex(x)];
+    const spec = liftChain(["spec"], ["specX", "seamK", "binAt"]) as unknown as (
+      specX: number,
+      seamK: number,
+      binAt: (x: number) => number,
+    ) => number;
+    expect(spec(0, seamKof(0, true), at)).toBeCloseTo(at(0), 12);
+    expect(spec(0, seamKof(0, false), at)).toBeLessThan(at(0) * 0.55);
+    // Note this is NOT a behaviour change at mirror >= 2: under the old sliced
+    // window min(specX, 1 - specX) never fell below 0.25, so seamK was already
+    // pinned at 1 there and the crossfade could not engage even in principle.
+    for (const m of [2, 3, 4, 8, 12]) {
+      for (const x of reached((ang) => sliced(ang), m, 20_000)) {
+        expect(seamKof((x + 0.5) / BINS, false), `mirror ${m} bin ${x}`).toBe(1);
+      }
     }
   });
 });

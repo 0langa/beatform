@@ -702,7 +702,8 @@ fn P_beatStar() -> f32 { return params[17u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   var c = centered(uv);              // aspect-corrected, centered at 0
-  c = kaleido(c, P_mirror());        // fold once; feedback re-samples the same fold every frame
+  let mirrorN = P_mirror();
+  c = kaleido(c, mirrorN);           // fold once; feedback re-samples the same fold every frame
   let rad = length(c);
   let ang = atan2(c.y, c.x);
 
@@ -814,6 +815,38 @@ fn preset(uv: vec2f) -> vec4f {
   // --- Inject a fresh audio-driven source over the trails ---
   // Spectrum ring: its radius per angle rides the spectrum + bass.
   //
+  // ANGLE -> SPECTRUM INDEX, and the club mirror changes which mapping is
+  // right. ang is read off the coordinate AFTER kaleido() folded it, and the
+  // fold does not preserve the angle's RANGE: it collapses the whole circle
+  // onto one wedge — [-pi/2, pi/2] at Club mirror 2 (a plain left/right
+  // mirror), [0, pi/N] at N >= 3 wedges. Pushing that folded angle through the
+  // unfolded formula, fract(ang / TAU + 0.5), therefore addresses a SLICE of
+  // the spectrum and nothing outside it: [0.25, 0.75] at mirror 2, and
+  // [0.5, 0.5 + 1/(2N)] at N >= 3 — 12.5% of the bins at the shipped Prism (4)
+  // and 6.25% at the shipped Rose Window (8). Those two styles reacted to a
+  // narrow mid-band and could not see bass or treble at all: a music
+  // visualiser not visualising the music. The mode shipped that way.
+  //
+  // So the FOLDED case rescales the wedge kaleido() actually leaves reachable
+  // onto the whole spectrum, and every wedge carries one complete bass-to-
+  // treble sweep — which is what a kaleidoscope OF a spectrum should be.
+  //
+  // That mapping is seam-free by construction, which the unfolded one is not.
+  // The fold is a mirror, so the folded angle runs 0 -> span -> 0 -> span as
+  // you travel round the circle: a triangle wave, hence bass meeting bass at
+  // one wedge edge and treble meeting treble at the next. It is the same
+  // mirrored sweep radialBurst, bassCircle and tunnelRings write as
+  // abs(seg * 2 - 1), and it is why seamK is forced to 1 whenever the coord is
+  // folded. That is not a new judgement about mirrored wedges — it is exactly
+  // what seamK ALREADY evaluated to at every mirror >= 2, because the old
+  // sliced window never came within 0.25 of either end of the spectrum and the
+  // crossfade below could not engage there even in principle. Leaving it live
+  // under the full-range mapping WOULD engage it, and it would blend each
+  // wedge's bass end into its treble end over 18% of the wedge — deleting most
+  // of the dynamics this mapping exists to restore, at the very ends where the
+  // music lives. So the crossfade stays exactly where it was earned: mirror 1.
+  //
+  // --- Club mirror 1 (the default, and six of the eight styles) ---
   // Angle maps onto the spectrum LINEARLY — one trip around the ring sweeps
   // bin 0 to bin N-1 exactly once — so the two ENDS of the spectrum meet at
   // ang = pi (screen left), where treble butts straight against bass. Those
@@ -848,12 +881,25 @@ fn preset(uv: vec2f) -> vec4f {
   // Vortex / Smoke on a -3 LUFS and a -17 LUFS track at Rounding 100%, the
   // largest angular gradient in the frame no longer sits at pi at all.
   //
-  // Mirroring the sweep would remove the seam by construction, but it would
-  // also make the ring bilaterally symmetric, which is not what this mode is.
-  let specX = fract(ang / TAU + 0.5);
+  // Mirroring the sweep would remove the seam by construction here too, but at
+  // mirror 1 it would also make the ring bilaterally symmetric, which is not
+  // what the unfolded mode is. (At mirror >= 2 the picture is symmetric because
+  // the owner asked for it, which is precisely why the fold above can take the
+  // mirrored sweep for free and drop the crossfade.)
+  //
+  // foldLo / foldSpan are the range kaleido() leaves ang in, keyed off the
+  // same two thresholds kaleido() itself branches on — 1.5 (fold at all) and
+  // 2.5 (radial wedges rather than a plain left/right mirror). Reading them off
+  // the mirror count rather than off the frame is what keeps this exact: the
+  // wedge is a property of the fold, not something to be measured.
+  let folded = mirrorN >= 1.5;
+  let foldLo = select(TAU * -0.25, 0.0, mirrorN >= 2.5);
+  let foldSpan = select(TAU * 0.5, TAU * 0.5 / mirrorN, mirrorN >= 2.5);
+  let specX = select(fract(ang / TAU + 0.5), clamp((ang - foldLo) / foldSpan, 0.0, 1.0), folded);
   // Distance to the joint, in spectrum-domain units — zero at the wrap from
-  // BOTH sides, so one weight serves the two halves of the crossfade.
-  let seamK = smoothstep(0.0, 0.09, min(specX, 1.0 - specX));
+  // BOTH sides, so one weight serves the two halves of the crossfade. Off (1 =
+  // no blend) when the coord is folded, where there is no joint to close.
+  let seamK = select(smoothstep(0.0, 0.09, min(specX, 1.0 - specX)), 1.0, folded);
   let spec = mix((binAt(0.0) + binAt(1.0)) * 0.5, binAt(specX), seamK);
   // Frame-safety: the FRESH ring is the source the feedback zoom streams
   // outward from — inject it on-screen (r<=0.45), or a loud/bright master at
@@ -907,6 +953,14 @@ fn preset(uv: vec2f) -> vec4f {
   // every style's colours would rotate by half a spin, which is a look change,
   // not a seam fix. Written through specX rather than ang / TAU so it shares
   // the one wrap coordinate; the two agree to an ulp away from the arc.
+  //
+  // Riding specX also means the hue inherits the folded mapping for free, and
+  // it was starved by exactly the same arithmetic: a wedge that could only
+  // reach 6.25% of the spectrum could only reach 6.25% of a Hue spin, so Rose
+  // Window's wedges came out one flat colour apiece. Each wedge now carries the
+  // whole spin, and it closes continuously at the wedge edges for the same
+  // mirror reason the spectrum does (seamK is 1 there, so this is the raw
+  // specX * spin ramp, reflected).
   let spin = P_hueSpin();
   let ringT = fract(hueT + mix(spin * 0.5, specX * spin, seamK) - spin * 0.5
     + u.time * P_hueDrift() * (30.0 / 360.0));
@@ -920,9 +974,12 @@ fn preset(uv: vec2f) -> vec4f {
   // kit), was measured to wash the whole tunnel out to flat white/gray within
   // a few seconds. Recoloring keeps the injected energy budget identical to
   // the original ring term — bounded and provably as stable as before.
-  // Same crossfade as the ring's own spectrum above — peaks[] wraps at the
-  // same joint, and a crown that jumped from treble-peak to bass-peak would
-  // leave a colour seam along the exact angle the geometry no longer has one.
+  // Same specX and same crossfade as the ring's own spectrum above — peaks[]
+  // wraps at the same joint, and a crown that jumped from treble-peak to
+  // bass-peak would leave a colour seam along the exact angle the geometry no
+  // longer has one. It was starved by the same slice too: at mirror 8 the crown
+  // could only ever address a 6-bin window of the 96, all of it mid, so it
+  // never once lit on a kick.
   let pk = mix((peakAt(0.0) + peakAt(1.0)) * 0.5, peakAt(specX), seamK);
   let ringPal = cosPalette(ringT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
   let ringHot = mix(ringPal, vec3f(1.0, 0.98, 0.95), pk * pk * 0.7);
