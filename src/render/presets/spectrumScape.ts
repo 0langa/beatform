@@ -39,7 +39,13 @@ export const spectrumScape: PresetDef = {
         hueRange: 190,
         heightScale: 13,
         camPitch: 6,
-        camDist: 9,
+        // 14, not 9 (v2.53.0). The grid is 28 columns at 0.75 spacing, so its
+        // half-extent is ~10.5 — a camera at 9 stands INSIDE the field, and on
+        // real music (where the near bars run to full height rather than the
+        // demo's short outer ring) the lens ends up pressed against one bar
+        // face: the whole frame becomes a single flat-shaded rectangle. 14
+        // clears the field while keeping the street-level read.
+        camDist: 14,
         camSpin: 5,
         fov: 78,
         targetY: 3.2,
@@ -132,7 +138,11 @@ export const spectrumScape: PresetDef = {
         hueRange: 90,
         heightScale: 14,
         camPitch: 40,
-        camDist: 13,
+        // 18, not 13 (v2.53.0) — same reason as Street Level: at 0.9 spacing
+        // the field's half-extent is ~12.6, so 13 sat on its edge and a
+        // full-height near slab filled the lens. 18 is far enough out to see
+        // the streets between the slabs, which is the whole look.
+        camDist: 18,
         camSpin: -6,
         fov: 70,
         targetY: 2,

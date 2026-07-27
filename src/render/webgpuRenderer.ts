@@ -1076,14 +1076,32 @@ fn vs_mesh(
     inPos.y * h,
     inPos.z * m.barWidth + dz * m.spacing,
   );
+  // The same bar WITHOUT the drive gain, for everything that shades rather
+  // than positions. GEOMETRY should grow with loudness — that is the point of
+  // the sync panel — but hue, the hot-top threshold and the emissive term all
+  // read a height that already carries that gain, and each of them multiplies
+  // by drive AGAIN in the fragment stage. Loudness therefore landed twice, so
+  // on a real master (-7 LUFS) every bar cleared the hot-top threshold at
+  // once and the whole city washed to flat white: no skyline, no colour, no
+  // depth. Shading off the drive-free height makes "tall" mean tall RELATIVE
+  // to the other bars, which is what the hot core was always documented to
+  // mean, and leaves the single explicit drive multiplier in the fragment as
+  // the one place loudness brightens the scene. At drive == 0 hLit == h, so
+  // this is an exact no-op on silence and scales in smoothly from there.
+  let hLit = bins[bi] * m.heightScale * 0.7 + 0.03;
   var out: VOut;
   out.pos = m.viewProj * vec4f(world, 1.0);
   out.normal = inNormal;
-  out.shade = hsl2rgb(m.hue + r * m.hueRange + h * 24.0, 0.9, 0.55);
-  out.height = h;
+  out.shade = hsl2rgb(m.hue + r * m.hueRange + hLit * 24.0, 0.9, 0.55);
+  out.height = hLit;
   out.fog = out.pos.w;
   // 0 at the floor, 1 near the top of the tallest bar — drives the hot core.
-  out.heightNorm = clamp(h / max(m.heightScale * 0.6, 0.001), 0.0, 1.0);
+  // 0.42 == the old 0.6 threshold folded through hLit's 0.7 gain, so a
+  // drive-free frame keeps exactly the hot core it had before. The ceiling is
+  // above 1 only so fs_mesh can slide its threshold up on loud material and
+  // still have somewhere to slide to; smoothstep clamps, so the un-slid
+  // 0.55..1.0 window behaves exactly as it did when this was clamped at 1.
+  out.heightNorm = clamp(hLit / max(m.heightScale * 0.42, 0.001), 0.0, 1.7);
   return out;
 }
 
@@ -1103,12 +1121,28 @@ fn fs_mesh(in: VOut) -> @location(0) vec4f {
 
   // Hot tops: the tallest bars desaturate toward white and push past 1.0 so
   // the tone map rolls them off as genuine emission rather than flat colour.
-  let hot = smoothstep(0.55, 1.0, in.heightNorm);
+  // The window rides drive because heightNorm measures a bar against the
+  // TALLEST POSSIBLE bar, not against the tallest bar on screen: on a loud
+  // broadband master almost every bin sits high, so a fixed 0.55 threshold
+  // fired on the entire city at once and "the tallest bars glow hotter"
+  // degenerated into "the whole city is white". Sliding the window up with
+  // loudness keeps the hot core on the actual peaks. No-op at drive == 0.
+  let hotLo = 0.55 + m.drive * 0.6;
+  let hot = smoothstep(hotLo, hotLo + 0.45, in.heightNorm);
   col = mix(col, vec3f(1.0), hot * 0.6);
   col += in.shade * hot * (0.6 + m.drive * 0.6 + m.driveBeat * 0.6);
 
-  // Existing height emissive, kept.
-  col += in.shade * clamp(in.height, 0.0, m.heightScale * 0.5) * m.emissive
+  // Height emissive, normalised against the Height knob instead of scaling
+  // with it. in.height is a WORLD height, so this term used to read
+  // heightScale * (bar shape) * emissive: raising Height from 6 to 16 did not
+  // just build taller bars, it multiplied their glow by 16/6 as well. Every
+  // washed-out style was a tall one (Street Level 13, Canyon 14, Neon Grid
+  // 16) and every intact one was near the default — Glow was silently a
+  // second Height knob. Dividing by heightScale (and restoring the default
+  // heightScale of 6) makes the term depend on the bar's SHAPE only, so Glow
+  // means glow at any Height. Identical at heightScale == 6, which is the
+  // default and therefore the out-of-box look.
+  col += in.shade * clamp(in.height / m.heightScale, 0.0, 0.5) * 6.0 * m.emissive
        * (0.7 + m.drive * 0.6 + m.driveBeat * 0.5);
 
   // Distance fog: recede into a dark blue haze rather than a hard black cut.

@@ -26,7 +26,7 @@ export const oscilloscope: PresetDef = {
       values: {
         hue: 285,
         kaleido: 2,
-        persist: 0.76,
+        persist: 0.56,
         fill: 0,
         mirror: 0,
         coreWidth: 0.0015,
@@ -149,7 +149,7 @@ export const oscilloscope: PresetDef = {
         hueWave: 70,
         gridLevel: 0,
         scanline: 0,
-        persist: 0.84,
+        persist: 0.6,
         bgLevel: 0.008,
         vignette: 0.6,
         beatLift: 0.05,
@@ -370,7 +370,17 @@ export const oscilloscope: PresetDef = {
       label: "Phosphor persist",
       group: "motion",
       min: 0,
-      max: 0.85,
+      // Ceiling lowered from 0.85 (v2.53.0). Persistence composites with
+      // max(), i.e. it UNIONS the recent sweeps; a trace on real music is a
+      // dense scribble, so once the trail lives long enough for the union to
+      // cover the whole excursion band the band goes flat white and the scope
+      // stops reading as a scope. Measured at 60 fps on five masters spanning
+      // -13.8 to -4.9 LUFS (and on the built-in groove demo): 0.60 keeps a
+      // legible trace on every one, 0.64 starts filling, 0.70+ is a solid
+      // slab at ANY other setting — that top third of the slider had no
+      // usable position on any material. The default (0.4) and every value
+      // still reachable render exactly as they did before.
+      max: 0.6,
       step: 0.02,
       default: 0.4,
       hint: "CRT afterglow — how long the beam lingers and fades between frames",
@@ -497,7 +507,21 @@ fn preset(uv: vec2f) -> vec4f {
   // shape that's still changing leaves a visible ghost. Decay is expressed
   // per SECOND (pow(.., dt*60)), not per rendered frame, so a 30 fps export
   // fades at the same track-time rate as a 60 fps preview.
-  let decay = pow(clamp(P_persist(), 0.0001, 0.98), u.dt * 60.0);
+  //
+  // ...with the exponent floored at 1.0, i.e. never FASTER than 60 fps.
+  // max() unions the recent sweeps rather than adding them, and covering the
+  // trace's excursion band takes a roughly frame-rate-independent NUMBER of
+  // sweeps — so what decides whether the band fills is the per-frame factor,
+  // not the per-second one. Above 60 fps the per-second form pushes that
+  // per-frame factor toward 1 (0.6/frame at 60 fps, 0.75/frame at 120 Hz),
+  // and a 120 Hz preview turned the same settings that are a clean trace at
+  // 60 fps into a solid slab — the live preview disagreeing with its own
+  // export. Flooring the exponent pins the trail at its authored 60 fps
+  // density on high-refresh displays (it fades over less wall time there,
+  // which degrades gracefully; the alternative saturates). At and below
+  // 60 fps — every export frame rate — this is a no-op and the per-second
+  // fade rate above is untouched.
+  let decay = pow(clamp(P_persist(), 0.0001, 0.98), max(u.dt * 60.0, 1.0));
   col = max(col, feedbackSample(uv).rgb * decay);
 
   let d2 = distance(uv, vec2f(0.5));

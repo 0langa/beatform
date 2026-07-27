@@ -412,9 +412,11 @@ export const FACTORY_THEMES: FactoryTheme[] = [
       ],
     },
     mods: [
-      // Glow multiplies heightScale inside the shader, so this rides at a
-      // tenth of the old 0.2: enough to tip the towers on a kick, not enough
-      // to push the whole downtown past the tone-map knee.
+      // Glow used to multiply heightScale inside the shader, so this was cut
+      // to a tenth of the old 0.2 to stop the whole downtown crossing the
+      // tone-map knee. That coupling is gone (mesh3d normalises the emissive
+      // term against Height now), but the small amount is still the right
+      // shape for this look: enough to tip the towers on a kick, no more.
       { source: "kick", param: "emissive", amount: 0.05 },
       { source: "bass", param: "heightScale", amount: 0.07 },
       { source: "driveBeat", param: "post:bloom", amount: 0.15 },
