@@ -194,6 +194,7 @@ Everything stays free and open source, GitHub-only, with no monetization.
 The full on-hardware acceptance pass is **complete** — every item in
 `TESTING.md` is green, including real-hardware drag-and-drop, a physical
 non-US keyboard, a two-hour export soak and ProRes 4444 alpha round-trip.
-That clears the gate for a 1.0-grade **v3.0.0**, which is deliberately not cut
-yet: the milestone lands when the remaining polish work does, not on a date.
-Releases continue on the 2.x line until then.
+**v3.0.0 is not a version bump waiting on a checklist.** It is the point where
+this is exactly the app it should be — every feature something to stand behind,
+not merely something that works. Passing the acceptance pass is evidence toward
+that, not a trigger for it. Development continues on the 2.x line.

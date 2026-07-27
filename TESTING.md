@@ -3,12 +3,14 @@
 > ## ✅ BATCH COMPLETE — closed 2026-07-27 against v2.51.0/v2.52.0
 >
 > Every item below is green, including the owner's sign-off on the one item no
-> agent can close (subjective visual quality on real music). This batch is the
-> acceptance record for the **v3.0.0** gate, and that gate is **met**.
+> agent can close (subjective visual quality on real music).
 >
-> **v3.0.0 is deliberately NOT cut yet.** Meeting the acceptance bar is a
-> precondition, not a trigger — the milestone lands when the remaining polish
-> work does, not on a date. Releases continue on the 2.x line until then.
+> **This does NOT mean v3.0.0 is due.** v3.0.0 is the point where the owner can
+> say _"this is exactly how I want beatform to be, and I stand behind every
+> single function and feature"_. That is a conviction bar, not a checklist —
+> passing this batch is evidence toward it, never a trigger for it. Cutting v3
+> to increment a version number is explicitly not the goal. Releases continue
+> on the 2.x line, and v3 lands when the owner is ready to stand behind it.
 >
 > A frozen copy of this file, plus the audit documents and all visual/soak
 > evidence, is archived outside the repo at
