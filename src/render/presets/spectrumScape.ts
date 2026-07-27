@@ -30,29 +30,64 @@ export const spectrumScape: PresetDef = {
   styles: [
     // Night City — the defaults — an orbiting night skyline.
     { id: "city", name: "Night City", values: {} },
-    // Street Level — camera at street level with a wide lens, looking up the towers.
+    // Street Level — a low, wide vantage just outside the city, eye level with
+    // the outer rooftops: near facades run off the bottom of frame, the towers
+    // in the middle rise against the sky.
+    //
+    // Re-conceived, because the literal reading of the name is not reachable
+    // here and every earlier attempt at it produced a flat slab.
+    // Three fixed facts of the mesh path force this:
+    //
+    //  1. Bar height is a RADIAL function of the spectrum (bin index ~ distance
+    //     from the centre), so every ring is one constant height. The row
+    //     nearest the camera is therefore always a flat-topped wall, never a
+    //     jagged skyline — there is no camera angle that makes it read as
+    //     separate buildings of different heights.
+    //  2. On real music the outer (treble) ring measures ~0.43 where the centre
+    //     measures ~0.88 — half, not a tenth. So the near wall is always about
+    //     half the height of the towers behind it, and an eye low enough to be
+    //     "under" the towers is also under the wall, which then fills the lens.
+    //  3. The camera always looks slightly DOWN: the eye sits sin(pitch)*dist
+    //     above the look-at point. There is no upward tilt to be had.
+    //
+    // So the look is built the other way round: put the eye a little ABOVE the
+    // outer roofline and let the towers do the rising. targetY 4 (the max) with
+    // the minimum 5-degree pitch puts the eye at ~5.4, against an outer wall of
+    // ~4.6 — over it on average, under it on the loud peaks, so the near wall
+    // breathes across your eyeline with the music.
     {
       id: "street",
       name: "Street Level",
       values: {
-        hue: 288,
-        hueRange: 190,
-        heightScale: 13,
-        camPitch: 6,
-        // 14, not 9 (v2.53.0). The grid is 28 columns at 0.75 spacing, so its
-        // half-extent is ~10.5 — a camera at 9 stands INSIDE the field, and on
-        // real music (where the near bars run to full height rather than the
-        // demo's short outer ring) the lens ends up pressed against one bar
-        // face: the whole frame becomes a single flat-shaded rectangle. 14
-        // clears the field while keeping the street-level read.
-        camDist: 14,
-        camSpin: 5,
-        fov: 78,
-        targetY: 3.2,
-        emissive: 1.15,
-        light: 0.5,
-        spacing: 0.75,
-        barWidth: 0.5,
+        // The height term shifts hue by hLit*24 in the shader, which at
+        // heightScale 8 is ~+120 degrees on the tallest bars — so the base hue
+        // is chosen for where the CENTRE lands (82 + 118 ~ 200, cyan tips), and
+        // the spread carries the outskirts round to magenta.
+        hue: 82,
+        hueRange: 145,
+        heightScale: 8,
+        camPitch: 5,
+        // 16 with spacing 0.5: the field's half-extent is 13.5*0.5 = 6.75 and
+        // its CORNER is 1.414x that (9.55), so a camera whose horizontal radius
+        // is cos(5)*16 = 15.9 clears the corner by 6.4 even at the worst point
+        // of the orbit. Both earlier versions failed this test — 9 stood inside
+        // the field outright, and 14 against spacing 0.75 cleared the flat edge
+        // (10.1) but not the corner (14.3), so a quarter of every orbit pressed
+        // the lens against one bar face. That is the "flat wall of stripes".
+        camDist: 16,
+        camSpin: 4,
+        fov: 46,
+        targetY: 4,
+        // Glow down, key light UP — the opposite of what this look used to do.
+        // Emissive is view-independent, so it flattens: at 1.15 it swamped the
+        // lighting and every facade rendered the same pale value, which is what
+        // made the wall unreadable even once it stopped being white. The key
+        // light only reaches two of a column's four side faces, so it is the
+        // term that actually separates one facade from the next.
+        emissive: 0.35,
+        light: 1.15,
+        spacing: 0.5,
+        barWidth: 0.28,
       },
     },
     // Flyover — telephoto from far and high — the grid reads as terrain.
@@ -110,23 +145,46 @@ export const spectrumScape: PresetDef = {
         spacing: 0.7,
       },
     },
-    // Neon Grid — thin tall emissive spikes, almost no key light: pure light sticks.
+    // Neon Grid — a lattice of glowing studs on the widest spacing the mode
+    // allows, seen from above the field: the dark between the elements is the
+    // look. Almost no key light — these are light sources, not lit objects.
+    //
+    // The height is deliberately LOW, which is the whole fix. A grid
+    // is legible only where you can see past its front row, and the condition
+    // for that is geometric: a bar of height h at horizontal distance d from an
+    // eye at height Y hides the ground behind it unless h < s*Y/d. At the old
+    // heightScale 16 the bars ran to 22 units from a 16-unit-high camera, so
+    // nothing was ever visible past the first row and 784 columns fused into a
+    // single field of spikes. At 3 they top out near 4, the near half of the
+    // lattice opens up, and the far half compresses into a horizon — which is
+    // what a grid in perspective is supposed to do.
+    //
+    // Low bars also stabilise the palette: the shader's hue shift rides bar
+    // height (hLit*24), so a tall style repaints itself as the track gets
+    // louder. At heightScale 3 the shift spans ~20-45 degrees instead of ~220,
+    // and the look holds the same violet-to-magenta from -17 to -3 LUFS.
     {
       id: "neonGrid",
       name: "Neon Grid",
       values: {
-        hue: 320,
-        hueRange: 260,
-        heightScale: 16,
-        camPitch: 16,
-        camDist: 22,
+        hue: 210,
+        hueRange: 65,
+        heightScale: 3,
+        camPitch: 45,
+        camDist: 27,
         camSpin: 8,
-        fov: 60,
-        targetY: 1.4,
-        emissive: 1.85,
-        light: 0.15,
-        barWidth: 0.14,
-        spacing: 1.15,
+        fov: 44,
+        targetY: 0.4,
+        // 0.85, not 1.85. The emissive term is normalised against Height and
+        // clamps at half the bar's shape, so it tops out near 3x emissive
+        // BEFORE the beat gain — 1.85 therefore drove every bar, not just the
+        // tall ones, past the tone map's shoulder and the grid rendered as a
+        // near-white sheet. Under 1 the studs keep their hue and only the
+        // spectrum's peak ring goes white-hot.
+        emissive: 0.85,
+        light: 0.25,
+        barWidth: 0.32,
+        spacing: 1.2,
       },
     },
     // Canyon — bars almost touching at max height — slabs with streets between them.
