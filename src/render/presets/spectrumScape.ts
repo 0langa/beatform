@@ -107,22 +107,70 @@ export const spectrumScape: PresetDef = {
       },
     },
     // Top Down — near-vertical: the concentric spectrum rings become a radial plot.
+    //
+    // Retuned, because this was the last washed look in the mode. Measured over
+    // 30 frames of a real export on the loudest master in the library (-2.9
+    // LUFS): the old values rendered a mean luminance of 0.854 with 66% of the
+    // frame above 0.85 on average — 95% on the worst frame — at a saturation of
+    // 0.317. That is the pale near-white plate: no rings, no depth, no colour.
+    // The same 30 frames now measure mean 0.487, saturation 0.485, and NOT ONE
+    // pixel above 0.85 on any frame.
+    //
+    // Nadir is the one vantage where the mode's usual cues do not work, and
+    // each value below answers a specific reason why:
+    //
+    //  1. Looking straight down, nearly every visible face is a TOP face, and
+    //     they all share one normal — so the key light resolves to a CONSTANT
+    //     over the whole plate and separates nothing. That leaves hue and the
+    //     height emissive as the only terms that vary bar to bar. Glow at 0.55
+    //     added ~2.3x the lit value to every bar (the emissive term clamps at
+    //     half the bar shape, and on a broadband master even the outer ring
+    //     sits at that clamp), which both pushed the plate past the tone map's
+    //     shoulder AND — being view-independent — collapsed the top-face to
+    //     side-face ratio from ~2.5:1 to ~1.2:1, erasing the one cue still
+    //     reading. Glow 0.1 with Light 1.15 is the trade Street Level makes,
+    //     for the same reason: the key light is the term that separates one
+    //     face from the next, the glow is the term that erases the difference.
+    //  2. Depth here cannot come from shading, so it has to come from the LENS.
+    //     Field of view 45 -> 80. A wide lens makes the outer columns lean away
+    //     from centre and show their sides, so the plate reads as columns of
+    //     different heights instead of a quilt. This is the change that put the
+    //     geometry back — the exposure change alone only made it a dimmer quilt.
+    //  3. Distance 17 -> 13, and Height back to the default 6 (it is not
+    //     restated below). Height is what decides how much of the frame the
+    //     shader's hot core can occupy: heightNorm is scale-free, so the SET of
+    //     bars that go white-hot is fixed by the spectrum, but how large they
+    //     loom is not. At Height 9 the hot inner disc subtended more than the
+    //     whole 80-degree lens; at 6 it is a core inside a magenta ring. The
+    //     eye sits sin(84)*13 = 12.9 up and the tallest bar the shader can
+    //     build is 1.0 * 6 * 1.4 = 8.4, so the camera stays clear of the towers
+    //     even at full drive on a full-scale bin.
+    //  4. Spacing 0.75 -> 0.9 against the same 0.7 bar width: fill drops from
+    //     93% — adjacent tops touching, hence "quilt" — to 78%, so every cell
+    //     has a visible edge. The field's silhouette also now covers the frame
+    //     vertically at ANY loudness (13*tan(40) = 10.9 against a half-extent
+    //     of 13.5*0.9 = 12.15), instead of shrinking away on quiet material.
+    //  5. Hue spread 240 -> 130. The shader shifts hue by hLit*24, which at
+    //     Height 6 is ~90 degrees at the centre against ~45 at the rim, so a
+    //     240 spread carried the corners a full turn back onto the centre's own
+    //     hue and the ramp ate its own tail. 130 keeps the plate one forward
+    //     sweep — pale core, magenta ring, crimson field, amber corners — and
+    //     it stays that sweep from -17 to -3 LUFS.
     {
       id: "topdown",
       name: "Top Down",
       values: {
-        hue: 186,
-        hueRange: 240,
-        heightScale: 9,
+        hue: 205,
+        hueRange: 130,
         camPitch: 84,
-        camDist: 17,
+        camDist: 13,
         camSpin: 10,
-        fov: 45,
+        fov: 80,
         targetY: 0,
-        emissive: 0.55,
-        light: 0.7,
+        emissive: 0.1,
+        light: 1.15,
         barWidth: 0.7,
-        spacing: 0.75,
+        spacing: 0.9,
       },
     },
     // Monolith — editorial. One hue, no orbit, key light carries the form — a study model.
