@@ -191,5 +191,9 @@ storytelling → motion arc is **complete and shipped**; live-performance
 Stage mode have landed, with a true second-display output window still to come.
 Everything stays free and open source, GitHub-only, with no monetization.
 
-Next up is a full on-hardware acceptance pass (see `TESTING.md`) toward a
-1.0-grade **v3.0.0** milestone.
+The full on-hardware acceptance pass is **complete** — every item in
+`TESTING.md` is green, including real-hardware drag-and-drop, a physical
+non-US keyboard, a two-hour export soak and ProRes 4444 alpha round-trip.
+That clears the gate for a 1.0-grade **v3.0.0**, which is deliberately not cut
+yet: the milestone lands when the remaining polish work does, not on a date.
+Releases continue on the 2.x line until then.

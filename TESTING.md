@@ -1,8 +1,27 @@
 # Beatform — Manual Testing Batch (agent-executable)
 
-State as of **v2.51.0** (2026-07-26). Written so a computer-controlling agent
-with full PC access can execute it; items that genuinely need human senses or
-hardware are marked **HUMAN**. Mark each item ✅/❌ with a one-line note.
+> ## ✅ BATCH COMPLETE — closed 2026-07-27 against v2.51.0/v2.52.0
+>
+> Every item below is green, including the owner's sign-off on the one item no
+> agent can close (subjective visual quality on real music). This batch is the
+> acceptance record for the **v3.0.0** gate, and that gate is **met**.
+>
+> **v3.0.0 is deliberately NOT cut yet.** Meeting the acceptance bar is a
+> precondition, not a trigger — the milestone lands when the remaining polish
+> work does, not on a date. Releases continue on the 2.x line until then.
+>
+> A frozen copy of this file, plus the audit documents and all visual/soak
+> evidence, is archived outside the repo at
+> `D:eatform-archive3-acceptance-2026-07-27\`.
+>
+> **Reusing this file:** it stays here as the living manual-test checklist.
+> When the next batch opens, reset the boxes, update the "State as of" line
+> below, and replace this banner — do not start a parallel document.
+
+State as of **v2.51.0/v2.52.0** (batch run 2026-07-26/27; app now at v2.53.0).
+Written so a computer-controlling agent with full PC access can execute it;
+items that genuinely need human senses or hardware are marked **HUMAN**. Mark
+each item ✅/❌ with a one-line note.
 
 ## Environment facts (read first)
 
