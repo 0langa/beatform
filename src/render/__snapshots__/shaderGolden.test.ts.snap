@@ -813,7 +813,48 @@ fn preset(uv: vec2f) -> vec4f {
 
   // --- Inject a fresh audio-driven source over the trails ---
   // Spectrum ring: its radius per angle rides the spectrum + bass.
-  let spec = binAt(fract(ang / TAU + 0.5));
+  //
+  // Angle maps onto the spectrum LINEARLY — one trip around the ring sweeps
+  // bin 0 to bin N-1 exactly once — so the two ENDS of the spectrum meet at
+  // ang = pi (screen left), where treble butts straight against bass. Those
+  // two are almost never alike, and the step lands in every term the ring is
+  // built from: its radius (spec * Reactivity), its brightness (0.5 + spec)
+  // and the peak-hold crown (pk). A plain preset would show that as a small
+  // notch; this one ADVECTS it outward every frame, so the step is redrawn
+  // into the same growing wedge over and over and reads as one clean straight
+  // CUT across the whole picture. It is the mode's oldest artifact.
+  //
+  // Sync -> Rounding makes it worse rather than better. The box blur behind
+  // that slider (featurePipeline) clamps at the bin array's ends, exactly as
+  // binAt()'s Catmull-Rom does here, so turning it up melts every spike in the
+  // spectrum EXCEPT the joint — the seam is the one hard edge left standing,
+  // and the smoother everything around it gets the more it stands out.
+  //
+  // The fix is an angular crossfade: across a narrow arc either side of the
+  // wrap, both ends blend to the SAME value — the mean of the two — so the
+  // ring closes on itself continuously. smoothstep rather than a linear ramp,
+  // because a linear one only trades the step for a KINK where the blend meets
+  // the raw spectrum: a visible crease at two angles instead of a cut at one.
+  //
+  // Arc width is the whole judgement, and it was picked from rendered frames,
+  // not from arithmetic — the value is a half-width, so it costs twice itself.
+  // 0.03 (a 22 degree total arc) still reads as a defect: the step becomes a
+  // ramp steep enough to look deliberate, a bright hook on Glacier's hairline
+  // and a hard inner wall on Smoke. 0.20 puts 40% of the circle under
+  // interpolation and visibly flattens the ring's whole left side into a plain
+  // curve. 0.09 — 65 degrees total — lands the treble-to-bass climb at about
+  // the angular slope the ring already has elsewhere, so it reads as part of
+  // the sweep rather than as a feature; measured across Tunnel / Glacier /
+  // Vortex / Smoke on a -3 LUFS and a -17 LUFS track at Rounding 100%, the
+  // largest angular gradient in the frame no longer sits at pi at all.
+  //
+  // Mirroring the sweep would remove the seam by construction, but it would
+  // also make the ring bilaterally symmetric, which is not what this mode is.
+  let specX = fract(ang / TAU + 0.5);
+  // Distance to the joint, in spectrum-domain units — zero at the wrap from
+  // BOTH sides, so one weight serves the two halves of the crossfade.
+  let seamK = smoothstep(0.0, 0.09, min(specX, 1.0 - specX));
+  let spec = mix((binAt(0.0) + binAt(1.0)) * 0.5, binAt(specX), seamK);
   // Frame-safety: the FRESH ring is the source the feedback zoom streams
   // outward from — inject it on-screen (r<=0.45), or a loud/bright master at
   // high Ring size + Reactivity puts the whole source off-frame and the tunnel
@@ -848,7 +889,27 @@ fn preset(uv: vec2f) -> vec4f {
   // (The classic basis runs its rainbow opposite HSL, hence "1.0 - hue/360" —
   // see the identical note in starfield.ts.)
   let hueT = 1.0 - P_hue() / 360.0;
-  let ringT = fract(hueT + ang / TAU * P_hueSpin() + u.time * P_hueDrift() * (30.0 / 360.0));
+  // The angular hue term wraps at the SAME joint the spectrum does, and it is
+  // its own seam: ang / TAU steps a full -1 at ang = pi, so the palette phase
+  // jumps by Hue spin there. cosPalette has period 1, so only an exact 1.0
+  // spin would come back continuous — every shipped value leaves a hard COLOUR
+  // edge along the very line the geometry seam used to sit on. It is a
+  // genuinely separate mechanism, and with the spectrum crossfade in and Hue
+  // spin forced to 0 the largest angular gradient in the frame moves off pi
+  // and falls to the 99th percentile; put the default 0.2 back and pi returns
+  // as an 8x outlier. Fixing only the geometry would have left the owner the
+  // same straight edge in the same place, drawn in colour instead of radius.
+  //
+  // So: same crossfade, same weight. Across the arc the phase eases to the
+  // average of the two ends (half a spin) instead of stepping to it, which
+  // reverses the palette gently over ~18% of the ring rather than cutting it.
+  // The trailing subtraction keeps the phase ORIGIN where it was — without it
+  // every style's colours would rotate by half a spin, which is a look change,
+  // not a seam fix. Written through specX rather than ang / TAU so it shares
+  // the one wrap coordinate; the two agree to an ulp away from the arc.
+  let spin = P_hueSpin();
+  let ringT = fract(hueT + mix(spin * 0.5, specX * spin, seamK) - spin * 0.5
+    + u.time * P_hueDrift() * (30.0 / 360.0));
   // Peak-hold crown: the loudest angle on the ring desaturates toward white
   // instead of just being light-colored — a hot core reads as EMITTING. This
   // recolors the ring rather than adding a second term on top of it: this
@@ -859,7 +920,10 @@ fn preset(uv: vec2f) -> vec4f {
   // kit), was measured to wash the whole tunnel out to flat white/gray within
   // a few seconds. Recoloring keeps the injected energy budget identical to
   // the original ring term — bounded and provably as stable as before.
-  let pk = peakAt(fract(ang / TAU + 0.5));
+  // Same crossfade as the ring's own spectrum above — peaks[] wraps at the
+  // same joint, and a crown that jumped from treble-peak to bass-peak would
+  // leave a colour seam along the exact angle the geometry no longer has one.
+  let pk = mix((peakAt(0.0) + peakAt(1.0)) * 0.5, peakAt(specX), seamK);
   let ringPal = cosPalette(ringT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
   let ringHot = mix(ringPal, vec3f(1.0, 0.98, 0.95), pk * pk * 0.7);
   col += ringHot * band * (0.5 + spec) * P_inject() * deposit;

@@ -133,3 +133,110 @@ describe("echo-trails frame-rate compensation", () => {
     }
   });
 });
+
+/**
+ * The wrap seam.
+ *
+ * Angle maps onto the spectrum linearly here, so the ring's two ends meet at
+ * ang = pi with bin N-1 against bin 0 — and the feedback tunnel advects that
+ * step outward every frame, which is what turned a one-pixel discontinuity
+ * into the hard straight cut across the picture that the mode shipped with.
+ *
+ * These run the shader's OWN crossfade expressions, lifted out of the WGSL
+ * exactly as the deposit test above does, over a realistic bass-heavy
+ * spectrum. Restating the formula here and then checking the restatement
+ * would assert nothing; pulling the source text means an edit that weakens
+ * the blend fails the test instead of quietly agreeing with it.
+ */
+describe("echo-trails spectrum wrap seam", () => {
+  const body = echoTrails.wgsl;
+
+  /** A plausible spectrum: loud low end falling away to near-silent treble —
+   * i.e. the case where the two ends of the sweep are furthest apart. */
+  const bins = Array.from({ length: 64 }, (_, i) => Math.exp(-i / 9) * 0.95 + 0.02);
+  const at = (x: number) =>
+    bins[Math.min(bins.length - 1, Math.max(0, Math.round(x * bins.length - 0.5)))];
+
+  /** Compile one `let <name> = <expr>;` line out of the shader into JS. */
+  const lift = (name: string, args: string[]) => {
+    const src = new RegExp(`let ${name} = ([^;]*);`).exec(body)?.[1];
+    if (src === undefined) throw new Error(`${name} expression not found in the WGSL`);
+    return new Function(
+      ...args,
+      `const min = Math.min, mix = (a, b, t) => a + (b - a) * t;
+       const smoothstep = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+       return ${src.replace(/\s+/g, " ")};`,
+    ) as (...a: never[]) => number;
+  };
+
+  const seamK = lift("seamK", ["specX"]) as (specX: number) => number;
+  // binAt is the array sampler; the lifted `spec` line calls it by name.
+  const specOf = (() => {
+    const f = lift("spec", ["specX", "seamK", "binAt"]) as (
+      specX: number,
+      seamK: number,
+      binAt: (x: number) => number,
+    ) => number;
+    return (x: number) => f(x, seamK(x), at);
+  })();
+
+  it("closes the ring: the two ends of the sweep meet at one value", () => {
+    // Exactly equal, not merely close — this is the whole point of the blend.
+    expect(specOf(0)).toBe(specOf(1));
+    // ...and it is the mean of the two ends, so neither end is favoured.
+    expect(specOf(0)).toBeCloseTo((at(0) + at(1)) / 2, 12);
+  });
+
+  /**
+   * The ring is CONTINUOUS at the wrap now, not merely gentler there — which
+   * is the difference between a fixed seam and a seam redrawn as a streak.
+   *
+   * Proved by refinement rather than by a slope threshold: sample the wrap
+   * twice as finely and a true discontinuity keeps its full height, while a
+   * continuous function's sampled step halves. That distinction is a property
+   * of the blend alone, so it holds for any spectrum — unlike "is the arc
+   * shallower than the rest of the ring", which depends entirely on how steep
+   * the test's synthetic spectrum happens to be and would let a tuned-to-pass
+   * input stand in for evidence. Whether the arc is WIDE enough to look right
+   * is a judgement about rendered frames and is settled there, not here.
+   */
+  it("closes the seam continuously, not as a steeper ramp", () => {
+    const stepAcrossWrap = (f: (x: number) => number, n: number) => Math.abs(f(1 - 1 / n) - f(0));
+    const fine = stepAcrossWrap(specOf, 8192);
+    expect(stepAcrossWrap(specOf, 4096) / fine).toBeGreaterThan(1.9);
+
+    // Non-vacuity: the RAW mapping this replaced does not shrink at all under
+    // the same refinement, because it is a genuine jump.
+    const rawFine = stepAcrossWrap(at, 8192);
+    expect(stepAcrossWrap(at, 4096) / rawFine).toBeCloseTo(1, 6);
+    // ...and that jump is two orders of magnitude bigger than what is left.
+    expect(rawFine / fine).toBeGreaterThan(100);
+  });
+
+  it("spends the arc the comment claims and leaves the rest untouched", () => {
+    // Away from the arc the ring is the raw spectrum to within an ulp (mix()
+    // at t=1 is a + (b-a), not literally b): the fix is LOCAL, not a global
+    // smoothing of the mode's spectrum response.
+    for (const x of [0.2, 0.35, 0.5, 0.65, 0.8]) expect(specOf(x)).toBeCloseTo(at(x), 15);
+    // The blend is confined to 0.09 either side — 18% of the ring, no more.
+    expect(seamK(0.09)).toBe(1);
+    expect(seamK(0.91)).toBe(1);
+    expect(seamK(0)).toBe(0);
+  });
+
+  it("crossfades the hue phase at the same joint, with the origin preserved", () => {
+    // cosPalette has period 1, so a Hue spin sawtooth steps the palette by the
+    // spin amount at ang = pi — a colour seam along the exact line the geometry
+    // seam used to sit on. It is crossfaded by the same weight.
+    const spinT = (specX: number, spin: number) =>
+      spin * 0.5 + (specX * spin - spin * 0.5) * seamK(specX) - spin * 0.5;
+    expect(body).toMatch(/mix\(spin \* 0\.5, specX \* spin, seamK\)/);
+    for (const spin of [0.06, 0.2, 0.5, 0.8]) {
+      // Continuous through the wrap...
+      expect(spinT(0, spin)).toBeCloseTo(spinT(1, spin), 12);
+      // ...and away from the arc it is still the plain ang/TAU sweep, so no
+      // shipped style's colours rotate.
+      for (const x of [0.2, 0.5, 0.8]) expect(spinT(x, spin)).toBeCloseTo((x - 0.5) * spin, 12);
+    }
+  });
+});
