@@ -749,7 +749,10 @@ mod tests {
         assert!(begin_guards(true, 60, true, ok).is_err(), "already running");
         assert!(begin_guards(false, 0, true, ok).is_err(), "fps 0");
         assert!(begin_guards(false, 241, true, ok).is_err(), "fps 241");
-        assert!(begin_guards(false, 60, false, ok).is_err(), "outside fs scope");
+        assert!(
+            begin_guards(false, 60, false, ok).is_err(),
+            "outside fs scope"
+        );
         assert!(
             begin_guards(false, 60, true, Path::new("relative.mov")).is_err(),
             "relative path"
