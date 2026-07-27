@@ -11,6 +11,34 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.55.0] - 2026-07-28
+
+### Fixed
+
+- **Echo Trails renders the same at every frame rate.** Its trails got dimmer
+  the lower the frame rate went, so a 30 fps export did not match what you saw
+  in a 60 Hz preview, and a high-refresh monitor looked brighter still. On the
+  Supernova look a 30 fps export was rendering at roughly two-thirds the
+  brightness of the preview. All three frame rates now match, and 60 fps output
+  is unchanged from before.
+- **The hard edge in Echo Trails is gone.** A straight cut ran through the
+  ring at the same angle in every look, most obvious with Rounding turned up.
+  The ring reads the sound left-to-right and then wraps, so the highest
+  frequencies landed directly against the lowest and the tunnel smeared that
+  step outward every frame. There were actually two edges in the same place —
+  one in the shape, one in the colour — and both are closed.
+- **Echo Trails' mirrored looks now react to the whole track.** Prism and Rose
+  Window were only ever reading a thin slice from the middle of the spectrum —
+  about 12% and 6% of it — so they never responded to bass or treble at all.
+  Every mirrored setting now covers the full range. Rose Window's brightness
+  was rebalanced to match, since it can suddenly hear a lot more.
+
+### Changed
+
+- Build tooling updated (Vite 8, and the media muxer that writes MP4 and WebM
+  files). Exports were checked before and after: rendered output is
+  byte-for-byte identical, and WebM files are too.
+
 ## [2.54.0] - 2026-07-27
 
 ### Fixed
