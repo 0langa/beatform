@@ -22,9 +22,17 @@ export class RealtimeAnalyzer {
   private pipeline: FeaturePipeline;
   private fft: RealFFT;
   private magDb: Float32Array;
-  private timeData: Float32Array;
-  private timeL: Float32Array;
-  private timeR: Float32Array;
+  // Pinned to <ArrayBuffer>, not the default <ArrayBufferLike>. These are
+  // allocated below with a plain ArrayBuffer, and the Web Audio analyser
+  // signatures require exactly that — ArrayBufferLike also admits
+  // SharedArrayBuffer, which cannot back an analyser destination. Bare
+  // Float32Array widens to ArrayBufferLike and fails to assign, which the
+  // pinned TypeScript happens not to surface but a newer one does. Declaring
+  // the truth here keeps the narrowing at the allocation site instead of
+  // scattering casts across every getFloatTimeDomainData call.
+  private timeData: Float32Array<ArrayBuffer>;
+  private timeL: Float32Array<ArrayBuffer>;
+  private timeR: Float32Array<ArrayBuffer>;
   private meter: LoudnessMeter;
   private grid: BeatGrid | null = null;
   private lastFrameAt: number | null = null;
