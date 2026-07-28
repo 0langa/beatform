@@ -95,8 +95,14 @@ export class OfflineAnalyzer {
   private windowBuf: Float32Array;
   private fftSize: number;
   private nextFrame = 0;
-  /** Track time of the next fixed-rate analysis tick. */
-  private analysisTime = 0;
+  /**
+   * Index of the next fixed-rate analysis tick. An INDEX, not an accumulated
+   * time: `analysisTime += ANALYSIS_DT` drifts, and over the ~3600 ticks of a
+   * 60 s track the drift was enough to move a tick across a frame boundary and
+   * lose about 4% of drum-onset edges at 144 fps relative to 60. Deriving the
+   * time as `index / ANALYSIS_HZ` keeps every rate on exactly the same grid.
+   */
+  private tickIndex = 0;
   /** Track time of the previous pipeline update, so `dt` is the REAL gap. */
   /** Starts one tick BEFORE zero so frame 0 sees a full ANALYSIS_DT, exactly
    * as it did when dt was the frame interval. */
@@ -236,8 +242,8 @@ export class OfflineAnalyzer {
 
     // `<=` plus an epsilon keeps 60 fps at exactly one tick per frame despite
     // float accumulation.
-    while (this.analysisTime <= t + 1e-9) {
-      const f = this.step(this.analysisTime, true);
+    while (this.tickIndex / ANALYSIS_HZ <= t + 1e-9) {
+      const f = this.step(this.tickIndex / ANALYSIS_HZ, true);
       ticked = true;
       beat = beat || f.beat;
       beatIntensity = Math.max(beatIntensity, f.beatIntensity);
@@ -245,7 +251,7 @@ export class OfflineAnalyzer {
       snare = Math.max(snare, f.snare);
       hat = Math.max(hat, f.hat);
       driveBeat = Math.max(driveBeat, f.driveBeat);
-      this.analysisTime += ANALYSIS_DT;
+      this.tickIndex++;
     }
 
     if (!ticked) {
