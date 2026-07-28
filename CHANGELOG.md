@@ -11,6 +11,37 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.59.0] - 2026-07-28
+
+### Fixed
+
+- **High-sample-rate audio devices now see the same music everyone else does.**
+  Beatform takes its analysis rate from whatever your output device runs at, but
+  the analysis window was a fixed size regardless — so on a 96 kHz interface it
+  examined half as much time and half as much low-frequency detail as on a
+  48 kHz one. The effect was not subtle: on identical audio, the bass level
+  driving every reaction and modulation read **72% higher** at 96 kHz. Projects
+  built on such a device genuinely behaved differently, and nothing in the app
+  explained why.
+
+  The window is now held constant across devices instead of the bin count, so
+  44.1, 48, 96 and 192 kHz all read the same track the same way. **If you run at
+  44.1 or 48 kHz — most people — nothing changes at all.** If you run higher,
+  your bass reactions will be calmer and more accurate, and closer to what the
+  same project shows on any other machine.
+
+### Changed
+
+- The beat detector's frequency band is now specified in hertz rather than in
+  FFT bins, and the detectors' absolute thresholds scale with bin density.
+  **Both are unit corrections with no visible effect** — beat times measured
+  identical at 44.1, 48 and 96 kHz before and after, loud and quiet. They keep
+  the band meaning the same frequencies on every device rather than drifting
+  with the sample rate.
+
+- The oscilloscope's waveform length no longer follows the analysis window size,
+  so the trace looks the same regardless of the transform behind it.
+
 ## [2.58.0] - 2026-07-28
 
 ### Fixed
