@@ -11,6 +11,29 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.57.0] - 2026-07-28
+
+### Added
+
+- **You can reorder the mode strip.** App settings (gear, or Ctrl+,) has a new
+  **Modes** tab — drag a mode to move it, or use the up/down buttons, and
+  "Restore default order" puts it back. Your order is saved, survives closing
+  the app, and carries across updates. If a future version adds a new mode it
+  appears in your list rather than going missing, and if you have never
+  customised the order you still get any improved default that ships later.
+
+### Changed
+
+- **A new default order for the mode strip**, arranged by how the modes
+  actually relate to each other rather than the order they happened to be
+  built in.
+- **The 1–9 keys and the next/previous shortcuts now follow the strip you see**,
+  so pressing 3 always selects the third mode shown.
+- **Particles and Particle Flow have readable previews.** Both were rendering
+  as nearly-black tiles — dark blue particles on a black background at
+  thumbnail size. Every mode's preview was checked; those two were the only
+  ones that needed it, and no mode's actual appearance changed.
+
 ## [2.56.0] - 2026-07-28
 
 ### Fixed
