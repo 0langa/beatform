@@ -11,6 +11,32 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.60.0] - 2026-07-28
+
+### Fixed
+
+- **A project now reacts the same on a high-refresh screen as it does in its
+  own export.** On a 144 Hz display the preview fired far more beats and drum
+  hits than the exported video of the same project — measured on real music,
+  about 75% more. Beatform's whole promise is that what you see is what you
+  render, and this broke it for anyone on a fast monitor.
+
+  The cause was that onset detection stepped once per drawn frame. Spectral
+  flux is a frame-to-frame difference, so drawing more often did not measure the
+  music more finely — it simply gave the detector more chances to fire. It now
+  steps on a fixed clock, so the beats you get depend on the track and nothing
+  else.
+
+  **The preview is not any less smooth.** The spectrum, peak caps, motion and
+  all the levels still update on every frame you draw; only the decision to
+  trigger moved. And the same fix applies to exports: rendering at 30 fps no
+  longer finds a different set of hits than 60.
+
+  Two limits are honest rather than hidden. A live preview reads the audio only
+  when it draws, so a display slower than 60 Hz analyses at its own rate, and on
+  a faster one the beat count can differ by one. Before this it differed by a
+  factor of 2.4.
+
 ## [2.59.0] - 2026-07-28
 
 ### Fixed
