@@ -423,6 +423,50 @@ fn preset(uv: vec2f) -> vec4f {
   let kp = kaleido(centered(uv), P_kaleido());
   let fuv = vec2f(kp.x / u.aspect + 0.5, kp.y + 0.5);
 
+  // The sweep coordinate, which is NOT fuv.x once the fold is on.
+  //
+  // kaleido() returns abs(p.x) at 2, so fuv.x lands in [0.5, 1]: the right half
+  // of the frame, reflected onto the left. Correct for the GEOMETRY — that is
+  // what the fold is for, and the graticule and the hue drift below rightly
+  // follow it — but calmWave()/waveAt() index the waveform BUFFER with it, so
+  // the folded trace only ever drew the buffer's second half. Two things are
+  // wrong with that, and only the second is the one this preset shares with the
+  // spectrum modes:
+  //
+  //   1. The dropped half is the one with the trigger in it. The pipeline
+  //      phase-aligns sample 0 to a rising zero crossing precisely so the trace
+  //      stands still, and index 0.5 is an arbitrary sample of arbitrary value.
+  //      That sample lands at fuv.x = 0.5 — the mirror line, the apex of the
+  //      symmetric figure, and the graticule's own bright centre column, i.e.
+  //      the single most prominent point in the frame. The figure's spine
+  //      therefore hinged on the one place in the buffer the trigger does NOT
+  //      hold still, and Lissajous' long persistence smeared that jitter.
+  //   2. Half the sweep was unrenderable at that setting: the folded scope drew
+  //      strictly less of the waveform than the unfolded one, in the same area.
+  //
+  // Rescaling the visible half back onto the whole buffer fixes both — every
+  // sample is drawn, and buffer index 0 sits at the mirror line, so the figure
+  // is anchored at the trigger's zero crossing, dead centre of the graticule.
+  //
+  // "Whole buffer per wedge" is not automatic here the way it is for a
+  // spectrum: a spectrum index that cannot reach a bin is deaf to that
+  // frequency forever, whereas both halves of a waveform window carry the same
+  // frequencies, so the case has to be made on the trigger and on wasted screen
+  // rather than on deafness. The cost is real and is the reason it needs
+  // making: the sweep now runs at twice the samples per pixel. That is
+  // affordable and was measured — the buffer is 512 points, so a folded half of
+  // a 1280-wide export still spends 1.25 px on each point, and waveAt()
+  // interpolates between them, so the trace stays a resolved line rather than a
+  // dotted one. Calm is deliberately NOT rescaled to compensate: it is a filter
+  // on the SIGNAL (a box blur in buffer units), and a filter that changed its
+  // cutoff because the display folded would be the same category of mistake as
+  // this one.
+  //
+  // Seam-free by construction — the fold is a mirror, so wx meets itself at the
+  // mirror line — and at kaleido 1 select() returns fuv.x untouched, so the
+  // unfolded trace is bit-identical.
+  let wx = select(fuv.x, (fuv.x - 0.5) * 2.0, P_kaleido() >= 1.5);
+
   // Auto-gain: normalize display height against the slow envelope, so quiet
   // and loud passages fill a similar, stable portion of the screen.
   let gain = P_gain() / (P_agFloor() + u.drive * P_agRange());
@@ -448,7 +492,7 @@ fn preset(uv: vec2f) -> vec4f {
         + smoothstep(0.006, 0.0, abs(fuv.y - 0.5)) * 1.6;
   col += hsl2rgb(P_hue(), 0.25, 0.32) * grid * P_gridLevel() * (1.0 + beatP * P_gridBeat());
 
-  let w = calmWave(fuv.x, P_calm()) * gain;
+  let w = calmWave(wx, P_calm()) * gain;
   // Trace height comes from Gain (× the fixed display scale); Height limit is
   // the SOFT ceiling (v2.44 law): loud peaks compress asymptotically toward it
   // via softLimit instead of flat-topping against a hard clamp, so a maxed

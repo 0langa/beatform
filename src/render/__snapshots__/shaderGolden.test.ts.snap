@@ -45,7 +45,12 @@ fn noiseClock(rate: f32) -> f32 {
 // position y. Split out of preset() so the horizon reflection below can
 // re-evaluate the exact same field at a mirrored y — a real reflection, not a
 // second decal. Reads only globals (u.*, P_*), so it stays deterministic.
-fn auroraCurtains(x: f32, y: f32, drive: f32) -> vec3f {
+//
+// specX is x's audio twin: the position along the SPECTRUM that this column
+// listens to. The two are separate arguments because the Symmetric fold moves
+// them apart — see the note at the fold in preset(). Unfolded they are equal,
+// so every unmirrored look reads exactly the bins it always did.
+fn auroraCurtains(x: f32, specX: f32, y: f32, drive: f32) -> vec3f {
   var acc = vec3f(0.0);
   let layers = i32(P_layers());
   for (var i = 0; i < 3; i++) {
@@ -70,7 +75,7 @@ fn auroraCurtains(x: f32, y: f32, drive: f32) -> vec3f {
 
     // Non-wrapping spectrum window per curtain (clamp, never fract) so there
     // is no hard seam where the sample index would roll over.
-    let sx = clamp(x * 0.82 + fi * 0.09, 0.0, 1.0);
+    let sx = clamp(specX * 0.82 + fi * 0.09, 0.0, 1.0);
     let spec = binAt(sx);
     // Wavy vertical center of the curtain, drifting slower with depth. Drift
     // slides the whole field sideways over time (monotonic, so it never reads
@@ -151,6 +156,32 @@ fn preset(uv: vec2f) -> vec4f {
   let foldedX = kaleido(vec2f(cx, 0.0), P_mirror()).x;
   let x = clamp(foldedX / u.aspect + 0.5, 0.0, 1.0);
 
+  // ...and that fold HALVES the screen coordinate's range: kaleido() returns
+  // abs(p.x) at every setting >= 2, so x lands in [0.5, 1] and only ever the
+  // RIGHT half of the frame is evaluated, reflected onto the left. That is
+  // exactly what a symmetry is supposed to do to GEOMETRY — but x was also the
+  // spectrum index, and there halving the range means deafness: each curtain's
+  // window (clamp(x * 0.82 + i * 0.09)) collapsed from [0.000, 0.820] to
+  // [0.410, 0.820] on the front curtain, and the half it dropped is the LOW
+  // one. The shipped Cathedral style is the mirrored look, so Cathedral's
+  // curtains had no bass response at all — they sculpted on mid and treble
+  // while the kick did nothing, and Bass swell (0.55 there) was the only low
+  // end left in the mode.
+  //
+  // So the spectrum gets its own coordinate, rescaled back onto the full width
+  // that the visible half stands for. One threshold, not kaleido()'s two: this
+  // preset folds a POINT ON THE X AXIS, and every segments >= 2 leaves that
+  // point's x in [0.5, 1] (the wedge branch only re-aims a vector that has no y
+  // to re-aim), so the inverse is the same map at 2 as at 12. The enum offers
+  // Off and Mirrored only, but the arithmetic does not depend on that.
+  //
+  // Seam-free by construction: specX is 0 at the mirror line from BOTH sides,
+  // so bass meets bass down the centre of the frame and the fold's own
+  // reflection is the only symmetry in the picture. Bass now sits at the axis
+  // of symmetry and treble runs out to both edges — the arch this style is
+  // named for, lit from the middle.
+  let specX = select(x, (x - 0.5) * 2.0, P_mirror() >= 1.5);
+
   // Deep night sky: near-black but hued, not grey, so the curtains have
   // real darkness to glow against instead of sitting on flat mid-grey fog.
   let skyPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.025), vec3f(0.02), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
@@ -176,7 +207,7 @@ fn preset(uv: vec2f) -> vec4f {
   // Sync-reactive envelope + beat pulse: switching the sync source (bass /
   // treble / kicks / ...) visibly changes the drive here.
   let drive = clamp(u.drive, 0.0, 1.5);
-  col += auroraCurtains(x, y, drive);
+  col += auroraCurtains(x, specX, y, drive);
 
   // Horizon reflection: below the horizon line the curtains are mirrored and
   // dimmed with depth, like an aurora over still ice or water. Off by default
@@ -184,7 +215,7 @@ fn preset(uv: vec2f) -> vec4f {
   if (P_reflect() > 0.01 && y > P_horizon()) {
     let ry = P_horizon() - (y - P_horizon());
     let fade = exp(-(y - P_horizon()) * P_reflectFade());
-    col += auroraCurtains(x, ry, drive) * P_reflect() * fade * 0.7;
+    col += auroraCurtains(x, specX, ry, drive) * P_reflect() * fade * 0.7;
   }
 
   // Soft sky glow rising from the horizon, lifted by the sync source.
@@ -1904,6 +1935,50 @@ fn preset(uv: vec2f) -> vec4f {
   let kp = kaleido(centered(uv), P_kaleido());
   let fuv = vec2f(kp.x / u.aspect + 0.5, kp.y + 0.5);
 
+  // The sweep coordinate, which is NOT fuv.x once the fold is on.
+  //
+  // kaleido() returns abs(p.x) at 2, so fuv.x lands in [0.5, 1]: the right half
+  // of the frame, reflected onto the left. Correct for the GEOMETRY — that is
+  // what the fold is for, and the graticule and the hue drift below rightly
+  // follow it — but calmWave()/waveAt() index the waveform BUFFER with it, so
+  // the folded trace only ever drew the buffer's second half. Two things are
+  // wrong with that, and only the second is the one this preset shares with the
+  // spectrum modes:
+  //
+  //   1. The dropped half is the one with the trigger in it. The pipeline
+  //      phase-aligns sample 0 to a rising zero crossing precisely so the trace
+  //      stands still, and index 0.5 is an arbitrary sample of arbitrary value.
+  //      That sample lands at fuv.x = 0.5 — the mirror line, the apex of the
+  //      symmetric figure, and the graticule's own bright centre column, i.e.
+  //      the single most prominent point in the frame. The figure's spine
+  //      therefore hinged on the one place in the buffer the trigger does NOT
+  //      hold still, and Lissajous' long persistence smeared that jitter.
+  //   2. Half the sweep was unrenderable at that setting: the folded scope drew
+  //      strictly less of the waveform than the unfolded one, in the same area.
+  //
+  // Rescaling the visible half back onto the whole buffer fixes both — every
+  // sample is drawn, and buffer index 0 sits at the mirror line, so the figure
+  // is anchored at the trigger's zero crossing, dead centre of the graticule.
+  //
+  // "Whole buffer per wedge" is not automatic here the way it is for a
+  // spectrum: a spectrum index that cannot reach a bin is deaf to that
+  // frequency forever, whereas both halves of a waveform window carry the same
+  // frequencies, so the case has to be made on the trigger and on wasted screen
+  // rather than on deafness. The cost is real and is the reason it needs
+  // making: the sweep now runs at twice the samples per pixel. That is
+  // affordable and was measured — the buffer is 512 points, so a folded half of
+  // a 1280-wide export still spends 1.25 px on each point, and waveAt()
+  // interpolates between them, so the trace stays a resolved line rather than a
+  // dotted one. Calm is deliberately NOT rescaled to compensate: it is a filter
+  // on the SIGNAL (a box blur in buffer units), and a filter that changed its
+  // cutoff because the display folded would be the same category of mistake as
+  // this one.
+  //
+  // Seam-free by construction — the fold is a mirror, so wx meets itself at the
+  // mirror line — and at kaleido 1 select() returns fuv.x untouched, so the
+  // unfolded trace is bit-identical.
+  let wx = select(fuv.x, (fuv.x - 0.5) * 2.0, P_kaleido() >= 1.5);
+
   // Auto-gain: normalize display height against the slow envelope, so quiet
   // and loud passages fill a similar, stable portion of the screen.
   let gain = P_gain() / (P_agFloor() + u.drive * P_agRange());
@@ -1929,7 +2004,7 @@ fn preset(uv: vec2f) -> vec4f {
         + smoothstep(0.006, 0.0, abs(fuv.y - 0.5)) * 1.6;
   col += hsl2rgb(P_hue(), 0.25, 0.32) * grid * P_gridLevel() * (1.0 + beatP * P_gridBeat());
 
-  let w = calmWave(fuv.x, P_calm()) * gain;
+  let w = calmWave(wx, P_calm()) * gain;
   // Trace height comes from Gain (× the fixed display scale); Height limit is
   // the SOFT ceiling (v2.44 law): loud peaks compress asymptotically toward it
   // via softLimit instead of flat-topping against a hard clamp, so a maxed
@@ -4382,7 +4457,8 @@ fn P_beatBright() -> f32 { return params[24u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   // Club mirror folds the tube into radial wedges. 1 = off.
-  var p = kaleido(centered(uv), P_mirror());
+  let mirrorN = P_mirror();
+  var p = kaleido(centered(uv), mirrorN);
   let r = max(length(p), 2e-3);
   let a = atan2(p.y, p.x);
 
@@ -4407,9 +4483,38 @@ fn preset(uv: vec2f) -> vec4f {
   // Corkscrew: flutes spiral with depth like a waterslide auger.
   let aTwist = a + travel * P_twist() * 0.15;
 
-  // Spectrum around the circumference, keyed to the true screen angle so it
-  // sits where the ear expects regardless of the corkscrew.
-  let xs = abs(fract(a / TAU + 0.5) * 2.0 - 1.0);
+  // Spectrum around the circumference, keyed to the wall angle rather than to
+  // aTwist so it sits where the ear expects regardless of the corkscrew.
+  //
+  // ...but a is read off the coordinate AFTER kaleido() folded it, and the
+  // fold does not preserve the angle's RANGE: it collapses the whole circle
+  // onto one fundamental domain — the half-plane [-pi/2, pi/2] at Club mirror 2
+  // (which is abs(p.x), not the N=2 case of the wedge formula), and the wedge
+  // [0, pi/N] at N >= 3. Pushing that folded angle through the UNFOLDED mapping
+  // below therefore addressed a SLICE of the spectrum and nothing outside it:
+  // [0, 0.5] at mirror 2 and [0, 1/N] at N >= 3, i.e. bins 0-15 of 96 at the
+  // shipped Kaleido Tube (mirror 6) and 8 bins at mirror 12. Kaleido Tube is
+  // described in its own entry above as "spectrum-lit stained glass" and lit
+  // exclusively on the bottom sixth of the spectrum — no mid, no treble, a
+  // stained glass window that could only hear the kick drum.
+  //
+  // So the FOLDED case rescales the domain kaleido() actually leaves reachable
+  // onto the whole spectrum, keyed off THE SAME two thresholds kaleido() itself
+  // branches on (1.5 = fold at all, 2.5 = radial wedges rather than a plain
+  // left/right mirror). Every wedge then carries one complete bass-to-treble
+  // sweep, which is what a kaleidoscope OF a spectrum should be.
+  //
+  // Seam-free by construction, and for the same reason the unfolded line was
+  // already written as a triangle: the fold is a MIRROR, so the folded angle
+  // runs 0 -> span -> 0 -> span round the circle, and a linear rescale of it is
+  // exactly the abs(seg * 2 - 1) sweep the unfolded branch performs by hand —
+  // bass meeting bass at one wedge edge, treble meeting treble at the next.
+  // Above the fold does the reflecting; below the preset does it itself.
+  let folded = mirrorN >= 1.5;
+  let foldLo = select(TAU * -0.25, 0.0, mirrorN >= 2.5);
+  let foldSpan = select(TAU * 0.5, TAU * 0.5 / mirrorN, mirrorN >= 2.5);
+  let xs = select(abs(fract(a / TAU + 0.5) * 2.0 - 1.0),
+                  clamp((a - foldLo) / foldSpan, 0.0, 1.0), folded);
   let v = binAt(xs);
   let pk = peakAt(xs);
 

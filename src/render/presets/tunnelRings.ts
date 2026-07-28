@@ -479,7 +479,8 @@ export const tunnelRings: PresetDef = {
   wgsl: /* wgsl */ `
 fn preset(uv: vec2f) -> vec4f {
   // Club mirror folds the tube into radial wedges. 1 = off.
-  var p = kaleido(centered(uv), P_mirror());
+  let mirrorN = P_mirror();
+  var p = kaleido(centered(uv), mirrorN);
   let r = max(length(p), 2e-3);
   let a = atan2(p.y, p.x);
 
@@ -504,9 +505,38 @@ fn preset(uv: vec2f) -> vec4f {
   // Corkscrew: flutes spiral with depth like a waterslide auger.
   let aTwist = a + travel * P_twist() * 0.15;
 
-  // Spectrum around the circumference, keyed to the true screen angle so it
-  // sits where the ear expects regardless of the corkscrew.
-  let xs = abs(fract(a / TAU + 0.5) * 2.0 - 1.0);
+  // Spectrum around the circumference, keyed to the wall angle rather than to
+  // aTwist so it sits where the ear expects regardless of the corkscrew.
+  //
+  // ...but a is read off the coordinate AFTER kaleido() folded it, and the
+  // fold does not preserve the angle's RANGE: it collapses the whole circle
+  // onto one fundamental domain — the half-plane [-pi/2, pi/2] at Club mirror 2
+  // (which is abs(p.x), not the N=2 case of the wedge formula), and the wedge
+  // [0, pi/N] at N >= 3. Pushing that folded angle through the UNFOLDED mapping
+  // below therefore addressed a SLICE of the spectrum and nothing outside it:
+  // [0, 0.5] at mirror 2 and [0, 1/N] at N >= 3, i.e. bins 0-15 of 96 at the
+  // shipped Kaleido Tube (mirror 6) and 8 bins at mirror 12. Kaleido Tube is
+  // described in its own entry above as "spectrum-lit stained glass" and lit
+  // exclusively on the bottom sixth of the spectrum — no mid, no treble, a
+  // stained glass window that could only hear the kick drum.
+  //
+  // So the FOLDED case rescales the domain kaleido() actually leaves reachable
+  // onto the whole spectrum, keyed off THE SAME two thresholds kaleido() itself
+  // branches on (1.5 = fold at all, 2.5 = radial wedges rather than a plain
+  // left/right mirror). Every wedge then carries one complete bass-to-treble
+  // sweep, which is what a kaleidoscope OF a spectrum should be.
+  //
+  // Seam-free by construction, and for the same reason the unfolded line was
+  // already written as a triangle: the fold is a MIRROR, so the folded angle
+  // runs 0 -> span -> 0 -> span round the circle, and a linear rescale of it is
+  // exactly the abs(seg * 2 - 1) sweep the unfolded branch performs by hand —
+  // bass meeting bass at one wedge edge, treble meeting treble at the next.
+  // Above the fold does the reflecting; below the preset does it itself.
+  let folded = mirrorN >= 1.5;
+  let foldLo = select(TAU * -0.25, 0.0, mirrorN >= 2.5);
+  let foldSpan = select(TAU * 0.5, TAU * 0.5 / mirrorN, mirrorN >= 2.5);
+  let xs = select(abs(fract(a / TAU + 0.5) * 2.0 - 1.0),
+                  clamp((a - foldLo) / foldSpan, 0.0, 1.0), folded);
   let v = binAt(xs);
   let pk = peakAt(xs);
 

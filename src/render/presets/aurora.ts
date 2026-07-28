@@ -417,7 +417,12 @@ fn noiseClock(rate: f32) -> f32 {
 // position y. Split out of preset() so the horizon reflection below can
 // re-evaluate the exact same field at a mirrored y — a real reflection, not a
 // second decal. Reads only globals (u.*, P_*), so it stays deterministic.
-fn auroraCurtains(x: f32, y: f32, drive: f32) -> vec3f {
+//
+// specX is x's audio twin: the position along the SPECTRUM that this column
+// listens to. The two are separate arguments because the Symmetric fold moves
+// them apart — see the note at the fold in preset(). Unfolded they are equal,
+// so every unmirrored look reads exactly the bins it always did.
+fn auroraCurtains(x: f32, specX: f32, y: f32, drive: f32) -> vec3f {
   var acc = vec3f(0.0);
   let layers = i32(P_layers());
   for (var i = 0; i < 3; i++) {
@@ -442,7 +447,7 @@ fn auroraCurtains(x: f32, y: f32, drive: f32) -> vec3f {
 
     // Non-wrapping spectrum window per curtain (clamp, never fract) so there
     // is no hard seam where the sample index would roll over.
-    let sx = clamp(x * 0.82 + fi * 0.09, 0.0, 1.0);
+    let sx = clamp(specX * 0.82 + fi * 0.09, 0.0, 1.0);
     let spec = binAt(sx);
     // Wavy vertical center of the curtain, drifting slower with depth. Drift
     // slides the whole field sideways over time (monotonic, so it never reads
@@ -523,6 +528,32 @@ fn preset(uv: vec2f) -> vec4f {
   let foldedX = kaleido(vec2f(cx, 0.0), P_mirror()).x;
   let x = clamp(foldedX / u.aspect + 0.5, 0.0, 1.0);
 
+  // ...and that fold HALVES the screen coordinate's range: kaleido() returns
+  // abs(p.x) at every setting >= 2, so x lands in [0.5, 1] and only ever the
+  // RIGHT half of the frame is evaluated, reflected onto the left. That is
+  // exactly what a symmetry is supposed to do to GEOMETRY — but x was also the
+  // spectrum index, and there halving the range means deafness: each curtain's
+  // window (clamp(x * 0.82 + i * 0.09)) collapsed from [0.000, 0.820] to
+  // [0.410, 0.820] on the front curtain, and the half it dropped is the LOW
+  // one. The shipped Cathedral style is the mirrored look, so Cathedral's
+  // curtains had no bass response at all — they sculpted on mid and treble
+  // while the kick did nothing, and Bass swell (0.55 there) was the only low
+  // end left in the mode.
+  //
+  // So the spectrum gets its own coordinate, rescaled back onto the full width
+  // that the visible half stands for. One threshold, not kaleido()'s two: this
+  // preset folds a POINT ON THE X AXIS, and every segments >= 2 leaves that
+  // point's x in [0.5, 1] (the wedge branch only re-aims a vector that has no y
+  // to re-aim), so the inverse is the same map at 2 as at 12. The enum offers
+  // Off and Mirrored only, but the arithmetic does not depend on that.
+  //
+  // Seam-free by construction: specX is 0 at the mirror line from BOTH sides,
+  // so bass meets bass down the centre of the frame and the fold's own
+  // reflection is the only symmetry in the picture. Bass now sits at the axis
+  // of symmetry and treble runs out to both edges — the arch this style is
+  // named for, lit from the middle.
+  let specX = select(x, (x - 0.5) * 2.0, P_mirror() >= 1.5);
+
   // Deep night sky: near-black but hued, not grey, so the curtains have
   // real darkness to glow against instead of sitting on flat mid-grey fog.
   let skyPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.025), vec3f(0.02), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
@@ -548,7 +579,7 @@ fn preset(uv: vec2f) -> vec4f {
   // Sync-reactive envelope + beat pulse: switching the sync source (bass /
   // treble / kicks / ...) visibly changes the drive here.
   let drive = clamp(u.drive, 0.0, 1.5);
-  col += auroraCurtains(x, y, drive);
+  col += auroraCurtains(x, specX, y, drive);
 
   // Horizon reflection: below the horizon line the curtains are mirrored and
   // dimmed with depth, like an aurora over still ice or water. Off by default
@@ -556,7 +587,7 @@ fn preset(uv: vec2f) -> vec4f {
   if (P_reflect() > 0.01 && y > P_horizon()) {
     let ry = P_horizon() - (y - P_horizon());
     let fade = exp(-(y - P_horizon()) * P_reflectFade());
-    col += auroraCurtains(x, ry, drive) * P_reflect() * fade * 0.7;
+    col += auroraCurtains(x, specX, ry, drive) * P_reflect() * fade * 0.7;
   }
 
   // Soft sky glow rising from the horizon, lifted by the sync source.
