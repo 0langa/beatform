@@ -1,6 +1,6 @@
 import type { AudioEngine } from "./engine";
 import type { AudioFeatures, SyncSettings } from "./types";
-import { FeaturePipeline, WAVEFORM_LENGTH } from "./featurePipeline";
+import { ANALYSIS_DT, FeaturePipeline, WAVEFORM_LENGTH } from "./featurePipeline";
 import { RealFFT } from "./dsp/fft";
 import { LoudnessMeter } from "./dsp/lufs";
 import { stereoWidth } from "./dsp/stereo";
@@ -36,6 +36,13 @@ export class RealtimeAnalyzer {
   private meter: LoudnessMeter;
   private grid: BeatGrid | null = null;
   private lastFrameAt: number | null = null;
+  /**
+   * Time owed to the fixed analysis clock, seconds. Onset detection steps once
+   * per ANALYSIS_DT of real time rather than once per animation frame, so a
+   * 144 Hz display gets the same number of chances to fire as the 60 fps export
+   * of the same project. See ANALYSIS_HZ in featurePipeline.
+   */
+  private sinceTick = 0;
 
   constructor(engine: AudioEngine, binCount = 96) {
     this.engine = engine;
@@ -77,6 +84,7 @@ export class RealtimeAnalyzer {
   reset(kind: "seek" | "source"): void {
     this.pipeline.reset(kind);
     this.lastFrameAt = null;
+    this.sinceTick = 0;
   }
 
   /** Attach the track's beat grid once analysis lands (null = none yet). */
@@ -94,6 +102,24 @@ export class RealtimeAnalyzer {
   update(now: number, trackTime = this.engine.currentTime): AudioFeatures {
     const dt = this.lastFrameAt === null ? 1 / 60 : now - this.lastFrameAt;
     this.lastFrameAt = now;
+    // Decide whether the detectors step this frame.
+    //
+    // Unlike the offline path this cannot replay missed ticks: the analyser is
+    // a live tap exposing one window, and running several ticks against the
+    // same samples would be inventing data, not recovering it. So a display
+    // slower than 60 Hz analyses at its own rate — the honest ceiling — while
+    // 60 Hz gets exactly one tick per frame (matching export) and anything
+    // faster ticks on a subset of frames.
+    this.sinceTick += dt;
+    let analysisTick = false;
+    if (this.sinceTick >= ANALYSIS_DT - 1e-9) {
+      analysisTick = true;
+      this.sinceTick -= ANALYSIS_DT;
+      // Never build a backlog. A stall (hidden window, GC pause) would
+      // otherwise leave the clock owing several ticks it can only pay with one
+      // window of audio, firing repeatedly on a spectrum it has already seen.
+      if (this.sinceTick > ANALYSIS_DT) this.sinceTick = 0;
+    }
     this.engine.analyser.getFloatTimeDomainData(this.timeData);
     this.engine.analyserL.getFloatTimeDomainData(this.timeL);
     this.engine.analyserR.getFloatTimeDomainData(this.timeR);
@@ -113,6 +139,7 @@ export class RealtimeAnalyzer {
       waveform: this.timeData,
       time: trackTime,
       dt,
+      analysisTick,
       playing: this.engine.playing,
       duration: this.engine.duration,
       width: stereoWidth(this.timeL, this.timeR),
