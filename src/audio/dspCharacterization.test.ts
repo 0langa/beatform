@@ -566,3 +566,69 @@ describe("characterization: waveform length is independent of the FFT", () => {
     expect(trace(4096)).toEqual(trace(2048));
   });
 });
+
+describe("characterization: detector bands are specified in hertz", () => {
+  /**
+   * The main beat detector's flux band used to be written as
+   * `midRange[0] + 8` — eight FFT BINS above 150 Hz. A bin is not a fixed
+   * number of hertz, so the band it actually measured moved with the sample
+   * rate: ~246 Hz at 48 kHz but ~237 Hz at 44.1 kHz. Nobody chose that.
+   *
+   * Neither rate is "wrong" by much, which is exactly why it survived: the
+   * difference never flipped a detection on any material tested. It is a unit
+   * mismatch, and this asserts the units rather than the symptom.
+   */
+  it("the flux band covers the same frequencies at every sample rate", () => {
+    const hz = (sr: number) =>
+      new FeaturePipeline({
+        sampleRate: sr,
+        fftBins: 2048,
+        binCount: 96,
+        waveformLength: WAVEFORM_LENGTH,
+      }).fluxBandHz;
+    const ref = hz(48000);
+    expect(ref[1]).toBeGreaterThan(240);
+    expect(ref[1]).toBeLessThan(252);
+    for (const sr of [44100, 96000, 192000]) {
+      const b = hz(sr);
+      // Within one bin of the reference at that rate, not within a fixed
+      // tolerance: a coarser grid genuinely cannot land on 245 Hz exactly.
+      const binHz = sr / 2 / 2048;
+      expect(Math.abs(b[1] - ref[1]), `flux band top at ${sr}`).toBeLessThanOrEqual(binHz);
+    }
+  });
+});
+
+describe("characterization: absolute flux floors scale with bin density", () => {
+  const scale = (sr: number, fftBins: number) =>
+    new FeaturePipeline({ sampleRate: sr, fftBins, binCount: 96, waveformLength: WAVEFORM_LENGTH })
+      .absoluteFloorScale;
+
+  /**
+   * Flux is a SUM over the bins in a band, so it grows with bin density while
+   * the detectors' absolute floors do not — the same unit bug as the dt
+   * scaling, on the other axis.
+   *
+   * This is asserted numerically rather than behaviourally on purpose. The
+   * correction is a few percent of a threshold and does not flip a detection on
+   * any material measured here, so a behavioural test would either be vacuous
+   * or tuned to a knife edge. What matters is the exactness below.
+   */
+  it("is EXACTLY 1 at the reference, so 48 kHz and the golden trace cannot move", () => {
+    expect(scale(48000, 2048)).toBe(1);
+  });
+
+  it("stays 1 when the FFT size tracks the sample rate", () => {
+    // Holding the analysis window constant holds bins-per-hertz constant, so
+    // rate-aware sizing needs no correction at all — the scale only earns its
+    // keep where the window cannot be held.
+    expect(scale(96000, 4096)).toBeCloseTo(1, 10);
+    expect(scale(192000, 8192)).toBeCloseTo(1, 10);
+  });
+
+  it("compensates the rates where the window cannot be held exactly", () => {
+    // 44.1 kHz on a 4096-point transform packs ~8.8% more bins per hertz than
+    // the 48 kHz reference, so its flux sums run correspondingly higher.
+    expect(scale(44100, 2048)).toBeCloseTo(1.0884, 3);
+  });
+});

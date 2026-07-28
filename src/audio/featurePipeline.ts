@@ -64,6 +64,32 @@ export const WARMUP_SEC = 12 / 60; // ~0.2 s before the detector may fire
  * crossing, whose index does not move when there is more room to look.
  */
 export const WAVEFORM_LENGTH = 3072;
+
+/**
+ * Upper edge of the band the main beat detector measures flux over.
+ *
+ * Was written as `midRange[0] + 8`, i.e. eight FFT BINS above 150 Hz — and a
+ * bin is not a fixed number of hertz. At 48 kHz/4096 that landed on bin 21
+ * (~246 Hz); at 44.1 kHz the same expression reached bin 22 (~237 Hz). Nobody
+ * chose that difference; it was a unit mismatch. 245 Hz reproduces bin 21
+ * exactly at 48 kHz/4096, so the reference configuration is unchanged.
+ */
+const FLUX_HI_HZ = 245;
+
+/**
+ * Bins-per-hertz of the reference configuration (48 kHz, 4096-point).
+ *
+ * The detectors' flux is a SUM over the bins in a band, so its magnitude scales
+ * with how many bins that band contains, while their absolute floors do not.
+ * Normalising the floors by the ratio below keeps a floor meaning the same
+ * thing on any transform — the same class of unit bug as the dt scaling, on the
+ * other axis. Exactly 1.0 at the reference, so 48 kHz behaviour is untouched.
+ *
+ * Note this ratio stays 1.0 when the FFT size tracks the sample rate, since
+ * holding the window duration constant holds bins-per-hertz constant. It earns
+ * its keep at rates where the window cannot be held exactly — 44.1 kHz today.
+ */
+const REF_BINS_PER_HZ = 2048 / 24000;
 /** Flux-history ring size for the current frame interval. */
 function fluxWindowFrames(dt: number): number {
   return Math.max(4, Math.round(FLUX_WINDOW_SEC / Math.max(1e-4, dt)));
@@ -147,6 +173,11 @@ export class FeaturePipeline {
   private kickRange: [number, number];
   private snareRange: [number, number];
   private hatRange: [number, number];
+  /** Upper FFT bin of the main beat detector's flux band (FLUX_HI_HZ). */
+  private fluxHiBin: number;
+
+  /** Scales every detector's absolute flux floor — see REF_BINS_PER_HZ. */
+  private floorScale: number;
 
   private fluxHistory: number[] = [];
   private lastBeatAt = -Infinity;
@@ -181,6 +212,7 @@ export class FeaturePipeline {
     const nyquist = config.sampleRate / 2;
     const hzPerBin = nyquist / fftBins;
     this.hzPerBin = hzPerBin;
+    this.floorScale = fftBins / nyquist / REF_BINS_PER_HZ;
     const toBin = (hz: number) => Math.max(0, Math.min(fftBins - 1, Math.round(hz / hzPerBin)));
 
     this.ranges = this.buildRanges(MIN_FREQ, MAX_FREQ);
@@ -191,6 +223,7 @@ export class FeaturePipeline {
     this.kickRange = [toBin(40), toBin(120)];
     this.snareRange = [toBin(180), toBin(2500)];
     this.hatRange = [toBin(5000), toBin(15000)];
+    this.fluxHiBin = toBin(FLUX_HI_HZ);
 
     this.features = {
       bins: new Float32Array(this.binCount),
@@ -407,7 +440,7 @@ export class FeaturePipeline {
 
     // Spectral flux over the low end (kick/snare live here), adaptive threshold
     let flux = 0;
-    const [lo, hi] = [this.bassRange[0], this.midRange[0] + 8];
+    const [lo, hi] = [this.bassRange[0], this.fluxHiBin];
     for (let b = lo; b < hi; b++) {
       const d = mag[b] - this.prevMag[b];
       if (d > 0) flux += d;
@@ -425,7 +458,7 @@ export class FeaturePipeline {
       // 144 Hz live display suppressed onsets a 60 fps export fires (audit
       // A6). dt*60 == 1 at 60 fps: 60 fps behaviour (and the golden trace,
       // which runs at fixed 1/60) is bit-identical.
-      flux > mean * 1.6 + 0.012 * (dt * 60) &&
+      flux > mean * 1.6 + 0.012 * (dt * 60) * this.floorScale &&
       this.clock - this.lastBeatAt > BEAT_REFRACTORY &&
       input.playing
     ) {
@@ -438,7 +471,15 @@ export class FeaturePipeline {
 
     f.voice = bandMean(mag, this.voiceRange);
 
-    f.kick = this.kickDet.update(mag, this.prevMag, this.kickRange, dt, this.clock, input.playing);
+    f.kick = this.kickDet.update(
+      mag,
+      this.prevMag,
+      this.kickRange,
+      dt,
+      this.clock,
+      input.playing,
+      this.floorScale,
+    );
     f.snare = this.snareDet.update(
       mag,
       this.prevMag,
@@ -446,8 +487,17 @@ export class FeaturePipeline {
       dt,
       this.clock,
       input.playing,
+      this.floorScale,
     );
-    f.hat = this.hatDet.update(mag, this.prevMag, this.hatRange, dt, this.clock, input.playing);
+    f.hat = this.hatDet.update(
+      mag,
+      this.prevMag,
+      this.hatRange,
+      dt,
+      this.clock,
+      input.playing,
+      this.floorScale,
+    );
 
     this.updateSync(f, mag, dt, input.playing);
     // Both onset detectors diff against the previous frame — update it last
@@ -520,6 +570,31 @@ export class FeaturePipeline {
       this.driveValue = 0;
       this.syncBeatIntensity = 0;
     }
+  }
+
+  /**
+   * The band the main beat detector measures flux over, in HERTZ.
+   *
+   * Exposed because it is the only way to check the property that matters:
+   * this band must describe the same frequencies on every transform. It was
+   * previously specified in FFT bins, which silently made it sample-rate
+   * dependent, and no test could see that from the outside.
+   */
+  /**
+   * Multiplier applied to every detector's absolute flux floor.
+   *
+   * Exposed for the same reason as `fluxBandHz`: its effect is a fraction of a
+   * threshold and does not flip a detection on any material measured, so the
+   * only way to guard it is to assert the number. The load-bearing property is
+   * that it is EXACTLY 1.0 at the reference configuration — that is what keeps
+   * 48 kHz behaviour, and the golden trace, bit-identical.
+   */
+  get absoluteFloorScale(): number {
+    return this.floorScale;
+  }
+
+  get fluxBandHz(): [number, number] {
+    return [this.bassRange[0] * this.hzPerBin, this.fluxHiBin * this.hzPerBin];
   }
 
   /** Choose what the visuals follow. Safe to call any time, with any input —
@@ -621,7 +696,7 @@ export class FeaturePipeline {
       // 144 Hz live display suppressed onsets a 60 fps export fires (audit
       // A6). dt*60 == 1 at 60 fps: 60 fps behaviour (and the golden trace,
       // which runs at fixed 1/60) is bit-identical.
-      flux > mean * 1.6 + 0.012 * (dt * 60) &&
+      flux > mean * 1.6 + 0.012 * (dt * 60) * this.floorScale &&
       this.clock - this.lastSyncBeatAt > BEAT_REFRACTORY &&
       playing
     ) {
@@ -673,6 +748,7 @@ class OnsetClassDetector {
     dt: number,
     clock: number,
     playing: boolean,
+    floorScale: number,
   ): number {
     let flux = 0;
     for (let b = lo; b < hi; b++) {
@@ -695,7 +771,7 @@ class OnsetClassDetector {
       // latent trap rather than a live bug — raise the floor to 0.6 and 144 fps
       // drops to one kick in four while 30 and 60 fps still find all of them.
       // dt*60 == 1 at 60 fps, so the golden trace is bit-identical.
-      flux > mean * 1.7 + 0.01 * (dt * 60) &&
+      flux > mean * 1.7 + 0.01 * (dt * 60) * floorScale &&
       clock - this.lastAt > 0.06
     ) {
       this.lastAt = clock;
