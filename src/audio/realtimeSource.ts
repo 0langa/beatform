@@ -7,6 +7,35 @@ import { stereoWidth } from "./dsp/stereo";
 import { gridPhase, type BeatGrid } from "./analysis/beatGrid";
 
 /**
+ * Live-input silence gate, in dBFS PEAK over one analysis window.
+ *
+ * Only the live path has one, and only because only the live path needs one.
+ * A muted or idle output device is not guaranteed to hand back digital zeros:
+ * driver APOs and "audio enhancements" inject dither or mains hum, and exact
+ * zeros are the one input the chain provably renders flat. Everything above
+ * them it AMPLIFIES — the sync scale bottoms out at -90 dBFS, bandMean
+ * multiplies by 1.6, attack is four times faster than release so every wiggle
+ * reads as a pulse, and the flux detectors' absolute floors are low enough that
+ * stationary noise crosses them by chance. That is the reported "pumping and
+ * spikes with nothing playing" (BUG-002), and it is a floor problem, not a
+ * detector problem.
+ *
+ * -60 dBFS peak is about 25 dB SPL at a normal listening level — under the
+ * noise floor of a quiet room, and far under anything a user would call system
+ * audio. Real programme material never sits there while audible. The 6 dB of
+ * hysteresis plus the hold stop a floor that hovers near the line from
+ * chattering the gate open and shut, which would look worse than the bug.
+ *
+ * Track playback is deliberately NOT gated: it has an export that must match it
+ * frame for frame, the offline path has no gate, and a hard nonlinearity on one
+ * side only is a preview-versus-export divergence. Live capture has no export
+ * counterpart, which is precisely why it can afford one.
+ */
+const GATE_OPEN = Math.pow(10, -60 / 20);
+const GATE_CLOSE = Math.pow(10, -66 / 20);
+const GATE_HOLD_SEC = 0.35;
+
+/**
  * Realtime analysis source: pulls the most recent fftSize time-domain samples
  * from the AnalyserNode each animation frame and runs the SAME RealFFT (Hann
  * window) the offline export path uses. Counterpart of OfflineAnalyzer.
@@ -43,6 +72,11 @@ export class RealtimeAnalyzer {
    * of the same project. See ANALYSIS_HZ in featurePipeline.
    */
   private sinceTick = 0;
+  /** Live-input silence gate: open = the capture is carrying real audio. */
+  private gateOpen = false;
+  private gateHold = 0;
+  /** Handed to the pipeline in place of the tap while the gate is shut. */
+  private silence: Float32Array;
 
   constructor(engine: AudioEngine, binCount = 96) {
     this.engine = engine;
@@ -52,6 +86,7 @@ export class RealtimeAnalyzer {
     this.timeData = new Float32Array(fftSize);
     this.timeL = new Float32Array(fftSize);
     this.timeR = new Float32Array(fftSize);
+    this.silence = new Float32Array(fftSize);
     this.meter = new LoudnessMeter(engine.ctx.sampleRate, 2);
     this.pipeline = new FeaturePipeline({
       sampleRate: engine.ctx.sampleRate,
@@ -85,6 +120,10 @@ export class RealtimeAnalyzer {
     this.pipeline.reset(kind);
     this.lastFrameAt = null;
     this.sinceTick = 0;
+    // Shut, not open: entering live input has heard nothing yet, and the first
+    // frame of real audio opens it anyway.
+    this.gateOpen = false;
+    this.gateHold = 0;
   }
 
   /** Attach the track's beat grid once analysis lands (null = none yet). */
@@ -123,7 +162,19 @@ export class RealtimeAnalyzer {
     this.engine.analyser.getFloatTimeDomainData(this.timeData);
     this.engine.analyserL.getFloatTimeDomainData(this.timeL);
     this.engine.analyserR.getFloatTimeDomainData(this.timeR);
-    this.fft.magnitudesDb(this.timeData, this.magDb);
+    // Live capture only — see GATE_OPEN. Track playback runs the branch below
+    // exactly as it always did.
+    const gated = this.engine.liveInput && !this.updateGate(dt);
+    if (gated) {
+      // -Infinity is what a genuinely silent bin looks like to the pipeline
+      // (`dsp/fft.ts` emits it for a zero magnitude), so this is the same input
+      // digital silence would have produced rather than a special case the
+      // pipeline has to know about. Bins fall away on the release EMA, every
+      // flux is zero, and no detector can fire.
+      this.magDb.fill(-Infinity);
+    } else {
+      this.fft.magnitudesDb(this.timeData, this.magDb);
+    }
     // Feed the loudness meter only the NEW samples since last frame (the
     // analyser exposes a sliding window; overlap would double-count)
     const fresh = Math.min(
@@ -136,15 +187,45 @@ export class RealtimeAnalyzer {
     ]);
     return this.pipeline.update({
       magDb: this.magDb,
-      waveform: this.timeData,
+      waveform: gated ? this.silence : this.timeData,
       time: trackTime,
       dt,
       analysisTick,
       playing: this.engine.playing,
       duration: this.engine.duration,
-      width: stereoWidth(this.timeL, this.timeR),
+      // A noise floor's channels are uncorrelated, so stereoWidth reads it as
+      // a WIDE signal — the one feature that would keep moving behind an
+      // otherwise silent picture.
+      width: gated ? 0 : stereoWidth(this.timeL, this.timeR),
       lufs: this.engine.playing ? this.meter.momentary : undefined,
       ...(this.grid ? { bpm: this.grid.bpm, ...gridPhase(this.grid, trackTime) } : {}),
     });
+  }
+
+  /**
+   * Step the live-input silence gate and report whether it is open.
+   *
+   * Peak, not RMS: the question is whether ANY sample in the window reached an
+   * audible level, and a peak answers it without a window-length dependence.
+   * The hold is what makes the gate safe on real music — it only ever closes
+   * after GATE_HOLD_SEC of continuous sub-threshold input, so a breath between
+   * phrases cannot shut it, while opening is immediate on the first frame that
+   * crosses GATE_OPEN, so nothing is lost coming back.
+   */
+  private updateGate(dt: number): boolean {
+    let peak = 0;
+    const w = this.timeData;
+    for (let i = 0; i < w.length; i++) {
+      const a = Math.abs(w[i]);
+      if (a > peak) peak = a;
+    }
+    if (peak >= GATE_OPEN) {
+      this.gateOpen = true;
+      this.gateHold = GATE_HOLD_SEC;
+    } else if (peak < GATE_CLOSE) {
+      this.gateHold -= dt;
+      if (this.gateHold <= 0) this.gateOpen = false;
+    }
+    return this.gateOpen;
   }
 }
