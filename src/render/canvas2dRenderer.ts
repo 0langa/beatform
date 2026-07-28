@@ -1,6 +1,14 @@
 import type { AudioFeatures } from "../audio/types";
 import { BG_IMAGE, BG_SOLID, BG_TRANSPARENT, BG_VIDEO } from "./types";
-import type { BgFit, BgSettings, ParamValues, PresetDef, Renderer } from "./types";
+import type {
+  BgFit,
+  BgSettings,
+  ParamValues,
+  PresetDef,
+  Renderer,
+  RenderOptions,
+  TransitionState,
+} from "./types";
 
 /**
  * Canvas2D fallback renderer — used when WebGPU is unavailable (old WebView2
@@ -160,7 +168,17 @@ export class Canvas2DRenderer implements Renderer {
     }
   }
 
-  render(f: AudioFeatures, _time: number, params: ParamValues): void {
+  render(
+    f: AudioFeatures,
+    _time: number,
+    params: ParamValues,
+    _transition?: TransitionState,
+    options?: RenderOptions,
+  ): void {
+    // Fixed feedback ticks are GPU texture-state work. Canvas2D has no
+    // feedback state, so an advance-only call must not become an extra visible
+    // draw when preview FPS is capped.
+    if (options?.feedback === "advance-only") return;
     const { ctx } = this;
     const W = this.canvas.width;
     const H = this.canvas.height;

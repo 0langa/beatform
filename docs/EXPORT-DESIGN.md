@@ -19,9 +19,9 @@ decodeAudioData(track)                 ── one decoded AudioBuffer is the
         │                                timestamps = sampleIndex / sampleRate
         └── video lane
              OfflineAnalyzer            src/audio/offlineSource.ts (EXISTS)
-               frame N → FFT window ending at t = N/fps
-               → FeaturePipeline (dt = 1/fps exactly)
-               → AudioFeatures identical in kind to live path
+               frame N → indexed FFT window near t = N/fps
+               → FeaturePipeline (onsets on fixed 60 Hz ticks)
+               → same AudioFeatures contract as live path
              WebGPU render to offscreen texture at export resolution
              → VideoEncoder (H.264 avc1.64xx, hardware accelerated)
                timestamps = N/fps exactly
@@ -36,13 +36,13 @@ structurally impossible — there is no clock, only indices.
 ## Already in place (built alongside the realtime path)
 
 - `FeaturePipeline` — source-agnostic, deterministic: state depends only on
-  the input sequence. Fixed `dt = 1/fps` gives reproducible smoothing/beat
-  state per frame.
+  the input sequence. Onset decisions and feedback state use fixed 60 Hz
+  clocks; continuous features may update at presentation cadence.
 - `OfflineAnalyzer` — walks an AudioBuffer at fixed fps, own `RealFFT`
   (AnalyserNode is realtime-only and unavailable offline).
 - Preset contract: presets are pure functions of (features, time, params) —
-  no wall-clock, no unseeded randomness. Keep it that way; it is what makes
-  export output identical to the live view.
+  no wall-clock, no unseeded randomness. Keep it that way; it makes export
+  repeatable and removes one source of preview divergence.
 - `WebGPURenderer` renders to any canvas size; export uses an
   `OffscreenCanvas` at target resolution, UI canvas untouched.
 
@@ -96,16 +96,14 @@ hardware encode ~100-300 fps at 1080p. A 3-minute track ≈ 1-2 min export.
 
 ## Sync precision budget
 
-Export: exact by construction (see above) — frame N _is_ t = N/fps of the
-decoded buffer. No jitter, no drift, sample-accurate forever.
+Export timeline: exact by construction (see above) — frame N _is_ t = N/fps
+of the decoded buffer. No wall-clock jitter and no accumulated A/V drift.
 
-Live playback: the analyser reads the samples currently entering the output
-device, so visuals lead the ears by the device output latency
-(`AudioContext.outputLatency`, ~10-30 ms on Windows/WASAPI), plus one vsync
-(8-16 ms) for presentation. Total skew stays inside ±30 ms — well under the
-ITU-R BT.1359 detectability window (audio may lag video ~125 ms / lead
-~45 ms before humans notice). Both feature paths share the audio clock, so
-skew is constant, never accumulating.
+Live playback: the analyser tap sits ahead of the speakers by device-dependent
+output latency. The host smooths and subtracts that estimate from render track
+time. Offline analysis instead uses a fixed 16.67 ms lookahead. These are
+analogous, not equal; transient placement can differ by roughly tens of
+milliseconds and one presentation interval. Neither path accumulates drift.
 
 If sub-vsync alignment is ever wanted live: delay features through a ring
 buffer sized to `outputLatency` before rendering. Knob documented here so it
@@ -117,3 +115,6 @@ doesn't get invented twice.
 - FeaturePipeline never reads wall-clock or AudioContext directly.
 - `AudioFeatures` shape changes must update BOTH RealtimeAnalyzer and
   OfflineAnalyzer (shared pipeline makes this automatic today).
+
+Full guarantee/tolerance boundary:
+[PREVIEW-EXPORT-CONTRACT.md](PREVIEW-EXPORT-CONTRACT.md).

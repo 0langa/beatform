@@ -37,8 +37,8 @@ import type { OverlayLayer } from "../render/overlay";
  * Rules every entry follows:
  *  - Deterministic: plain serializable data only. Route and layer ids are
  *    derived from the template's slug (below), never Date.now()/random, so
- *    the same template exports byte-identically on every machine and every
- *    launch — which is also what makes the round-trip test meaningful.
+ *    applying the same template produces the same project document every
+ *    launch — which is what makes the round-trip test meaningful.
  *  - Canonical: the authored document must already equal what
  *    validateDocument() would produce, so apply -> export -> re-import is a
  *    fixed point. factoryThemes.test.ts asserts exactly that.

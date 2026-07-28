@@ -571,9 +571,10 @@ export default function App() {
     return () => window.removeEventListener("unhandledrejection", onRejection);
   }, [store]);
 
-  // Dev-only E2E hooks (window.__store/__runExport/__runBatch) — devHooks.ts
+  // DEV or explicit local test-build E2E hooks. Ordinary production builds
+  // leave VITE_E2E_HOOKS unset and expose nothing.
   useEffect(() => {
-    if (import.meta.env.DEV) installDevHooks(store);
+    if (import.meta.env.DEV || import.meta.env.VITE_E2E_HOOKS === "1") installDevHooks(store);
   }, [store]);
 
   // Dev-only: drive the update prompt with a synthetic phase so the dialog

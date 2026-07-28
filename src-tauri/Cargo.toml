@@ -1,6 +1,6 @@
 [package]
 name = "beatform"
-version = "2.60.0"
+version = "2.60.1"
 description = "Local-first music visualizer — realtime preview and deterministic offline export from one engine."
 authors = ["0langa"]
 edition = "2021"
@@ -26,6 +26,6 @@ serde_json = "1"
 lofty = "0.24.0"
 walkdir = "2.5.0"
 cpal = "0.18.1"
+base64 = "0.22"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-

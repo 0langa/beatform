@@ -303,15 +303,19 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       ) {
         gpuRetries = 0;
       }
-      // Track time drives everything rendered — u.time, timeline, automation —
-      // so preview matches the deterministic export frame-for-frame and idle
-      // motion freezes when paused (track time, not wall clock).
+      // Track time drives u.time, timeline and automation on both paths; idle
+      // motion freezes when paused. Input sampling still follows the live
+      // device, as documented in PREVIEW-EXPORT-CONTRACT.md.
       const trackTime = compensated;
       // Live FPS cap (Settings ▸ Performance): draw-skip, transport-keep.
       // Preview-only by design — exports walk every frame deterministically
       // and never consult this.
       const fpsCap = getPrefs().fpsCap;
-      if (fpsCap > 0 && tMs - lastCapDraw < 1000 / fpsCap - 1) {
+      const capSkipped = fpsCap > 0 && tMs - lastCapDraw < 1000 / fpsCap - 1;
+      // A capped presentation must not cap texture-feedback STATE. The
+      // analyser still runs on every rAF and tells us which calls are its
+      // canonical 60 Hz ticks; those ticks render history offscreen below.
+      if (capSkipped && !ana.feedbackTicked) {
         raf = requestAnimationFrame(loop);
         fallback = setTimeout(() => {
           cancelAnimationFrame(raf);
@@ -323,7 +327,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         }
         return;
       }
-      lastCapDraw = tMs;
+      if (!capSkipped) lastCapDraw = tMs;
       if (liveRenderPaused) {
         // Skip the draw, keep the loop: a paused preview must still refresh
         // the transport below, and the caches stay valid for when it resumes.
@@ -382,7 +386,28 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         trackTime,
         applyMods(activePreset, rf.params, rf.mods, features, stemValues),
         transition,
+        {
+          feedback: capSkipped
+            ? "advance-only"
+            : ana.feedbackTicked
+              ? "advance-and-present"
+              : "present-only",
+        },
       );
+      if (capSkipped) {
+        // State advanced offscreen; keep presentation cadence and UI cadence
+        // exactly as before.
+        raf = requestAnimationFrame(loop);
+        fallback = setTimeout(() => {
+          cancelAnimationFrame(raf);
+          loop(performance.now());
+        }, 300);
+        if (eng.playing && t - lastUiUpdate > 0.25 && !hooks.isSeeking()) {
+          lastUiUpdate = t;
+          hooks.onPlayback(eng.state);
+        }
+        return;
+      }
       hooks.onFrameTick?.(trackTime);
       // E2E probe: lets tooling confirm the render loop is alive
       (window as unknown as { __vizFrames: number }).__vizFrames =

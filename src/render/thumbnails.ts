@@ -96,7 +96,7 @@ const THUMB_PARAMS: Record<string, Record<string, number>> = {
 };
 
 /** A flattering, deterministic feature frame: full spectrum, a beat mid-decay. */
-function demoFeatures(t: number): AudioFeatures {
+export function demoFeatures(t: number): AudioFeatures {
   const bins = new Float32Array(96);
   const peaks = new Float32Array(96);
   for (let i = 0; i < 96; i++) {

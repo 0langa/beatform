@@ -2,12 +2,27 @@ import type { PlaybackState } from "./types";
 import { decodeAudioLenient } from "./decodeLenient";
 import { analysisFftSize } from "./dsp/fftSize";
 
+export interface LoopbackStats {
+  depthFrames: number;
+  maxDepthFrames: number;
+  skippedFrames: number;
+  hardSkippedFrames: number;
+  adaptiveSkippedFrames: number;
+  underrunFrames: number;
+  underrunEvents: number;
+  maxUnderrunFrames: number;
+  sampleRate: number;
+  mainChunks: number;
+  mainFrames: number;
+  mainMaxGapMs: number;
+}
+
 /**
  * AudioWorklet that turns pushed sample chunks into a live audio-graph
  * source. Ring-buffered per channel; underruns emit silence; if the writer
- * runs more than ~250 ms ahead of playback it jumps forward so live visuals
- * never drift behind what the user hears. Input is interleaved stereo f32
- * (the loopback capture's wire format), at the context's own sample rate.
+ * runs more than ~120 ms ahead of playback it spends underrun credit to jump
+ * forward so live visuals never drift behind what the user hears. Input is
+ * interleaved stereo PCM16 little-endian at the context's own sample rate.
  */
 
 /**
@@ -31,18 +46,22 @@ export class AudioEngine {
    * and mute never reach the analysers. */
   private tap: GainNode;
   private gain: GainNode;
+  /** Keeps live AudioWorklet on device clock without re-emitting capture. */
+  private liveSink: GainNode;
   private splitter: ChannelSplitterNode;
   private source: AudioBufferSourceNode | null = null;
   private buffer: AudioBuffer | null = null;
   /** Monotonic load counter: a slow decode must not clobber a newer load. */
   private loadGen = 0;
   // Live system-audio input (WASAPI loopback): a worklet source connected to
-  // the ANALYSERS ONLY — routing it to the destination would feed the system
-  // output back into itself.
+  // the analysis graph. A separate zero-gain destination branch schedules the
+  // worklet but emits exact silence, avoiding acoustic feedback.
   private liveNode: AudioWorkletNode | null = null;
   private liveStartAt = 0;
   private nameBeforeLive: string | null = null;
   private workletReady = false;
+  private loopbackStatsRequest = 0;
+  private liveDelivery = { chunks: 0, frames: 0, lastAt: 0, maxGapMs: 0 };
 
   /** ctx.currentTime at which playback of current segment began */
   private startedAt = 0;
@@ -82,8 +101,16 @@ export class AudioEngine {
     // footing.
     this.tap = this.ctx.createGain();
     this.gain = this.ctx.createGain();
+    this.liveSink = this.ctx.createGain();
+    this.liveSink.gain.value = 0;
     this.tap.connect(this.gain);
     this.gain.connect(this.ctx.destination);
+    // An analyser is not an output sink. Without a route to AudioDestination,
+    // Chromium may pull the live worklet only when getFloatTimeDomainData()
+    // runs, so its ring consumes at render cadence instead of device cadence.
+    // A zero-gain destination route keeps the worklet continuously scheduled
+    // while output remains exact digital silence (no acoustic feedback loop).
+    this.liveSink.connect(this.ctx.destination);
     this.tap.connect(this.analyser);
     this.splitter = this.ctx.createChannelSplitter(2);
     this.tap.connect(this.splitter);
@@ -98,7 +125,7 @@ export class AudioEngine {
 
   /**
    * Switch the analysis graph to live system audio. Returns the push
-   * function the loopback capture feeds (interleaved stereo f32 chunks at
+   * function the loopback capture feeds (interleaved stereo PCM16 chunks at
    * the context's sample rate — the caller verifies rates match). Playback
    * of the loaded track stops; the track itself stays loaded.
    */
@@ -126,12 +153,26 @@ export class AudioEngine {
     });
     node.connect(this.analyser);
     node.connect(this.splitter);
+    node.connect(this.liveSink);
     this.liveNode = node;
     this.liveStartAt = this.ctx.currentTime;
+    this.liveDelivery = { chunks: 0, frames: 0, lastAt: 0, maxGapMs: 0 };
     this.nameBeforeLive = this._trackName;
     this._trackName = "System audio";
     this.emit();
-    return (chunk) => node.port.postMessage(chunk, [chunk]);
+    return (chunk) => {
+      const now = performance.now();
+      if (this.liveDelivery.lastAt > 0) {
+        this.liveDelivery.maxGapMs = Math.max(
+          this.liveDelivery.maxGapMs,
+          now - this.liveDelivery.lastAt,
+        );
+      }
+      this.liveDelivery.lastAt = now;
+      this.liveDelivery.chunks++;
+      this.liveDelivery.frames += chunk.byteLength / (2 * 2);
+      node.port.postMessage({ type: "pcm16", data: chunk }, [chunk]);
+    };
   }
 
   /** Back to track mode. Safe to call when live input is not active. */
@@ -143,6 +184,45 @@ export class AudioEngine {
     this._trackName = this.nameBeforeLive;
     this.nameBeforeLive = null;
     this.emit();
+  }
+
+  /** Explicit diagnostics request; no periodic work runs in production. */
+  loopbackStats(reset = false): Promise<LoopbackStats | null> {
+    const node = this.liveNode;
+    if (!node) return Promise.resolve(null);
+    const requestId = ++this.loopbackStatsRequest;
+    return new Promise((resolve) => {
+      const done = (value: LoopbackStats | null) => {
+        clearTimeout(timeout);
+        node.port.removeEventListener("message", onMessage);
+        resolve(value);
+      };
+      const onMessage = (event: MessageEvent) => {
+        const data = event.data as (LoopbackStats & { type?: string; requestId?: number }) | null;
+        if (!data || data.type !== "stats" || data.requestId !== requestId) return;
+        done({
+          depthFrames: data.depthFrames,
+          maxDepthFrames: data.maxDepthFrames,
+          skippedFrames: data.skippedFrames,
+          hardSkippedFrames: data.hardSkippedFrames,
+          adaptiveSkippedFrames: data.adaptiveSkippedFrames,
+          underrunFrames: data.underrunFrames,
+          underrunEvents: data.underrunEvents,
+          maxUnderrunFrames: data.maxUnderrunFrames,
+          sampleRate: data.sampleRate,
+          mainChunks: this.liveDelivery.chunks,
+          mainFrames: this.liveDelivery.frames,
+          mainMaxGapMs: this.liveDelivery.maxGapMs,
+        });
+        if (reset) {
+          this.liveDelivery = { chunks: 0, frames: 0, lastAt: 0, maxGapMs: 0 };
+        }
+      };
+      const timeout = setTimeout(() => done(null), 1000);
+      node.port.addEventListener("message", onMessage);
+      node.port.start();
+      node.port.postMessage({ type: "stats", requestId, reset });
+    });
   }
 
   async loadFile(file: File): Promise<void> {

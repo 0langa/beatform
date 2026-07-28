@@ -14,7 +14,7 @@
 >
 > A frozen copy of this file, plus the audit documents and all visual/soak
 > evidence, is archived outside the repo at
-> `D:eatform-archive3-acceptance-2026-07-27\`.
+> `D:\beatform-archive\v3-acceptance-2026-07-27\`.
 >
 > **Reusing this file:** it stays here as the living manual-test checklist.
 > When the next batch opens, reset the boxes, update the "State as of" line
@@ -70,7 +70,7 @@ mkdir C:\bf-test\media, C:\bf-test\out -Force
 
 Installer/launch/sidecar · auto-updater end-to-end (twice: 2.39→2.43 and
 2.44.0→2.44.1) · 16 modes look correct · max-settings sweep (no hard circular
-clipping) · preview ≡ export · lyrics anims · video-bg dim/blur · H.264, AV1,
+clipping) · preview/export contract · lyrics anims · video-bg dim/blur · H.264, AV1,
 VP9-alpha (`alpha_mode: 1`), ProRes 4444 (`yuva444p12le` + PCM), GIF decode
 clean · batch 20 MP3s with ID3 titles + bad-file isolation · beat-quantized
 switching · OS-fullscreen + Stage as projector output · undo/redo ·
@@ -303,10 +303,11 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   OWNER SIGN-OFF 2026-07-27. This is the one item no agent can close — it
   needs eyes on the canvas, and the owner gave it.
 
-**All acceptance items are green. The app has cleared its bar end-to-end on
-real hardware — v3.0.0 can be cut.**
+**All items in this archived v2.51.0/v2.52.0 batch were green. This is evidence
+toward v3, not authorization to cut it; current code still requires its own
+release matrix.**
 
 ## Sign-off
 
-When the retest + still-to-test items are green, the app has cleared its
-acceptance bar end-to-end on real hardware — cut the **v3.0.0** milestone.
+When a current retest is green, record its evidence here. v3.0.0 remains an
+owner conviction decision, not an automatic checklist outcome.

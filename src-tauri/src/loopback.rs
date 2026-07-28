@@ -13,13 +13,14 @@
 //! So the callback only fills preallocated buffers from a fixed pool
 //! (`BlockPipe`) and a separate thread does the forwarding to the webview.
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::{mpsc, Mutex};
 use std::time::Duration;
-use tauri::ipc::{Channel, InvokeResponseBody};
+use tauri::ipc::Channel;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,14 +63,21 @@ impl Default for LoopbackCtl {
 /// period is ~10 ms — 480 frames at 48 kHz, 1920 at 192 kHz — so a callback
 /// buffer fits many times over and the fill below never has to grow a Vec.
 const POOL_BLOCKS: usize = 8;
-const BLOCK_CAP_BYTES: usize = 4096 * 2 * 4;
+const BLOCK_CAP_BYTES: usize = 4096 * 2 * 2;
 
 /// How long the forwarding thread waits on the pool before re-checking the stop
 /// channel. Stop latency only: the stream keeps capturing throughout.
 const FORWARD_POLL: Duration = Duration::from_millis(100);
 
+/// Largest PCM16 payload whose base64 JSON string remains below Tauri's 8 KiB
+/// direct-execute threshold (5,760 bytes -> 7,680 base64 chars plus quotes).
+/// Staying below that boundary avoids the fetch-backed channel path whose
+/// real WebView2 delivery showed 300-500 ms gaps. At 48 kHz this is 30 ms of
+/// stereo audio; higher-rate devices send proportionally more often.
+const FORWARD_BATCH_BYTES: usize = 5_760;
+
 /// Overwrite `out` with one interleaved device-channel callback buffer
-/// converted to interleaved STEREO f32 little-endian bytes (mono duplicates,
+/// converted to interleaved STEREO PCM16 little-endian bytes (mono duplicates,
 /// >2ch takes the front pair — the visualizer's analysis graph is stereo).
 ///
 /// Takes `&mut Vec<u8>` rather than returning a fresh one because it runs ON
@@ -88,8 +96,16 @@ fn fill_stereo_le_bytes(out: &mut Vec<u8>, data: &[f32], channels: usize) {
         let base = f * ch;
         let l = data[base];
         let r = if ch > 1 { data[base + 1] } else { l };
-        out.extend_from_slice(&l.to_le_bytes());
-        out.extend_from_slice(&r.to_le_bytes());
+        out.extend_from_slice(&sample_to_i16(l).to_le_bytes());
+        out.extend_from_slice(&sample_to_i16(r).to_le_bytes());
+    }
+}
+
+fn sample_to_i16(sample: f32) -> i16 {
+    if sample <= -1.0 {
+        i16::MIN
+    } else {
+        (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16
     }
 }
 
@@ -142,10 +158,10 @@ struct BlockSink {
 impl BlockSink {
     /// Take the next filled block, immediately topping the pool back up.
     ///
-    /// The Tauri channel takes ownership of the bytes, so a replacement has to
-    /// be allocated somewhere — and this thread, not the audio callback, is
-    /// where that belongs. The pool never grows past `POOL_BLOCKS` buffers, so
-    /// `free` always has room for the replacement.
+    /// The forwarder consumes each block into its base64 batch, so a replacement
+    /// has to be allocated somewhere — and this thread, not the audio callback,
+    /// is where that belongs. The pool never grows past `POOL_BLOCKS` buffers,
+    /// so `free` always has room for the replacement.
     fn take(&self, timeout: Duration) -> Result<Vec<u8>, mpsc::RecvTimeoutError> {
         let block = self.filled.recv_timeout(timeout)?;
         let _ = self
@@ -197,7 +213,7 @@ fn admit_start(guard: &mut Option<mpsc::Sender<()>>, dead: &AtomicBool) -> Resul
 #[tauri::command]
 pub fn start_loopback(
     state: tauri::State<'_, LoopbackCtl>,
-    on_samples: Channel<InvokeResponseBody>,
+    on_samples: Channel<String>,
 ) -> Result<LoopbackInfo, String> {
     let mut guard = state.inner.lock().map_err(|_| "loopback state poisoned")?;
     admit_start(&mut guard, &state.dead)?;
@@ -236,6 +252,7 @@ pub fn start_loopback(
     let (pipe, sink) = block_pipe();
     std::thread::spawn(move || {
         let ch = channels as usize;
+        let mut outbound = Vec::with_capacity(FORWARD_BATCH_BYTES + BLOCK_CAP_BYTES);
         let stream = device.build_input_stream(
             config.into(),
             move |data: &[f32], _| pipe.push(data, ch),
@@ -267,10 +284,15 @@ pub fn start_loopback(
                     }
                     match sink.take(FORWARD_POLL) {
                         Ok(block) => {
-                            // A send failure means the webview side is gone; the
-                            // stop command will tear us down shortly — nothing
-                            // to do here.
-                            let _ = on_samples.send(InvokeResponseBody::Raw(block));
+                            outbound.extend_from_slice(&block);
+                            while outbound.len() >= FORWARD_BATCH_BYTES {
+                                let remainder = outbound.split_off(FORWARD_BATCH_BYTES);
+                                let send = std::mem::replace(&mut outbound, remainder);
+                                // JSON base64 is deliberate: Tauri directly
+                                // executes JSON below 8 KiB, while raw data
+                                // switches to fetch at only 1 KiB.
+                                let _ = on_samples.send(BASE64.encode(send));
+                            }
                         }
                         // Idle tick: no block this period, just re-check stop.
                         // Bounds how long a stop waits, nothing else — capture
@@ -278,6 +300,9 @@ pub fn start_loopback(
                         Err(mpsc::RecvTimeoutError::Timeout) => {}
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     }
+                }
+                if !outbound.is_empty() {
+                    let _ = on_samples.send(BASE64.encode(outbound));
                 }
                 drop(s);
             }
@@ -320,10 +345,10 @@ pub fn loopback_died(state: tauri::State<'_, LoopbackCtl>) -> bool {
 mod tests {
     use super::*;
 
-    fn floats(bytes: &[u8]) -> Vec<f32> {
+    fn samples(bytes: &[u8]) -> Vec<i16> {
         bytes
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
             .collect()
     }
 
@@ -331,6 +356,16 @@ mod tests {
         let mut out = Vec::new();
         fill_stereo_le_bytes(&mut out, data, channels);
         out
+    }
+
+    #[test]
+    fn forward_batch_fits_tauris_direct_json_channel_path() {
+        let encoded_len = BASE64.encode(vec![0_u8; FORWARD_BATCH_BYTES]).len();
+        assert_eq!(encoded_len, 7_680);
+        assert!(
+            encoded_len + 2 < 8_192,
+            "JSON string plus quotes must stay below 8 KiB"
+        );
     }
 
     #[test]
@@ -366,20 +401,26 @@ mod tests {
     #[test]
     fn stereo_passes_through() {
         let out = converted(&[0.1, -0.2, 0.3, -0.4], 2);
-        assert_eq!(floats(&out), vec![0.1, -0.2, 0.3, -0.4]);
+        assert_eq!(samples(&out), vec![3277, -6553, 9830, -13107]);
     }
 
     #[test]
     fn mono_duplicates() {
         let out = converted(&[0.5, -0.5], 1);
-        assert_eq!(floats(&out), vec![0.5, 0.5, -0.5, -0.5]);
+        assert_eq!(samples(&out), vec![16384, 16384, -16384, -16384]);
     }
 
     #[test]
     fn surround_takes_front_pair() {
         // 5.1 frame: FL FR C LFE RL RR
         let out = converted(&[0.1, 0.2, 9.0, 9.0, 9.0, 9.0], 6);
-        assert_eq!(floats(&out), vec![0.1, 0.2]);
+        assert_eq!(samples(&out), vec![3277, 6553]);
+    }
+
+    #[test]
+    fn conversion_clamps_full_scale() {
+        let out = converted(&[-2.0, -1.0, 1.0, 2.0], 2);
+        assert_eq!(samples(&out), vec![i16::MIN, i16::MIN, i16::MAX, i16::MAX]);
     }
 
     #[test]
@@ -393,7 +434,7 @@ mod tests {
         for _ in 0..1000 {
             fill_stereo_le_bytes(&mut block, &period, 2);
         }
-        assert_eq!(block.len(), 480 * 2 * 4);
+        assert_eq!(block.len(), 480 * 2 * 2);
         assert_eq!(
             block.capacity(),
             capacity,
@@ -463,7 +504,7 @@ mod tests {
             let block = sink
                 .take(Duration::from_millis(500))
                 .expect("a pushed block must arrive");
-            assert_eq!(block.len(), 64 * 2 * 4);
+            assert_eq!(block.len(), 64 * 2 * 2);
             drop(block); // the channel send would consume it the same way
         }
     }

@@ -128,8 +128,8 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       const genAtStart = shared.trackLoadGen;
       let savePath: string | null = null;
       let pngDir: string | null = null;
-      /** Volume holding %TEMP%, remembered so a disk failure can name it. */
-      let scratchRoot: string | null = null;
+      /** %TEMP% path, retained so a failure can re-measure its volume. */
+      let scratchPathForError: string | null = null;
       if (isTauri()) {
         if (pngMode) {
           const dir = await pickFolder("Choose a folder for the PNG sequence");
@@ -186,6 +186,7 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       const destination = savePath ?? pngDir;
       if (destination) {
         const scratchPath = await scratchDir();
+        scratchPathForError = scratchPath;
         const [outVol, scratchVol] = await Promise.all([
           diskSpace(destination),
           scratchPath ? diskSpace(scratchPath) : Promise.resolve(null),
@@ -213,10 +214,6 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           shared.exportStarting = false;
           return;
         }
-        // Kept for the failure path: a NotReadableError has to name the drive
-        // that actually ran out, and by then the volume is not re-queryable
-        // in the catch without another round trip.
-        scratchRoot = scratchVol?.root ?? null;
       }
 
       const ac = new AbortController();
@@ -386,7 +383,10 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         // raw text when it is not a disk problem.
         const raw = proresFail.err ?? e;
         if (proresFail.err != null || (e as Error)?.name !== "AbortError") {
-          set({ exportError: translateExportError(raw, scratchRoot) ?? errText(raw) });
+          // NotReadableError is ambiguous. Re-measure scratch NOW instead of
+          // turning a stale preflight snapshot into a confident disk diagnosis.
+          const scratchNow = scratchPathForError ? await diskSpace(scratchPathForError) : null;
+          set({ exportError: translateExportError(raw, scratchNow) ?? errText(raw) });
         }
       } finally {
         overlayBitmap?.close();

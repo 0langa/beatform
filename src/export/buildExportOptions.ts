@@ -20,12 +20,11 @@ import type { AudiogramSettings } from "../state/audiogram";
 /**
  * The single place a ProjectDocument becomes an ExportOptions.
  *
- * The app's cardinal invariant is that the preview and the export are the same
- * render. That was previously held up by hand: runExport read ~18 fields off
- * the store in the right way, and anything else wanting to render a document
- * had to read them the same way or silently diverge. This makes it a call
- * graph instead — one function, so a second caller (the batch queue) cannot
- * drift from the first.
+ * Preview and export must consume one creative document definition. That was
+ * previously held up by hand: runExport read ~18 fields off the store in the
+ * right way, and another caller could omit one silently. This makes it a call
+ * graph instead — one function, so batch and single export cannot drift in
+ * document fields.
  *
  * Pure: no store, no engine, no globals. Everything varying per render arrives
  * as an argument.

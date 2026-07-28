@@ -17,6 +17,8 @@ import type { PcmData, SyncSettings } from "../audio/types";
 import { integratedLufs, normalizationGainDb } from "../audio/dsp/lufs";
 import { TruePeakLimiter } from "../audio/dsp/truepeak";
 import { WebGPURenderer } from "../render/webgpuRenderer";
+import { presetUsesFeedback } from "../render/webgpuRenderer";
+import { FixedFeedbackClock, isFeedbackTick } from "../render/fixedFeedback";
 import {
   BG_IMAGE,
   BG_VIDEO,
@@ -647,6 +649,14 @@ export async function runExportJob(
       modsByPreset: job.modsByPreset ?? {},
     };
     const analyzer = new OfflineAnalyzer(pcm, job.fps, 96, job.sync, job.beatGrid ?? null);
+    // Feedback state has its own canonical 60 Hz analysis walk. Output fps is
+    // presentation cadence only: 24/30 fps exports consume multiple state
+    // ticks before a frame, while 90/120/144 fps insert presentation-only
+    // frames between ticks. Separate analyser is required because a low-fps
+    // frame latches multiple onset ticks into one feature object; replaying
+    // that aggregate for history would stamp hits at wrong times.
+    const feedbackAnalyzer = new OfflineAnalyzer(pcm, 60, 96, job.sync, job.beatGrid ?? null);
+    const feedbackClock = new FixedFeedbackClock();
     const total = analyzer.frameCount;
     // Loop mode: keep the first K rendered frames; blend them into the last K
     const xfadeFrames = job.loopCrossfadeSec
@@ -659,8 +669,45 @@ export async function runExportJob(
       abort();
       if (deviceLost) throw deviceLost;
 
-      const features = analyzer.nextFrameFeatures();
       const t = n / job.fps;
+      // Advance texture-feedback state independently from output cadence.
+      // These calls never touch swapchain/post/encoder; renderer returns
+      // immediately for presets that do not use feedback.
+      for (const tickTime of feedbackClock.drainThrough(t)) {
+        const tickFeatures = feedbackAnalyzer.nextFrameFeatures();
+        const tickFrame = resolveActiveFrame(frameInput, tickTime);
+        const tickPreset = presetById(tickFrame.presetId);
+        if (tickFrame.presetId !== currentPresetId) {
+          renderer.setPreset(tickPreset);
+          currentPresetId = tickFrame.presetId;
+        }
+        const tickVideoFailed = tickFrame.bg.mode === BG_VIDEO && !videoBg;
+        renderer.setBackground(
+          (bgImageFailed && tickFrame.bg.mode === BG_IMAGE) || tickVideoFailed
+            ? { ...tickFrame.bg, mode: 0 }
+            : tickFrame.bg,
+        );
+        if (videoBg && tickFrame.bg.mode === BG_VIDEO) {
+          const vi = videoBgFrameIndex(
+            videoBg.frames.length,
+            videoBg.fps,
+            tickTime + (job.bgVideo?.timeOffset ?? 0),
+          );
+          renderer.updateBackgroundVideoFrame(videoBg.frames[vi]);
+        }
+        if (presetUsesFeedback(tickPreset)) {
+          const tickStems = job.stems ? stemValuesAt(job.stems, tickTime) : undefined;
+          renderer.render(
+            tickFeatures,
+            tickTime,
+            applyMods(tickPreset, tickFrame.params, tickFrame.mods, tickFeatures, tickStems),
+            undefined,
+            { feedback: "advance-only" },
+          );
+        }
+      }
+
+      const features = analyzer.nextFrameFeatures();
       const rf = resolveActiveFrame(frameInput, t);
       if (rf.presetId !== currentPresetId) {
         renderer.setPreset(presetById(rf.presetId));
@@ -724,6 +771,7 @@ export async function runExportJob(
         t,
         applyMods(presetById(rf.presetId), rf.params, rf.mods, features, stemValues),
         transition,
+        { feedback: isFeedbackTick(t) ? "present-history" : "present-only" },
       );
       // Ensure the GPU finished before snapshotting the canvas
       await renderer.gpuDone();

@@ -1,6 +1,7 @@
 import type { AudioFeatures } from "../audio/types";
 import { BUILDER_MAX_LAYERS } from "./builder2";
 import { getPrefs } from "../state/prefs";
+import { FEEDBACK_DT } from "./fixedFeedback";
 import { allParams, BG_VIDEO, DEFAULT_MOTION, DEFAULT_POST, paramOr } from "./types";
 import type {
   BgSettings,
@@ -10,6 +11,7 @@ import type {
   ParticleSpec,
   PostSettings,
   PresetDef,
+  RenderOptions,
   Renderer,
   TransitionState,
 } from "./types";
@@ -45,8 +47,7 @@ const PARTICLE_UNIFORM_SIZE = 96;
  * Each step n runs with pu.time = (n+1)/SIM_FPS — the track time at the END of
  * that step — regardless of how many steps a given frame happens to batch. So
  * step 137 sees the same time whether it ran alone at 60 fps or second-of-two
- * at 30 fps, and the time-driven parts of the sim (flow field, respawn hash)
- * are identical across frame rates and between preview and export.
+ * at 30 fps, so time-driven flow/respawn inputs use the same state grid.
  *
  * The audio lanes (bass/drive/kick) are still per-FRAME, not per-step: at
  * 30 fps two steps share one feature sample. Resolving features per sim step
@@ -66,8 +67,8 @@ const PARTICLE_DRAW_SLOT = MAX_SIM_CATCHUP;
  * Post-processing WGSL. One module, three entry points sharing a fullscreen
  * triangle: bright-pass (HDR -> thresholded bloom seed), separable blur, and
  * the final composite (scene + bloom -> exposure -> ACES -> chromatic ->
- * vignette -> grain -> swapchain). All effects are pure functions of the
- * scene texture + track time, so live and export match exactly.
+ * vignette -> grain -> swapchain). All effects are pure functions of scene
+ * texture + track time, so each path is deterministic for its frame input.
  */
 const POST_WGSL = /* wgsl */ `
 struct PostU {
@@ -1297,7 +1298,7 @@ function mat4Mul(a: Float32Array, b: Float32Array): Float32Array {
  * no string literals to worry about, so stripping `//` and block comments is
  * sufficient.
  */
-function usesFeedback(preset: PresetDef): boolean {
+export function presetUsesFeedback(preset: PresetDef): boolean {
   const code = preset.wgsl.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
   return /feedbackSample\s*\(/.test(code);
 }
@@ -1449,6 +1450,8 @@ export class WebGPURenderer implements Renderer {
   private emptyFeedback: GPUTexture;
   private compositePipeline: GPURenderPipeline | null = null;
   private compositeBind: GPUBindGroup | null = null;
+  /** Source = stable fixed-clock history instead of this call's raw visual. */
+  private historyCompositeBind: GPUBindGroup | null = null;
 
   // Compute-particle system: a {pos,vel} storage buffer advanced by a compute
   // pass at a fixed sim rate, drawn as additive sprites into visTex (then the
@@ -1769,7 +1772,7 @@ export class WebGPURenderer implements Renderer {
 
   setTransitionPreset(preset: PresetDef | null): void {
     this.transitionPreset = preset;
-    this.transitionPresetUsesFeedback = preset ? usesFeedback(preset) : false;
+    this.transitionPresetUsesFeedback = preset ? presetUsesFeedback(preset) : false;
     if (!preset) {
       this.transitionPipeline = null;
       this.transitionPipelineFor = null;
@@ -1909,6 +1912,7 @@ export class WebGPURenderer implements Renderer {
     this.feedbackSize = [w, h];
     this.feedbackClearPending = true; // fresh targets hold garbage
     this.compositeBind = null;
+    this.historyCompositeBind = null;
     this.bindGroup = null; // binding 7 (histTex view) changed
     this.transitionBindGroup = null;
   }
@@ -1953,6 +1957,31 @@ export class WebGPURenderer implements Renderer {
       });
     }
     return this.compositeBind;
+  }
+
+  /** Composite already-advanced history without evaluating the recurrence a
+   * second time. Re-evaluation would double-inject fresh content in
+   * accumulating presets such as Echo Trails. */
+  private getHistoryCompositeBindGroup(): GPUBindGroup {
+    if (!this.historyCompositeBind) {
+      this.historyCompositeBind = this.device.createBindGroup({
+        layout: this.bindLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.uniformBuf } },
+          { binding: 1, resource: { buffer: this.binsBuf! } },
+          { binding: 2, resource: { buffer: this.peaksBuf! } },
+          { binding: 3, resource: { buffer: this.paramsBuf } },
+          { binding: 4, resource: { buffer: this.waveBuf } },
+          { binding: 5, resource: (this.overlayTexture ?? this.emptyOverlay).createView() },
+          { binding: 6, resource: this.overlaySampler },
+          { binding: 7, resource: this.histTex!.createView() },
+          { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
+          { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
+          { binding: 10, resource: { buffer: this.builderBuf } },
+        ],
+      });
+    }
+    return this.historyCompositeBind;
   }
 
   /** A post-pass bind group: src texture + optional bloom texture. */
@@ -2344,6 +2373,7 @@ export class WebGPURenderer implements Renderer {
         this.bindGroup = null;
         this.transitionBindGroup = null;
         this.compositeBind = null;
+        this.historyCompositeBind = null;
       }
       return;
     }
@@ -2364,6 +2394,7 @@ export class WebGPURenderer implements Renderer {
       this.bindGroup = null; // rebind with the new texture view
       this.transitionBindGroup = null;
       this.compositeBind = null; // composite pass also samples the overlay
+      this.historyCompositeBind = null;
     }
     this.device.queue.copyExternalImageToTexture(
       { source },
@@ -2400,6 +2431,7 @@ export class WebGPURenderer implements Renderer {
     this.bindGroup = null;
     this.transitionBindGroup = null;
     this.compositeBind = null;
+    this.historyCompositeBind = null;
   }
 
   /**
@@ -2427,6 +2459,7 @@ export class WebGPURenderer implements Renderer {
       this.bindGroup = null;
       this.transitionBindGroup = null;
       this.compositeBind = null;
+      this.historyCompositeBind = null;
     }
     this.device.queue.copyExternalImageToTexture(
       { source },
@@ -2457,6 +2490,7 @@ export class WebGPURenderer implements Renderer {
     this.bindGroup = null;
     this.transitionBindGroup = null;
     this.compositeBind = null;
+    this.historyCompositeBind = null;
   }
 
   /** Resolves when all submitted GPU work has executed (export frame sync). */
@@ -2490,7 +2524,7 @@ export class WebGPURenderer implements Renderer {
     this.preset = preset;
     // Feedback is opt-in per preset (WGSL references feedbackSample). A new
     // preset must not inherit the previous one's trails, so clear the history.
-    this.presetUsesFeedback = usesFeedback(preset);
+    this.presetUsesFeedback = presetUsesFeedback(preset);
     this.feedbackClearPending = true;
     // Particle preset: (re)allocate state and re-seed on the next frame.
     this.particleSpec = preset.particles ?? null;
@@ -2581,6 +2615,7 @@ export class WebGPURenderer implements Renderer {
       this.histTex?.destroy();
       this.visTex = this.histTex = null;
       this.compositeBind = null;
+      this.historyCompositeBind = null;
       this.bindGroup = null;
       this.transitionBindGroup = null;
     }
@@ -2622,8 +2657,20 @@ export class WebGPURenderer implements Renderer {
     }
   }
 
-  render(f: AudioFeatures, time: number, params: ParamValues, transition?: TransitionState): void {
+  render(
+    f: AudioFeatures,
+    time: number,
+    params: ParamValues,
+    transition?: TransitionState,
+    options?: RenderOptions,
+  ): void {
     if (!this.pipeline || !this.preset) return;
+    const feedbackMode = options?.feedback ?? "advance-and-present";
+    const feedbackAdvance =
+      feedbackMode === "advance-and-present" || feedbackMode === "advance-only";
+    const feedbackPresent = feedbackMode !== "advance-only";
+    // Hidden fixed-clock ticks exist only for texture-feedback presets.
+    if (!feedbackPresent && !this.presetUsesFeedback) return;
     this.ensureBinBuffers(f.bins.length);
 
     // Slots 1 (beatIntensity), 19 (width), 24 (snare) and 25 (hat) are unread
@@ -2647,7 +2694,13 @@ export class WebGPURenderer implements Renderer {
     // vanish or freeze.
     const dtRaw = this.lastRenderTime < 0 ? 0 : time - this.lastRenderTime;
     this.lastRenderTime = time;
-    this.uniformF32[9] = dtRaw > 0 && dtRaw <= 0.1 ? dtRaw : 1 / 60;
+    this.uniformF32[9] = this.presetUsesFeedback
+      ? feedbackAdvance
+        ? FEEDBACK_DT
+        : 0
+      : dtRaw > 0 && dtRaw <= 0.1
+        ? dtRaw
+        : 1 / 60;
     this.uniformF32[10] = f.energy;
     this.uniformU32[11] = this.bg.mode;
     this.uniformF32[12] = this.bg.color[0];
@@ -2689,7 +2742,10 @@ export class WebGPURenderer implements Renderer {
     const mesh3dActive = !!this.mesh3dSpec;
     const special = particlesActive || mesh3dActive;
     const fading = !special && !!(transition && this.transitionPipeline && this.transitionPreset);
-    const useFeedback = !special && this.presetUsesFeedback && !fading;
+    // Advance incoming feedback on its fixed clock even while presentation is
+    // crossfading. Presentation itself still uses the transition branch.
+    const useFeedback =
+      !special && this.presetUsesFeedback && (!fading || feedbackMode === "advance-only");
     this.uniformF32[27] = useFeedback ? 1 : 0;
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniformData);
     this.device.queue.writeBuffer(this.binsBuf!, 0, f.bins);
@@ -2731,7 +2787,13 @@ export class WebGPURenderer implements Renderer {
     // the extra fullscreen pass every frame. This is the app's DEFAULT state
     // (DEFAULT_POST is neutral), so most users get the win.
     const direct =
-      !fading && !useFeedback && !particlesActive && !mesh3dActive && this.postIsNeutral();
+      feedbackPresent &&
+      !fading &&
+      !useFeedback &&
+      !particlesActive &&
+      !mesh3dActive &&
+      this.postIsNeutral();
+    const needsGraph = feedbackPresent && !direct;
     // M23: stamp which target groups this frame actually uses; anything idle
     // past RT_IDLE_FRAMES is released after submit.
     this.frameIndex++;
@@ -2743,15 +2805,15 @@ export class WebGPURenderer implements Renderer {
     if (fading) this.fadeLastUsed = this.frameIndex;
     if (feedbackTargetsInUse) this.feedbackLastUsed = this.frameIndex;
     if (mesh3dActive) this.depthLastUsed = this.frameIndex;
-    if (!direct) this.graphLastUsed = this.frameIndex;
-    if (!direct) this.ensureGraphTargets();
+    if (needsGraph) this.graphLastUsed = this.frameIndex;
+    if (needsGraph) this.ensureGraphTargets();
     // Particles + feedback both draw into visTex, then composite -> sceneTex.
     // A crossfade needs histTex too whenever either side of it uses feedback
     // (M14) — the fading branch below shares it exactly like the plain
     // feedback path does, instead of forcing the outgoing/incoming preset to
     // emptyFeedback or a stale pre-fade snapshot.
     if (feedbackTargetsInUse) this.ensureFeedbackTargets();
-    const scene = direct ? null : this.sceneTex!.createView();
+    const scene = needsGraph ? this.sceneTex!.createView() : null;
 
     const encoder = this.device.createCommandEncoder();
     const drawPass = (
@@ -2789,15 +2851,26 @@ export class WebGPURenderer implements Renderer {
       // Fresh history holds garbage / a previous preset's trails — clear it
       // before the first feedback frame so trails start from black.
       if (this.feedbackClearPending) this.clearFeedbackHistory(encoder);
-      // 1) preset draws its raw visual (samples histTex) into visTex.
-      drawPass(this.pipeline, this.getBindGroup(), this.visTex!.createView());
-      // 2) composite pass finishes visTex -> sceneTex (bg + overlay).
-      drawPass(this.compositePipeline!, this.getCompositeBindGroup(), scene!);
-      // 3) capture this frame's raw visual as next frame's history.
-      encoder.copyTextureToTexture({ texture: this.visTex! }, { texture: this.histTex! }, [
-        this.feedbackSize[0],
-        this.feedbackSize[1],
-      ]);
+      if (feedbackMode === "present-history") {
+        // This timestamp's fixed state tick already ran. Present that state
+        // directly; evaluating an accumulating recurrence twice would inject
+        // its fresh source twice.
+        drawPass(this.compositePipeline!, this.getHistoryCompositeBindGroup(), scene!);
+      } else {
+        // 1) preset evaluates fresh visual + stable history into visTex.
+        drawPass(this.pipeline, this.getBindGroup(), this.visTex!.createView());
+        // 2) presentation is independent from state advancement.
+        if (feedbackPresent) {
+          drawPass(this.compositePipeline!, this.getCompositeBindGroup(), scene!);
+        }
+        // 3) only canonical 60 Hz ticks become future history.
+        if (feedbackAdvance) {
+          encoder.copyTextureToTexture({ texture: this.visTex! }, { texture: this.histTex! }, [
+            this.feedbackSize[0],
+            this.feedbackSize[1],
+          ]);
+        }
+      }
     } else if (!fading) {
       // Non-feedback: preset composites inline straight into the scene target.
       drawPass(this.pipeline, this.getBindGroup(), scene!);
@@ -2839,7 +2912,7 @@ export class WebGPURenderer implements Renderer {
         this.getTransitionBindGroup(),
         this.fadeTexB!.createView(),
       );
-      if (this.presetUsesFeedback) {
+      if (this.presetUsesFeedback && feedbackAdvance) {
         // Keep the incoming preset's trail alive through the whole fade so
         // it continues smoothly once the transition ends, instead of
         // resuming from a stale pre-fade snapshot with a hard snap.
@@ -2864,7 +2937,7 @@ export class WebGPURenderer implements Renderer {
 
     // Post pass: bloom + tonemap/vignette/grain/chromatic -> swapchain.
     // Skipped on the direct path — the preset already drew the swapchain.
-    if (!direct) this.runPost(encoder, time, clearA);
+    if (feedbackPresent && !direct) this.runPost(encoder, time, clearA);
     this.device.queue.submit([encoder.finish()]);
     this.releaseIdleTargets();
   }
@@ -2954,6 +3027,7 @@ export class WebGPURenderer implements Renderer {
     this.transitionBindGroup = null;
     this.mesh3dBind = null; // references binsBuf
     this.compositeBind = null; // also holds binsBuf/peaksBuf at bindings 1/2
+    this.historyCompositeBind = null;
   }
 
   private getBindGroup(): GPUBindGroup {

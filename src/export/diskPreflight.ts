@@ -8,11 +8,11 @@
  *   "The requested file could not be read, typically due to permission
  *    problems that have occurred after a reference to a file was acquired."
  *
- * — the Blob API's `NotReadableError`, which says "permission" and means
- * "the disk backing blob storage filled up". The output drive (D:) had 518 GB
- * free and was never involved; the SYSTEM drive had 3.2 GB of 236 GB left,
- * and that is where Chromium spills blobs and where the mezzanine WAV is
- * staged. Nothing in the app looked at either number.
+ * — the Blob API's `NotReadableError`, whose permission-oriented text hid a
+ * full blob-storage drive in this incident. The output drive (D:) had 518 GB
+ * free and was never involved; the SYSTEM drive had 3.2 GB of 236 GB left.
+ * `NotReadableError` is not itself proof of disk exhaustion, so translation
+ * below requires a fresh low-space measurement.
  *
  * So two things live here:
  *  1. An estimate + warning, checked against BOTH volumes before a frame is
@@ -215,26 +215,26 @@ export function preflightWarning(
 /**
  * Turn a disk-shaped failure into a sentence that names the right drive.
  *
- * `NotReadableError` is the one that cost eleven minutes. It comes out of the
- * Blob API and its stock text talks about permissions, so it reads as a
- * file-access problem with the OUTPUT file — which is the one drive that was
- * definitely fine. Chromium's blob storage lives on the system drive, so this
- * is always about scratch space.
+ * `NotReadableError` is the one that cost eleven minutes, but it is not a
+ * disk-full error code: permissions and concurrent file access can produce it
+ * too. Only translate it when a fresh scratch-volume measurement independently
+ * shows the drive below the same conservative floor used by preflight.
  *
  * Returns null when the error is not disk-related, so callers keep showing the
  * original message rather than guessing.
  */
-export function translateExportError(err: unknown, scratchRoot: string | null): string | null {
+export function translateExportError(err: unknown, scratch: VolumeSpace | null): string | null {
   const name = err instanceof DOMException || err instanceof Error ? err.name : "";
   const text = err instanceof Error ? err.message : typeof err === "string" ? err : String(err);
-  const where = scratchRoot ? `on ${scratchRoot}` : "on the system drive";
+  const where = scratch ? `on ${scratch.root}` : "on the system drive";
 
   if (name === "NotReadableError") {
+    if (!scratch || scratch.freeBytes >= SCRATCH_FLOOR_BYTES) return null;
     return (
       `The export ran out of working space ${where}. Frames are staged there while ` +
-      `the file is written, and the message the browser engine produces for this ` +
-      `("permission problems") is misleading — the drive you exported TO is not the ` +
-      `problem. Free up space ${where} and run the export again.`
+      `the file is written. The browser reported a read failure, and a fresh disk ` +
+      `check found only ${formatBytes(scratch.freeBytes)} free there. Free up space ` +
+      `${where} and run the export again.`
     );
   }
   if (name === "QuotaExceededError") {

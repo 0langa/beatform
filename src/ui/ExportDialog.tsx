@@ -172,7 +172,7 @@ export function ExportDialog() {
               className="select"
               value={exportSettings.loudnessTarget ?? ""}
               disabled={!!exporting}
-              title="Match the exported audio to a loudness standard. Affects audio only — the visuals stay exactly as previewed."
+              title="Match exported audio to a loudness standard. Audio only — this setting does not change export analysis or visual frames."
               onChange={(e) =>
                 store().setExportSettings({
                   loudnessTarget: e.target.value === "" ? null : Number(e.target.value),

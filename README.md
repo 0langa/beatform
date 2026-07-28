@@ -47,7 +47,7 @@ Free and open source. Built to become a professional-grade tool for producers an
   native dialogs
 - **Overlay layers**: text with `{title}`/`{artist}` auto-fill from tags,
   logos/images, one-click album art — anchored, resolution-independent,
-  rendered into exports identically
+  resolved from the same project document in exports
 - **Frame aspects** (Fill / 16:9 / 9:16 / 1:1) with letterboxed preview and
   aspect-matched export resolutions up to vertical 4K
 - **Spotify Canvas mode**: pick any 3-8 s segment, export a 1080×1920
@@ -58,15 +58,15 @@ Free and open source. Built to become a professional-grade tool for producers an
   (visuals get beat/bar phase), kick/snare/hat onset classes as sync
   sources, key detection (Krumhansl), section boundaries as seek-bar ticks
 - **Modulation matrix**: route any audio feature (drums, bands, width,
-  beat phase...) to any knob of the active visual — applied identically in
-  exports
+  beat phase...) to any knob of the active visual — resolved by the same
+  track-time functions in exports
 - **Smooth curve toggle**: spline-connected spectrum (Catmull-Rom through
   the bins) instead of hard-edged bars, across all visuals
 - **Timeline workstation** (press T): arrange scenes (any visual per song
   part) with beat-snapped drag, crossfade transitions, and keyframe
   automation lanes for any parameter — against a waveform overview with a
-  beat/bar ruler and section markers. Exports render the arrangement
-  frame-perfectly.
+  beat/bar ruler and section markers. Exports resolve the arrangement from
+  deterministic track-time timestamps.
 - **Undo/redo** (Ctrl+Z / Ctrl+Y) across every edit, with gesture grouping
   (a slider drag is one step); crash-safe autosave on desktop, offered back on the
   next launch if the app died with unsaved work
@@ -79,11 +79,13 @@ Free and open source. Built to become a professional-grade tool for producers an
 - **MP4 export**: offline-rendered WebCodecs pipeline (H.264 + AAC, hardware
   encode, faster than realtime) running **in a worker** — the UI never
   freezes. On desktop, exports **stream straight to disk** (fragmented MP4,
-  flat memory — hour-long renders are fine). WYSIWYG by construction: the
-  live view and the export run the exact same FFT/windowing math, and sync
-  is sample-exact. 720p→4K / 30/60 fps / auto or manual bitrate. **HEVC and
-  AV1** where the hardware supports them (probed, smaller files, identical
-  pixels). Design: [docs/EXPORT-DESIGN.md](docs/EXPORT-DESIGN.md)
+  flat memory — hour-long renders are fine). Export A/V timestamps share one
+  decoded-audio clock, so drift cannot accumulate. Preview and export share
+  DSP/render code but live device timing is not numerically identical; see the
+  [preview/export truth contract](docs/PREVIEW-EXPORT-CONTRACT.md). 720p→4K /
+  30/60 fps / auto or manual bitrate. **HEVC and
+  AV1** where the hardware supports them (probed; codec choice does not change
+  the raw render). Design: [docs/EXPORT-DESIGN.md](docs/EXPORT-DESIGN.md)
 - **Transparent WebM export** — VP9 with a real alpha channel (color + alpha
   planes muxed via BlockAdditions) + Opus audio, for OBS overlays and web
   embeds. Pick the _VP9 + alpha_ codec, set Background to Transparent
@@ -105,11 +107,11 @@ Free and open source. Built to become a professional-grade tool for producers an
 - **Loudness normalization** on export: match the audio to −14 LUFS (streaming),
   −16 (podcast) or −23 (EBU R128), measured per ITU-R BS.1770-4 and held under a
   −1 dBTP ceiling by a look-ahead true-peak limiter, so nothing clips when a
-  streaming service re-encodes it. Audio-only — a normalized export renders
-  frame-for-frame identically to the preview. Off by default
+  streaming service re-encodes it. Audio-only — toggling normalization does
+  not change that export's visual analysis or raw frames. Off by default
 - **Timed lyrics (.lrc / .srt)**: drop a lyrics file on the window and the
   current line renders karaoke-style over the visual — position, size, color
-  and fades configurable, identical live and in every export
+  and fades configurable from the same timed definition in every export
 - **Music library** (desktop): pick your music folder once — every track
   listed with its real tags (title/artist/duration via lofty), one click to
   play, and finished tracks flow into the next near-gaplessly (the next file
@@ -135,7 +137,7 @@ src/
   audio/
     engine.ts          AudioContext graph, decoded-buffer playback, seek/volume
     featurePipeline.ts source-agnostic spectrum->AudioFeatures (deterministic)
-    realtimeSource.ts  live analysis — same RealFFT as export (WYSIWYG)
+    realtimeSource.ts  live analysis — shared DSP, device-timed input
     offlineSource.ts   PcmData driver at fixed fps (export path)
     dsp/fft.ts         own real FFT (Hann), shared by live + offline paths
     types.ts           AudioFeatures — the audio->render contract
@@ -164,9 +166,10 @@ src-tauri/             Rust shell — dialog/fs plugins, library scan
 
 Design rules: renderers consume only `AudioFeatures`; presets declare params
 as schema and stay pure functions of (features, time, params) — purity is
-what makes offline export output identical to the live view. New visual =
-one preset file + registry entry. Document state lives in the store's
-document slice and is what `.avproj` serializes.
+what makes the indexed offline frame walk repeatable. Live device sampling and
+cross-hardware pixels remain measured parity, not identity. New visual = one
+preset file + registry entry. Document state lives in the store's document
+slice and is what `.avproj` serializes.
 
 ## Dev
 

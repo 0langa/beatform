@@ -44,7 +44,7 @@ slider plus independent **Attack**/**Release** for punchy-in, ease-out
 reactions.
 
 Modes that draw the spectrum also get three **shape** controls (saved per
-mode, applied identically in exports): **Merge** melts isolated spikes into
+mode and included in exports): **Merge** melts isolated spikes into
 one connected silhouette (each bar props up its neighbors, Monstercat-style),
 **Rounding** averages neighboring bars — real smoothing, unlike the _Smooth
 curve_ spline which only rounds corners between still-spiky values — and
@@ -73,13 +73,15 @@ place.
 _Settings → Sync → Modulation_ routes any audio feature to any knob. The
 target list covers this visual's own parameters **and the post-processing
 chain** — so the kick can drive Chromatic, bass can breathe the Bloom, and
-the whole look moves with the track. Routes apply identically in exports.
+the whole look moves with the track. Exports resolve routes from the same
+track-time functions.
 
 ## Layers
 
 Text (with `{title}` / `{artist}` filled from the track's tags), logo
-images, or the track's embedded album art. Nine-point anchoring, fractional
-sizing. Layers render identically in preview and export.
+images, or the track's embedded album art. Nine-point anchoring and fractional
+sizing use one layout model in preview and export; raster pixels vary with
+target resolution.
 
 ## Timeline
 
@@ -145,19 +147,19 @@ tweak the amounts from there.
 The panel's **Audiogram** section adds track-driven overlay elements — a
 progress bar, an elapsed/total time readout, and a mini-waveform strip with
 a moving playhead (the podcast/reel look). Position and accent color are
-yours; everything renders identically in exports.
+yours; exports use the same timed overlay definition.
 
 ## Export
 
 - **MP4** — H.264 everywhere; **HEVC/AV1** where your GPU supports them
-  (probed automatically; identical pixels, smaller files). 720p→4K, 30/60
+  (probed automatically; codec choice leaves the raw render unchanged). 720p→4K, 30/60
   fps, auto or manual bitrate. Optional **loudness normalization** to −14 /
   −16 / −23 LUFS with a −1 dBTP true-peak ceiling (audio only — pixels
   unchanged).
 - **Video** — pick a short local clip to loop behind the visualization
   (desktop): cover-fit, dimmable, deterministic (the frame for each moment is a
-  pure function of track time, so exports match the preview). Decoded to a
-  fixed loop of the first seconds.
+  pure function of track time in both paths). Decoded to a fixed loop of the
+  first seconds; raster output still follows the truth-contract tolerances.
 - **Per-mode backgrounds** — the Background section's scope switch ("All
   modes" / "This mode") gives any mode its own background, image and video
   included: Spectrum Bars can sit on your video loop while Bass Circle keeps
@@ -176,9 +178,10 @@ yours; everything renders identically in exports.
 - **Batch** (**B**) — one video per dropped track, titled from each file's
   own tags. A failed file costs that one video, never the night.
 
-Exports render offline in a worker: the UI stays live, sync is sample-exact,
-and on desktop the file streams to disk so hour-long renders hold flat
-memory.
+Exports render offline in a worker: the UI stays live, indexed audio/video
+timestamps prevent accumulated drift, and on desktop the file streams to disk
+so hour-long renders hold flat memory. Preview parity scope and tolerances:
+[preview/export truth contract](PREVIEW-EXPORT-CONTRACT.md).
 
 ## App settings & updates
 

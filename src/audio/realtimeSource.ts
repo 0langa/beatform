@@ -26,10 +26,9 @@ import { gridPhase, type BeatGrid } from "./analysis/beatGrid";
  * hysteresis plus the hold stop a floor that hovers near the line from
  * chattering the gate open and shut, which would look worse than the bug.
  *
- * Track playback is deliberately NOT gated: it has an export that must match it
- * frame for frame, the offline path has no gate, and a hard nonlinearity on one
- * side only is a preview-versus-export divergence. Live capture has no export
- * counterpart, which is precisely why it can afford one.
+ * Track playback is deliberately NOT gated: its export path has no gate, so a
+ * hard nonlinearity on one side would add an avoidable preview/export
+ * divergence. Live capture has no export counterpart and can afford one.
  */
 const GATE_OPEN = Math.pow(10, -60 / 20);
 const GATE_CLOSE = Math.pow(10, -66 / 20);
@@ -42,9 +41,9 @@ const GATE_HOLD_SEC = 0.35;
  *
  * The AnalyserNode is used only as a time-domain tap — not for its frequency
  * data. Its Blackman window and native smoothingTimeConstant would make live
- * spectra differ from offline ones; doing the FFT ourselves makes live and
- * export pixels come from identical math (WYSIWYG), the only remaining
- * difference being frame timing (live dt varies, offline dt = 1/fps).
+ * spectra differ from offline ones; doing the FFT ourselves keeps
+ * Hann/FFT/bin math shared with export. Sample acquisition and frame timing
+ * remain distinct (device-timed live tap versus indexed offline windows).
  */
 export class RealtimeAnalyzer {
   private engine: AudioEngine;
@@ -72,6 +71,7 @@ export class RealtimeAnalyzer {
    * of the same project. See ANALYSIS_HZ in featurePipeline.
    */
   private sinceTick = 0;
+  private lastUpdateTicked = false;
   /** Live-input silence gate: open = the capture is carrying real audio. */
   private gateOpen = false;
   private gateHold = 0;
@@ -120,6 +120,7 @@ export class RealtimeAnalyzer {
     this.pipeline.reset(kind);
     this.lastFrameAt = null;
     this.sinceTick = 0;
+    this.lastUpdateTicked = false;
     // Shut, not open: entering live input has heard nothing yet, and the first
     // frame of real audio opens it anyway.
     this.gateOpen = false;
@@ -129,6 +130,16 @@ export class RealtimeAnalyzer {
   /** Attach the track's beat grid once analysis lands (null = none yet). */
   setBeatGrid(grid: BeatGrid | null): void {
     this.grid = grid;
+  }
+
+  /** Whether latest update advanced canonical 60 Hz detector/state clock. */
+  get feedbackTicked(): boolean {
+    return this.lastUpdateTicked;
+  }
+
+  /** Latest immutable-by-convention feature snapshot for DEV diagnostics. */
+  get features(): AudioFeatures {
+    return this.pipeline.features;
   }
 
   /**
@@ -159,6 +170,7 @@ export class RealtimeAnalyzer {
       // window of audio, firing repeatedly on a spectrum it has already seen.
       if (this.sinceTick > ANALYSIS_DT) this.sinceTick = 0;
     }
+    this.lastUpdateTicked = analysisTick;
     this.engine.analyser.getFloatTimeDomainData(this.timeData);
     this.engine.analyserL.getFloatTimeDomainData(this.timeL);
     this.engine.analyserR.getFloatTimeDomainData(this.timeR);

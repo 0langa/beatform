@@ -187,8 +187,8 @@ export interface PresetDef {
    * particle simulation (curl-noise flow + audio forces) and draws the
    * particles additively, bypassing the fragment `wgsl` path. Params (main +
    * advanced) drive the sim in ABI order — see PARTICLE_PARAM_KEYS in the
-   * renderer. Deterministic: seeded init, fixed sim rate keyed to track time,
-   * no RNG — so exports are bit-reproducible and preview tracks them closely.
+   * renderer. Deterministic input: seeded init, fixed sim rate keyed to track
+   * time, no RNG. GPU/driver pixel identity is outside this type contract.
    */
   particles?: ParticleSpec;
   /**
@@ -499,6 +499,20 @@ export interface TransitionState {
   kind?: number;
 }
 
+/**
+ * Texture-feedback work for one renderer call.
+ *
+ * State advances on a fixed 60 Hz clock. Presentation may happen on that same
+ * call, on a separate higher-rate call, or not at all (FPS-capped preview and
+ * export catch-up ticks).
+ */
+export type FeedbackRenderMode =
+  "advance-and-present" | "advance-only" | "present-only" | "present-history";
+
+export interface RenderOptions {
+  feedback?: FeedbackRenderMode;
+}
+
 export interface Renderer {
   readonly kind: "webgpu" | "canvas2d";
   render(
@@ -506,6 +520,7 @@ export interface Renderer {
     time: number,
     params: ParamValues,
     transition?: TransitionState,
+    options?: RenderOptions,
   ): void;
   /** Outgoing preset for crossfades (compiled+cached); null clears. */
   setTransitionPreset(preset: PresetDef | null): void;

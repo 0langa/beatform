@@ -181,7 +181,7 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
           Write a visual as one WGSL function — the full audio ABI (spectrum, waveform, sync
           signals, tempo pulses) is in scope; each parameter below becomes a{" "}
           <code>P_&lt;key&gt;()</code> accessor and an automatic slider. See the docs' Preset SDK
-          page for the reference. Custom visuals export and preview exactly like built-ins.
+          page for the reference. Custom visuals use the same preview and export paths as built-ins.
         </p>
 
         {props.customDefs.length > 0 && (

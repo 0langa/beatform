@@ -1,5 +1,5 @@
 import { useVizStore, type VizState } from "./state/store";
-import { getEngine } from "./state/services";
+import { getAnalyzer, getEngine } from "./state/services";
 import { rasterizeOverlay } from "./render/overlay";
 import { exportVideo } from "./export/videoExporter";
 import type { VideoCodecId } from "./export/codecProbe";
@@ -11,6 +11,8 @@ import { truePeakDbfs } from "./audio/dsp/truepeak";
 import { expandJobs, type BatchRun } from "./state/batch";
 import { runBatch } from "./state/batchRunner";
 import type { ProjectDocument } from "./state/project";
+import { runGpuPixelMatrix } from "./render/gpuMatrix";
+import { getPrefs, setPrefs } from "./state/prefs";
 
 /**
  * Dev-only E2E probes, extracted whole from App.tsx (they were ~240 lines and
@@ -75,11 +77,14 @@ function fnv1a(bytes: Uint8Array): string {
 }
 
 export function installDevHooks(store: typeof useVizStore.getState): void {
+  (window as unknown as { __runGpuMatrix: unknown }).__runGpuMatrix = runGpuPixelMatrix;
   // The app's store instance (HMR-safe), for state assertions in E2E runs
   (window as unknown as { __store: unknown }).__store = useVizStore;
   // The live audio engine, for E2E probes (module import from the console
   // would get a DIFFERENT instance — "services not initialized").
   (window as unknown as { __engine: unknown }).__engine = getEngine();
+  (window as unknown as { __analyzer: unknown }).__analyzer = getAnalyzer();
+  (window as unknown as { __prefs: unknown }).__prefs = { get: getPrefs, set: setPrefs };
   // UI clipping auditor for the browser-pane harness (referenced by the
   // testing hand-off): walks a scope's visible DOM and reports horizontally
   // clipped text, elements poking outside the scope, and content below the

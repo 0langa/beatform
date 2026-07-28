@@ -132,23 +132,22 @@ export interface LoopbackInfo {
 
 /**
  * Tauri only: start WASAPI loopback capture of the default output device.
- * `onChunk` receives interleaved STEREO f32 little-endian sample buffers.
- * Raw channel payloads normally arrive as ArrayBuffer; the other shapes are
- * handled defensively (IPC encodings have varied across Tauri versions).
+ * `onChunk` receives interleaved stereo PCM16 little-endian sample buffers.
+ * Rust sends base64 JSON below Tauri's direct-execute threshold, avoiding its
+ * high-latency fetch-backed channel path for larger raw payloads.
  */
 export async function startLoopback(onChunk: (chunk: ArrayBuffer) => void): Promise<LoopbackInfo> {
   const { invoke, Channel } = await import("@tauri-apps/api/core");
-  const ch = new Channel<ArrayBuffer | Uint8Array | number[]>();
-  ch.onmessage = (data) => {
-    if (data instanceof ArrayBuffer) {
-      onChunk(data);
-    } else if (data instanceof Uint8Array) {
-      onChunk(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer);
-    } else if (Array.isArray(data)) {
-      onChunk(new Uint8Array(data).buffer);
-    }
-  };
+  const ch = new Channel<string>();
+  ch.onmessage = (data) => onChunk(decodeLoopbackBase64(data));
   return invoke<LoopbackInfo>("start_loopback", { onSamples: ch });
+}
+
+export function decodeLoopbackBase64(data: string): ArrayBuffer {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
 }
 
 /** Tauri only: stop loopback capture (idempotent). */

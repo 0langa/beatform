@@ -187,7 +187,7 @@ describe("preflightWarning", () => {
 });
 
 describe("translateExportError", () => {
-  it("turns NotReadableError into a message about the scratch drive", () => {
+  it("turns NotReadableError into a disk message only with measured low scratch space", () => {
     // The exact exception the failed export showed. Its stock text says
     // "permission problems", which reads as a problem with the output file —
     // the one thing that was definitely fine.
@@ -195,17 +195,23 @@ describe("translateExportError", () => {
       "The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired.",
       "NotReadableError",
     );
-    const msg = translateExportError(e, "C:\\");
+    const msg = translateExportError(e, {
+      root: "C:\\",
+      freeBytes: 3.2e9,
+      totalBytes: 236e9,
+    });
     expect(msg).not.toBeNull();
     expect(msg).toContain("C:\\");
     expect(msg).toMatch(/working space/i);
-    // It must actively correct the misreading, not just restate it.
-    expect(msg).toMatch(/misleading/i);
+    expect(msg).toContain("3.2 GB");
   });
 
-  it("falls back to naming the system drive when the volume is unknown", () => {
+  it("preserves NotReadableError when scratch space is healthy or unknown", () => {
     const e = new DOMException("boom", "NotReadableError");
-    expect(translateExportError(e, null)).toMatch(/system drive/i);
+    expect(translateExportError(e, null)).toBeNull();
+    expect(
+      translateExportError(e, { root: "C:\\", freeBytes: 20e9, totalBytes: 236e9 }),
+    ).toBeNull();
   });
 
   it("recognises a disk-full report from ffmpeg or the OS, whatever the wording", () => {
@@ -216,15 +222,15 @@ describe("translateExportError", () => {
     ]) {
       // Sidecar failures arrive as raw STRINGS from the Rust command, not
       // Errors — reading .message off them yields undefined.
-      expect(translateExportError(text, "C:\\")).toMatch(/ran out of space/i);
+      expect(translateExportError(text, null)).toMatch(/ran out of space/i);
     }
   });
 
   it("returns null for errors that are not about disk space", () => {
     // The caller falls back to the original text; guessing here would replace
     // a precise message with a wrong one.
-    expect(translateExportError(new Error("GPU device lost during export"), "C:\\")).toBeNull();
-    expect(translateExportError("Unknown animation format: bmp", "C:\\")).toBeNull();
+    expect(translateExportError(new Error("GPU device lost during export"), null)).toBeNull();
+    expect(translateExportError("Unknown animation format: bmp", null)).toBeNull();
     expect(
       translateExportError(new DOMException("Export cancelled", "AbortError"), null),
     ).toBeNull();

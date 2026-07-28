@@ -95,8 +95,8 @@ export interface ExportOptions {
   onPngFrame?: (data: Uint8Array, index: number) => void | Promise<void>;
   /**
    * Normalize the delivered audio to a loudness target with a true-peak
-   * ceiling. Audio-only: the visuals do not change, so a normalized export
-   * still matches the preview frame for frame. Omit to encode at source level.
+   * ceiling. Audio-only: toggling this does not change this export job's
+   * analysis inputs or raw visual frames. Omit to encode at source level.
    */
   loudness?: LoudnessJob;
   onProgress?: (framesDone: number, framesTotal: number) => void;

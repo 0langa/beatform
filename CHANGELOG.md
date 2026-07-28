@@ -11,6 +11,78 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.60.1] - 2026-07-28
+
+### Fixed
+
+- **System-audio visualization no longer runs a beat behind what you are
+  hearing.** Watching visuals react to Spotify or a browser, everything arrived
+  noticeably late — and the longer a session ran, the worse it got.
+
+  The audio captured from your speakers passes through a small buffer on its way
+  to the analyser. That buffer had no way to empty itself: any moment the app
+  stuttered left a little extra audio sitting in it, and nothing ever took that
+  audio back out, so the delay only ever grew. It waited until a quarter of a
+  second had piled up before doing anything about it, which made a QUARTER
+  SECOND of lag the normal state of a long session rather than an emergency.
+
+  It now watches how full the buffer gets and gives back only depth a complete
+  measurement window proved unnecessary. Late-delivery recovery is credited
+  only against frames already emitted as silence, so it cannot manufacture a
+  second hole by dropping valid audio.
+
+  The native bridge also stopped pushing full-rate float blocks through
+  Tauri's fetch-backed channel path. Capture is converted to PCM16 outside the
+  realtime callback, sent in bounded base64 batches below the direct-channel
+  threshold, and decoded by the worklet. On the optimized Windows build at
+  48 kHz, real two-tone loopback passed at both display rate and a 30 fps cap:
+  341–348 ms onset response, 99–101 ms steady ring depth (111–112 ms maximum),
+  100% visible tone continuity, and zero worklet underruns during each 12 s
+  sustained run. These are validation measurements, not hardware-universal
+  latency promises.
+
+- **System-audio visualization stays still when nothing is playing.** With the
+  system muted or idle, the visuals still pumped and threw the occasional spike,
+  most visibly on Radial Burst and Bass Circle.
+
+  Silence from a sound device is not always silence. Depending on the driver and
+  whatever "audio enhancements" it applies, a muted output can still hand over a
+  faint hum or dither — far too quiet to hear, but Beatform's analysis is built
+  to bring out quiet detail, so it drew it. Live capture now recognises a level
+  that low as silence and shows nothing.
+
+  This applies only to system-audio capture. Track playback is untouched; its
+  export path has no corresponding gate.
+
+- **Texture-feedback trails now use a fixed 60 Hz state clock.** Oscilloscope
+  afterglow and Echo Trails no longer mutate history once per presented frame.
+  A 24/30 fps export consumes multiple state ticks before presenting; a
+  90/120/144 Hz preview presents fresh motion between ticks without feeding it
+  back. Trail decay and sampling density therefore no longer depend on output
+  or display fps.
+
+  Oscilloscope's finishing pass also runs before trail carry-forward, so a
+  pixel is graded once rather than once for every frame it survives.
+
+- **Ambiguous browser read failures are no longer diagnosed as disk-full by
+  name alone.** `NotReadableError` can also mean permissions or concurrent file
+  access. Beatform now re-measures the scratch volume at failure time and only
+  shows the disk-space explanation when that independent check is low; explicit
+  OS/ffmpeg disk-full codes remain translated directly.
+
+### Changed
+
+- **Oscilloscope's trails look brighter.** A direct consequence of the fix
+  above: the afterglow now keeps its authored colour and no longer darkens
+  toward the corners the longer it lingers. The beam itself is unchanged. If you
+  had dialled Persistence up to compensate, it will now read stronger than
+  before.
+
+- **Preview/export claims now have one explicit truth contract.** Indexed A/V
+  timing and shared project/render definitions are guarantees; live device
+  timing and cross-GPU pixels use measured tolerances rather than unsupported
+  “exact same pixels” language.
+
 ## [2.60.0] - 2026-07-28
 
 ### Fixed
@@ -1465,7 +1537,41 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.37.2...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.60.1...HEAD
+[2.60.1]: https://github.com/0langa/beatform/compare/v2.60.0...v2.60.1
+[2.60.0]: https://github.com/0langa/beatform/compare/v2.59.0...v2.60.0
+[2.59.0]: https://github.com/0langa/beatform/compare/v2.58.0...v2.59.0
+[2.58.0]: https://github.com/0langa/beatform/compare/v2.57.0...v2.58.0
+[2.57.0]: https://github.com/0langa/beatform/compare/v2.56.0...v2.57.0
+[2.56.0]: https://github.com/0langa/beatform/compare/v2.55.0...v2.56.0
+[2.55.0]: https://github.com/0langa/beatform/compare/v2.54.0...v2.55.0
+[2.54.0]: https://github.com/0langa/beatform/compare/v2.53.0...v2.54.0
+[2.53.0]: https://github.com/0langa/beatform/compare/v2.52.0...v2.53.0
+[2.52.0]: https://github.com/0langa/beatform/compare/v2.51.0...v2.52.0
+[2.51.0]: https://github.com/0langa/beatform/compare/v2.50.0...v2.51.0
+[2.50.0]: https://github.com/0langa/beatform/compare/v2.49.1...v2.50.0
+[2.49.1]: https://github.com/0langa/beatform/compare/v2.49.0...v2.49.1
+[2.49.0]: https://github.com/0langa/beatform/compare/v2.48.1...v2.49.0
+[2.48.1]: https://github.com/0langa/beatform/compare/v2.48.0...v2.48.1
+[2.48.0]: https://github.com/0langa/beatform/compare/v2.47.1...v2.48.0
+[2.47.1]: https://github.com/0langa/beatform/compare/v2.47.0...v2.47.1
+[2.47.0]: https://github.com/0langa/beatform/compare/v2.46.2...v2.47.0
+[2.46.2]: https://github.com/0langa/beatform/compare/v2.46.1...v2.46.2
+[2.46.1]: https://github.com/0langa/beatform/compare/v2.46.0...v2.46.1
+[2.46.0]: https://github.com/0langa/beatform/compare/v2.45.2...v2.46.0
+[2.45.2]: https://github.com/0langa/beatform/compare/v2.45.1...v2.45.2
+[2.45.1]: https://github.com/0langa/beatform/compare/v2.45.0...v2.45.1
+[2.45.0]: https://github.com/0langa/beatform/compare/v2.44.3...v2.45.0
+[2.44.3]: https://github.com/0langa/beatform/compare/v2.44.2...v2.44.3
+[2.44.2]: https://github.com/0langa/beatform/compare/v2.44.1...v2.44.2
+[2.44.1]: https://github.com/0langa/beatform/compare/v2.44.0...v2.44.1
+[2.44.0]: https://github.com/0langa/beatform/compare/v2.43.0...v2.44.0
+[2.43.0]: https://github.com/0langa/beatform/compare/v2.42.0...v2.43.0
+[2.42.0]: https://github.com/0langa/beatform/compare/v2.41.0...v2.42.0
+[2.41.0]: https://github.com/0langa/beatform/compare/v2.40.0...v2.41.0
+[2.40.0]: https://github.com/0langa/beatform/compare/v2.39.0...v2.40.0
+[2.39.0]: https://github.com/0langa/beatform/compare/v2.38.0...v2.39.0
+[2.38.0]: https://github.com/0langa/beatform/compare/v2.37.2...v2.38.0
 [2.37.2]: https://github.com/0langa/beatform/compare/v2.37.1...v2.37.2
 [2.37.1]: https://github.com/0langa/beatform/compare/v2.37.0...v2.37.1
 [2.37.0]: https://github.com/0langa/beatform/compare/v2.36.1...v2.37.0

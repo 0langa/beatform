@@ -22,8 +22,8 @@ import type { PresetDef } from "../types";
  *     re-samples the SAME folded coordinate every frame, so the kaleidoscope
  *     stays coherent across accumulating trails instead of smearing.
  *
- * All motion is a pure function of the frame sequence (feedback texture +
- * uniforms) — no RNG — so live preview and export produce identical trails.
+ * All motion is a pure function of fixed-clock feedback state + uniforms — no
+ * RNG. Presentation cadence does not change history cadence.
  */
 export const echoTrails: PresetDef = {
   id: "echo-trails",

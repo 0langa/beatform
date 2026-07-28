@@ -584,24 +584,12 @@ fn preset(uv: vec2f) -> vec4f {
   // Phosphor persistence: last frame's beam lingers and fades, like a real
   // CRT's afterglow. max(), not +=, so a STABLE trace converges to its own
   // fresh brightness instead of the trail re-brightening it forever — only a
-  // shape that's still changing leaves a visible ghost. Decay is expressed
-  // per SECOND (pow(.., dt*60)), not per rendered frame, so a 30 fps export
-  // fades at the same track-time rate as a 60 fps preview.
-  //
-  // ...with the exponent floored at 1.0, i.e. never FASTER than 60 fps.
-  // max() unions the recent sweeps rather than adding them, and covering the
-  // trace's excursion band takes a roughly frame-rate-independent NUMBER of
-  // sweeps — so what decides whether the band fills is the per-frame factor,
-  // not the per-second one. Above 60 fps the per-second form pushes that
-  // per-frame factor toward 1 (0.6/frame at 60 fps, 0.75/frame at 120 Hz),
-  // and a 120 Hz preview turned the same settings that are a clean trace at
-  // 60 fps into a solid slab — the live preview disagreeing with its own
-  // export. Flooring the exponent pins the trail at its authored 60 fps
-  // density on high-refresh displays (it fades over less wall time there,
-  // which degrades gracefully; the alternative saturates). At and below
-  // 60 fps — every export frame rate — this is a no-op and the per-second
-  // fade rate above is untouched.
-  let decay = pow(clamp(P_persist(), 0.0001, 0.98), max(u.dt * 60.0, 1.0));
+  // shape that's still changing leaves a visible ghost. Renderer advances
+  // feedback history on a fixed 60 Hz state clock. Canonical ticks carry
+  // u.dt=1/60; presentation-only frames carry u.dt=0 and are never copied
+  // back into history. This keeps both decay RATE and sweep DENSITY invariant
+  // across 24/30/60/120/144 fps without freezing fresh beam presentation.
+  let decay = pow(clamp(P_persist(), 0.0001, 0.98), u.dt * 60.0);
   col = max(col, feedbackSample(uv).rgb * decay);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }

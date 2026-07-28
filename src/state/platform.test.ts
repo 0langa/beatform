@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { IMAGE_MAX_BYTES, VIDEO_MAX_BYTES, openImageFile, openVideoFile } from "./platform";
+import {
+  decodeLoopbackBase64,
+  IMAGE_MAX_BYTES,
+  VIDEO_MAX_BYTES,
+  openImageFile,
+  openVideoFile,
+} from "./platform";
 
 /**
  * M21: openImageFile/openVideoFile embedded any file as a base64 data URL
@@ -40,6 +46,10 @@ function stubFilePicker(file: File): void {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+it("decodes loopback base64 without changing PCM bytes", () => {
+  expect(Array.from(new Uint8Array(decodeLoopbackBase64("AID/fw==")))).toEqual([0, 128, 255, 127]);
 });
 
 describe("background asset size limits", () => {

@@ -342,8 +342,9 @@ const SECTIONS: GuideSection[] = [
       <>
         <h3>Rendering videos</h3>
         <p>
-          Exports render every frame off-screen and match the preview exactly — same seed, same
-          analysis, same pixels. Formats:
+          Exports render every frame off-screen from deterministic track time. Preview and export
+          share project, DSP, and shader code; live device timing and cross-GPU pixels are measured,
+          not claimed identical. Formats:
         </p>
         <ul>
           <li>

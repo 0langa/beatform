@@ -1,8 +1,9 @@
 # Beatform
 
-Beatform is a free, open-source music visualizer for Windows. Drop a track in, get a
-beat-locked video out — live preview and exported file are the same render,
-by construction.
+Beatform is a free, open-source music visualizer for Windows. Drop a track in,
+get a beat-locked video out. Preview and export share one creative definition;
+exact guarantees and measured tolerances are documented in the
+[preview/export truth contract](PREVIEW-EXPORT-CONTRACT.md).
 
 **[Download the latest release](https://github.com/0langa/beatform/releases/latest)**
 (NSIS installer or MSI + SHA256 checksums). No account, no cloud, no telemetry;
@@ -23,16 +24,16 @@ GitHub is the only channel and everything is free forever.
    or album art. _Sync_ chooses what drives the motion (kicks, bass, melody,
    voice…). _Post_ adds bloom, grain, vignette.
 5. **Export.** One MP4 (H.264/HEVC/AV1), a transparent WebM (VP9 + alpha), a
-   PNG sequence with alpha, or a ProRes 4444 `.mov` for your editor. What you
-   previewed is what renders —
-   sync is sample-exact.
+   PNG sequence with alpha, or a ProRes 4444 `.mov` for your editor. The same
+   project definition renders on an indexed export timeline; live reaction and
+   cross-hardware pixels follow the documented parity tolerances.
 
 ## More
 
 - **[User guide](guide)** — every panel, mode, and export option
 - **[Templates (.avtheme)](templates)** — share a complete look as one file
 - **[Preset SDK](presets)** — add a visual mode with one WGSL file
-- **[Export design](EXPORT-DESIGN)** — why preview and file can't drift
+- **[Export design](EXPORT-DESIGN)** — indexed A/V timing and parity boundaries
 - **[Contributing](https://github.com/0langa/beatform/blob/main/CONTRIBUTING.md)**
 
 ## Highlights
@@ -47,4 +48,6 @@ GitHub is the only channel and everything is free forever.
   near-gapless auto-advance.
 - **Listen to the system**: visualize whatever the PC is playing (Spotify, a
   browser, a DAW) via native loopback — live, no setup.
-- **Deterministic renders**: same input, byte-identical frames, every run.
+- **Deterministic export timeline**: indexed frame/audio timestamps, no
+  accumulated A/V drift. Raw-frame repeatability and preview parity have
+  explicit scope: [truth contract](PREVIEW-EXPORT-CONTRACT.md).

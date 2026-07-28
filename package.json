@@ -1,7 +1,7 @@
 {
   "name": "beatform",
   "private": true,
-  "version": "2.60.0",
+  "version": "2.60.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,11 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:gpu": "node scripts/gpu-pixel-matrix.mjs",
+    "test:gpu:update": "node scripts/gpu-pixel-matrix.mjs --update",
+    "test:loopback": "node scripts/loopback-smoke.mjs",
+    "test:loopback:built": "node scripts/loopback-smoke.mjs --built",
+    "test:loopback:built:30": "node scripts/loopback-smoke.mjs --built --fps=30",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",

@@ -309,7 +309,7 @@ const POST_SLIDERS: Array<{
     min: 0,
     max: 0.5,
     step: 0.01,
-    hint: "Deterministic film grain — identical in preview and export",
+    hint: "Deterministic film grain keyed to track time",
   },
 ];
 
@@ -1386,7 +1386,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               <p className="section-hint">
                 {props.simplifiedRenderer
                   ? "Video backgrounds upload a frame to the GPU every frame, so they need hardware rendering (WebGPU). This mode currently paints the flat background color instead — pick Animated, Solid or Image."
-                  : `A short clip loops behind the visualization (first ${12}s, decoded to a fixed loop). Deterministic — the export matches the preview. Desktop only.`}
+                  : `A short clip loops behind the visualization (first ${12}s, decoded to a fixed loop). Export selects frames from the same track-time index. Desktop only.`}
               </p>
             </>
           )}
@@ -1463,7 +1463,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
           <p className="section-hint">
             {props.simplifiedRenderer
               ? "The finishing pass runs on the GPU, so it needs hardware rendering (WebGPU). Your settings are kept and apply again where it is available."
-              : "Finishing pass applied to the whole frame — grain is deterministic, so preview and export match exactly."}
+              : "Finishing pass applied to the whole frame — grain is deterministic from track time in both preview and export."}
           </p>
         </>
       ),
