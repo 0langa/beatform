@@ -2057,6 +2057,42 @@ fn preset(uv: vec2f) -> vec4f {
   // Gentle beat lift (no strobe)
   col *= 1.0 + beatP * P_beatLift();
 
+  // The finishing kit runs BEFORE the persistence union, not after it.
+  //
+  // This preset's return value IS next frame's feedbackSample(): the renderer
+  // captures the raw visual and hands it back (webgpuRenderer, feedback path).
+  // So a post chain applied after the union lands on the FED-BACK pixel too,
+  // and every persisted frame re-applies it. What that costs is not subtle:
+  //
+  //   - tonemap is an S-curve, and in the dark half it LIFTS (t(0.2) = 0.30).
+  //     Re-applied per frame it fights the decay, so the trail's real per-frame
+  //     gain was decay x ~1.5 at 60 fps but decay x ~1.14 at 30 — the same
+  //     project's afterglow measurably shorter in its 30 fps export than in its
+  //     own preview, which is the one thing this app does not do.
+  //   - vignette is a <=1 multiply applied once per RENDERED frame while decay
+  //     is per SECOND, so a one-second-old trail took 60 vignette applications
+  //     at 60 fps against 30 at 30 (0.8625^30 ~ 0.012 corner divergence at the
+  //     default 0.55).
+  //   - a trail pixel was therefore also darker and flatter than the brightness
+  //     it was authored at, having been graded once for every frame it survived
+  //     rather than once when it was drawn.
+  //
+  // Posting first fixes all three at once: a pixel is graded exactly once, in
+  // the frame it was fresh, and the loop that carries it afterwards is the pure
+  // per-second decay it was always documented to be. Echo Trails reached the
+  // same place from the other direction — it keeps the vignette in the loop and
+  // gives it a per-second exponent (vgFade), and drops tonemap entirely — which
+  // it has to, because it ACCUMULATES with += and needs a bounded loop gain.
+  // A max() union has no runaway to bound, so it can simply post first.
+  //
+  // Fresh beam pixels are unchanged wherever the trace dominates its own trail,
+  // which is every lit pixel of the beam; the afterglow is brighter and holds
+  // its authored colour, at every frame rate.
+  let d2 = distance(uv, vec2f(0.5));
+  col *= 1.0 - d2 * d2 * P_vignette();
+  col = tonemap(col * 1.1);
+  col += grain(uv, 0.012);
+
   // Phosphor persistence: last frame's beam lingers and fades, like a real
   // CRT's afterglow. max(), not +=, so a STABLE trace converges to its own
   // fresh brightness instead of the trail re-brightening it forever — only a
@@ -2079,11 +2115,6 @@ fn preset(uv: vec2f) -> vec4f {
   // fade rate above is untouched.
   let decay = pow(clamp(P_persist(), 0.0001, 0.98), max(u.dt * 60.0, 1.0));
   col = max(col, feedbackSample(uv).rgb * decay);
-
-  let d2 = distance(uv, vec2f(0.5));
-  col *= 1.0 - d2 * d2 * P_vignette();
-  col = tonemap(col * 1.1);
-  col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
 "
