@@ -11,6 +11,37 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.58.0] - 2026-07-28
+
+### Fixed
+
+- **Dragging the playhead no longer sets off a beat that isn't in the music.**
+  After a seek the analyser compared the new position against wherever you just
+  came from, and that difference was almost always big enough to trigger a
+  beat, kick, snare or hat — so scrubbing punched the visuals on nearly every
+  drag. Looping a track did the same thing at the top of every lap. The
+  analyser is now told when the audio it is about to hear isn't a continuation
+  of what came before: on seek, loop, loading a track, and switching in or out
+  of system audio.
+
+  Scrubbing still looks the way it did otherwise — the spectrum, peak caps and
+  motion carry across a seek rather than blinking out and rebuilding, and there
+  is no dead moment before beats resume.
+
+- **A recording with a DC offset no longer pegs the bottom bar of the
+  spectrum.** If you dragged the analysed frequency range down toward its 10 Hz
+  floor, any file carrying a constant offset lit the lowest bar and held it
+  there for the whole track, in both the preview and the export. That bar now
+  reads the music.
+
+### Changed
+
+- The drum-onset detector's threshold now scales with frame time, matching the
+  beat and sync detectors. **This is a consistency fix with no visible effect**
+  — measured, every frame rate from 30 to 144 already found the same hits, down
+  to levels far below anything audible. It is tidied now so the value can be
+  adjusted later without quietly behaving differently on a high-refresh display.
+
 ## [2.57.0] - 2026-07-28
 
 ### Added
