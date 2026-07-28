@@ -46,6 +46,16 @@ export interface AppPrefs {
   paramsTab: "visual" | "sync" | "scene" | "text" | "live";
   /** Collapsed section titles inside the settings panel. */
   collapsedSections: string[];
+  /**
+   * The user's own left-to-right order for the mode strip, as preset ids.
+   * EMPTY means "never customised" — and that is load-bearing: an empty value
+   * follows whatever order the app ships, so someone who never touched this
+   * picks up a better default order from an update instead of being frozen on
+   * the one that happened to be current when they first launched. A non-empty
+   * value is reconciled against the live registry on read (see
+   * presetOrder.ts), never trusted as-is.
+   */
+  presetOrder: string[];
 }
 
 export const DEFAULT_PREFS: AppPrefs = {
@@ -62,6 +72,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   updateAutoCheck: true,
   paramsTab: "visual",
   collapsedSections: [],
+  presetOrder: [],
 };
 
 const LS_PREFS = "beatform.prefs.v1";
@@ -108,6 +119,12 @@ function validPrefs(raw: unknown): AppPrefs {
         : "visual",
     collapsedSections: Array.isArray(p.collapsedSections)
       ? p.collapsedSections.filter((s): s is string => typeof s === "string").slice(0, 64)
+      : [],
+    // Kept as raw ids, NOT reconciled here: prefs must not import the preset
+    // registry (it would drag the whole render layer into every module that
+    // reads a volume). Anything non-array degrades to "never customised".
+    presetOrder: Array.isArray(p.presetOrder)
+      ? p.presetOrder.filter((s): s is string => typeof s === "string").slice(0, 64)
       : [],
   };
 }

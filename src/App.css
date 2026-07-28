@@ -2800,3 +2800,95 @@ kbd {
   color: var(--danger);
   background: rgba(255, 143, 143, 0.13);
 }
+
+/* Mode-strip order editor (App settings → Modes). A scrolling list inside a
+   380px modal: the row must never grow past its column, hence the 1fr name
+   cell with its own ellipsis. */
+.mode-order {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 46vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mode-order-row {
+  display: grid;
+  grid-template-columns: 14px 12px 48px 1fr auto auto;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  /* A 2px transparent edge on both sides, so the drop indicator below can
+     colour one in without the row jumping by 2px as you drag past it. */
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: grab;
+}
+
+.mode-order-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.mode-order-row.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+.mode-order-row.drop-before {
+  border-top-color: var(--accent);
+}
+
+.mode-order-row.drop-after {
+  border-bottom-color: var(--accent);
+}
+
+.mode-order-index {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mode-order-grip {
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1;
+}
+
+.mode-order-thumb {
+  width: 48px;
+  height: 27px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+  border: 1px solid var(--border);
+  pointer-events: none;
+}
+
+.mode-order-thumb.placeholder {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mode-order-name {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mode-order-row .chip-x:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.mode-order-row .chip-x:disabled:hover {
+  color: var(--text-faint);
+  background: none;
+}

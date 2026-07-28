@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { presets } from "../render/presets";
+import { orderedPresets } from "../state/presetOrder";
 import type { useVizStore } from "../state/store";
 
 /** Input types that are real text entry — these swallow every shortcut. A
@@ -125,7 +125,10 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
       // Number keys 1-9 jump to a mode by position, beat-quantized when the
       // Quantize control is on (the switch lands on the next beat/bar).
       if (e.key >= "1" && e.key <= "9") {
-        const all = [...presets, ...s.customDefs];
+        // "Position" means position ON THE STRIP — the digits have to address
+        // the chips the user can see, or a custom order would silently break
+        // every muscle-memory binding in a live set.
+        const all = orderedPresets(s.presetOrder, s.customDefs);
         const target = all[Number(e.key) - 1];
         if (target) s.queuePreset(target.id);
         return;

@@ -122,6 +122,7 @@ import {
   markSessionDirty,
 } from "./persistence";
 import { getPrefs, setPrefs } from "./prefs";
+import { defaultPresetOrder, orderedPresets, reconcilePresetOrder } from "./presetOrder";
 import { decodeAudioLenient } from "../audio/decodeLenient";
 import {
   BUILDER2_ID,
@@ -309,6 +310,13 @@ interface SessionSlice {
   liveInputActive: boolean;
   /** presetId -> PNG data URL, generated lazily after first paint. */
   presetThumbs: Record<string, string> | null;
+  /**
+   * Built-in preset ids in the order the strip shows them — chrome only.
+   * Reconciled against the live registry at boot, so it is always exactly the
+   * ids this build has. Nothing downstream of the renderer reads it: display
+   * order cannot reach a frame.
+   */
+  presetOrder: string[];
   /** Imported stems (analysis-only, session-scoped like the track). */
   stems: StemEntry[];
   /** User-authored WGSL presets (mirrors the runtime registry). */
@@ -335,6 +343,11 @@ interface Actions {
   /** Switch to a preset, honoring the beat-quantize mode: instant when off /
    * paused / unanalyzed, otherwise queued until the next beat/bar boundary. */
   queuePreset(id: string): void;
+  /** Rewrite the strip's display order (persisted). Reconciled on the way in,
+   * so a caller can hand over a stale or partial list without breaking it. */
+  setPresetOrder(ids: readonly string[]): void;
+  /** Back to the shipped order, and forget the customisation. */
+  resetPresetOrder(): void;
   setSwitchQuantize(mode: QuantizeMode): void;
   /** Request Web MIDI access and start listening (user-gesture initiated). */
   enableMidi(): Promise<void>;
@@ -1010,6 +1023,7 @@ export const useVizStore = create<VizState>((set, get) => {
     midiLearn: null,
     liveInputActive: false,
     presetThumbs: null,
+    presetOrder: reconcilePresetOrder(getPrefs().presetOrder),
     stems: [],
     stemAnalyzing: null,
     lyrics: null,
@@ -1196,12 +1210,30 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     stepPreset(delta) {
-      const all = [...presets, ...get().customDefs];
+      // Walks the STRIP's order, not the registry's: N/P and the ◀▶ buttons
+      // are "the next chip along", and stepping in a different sequence from
+      // the one on screen is the kind of thing you only notice on stage.
+      const all = orderedPresets(get().presetOrder, get().customDefs);
       const i = all.findIndex((p) => p.id === get().presetId);
       // Through queuePreset, not switchPreset: [ and ] are live-performance
       // controls exactly like the number keys, and it was inconsistent for
       // 1-9 to honour beat-quantize while the step keys jumped instantly.
       get().queuePreset(all[(i + delta + all.length) % all.length].id);
+    },
+
+    setPresetOrder(ids) {
+      const presetOrder = reconcilePresetOrder(ids);
+      set({ presetOrder });
+      // Stored as given (already reconciled) rather than as a diff from the
+      // default: a plain id list is what survives an app update readably.
+      setPrefs({ presetOrder });
+    },
+
+    resetPresetOrder() {
+      set({ presetOrder: defaultPresetOrder() });
+      // Empty, not the resolved list — "never customised" must keep meaning
+      // "follow whatever order the app ships", including after a later update.
+      setPrefs({ presetOrder: [] });
     },
 
     queuePreset(id) {

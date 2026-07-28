@@ -343,3 +343,53 @@ describe("export and batch refuse to start on the simplified renderer (F2)", () 
     );
   });
 });
+
+/**
+ * Strip display order. The store owns it because three surfaces have to agree
+ * on one sequence — the chips, the N/P step keys, and the 1-9 number keys —
+ * and because a change has to reach the strip immediately, not on next launch.
+ */
+describe("preset display order", () => {
+  it("persists a custom order into prefs, reconciled", async () => {
+    const { useVizStore } = await import("./store");
+    const { getPrefs } = await import("./prefs");
+    const { defaultPresetOrder, stripPresetIds } = await import("./presetOrder");
+
+    // A partial, slightly dirty list — what a caller (or an older build's
+    // stored value) can realistically hand over.
+    useVizStore.getState().setPresetOrder(["synthwave", "aurora", "gone-in-this-build"]);
+
+    const order = useVizStore.getState().presetOrder;
+    expect(order.slice(0, 2)).toEqual(["synthwave", "aurora"]);
+    expect(order).not.toContain("gone-in-this-build");
+    // Nothing may go missing: every mode still has a chip.
+    expect([...order].sort()).toEqual([...stripPresetIds()].sort());
+    expect(getPrefs().presetOrder).toEqual(order);
+
+    useVizStore.getState().resetPresetOrder();
+    expect(useVizStore.getState().presetOrder).toEqual(defaultPresetOrder());
+    // Stored EMPTY, not the resolved list: "never customised" has to keep
+    // meaning "follow whatever order the app ships", including after an update
+    // that changes the default.
+    expect(getPrefs().presetOrder).toEqual([]);
+  });
+
+  it("steps along the strip's order, not the registry array", async () => {
+    const { useVizStore } = await import("./store");
+
+    useVizStore.getState().setPresetOrder(["synthwave", "aurora"]);
+    useVizStore.setState({
+      presetId: "synthwave",
+      customDefs: [],
+      switchQuantize: "off",
+      pendingPresetId: null,
+    });
+
+    useVizStore.getState().stepPreset(1);
+
+    // Registry order would have gone synthwave -> bass-circle.
+    expect(useVizStore.getState().presetId).toBe("aurora");
+
+    useVizStore.getState().resetPresetOrder();
+  });
+});

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { demos } from "./audio/demoTrack";
 import { BG_TRANSPARENT } from "./render/types";
-import { presets, presetById } from "./render/presets";
+import { presetById } from "./render/presets";
+import { orderedPresets } from "./state/presetOrder";
 import { APP_VERSION } from "./version";
 import { BatchPanel, type BatchPanelProps } from "./ui/BatchPanel";
 import { RESOLUTIONS, useVizStore } from "./state/store";
@@ -144,7 +145,11 @@ export default function App() {
   const showBatch = useVizStore((s) => s.showBatch);
   const customDefs = useVizStore((s) => s.customDefs);
   const showShaderEditor = useVizStore((s) => s.showShaderEditor);
-  const allPresets = useMemo(() => [...presets, ...customDefs], [customDefs]);
+  const presetOrder = useVizStore((s) => s.presetOrder);
+  const allPresets = useMemo(
+    () => orderedPresets(presetOrder, customDefs),
+    [presetOrder, customDefs],
+  );
 
   const store = useVizStore.getState; // stable accessor for actions/handlers
 

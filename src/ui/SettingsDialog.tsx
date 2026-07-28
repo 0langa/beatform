@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useVizStore } from "../state/store";
 import { getPrefs, setPrefs, type AppPrefs } from "../state/prefs";
 import { isTauri } from "../state/platform";
+import { presets } from "../render/presets";
+import { isDefaultPresetOrder } from "../state/presetOrder";
 import { APP_VERSION } from "../version";
 import type { UpdatePhase } from "../state/updater";
 import { useFocusTrap } from "./useFocusTrap";
 import { IconClose } from "./Icons";
+import { PresetOrderEditor } from "./PresetOrderEditor";
 import { SECONDS, Segmented, SelectRow, SliderRow, ToggleRow } from "./kit";
 
 /**
@@ -21,7 +24,11 @@ export interface SettingsDialogProps {
   onRelaunch: () => void;
 }
 
-type Tab = "general" | "performance" | "updates";
+type Tab = "general" | "modes" | "performance" | "updates";
+
+/** Built-in defs by id — the strip order is a list of ids, and this turns it
+ * back into names/thumbs. Module-level: the registry cannot change at runtime. */
+const PRESETS_BY_ID = new Map(presets.map((p) => [p.id, p]));
 
 export function SettingsDialog(props: SettingsDialogProps) {
   const store = useVizStore.getState;
@@ -30,6 +37,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
   // Prefs are module state, not store state — mirror locally for re-render.
   const [prefs, setLocal] = useState<AppPrefs>(() => getPrefs());
   const apply = (patch: Partial<AppPrefs>) => setLocal(setPrefs(patch));
+  // The strip order DOES live in the store, so the chips behind this dialog
+  // reorder live as you drag — no "apply" step, no way to leave the two views
+  // disagreeing.
+  const presetOrder = useVizStore((s) => s.presetOrder);
+  const presetThumbs = useVizStore((s) => s.presetThumbs);
+  const orderIsDefault = useMemo(() => isDefaultPresetOrder(presetOrder), [presetOrder]);
   const desktop = isTauri();
   const { update } = props;
 
@@ -61,6 +74,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
           ariaLabel="Settings section"
           options={[
             { value: "general", label: "General" },
+            { value: "modes", label: "Modes" },
             { value: "performance", label: "Performance" },
             { value: "updates", label: "Updates" },
           ]}
@@ -101,6 +115,24 @@ export function SettingsDialog(props: SettingsDialogProps) {
               Project-specific settings (visuals, sync, background, post…) live in the settings
               panel (G) and save into your project file — this page is preferences about the app
               itself. Beatform stores everything locally and sends no telemetry, ever.
+            </p>
+          </>
+        )}
+
+        {tab === "modes" && (
+          <>
+            <PresetOrderEditor
+              order={presetOrder}
+              byId={PRESETS_BY_ID}
+              thumbs={presetThumbs}
+              isDefault={orderIsDefault}
+              onChange={(ids) => store().setPresetOrder(ids)}
+              onReset={() => store().resetPresetOrder()}
+            />
+            <p className="section-hint">
+              Order is yours and stays put across restarts and updates. Modes added by a future
+              update slot in before Builder rather than disappearing. Your own WGSL visuals always
+              follow at the end of the strip.
             </p>
           </>
         )}
