@@ -662,7 +662,20 @@ class OnsetClassDetector {
     while (this.history.length > win) this.history.shift();
     const mean = this.history.reduce((a, b) => a + b, 0) / Math.max(1, this.history.length);
 
-    if (playing && clock >= WARMUP_SEC && flux > mean * 1.7 + 0.01 && clock - this.lastAt > 0.06) {
+    if (
+      playing &&
+      clock >= WARMUP_SEC &&
+      // Scaled by dt like the main and sync detectors (see their comments).
+      // Flux shrinks as frames get shorter, so a FIXED floor quietly becomes a
+      // high-frame-rate suppressor. Measured, 0.01 is small enough that the
+      // relative term binds everywhere audible and this changes nothing today:
+      // all three frame rates find every kick down to about -74 dBFS. It is a
+      // latent trap rather than a live bug — raise the floor to 0.6 and 144 fps
+      // drops to one kick in four while 30 and 60 fps still find all of them.
+      // dt*60 == 1 at 60 fps, so the golden trace is bit-identical.
+      flux > mean * 1.7 + 0.01 * (dt * 60) &&
+      clock - this.lastAt > 0.06
+    ) {
       this.lastAt = clock;
       this.envelope = 1;
     } else {
