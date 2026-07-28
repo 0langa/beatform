@@ -84,6 +84,65 @@ describe("RealFFT", () => {
     expect(outDb[k + 500]).toBeLessThan(-100);
   });
 
+  it("leaves DC alone by default, so the whole-track analysers keep a plain DFT", () => {
+    // beatGrid, keyDetect and sections all construct RealFFT without the flag.
+    // If the default ever flips, their tempo/key/section results move silently.
+    const size = 1024;
+    const input = new Float32Array(size).fill(0.5);
+    const outDb = new Float32Array(size / 2);
+    new RealFFT(size).magnitudesDb(input, outDb);
+    expect(outDb[0]).toBeGreaterThan(-12); // the offset is plainly present
+  });
+
+  it("blockDc drives bin 0 to silence for a constant offset", () => {
+    const size = 1024;
+    const input = new Float32Array(size).fill(0.5);
+    const outDb = new Float32Array(size / 2);
+    new RealFFT(size, true).magnitudesDb(input, outDb);
+    // Exactly zero energy, not merely reduced: the window-weighted mean is the
+    // one correction that nulls bin 0 rather than trading it against a residue.
+    expect(outDb[0]).toBeLessThan(-100);
+    expect(outDb[1]).toBeLessThan(-100);
+  });
+
+  it("blockDc uses the window-weighted mean, not the arithmetic mean", () => {
+    // The two agree on any signal that is symmetric across the window — a
+    // constant, or a bin-centred sine — so those fixtures cannot tell them
+    // apart. A single half-cycle is deliberately lopsided: its flat average is
+    // 2/pi ~ 0.637 while the Hann weighting, which is centre-heavy, sees a
+    // noticeably larger one.
+    //
+    // Bin 0 of the transform IS sum(w * x), so only the weighted mean drives
+    // it to zero. Subtracting the flat average instead leaves a residue, and
+    // that residue is what lifted the lowest bands on offset-free material.
+    const size = 1024;
+    const input = new Float32Array(size);
+    for (let n = 0; n < size; n++) input[n] = Math.sin((Math.PI * n) / size);
+    const outDb = new Float32Array(size / 2);
+    new RealFFT(size, true).magnitudesDb(input, outDb);
+    expect(outDb[0]).toBeLessThan(-100);
+  });
+
+  it("blockDc leaves an offset tone's own bin untouched", () => {
+    // A DC block must remove the offset WITHOUT attenuating real content, or
+    // it would quietly change every band on every track rather than the bottom
+    // of ones that carry an offset.
+    const size = 4096;
+    const k = 100;
+    const plain = new Float32Array(size);
+    const offset = new Float32Array(size);
+    for (let n = 0; n < size; n++) {
+      const s = Math.sin((2 * Math.PI * k * n) / size);
+      plain[n] = s;
+      offset[n] = s + 0.4;
+    }
+    const a = new Float32Array(size / 2);
+    const b = new Float32Array(size / 2);
+    new RealFFT(size, true).magnitudesDb(plain, a);
+    new RealFFT(size, true).magnitudesDb(offset, b);
+    expect(Math.abs(b[k] - a[k])).toBeLessThan(0.01);
+  });
+
   it("returns -Infinity for silence", () => {
     const size = 512;
     const fft = new RealFFT(size);

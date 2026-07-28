@@ -105,7 +105,7 @@ export class OfflineAnalyzer {
     this.meterChannels = Math.min(2, pcm.channels.length);
     this.meter = new LoudnessMeter(pcm.sampleRate, this.meterChannels);
 
-    this.fft = new RealFFT(FFT_SIZE);
+    this.fft = new RealFFT(FFT_SIZE, true);
     this.magDb = new Float32Array(FFT_SIZE / 2);
     this.windowBuf = new Float32Array(FFT_SIZE);
     this.pipeline = new FeaturePipeline({

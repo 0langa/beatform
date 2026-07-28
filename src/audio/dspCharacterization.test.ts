@@ -314,30 +314,28 @@ describe("characterization: silence and DC", () => {
   });
 
   /**
-   * PINS A DEFECT THIS SUITE DISCOVERED — see T7 in the working plan.
+   * REGRESSION PIN for a bug this suite found and then fixed.
    *
-   * `binAt` guards the DC term with `Math.max(1, ...)`, and its comment says
+   * `binAt` guards the DC term with `Math.max(1, ...)`, and its comment claims
    * that without it "a file with any DC offset would otherwise light the
    * lowest bar permanently once the low edge is dragged near 10 Hz". The guard
-   * had no test anywhere: removing it passes all 906 existing tests.
-   *
-   * Measured, the guard does not actually achieve that. It excludes bin 0, but
-   * a Hann window leaks DC into bin 1 at about -6 dB, and at `freqMin` = 10 Hz
-   * the lowest band's edges land on bin 1 — so the bar pegs anyway:
+   * had no test anywhere — removing it passed all 906 tests in the repo — and
+   * it did not actually achieve that. It excludes bin 0, but a Hann window
+   * leaks DC into bin 1 at about -6 dB, and at `freqMin` = 10 Hz the lowest
+   * band's edges land on bin 1, so the bar pegged anyway:
    *
    *     DC 0.3  ->  bin 0 ~ -4.4 dBFS, bin 1 ~ -10.4 dBFS
-   *     display: ((80 - 10.4) / 72) ^ 1.3 = 0.957     observed: 0.9559
+   *     display: ((80 - 10.4) / 72) ^ 1.3 = 0.957     measured: 0.9559
+   *     with the guard removed entirely:              0.9623   (worth 0.65 %)
    *
-   * The real fix is to remove the mean from the time-domain window before the
-   * FFT rather than to keep excluding bins one at a time. That is T7, and it
-   * carries a golden re-bless risk, so it is not bundled into this task.
-   *
-   * This assertion therefore pins the BROKEN value on purpose. When T7 lands
-   * it must fail, and be re-blessed to the fixed value.
+   * `RealFFT` now subtracts the window-weighted mean for the two feature paths
+   * (opt-in, so the whole-track analysers keep a plain DFT), which drives bin 0
+   * to zero at the cause rather than excluding bins one at a time. Same
+   * measurement after the fix: 3.3e-7.
    */
-  it("a DC offset currently pegs the lowest band at a 10 Hz span (pinned defect)", () => {
+  it("a DC offset leaves the lowest band dark even at a 10 Hz span", () => {
     const withDc = run(dcOffset(48000), 60, LOW_SPAN).bins[100][0];
-    expect(withDc, "lowest band under DC offset").toBeGreaterThan(0.9);
+    expect(withDc, "lowest band under DC offset").toBeLessThan(0.01);
   });
 
   it("the same span without DC leaves the lowest band dark (control)", () => {

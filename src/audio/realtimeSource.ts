@@ -40,7 +40,7 @@ export class RealtimeAnalyzer {
   constructor(engine: AudioEngine, binCount = 96) {
     this.engine = engine;
     const fftSize = engine.analyser.fftSize;
-    this.fft = new RealFFT(fftSize);
+    this.fft = new RealFFT(fftSize, true);
     this.magDb = new Float32Array(fftSize / 2);
     this.timeData = new Float32Array(fftSize);
     this.timeL = new Float32Array(fftSize);
