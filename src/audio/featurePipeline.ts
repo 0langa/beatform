@@ -66,6 +66,30 @@ export const WARMUP_SEC = 12 / 60; // ~0.2 s before the detector may fire
 export const WAVEFORM_LENGTH = 3072;
 
 /**
+ * Onset detection runs at a FIXED cadence, independent of the rendered frame
+ * rate. Continuous features (bins, peaks, bands, drive, envelopes) still update
+ * every frame, so a 144 Hz display stays as smooth as it ever was.
+ *
+ * Spectral flux is a rectified frame-to-frame difference and is not band
+ * limited: sampling it more often does not merely refine it, it makes every
+ * extra frame another independent chance to cross the adaptive threshold. On
+ * three real tracks the same 60 s of music produced 170 beats at 30 fps and
+ * 299 at 144 — a project reacting ~75% more on a high-refresh display than in
+ * its own export.
+ *
+ * The crossing probability PER FRAME is what stays constant (~15% at every
+ * rate; flux/mean averages 0.99-1.04), which is why no local fix works. Two
+ * cheaper candidates were measured and rejected: diffing against a fixed
+ * 16.7 ms lag gave 277, causal peak-picking gave 287, against 299 shipping.
+ * Neither removes trials, and trials are the problem.
+ *
+ * 60 Hz because that is what the golden trace and every existing project were
+ * built at, so a 60 fps render is bit-identical.
+ */
+export const ANALYSIS_HZ = 60;
+export const ANALYSIS_DT = 1 / ANALYSIS_HZ;
+
+/**
  * Upper edge of the band the main beat detector measures flux over.
  *
  * Was written as `midRange[0] + 8`, i.e. eight FFT BINS above 150 Hz — and a
@@ -124,6 +148,13 @@ export interface PipelineInput {
   width?: number;
   /** Momentary LUFS for this frame (undefined = keep previous). */
   lufs?: number;
+  /**
+   * Whether the ONSET DETECTORS should step this frame. Continuous features
+   * update regardless. Callers drive this from a fixed ANALYSIS_DT clock; the
+   * default keeps direct callers (and tests) on the old one-per-frame
+   * behaviour, which at 60 fps is the same thing.
+   */
+  analysisTick?: boolean;
   /** Beat-grid readouts for this frame (undefined = keep previous). */
   bpm?: number;
   beatPhase?: number;
@@ -317,7 +348,14 @@ export class FeaturePipeline {
   update(input: PipelineInput): AudioFeatures {
     const f = this.features;
     const dt = Math.min(0.1, Math.max(0.0001, input.dt));
-    this.clock += dt;
+    // The detector clock advances on ANALYSIS ticks only, by ANALYSIS_DT. It is
+    // what the warmup gate and every refractory are measured against, so it has
+    // to track real time no matter how many times update() is called per
+    // rendered frame — a 30 fps render calls it twice, and advancing by the
+    // render dt each time ran it at double speed, expiring refractories early
+    // and firing 305 beats where 60 fps found 228. At 60 fps ANALYSIS_DT is the
+    // frame interval, so this is unchanged there.
+    if (input.analysisTick ?? true) this.clock += ANALYSIS_DT;
 
     // dB -> 0..1 magnitudes. `mag` keeps the −22 dBFS ceiling (bands, flux,
     // beats); `magDisp` uses the display ceiling + gamma (the drawn bars only).
@@ -438,40 +476,45 @@ export class FeaturePipeline {
     f.mid = bandMean(mag, this.midRange);
     f.treble = bandMean(mag, this.trebleRange);
 
-    // Spectral flux over the low end (kick/snare live here), adaptive threshold
-    let flux = 0;
-    const [lo, hi] = [this.bassRange[0], this.fluxHiBin];
-    for (let b = lo; b < hi; b++) {
-      const d = mag[b] - this.prevMag[b];
-      if (d > 0) flux += d;
-    }
-    this.fluxHistory.push(flux);
-    const win = fluxWindowFrames(dt);
-    while (this.fluxHistory.length > win) this.fluxHistory.shift();
-    const mean = this.fluxHistory.reduce((a, b) => a + b, 0) / Math.max(1, this.fluxHistory.length);
+    // Onset detection steps on the FIXED analysis clock; everything above
+    // this point ran for the rendered frame. See ANALYSIS_HZ.
+    const tick = input.analysisTick ?? true;
+    const adt = ANALYSIS_DT;
 
     f.beat = false;
-    if (
-      this.clock >= WARMUP_SEC &&
-      // The relative term self-scales with dt (flux and its mean shrink
-      // together as frames get shorter) but the absolute floor did not, so a
-      // 144 Hz live display suppressed onsets a 60 fps export fires (audit
-      // A6). dt*60 == 1 at 60 fps: 60 fps behaviour (and the golden trace,
-      // which runs at fixed 1/60) is bit-identical.
-      flux > mean * 1.6 + 0.012 * (dt * 60) * this.floorScale &&
-      this.clock - this.lastBeatAt > BEAT_REFRACTORY &&
-      input.playing
-    ) {
-      f.beat = true;
-      this.lastBeatAt = this.clock;
-      f.beatIntensity = 1;
-    } else {
-      f.beatIntensity *= Math.exp(-dt * BEAT_DECAY);
+    if (tick) {
+      // Spectral flux over the low end (kick/snare live here), adaptive threshold
+      let flux = 0;
+      const [lo, hi] = [this.bassRange[0], this.fluxHiBin];
+      for (let b = lo; b < hi; b++) {
+        const d = mag[b] - this.prevMag[b];
+        if (d > 0) flux += d;
+      }
+      this.fluxHistory.push(flux);
+      const win = fluxWindowFrames(adt);
+      while (this.fluxHistory.length > win) this.fluxHistory.shift();
+      const mean =
+        this.fluxHistory.reduce((a, b) => a + b, 0) / Math.max(1, this.fluxHistory.length);
+
+      if (
+        this.clock >= WARMUP_SEC &&
+        flux > mean * 1.6 + 0.012 * this.floorScale &&
+        this.clock - this.lastBeatAt > BEAT_REFRACTORY &&
+        input.playing
+      ) {
+        f.beat = true;
+        this.lastBeatAt = this.clock;
+        f.beatIntensity = 1;
+      }
     }
+    // The pulse envelope decays on the RENDER clock so it stays smooth between
+    // ticks on a high-refresh display.
+    if (tick && !f.beat) f.beatIntensity *= Math.exp(-ANALYSIS_DT * BEAT_DECAY);
 
     f.voice = bandMean(mag, this.voiceRange);
 
     f.kick = this.kickDet.update(
+      tick,
       mag,
       this.prevMag,
       this.kickRange,
@@ -481,6 +524,7 @@ export class FeaturePipeline {
       this.floorScale,
     );
     f.snare = this.snareDet.update(
+      tick,
       mag,
       this.prevMag,
       this.snareRange,
@@ -490,6 +534,7 @@ export class FeaturePipeline {
       this.floorScale,
     );
     f.hat = this.hatDet.update(
+      tick,
       mag,
       this.prevMag,
       this.hatRange,
@@ -499,9 +544,10 @@ export class FeaturePipeline {
       this.floorScale,
     );
 
-    this.updateSync(f, mag, dt, input.playing);
-    // Both onset detectors diff against the previous frame — update it last
-    this.prevMag.set(mag);
+    this.updateSync(f, mag, dt, input.playing, tick);
+    // prevMag is the reference for the NEXT tick, so it only advances on a
+    // tick — otherwise a held frame would zero the next tick's flux.
+    if (tick) this.prevMag.set(mag);
 
     if (input.width !== undefined) {
       // Smooth like the bins: widths jump frame to frame, visuals shouldn't
@@ -633,7 +679,13 @@ export class FeaturePipeline {
     }
   }
 
-  private updateSync(f: AudioFeatures, mag: Float32Array, dt: number, playing: boolean): void {
+  private updateSync(
+    f: AudioFeatures,
+    mag: Float32Array,
+    dt: number,
+    playing: boolean,
+    tick: boolean,
+  ): void {
     const { mode, smooth } = this.sync;
     // Attack/Release fall back to the overall smoothing macro when unset, so
     // existing projects behave identically. Both are 0 (instant) .. 1 (slow).
@@ -676,35 +728,35 @@ export class FeaturePipeline {
     this.driveValue += (raw - this.driveValue) * (raw > this.driveValue ? attack : release);
     f.drive = this.driveValue;
 
-    // Onset pulse over the selected band (spectral flux, adaptive threshold)
-    const [lo, hi] = this.syncBand(mode);
-    let flux = 0;
-    for (let b = lo; b < hi; b++) {
-      const d = mag[b] - this.prevMag[b];
-      if (d > 0) flux += d;
-    }
-    this.syncFluxHistory.push(flux);
-    const win = fluxWindowFrames(dt);
-    while (this.syncFluxHistory.length > win) this.syncFluxHistory.shift();
-    const mean =
-      this.syncFluxHistory.reduce((a, b) => a + b, 0) / Math.max(1, this.syncFluxHistory.length);
+    // Onset pulse over the selected band. The FIRING decision steps on the
+    // fixed analysis clock; the envelope decays on the render clock so it stays
+    // smooth between ticks.
+    let fired = false;
+    if (tick) {
+      const [lo, hi] = this.syncBand(mode);
+      let flux = 0;
+      for (let b = lo; b < hi; b++) {
+        const d = mag[b] - this.prevMag[b];
+        if (d > 0) flux += d;
+      }
+      this.syncFluxHistory.push(flux);
+      const win = fluxWindowFrames(ANALYSIS_DT);
+      while (this.syncFluxHistory.length > win) this.syncFluxHistory.shift();
+      const mean =
+        this.syncFluxHistory.reduce((a, b) => a + b, 0) / Math.max(1, this.syncFluxHistory.length);
 
-    if (
-      this.clock >= WARMUP_SEC &&
-      // The relative term self-scales with dt (flux and its mean shrink
-      // together as frames get shorter) but the absolute floor did not, so a
-      // 144 Hz live display suppressed onsets a 60 fps export fires (audit
-      // A6). dt*60 == 1 at 60 fps: 60 fps behaviour (and the golden trace,
-      // which runs at fixed 1/60) is bit-identical.
-      flux > mean * 1.6 + 0.012 * (dt * 60) * this.floorScale &&
-      this.clock - this.lastSyncBeatAt > BEAT_REFRACTORY &&
-      playing
-    ) {
-      this.lastSyncBeatAt = this.clock;
-      this.syncBeatIntensity = 1;
-    } else {
-      this.syncBeatIntensity *= Math.exp(-dt * BEAT_DECAY);
+      if (
+        this.clock >= WARMUP_SEC &&
+        flux > mean * 1.6 + 0.012 * this.floorScale &&
+        this.clock - this.lastSyncBeatAt > BEAT_REFRACTORY &&
+        playing
+      ) {
+        this.lastSyncBeatAt = this.clock;
+        this.syncBeatIntensity = 1;
+        fired = true;
+      }
     }
+    if (tick && !fired) this.syncBeatIntensity *= Math.exp(-ANALYSIS_DT * BEAT_DECAY);
     f.driveBeat = this.syncBeatIntensity;
   }
 }
@@ -742,6 +794,7 @@ class OnsetClassDetector {
   }
 
   update(
+    tick: boolean,
     mag: Float32Array,
     prevMag: Float32Array,
     [lo, hi]: [number, number],
@@ -750,35 +803,33 @@ class OnsetClassDetector {
     playing: boolean,
     floorScale: number,
   ): number {
-    let flux = 0;
-    for (let b = lo; b < hi; b++) {
-      const d = mag[b] - prevMag[b];
-      if (d > 0) flux += d;
-    }
-    this.history.push(flux);
-    const win = fluxWindowFrames(dt);
-    while (this.history.length > win) this.history.shift();
-    const mean = this.history.reduce((a, b) => a + b, 0) / Math.max(1, this.history.length);
+    let fired = false;
+    if (tick) {
+      let flux = 0;
+      for (let b = lo; b < hi; b++) {
+        const d = mag[b] - prevMag[b];
+        if (d > 0) flux += d;
+      }
+      this.history.push(flux);
+      const win = fluxWindowFrames(dt);
+      while (this.history.length > win) this.history.shift();
+      const mean = this.history.reduce((a, b) => a + b, 0) / Math.max(1, this.history.length);
 
-    if (
-      playing &&
-      clock >= WARMUP_SEC &&
-      // Scaled by dt like the main and sync detectors (see their comments).
-      // Flux shrinks as frames get shorter, so a FIXED floor quietly becomes a
-      // high-frame-rate suppressor. Measured, 0.01 is small enough that the
-      // relative term binds everywhere audible and this changes nothing today:
-      // all three frame rates find every kick down to about -74 dBFS. It is a
-      // latent trap rather than a live bug — raise the floor to 0.6 and 144 fps
-      // drops to one kick in four while 30 and 60 fps still find all of them.
-      // dt*60 == 1 at 60 fps, so the golden trace is bit-identical.
-      flux > mean * 1.7 + 0.01 * (dt * 60) * floorScale &&
-      clock - this.lastAt > 0.06
-    ) {
-      this.lastAt = clock;
-      this.envelope = 1;
-    } else {
-      this.envelope *= Math.exp(-dt * 10);
+      if (
+        playing &&
+        clock >= WARMUP_SEC &&
+        flux > mean * 1.7 + 0.01 * floorScale &&
+        clock - this.lastAt > 0.06
+      ) {
+        this.lastAt = clock;
+        this.envelope = 1;
+        fired = true;
+      }
     }
+    // Decays on the ANALYSIS clock, like every other time-based detector
+    // quantity, so it advances at the same rate however often update() is
+    // called per rendered frame.
+    if (tick && !fired) this.envelope *= Math.exp(-ANALYSIS_DT * 10);
     return this.envelope;
   }
 }

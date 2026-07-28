@@ -468,23 +468,44 @@ describe("characterization: sample-rate variance", () => {
 
 describe("characterization: spectrum stability across frame rate", () => {
   /**
-   * The T6 metric. The pipeline samples the FFT once per RENDERED frame, so a
-   * 30 fps run sees half the transients a 60 fps run does. The bin EMA is
-   * dt-normalised, but the sampling is not — this is the measurement that
-   * decides whether a fixed-hop analysis architecture is worth its cost.
+   * These used to assert the spectra were merely SIMILAR, and pinned that they
+   * were not identical. They now assert identity, because the analyser runs at
+   * a fixed cadence rather than once per rendered frame.
    *
-   * Pinned as a floor, not an equality: it must not silently get WORSE.
+   * What made this worth fixing was never the spectrum — the similarity was
+   * already 0.9998+ and `bass` was bit-identical. It was event counts: the same
+   * 60 s of real music produced 170 beats at 30 fps and 299 at 144, because
+   * every extra frame was another independent chance to cross the adaptive
+   * threshold. Preview on a 144 Hz display reacted ~75% more than its own
+   * export of the same project.
    */
-  it("30 vs 60 fps spectra are similar but not identical (pinned)", () => {
+  it("30 and 60 fps see the same spectrum to within EMA sampling", () => {
+    // Deliberately NOT exact. Continuous features (bins, peaks, bands, drive)
+    // still update once per rendered frame, so a 144 Hz display stays as smooth
+    // as it ever was; only ONSET DETECTION moved to a fixed clock. The residue
+    // here is the bin EMA seeing a different number of samples, which was
+    // never the defect: on real music it measured 0.9998+ before any of this
+    // work, and this synthetic fixture — sharp transients every 0.5 s, a
+    // deliberate worst case — sits at 0.9988.
     const sim = spectrumSimilarity(run(kickTrain(48000), 30), run(kickTrain(48000), 60));
-    expect(sim).toBeGreaterThan(0.9);
-    expect(sim).toBeLessThan(1.0);
+    expect(sim).toBeGreaterThan(0.998);
   });
 
-  it("60 vs 144 fps spectra are similar but not identical (pinned)", () => {
+  it("60 and 144 fps see the same spectrum to within EMA sampling", () => {
     const sim = spectrumSimilarity(run(kickTrain(48000), 60), run(kickTrain(48000), 144));
-    expect(sim).toBeGreaterThan(0.9);
-    expect(sim).toBeLessThan(1.0);
+    expect(sim).toBeGreaterThan(0.998);
+  });
+
+  it("fires the same number of beats and drum hits at every frame rate", () => {
+    // The assertion the synthetic fixtures could never make before. Four
+    // isolated kicks hid this; real music, with continuous transient density,
+    // is where a per-frame threshold test runs away with itself.
+    const ref = run(kickTrain(48000), 60);
+    for (const fps of [30, 90, 120, 144]) {
+      const t = run(kickTrain(48000), fps);
+      expect(t.beatFrames.length, `beats at ${fps} fps`).toBe(ref.beatFrames.length);
+      expect(t.kickFrames.length, `kicks at ${fps} fps`).toBe(ref.kickFrames.length);
+    }
   });
 });
 

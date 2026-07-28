@@ -26,6 +26,31 @@ import { gridPhase, type BeatGrid } from "./analysis/beatGrid";
  */
 const ANALYSIS_LOOKAHEAD = 1 / 60;
 
+/**
+ * The analyser runs at a FIXED rate, independent of the rendered frame rate.
+ *
+ * Spectral flux is a rectified frame-to-frame difference, so it is not band
+ * limited: sample it more often and it does not merely get finer, it gets
+ * NOISIER, and every extra frame is another independent chance to cross the
+ * adaptive threshold. Measured on three real tracks, the same 60 s of music
+ * produced 170 beats at 30 fps and 299 at 144 — the identical project reacting
+ * ~75% more on a high-refresh display than in its own export.
+ *
+ * The crossing PROBABILITY PER FRAME is what stays constant (~15% at every
+ * rate, with flux/mean averaging 0.99-1.04), which is why no local fix to the
+ * detector works. Both cheaper candidates were measured and rejected: diffing
+ * against a fixed 16.7 ms lag instead of the previous frame gave 277, and
+ * causal peak-picking gave 287, against 299 for the shipping code. Neither
+ * removes trials, and trials are the problem.
+ *
+ * Pinning the analysis cadence removes it at the source: the detector sees the
+ * same sequence of updates for a given track no matter what fps is rendered.
+ * 60 Hz is chosen because it is the rate the golden trace and every existing
+ * project were built at, so rendering at 60 fps stays bit-identical.
+ */
+const ANALYSIS_HZ = 60;
+const ANALYSIS_DT = 1 / ANALYSIS_HZ;
+
 /** Extract plain PCM from a decoded AudioBuffer (main thread only). */
 export function pcmFromAudioBuffer(buffer: AudioBuffer): PcmData {
   const channels: Float32Array[] = [];
@@ -70,6 +95,12 @@ export class OfflineAnalyzer {
   private windowBuf: Float32Array;
   private fftSize: number;
   private nextFrame = 0;
+  /** Track time of the next fixed-rate analysis tick. */
+  private analysisTime = 0;
+  /** Track time of the previous pipeline update, so `dt` is the REAL gap. */
+  /** Starts one tick BEFORE zero so frame 0 sees a full ANALYSIS_DT, exactly
+   * as it did when dt was the frame interval. */
+  private lastUpdateTime = -1 / 60;
   private duration: number;
 
   private grid: BeatGrid | null;
@@ -147,8 +178,10 @@ export class OfflineAnalyzer {
    * exports stay byte-reproducible.
    */
   private primePipeline(): void {
-    const frames = Math.ceil(WARMUP_SEC * this.fps);
-    const dt = 1 / this.fps;
+    // Pre-roll at the ANALYSIS rate, not the render rate: the pipeline it is
+    // warming now only ever sees ANALYSIS_DT steps.
+    const frames = Math.ceil(WARMUP_SEC * ANALYSIS_HZ);
+    const dt = ANALYSIS_DT;
     for (let i = frames; i >= 1; i--) {
       const t = -i * dt;
       const end = Math.min(
@@ -167,6 +200,7 @@ export class OfflineAnalyzer {
         dt,
         // The whole point: warm the continuous state, fire nothing.
         playing: false,
+        analysisTick: true,
         duration: this.duration,
         width: 0,
         lufs: -Infinity,
@@ -174,16 +208,76 @@ export class OfflineAnalyzer {
     }
   }
 
-  /** Sequential frame analysis (pipeline smoothing/beat state is stateful). */
+  /**
+   * One rendered frame.
+   *
+   * Onset detection steps on a fixed ANALYSIS_DT clock, so the number of
+   * chances to fire depends on the track and not the frame rate. A 30 fps
+   * render consumes two ticks per frame; a 144 fps render finds a tick due on
+   * roughly two frames in five and updates only the continuous features on the
+   * rest. At 60 fps it is exactly one tick per frame, which is why a 60 fps
+   * render is bit-identical.
+   *
+   * Events cannot just be read off the last tick. `beat` is an instant, so one
+   * landing on the first of two ticks would vanish if the second reported
+   * false; instants are LATCHED and the onset envelopes take their maximum, so
+   * a 30 fps export cannot drop a hit that happened between its frames.
+   */
   nextFrameFeatures(): AudioFeatures {
     const n = this.nextFrame++;
     const t = n / this.fps;
+    let beat = false;
+    let beatIntensity = 0;
+    let kick = 0;
+    let snare = 0;
+    let hat = 0;
+    let driveBeat = 0;
+    let ticked = false;
+
+    // `<=` plus an epsilon keeps 60 fps at exactly one tick per frame despite
+    // float accumulation.
+    while (this.analysisTime <= t + 1e-9) {
+      const f = this.step(this.analysisTime, true);
+      ticked = true;
+      beat = beat || f.beat;
+      beatIntensity = Math.max(beatIntensity, f.beatIntensity);
+      kick = Math.max(kick, f.kick);
+      snare = Math.max(snare, f.snare);
+      hat = Math.max(hat, f.hat);
+      driveBeat = Math.max(driveBeat, f.driveBeat);
+      this.analysisTime += ANALYSIS_DT;
+    }
+
+    if (!ticked) {
+      // Rendering faster than the analysis clock: refresh the continuous
+      // features for this frame so a high-refresh display stays smooth, but do
+      // not give the detectors another chance to fire.
+      return this.step(t, false);
+    }
+    const f = this.pipeline.features;
+    f.beat = beat;
+    f.beatIntensity = beatIntensity;
+    f.kick = kick;
+    f.snare = snare;
+    f.hat = hat;
+    f.driveBeat = driveBeat;
+    // Time is per RENDERED frame: it drives u.time, the timeline and
+    // automation, all of which must advance at the render rate.
+    f.time = t;
+    return f;
+  }
+
+  /** Window, transform and pipeline update for one rendered frame. */
+  private step(t: number, analysisTick: boolean): AudioFeatures {
     const end = Math.min(this.mono.length, Math.round((t + ANALYSIS_LOOKAHEAD) * this.sampleRate));
     const start = Math.max(0, end - this.fftSize);
     this.windowBuf.fill(0);
     this.windowBuf.set(this.mono.subarray(start, end), this.fftSize - (end - start));
     this.fft.magnitudesDb(this.windowBuf, this.magDb);
-    // Meter gets the contiguous new samples up to this frame's true end —
+    const prevUpdate = this.lastUpdateTime;
+    this.lastUpdateTime = t;
+    void prevUpdate;
+    // Meter gets the contiguous new samples up to this tick's true end —
     // loudness stays on the un-shifted timeline, only analysis looks ahead
     const meterEnd = Math.min(this.mono.length, Math.round(t * this.sampleRate));
     if (meterEnd > this.meterFed) {
@@ -201,7 +295,12 @@ export class OfflineAnalyzer {
       magDb: this.magDb,
       waveform: this.windowBuf,
       time: t,
-      dt: 1 / this.fps,
+      // Time since the PREVIOUS update call, not the frame interval. update()
+      // no longer runs exactly once per frame — a 30 fps render calls it twice
+      // — and passing the frame interval each time advanced every continuous
+      // EMA at double speed (cross-rate spectrum similarity fell to 0.973).
+      dt: Math.max(1e-6, t - prevUpdate),
+      analysisTick,
       playing: true,
       duration: this.duration,
       width: stereoWidth(this.left.subarray(start, end), this.right.subarray(start, end)),
