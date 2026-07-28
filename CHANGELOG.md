@@ -11,6 +11,25 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.56.0] - 2026-07-28
+
+### Fixed
+
+- **The mirrored looks in Tunnel, Aurora and Oscilloscope now react to the
+  whole track.** Turning on the club mirror was quietly narrowing what the
+  visual could hear. Tunnel's **Kaleido Tube** was reading only the lowest
+  sixth of the spectrum — bass, with no mid or treble at all — despite being
+  described as stained glass lit by the spectrum. Aurora's **Cathedral** lost
+  its bass response entirely. Oscilloscope's **Lissajous** was drawing from
+  half the waveform, and the half it dropped was the one holding the trigger,
+  so the figure sat off-centre instead of anchored to the middle of the
+  screen.
+- These are the same underlying issue fixed for Echo Trails in 2.55.0, now
+  closed everywhere it occurs. **No look was retuned to compensate** — each
+  was measured before and after, and every one still renders at the exposure
+  it was authored with. Looks with the mirror switched off are unchanged
+  down to the byte.
+
 ## [2.55.0] - 2026-07-28
 
 ### Fixed
