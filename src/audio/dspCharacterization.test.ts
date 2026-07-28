@@ -154,6 +154,32 @@ function kickTrainAt(sr: number, dur: number, amp: number): PcmData {
   });
 }
 
+/**
+ * DENSE percussive material, and the density is load-bearing.
+ *
+ * The isolated-kick fixtures cannot test frame-rate independence of onset
+ * detection: four hits in two seconds sit far under the refractory ceiling, so
+ * the count is pinned by the music and nothing about the sampling rate can move
+ * it. Real music keeps spectral flux continuously near the adaptive threshold,
+ * which is the regime where the detector's history window length matters — and
+ * a wrong window there is invisible on sparse material.
+ *
+ * Deterministic hash-noise, no Math.random, so every run is the same test.
+ */
+function denseMix(sr: number, dur = 3): PcmData {
+  return makePcm(sr, dur, (t, i) => {
+    let h = Math.imul(i ^ 0x9e3779b9, 0x85ebca6b);
+    h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+    const n = ((h ^ (h >>> 16)) >>> 0) / 0x80000000 - 1;
+    let v = 0.18 * n + 0.2 * Math.sin(2 * Math.PI * 55 * t);
+    const k = t % 0.125;
+    if (k < 0.03) v += 0.7 * Math.sin(2 * Math.PI * 90 * k) * Math.exp(-k * 120);
+    const s = (t + 0.0625) % 0.25;
+    if (s < 0.02) v += 0.5 * n * Math.exp(-s * 150);
+    return v;
+  });
+}
+
 /** Band-limited noise burst every 0.5 s, shaped into the snare band. */
 function snareTrain(sr: number, dur = 2): PcmData {
   const r = rng(0xbeef);
@@ -505,6 +531,43 @@ describe("characterization: spectrum stability across frame rate", () => {
       const t = run(kickTrain(48000), fps);
       expect(t.beatFrames.length, `beats at ${fps} fps`).toBe(ref.beatFrames.length);
       expect(t.kickFrames.length, `kicks at ${fps} fps`).toBe(ref.kickFrames.length);
+    }
+  });
+});
+
+describe("characterization: detectors are frame-rate independent", () => {
+  /**
+   * The assertion this whole suite existed to make, and the one it could not
+   * make until it had dense material to make it on.
+   *
+   * Onset detection steps on a fixed 60 Hz clock rather than once per rendered
+   * frame. Before that, the same 60 s of real music produced 170 beats at 30 fps
+   * and 299 at 144 — a project reacting ~75% more on a high-refresh display
+   * than in its own export.
+   *
+   * Counts FIRES (the envelope only jumps up on a fire) rather than threshold
+   * crossings, so it is immune to how many render frames sample a held value.
+   */
+  const fires = (fps: number) => {
+    const t = run(denseMix(48000), fps);
+    return {
+      beats: t.beatFrames.length,
+      kick: t.kickFrames.length,
+      snare: t.snareFrames.length,
+      hat: t.hatFrames.length,
+    };
+  };
+
+  it("fires identically at 30, 60, 90, 120 and 144 fps", () => {
+    const ref = fires(60);
+    // Fixture sanity: the detectors must be BUSY, not merely non-zero. 13 beats
+    // in 3 s is ~60% of the 0.14 s refractory ceiling, and the drum detectors
+    // fire several times that — enough that the history-window length actually
+    // decides outcomes, which is what makes the comparison below meaningful.
+    expect(ref.beats, "fixture must keep the detector busy").toBeGreaterThan(10);
+    expect(ref.kick, "fixture must keep the drum detector busy").toBeGreaterThan(10);
+    for (const fps of [30, 90, 120, 144]) {
+      expect(fires(fps), `detector fires at ${fps} fps`).toEqual(ref);
     }
   });
 });

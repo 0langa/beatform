@@ -518,7 +518,12 @@ export class FeaturePipeline {
       mag,
       this.prevMag,
       this.kickRange,
-      dt,
+      // ANALYSIS_DT, not the render dt: this sizes the flux-history ring, so
+      // passing the frame interval made the adaptive mean average over 1.7 s of
+      // ticks at 144 fps against 0.72 s at 60, and the detector fired
+      // differently. The main beat and sync detectors already use the analysis
+      // clock here, which is why they were frame-rate exact and these were not.
+      ANALYSIS_DT,
       this.clock,
       input.playing,
       this.floorScale,
@@ -528,7 +533,12 @@ export class FeaturePipeline {
       mag,
       this.prevMag,
       this.snareRange,
-      dt,
+      // ANALYSIS_DT, not the render dt: this sizes the flux-history ring, so
+      // passing the frame interval made the adaptive mean average over 1.7 s of
+      // ticks at 144 fps against 0.72 s at 60, and the detector fired
+      // differently. The main beat and sync detectors already use the analysis
+      // clock here, which is why they were frame-rate exact and these were not.
+      ANALYSIS_DT,
       this.clock,
       input.playing,
       this.floorScale,
@@ -538,7 +548,12 @@ export class FeaturePipeline {
       mag,
       this.prevMag,
       this.hatRange,
-      dt,
+      // ANALYSIS_DT, not the render dt: this sizes the flux-history ring, so
+      // passing the frame interval made the adaptive mean average over 1.7 s of
+      // ticks at 144 fps against 0.72 s at 60, and the detector fired
+      // differently. The main beat and sync detectors already use the analysis
+      // clock here, which is why they were frame-rate exact and these were not.
+      ANALYSIS_DT,
       this.clock,
       input.playing,
       this.floorScale,
