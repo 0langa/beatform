@@ -26,6 +26,8 @@ public/testdata/
 
 # private planning docs
 /ROADMAP.md
+/PLAN-*.md
+/beatform-audio-analysis-architecture-review.md
 
 # local agent memory (recall plugin)
 /.recall/
