@@ -1,6 +1,6 @@
 import type { AudioEngine } from "./engine";
 import type { AudioFeatures, SyncSettings } from "./types";
-import { FeaturePipeline } from "./featurePipeline";
+import { FeaturePipeline, WAVEFORM_LENGTH } from "./featurePipeline";
 import { RealFFT } from "./dsp/fft";
 import { LoudnessMeter } from "./dsp/lufs";
 import { stereoWidth } from "./dsp/stereo";
@@ -50,8 +50,9 @@ export class RealtimeAnalyzer {
       sampleRate: engine.ctx.sampleRate,
       fftBins: fftSize / 2,
       binCount,
-      // 3/4 window: the rest is trigger-search headroom (see FeaturePipeline)
-      waveformLength: Math.floor((fftSize * 3) / 4),
+      // Fixed, NOT derived from fftSize — see WAVEFORM_LENGTH. The rest of
+      // the window is trigger-search headroom.
+      waveformLength: WAVEFORM_LENGTH,
     });
   }
 

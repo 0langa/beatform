@@ -1,5 +1,5 @@
 import type { AudioFeatures, PcmData, SyncSettings } from "./types";
-import { FeaturePipeline, WARMUP_SEC } from "./featurePipeline";
+import { FeaturePipeline, WARMUP_SEC, WAVEFORM_LENGTH } from "./featurePipeline";
 import { RealFFT } from "./dsp/fft";
 import { LoudnessMeter } from "./dsp/lufs";
 import { stereoWidth } from "./dsp/stereo";
@@ -112,8 +112,9 @@ export class OfflineAnalyzer {
       sampleRate: pcm.sampleRate,
       fftBins: FFT_SIZE / 2,
       binCount,
-      // 3/4 window: the rest is trigger-search headroom (see FeaturePipeline)
-      waveformLength: Math.floor((FFT_SIZE * 3) / 4),
+      // Fixed, NOT derived from FFT_SIZE — see WAVEFORM_LENGTH. The rest of
+      // the window is trigger-search headroom.
+      waveformLength: WAVEFORM_LENGTH,
     });
     if (sync) this.pipeline.setSync(sync);
     this.primePipeline();

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OfflineAnalyzer } from "./offlineSource";
+import { FeaturePipeline, WAVEFORM_LENGTH } from "./featurePipeline";
 import type { AudioFeatures, PcmData, SyncSettings } from "./types";
 import { DEFAULT_SYNC } from "./types";
 
@@ -501,5 +502,67 @@ describe("characterization: band ordering on shaped material", () => {
     const highLate = late.slice(72).reduce((a, b) => a + b, 0);
     expect(lowEarly).toBeGreaterThan(0);
     expect(highLate).toBeGreaterThan(0);
+  });
+});
+
+describe("characterization: waveform length is independent of the FFT", () => {
+  /**
+   * The renderer downsamples `f.waveform` to a fixed 512 points by CHUNK MEAN,
+   * with the chunk width taken as `length / 512`. So the waveform's length is
+   * not a free parameter — it sets how much averaging the oscilloscope trace
+   * receives. While it was derived as `fftSize * 3/4`, raising the transform
+   * size would have doubled the chunk from 6 samples to 12 and visibly smoothed
+   * the trace, with nothing in the drawing code having changed.
+   *
+   * These guard the decoupling ahead of the FFT size becoming sample-rate
+   * aware, which is exactly when the old derivation would have bitten.
+   */
+  it("every sample rate produces the same waveform length", () => {
+    // The literal, NOT the constant. Asserting `length === WAVEFORM_LENGTH`
+    // compares the constant against itself and passes for any value it takes —
+    // which it duly did when the constant was mutated to 6144.
+    for (const sr of [44100, 48000, 96000]) {
+      const a = new OfflineAnalyzer(kickTrain(sr), 60);
+      expect(a.nextFrameFeatures().waveform.length, `waveform length at ${sr}`).toBe(3072);
+    }
+    expect(WAVEFORM_LENGTH).toBe(3072);
+  });
+
+  /**
+   * NOT YET GUARDED, on purpose, and recorded so it is not mistaken for
+   * coverage: reverting either source to `fftSize * 3/4` is currently
+   * undetectable, because floor(4096 * 3/4) IS 3072. The two expressions only
+   * diverge once the FFT size stops being 4096 — i.e. when sizing becomes
+   * sample-rate aware. That task must add a 96 kHz case asserting the waveform
+   * is still 3072 while the transform is 8192; until then this decoupling
+   * rests on the literal above and on review.
+   */
+  it.todo("waveform length stays 3072 at 96 kHz once the FFT size is rate-aware");
+
+  it("the zero-crossing trigger does not move when headroom grows", () => {
+    // Growing the FFT only grows the search headroom. The trigger takes the
+    // FIRST rising crossing, so its index must not depend on how much room it
+    // had to look — otherwise a larger transform would shift the whole trace.
+    const wave = new Float32Array(8192);
+    for (let i = 0; i < wave.length; i++) wave[i] = Math.sin((2 * Math.PI * i) / 700);
+    const trace = (fftBins: number) => {
+      const p = new FeaturePipeline({
+        sampleRate: 48000,
+        fftBins,
+        binCount: 96,
+        waveformLength: WAVEFORM_LENGTH,
+      });
+      return Array.from(
+        p.update({
+          magDb: new Float32Array(fftBins).fill(-90),
+          waveform: wave,
+          time: 0,
+          dt: 1 / 60,
+          playing: true,
+          duration: 10,
+        }).waveform,
+      );
+    };
+    expect(trace(4096)).toEqual(trace(2048));
   });
 });

@@ -42,6 +42,28 @@ const FLUX_WINDOW_SEC = 43 / 60; // ~0.717 s of flux history for the mean
  * same track moment.
  */
 export const WARMUP_SEC = 12 / 60; // ~0.2 s before the detector may fire
+
+/**
+ * Length of the time-domain waveform handed to the renderer, in samples.
+ *
+ * A FIXED count, deliberately not derived from the FFT size. It used to be
+ * `fftSize * 3/4`, which looks harmless because the renderer downsamples the
+ * waveform to a fixed 512 points anyway — but it does so by CHUNK MEAN, and
+ * the chunk width is `length / 512`. Tie the length to the FFT size and any
+ * change to the transform silently changes how much averaging the trace gets:
+ * at 4096 the chunk is 6 samples, at 8192 it is 12, and the oscilloscope
+ * visibly smooths out and loses amplitude without anything in the drawing code
+ * having changed.
+ *
+ * 3072 is exactly what a 4096-point transform produced, so this is a no-op
+ * today and stays a no-op when the FFT size becomes sample-rate aware.
+ *
+ * The remaining constraint is `WAVEFORM_LENGTH < fftSize`: the difference is
+ * the search headroom the zero-crossing trigger needs (see `update`). Growing
+ * the FFT only grows that headroom, and the trigger takes the FIRST rising
+ * crossing, whose index does not move when there is more room to look.
+ */
+export const WAVEFORM_LENGTH = 3072;
 /** Flux-history ring size for the current frame interval. */
 function fluxWindowFrames(dt: number): number {
   return Math.max(4, Math.round(FLUX_WINDOW_SEC / Math.max(1e-4, dt)));
