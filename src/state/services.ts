@@ -125,6 +125,8 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
   let ro: ResizeObserver | null = null;
   let fallback: ReturnType<typeof setTimeout> | undefined;
   let gpuRetries = 0;
+  /** Previous frame's track position, for detecting loop wraps (see below). */
+  let lastTrackTime: number | null = null;
   /** Sibling canvas the 2D fallback draws on when the original is unusable. */
   let fallbackCanvas: HTMLCanvasElement | null = null;
 
@@ -277,6 +279,16 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       }
       const compensated =
         eng.playing && latency > 0 ? Math.max(0, eng.currentTime - latency) : eng.currentTime;
+      // Loop wrap. The engine reports position as `raw % duration`, so a
+      // looping track silently teleports from the end back to the start with
+      // no event to subscribe to — and the analyser would diff the opening
+      // bars against the closing ones and fire a phantom onset on every lap.
+      // Any sizeable BACKWARD jump means a discontinuity; forward jumps are
+      // just frames, and a small backward wobble is latency-estimate jitter.
+      if (lastTrackTime !== null && lastTrackTime - compensated > 0.25) {
+        ana.reset("seek");
+      }
+      lastTrackTime = compensated;
       const features = ana.update(t, compensated);
       // A WebGPU renderer that has survived this long is healthy; give the
       // retry budget back so a later, unrelated device loss still gets its

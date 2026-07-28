@@ -1658,6 +1658,9 @@ export const useVizStore = create<VizState>((set, get) => {
         set({ error: null, libraryActivePath: null });
         await getEngine().loadFile(file);
         if (gen !== shared.trackLoadGen) return;
+        // Different audio entirely: detector history, peak caps and the drive
+        // envelope all describe the previous track and must not carry over.
+        getAnalyzer().reset("source");
         await getEngine().play();
         // Tag metadata (title/artist/cover) — best effort, never blocks
         // playback, so no duration scan here. Shared with the batch queue.
@@ -1687,6 +1690,7 @@ export const useVizStore = create<VizState>((set, get) => {
         const buf = await demo.render(engine.ctx.sampleRate);
         if (gen !== shared.trackLoadGen) return;
         engine.loadBuffer(buf, `Demo: ${demo.name}`);
+        getAnalyzer().reset("source");
         await engine.play();
         set({
           trackMeta: { title: demo.name, artist: "" },
@@ -1724,6 +1728,7 @@ export const useVizStore = create<VizState>((set, get) => {
         if (get().liveInputActive) {
           await stopLoopback().catch(() => undefined);
           engine.stopLiveInput();
+          getAnalyzer().reset("source");
           set({ liveInputActive: false });
           return;
         }
@@ -1733,12 +1738,14 @@ export const useVizStore = create<VizState>((set, get) => {
         }
         try {
           const push = await engine.startLiveInput();
+          getAnalyzer().reset("source");
           const info = await startLoopback(push);
           if (info.sampleRate !== engine.ctx.sampleRate) {
             // Same default device on both ends makes this near-impossible, but
             // feeding mismatched rates would pitch-shift every feature.
             await stopLoopback().catch(() => undefined);
             engine.stopLiveInput();
+            getAnalyzer().reset("source");
             set({
               error: `System audio runs at ${info.sampleRate} Hz, the visualizer at ${engine.ctx.sampleRate} Hz — match them in Windows sound settings`,
             });
@@ -1766,6 +1773,7 @@ export const useVizStore = create<VizState>((set, get) => {
           // would wedge every future toggle on "already running".
           await stopLoopback().catch(() => undefined);
           engine.stopLiveInput();
+          getAnalyzer().reset("source");
           set({ error: `System-audio capture failed: ${(e as Error).message}` });
         }
       } finally {
@@ -1787,11 +1795,16 @@ export const useVizStore = create<VizState>((set, get) => {
     seekEnd(time) {
       set({ seeking: false });
       getEngine().seek(time);
+      // New position: the pipeline's previous spectrum describes a moment that
+      // is no longer adjacent, and diffing across the jump fires a phantom
+      // beat/kick/snare/hat on the next frame.
+      getAnalyzer().reset("seek");
     },
 
     seekBy(delta) {
       const engine = getEngine();
       engine.seek(engine.currentTime + delta);
+      getAnalyzer().reset("seek");
     },
 
     toggleLoop() {

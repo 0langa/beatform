@@ -60,6 +60,24 @@ export class RealtimeAnalyzer {
     this.pipeline.setSync(sync);
   }
 
+  /**
+   * Tell the pipeline the next frame is not a continuation of the last one.
+   *
+   * "seek" = same track, new position. "source" = different audio entirely
+   * (track load, entering or leaving live input). See FeaturePipeline.reset.
+   *
+   * Note what this CANNOT fix: the AnalyserNode keeps its own `fftSize`-long
+   * ring, and recreating the buffer source does not flush it. So for roughly
+   * one window (~85 ms, about 5 frames at 60 fps) after a seek the FFT still
+   * straddles both positions. Resetting removes the false ONSET, which is the
+   * visible symptom; the brief spectral blend is inherent to tapping the graph
+   * and would need a different tap to remove.
+   */
+  reset(kind: "seek" | "source"): void {
+    this.pipeline.reset(kind);
+    this.lastFrameAt = null;
+  }
+
   /** Attach the track's beat grid once analysis lands (null = none yet). */
   setBeatGrid(grid: BeatGrid | null): void {
     this.grid = grid;

@@ -129,6 +129,10 @@ export class FeaturePipeline {
   private fluxHistory: number[] = [];
   private lastBeatAt = -Infinity;
   private clock = 0;
+  /** Set by reset(): the next frame adopts its own spectrum as the reference
+   * and fires no detector. See reset() for why zeroing prevMag is not an
+   * option. */
+  private priming = false;
 
   // Onset-class detectors: independent flux trackers per drum band
   private kickDet = new OnsetClassDetector();
@@ -274,6 +278,14 @@ export class FeaturePipeline {
         mag[i] = clamp01((db - MIN_DB) / (MAX_DB - MIN_DB));
         magDisp[i] = Math.pow(clamp01((db - DISPLAY_MIN_DB) / dispRange), DISPLAY_GAMMA);
       }
+    }
+
+    // A primed frame compares against ITSELF, so every band's delta is exactly
+    // zero and no detector can fire on a discontinuity it did not hear. The
+    // frame after this one measures a true single-frame delta again.
+    if (this.priming) {
+      this.prevMag.set(mag);
+      this.priming = false;
     }
 
     // Log-spaced bins with asymmetric EMA + peak hold with gravity. Built from
@@ -433,6 +445,61 @@ export class FeaturePipeline {
     return f;
   }
 
+  /**
+   * Tell the pipeline the audio it is about to see is not a continuation of
+   * the audio it has been seeing.
+   *
+   * Without this, the first update after a seek diffs the NEW position's
+   * spectrum against `prevMag` from the OLD one. That difference is arbitrary
+   * and usually large, so scrubbing fired a phantom beat, kick, snare or hat
+   * on the frame after almost every seek.
+   *
+   * The obvious fix — zero `prevMag` — is worse than the bug: flux is the sum
+   * of POSITIVE bin deltas, so diffing against zeros yields the largest flux
+   * the detector can ever see and fires on every band at once. Instead the
+   * next frame PRIMES: it adopts that frame's own spectrum as the reference
+   * and fires nothing, so the frame after it measures a true one-frame delta.
+   *
+   * `kind` matters, and the difference is deliberate:
+   *
+   *   "seek"   — same track, new time. Detector history and refractories are
+   *              discarded (they describe a moment that is no longer adjacent)
+   *              but the smoothed bins, peak caps and drive envelope are KEPT.
+   *              Clearing those collapses the spectrum to zero and ramps it
+   *              back, which reads as a visible flash on every scrub. The
+   *              clock is kept too: restarting it would re-arm WARMUP_SEC and
+   *              leave the visuals beat-blind for ~0.2 s after every drag.
+   *
+   *   "source" — different audio entirely (track load, entering or leaving
+   *              live input). That IS a hard cut, so everything goes, warmup
+   *              included.
+   */
+  reset(kind: "seek" | "source"): void {
+    this.priming = true;
+    this.fluxHistory.length = 0;
+    this.syncFluxHistory.length = 0;
+    this.lastBeatAt = -Infinity;
+    this.lastSyncBeatAt = -Infinity;
+    this.kickDet.reset();
+    this.snareDet.reset();
+    this.hatDet.reset();
+    if (kind === "source") {
+      this.clock = 0;
+      this.features.bins.fill(0);
+      this.features.peaks.fill(0);
+      this.features.beatIntensity = 0;
+      this.features.kick = 0;
+      this.features.snare = 0;
+      this.features.hat = 0;
+      this.features.driveBeat = 0;
+      this.features.drive = 0;
+      this.features.energy = 0;
+      this.features.rms = 0;
+      this.driveValue = 0;
+      this.syncBeatIntensity = 0;
+    }
+  }
+
   /** Choose what the visuals follow. Safe to call any time, with any input —
    * malformed settings are coerced rather than allowed to NaN the drive EMA. */
   setSync(sync: SyncSettings): void {
@@ -568,6 +635,14 @@ class OnsetClassDetector {
   private history: number[] = [];
   private lastAt = -Infinity;
   private envelope = 0;
+
+  /** Drop the adaptive-threshold history and refractory. The envelope is left
+   * to decay on its own — cutting it to zero mid-pulse is a visible pop, and
+   * it dies within ~100 ms anyway. */
+  reset(): void {
+    this.history.length = 0;
+    this.lastAt = -Infinity;
+  }
 
   update(
     mag: Float32Array,

@@ -361,3 +361,121 @@ describe("band coverage (N1/N2 regression)", () => {
     expect(lo).toBeGreaterThan(hi * 0.8);
   });
 });
+
+describe("FeaturePipeline discontinuity reset", () => {
+  /** Feed `frames` frames of a band-limited signal, return the last features. */
+  function feed(p: FeaturePipeline, loHz: number, hiHz: number, frames: number, t0 = 0) {
+    let f = p.features;
+    for (let n = 0; n < frames; n++) {
+      const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+      fillBand(magDb, loHz, hiHz, MAX_DB);
+      f = p.update(makeInput({ magDb, time: t0 + n * DT }));
+    }
+    return f;
+  }
+
+  /** One frame of a DIFFERENT band — the "landed somewhere else" spectrum. */
+  function jump(p: FeaturePipeline, loHz: number, hiHz: number, time: number) {
+    const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    fillBand(magDb, loHz, hiHz, MAX_DB);
+    return p.update(makeInput({ magDb, time }));
+  }
+
+  it("fires a phantom onset across a jump when NOT reset", () => {
+    // Establishes that the fixture actually reproduces the bug. Without this,
+    // the test below could pass because the jump was too gentle to fire.
+    const p = makePipeline();
+    feed(p, 5000, 15000, 60); // settle on hats, low end quiet
+    const f = jump(p, 40, 140, 1.0); // land on a kick-heavy moment
+    expect(f.beat || f.kick > 0.5).toBe(true);
+  });
+
+  it("fires nothing on the frame after a seek reset", () => {
+    const p = makePipeline();
+    feed(p, 5000, 15000, 60);
+    p.reset("seek");
+    const f = jump(p, 40, 140, 1.0);
+    expect(f.beat).toBe(false);
+    expect(f.kick).toBeLessThan(0.5);
+    expect(f.snare).toBeLessThan(0.5);
+    expect(f.driveBeat).toBeLessThan(0.5);
+  });
+
+  /**
+   * This is the assertion that actually earns the priming step, and it took a
+   * mutation check to find out.
+   *
+   * Clearing the flux history alone already suppresses the frame right after a
+   * reset — `fluxHistory.push(flux)` runs BEFORE the mean is taken, so on the
+   * first frame `mean === flux` and `flux > mean * 1.6` cannot be true. Tests
+   * that only assert "nothing fires immediately after a seek" therefore pass
+   * whether or not the pipeline primes at all.
+   *
+   * What priming really prevents is the discontinuity spike POISONING the
+   * adaptive mean. Landing on an unrelated spectrum produces a huge one-frame
+   * flux; if that value enters the history, the mean stays inflated for the
+   * length of the window (~0.7 s) and swallows the first genuine onsets after
+   * the seek. Priming enters a zero instead, because the frame is compared
+   * against itself.
+   */
+  it("does not swallow real onsets in the window after a seek", () => {
+    const p = makePipeline();
+    feed(p, 5000, 15000, 60); // settled on hats
+    p.reset("seek");
+    jump(p, 40, 140, 1.0); // land on a loud, unrelated low end
+    jump(p, 30, 32, 1.0 + DT); // low end goes quiet again
+    const f = feed(p, 40, 140, 1, 1.0 + 2 * DT); // a genuine kick arrives
+    expect(f.beat || f.kick > 0.5).toBe(true);
+  });
+
+  it("a seek keeps the drawn spectrum, so scrubbing does not flash", () => {
+    const p = makePipeline();
+    feed(p, 40, 140, 60);
+    const before = Array.from(p.features.bins);
+    p.reset("seek");
+    const peak = Math.max(...before);
+    expect(peak).toBeGreaterThan(0.1); // fixture sanity
+    expect(Math.max(...Array.from(p.features.bins))).toBe(peak);
+  });
+
+  it("a source reset clears the drawn spectrum and the warmup gate", () => {
+    const p = makePipeline();
+    feed(p, 40, 140, 60);
+    expect(Math.max(...Array.from(p.features.bins))).toBeGreaterThan(0.1);
+    p.reset("source");
+    expect(Math.max(...Array.from(p.features.bins))).toBe(0);
+    expect(Math.max(...Array.from(p.features.peaks))).toBe(0);
+    expect(p.features.drive).toBe(0);
+    // Warmup re-armed: a loud kick immediately after must NOT fire, exactly as
+    // it would not on a freshly constructed pipeline.
+    const f = feed(p, 40, 140, 2, 2.0);
+    expect(f.beat).toBe(false);
+  });
+
+  it("a seek clears the refractory, so rapid scrubbing still fires", () => {
+    // The refractory is 0.14 s of wall time on a clock that a seek does NOT
+    // restart. Scrub within that window of the last beat and the new position's
+    // first onset would be swallowed by a timer belonging to the old one.
+    const p = makePipeline();
+    // A beat needs a QUIET history then a spike: on a pipeline whose history
+    // is empty or already loud, mean == flux and nothing can cross 1.6x.
+    feed(p, 5000, 15000, 30);
+    const hit = feed(p, 40, 140, 1, 0.5);
+    expect(hit.beat).toBe(true); // fixture sanity: the refractory is now armed
+    feed(p, 5000, 15000, 1, 0.52); // low end drops away again
+    p.reset("seek");
+    jump(p, 30, 32, 0.54); // primed frame
+    const f = feed(p, 40, 140, 1, 0.56); // well inside the 0.14 s refractory
+    expect(f.beat).toBe(true);
+  });
+
+  it("reset is idempotent and safe before any frame has been seen", () => {
+    const p = makePipeline();
+    p.reset("seek");
+    p.reset("seek");
+    p.reset("source");
+    const f = jump(p, 40, 140, 0);
+    expect(Number.isFinite(f.bass)).toBe(true);
+    expect(f.beat).toBe(false);
+  });
+});
