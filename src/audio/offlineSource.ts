@@ -1,11 +1,10 @@
 import type { AudioFeatures, PcmData, SyncSettings } from "./types";
 import { FeaturePipeline, WARMUP_SEC, WAVEFORM_LENGTH } from "./featurePipeline";
 import { RealFFT } from "./dsp/fft";
+import { analysisFftSize } from "./dsp/fftSize";
 import { LoudnessMeter } from "./dsp/lufs";
 import { stereoWidth } from "./dsp/stereo";
 import { gridPhase, type BeatGrid } from "./analysis/beatGrid";
-
-const FFT_SIZE = 4096;
 
 /**
  * Analysis lookahead, seconds. The FFT window ends at t + LOOKAHEAD instead
@@ -46,7 +45,7 @@ export function pcmFromAudioBuffer(buffer: AudioBuffer): PcmData {
  * frame-by-frame at a fixed fps and produces the exact same AudioFeatures the
  * realtime path would — but deterministically, decoupled from wall-clock.
  *
- * Frame N covers t = N / fps. The FFT window is the FFT_SIZE samples ending
+ * Frame N covers t = N / fps. The FFT window is the fftSize samples ending
  * at t (mirrors the realtime path, which analyzes the most recent fftSize
  * samples from the AnalyserNode tap).
  *
@@ -69,6 +68,7 @@ export class OfflineAnalyzer {
   private pipeline: FeaturePipeline;
   private magDb: Float32Array;
   private windowBuf: Float32Array;
+  private fftSize: number;
   private nextFrame = 0;
   private duration: number;
 
@@ -105,14 +105,18 @@ export class OfflineAnalyzer {
     this.meterChannels = Math.min(2, pcm.channels.length);
     this.meter = new LoudnessMeter(pcm.sampleRate, this.meterChannels);
 
-    this.fft = new RealFFT(FFT_SIZE, true);
-    this.magDb = new Float32Array(FFT_SIZE / 2);
-    this.windowBuf = new Float32Array(FFT_SIZE);
+    // Sized from the track's rate so the analysis WINDOW, not the bin count,
+    // is what stays constant across devices. See analysisFftSize.
+    const fftSize = analysisFftSize(pcm.sampleRate);
+    this.fftSize = fftSize;
+    this.fft = new RealFFT(fftSize, true);
+    this.magDb = new Float32Array(fftSize / 2);
+    this.windowBuf = new Float32Array(fftSize);
     this.pipeline = new FeaturePipeline({
       sampleRate: pcm.sampleRate,
-      fftBins: FFT_SIZE / 2,
+      fftBins: fftSize / 2,
       binCount,
-      // Fixed, NOT derived from FFT_SIZE — see WAVEFORM_LENGTH. The rest of
+      // Fixed, NOT derived from the FFT size — see WAVEFORM_LENGTH. The rest of
       // the window is trigger-search headroom.
       waveformLength: WAVEFORM_LENGTH,
     });
@@ -151,9 +155,10 @@ export class OfflineAnalyzer {
         this.mono.length,
         Math.round((t + ANALYSIS_LOOKAHEAD) * this.sampleRate),
       );
-      const start = Math.max(0, end - FFT_SIZE);
+      const start = Math.max(0, end - this.fftSize);
       this.windowBuf.fill(0);
-      if (end > start) this.windowBuf.set(this.mono.subarray(start, end), FFT_SIZE - (end - start));
+      if (end > start)
+        this.windowBuf.set(this.mono.subarray(start, end), this.fftSize - (end - start));
       this.fft.magnitudesDb(this.windowBuf, this.magDb);
       this.pipeline.update({
         magDb: this.magDb,
@@ -174,9 +179,9 @@ export class OfflineAnalyzer {
     const n = this.nextFrame++;
     const t = n / this.fps;
     const end = Math.min(this.mono.length, Math.round((t + ANALYSIS_LOOKAHEAD) * this.sampleRate));
-    const start = Math.max(0, end - FFT_SIZE);
+    const start = Math.max(0, end - this.fftSize);
     this.windowBuf.fill(0);
-    this.windowBuf.set(this.mono.subarray(start, end), FFT_SIZE - (end - start));
+    this.windowBuf.set(this.mono.subarray(start, end), this.fftSize - (end - start));
     this.fft.magnitudesDb(this.windowBuf, this.magDb);
     // Meter gets the contiguous new samples up to this frame's true end —
     // loudness stays on the un-shifted timeline, only analysis looks ahead

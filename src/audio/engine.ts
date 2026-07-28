@@ -1,5 +1,6 @@
 import type { PlaybackState } from "./types";
 import { decodeAudioLenient } from "./decodeLenient";
+import { analysisFftSize } from "./dsp/fftSize";
 
 /**
  * AudioWorklet that turns pushed sample chunks into a live audio-graph
@@ -58,12 +59,16 @@ export class AudioEngine {
     this.ctx = new AudioContext();
     // The analyser is a time-domain tap only (fftSize = window length);
     // RealtimeAnalyzer runs its own FFT so live matches offline export.
+    // Sized from the CONTEXT rate, not fixed: on a hardcoded 4096 a 96 kHz
+    // output device analysed half the time window everyone else did. See
+    // analysisFftSize. 44.1 and 48 kHz still resolve to 4096.
+    const fftSize = analysisFftSize(this.ctx.sampleRate);
     this.analyser = this.ctx.createAnalyser();
-    this.analyser.fftSize = 4096;
+    this.analyser.fftSize = fftSize;
     this.analyserL = this.ctx.createAnalyser();
     this.analyserR = this.ctx.createAnalyser();
-    this.analyserL.fftSize = 4096;
-    this.analyserR.fftSize = 4096;
+    this.analyserL.fftSize = fftSize;
+    this.analyserR.fftSize = fftSize;
     // Unity-gain analysis tap. Sources feed THIS, and it feeds both the
     // analysers and the volume gain — so what we analyse is the raw programme
     // material, exactly like the offline path (which analyses raw PCM).

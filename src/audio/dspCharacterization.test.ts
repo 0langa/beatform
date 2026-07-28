@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { OfflineAnalyzer } from "./offlineSource";
 import { FeaturePipeline, WAVEFORM_LENGTH } from "./featurePipeline";
+import { analysisFftSize } from "./dsp/fftSize";
 import type { AudioFeatures, PcmData, SyncSettings } from "./types";
 import { DEFAULT_SYNC } from "./types";
 
@@ -428,15 +429,26 @@ describe("characterization: sample-rate variance", () => {
    * size rate-aware, which holds the window (and bins-per-Hz) constant and MUST
    * collapse this gap. Re-bless with the new numbers when it lands.
    */
-  it("96 kHz reads bass far higher than 48 kHz on identical audio (pinned defect)", () => {
+  it("96 kHz and 48 kHz now read the same bass on identical audio", () => {
     const at48 = run(twoBassTones(48000), 60).mean;
     const at96 = run(twoBassTones(96000), 60).mean;
-    // Guard the fixture itself: a saturated band would make the drift vanish
-    // and this test pass for the wrong reason.
+    // Guard the fixture itself: a saturated band reads 1.0 at every rate and
+    // would make this pass for entirely the wrong reason. That is exactly how
+    // the defect stayed hidden when the fixture was first written at 0.35.
     expect(at48.bass, "fixture must not clamp").toBeLessThan(0.95);
     expect(at96.bass, "fixture must not clamp").toBeLessThan(0.99);
-    const drift = (at96.bass - at48.bass) / at48.bass;
-    expect(drift, "48k->96k bass overread").toBeGreaterThan(0.5);
+    const drift = Math.abs(at96.bass - at48.bass) / at48.bass;
+    // Was 0.72 — a 72% overread — while the FFT size was fixed at 4096 and
+    // bassRange therefore spanned 10 bins at 48 kHz but 5 at 96 kHz. Now
+    // 0.00016. The residue is the resampling of the fixture, not the analyser.
+    expect(drift, "48k->96k bass drift").toBeLessThan(0.01);
+  });
+
+  it("192 kHz matches 48 kHz too", () => {
+    const at48 = run(twoBassTones(48000), 60).mean;
+    const at192 = run(twoBassTones(192000), 60).mean;
+    expect(at48.bass).toBeLessThan(0.95);
+    expect(Math.abs(at192.bass - at48.bass) / at48.bass).toBeLessThan(0.01);
   });
 
   it("44.1 kHz and 48 kHz stay close (both select the same window today)", () => {
@@ -529,15 +541,17 @@ describe("characterization: waveform length is independent of the FFT", () => {
   });
 
   /**
-   * NOT YET GUARDED, on purpose, and recorded so it is not mistaken for
-   * coverage: reverting either source to `fftSize * 3/4` is currently
-   * undetectable, because floor(4096 * 3/4) IS 3072. The two expressions only
-   * diverge once the FFT size stops being 4096 — i.e. when sizing becomes
-   * sample-rate aware. That task must add a 96 kHz case asserting the waveform
-   * is still 3072 while the transform is 8192; until then this decoupling
-   * rests on the literal above and on review.
+   * The assertion that was impossible before the FFT size became rate-aware:
+   * while every transform was 4096, `fftSize * 3/4` and a fixed 3072 were the
+   * same number, so reverting the decoupling was undetectable. At 96 kHz the
+   * transform is 8192 and the old expression would yield 6144 — doubling the
+   * renderer's chunk-mean width and visibly smoothing the oscilloscope.
    */
-  it.todo("waveform length stays 3072 at 96 kHz once the FFT size is rate-aware");
+  it("stays 3072 at 96 kHz, where the transform is 8192", () => {
+    expect(analysisFftSize(96000)).toBe(8192);
+    const a = new OfflineAnalyzer(kickTrain(96000), 60);
+    expect(a.nextFrameFeatures().waveform.length).toBe(3072);
+  });
 
   it("the zero-crossing trigger does not move when headroom grows", () => {
     // Growing the FFT only grows the search headroom. The trigger takes the
