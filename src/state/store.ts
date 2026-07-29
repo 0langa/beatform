@@ -431,6 +431,10 @@ interface Actions {
   seekEnd(time: number): void;
   seekBy(delta: number): void;
   toggleLoop(): void;
+  /** Set session-only A/B markers at an explicit time, or the live playhead. */
+  setLoopStart(time?: number): void;
+  setLoopEnd(time?: number): void;
+  clearLoopRegion(): void;
   applyVolume(volume: number, muted: boolean): void;
   pokeChrome(): void;
   setDragOver(v: boolean): void;
@@ -952,7 +956,15 @@ export const useVizStore = create<VizState>((set, get) => {
     activeParams: resolveParams(initialPresetId, initialParams),
     activeMods: initialMods[initialPresetId] ?? [],
     sync: initialSync[initialPresetId] ?? { ...DEFAULT_SYNC },
-    playback: { playing: false, time: 0, duration: 0, trackName: null, loop: false },
+    playback: {
+      playing: false,
+      time: 0,
+      duration: 0,
+      trackName: null,
+      loop: false,
+      loopStart: null,
+      loopEnd: null,
+    },
     analysisSampleRate: 48000,
     volume: loadStoredVolume(),
     muted: false,
@@ -1814,6 +1826,27 @@ export const useVizStore = create<VizState>((set, get) => {
     toggleLoop() {
       const engine = getEngine();
       engine.loop = !engine.loop;
+    },
+
+    setLoopStart(time) {
+      const engine = getEngine();
+      const before = engine.currentTime;
+      engine.setLoopStart(time ?? before);
+      if (Math.abs(engine.currentTime - before) > 0.001) getAnalyzer().reset("seek");
+    },
+
+    setLoopEnd(time) {
+      const engine = getEngine();
+      const before = engine.currentTime;
+      engine.setLoopEnd(time ?? before);
+      if (Math.abs(engine.currentTime - before) > 0.001) getAnalyzer().reset("seek");
+    },
+
+    clearLoopRegion() {
+      const engine = getEngine();
+      const before = engine.currentTime;
+      engine.clearLoopRegion();
+      if (Math.abs(engine.currentTime - before) > 0.001) getAnalyzer().reset("seek");
     },
 
     applyVolume(volume, muted) {

@@ -59,6 +59,14 @@ const SECTIONS: GuideSection[] = [
           When something looks wrong or you get lost, <em>Project ▸ New project</em> resets the
           whole document to clean defaults — one <K k="Ctrl+Z" /> undoes even that.
         </p>
+        <h4>Loop a section while you tune</h4>
+        <p>
+          Press <K k="I" /> at the start of a drop and <K k="O" /> at the end, or use the{" "}
+          <strong>A</strong>/<strong>B</strong> buttons beside the player. The selected region
+          appears on the seek bar; drag either marker to adjust it, then press <K k="L" /> to loop
+          it. Clear the markers to return <K k="L" /> to whole-track looping. A-B markers are
+          session-only and reset when another track loads.
+        </p>
       </>
     ),
   },
@@ -436,8 +444,9 @@ const SECTIONS: GuideSection[] = [
           Press <K k="H" /> for the full list. The important ones: <K k="Space" /> play/pause,{" "}
           <K k="N" />/<K k="P" /> next/previous mode, <K k="1" />–<K k="9" /> jump to a mode,{" "}
           <K k="G" /> settings panel, <K k="S" /> stage mode, <K k="0" /> blackout, <K k="F" />{" "}
-          fullscreen, <K k="M" /> mute, <K k="L" /> loop. Every shortcut is a letter or digit, so it
-          sits on the same labeled key on every keyboard layout.
+          fullscreen, <K k="M" /> mute, <K k="L" /> loop, and <K k="I" />/<K k="O" /> A-B loop
+          markers. Every shortcut is a letter or digit, so it sits on the same labeled key on every
+          keyboard layout.
         </p>
       </>
     ),

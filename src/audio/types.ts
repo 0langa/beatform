@@ -181,6 +181,9 @@ export interface PlaybackState {
   duration: number;
   trackName: string | null;
   loop: boolean;
+  /** Session-only A-B loop markers. Both null means whole-track looping. */
+  loopStart: number | null;
+  loopEnd: number | null;
 }
 
 /**

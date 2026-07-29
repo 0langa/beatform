@@ -78,6 +78,8 @@ class FakeAudioContext {
       ...node("bufferSource"),
       buffer: null,
       loop: false,
+      loopStart: 0,
+      loopEnd: 0,
       onended: null,
       start() {},
       stop() {},
@@ -138,5 +140,113 @@ describe("audio graph", () => {
       const dest = findByKind("destination")[0];
       expect(reaches(src, dest)).toBe(true);
     }
+  });
+
+  it("applies ordered A-B endpoints and reports exact short-region wraps", async () => {
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    vi.resetModules();
+    const { AudioEngine } = await import("./engine");
+
+    const engine = new AudioEngine();
+    const buffer = {
+      duration: 10,
+      length: 480000,
+      numberOfChannels: 2,
+      sampleRate: 48000,
+      getChannelData: () => new Float32Array(480000),
+    } as unknown as AudioBuffer;
+    engine.loadBuffer(buffer, "loop.wav");
+
+    // Either marker may be set first; A is always the earlier boundary.
+    engine.setLoopStart(2.2);
+    engine.setLoopEnd(2);
+    expect(engine.loopRegion).toEqual({ start: 2, end: 2.2 });
+    engine.loop = true;
+    await engine.play();
+
+    const sources = findByKind("bufferSource");
+    const source = sources[sources.length - 1] as FakeNode & {
+      loop: boolean;
+      loopStart: number;
+      loopEnd: number;
+    };
+    expect(source.loop).toBe(true);
+    expect(source.loopStart).toBe(2);
+    expect(source.loopEnd).toBe(2.2);
+
+    (engine.ctx as unknown as { currentTime: number }).currentTime = 0.21;
+    expect(engine.currentTime).toBeCloseTo(2.01, 6);
+    expect(engine.loopEpoch).toBe(1);
+
+    (engine.ctx as unknown as { currentTime: number }).currentTime = 0.61;
+    expect(engine.currentTime).toBeCloseTo(2.01, 6);
+    expect(engine.loopEpoch).toBe(3);
+  });
+
+  it("clears A-B markers per track and keeps whole-track loop available", async () => {
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    vi.resetModules();
+    const { AudioEngine } = await import("./engine");
+
+    const buffer = {
+      duration: 10,
+      length: 480000,
+      numberOfChannels: 2,
+      sampleRate: 48000,
+      getChannelData: () => new Float32Array(480000),
+    } as unknown as AudioBuffer;
+    const engine = new AudioEngine();
+    engine.loadBuffer(buffer, "first.wav");
+    engine.setLoopStart(2);
+    engine.setLoopEnd(4);
+    engine.loop = true;
+    engine.clearLoopRegion();
+    expect(engine.state).toMatchObject({ loop: true, loopStart: null, loopEnd: null });
+
+    await engine.play();
+    const sources = findByKind("bufferSource");
+    const source = sources[sources.length - 1] as FakeNode & {
+      loop: boolean;
+      loopStart: number;
+      loopEnd: number;
+    };
+    expect(source).toMatchObject({ loop: true, loopStart: 0, loopEnd: 0 });
+
+    engine.setLoopStart(1);
+    engine.setLoopEnd(3);
+    engine.loadBuffer(buffer, "second.wav");
+    expect(engine.state).toMatchObject({
+      trackName: "second.wav",
+      loop: true,
+      loopStart: null,
+      loopEnd: null,
+    });
+  });
+
+  it("re-anchors the playhead when looping is disabled after several laps", async () => {
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    vi.resetModules();
+    const { AudioEngine } = await import("./engine");
+
+    const buffer = {
+      duration: 10,
+      length: 480000,
+      numberOfChannels: 2,
+      sampleRate: 48000,
+      getChannelData: () => new Float32Array(480000),
+    } as unknown as AudioBuffer;
+    const engine = new AudioEngine();
+    engine.loadBuffer(buffer, "clock.wav");
+    engine.loop = true;
+    await engine.play();
+
+    (engine.ctx as unknown as { currentTime: number }).currentTime = 12;
+    expect(engine.currentTime).toBe(2);
+    expect(engine.loopEpoch).toBe(1);
+
+    engine.loop = false;
+    expect(engine.currentTime).toBe(2);
+    (engine.ctx as unknown as { currentTime: number }).currentTime = 13;
+    expect(engine.currentTime).toBe(3);
   });
 });

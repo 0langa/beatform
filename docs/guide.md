@@ -4,9 +4,26 @@ Everything the app does, panel by panel — all of it also lives in the app
 itself: the **User guide** button in the shortcut overlay (press `H`) opens
 a 12-section in-app walkthrough. Keyboard shortcuts: press `H` (or
 `?`) in the app (Space play/pause, P/N switch mode, G settings, T timeline,
-B batch, Q library, L loop, F fullscreen, S stage, Ctrl+Z undo). Every
+B batch, Q library, L loop, I/O set A-B markers, F fullscreen, S stage,
+Ctrl+Z undo). Every
 shortcut is a letter or digit, so it sits on the same labeled key on every
 keyboard layout — QWERTZ, AZERTY and friends included.
+
+## Playback and A-B loops
+
+The player seek bar supports a session-only loop region for tuning a look
+against one drop or phrase:
+
+1. Press **I** at the start and **O** at the end, or click the **A** and **B**
+   buttons beside the loop control.
+2. Drag either labeled marker on the seek bar for precise adjustment.
+3. Press **L** (or the loop icon). With both markers set, only that region
+   loops; without them, the same control loops the whole track.
+4. Click **×** beside A/B to clear the region without turning whole-track loop
+   off.
+
+Markers reset when a different track loads. They are preview workflow state,
+not project or export data.
 
 ## Visual modes
 

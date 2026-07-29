@@ -51,7 +51,8 @@ const SHORTCUTS: Array<[string, string]> = [
   ["← / →", "Seek 5 s"],
   ["↑ / ↓", "Volume"],
   ["M", "Mute"],
-  ["L", "Loop"],
+  ["L", "Loop whole track / selected A-B region"],
+  ["I / O", "Set A / B loop markers at playhead"],
   ["P / N", "Previous / next preset (also [ / ])"],
   ["1 – 9", "Jump to mode (beat-quantized when Live › Quantize is on)"],
   ["S", "Stage mode (chrome-free output) · 0 blackout · Esc exits (also \\ and .)"],
@@ -447,6 +448,18 @@ export default function App() {
   const seekEnd: PlayerBarProps["onSeekEnd"] = useCallback((t) => store().seekEnd(t), [store]);
   const toggleLoop: PlayerBarProps["onToggleLoop"] = useCallback(
     () => store().toggleLoop(),
+    [store],
+  );
+  const setLoopStart: PlayerBarProps["onSetLoopStart"] = useCallback(
+    (t) => store().setLoopStart(t),
+    [store],
+  );
+  const setLoopEnd: PlayerBarProps["onSetLoopEnd"] = useCallback(
+    (t) => store().setLoopEnd(t),
+    [store],
+  );
+  const clearLoopRegion: PlayerBarProps["onClearLoopRegion"] = useCallback(
+    () => store().clearLoopRegion(),
     [store],
   );
   const setVolume: PlayerBarProps["onVolume"] = useCallback(
@@ -1046,6 +1059,9 @@ export default function App() {
         onSeekStart={seekStart}
         onSeekEnd={seekEnd}
         onToggleLoop={toggleLoop}
+        onSetLoopStart={setLoopStart}
+        onSetLoopEnd={setLoopEnd}
+        onClearLoopRegion={clearLoopRegion}
         onVolume={setVolume}
         onToggleMute={toggleMute}
       />

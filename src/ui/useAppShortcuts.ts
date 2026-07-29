@@ -189,6 +189,14 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         case "L":
           s.toggleLoop();
           break;
+        case "i":
+        case "I":
+          s.setLoopStart();
+          break;
+        case "o":
+        case "O":
+          s.setLoopEnd();
+          break;
         case "g":
         case "G":
           s.setShowPanel((v) => !v);

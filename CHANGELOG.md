@@ -11,6 +11,22 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.63.0] - 2026-07-29
+
+### Added
+
+- **A-B loop regions for focused live look-tuning.** Set A and B at the
+  playhead with the new controls or **I** and **O**, then toggle the selected
+  region with **L**. Both labeled markers can be dragged directly on the seek
+  bar; clearing them returns an active loop to whole-track behavior.
+
+  Region endpoints are ordered, clamped to the track, and kept at least 100 ms
+  apart. Playback uses `AudioBufferSourceNode.loopStart` and `loopEnd`, while
+  the UI clock mirrors every wrap and explicitly resets analyzer state—even for
+  loops shorter than the old backwards-jump threshold. Markers are session-only
+  and clear when a new track loads, so project and export formats stay
+  unchanged.
+
 ## [2.62.0] - 2026-07-29
 
 ### Added
@@ -1573,7 +1589,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.62.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.63.0...HEAD
+[2.63.0]: https://github.com/0langa/beatform/compare/v2.62.0...v2.63.0
 [2.62.0]: https://github.com/0langa/beatform/compare/v2.61.0...v2.62.0
 [2.61.0]: https://github.com/0langa/beatform/compare/v2.60.1...v2.61.0
 [2.60.1]: https://github.com/0langa/beatform/compare/v2.60.0...v2.60.1

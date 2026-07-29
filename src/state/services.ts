@@ -130,6 +130,9 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
   let gpuRetries = 0;
   /** Previous frame's track position, for detecting loop wraps (see below). */
   let lastTrackTime: number | null = null;
+  /** Exact wrap signal from AudioEngine. Needed for A-B loops shorter than the
+   * old 250 ms backwards-jump heuristic. */
+  let lastLoopEpoch = eng.loopEpoch;
   /** Sibling canvas the 2D fallback draws on when the original is unusable. */
   let fallbackCanvas: HTMLCanvasElement | null = null;
 
@@ -288,9 +291,14 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       // bars against the closing ones and fire a phantom onset on every lap.
       // Any sizeable BACKWARD jump means a discontinuity; forward jumps are
       // just frames, and a small backward wobble is latency-estimate jitter.
-      if (lastTrackTime !== null && lastTrackTime - compensated > 0.25) {
+      const loopEpoch = eng.loopEpoch;
+      if (
+        loopEpoch !== lastLoopEpoch ||
+        (lastTrackTime !== null && lastTrackTime - compensated > 0.25)
+      ) {
         ana.reset("seek");
       }
+      lastLoopEpoch = loopEpoch;
       lastTrackTime = compensated;
       const features = ana.update(t, compensated);
       // A WebGPU renderer that has survived this long is healthy; give the

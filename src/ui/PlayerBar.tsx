@@ -1,7 +1,7 @@
 import { memo, useRef, useState } from "react";
 import type { PlaybackState } from "../audio/types";
 import { Slider } from "./Slider";
-import { IconLoop, IconMusic, IconMute, IconPause, IconPlay, IconVolume } from "./Icons";
+import { IconClose, IconLoop, IconMusic, IconMute, IconPause, IconPlay, IconVolume } from "./Icons";
 
 function fmt(t: number): string {
   const m = Math.floor(t / 60);
@@ -19,6 +19,9 @@ export interface PlayerBarProps {
   onSeekStart: () => void;
   onSeekEnd: (t: number) => void;
   onToggleLoop: () => void;
+  onSetLoopStart: (t?: number) => void;
+  onSetLoopEnd: (t?: number) => void;
+  onClearLoopRegion: () => void;
   onVolume: (v: number) => void;
   onToggleMute: () => void;
 }
@@ -38,11 +41,21 @@ export const PlayerBar = memo(function PlayerBar(props: PlayerBarProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const [hoverT, setHoverT] = useState<number | null>(null);
   const [hoverX, setHoverX] = useState(0);
-  const [dragT, setDragT] = useState<number | null>(null);
+  const [seekDragT, setSeekDragT] = useState<number | null>(null);
+  const [loopDrag, setLoopDrag] = useState<{
+    kind: "start" | "end";
+    time: number;
+  } | null>(null);
 
   const enabled = !!playback.trackName && playback.duration > 0;
-  const shownTime = dragT ?? playback.time;
+  const shownTime = seekDragT ?? playback.time;
   const pct = enabled ? (shownTime / playback.duration) * 100 : 0;
+  const shownLoopStart = loopDrag?.kind === "start" ? loopDrag.time : playback.loopStart;
+  const shownLoopEnd = loopDrag?.kind === "end" ? loopDrag.time : playback.loopEnd;
+  const hasAnyLoopPoint = playback.loopStart !== null || playback.loopEnd !== null;
+  const hasLoopRegion = shownLoopStart !== null && shownLoopEnd !== null;
+  const regionStart = hasLoopRegion ? Math.min(shownLoopStart, shownLoopEnd) : null;
+  const regionEnd = hasLoopRegion ? Math.max(shownLoopStart, shownLoopEnd) : null;
 
   const timeAt = (clientX: number): number => {
     const rect = barRef.current!.getBoundingClientRect();
@@ -63,29 +76,47 @@ export const PlayerBar = memo(function PlayerBar(props: PlayerBarProps) {
         onPointerDown={(e) => {
           if (!enabled) return;
           e.currentTarget.setPointerCapture(e.pointerId);
+          const marker = (e.target as HTMLElement).closest<HTMLElement>("[data-loop-marker]")
+            ?.dataset.loopMarker;
+          if (marker === "start" && playback.loopStart !== null) {
+            setLoopDrag({ kind: "start", time: playback.loopStart });
+            return;
+          }
+          if (marker === "end" && playback.loopEnd !== null) {
+            setLoopDrag({ kind: "end", time: playback.loopEnd });
+            return;
+          }
           props.onSeekStart();
-          setDragT(timeAt(e.clientX));
+          setSeekDragT(timeAt(e.clientX));
         }}
         onPointerMove={(e) => {
           if (!enabled) return;
           const t = timeAt(e.clientX);
           setHoverT(t);
           setHoverX(e.clientX - barRef.current!.getBoundingClientRect().left);
-          if (dragT !== null) setDragT(t);
+          if (seekDragT !== null) setSeekDragT(t);
+          if (loopDrag !== null) setLoopDrag({ ...loopDrag, time: t });
         }}
         onPointerUp={(e) => {
-          if (!enabled || dragT === null) return;
+          if (!enabled || (seekDragT === null && loopDrag === null)) return;
           e.currentTarget.releasePointerCapture(e.pointerId);
-          props.onSeekEnd(timeAt(e.clientX));
-          setDragT(null);
+          const time = timeAt(e.clientX);
+          if (loopDrag?.kind === "start") props.onSetLoopStart(time);
+          else if (loopDrag?.kind === "end") props.onSetLoopEnd(time);
+          else props.onSeekEnd(time);
+          setSeekDragT(null);
+          setLoopDrag(null);
         }}
         onPointerCancel={(e) => {
           // Touch-scroll takeover / pen interruption: without this the app
           // wedges in "seeking" state and the transport freezes for good.
-          if (dragT === null) return;
+          if (seekDragT === null && loopDrag === null) return;
           e.currentTarget.releasePointerCapture(e.pointerId);
-          props.onSeekEnd(dragT);
-          setDragT(null);
+          if (loopDrag?.kind === "start") props.onSetLoopStart(loopDrag.time);
+          else if (loopDrag?.kind === "end") props.onSetLoopEnd(loopDrag.time);
+          else if (seekDragT !== null) props.onSeekEnd(seekDragT);
+          setSeekDragT(null);
+          setLoopDrag(null);
         }}
         onPointerLeave={() => setHoverT(null)}
         tabIndex={enabled ? 0 : -1}
@@ -108,6 +139,15 @@ export const PlayerBar = memo(function PlayerBar(props: PlayerBarProps) {
         }}
       >
         <div className="seek-track">
+          {regionStart !== null && regionEnd !== null && (
+            <div
+              className={`seek-loop-region ${playback.loop ? "active" : ""}`}
+              style={{
+                left: `${(regionStart / playback.duration) * 100}%`,
+                width: `${((regionEnd - regionStart) / playback.duration) * 100}%`,
+              }}
+            />
+          )}
           <div className="seek-fill" style={{ width: `${pct}%` }} />
           {enabled &&
             props.sections.map((t) => (
@@ -118,6 +158,26 @@ export const PlayerBar = memo(function PlayerBar(props: PlayerBarProps) {
                 style={{ left: `${(t / playback.duration) * 100}%` }}
               />
             ))}
+          {shownLoopStart !== null && (
+            <div
+              className="seek-loop-marker start"
+              data-loop-marker="start"
+              title={`Loop A ${fmt(shownLoopStart)} — drag to adjust`}
+              style={{ left: `${(shownLoopStart / playback.duration) * 100}%` }}
+            >
+              A
+            </div>
+          )}
+          {shownLoopEnd !== null && (
+            <div
+              className="seek-loop-marker end"
+              data-loop-marker="end"
+              title={`Loop B ${fmt(shownLoopEnd)} — drag to adjust`}
+              style={{ left: `${(shownLoopEnd / playback.duration) * 100}%` }}
+            >
+              B
+            </div>
+          )}
           <div className="seek-handle" style={{ left: `${pct}%` }} />
         </div>
         {hoverT !== null && enabled && (
@@ -151,13 +211,47 @@ export const PlayerBar = memo(function PlayerBar(props: PlayerBarProps) {
         <div className="player-right">
           <button
             className={`icon-btn ${playback.loop ? "active" : ""}`}
-            title={`Loop ${playback.loop ? "on" : "off"} (L)`}
+            title={`${hasLoopRegion ? "A-B" : "Whole-track"} loop ${
+              playback.loop ? "on" : "off"
+            } (L)`}
             aria-label="Loop"
             aria-pressed={playback.loop}
             onClick={props.onToggleLoop}
           >
             <IconLoop size={17} />
           </button>
+          <button
+            className={`loop-point-btn ${playback.loopStart !== null ? "active" : ""}`}
+            disabled={!enabled}
+            title={`Set loop A at playhead (I)${
+              playback.loopStart !== null ? ` — ${fmt(playback.loopStart)}` : ""
+            }`}
+            aria-label="Set loop A"
+            onClick={() => props.onSetLoopStart()}
+          >
+            A
+          </button>
+          <button
+            className={`loop-point-btn ${playback.loopEnd !== null ? "active" : ""}`}
+            disabled={!enabled}
+            title={`Set loop B at playhead (O)${
+              playback.loopEnd !== null ? ` — ${fmt(playback.loopEnd)}` : ""
+            }`}
+            aria-label="Set loop B"
+            onClick={() => props.onSetLoopEnd()}
+          >
+            B
+          </button>
+          {hasAnyLoopPoint && (
+            <button
+              className="icon-btn subtle"
+              title="Clear A-B region (whole-track loop remains available)"
+              aria-label="Clear A-B loop"
+              onClick={props.onClearLoopRegion}
+            >
+              <IconClose size={14} />
+            </button>
+          )}
           <button
             className="icon-btn"
             title={props.muted ? "Unmute (M)" : "Mute (M)"}

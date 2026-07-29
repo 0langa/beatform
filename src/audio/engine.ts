@@ -2,6 +2,13 @@ import type { PlaybackState } from "./types";
 import { decodeAudioLenient } from "./decodeLenient";
 import { analysisFftSize } from "./dsp/fftSize";
 
+export const MIN_LOOP_REGION_SECONDS = 0.1;
+
+export interface LoopRegion {
+  start: number;
+  end: number;
+}
+
 export interface LoopbackStats {
   depthFrames: number;
   maxDepthFrames: number;
@@ -75,6 +82,14 @@ export class AudioEngine {
   private _playing = false;
   private _trackName: string | null = null;
   private _loop = false;
+  private _loopStart: number | null = null;
+  private _loopEnd: number | null = null;
+  /** Monotonic discontinuity counter. The analyzer consumes this instead of
+   * guessing loop wraps from a minimum backwards distance, which failed for
+   * short A-B regions. */
+  private _loopEpoch = 0;
+  /** Cycle number observed on the current one-shot BufferSource clock. */
+  private observedLoopCycle = 0;
 
   onStateChange: ((s: PlaybackState) => void) | null = null;
   onEnded: (() => void) | null = null;
@@ -251,6 +266,7 @@ export class AudioEngine {
     this._trackName = name;
     this.offset = 0;
     this._playing = false;
+    this.resetLoopRegion();
     this.emit();
   }
 
@@ -262,6 +278,7 @@ export class AudioEngine {
     this._trackName = name;
     this.offset = 0;
     this._playing = false;
+    this.resetLoopRegion();
     this.emit();
   }
 
@@ -309,11 +326,64 @@ export class AudioEngine {
     return this._loop;
   }
 
-  /** Gapless: toggles AudioBufferSourceNode.loop, live on a playing source. */
+  /** Whole-track when no A-B region exists; otherwise the selected region. */
   set loop(v: boolean) {
+    if (v === this._loop) return;
+    const position = this.currentTime;
     this._loop = v;
-    if (this.source) this.source.loop = v;
+    const region = this.loopRegion;
+    const normalized = v && region ? this.positionInsideRegion(position, region) : position;
+
+    // Re-anchor the JS clock at the audio node's current playhead. This keeps
+    // disabling a loop after several laps from jumping currentTime to the end
+    // while the real BufferSource continues from its current loop position.
+    this.offset = normalized;
+    this.startedAt = this.ctx.currentTime;
+    this.observedLoopCycle = 0;
+
+    if (this.source && normalized !== position) {
+      this.stopSource();
+      this.startSourceAt(normalized);
+      return;
+    }
+    if (this.source) this.configureSourceLoop(this.source);
     this.emit();
+  }
+
+  get loopStart(): number | null {
+    return this._loopStart;
+  }
+
+  get loopEnd(): number | null {
+    return this._loopEnd;
+  }
+
+  get loopRegion(): LoopRegion | null {
+    if (this._loopStart === null || this._loopEnd === null || this._loopEnd <= this._loopStart) {
+      return null;
+    }
+    return { start: this._loopStart, end: this._loopEnd };
+  }
+
+  /** Increments once per audio loop wrap, including sub-250 ms A-B regions. */
+  get loopEpoch(): number {
+    return this._loopEpoch;
+  }
+
+  setLoopStart(time: number): void {
+    this.setLoopPoint("start", time);
+  }
+
+  setLoopEnd(time: number): void {
+    this.setLoopPoint("end", time);
+  }
+
+  clearLoopRegion(): void {
+    if (this._loopStart === null && this._loopEnd === null) return;
+    const position = this.currentTime;
+    this._loopStart = null;
+    this._loopEnd = null;
+    this.reconfigureLoopRegion(position);
   }
 
   get duration(): number {
@@ -345,7 +415,20 @@ export class AudioEngine {
     if (!this.buffer) return 0;
     if (!this._playing) return this.offset;
     const raw = this.offset + (this.ctx.currentTime - this.startedAt);
-    if (this._loop) return raw % this.buffer.duration;
+    if (this._loop) {
+      const region = this.loopRegion;
+      if (region) {
+        if (raw < region.end) return raw;
+        const length = region.end - region.start;
+        const afterFirstEnd = raw - region.end;
+        const cycle = 1 + Math.floor(afterFirstEnd / length);
+        this.observeLoopCycle(cycle);
+        return region.start + (afterFirstEnd % length);
+      }
+      const cycle = Math.floor(raw / this.buffer.duration);
+      this.observeLoopCycle(cycle);
+      return raw % this.buffer.duration;
+    }
     return Math.min(raw, this.buffer.duration);
   }
 
@@ -356,14 +439,18 @@ export class AudioEngine {
       duration: this.duration,
       trackName: this._trackName,
       loop: this._loop,
+      loopStart: this._loopStart,
+      loopEnd: this._loopEnd,
     };
   }
 
   private startSourceAt(offset: number): void {
     if (!this.buffer) return;
+    const region = this._loop ? this.loopRegion : null;
+    const startOffset = region ? this.positionInsideRegion(offset, region) : offset;
     const src = this.ctx.createBufferSource();
     src.buffer = this.buffer;
-    src.loop = this._loop;
+    this.configureSourceLoop(src);
     // THE TAP, not the gain. `tap` feeds both the analysers and `gain`, so
     // connecting a source straight to `gain` routes it to the speakers while
     // bypassing every analyser: audio plays, the spectrum reads digital
@@ -382,12 +469,78 @@ export class AudioEngine {
         this.onEnded?.();
       }
     };
-    src.start(0, offset);
+    src.start(0, startOffset);
     this.source = src;
     this.startedAt = this.ctx.currentTime;
-    this.offset = offset;
+    this.offset = startOffset;
+    this.observedLoopCycle = 0;
     this._playing = true;
     this.emit();
+  }
+
+  private configureSourceLoop(src: AudioBufferSourceNode): void {
+    const region = this.loopRegion;
+    src.loop = this._loop;
+    src.loopStart = region?.start ?? 0;
+    src.loopEnd = region?.end ?? 0;
+  }
+
+  private setLoopPoint(kind: "start" | "end", time: number): void {
+    const duration = this.duration;
+    if (duration <= 0 || !Number.isFinite(time)) return;
+    const position = this.currentTime;
+    const point = Math.max(0, Math.min(time, duration));
+    let start = kind === "start" ? point : this._loopStart;
+    let end = kind === "end" ? point : this._loopEnd;
+
+    // A and B describe ordered boundaries, not creation order. Accept either
+    // button first and swap automatically if the second point lands earlier.
+    if (start !== null && end !== null) {
+      [start, end] = [Math.min(start, end), Math.max(start, end)];
+      const minSpan = Math.min(MIN_LOOP_REGION_SECONDS, duration);
+      if (end - start < minSpan) {
+        if (start + minSpan <= duration) end = start + minSpan;
+        else start = Math.max(0, end - minSpan);
+      }
+    }
+
+    this._loopStart = start;
+    this._loopEnd = end;
+    this.reconfigureLoopRegion(position);
+  }
+
+  private reconfigureLoopRegion(position: number): void {
+    const region = this.loopRegion;
+    const normalized =
+      this._loop && region ? this.positionInsideRegion(position, region) : position;
+    this.offset = normalized;
+    this.startedAt = this.ctx.currentTime;
+    this.observedLoopCycle = 0;
+
+    if (this.source && normalized !== position) {
+      this.stopSource();
+      this.startSourceAt(normalized);
+      return;
+    }
+    if (this.source) this.configureSourceLoop(this.source);
+    this.emit();
+  }
+
+  private positionInsideRegion(position: number, region: LoopRegion): number {
+    return position >= region.start && position < region.end ? position : region.start;
+  }
+
+  private observeLoopCycle(cycle: number): void {
+    if (cycle <= this.observedLoopCycle) return;
+    this._loopEpoch += cycle - this.observedLoopCycle;
+    this.observedLoopCycle = cycle;
+  }
+
+  private resetLoopRegion(): void {
+    this._loopStart = null;
+    this._loopEnd = null;
+    this._loopEpoch = 0;
+    this.observedLoopCycle = 0;
   }
 
   private stopSource(): void {
