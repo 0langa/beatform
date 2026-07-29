@@ -195,6 +195,26 @@ export const radialBurst: PresetDef = {
       hint: "Color range around the circle — 0 = single color",
     },
     {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
+    },
+    {
       key: "innerRadius",
       label: "Core size",
       group: "shape",
@@ -524,6 +544,15 @@ export const radialBurst: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
+
 fn preset(uv: vec2f) -> vec4f {
   let p = centered(uv);
   let r = length(p);
@@ -567,21 +596,21 @@ fn preset(uv: vec2f) -> vec4f {
   // of a 16:9 frame and 1.27 at 21:9, where a bare (1.0 - r * 0.8) goes
   // NEGATIVE and the wash starts subtracting light from whatever is behind the
   // preset instead of fading out against it.
-  var col = hsl2rgb(P_hue() + 60.0, 0.5, 0.04 + u.mid * 0.04) * max(1.0 - r * 0.8, 0.0);
+  var col = presetColor(P_hue() + 60.0, 0.5, 0.04 + u.mid * 0.04) * max(1.0 - r * 0.8, 0.0);
 
   // Radial bar body
   let inBar = step(inner, r) * step(r, inner + len);
   let radial = (r - inner) / max(len, 0.001);
-  col = mix(col, hsl2rgb(barHue, 0.85, 0.35 + radial * 0.35), inBar);
+  col = mix(col, presetColor(barHue, 0.85, 0.35 + radial * 0.35), inBar);
 
   // Glow beyond bar tip
   let tip = inner + len;
   let fall = exp(-max(r - tip, 0.0) * (18.0 - P_glow() * 12.0));
-  col += hsl2rgb(barHue, 0.9, 0.5) * fall * P_glow() * v * step(tip, r);
+  col += presetColor(barHue, 0.9, 0.5) * fall * P_glow() * v * step(tip, r);
 
   // Peak arc (toggleable)
   let pkR = softLimit(inner + pk * P_barLen(), frameReach(screenA));
-  col += hsl2rgb(barHue, 0.3, 0.9) * smoothstep(0.005, 0.0, abs(r - pkR)) * 0.8
+  col += presetColor(barHue, 0.3, 0.9) * smoothstep(0.005, 0.0, abs(r - pkR)) * 0.8
        * step(0.5, P_peaks());
 
   // Core disc: geometry rides only slow signals — fast bands jitter,
@@ -607,7 +636,7 @@ fn preset(uv: vec2f) -> vec4f {
   let coreEdge = softLimit(coreR + wob, frameCircle());
   let core = smoothstep(coreEdge + 0.005, coreEdge - 0.005, r);
   let coreL = 0.12 + u.drive * P_coreBright() + beatP * P_beatBloom();
-  var coreFill = hsl2rgb(P_hue() + 30.0, 0.75, coreL);
+  var coreFill = presetColor(P_hue() + 30.0, 0.75, coreL);
   if (P_cover() > 0.5 && hasCover()) {
     // Map the core disc to the image using the MAXIMUM the wavy edge can
     // reach (coreR + wobble limit), not the resting radius: mapping to the
@@ -633,14 +662,14 @@ fn preset(uv: vec2f) -> vec4f {
   // reading as an unexplained blob — a rim that swells on the grid beat and
   // with loudness makes it legible as THE beat anchor, cover or no cover.
   let rim = exp(-abs(r - coreEdge) * 80.0);
-  col += hsl2rgb(P_hue() + 15.0, 0.85, 0.6) * rim * P_rimBright()
+  col += presetColor(P_hue() + 15.0, 0.85, 0.6) * rim * P_rimBright()
        * (0.45 + u.drive * 0.55 + beatP * 0.7);
 
   // Thin waveform detail ring inside the core: fast micro-motion reads as
   // "alive" on a hairline without deforming the silhouette
   if (P_detailRing() > 0.5) {
     let wr = coreR * P_detailPos() + waveAt(fract(a / TAU + 0.5)) * 0.02;
-    col += hsl2rgb(P_hue() + 50.0, 0.6, 0.65) * smoothstep(0.004, 0.0, abs(r - wr)) * core * 0.5;
+    col += presetColor(P_hue() + 50.0, 0.6, 0.65) * smoothstep(0.004, 0.0, abs(r - wr)) * core * 0.5;
   }
 
   // Vignette. Clamped at zero because r*r reaches ~1.04 in the corners of a

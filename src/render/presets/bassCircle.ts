@@ -192,6 +192,26 @@ export const bassCircle: PresetDef = {
       hint: "Base color",
     },
     {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
+    },
+    {
       key: "radius",
       label: "Circle size",
       group: "shape",
@@ -469,6 +489,15 @@ export const bassCircle: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
+
 fn preset(uv: vec2f) -> vec4f {
   let c = centered(uv);
   let r = length(c);
@@ -522,7 +551,7 @@ fn preset(uv: vec2f) -> vec4f {
           let tw = 0.4 + 0.6 * (0.5 + 0.5 * sin(u.time * (0.8 + h2 * 3.0) + h1 * 40.0));
           let core = smoothstep(sz, 0.0, d);
           let halo = exp(-d * d / max(sz * sz * 3.0, 1e-6)) * 0.5;
-          col += hsl2rgb(P_hue() + (h2 - 0.5) * P_hueSpread(), 0.5, 0.72)
+          col += presetColor(P_hue() + (h2 - 0.5) * P_hueSpread(), 0.5, 0.72)
                * (core + halo) * tw * P_particles() * beat * (1.0 - fl * 0.3);
         }
       }
@@ -546,13 +575,13 @@ fn preset(uv: vec2f) -> vec4f {
   let barHue = P_hue() + xs * P_hueSpread();
   let inBar = step(barInner, r) * step(r, barInner + barLen);
   let along = (r - barInner) / max(barLen, 1e-3);
-  col = mix(col, hsl2rgb(barHue, 0.9, 0.4 + along * 0.35), inBar);
-  col += hsl2rgb(barHue, 0.95, 0.6) * exp(-max(r - (barInner + barLen), 0.0) * 22.0)
+  col = mix(col, presetColor(barHue, 0.9, 0.4 + along * 0.35), inBar);
+  col += presetColor(barHue, 0.95, 0.6) * exp(-max(r - (barInner + barLen), 0.0) * 22.0)
        * v * P_barGlow() * step(barInner + barLen, r);
 
   // --- Centre circle: cover art (or a cool dark fill) + a bright glowing rim ---
   let inner = smoothstep(circleR, circleR - 0.02, r);
-  var fill = hsl2rgb(P_hue(), 0.5, 0.04 + u.drive * 0.07);
+  var fill = presetColor(P_hue(), 0.5, 0.04 + u.drive * 0.07);
   if (P_cover() > 0.5 && hasCover()) {
     // Map the disc to the image (0..1), so the art fills the circle. No flip on
     // y: uv already arrives top-down from the vertex stage, so centered()'s y
@@ -569,8 +598,8 @@ fn preset(uv: vec2f) -> vec4f {
   }
   col = mix(col, fill, inner);
   let rim = exp(-abs(r - circleR) * 90.0);
-  col += hsl2rgb(P_hue(), 0.9, 0.65) * rim * P_rimBright() * (0.7 + u.drive * 0.6 + beatP * 0.5);
-  col += hsl2rgb(P_hue() + 20.0, 0.8, 0.5) * smoothstep(circleR, 0.0, r) * (0.08 + u.drive * 0.3) * inner;
+  col += presetColor(P_hue(), 0.9, 0.65) * rim * P_rimBright() * (0.7 + u.drive * 0.6 + beatP * 0.5);
+  col += presetColor(P_hue() + 20.0, 0.8, 0.5) * smoothstep(circleR, 0.0, r) * (0.08 + u.drive * 0.3) * inner;
 
   // Vignette, clamped at zero: r*r reaches ~1.04 in the corners of a 16:9 frame
   // (1.61 at 21:9) while Vignette goes to 1.2, so the bare 1.0 - r*r*amt lands

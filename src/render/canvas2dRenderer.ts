@@ -15,7 +15,8 @@ import type {
  * runtime, GPU blocklist).
  *
  * It draws exactly ONE look, an approximation of spectrum-bars, and reads
- * exactly four parameter keys (hue, hueSpread, barGap, peaks). Everything else
+ * exactly six parameter keys (hue, hueSpread, saturation, lightness, barGap,
+ * peaks). Everything else
  * the UI can express — the other modes, Motion masters, Builder Studio, custom
  * WGSL, scene transitions, post-processing, cover art — has no equivalent here
  * and the setters below are honest no-ops.
@@ -184,7 +185,13 @@ export class Canvas2DRenderer implements Renderer {
     const H = this.canvas.height;
     const hue = params.hue ?? 210;
     const hueSpread = params.hueSpread ?? 80;
+    const saturation = Math.max(0, Math.min(2, params.saturation ?? 1));
+    const lightness = Math.max(0, Math.min(2, params.lightness ?? 1));
     const gap = params.barGap ?? 0.22;
+    const colorScale = (value: number, control: number) =>
+      control <= 1 ? value * control : Math.min(value * control, 100);
+    const color = (h: number, s: number, l: number) =>
+      `hsl(${h} ${colorScale(s, saturation)}% ${colorScale(l, lightness)}%)`;
 
     if (this.bg.mode === BG_TRANSPARENT) {
       // NOTE: this is a real difference from the shader, which derives alpha
@@ -214,7 +221,7 @@ export class Canvas2DRenderer implements Renderer {
       ctx.fillRect(0, 0, W, H);
     } else {
       // BG_PRESET: the one animated background this renderer authors itself.
-      ctx.fillStyle = `hsl(${hue + 40} 50% ${4 + f.beatIntensity * 6}%)`;
+      ctx.fillStyle = color(hue + 40, 50, 4 + f.beatIntensity * 6);
       ctx.fillRect(0, 0, W, H);
     }
 
@@ -237,8 +244,8 @@ export class Canvas2DRenderer implements Renderer {
       ctx.lineTo(W, H);
       ctx.closePath();
       const grad = ctx.createLinearGradient(0, 0, W, 0);
-      grad.addColorStop(0, `hsl(${hue} 85% ${45 + f.beatIntensity * 8}%)`);
-      grad.addColorStop(1, `hsl(${hue + hueSpread} 85% ${45 + f.beatIntensity * 8}%)`);
+      grad.addColorStop(0, color(hue, 85, 45 + f.beatIntensity * 8));
+      grad.addColorStop(1, color(hue + hueSpread, 85, 45 + f.beatIntensity * 8));
       ctx.fillStyle = grad;
       ctx.fill();
       if (this.overlay) ctx.drawImage(this.overlay, 0, 0, W, H);
@@ -248,11 +255,11 @@ export class Canvas2DRenderer implements Renderer {
       const v = f.bins[i];
       const h = v * H * 0.92;
       const barHue = hue + (i / n) * hueSpread;
-      ctx.fillStyle = `hsl(${barHue} 85% ${45 + f.beatIntensity * 8}%)`;
+      ctx.fillStyle = color(barHue, 85, 45 + f.beatIntensity * 8);
       ctx.fillRect(i * bw + (bw * gap) / 2, H - h, bw * (1 - gap), h);
       if ((params.peaks ?? 1) > 0.5) {
         const pk = f.peaks[i] * H * 0.92;
-        ctx.fillStyle = `hsl(${barHue} 30% 90%)`;
+        ctx.fillStyle = color(barHue, 30, 90);
         ctx.fillRect(i * bw + (bw * gap) / 2, H - pk - 2, bw * (1 - gap), 2);
       }
     }

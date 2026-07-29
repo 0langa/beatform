@@ -101,12 +101,27 @@ export async function runGpuPixelMatrix(width = 192, height = 108): Promise<GpuP
     }
 
     for (const preset of presets) {
+      const hasFullColorControls =
+        preset.params.some((param) => param.key === "saturation") &&
+        preset.params.some((param) => param.key === "lightness");
       const variants = [
         { id: `${preset.id}/@defaults`, values: {} },
         ...(preset.styles ?? []).map((style) => ({
           id: `${preset.id}/style/${style.id}`,
           values: style.values,
         })),
+        ...(hasFullColorControls
+          ? [
+              {
+                id: `${preset.id}/color/grayscale`,
+                values: { saturation: 0 },
+              },
+              {
+                id: `${preset.id}/color/bright-grayscale`,
+                values: { saturation: 0, lightness: 2 },
+              },
+            ]
+          : []),
       ];
       for (const variant of variants) {
         renderer.setPreset(preset);

@@ -196,7 +196,18 @@ describe("Canvas2DRenderer background framing (F9)", () => {
     const { renderer, fills } = harness(400, 400);
     renderer.setBackground({ mode: BG_PRESET, color: [0, 0, 0] });
     renderer.render(SILENCE, 0, { hue: 210 });
-    expect(fills[0]).toContain("hsl(250");
+    expect(fills.slice(0, 3)).toEqual(["hsl(250 50% 4%)", "hsl(210 85% 45%)", "hsl(210 30% 90%)"]);
+  });
+
+  it("applies saturation and lightness to the whole authored look", () => {
+    const { renderer, fills } = harness(400, 400);
+    renderer.setBackground({ mode: BG_PRESET, color: [0, 0, 0] });
+    renderer.render(SILENCE, 0, {
+      hue: 210,
+      saturation: 0,
+      lightness: 2,
+    });
+    expect(fills.slice(0, 3)).toEqual(["hsl(250 0% 8%)", "hsl(210 0% 90%)", "hsl(210 0% 100%)"]);
   });
 
   it("fills solid mode with the chosen colour", () => {

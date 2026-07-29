@@ -91,6 +91,20 @@ function signatureError(a64, b64) {
   return { mae: sum / a.length, max };
 }
 
+function signatureChroma(a64) {
+  const rgb = Buffer.from(a64, "base64");
+  let max = 0;
+  for (let i = 0; i < rgb.length; i += 3) {
+    max = Math.max(
+      max,
+      Math.abs(rgb[i] - rgb[i + 1]),
+      Math.abs(rgb[i] - rgb[i + 2]),
+      Math.abs(rgb[i + 1] - rgb[i + 2]),
+    );
+  }
+  return max;
+}
+
 function assertRuntime(matrix) {
   const failures = [];
   if (Object.keys(matrix.compileErrors).length) {
@@ -100,6 +114,12 @@ function assertRuntime(matrix) {
   for (const entry of matrix.cases) {
     if (entry.litFraction === 0 && entry.meanLuma === 0) {
       failures.push(`${entry.id}: fully black frame`);
+    }
+    if (
+      (entry.id.endsWith("/color/grayscale") || entry.id.endsWith("/color/bright-grayscale")) &&
+      signatureChroma(entry.signature) > 1
+    ) {
+      failures.push(`${entry.id}: saturation 0 left visible chroma`);
     }
   }
   const spectrum = matrix.spectrumSmoke;

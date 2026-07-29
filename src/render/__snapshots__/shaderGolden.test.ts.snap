@@ -324,31 +324,42 @@ exports[`shader golden baseline > aurora: param ABI (key + default, in order) is
 
 exports[`shader golden baseline > bass-circle: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
-fn P_radius() -> f32 { return params[1u]; }
-fn P_pump() -> f32 { return params[2u]; }
-fn P_barLen() -> f32 { return params[3u]; }
-fn P_particles() -> f32 { return params[4u]; }
-fn P_rimBright() -> f32 { return params[5u]; }
-fn P_cover() -> f32 { return params[6u]; }
-fn P_coverHue() -> f32 { return params[7u]; }
-fn P_symmetry() -> f32 { return params[8u]; }
-fn P_angle() -> f32 { return params[9u]; }
-fn P_spin() -> f32 { return params[10u]; }
-fn P_hueSpread() -> f32 { return params[11u]; }
-fn P_beatPump() -> f32 { return params[12u]; }
-fn P_gap() -> f32 { return params[13u]; }
-fn P_barGlow() -> f32 { return params[14u]; }
-fn P_partDensity() -> f32 { return params[15u]; }
-fn P_partFill() -> f32 { return params[16u]; }
-fn P_partFloat() -> f32 { return params[17u]; }
-fn P_beatBurst() -> f32 { return params[18u]; }
-fn P_coverMix() -> f32 { return params[19u]; }
-fn P_coverBright() -> f32 { return params[20u]; }
-fn P_coverFit() -> f32 { return params[21u]; }
-fn P_coverZoom() -> f32 { return params[22u]; }
-fn P_coverX() -> f32 { return params[23u]; }
-fn P_coverY() -> f32 { return params[24u]; }
-fn P_vignette() -> f32 { return params[25u]; }
+fn P_saturation() -> f32 { return params[1u]; }
+fn P_lightness() -> f32 { return params[2u]; }
+fn P_radius() -> f32 { return params[3u]; }
+fn P_pump() -> f32 { return params[4u]; }
+fn P_barLen() -> f32 { return params[5u]; }
+fn P_particles() -> f32 { return params[6u]; }
+fn P_rimBright() -> f32 { return params[7u]; }
+fn P_cover() -> f32 { return params[8u]; }
+fn P_coverHue() -> f32 { return params[9u]; }
+fn P_symmetry() -> f32 { return params[10u]; }
+fn P_angle() -> f32 { return params[11u]; }
+fn P_spin() -> f32 { return params[12u]; }
+fn P_hueSpread() -> f32 { return params[13u]; }
+fn P_beatPump() -> f32 { return params[14u]; }
+fn P_gap() -> f32 { return params[15u]; }
+fn P_barGlow() -> f32 { return params[16u]; }
+fn P_partDensity() -> f32 { return params[17u]; }
+fn P_partFill() -> f32 { return params[18u]; }
+fn P_partFloat() -> f32 { return params[19u]; }
+fn P_beatBurst() -> f32 { return params[20u]; }
+fn P_coverMix() -> f32 { return params[21u]; }
+fn P_coverBright() -> f32 { return params[22u]; }
+fn P_coverFit() -> f32 { return params[23u]; }
+fn P_coverZoom() -> f32 { return params[24u]; }
+fn P_coverX() -> f32 { return params[25u]; }
+fn P_coverY() -> f32 { return params[26u]; }
+fn P_vignette() -> f32 { return params[27u]; }
+
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
 
 fn preset(uv: vec2f) -> vec4f {
   let c = centered(uv);
@@ -403,7 +414,7 @@ fn preset(uv: vec2f) -> vec4f {
           let tw = 0.4 + 0.6 * (0.5 + 0.5 * sin(u.time * (0.8 + h2 * 3.0) + h1 * 40.0));
           let core = smoothstep(sz, 0.0, d);
           let halo = exp(-d * d / max(sz * sz * 3.0, 1e-6)) * 0.5;
-          col += hsl2rgb(P_hue() + (h2 - 0.5) * P_hueSpread(), 0.5, 0.72)
+          col += presetColor(P_hue() + (h2 - 0.5) * P_hueSpread(), 0.5, 0.72)
                * (core + halo) * tw * P_particles() * beat * (1.0 - fl * 0.3);
         }
       }
@@ -427,13 +438,13 @@ fn preset(uv: vec2f) -> vec4f {
   let barHue = P_hue() + xs * P_hueSpread();
   let inBar = step(barInner, r) * step(r, barInner + barLen);
   let along = (r - barInner) / max(barLen, 1e-3);
-  col = mix(col, hsl2rgb(barHue, 0.9, 0.4 + along * 0.35), inBar);
-  col += hsl2rgb(barHue, 0.95, 0.6) * exp(-max(r - (barInner + barLen), 0.0) * 22.0)
+  col = mix(col, presetColor(barHue, 0.9, 0.4 + along * 0.35), inBar);
+  col += presetColor(barHue, 0.95, 0.6) * exp(-max(r - (barInner + barLen), 0.0) * 22.0)
        * v * P_barGlow() * step(barInner + barLen, r);
 
   // --- Centre circle: cover art (or a cool dark fill) + a bright glowing rim ---
   let inner = smoothstep(circleR, circleR - 0.02, r);
-  var fill = hsl2rgb(P_hue(), 0.5, 0.04 + u.drive * 0.07);
+  var fill = presetColor(P_hue(), 0.5, 0.04 + u.drive * 0.07);
   if (P_cover() > 0.5 && hasCover()) {
     // Map the disc to the image (0..1), so the art fills the circle. No flip on
     // y: uv already arrives top-down from the vertex stage, so centered()'s y
@@ -450,8 +461,8 @@ fn preset(uv: vec2f) -> vec4f {
   }
   col = mix(col, fill, inner);
   let rim = exp(-abs(r - circleR) * 90.0);
-  col += hsl2rgb(P_hue(), 0.9, 0.65) * rim * P_rimBright() * (0.7 + u.drive * 0.6 + beatP * 0.5);
-  col += hsl2rgb(P_hue() + 20.0, 0.8, 0.5) * smoothstep(circleR, 0.0, r) * (0.08 + u.drive * 0.3) * inner;
+  col += presetColor(P_hue(), 0.9, 0.65) * rim * P_rimBright() * (0.7 + u.drive * 0.6 + beatP * 0.5);
+  col += presetColor(P_hue() + 20.0, 0.8, 0.5) * smoothstep(circleR, 0.0, r) * (0.08 + u.drive * 0.3) * inner;
 
   // Vignette, clamped at zero: r*r reaches ~1.04 in the corners of a 16:9 frame
   // (1.61 at 21:9) while Vignette goes to 1.2, so the bare 1.0 - r*r*amt lands
@@ -469,6 +480,14 @@ exports[`shader golden baseline > bass-circle: param ABI (key + default, in orde
   {
     "default": 280,
     "key": "hue",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 0.18,
@@ -1128,26 +1147,49 @@ exports[`shader golden baseline > led-matrix: accessors + body are stable 1`] = 
 fn P_rows() -> f32 { return params[1u]; }
 fn P_gap() -> f32 { return params[2u]; }
 fn P_hueShift() -> f32 { return params[3u]; }
-fn P_dim() -> f32 { return params[4u]; }
-fn P_rounded() -> f32 { return params[5u]; }
-fn P_peaks() -> f32 { return params[6u]; }
-fn P_hueLow() -> f32 { return params[7u]; }
-fn P_hueHigh() -> f32 { return params[8u]; }
-fn P_spectrumColor() -> f32 { return params[9u]; }
-fn P_gradStart() -> f32 { return params[10u]; }
-fn P_gradEnd() -> f32 { return params[11u]; }
-fn P_litLevel() -> f32 { return params[12u]; }
-fn P_hotBoost() -> f32 { return params[13u]; }
-fn P_beatBoost() -> f32 { return params[14u]; }
-fn P_ghost() -> f32 { return params[15u]; }
-fn P_bassGlow() -> f32 { return params[16u]; }
-fn P_beatFlash() -> f32 { return params[17u]; }
-fn P_peakBright() -> f32 { return params[18u]; }
-fn P_bloom() -> f32 { return params[19u]; }
-fn P_scanline() -> f32 { return params[20u]; }
-fn P_flicker() -> f32 { return params[21u]; }
-fn P_panelVariance() -> f32 { return params[22u]; }
-fn P_vignette() -> f32 { return params[23u]; }
+fn P_saturation() -> f32 { return params[4u]; }
+fn P_lightness() -> f32 { return params[5u]; }
+fn P_dim() -> f32 { return params[6u]; }
+fn P_rounded() -> f32 { return params[7u]; }
+fn P_peaks() -> f32 { return params[8u]; }
+fn P_hueLow() -> f32 { return params[9u]; }
+fn P_hueHigh() -> f32 { return params[10u]; }
+fn P_spectrumColor() -> f32 { return params[11u]; }
+fn P_gradStart() -> f32 { return params[12u]; }
+fn P_gradEnd() -> f32 { return params[13u]; }
+fn P_litLevel() -> f32 { return params[14u]; }
+fn P_hotBoost() -> f32 { return params[15u]; }
+fn P_beatBoost() -> f32 { return params[16u]; }
+fn P_ghost() -> f32 { return params[17u]; }
+fn P_bassGlow() -> f32 { return params[18u]; }
+fn P_beatFlash() -> f32 { return params[19u]; }
+fn P_peakBright() -> f32 { return params[20u]; }
+fn P_bloom() -> f32 { return params[21u]; }
+fn P_scanline() -> f32 { return params[22u]; }
+fn P_flicker() -> f32 { return params[23u]; }
+fn P_panelVariance() -> f32 { return params[24u]; }
+fn P_vignette() -> f32 { return params[25u]; }
+
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
+
+fn presetRgb(rgb: vec3f) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let saturation = P_saturation();
+  var adjusted = mix(gray, rgb, saturation);
+  if (saturation > 1.0) {
+    adjusted = rgb + (rgb - gray) * (saturation - 1.0);
+  }
+  let lightness = P_lightness();
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
 
 fn ledCell(l: vec2f, gap: f32, rounded: f32) -> f32 {
   let c = l - 0.5;
@@ -1214,16 +1256,16 @@ fn preset(uv: vec2f) -> vec4f {
   let tileId = floor(vec2f(cx, cy) / 8.0);
   let panelFalloff = mix(1.0, 0.82 + 0.22 * hash21(tileId * 3.7), pv);
 
-  var col = vec3f(0.006, 0.008, 0.01); // panel/PCB background
+  var col = presetRgb(vec3f(0.006, 0.008, 0.01)); // panel/PCB background
   // A faint structural grid on the mounting board — reads as physical
   // hardware instead of an empty void between LEDs.
   let edge = min(min(lx, 1.0 - lx), min(ly, 1.0 - ly));
-  col += vec3f(0.01, 0.012, 0.014) * smoothstep(0.035, 0.0, edge) * (1.0 - mask);
+  col += presetRgb(vec3f(0.01, 0.012, 0.014)) * smoothstep(0.035, 0.0, edge) * (1.0 - mask);
   // Panel backlight breathes with the bass — the wall reads the music even
   // between columns, without touching the LED look itself.
-  col += hsl2rgb(P_hueLow() + P_hueShift(), 0.8, 0.3) * u.bass * P_bassGlow();
+  col += presetColor(P_hueLow() + P_hueShift(), 0.8, 0.3) * u.bass * P_bassGlow();
   // Unlit LEDs faintly visible
-  col += hsl2rgb(cellHue, 0.5, 0.04) * mask * P_dim() * (1.0 - lit);
+  col += presetColor(cellHue, 0.5, 0.04) * mask * P_dim() * (1.0 - lit);
 
   // Phosphor ghost trail: cells ABOVE the live top but BELOW the recent peak
   // glow and fade with distance from the top, so a falling column leaves a
@@ -1232,8 +1274,8 @@ fn preset(uv: vec2f) -> vec4f {
   let pkLevel = pk * rows;
   let ghostLit = step(cy + 0.5, pkLevel) * (1.0 - lit);
   let ghostFade = exp(-max((cy + 0.5) - level, 0.0) * 0.6);
-  col += hsl2rgb(cellHue, 0.85, P_litLevel() * 0.55) * mask * ghostLit * ghostFade * P_ghost();
-  col += hsl2rgb(cellHue, 0.7, 0.5) * glow * ghostLit * ghostFade * P_ghost() * P_bloom() * 0.5;
+  col += presetColor(cellHue, 0.85, P_litLevel() * 0.55) * mask * ghostLit * ghostFade * P_ghost();
+  col += presetColor(cellHue, 0.7, 0.5) * glow * ghostLit * ghostFade * P_ghost() * P_bloom() * 0.5;
 
   // Lit LEDs: flat mask body, brighter near the column's current top, plus
   // beat boost — then a soft bloom that bleeds past the mask into the gap,
@@ -1241,13 +1283,13 @@ fn preset(uv: vec2f) -> vec4f {
   let hot = P_litLevel() + P_hotBoost() * smoothstep(level - 2.0, level, cy + 0.5)
           + beatP * P_beatBoost();
   let litBright = hot * mix(1.0, panelFalloff * (0.82 + jBright * 0.36), pv);
-  var ledCol = hsl2rgb(cellHue, 0.9 - jSat * 0.15 * pv, litBright) * mask * lit;
-  ledCol += hsl2rgb(cellHue, 0.75, 0.62) * glow * lit * P_bloom() * (0.4 + v * 0.6)
+  var ledCol = presetColor(cellHue, 0.9 - jSat * 0.15 * pv, litBright) * mask * lit;
+  ledCol += presetColor(cellHue, 0.75, 0.62) * glow * lit * P_bloom() * (0.4 + v * 0.6)
           * (0.6 + jBright * 0.5 * pv);
   // Hot-core desaturation on the brightest cells (top of a loud column) so
   // they read as genuinely emitting instead of merely "very saturated green".
   let veryHot = smoothstep(0.8, 1.1, hot) * lit;
-  ledCol = mix(ledCol, vec3f(1.0, 0.98, 0.92), veryHot * 0.55 * mask);
+  ledCol = mix(ledCol, presetRgb(vec3f(1.0, 0.98, 0.92)), veryHot * 0.55 * mask);
   ledCol *= 1.0 + veryHot * 0.6;
   col += ledCol;
 
@@ -1259,15 +1301,15 @@ fn preset(uv: vec2f) -> vec4f {
     let pkFrac = (pkRow + 0.5) / rows;
     let pkGrad = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), pkFrac));
     let pkHue = mix(pkGrad, freqHue, P_spectrumColor()) + P_hueShift();
-    col += hsl2rgb(pkHue, 0.55, P_peakBright()) * mask;
-    col += hsl2rgb(pkHue, 0.4, 0.75) * glow * P_bloom() * 0.5;
+    col += presetColor(pkHue, 0.55, P_peakBright()) * mask;
+    col += presetColor(pkHue, 0.4, 0.75) * glow * P_bloom() * 0.5;
   }
 
   // Beat border flash: the wall's outer frame pulses on the tempo grid — a
   // whole-panel beat response distinct from the per-LED beat boost.
   let bdist = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
   let border = smoothstep(0.07, 0.0, bdist);
-  col += hsl2rgb(P_hueHigh() + P_hueShift(), 0.85, 0.5) * border * beatP * P_beatFlash();
+  col += presetColor(P_hueHigh() + P_hueShift(), 0.85, 0.5) * border * beatP * P_beatFlash();
 
   // CRT scanlines: fixed-frequency horizontal darkening, independent of the LED
   // grid so it reads as a display overlay rather than the diode rows.
@@ -1304,6 +1346,14 @@ exports[`shader golden baseline > led-matrix: param ABI (key + default, in order
   {
     "default": 0,
     "key": "hueShift",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 0.35,
@@ -2295,36 +2345,47 @@ exports[`shader golden baseline > particle-flow: param ABI (key + default, in or
 exports[`shader golden baseline > radial-burst: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
 fn P_hueSpread() -> f32 { return params[1u]; }
-fn P_innerRadius() -> f32 { return params[2u]; }
-fn P_symmetry() -> f32 { return params[3u]; }
-fn P_angle() -> f32 { return params[4u]; }
-fn P_rotSpeed() -> f32 { return params[5u]; }
-fn P_glow() -> f32 { return params[6u]; }
-fn P_peaks() -> f32 { return params[7u]; }
-fn P_cover() -> f32 { return params[8u]; }
-fn P_coverHue() -> f32 { return params[9u]; }
-fn P_barLen() -> f32 { return params[10u]; }
-fn P_ringBreathe() -> f32 { return params[11u]; }
-fn P_coreSize() -> f32 { return params[12u]; }
-fn P_corePump() -> f32 { return params[13u]; }
-fn P_coreBeat() -> f32 { return params[14u]; }
-fn P_wobBase() -> f32 { return params[15u]; }
-fn P_wobAmp() -> f32 { return params[16u]; }
-fn P_wobClamp() -> f32 { return params[17u]; }
-fn P_spinBase() -> f32 { return params[18u]; }
-fn P_spinEnergy() -> f32 { return params[19u]; }
-fn P_coreBright() -> f32 { return params[20u]; }
-fn P_detailRing() -> f32 { return params[21u]; }
-fn P_detailPos() -> f32 { return params[22u]; }
-fn P_beatBloom() -> f32 { return params[23u]; }
-fn P_coverMix() -> f32 { return params[24u]; }
-fn P_coverBright() -> f32 { return params[25u]; }
-fn P_coverFit() -> f32 { return params[26u]; }
-fn P_coverZoom() -> f32 { return params[27u]; }
-fn P_coverX() -> f32 { return params[28u]; }
-fn P_coverY() -> f32 { return params[29u]; }
-fn P_rimBright() -> f32 { return params[30u]; }
-fn P_vignette() -> f32 { return params[31u]; }
+fn P_saturation() -> f32 { return params[2u]; }
+fn P_lightness() -> f32 { return params[3u]; }
+fn P_innerRadius() -> f32 { return params[4u]; }
+fn P_symmetry() -> f32 { return params[5u]; }
+fn P_angle() -> f32 { return params[6u]; }
+fn P_rotSpeed() -> f32 { return params[7u]; }
+fn P_glow() -> f32 { return params[8u]; }
+fn P_peaks() -> f32 { return params[9u]; }
+fn P_cover() -> f32 { return params[10u]; }
+fn P_coverHue() -> f32 { return params[11u]; }
+fn P_barLen() -> f32 { return params[12u]; }
+fn P_ringBreathe() -> f32 { return params[13u]; }
+fn P_coreSize() -> f32 { return params[14u]; }
+fn P_corePump() -> f32 { return params[15u]; }
+fn P_coreBeat() -> f32 { return params[16u]; }
+fn P_wobBase() -> f32 { return params[17u]; }
+fn P_wobAmp() -> f32 { return params[18u]; }
+fn P_wobClamp() -> f32 { return params[19u]; }
+fn P_spinBase() -> f32 { return params[20u]; }
+fn P_spinEnergy() -> f32 { return params[21u]; }
+fn P_coreBright() -> f32 { return params[22u]; }
+fn P_detailRing() -> f32 { return params[23u]; }
+fn P_detailPos() -> f32 { return params[24u]; }
+fn P_beatBloom() -> f32 { return params[25u]; }
+fn P_coverMix() -> f32 { return params[26u]; }
+fn P_coverBright() -> f32 { return params[27u]; }
+fn P_coverFit() -> f32 { return params[28u]; }
+fn P_coverZoom() -> f32 { return params[29u]; }
+fn P_coverX() -> f32 { return params[30u]; }
+fn P_coverY() -> f32 { return params[31u]; }
+fn P_rimBright() -> f32 { return params[32u]; }
+fn P_vignette() -> f32 { return params[33u]; }
+
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
 
 fn preset(uv: vec2f) -> vec4f {
   let p = centered(uv);
@@ -2369,21 +2430,21 @@ fn preset(uv: vec2f) -> vec4f {
   // of a 16:9 frame and 1.27 at 21:9, where a bare (1.0 - r * 0.8) goes
   // NEGATIVE and the wash starts subtracting light from whatever is behind the
   // preset instead of fading out against it.
-  var col = hsl2rgb(P_hue() + 60.0, 0.5, 0.04 + u.mid * 0.04) * max(1.0 - r * 0.8, 0.0);
+  var col = presetColor(P_hue() + 60.0, 0.5, 0.04 + u.mid * 0.04) * max(1.0 - r * 0.8, 0.0);
 
   // Radial bar body
   let inBar = step(inner, r) * step(r, inner + len);
   let radial = (r - inner) / max(len, 0.001);
-  col = mix(col, hsl2rgb(barHue, 0.85, 0.35 + radial * 0.35), inBar);
+  col = mix(col, presetColor(barHue, 0.85, 0.35 + radial * 0.35), inBar);
 
   // Glow beyond bar tip
   let tip = inner + len;
   let fall = exp(-max(r - tip, 0.0) * (18.0 - P_glow() * 12.0));
-  col += hsl2rgb(barHue, 0.9, 0.5) * fall * P_glow() * v * step(tip, r);
+  col += presetColor(barHue, 0.9, 0.5) * fall * P_glow() * v * step(tip, r);
 
   // Peak arc (toggleable)
   let pkR = softLimit(inner + pk * P_barLen(), frameReach(screenA));
-  col += hsl2rgb(barHue, 0.3, 0.9) * smoothstep(0.005, 0.0, abs(r - pkR)) * 0.8
+  col += presetColor(barHue, 0.3, 0.9) * smoothstep(0.005, 0.0, abs(r - pkR)) * 0.8
        * step(0.5, P_peaks());
 
   // Core disc: geometry rides only slow signals — fast bands jitter,
@@ -2409,7 +2470,7 @@ fn preset(uv: vec2f) -> vec4f {
   let coreEdge = softLimit(coreR + wob, frameCircle());
   let core = smoothstep(coreEdge + 0.005, coreEdge - 0.005, r);
   let coreL = 0.12 + u.drive * P_coreBright() + beatP * P_beatBloom();
-  var coreFill = hsl2rgb(P_hue() + 30.0, 0.75, coreL);
+  var coreFill = presetColor(P_hue() + 30.0, 0.75, coreL);
   if (P_cover() > 0.5 && hasCover()) {
     // Map the core disc to the image using the MAXIMUM the wavy edge can
     // reach (coreR + wobble limit), not the resting radius: mapping to the
@@ -2435,14 +2496,14 @@ fn preset(uv: vec2f) -> vec4f {
   // reading as an unexplained blob — a rim that swells on the grid beat and
   // with loudness makes it legible as THE beat anchor, cover or no cover.
   let rim = exp(-abs(r - coreEdge) * 80.0);
-  col += hsl2rgb(P_hue() + 15.0, 0.85, 0.6) * rim * P_rimBright()
+  col += presetColor(P_hue() + 15.0, 0.85, 0.6) * rim * P_rimBright()
        * (0.45 + u.drive * 0.55 + beatP * 0.7);
 
   // Thin waveform detail ring inside the core: fast micro-motion reads as
   // "alive" on a hairline without deforming the silhouette
   if (P_detailRing() > 0.5) {
     let wr = coreR * P_detailPos() + waveAt(fract(a / TAU + 0.5)) * 0.02;
-    col += hsl2rgb(P_hue() + 50.0, 0.6, 0.65) * smoothstep(0.004, 0.0, abs(r - wr)) * core * 0.5;
+    col += presetColor(P_hue() + 50.0, 0.6, 0.65) * smoothstep(0.004, 0.0, abs(r - wr)) * core * 0.5;
   }
 
   // Vignette. Clamped at zero because r*r reaches ~1.04 in the corners of a
@@ -2473,6 +2534,14 @@ exports[`shader golden baseline > radial-burst: param ABI (key + default, in ord
   {
     "default": 120,
     "key": "hueSpread",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 0.18,
@@ -3630,21 +3699,32 @@ fn fs_composite(in: VSOut) -> @location(0) vec4f {
 exports[`shader golden baseline > spectrum-bars: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
 fn P_hueSpread() -> f32 { return params[1u]; }
-fn P_glow() -> f32 { return params[2u]; }
-fn P_barGap() -> f32 { return params[3u]; }
-fn P_beatZoom() -> f32 { return params[4u]; }
-fn P_mirror() -> f32 { return params[5u]; }
-fn P_peaks() -> f32 { return params[6u]; }
-fn P_barHeight() -> f32 { return params[7u]; }
-fn P_barSat() -> f32 { return params[8u]; }
-fn P_barLift() -> f32 { return params[9u]; }
-fn P_glowReach() -> f32 { return params[10u]; }
-fn P_capBright() -> f32 { return params[11u]; }
-fn P_bgLevel() -> f32 { return params[12u]; }
-fn P_bgBassGlow() -> f32 { return params[13u]; }
-fn P_beatFlash() -> f32 { return params[14u]; }
-fn P_beatBright() -> f32 { return params[15u]; }
-fn P_vignette() -> f32 { return params[16u]; }
+fn P_saturation() -> f32 { return params[2u]; }
+fn P_lightness() -> f32 { return params[3u]; }
+fn P_glow() -> f32 { return params[4u]; }
+fn P_barGap() -> f32 { return params[5u]; }
+fn P_beatZoom() -> f32 { return params[6u]; }
+fn P_mirror() -> f32 { return params[7u]; }
+fn P_peaks() -> f32 { return params[8u]; }
+fn P_barHeight() -> f32 { return params[9u]; }
+fn P_barSat() -> f32 { return params[10u]; }
+fn P_barLift() -> f32 { return params[11u]; }
+fn P_glowReach() -> f32 { return params[12u]; }
+fn P_capBright() -> f32 { return params[13u]; }
+fn P_bgLevel() -> f32 { return params[14u]; }
+fn P_bgBassGlow() -> f32 { return params[15u]; }
+fn P_beatFlash() -> f32 { return params[16u]; }
+fn P_beatBright() -> f32 { return params[17u]; }
+fn P_vignette() -> f32 { return params[18u]; }
+
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
 
 fn preset(uvIn: vec2f) -> vec4f {
   // Beat zoom: scale around center (Motion→Pulse master scales it)
@@ -3673,8 +3753,8 @@ fn preset(uvIn: vec2f) -> vec4f {
   // Background: dark radial wash breathing with bass + beat flash
   let d = distance(uv, vec2f(0.5, 0.55));
   let bgHue = P_hue() + 40.0;
-  var col = hsl2rgb(bgHue, 0.5, P_bgLevel() + u.bass * P_bgBassGlow()) * (1.0 - d * 0.9);
-  col += hsl2rgb(P_hue(), 0.7, 0.5) * u.driveBeat * P_beatFlash() * (1.0 - d);
+  var col = presetColor(bgHue, 0.5, P_bgLevel() + u.bass * P_bgBassGlow()) * (1.0 - d * 0.9);
+  col += presetColor(P_hue(), 0.7, 0.5) * u.driveBeat * P_beatFlash() * (1.0 - d);
 
   let y = 1.0 - uv.y; // bars grow from bottom
   let barH = v * P_barHeight();
@@ -3685,17 +3765,17 @@ fn preset(uvIn: vec2f) -> vec4f {
   // Bar body with vertical gradient
   if (y < barH) {
     let g = y / max(barH, 0.001);
-    col = hsl2rgb(barHue, P_barSat(), 0.35 + g * P_barLift() + u.driveBeat * P_beatBright()) * gapMask
+    col = presetColor(barHue, P_barSat(), 0.35 + g * P_barLift() + u.driveBeat * P_beatBright()) * gapMask
         + col * (1.0 - gapMask);
   } else {
     // Glow above the bar
     let fall = exp(-(y - barH) * (14.0 - P_glow() * P_glowReach()));
-    col += hsl2rgb(barHue, 0.9, 0.5) * fall * P_glow() * v * gapMask;
+    col += presetColor(barHue, 0.9, 0.5) * fall * P_glow() * v * gapMask;
   }
 
   // Peak caps (toggleable)
   let capD = abs(y - pk * P_barHeight());
-  col += hsl2rgb(barHue, 0.3, 0.9) * smoothstep(0.006, 0.0, capD) * gapMask * P_capBright()
+  col += presetColor(barHue, 0.3, 0.9) * smoothstep(0.006, 0.0, capD) * gapMask * P_capBright()
        * step(0.5, P_peaks());
 
   // Vignette
@@ -3714,6 +3794,14 @@ exports[`shader golden baseline > spectrum-bars: param ABI (key + default, in or
   {
     "default": 80,
     "key": "hueSpread",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 0.45,

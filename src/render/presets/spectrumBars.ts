@@ -189,6 +189,26 @@ export const spectrumBars: PresetDef = {
       hint: "Color range across the bars — 0 = single color, high = rainbow left to right",
     },
     {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
+    },
+    {
       key: "glow",
       label: "Glow",
       group: "glow",
@@ -344,6 +364,15 @@ export const spectrumBars: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
+
 fn preset(uvIn: vec2f) -> vec4f {
   // Beat zoom: scale around center (Motion→Pulse master scales it)
   var uv = (uvIn - 0.5) / (1.0 + u.driveBeat * P_beatZoom() * u.pulse) + 0.5;
@@ -371,8 +400,8 @@ fn preset(uvIn: vec2f) -> vec4f {
   // Background: dark radial wash breathing with bass + beat flash
   let d = distance(uv, vec2f(0.5, 0.55));
   let bgHue = P_hue() + 40.0;
-  var col = hsl2rgb(bgHue, 0.5, P_bgLevel() + u.bass * P_bgBassGlow()) * (1.0 - d * 0.9);
-  col += hsl2rgb(P_hue(), 0.7, 0.5) * u.driveBeat * P_beatFlash() * (1.0 - d);
+  var col = presetColor(bgHue, 0.5, P_bgLevel() + u.bass * P_bgBassGlow()) * (1.0 - d * 0.9);
+  col += presetColor(P_hue(), 0.7, 0.5) * u.driveBeat * P_beatFlash() * (1.0 - d);
 
   let y = 1.0 - uv.y; // bars grow from bottom
   let barH = v * P_barHeight();
@@ -383,17 +412,17 @@ fn preset(uvIn: vec2f) -> vec4f {
   // Bar body with vertical gradient
   if (y < barH) {
     let g = y / max(barH, 0.001);
-    col = hsl2rgb(barHue, P_barSat(), 0.35 + g * P_barLift() + u.driveBeat * P_beatBright()) * gapMask
+    col = presetColor(barHue, P_barSat(), 0.35 + g * P_barLift() + u.driveBeat * P_beatBright()) * gapMask
         + col * (1.0 - gapMask);
   } else {
     // Glow above the bar
     let fall = exp(-(y - barH) * (14.0 - P_glow() * P_glowReach()));
-    col += hsl2rgb(barHue, 0.9, 0.5) * fall * P_glow() * v * gapMask;
+    col += presetColor(barHue, 0.9, 0.5) * fall * P_glow() * v * gapMask;
   }
 
   // Peak caps (toggleable)
   let capD = abs(y - pk * P_barHeight());
-  col += hsl2rgb(barHue, 0.3, 0.9) * smoothstep(0.006, 0.0, capD) * gapMask * P_capBright()
+  col += presetColor(barHue, 0.3, 0.9) * smoothstep(0.006, 0.0, capD) * gapMask * P_capBright()
        * step(0.5, P_peaks());
 
   // Vignette

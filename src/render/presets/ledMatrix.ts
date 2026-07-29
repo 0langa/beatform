@@ -217,6 +217,26 @@ export const ledMatrix: PresetDef = {
       hint: "Rotate the whole color scheme around the wheel",
     },
     {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
+    },
+    {
       key: "dim",
       label: "Unlit glow",
       group: "glow",
@@ -424,6 +444,27 @@ export const ledMatrix: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
+
+fn presetRgb(rgb: vec3f) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let saturation = P_saturation();
+  var adjusted = mix(gray, rgb, saturation);
+  if (saturation > 1.0) {
+    adjusted = rgb + (rgb - gray) * (saturation - 1.0);
+  }
+  let lightness = P_lightness();
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
 fn ledCell(l: vec2f, gap: f32, rounded: f32) -> f32 {
   let c = l - 0.5;
   if (rounded > 0.5) {
@@ -489,16 +530,16 @@ fn preset(uv: vec2f) -> vec4f {
   let tileId = floor(vec2f(cx, cy) / 8.0);
   let panelFalloff = mix(1.0, 0.82 + 0.22 * hash21(tileId * 3.7), pv);
 
-  var col = vec3f(0.006, 0.008, 0.01); // panel/PCB background
+  var col = presetRgb(vec3f(0.006, 0.008, 0.01)); // panel/PCB background
   // A faint structural grid on the mounting board — reads as physical
   // hardware instead of an empty void between LEDs.
   let edge = min(min(lx, 1.0 - lx), min(ly, 1.0 - ly));
-  col += vec3f(0.01, 0.012, 0.014) * smoothstep(0.035, 0.0, edge) * (1.0 - mask);
+  col += presetRgb(vec3f(0.01, 0.012, 0.014)) * smoothstep(0.035, 0.0, edge) * (1.0 - mask);
   // Panel backlight breathes with the bass — the wall reads the music even
   // between columns, without touching the LED look itself.
-  col += hsl2rgb(P_hueLow() + P_hueShift(), 0.8, 0.3) * u.bass * P_bassGlow();
+  col += presetColor(P_hueLow() + P_hueShift(), 0.8, 0.3) * u.bass * P_bassGlow();
   // Unlit LEDs faintly visible
-  col += hsl2rgb(cellHue, 0.5, 0.04) * mask * P_dim() * (1.0 - lit);
+  col += presetColor(cellHue, 0.5, 0.04) * mask * P_dim() * (1.0 - lit);
 
   // Phosphor ghost trail: cells ABOVE the live top but BELOW the recent peak
   // glow and fade with distance from the top, so a falling column leaves a
@@ -507,8 +548,8 @@ fn preset(uv: vec2f) -> vec4f {
   let pkLevel = pk * rows;
   let ghostLit = step(cy + 0.5, pkLevel) * (1.0 - lit);
   let ghostFade = exp(-max((cy + 0.5) - level, 0.0) * 0.6);
-  col += hsl2rgb(cellHue, 0.85, P_litLevel() * 0.55) * mask * ghostLit * ghostFade * P_ghost();
-  col += hsl2rgb(cellHue, 0.7, 0.5) * glow * ghostLit * ghostFade * P_ghost() * P_bloom() * 0.5;
+  col += presetColor(cellHue, 0.85, P_litLevel() * 0.55) * mask * ghostLit * ghostFade * P_ghost();
+  col += presetColor(cellHue, 0.7, 0.5) * glow * ghostLit * ghostFade * P_ghost() * P_bloom() * 0.5;
 
   // Lit LEDs: flat mask body, brighter near the column's current top, plus
   // beat boost — then a soft bloom that bleeds past the mask into the gap,
@@ -516,13 +557,13 @@ fn preset(uv: vec2f) -> vec4f {
   let hot = P_litLevel() + P_hotBoost() * smoothstep(level - 2.0, level, cy + 0.5)
           + beatP * P_beatBoost();
   let litBright = hot * mix(1.0, panelFalloff * (0.82 + jBright * 0.36), pv);
-  var ledCol = hsl2rgb(cellHue, 0.9 - jSat * 0.15 * pv, litBright) * mask * lit;
-  ledCol += hsl2rgb(cellHue, 0.75, 0.62) * glow * lit * P_bloom() * (0.4 + v * 0.6)
+  var ledCol = presetColor(cellHue, 0.9 - jSat * 0.15 * pv, litBright) * mask * lit;
+  ledCol += presetColor(cellHue, 0.75, 0.62) * glow * lit * P_bloom() * (0.4 + v * 0.6)
           * (0.6 + jBright * 0.5 * pv);
   // Hot-core desaturation on the brightest cells (top of a loud column) so
   // they read as genuinely emitting instead of merely "very saturated green".
   let veryHot = smoothstep(0.8, 1.1, hot) * lit;
-  ledCol = mix(ledCol, vec3f(1.0, 0.98, 0.92), veryHot * 0.55 * mask);
+  ledCol = mix(ledCol, presetRgb(vec3f(1.0, 0.98, 0.92)), veryHot * 0.55 * mask);
   ledCol *= 1.0 + veryHot * 0.6;
   col += ledCol;
 
@@ -534,15 +575,15 @@ fn preset(uv: vec2f) -> vec4f {
     let pkFrac = (pkRow + 0.5) / rows;
     let pkGrad = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), pkFrac));
     let pkHue = mix(pkGrad, freqHue, P_spectrumColor()) + P_hueShift();
-    col += hsl2rgb(pkHue, 0.55, P_peakBright()) * mask;
-    col += hsl2rgb(pkHue, 0.4, 0.75) * glow * P_bloom() * 0.5;
+    col += presetColor(pkHue, 0.55, P_peakBright()) * mask;
+    col += presetColor(pkHue, 0.4, 0.75) * glow * P_bloom() * 0.5;
   }
 
   // Beat border flash: the wall's outer frame pulses on the tempo grid — a
   // whole-panel beat response distinct from the per-LED beat boost.
   let bdist = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
   let border = smoothstep(0.07, 0.0, bdist);
-  col += hsl2rgb(P_hueHigh() + P_hueShift(), 0.85, 0.5) * border * beatP * P_beatFlash();
+  col += presetColor(P_hueHigh() + P_hueShift(), 0.85, 0.5) * border * beatP * P_beatFlash();
 
   // CRT scanlines: fixed-frequency horizontal darkening, independent of the LED
   // grid so it reads as a display overlay rather than the diode rows.

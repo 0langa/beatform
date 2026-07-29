@@ -11,6 +11,22 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.62.0] - 2026-07-29
+
+### Added
+
+- **Full color controls for every spectrum visual.** Spectrum Bars, Bass Circle,
+  Radial Burst, and LED Matrix now expose whole-look Saturation and Lightness
+  controls alongside existing hue controls. Saturation 0 produces a genuinely
+  neutral grayscale—including LED board and highlight tints—and Lightness can
+  lift the visual into clean white without washing dark backgrounds gray.
+
+  Both controls default to the authored look exactly, so existing projects and
+  styles render unchanged. The Canvas2D fallback honors the same controls. The
+  real WebGPU matrix now includes grayscale and bright-grayscale endpoint cases
+  for all four modes; the original 128 default and style pixel hashes did not
+  change.
+
 ## [2.61.0] - 2026-07-29
 
 ### Added
@@ -1557,7 +1573,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.61.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.62.0...HEAD
+[2.62.0]: https://github.com/0langa/beatform/compare/v2.61.0...v2.62.0
 [2.61.0]: https://github.com/0langa/beatform/compare/v2.60.1...v2.61.0
 [2.60.1]: https://github.com/0langa/beatform/compare/v2.60.0...v2.60.1
 [2.60.0]: https://github.com/0langa/beatform/compare/v2.59.0...v2.60.0
