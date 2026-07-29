@@ -20,6 +20,7 @@ decodeAudioData(track)                 ── one decoded AudioBuffer is the
         └── video lane
              OfflineAnalyzer            src/audio/offlineSource.ts (EXISTS)
                frame N → indexed FFT window near t = N/fps
+               → optional display-only long FFT on fixed 60 Hz ticks
                → FeaturePipeline (onsets on fixed 60 Hz ticks)
                → same AudioFeatures contract as live path
              WebGPU render to offscreen texture at export resolution
@@ -39,7 +40,9 @@ structurally impossible — there is no clock, only indices.
   the input sequence. Onset decisions and feedback state use fixed 60 Hz
   clocks; continuous features may update at presentation cadence.
 - `OfflineAnalyzer` — walks an AudioBuffer at fixed fps, own `RealFFT`
-  (AnalyserNode is realtime-only and unavailable offline).
+  (AnalyserNode is realtime-only and unavailable offline). Analyzer-quality
+  projects add a second display-only transform; detector FFT and behavior stay
+  unchanged.
 - Preset contract: presets are pure functions of (features, time, params) —
   no wall-clock, no unseeded randomness. Keep it that way; it makes export
   repeatable and removes one source of preview divergence.

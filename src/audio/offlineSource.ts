@@ -1,10 +1,12 @@
 import type { AudioFeatures, PcmData, SyncSettings } from "./types";
+import { DEFAULT_SYNC, sanitizeSync } from "./types";
 import { FeaturePipeline, WARMUP_SEC, WAVEFORM_LENGTH } from "./featurePipeline";
 import { RealFFT } from "./dsp/fft";
 import { analysisFftSize } from "./dsp/fftSize";
 import { LoudnessMeter } from "./dsp/lufs";
 import { stereoWidth } from "./dsp/stereo";
 import { gridPhase, type BeatGrid } from "./analysis/beatGrid";
+import { displaySpectrumFftSize, spectrumResolution } from "./dsp/displaySpectrum";
 
 /**
  * Analysis lookahead, seconds. The FFT window ends at t + LOOKAHEAD instead
@@ -94,6 +96,11 @@ export class OfflineAnalyzer {
   private magDb: Float32Array;
   private windowBuf: Float32Array;
   private fftSize: number;
+  /** Optional long transform for drawn bins only. Detector FFT remains fft. */
+  private displayFft: RealFFT | null = null;
+  private displayMagDb: Float32Array | null = null;
+  private displayWindowBuf: Float32Array | null = null;
+  private displayReady = false;
   private nextFrame = 0;
   /**
    * Index of the next fixed-rate analysis tick. An INDEX, not an accumulated
@@ -157,8 +164,34 @@ export class OfflineAnalyzer {
       // the window is trigger-search headroom.
       waveformLength: WAVEFORM_LENGTH,
     });
-    if (sync) this.pipeline.setSync(sync);
+    const safeSync = sync ? sanitizeSync(sync) : DEFAULT_SYNC;
+    const displayFftSize = displaySpectrumFftSize(pcm.sampleRate, spectrumResolution(safeSync));
+    if (displayFftSize !== fftSize) {
+      this.displayFft = new RealFFT(displayFftSize, true);
+      this.displayMagDb = new Float32Array(displayFftSize / 2);
+      this.displayWindowBuf = new Float32Array(displayFftSize);
+      this.pipeline.setDisplayFftBins(displayFftSize / 2);
+    }
+    if (sync) this.pipeline.setSync(safeSync);
     this.primePipeline();
+  }
+
+  /** Refresh long drawn-spectrum window on canonical analysis ticks only. */
+  private updateDisplaySpectrum(endIn: number, analysisTick: boolean): Float32Array | undefined {
+    if (!this.displayFft || !this.displayMagDb || !this.displayWindowBuf) return undefined;
+    if (!analysisTick && this.displayReady) return this.displayMagDb;
+    const end = Math.max(0, Math.min(this.mono.length, endIn));
+    const start = Math.max(0, end - this.displayFft.size);
+    this.displayWindowBuf.fill(0);
+    if (end > start) {
+      this.displayWindowBuf.set(
+        this.mono.subarray(start, end),
+        this.displayFft.size - (end - start),
+      );
+    }
+    this.displayFft.magnitudesDb(this.displayWindowBuf, this.displayMagDb);
+    this.displayReady = true;
+    return this.displayMagDb;
   }
 
   /**
@@ -199,8 +232,10 @@ export class OfflineAnalyzer {
       if (end > start)
         this.windowBuf.set(this.mono.subarray(start, end), this.fftSize - (end - start));
       this.fft.magnitudesDb(this.windowBuf, this.magDb);
+      const displayMagDb = this.updateDisplaySpectrum(end, true);
       this.pipeline.update({
         magDb: this.magDb,
+        ...(displayMagDb ? { displayMagDb } : {}),
         waveform: this.windowBuf,
         time: t,
         dt,
@@ -280,6 +315,7 @@ export class OfflineAnalyzer {
     this.windowBuf.fill(0);
     this.windowBuf.set(this.mono.subarray(start, end), this.fftSize - (end - start));
     this.fft.magnitudesDb(this.windowBuf, this.magDb);
+    const displayMagDb = this.updateDisplaySpectrum(end, analysisTick);
     const prevUpdate = this.lastUpdateTime;
     this.lastUpdateTime = t;
     void prevUpdate;
@@ -299,6 +335,7 @@ export class OfflineAnalyzer {
     }
     return this.pipeline.update({
       magDb: this.magDb,
+      ...(displayMagDb ? { displayMagDb } : {}),
       waveform: this.windowBuf,
       time: t,
       // Time since the PREVIOUS update call, not the frame interval. update()

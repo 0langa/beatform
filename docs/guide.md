@@ -52,10 +52,25 @@ curve_ spline which only rounds corners between still-spiky values — and
 shape the drawn bars only; the sync feel (attack/release, beat pulses) is
 untouched.
 
-**Low edge** and **High edge** set the frequency span the bars cover. The
-bars are spaced geometrically across it — equal width per octave — so
-raising the low edge stops spending bars on sub-bass a track doesn't have,
-and lowering the high edge gives the musical range more of the width.
+**Resolution** controls only the spectrum that is drawn. Responsive uses the
+existing ~85 ms window; Detailed doubles it; Precise quadruples it (subject to
+the 32768-point Web Audio ceiling). A longer window separates closer low tones
+but necessarily carries more audio history. It never changes kicks, beats,
+band energies, or sync timing: those stay on the responsive detector FFT.
+
+**Axis** chooses Musical (logarithmic, equal width per octave) or Linear
+(equal hertz per horizontal step). **Sampling** chooses **96 bands**, which
+resamples the transform into the authored 96-bar budget, or **FFT bins**,
+which reads integer transform bins only. FFT-bin mode is linear and uses fewer
+bars when the selected range physically contains fewer than 96 bins. The
+readout below the controls reports the actual device-rate window, hertz per
+bin, native bin count, and rendered count rather than implying detail that the
+transform does not contain.
+
+**Low edge** and **High edge** set the frequency span the bars cover. Raising
+the low edge stops spending bars on sub-bass the track does not have; lowering
+the high edge gives a narrow musical range more of the width. High edge reaches
+200 Hz for analyzer-style low-frequency views.
 
 Two kinds of beat reaction work together:
 

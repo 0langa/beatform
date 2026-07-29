@@ -11,6 +11,26 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.61.0] - 2026-07-29
+
+### Added
+
+- **Analyzer-quality spectrum views without changing Beatform's punchy sync.**
+  Spectrum-capable modes now offer three drawn-spectrum windows (roughly
+  85/171/341 ms at 48 kHz), Musical or Linear axes, and either the authored
+  96-band view or measured FFT bins with no interpolation. A 30–300 Hz Linear
+  view at Precise resolution, for example, draws 92 real bins at 48 kHz rather
+  than inventing 96 values between them.
+
+  Longer transforms feed drawn bins only. Kick, beat, band-energy, and sync
+  detectors remain on the existing responsive transform, so enabling more
+  low-frequency detail cannot make a project feel slower or retune its hits.
+  Live and export refresh the long display FFT on the same fixed 60 Hz clock.
+
+  The settings panel reports the current device's actual window length,
+  hertz-per-bin, native-bin count, and rendered count. The High edge control
+  now reaches 200 Hz for narrow low-frequency analyzer views.
+
 ## [2.60.1] - 2026-07-28
 
 ### Fixed
@@ -1537,7 +1557,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.60.1...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.61.0...HEAD
+[2.61.0]: https://github.com/0langa/beatform/compare/v2.60.1...v2.61.0
 [2.60.1]: https://github.com/0langa/beatform/compare/v2.60.0...v2.60.1
 [2.60.0]: https://github.com/0langa/beatform/compare/v2.59.0...v2.60.0
 [2.59.0]: https://github.com/0langa/beatform/compare/v2.58.0...v2.59.0

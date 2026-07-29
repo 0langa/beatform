@@ -88,6 +88,7 @@ export default function App() {
     return id ? (s.assets[id]?.name ?? "Custom image") : null;
   });
   const sync = useVizStore((s) => s.sync);
+  const analysisSampleRate = useVizStore((s) => s.analysisSampleRate);
   const playback = useVizStore((s) => s.playback);
   const volume = useVizStore((s) => s.volume);
   const muted = useVizStore((s) => s.muted);
@@ -951,6 +952,7 @@ export default function App() {
           videoBgLoading={videoBgLoading}
           showVideoBg={isTauri()}
           sync={sync}
+          analysisSampleRate={analysisSampleRate}
           onSync={setSync}
           rendererKind={rendererKind}
           simplifiedRenderer={simplifiedRenderer}

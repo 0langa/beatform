@@ -136,6 +136,9 @@ export interface PipelineConfig {
 export interface PipelineInput {
   /** dB magnitudes per FFT bin (AnalyserNode or RealFFT output) */
   magDb: Float32Array;
+  /** Optional, separately resolved transform for DRAWN bins only. Detectors,
+   * bands and sync always read magDb. Held between fixed analysis ticks. */
+  displayMagDb?: Float32Array;
   /** Time-domain samples, -1..1 */
   waveform: Float32Array;
   /** Playback position, seconds */
@@ -174,6 +177,8 @@ export interface PipelineInput {
  * visuals for identical audio.
  */
 export class FeaturePipeline {
+  private readonly sampleRate: number;
+  /** Maximum authored display-bin budget. Measured mode may expose fewer. */
   readonly binCount: number;
   readonly features: AudioFeatures;
 
@@ -192,8 +197,13 @@ export class FeaturePipeline {
    * edges fractional lets `bandLevel` interpolate a sub-bin band instead of
    * duplicating its neighbour. */
   private ranges: Array<[number, number]>;
+  /** Integer FFT-bin indices used by no-interpolation measured mode. */
+  private measuredBins: number[] = [];
+  private activeBinCount: number;
   /** Hz covered by one FFT bin — the interpolation needs it alongside `ranges`. */
   private hzPerBin: number;
+  /** Bin spacing of optional drawn-spectrum transform. */
+  private displayHzPerBin: number;
   /** Analysed span the current `ranges` were built for, so `setSync` only
    * rebuilds when the user actually moves the range. */
   private rangeSpan: [number, number] = [MIN_FREQ, MAX_FREQ];
@@ -232,7 +242,9 @@ export class FeaturePipeline {
   private driveValue = 0;
 
   constructor(config: PipelineConfig) {
+    this.sampleRate = config.sampleRate;
     this.binCount = config.binCount ?? 96;
+    this.activeBinCount = this.binCount;
     const fftBins = config.fftBins;
     this.mag = new Float32Array(fftBins);
     this.magDisp = new Float32Array(fftBins);
@@ -243,10 +255,11 @@ export class FeaturePipeline {
     const nyquist = config.sampleRate / 2;
     const hzPerBin = nyquist / fftBins;
     this.hzPerBin = hzPerBin;
+    this.displayHzPerBin = hzPerBin;
     this.floorScale = fftBins / nyquist / REF_BINS_PER_HZ;
     const toBin = (hz: number) => Math.max(0, Math.min(fftBins - 1, Math.round(hz / hzPerBin)));
 
-    this.ranges = this.buildRanges(MIN_FREQ, MAX_FREQ);
+    this.ranges = this.buildRanges(MIN_FREQ, MAX_FREQ, "log");
     this.bassRange = [toBin(30), toBin(150)];
     this.midRange = [toBin(150), toBin(2000)];
     this.trebleRange = [toBin(2000), toBin(16000)];
@@ -289,25 +302,76 @@ export class FeaturePipeline {
    * a musical octave occupy the same width everywhere, so the bars can then be
    * plotted at equal pixel width.
    */
-  private buildRanges(freqMin: number, freqMax: number): Array<[number, number]> {
-    // Remember what was ASKED for, not what survives clamping: `setSync`
-    // compares against this to decide whether to rebuild, and storing the
-    // clamped value would make every later call look like a change.
-    this.rangeSpan = [freqMin, freqMax];
+  private buildRanges(
+    freqMin: number,
+    freqMax: number,
+    axis: "log" | "linear",
+  ): Array<[number, number]> {
     // Nothing above Nyquist exists in the transform, and asking for it would
     // spend bands on bins that are always zero — a 22 kHz ceiling on a
     // 44.1 kHz track is a real user setting, so clamp rather than trust it.
-    const nyquist = this.hzPerBin * this.mag.length;
+    const nyquist = this.displayHzPerBin * this.magDisp.length;
     const hi = Math.min(freqMax, nyquist * 0.99);
     const lo = Math.min(freqMin, hi / 2);
     const ratio = hi / lo;
     const out: Array<[number, number]> = [];
     for (let i = 0; i < this.binCount; i++) {
-      const f0 = lo * Math.pow(ratio, i / this.binCount);
-      const f1 = lo * Math.pow(ratio, (i + 1) / this.binCount);
-      out.push([f0 / this.hzPerBin, f1 / this.hzPerBin]);
+      const t0 = i / this.binCount;
+      const t1 = (i + 1) / this.binCount;
+      const f0 = axis === "linear" ? lo + (hi - lo) * t0 : lo * Math.pow(ratio, t0);
+      const f1 = axis === "linear" ? lo + (hi - lo) * t1 : lo * Math.pow(ratio, t1);
+      out.push([f0 / this.displayHzPerBin, f1 / this.displayHzPerBin]);
     }
     return out;
+  }
+
+  /** Rebuild display layout after span, axis, sampling, or FFT geometry moves. */
+  private rebuildDisplayLayout(): void {
+    const freqMin = this.sync.freqMin ?? MIN_FREQ;
+    const freqMax = this.sync.freqMax ?? MAX_FREQ;
+    this.rangeSpan = [freqMin, freqMax];
+    if (this.sync.spectrumSampling === "measured") {
+      const nyquist = this.displayHzPerBin * this.magDisp.length;
+      const hiHz = Math.min(freqMax, nyquist * 0.99);
+      const loHz = Math.min(freqMin, hiHz / 2);
+      const lo = Math.max(1, Math.ceil(loHz / this.displayHzPerBin));
+      const hi = Math.min(this.magDisp.length - 1, Math.floor(hiHz / this.displayHzPerBin));
+      const available = Math.max(0, hi - lo + 1);
+      const count = Math.min(this.binCount, available);
+      this.measuredBins = [];
+      if (count === 1) {
+        this.measuredBins.push(lo);
+      } else if (count > 1) {
+        // When range contains <= budget bins this is every native FFT bin.
+        // Wider ranges are evenly subsampled, still at integer bin centres.
+        for (let i = 0; i < count; i++) {
+          this.measuredBins.push(Math.round(lo + ((hi - lo) * i) / (count - 1)));
+        }
+      }
+      this.ranges = [];
+      this.resizeDisplayBins(count);
+      return;
+    }
+    this.measuredBins = [];
+    this.ranges = this.buildRanges(freqMin, freqMax, this.sync.spectrumAxis ?? "log");
+    this.resizeDisplayBins(this.binCount);
+  }
+
+  private resizeDisplayBins(count: number): void {
+    if (count === this.activeBinCount) return;
+    this.activeBinCount = count;
+    // A layout change remaps x positions, so carrying old values would put
+    // energy under the wrong frequencies. Start new display state honestly.
+    this.features.bins = new Float32Array(count);
+    this.features.peaks = new Float32Array(count);
+  }
+
+  /** Declare optional display-transform geometry before its first frame. */
+  setDisplayFftBins(fftBins: number): void {
+    if (!Number.isInteger(fftBins) || fftBins < 2 || fftBins === this.magDisp.length) return;
+    this.magDisp = new Float32Array(fftBins);
+    this.displayHzPerBin = this.sampleRate / 2 / fftBins;
+    this.rebuildDisplayLayout();
   }
 
   /** The spectrum at a FRACTIONAL bin position, linearly interpolated. */
@@ -360,16 +424,33 @@ export class FeaturePipeline {
     // dB -> 0..1 magnitudes. `mag` keeps the −22 dBFS ceiling (bands, flux,
     // beats); `magDisp` uses the display ceiling + gamma (the drawn bars only).
     const mag = this.mag;
+    const displayDb = input.displayMagDb ?? input.magDb;
+    if (displayDb.length !== this.magDisp.length) this.setDisplayFftBins(displayDb.length);
     const magDisp = this.magDisp;
     const dispRange = DISPLAY_MAX_DB - DISPLAY_MIN_DB;
-    for (let i = 0; i < mag.length; i++) {
-      const db = input.magDb[i];
-      if (db === -Infinity) {
-        mag[i] = 0;
-        magDisp[i] = 0;
-      } else {
-        mag[i] = clamp01((db - MIN_DB) / (MAX_DB - MIN_DB));
-        magDisp[i] = Math.pow(clamp01((db - DISPLAY_MIN_DB) / dispRange), DISPLAY_GAMMA);
+    if (displayDb === input.magDb && magDisp.length === mag.length) {
+      // Keep legacy/default operation order byte-identical.
+      for (let i = 0; i < mag.length; i++) {
+        const db = input.magDb[i];
+        if (db === -Infinity) {
+          mag[i] = 0;
+          magDisp[i] = 0;
+        } else {
+          mag[i] = clamp01((db - MIN_DB) / (MAX_DB - MIN_DB));
+          magDisp[i] = Math.pow(clamp01((db - DISPLAY_MIN_DB) / dispRange), DISPLAY_GAMMA);
+        }
+      }
+    } else {
+      for (let i = 0; i < mag.length; i++) {
+        const db = input.magDb[i];
+        mag[i] = db === -Infinity ? 0 : clamp01((db - MIN_DB) / (MAX_DB - MIN_DB));
+      }
+      for (let i = 0; i < magDisp.length; i++) {
+        const db = displayDb[i];
+        magDisp[i] =
+          db === -Infinity
+            ? 0
+            : Math.pow(clamp01((db - DISPLAY_MIN_DB) / dispRange), DISPLAY_GAMMA);
       }
     }
 
@@ -387,16 +468,20 @@ export class FeaturePipeline {
     const release = 1 - Math.exp(-dt * 9);
     const gravity = 0.55 * dt;
     const raw = this.binScratch;
-    for (let i = 0; i < this.binCount; i++) {
-      const [b0, b1] = this.ranges[i];
-      raw[i] = this.bandLevel(magDisp, b0, b1);
+    if (this.measuredBins.length > 0) {
+      for (let i = 0; i < this.activeBinCount; i++) raw[i] = magDisp[this.measuredBins[i]] ?? 0;
+    } else {
+      for (let i = 0; i < this.activeBinCount; i++) {
+        const [b0, b1] = this.ranges[i];
+        raw[i] = this.bandLevel(magDisp, b0, b1);
+      }
     }
 
     // --- Spectrum SHAPE (drawn bins only; sync/bands read `mag`, untouched).
     // Applied to the instantaneous frame BEFORE the temporal EMA, so attack/
     // release feel is preserved and the peak caps ride the shaped curve.
     // All three default to a no-op — the neutral path is byte-identical.
-    const n = this.binCount;
+    const n = this.activeBinCount;
     // 1) Merge (Monstercat): two sweeps with an exponential falloff — each
     //    bar lifts its neighbors, melting isolated spikes into one shape.
     const merge = this.sync.shapeMerge ?? 0;
@@ -442,7 +527,7 @@ export class FeaturePipeline {
       for (let i = 0; i < n; i++) raw[i] = Math.pow(raw[i], g);
     }
 
-    for (let i = 0; i < this.binCount; i++) {
+    for (let i = 0; i < this.activeBinCount; i++) {
       const v = raw[i];
       const prev = f.bins[i];
       f.bins[i] = prev + (v - prev) * (v > prev ? attack : release);
@@ -671,10 +756,13 @@ export class FeaturePipeline {
     // change, and rebuilding 96 bands per frame would be pure waste.
     const freqMin = safe.freqMin ?? MIN_FREQ;
     const freqMax = safe.freqMax ?? MAX_FREQ;
-    if (freqMin !== this.rangeSpan[0] || freqMax !== this.rangeSpan[1]) {
-      this.ranges = this.buildRanges(freqMin, freqMax);
-    }
+    const layoutChanged =
+      freqMin !== this.rangeSpan[0] ||
+      freqMax !== this.rangeSpan[1] ||
+      safe.spectrumAxis !== this.sync.spectrumAxis ||
+      safe.spectrumSampling !== this.sync.spectrumSampling;
     this.sync = safe;
+    if (layoutChanged) this.rebuildDisplayLayout();
   }
 
   private syncBand(mode: SyncMode): [number, number] {

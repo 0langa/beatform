@@ -28,8 +28,10 @@ export interface LoopbackStats {
 /**
  * AudioEngine owns the AudioContext graph:
  *
- *   AudioBufferSourceNode -> GainNode -> destination
- *                                \-> AnalyserNode (tap, no audible effect)
+ *   AudioBufferSourceNode -> analysis tap -> GainNode -> destination
+ *                                ├-> detector AnalyserNode
+ *                                ├-> display-only AnalyserNode
+ *                                └-> stereo AnalyserNodes
  *
  * Decoded-buffer playback (not <audio> element) so seeking is sample-accurate
  * and later features (gapless queue, offline analysis, custom DSP worklets)
@@ -39,6 +41,9 @@ export interface LoopbackStats {
 export class AudioEngine {
   readonly ctx: AudioContext;
   readonly analyser: AnalyserNode;
+  /** Independent time-domain tap for opt-in long drawn-spectrum windows.
+   * Detector analysis always stays on `analyser`. */
+  readonly displayAnalyser: AnalyserNode;
   /** Per-channel taps for stereo features (width) and loudness metering. */
   readonly analyserL: AnalyserNode;
   readonly analyserR: AnalyserNode;
@@ -84,6 +89,8 @@ export class AudioEngine {
     const fftSize = analysisFftSize(this.ctx.sampleRate);
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = fftSize;
+    this.displayAnalyser = this.ctx.createAnalyser();
+    this.displayAnalyser.fftSize = fftSize;
     this.analyserL = this.ctx.createAnalyser();
     this.analyserR = this.ctx.createAnalyser();
     this.analyserL.fftSize = fftSize;
@@ -112,6 +119,7 @@ export class AudioEngine {
     // while output remains exact digital silence (no acoustic feedback loop).
     this.liveSink.connect(this.ctx.destination);
     this.tap.connect(this.analyser);
+    this.tap.connect(this.displayAnalyser);
     this.splitter = this.ctx.createChannelSplitter(2);
     this.tap.connect(this.splitter);
     this.splitter.connect(this.analyserL, 0);
@@ -152,6 +160,7 @@ export class AudioEngine {
       outputChannelCount: [2],
     });
     node.connect(this.analyser);
+    node.connect(this.displayAnalyser);
     node.connect(this.splitter);
     node.connect(this.liveSink);
     this.liveNode = node;

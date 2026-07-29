@@ -362,6 +362,80 @@ describe("band coverage (N1/N2 regression)", () => {
   });
 });
 
+describe("analyzer-quality drawn spectrum", () => {
+  it("reads native FFT bins directly and exposes only bins inside the selected span", () => {
+    const p = makePipeline();
+    const displayBins = 8192; // 16384-point display FFT at 48 kHz
+    p.setDisplayFftBins(displayBins);
+    p.setSync({
+      mode: "kick",
+      smooth: 0.5,
+      freqMin: 30,
+      freqMax: 300,
+      spectrumResolution: "precise",
+      spectrumAxis: "linear",
+      spectrumSampling: "measured",
+    });
+    const displayMagDb = new Float32Array(displayBins).fill(-Infinity);
+    // 99.609 Hz. With lo bin ceil(30 / 2.9296875) = 11, this is output 23.
+    displayMagDb[34] = DISPLAY_MAX_DB;
+    const f = p.update(makeInput({ displayMagDb }));
+
+    expect(f.bins).toHaveLength(92);
+    expect(f.peaks).toHaveLength(92);
+    expect(f.bins[23]).toBeGreaterThan(0.4);
+    expect(f.bins[22]).toBe(0);
+    expect(f.bins[24]).toBe(0);
+  });
+
+  it("a separate long display transform cannot change bands, sync or onset detection", () => {
+    const baseline = makePipeline();
+    const quality = makePipeline();
+    quality.setDisplayFftBins(8192);
+    quality.setSync({
+      mode: "kick",
+      smooth: 0.5,
+      spectrumResolution: "precise",
+      spectrumAxis: "linear",
+    });
+    const alternateDisplay = new Float32Array(8192).fill(DISPLAY_MAX_DB);
+
+    for (let n = 0; n < 90; n++) {
+      const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+      if (n > 0 && n % 30 === 0) fillBand(magDb, 40, 140, MAX_DB);
+      const input = makeInput({ magDb, time: n * DT });
+      const a = baseline.update(input);
+      const b = quality.update({ ...input, displayMagDb: alternateDisplay });
+      expect({
+        bass: b.bass,
+        mid: b.mid,
+        treble: b.treble,
+        voice: b.voice,
+        drive: b.drive,
+        driveBeat: b.driveBeat,
+        beat: b.beat,
+        beatIntensity: b.beatIntensity,
+        kick: b.kick,
+        snare: b.snare,
+        hat: b.hat,
+      }).toEqual({
+        bass: a.bass,
+        mid: a.mid,
+        treble: a.treble,
+        voice: a.voice,
+        drive: a.drive,
+        driveBeat: a.driveBeat,
+        beat: a.beat,
+        beatIntensity: a.beatIntensity,
+        kick: a.kick,
+        snare: a.snare,
+        hat: a.hat,
+      });
+    }
+    expect(Math.max(...quality.features.bins)).toBeGreaterThan(Math.max(...baseline.features.bins));
+  });
+});
+
 describe("FeaturePipeline discontinuity reset", () => {
   /** Feed `frames` frames of a band-limited signal, return the last features. */
   function feed(p: FeaturePipeline, loHz: number, hiHz: number, frames: number, t0 = 0) {

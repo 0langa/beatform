@@ -102,6 +102,10 @@ function assertRuntime(matrix) {
       failures.push(`${entry.id}: fully black frame`);
     }
   }
+  const spectrum = matrix.spectrumSmoke;
+  if (!spectrum?.passed) {
+    failures.push(`analyzer-quality spectrum smoke failed: ${JSON.stringify(spectrum)}`);
+  }
   if (failures.length) throw new Error(failures.join("\n"));
 }
 
@@ -154,7 +158,64 @@ async function evaluateMatrix() {
             if (Date.now() > deadline) throw new Error("__runGpuMatrix hook unavailable");
             await new Promise(r => setTimeout(r, 100));
           }
-          return await window.__runGpuMatrix(192, 108);
+          const matrix = await window.__runGpuMatrix(192, 108);
+          const store = window.__store;
+          const analyzer = window.__analyzer;
+          const engine = window.__engine;
+          const originalSync = { ...store.getState().sync };
+          const originalPanel = store.getState().showPanel;
+          let spectrumSmoke;
+          try {
+            store.getState().setSync({
+              ...originalSync,
+              freqMin: 30,
+              freqMax: 300,
+              spectrumResolution: "precise",
+              spectrumAxis: "linear",
+              spectrumSampling: "measured",
+            });
+            store.getState().setShowPanel(true);
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+            const syncTab = [...document.querySelectorAll(".panel-tabs button")]
+              .find(button => button.textContent?.trim() === "Sync");
+            syncTab?.click();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const syncSection = [...document.querySelectorAll(".section-toggle")]
+              .find(button => button.textContent?.trim() === "Sync");
+            if (syncSection?.getAttribute("aria-expanded") === "false") syncSection.click();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+            const panel = document.querySelector(".params-panel");
+            const text = panel?.textContent ?? "";
+            const axis = panel?.querySelector('[aria-label="Spectrum frequency axis"]');
+            const activeAxis = axis?.querySelector('[aria-pressed="true"]')?.textContent?.trim();
+            const axisLocked = axis
+              ? [...axis.querySelectorAll("button")].every(button => button.disabled)
+              : false;
+            const displayBins = analyzer.features.bins.length;
+            const expectedFft = Math.min(32768, engine.analyser.fftSize * 4);
+            const audit = window.__auditUI(".params-panel");
+            spectrumSmoke = {
+              passed:
+                engine.analyser.fftSize !== engine.displayAnalyser.fftSize &&
+                engine.displayAnalyser.fftSize === expectedFft &&
+                displayBins > 0 && displayBins <= 96 &&
+                text.includes(displayBins + " measured bars, no interpolation") &&
+                activeAxis === "Linear" && axisLocked &&
+                Array.isArray(audit) && audit.length === 0,
+              detectorFft: engine.analyser.fftSize,
+              displayFft: engine.displayAnalyser.fftSize,
+              displayBins,
+              activeAxis,
+              axisLocked,
+              audit,
+            };
+          } finally {
+            store.getState().setSync(originalSync);
+            store.getState().setShowPanel(originalPanel);
+          }
+          return { ...matrix, spectrumSmoke };
         })()`,
         awaitPromise: true,
         returnByValue: true,
@@ -215,7 +276,8 @@ try {
     const rawHashChanges = await compare(matrix);
     console.log(
       `GPU matrix passed: ${matrix.cases.length} cases, 0 compile errors, ` +
-        `0 GPU errors, ${rawHashChanges} tolerance-only raw hash changes`,
+        `0 GPU errors, ${rawHashChanges} tolerance-only raw hash changes; ` +
+        `spectrum smoke ${matrix.spectrumSmoke.displayBins} measured bins`,
     );
   }
 } finally {

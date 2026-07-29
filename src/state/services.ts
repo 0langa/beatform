@@ -29,6 +29,8 @@ export interface ServiceHooks {
   /** True while the user drags the seek bar — playback pushes pause then. */
   isSeeking(): boolean;
   onPlayback(s: PlaybackState): void;
+  /** Actual AudioContext rate for spectrum-resolution diagnostics in UI. */
+  onAnalysisSampleRate?(sampleRate: number): void;
   onRendererChanged(kind: Renderer["kind"], warning: string | null): void;
   /** Canvas pixel size changed — overlays re-rasterize at the new size. */
   onResize?(width: number, height: number): void;
@@ -113,6 +115,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
 
   const eng = new AudioEngine();
   engine = eng;
+  hooks.onAnalysisSampleRate?.(eng.ctx.sampleRate);
   eng.onStateChange = (s) => {
     if (!hooks.isSeeking()) hooks.onPlayback(s);
   };

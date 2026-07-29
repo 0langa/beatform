@@ -1,10 +1,12 @@
 import type { AudioEngine } from "./engine";
 import type { AudioFeatures, SyncSettings } from "./types";
+import { sanitizeSync } from "./types";
 import { ANALYSIS_DT, FeaturePipeline, WAVEFORM_LENGTH } from "./featurePipeline";
 import { RealFFT } from "./dsp/fft";
 import { LoudnessMeter } from "./dsp/lufs";
 import { stereoWidth } from "./dsp/stereo";
 import { gridPhase, type BeatGrid } from "./analysis/beatGrid";
+import { displaySpectrumFftSize, spectrumResolution } from "./dsp/displaySpectrum";
 
 /**
  * Live-input silence gate, in dBFS PEAK over one analysis window.
@@ -50,6 +52,12 @@ export class RealtimeAnalyzer {
   private pipeline: FeaturePipeline;
   private fft: RealFFT;
   private magDb: Float32Array;
+  /** Optional long transform for drawn bins only. Null on legacy/default path. */
+  private displayFft: RealFFT | null = null;
+  private displayMagDb: Float32Array | null = null;
+  private displayTimeData: Float32Array<ArrayBuffer> | null = null;
+  private displayFftSize: number;
+  private displayReady = false;
   // Pinned to <ArrayBuffer>, not the default <ArrayBufferLike>. These are
   // allocated below with a plain ArrayBuffer, and the Web Audio analyser
   // signatures require exactly that — ArrayBufferLike also admits
@@ -81,6 +89,7 @@ export class RealtimeAnalyzer {
   constructor(engine: AudioEngine, binCount = 96) {
     this.engine = engine;
     const fftSize = engine.analyser.fftSize;
+    this.displayFftSize = fftSize;
     this.fft = new RealFFT(fftSize, true);
     this.magDb = new Float32Array(fftSize / 2);
     this.timeData = new Float32Array(fftSize);
@@ -100,7 +109,26 @@ export class RealtimeAnalyzer {
 
   /** Choose what the visuals follow. */
   setSync(sync: SyncSettings): void {
-    this.pipeline.setSync(sync);
+    const safe = sanitizeSync(sync);
+    const fftSize = displaySpectrumFftSize(this.engine.ctx.sampleRate, spectrumResolution(safe));
+    if (fftSize !== this.displayFftSize) {
+      this.displayFftSize = fftSize;
+      this.displayReady = false;
+      this.pipeline.setDisplayFftBins(fftSize / 2);
+      this.engine.displayAnalyser.fftSize = fftSize;
+      if (fftSize === this.engine.analyser.fftSize) {
+        this.displayFft = null;
+        this.displayMagDb = null;
+        this.displayTimeData = null;
+      } else {
+        // Independent AnalyserNode history: changing this cannot lengthen the
+        // detector window or alter onset timing.
+        this.displayFft = new RealFFT(fftSize, true);
+        this.displayMagDb = new Float32Array(fftSize / 2);
+        this.displayTimeData = new Float32Array(fftSize);
+      }
+    }
+    this.pipeline.setSync(safe);
   }
 
   /**
@@ -121,6 +149,7 @@ export class RealtimeAnalyzer {
     this.lastFrameAt = null;
     this.sinceTick = 0;
     this.lastUpdateTicked = false;
+    this.displayReady = false;
     // Shut, not open: entering live input has heard nothing yet, and the first
     // frame of real audio opens it anyway.
     this.gateOpen = false;
@@ -187,6 +216,16 @@ export class RealtimeAnalyzer {
     } else {
       this.fft.magnitudesDb(this.timeData, this.magDb);
     }
+    let displayMagDb: Float32Array | undefined;
+    if (this.displayFft && this.displayMagDb && this.displayTimeData) {
+      if (analysisTick || !this.displayReady) {
+        this.engine.displayAnalyser.getFloatTimeDomainData(this.displayTimeData);
+        if (gated) this.displayMagDb.fill(-Infinity);
+        else this.displayFft.magnitudesDb(this.displayTimeData, this.displayMagDb);
+        this.displayReady = true;
+      }
+      displayMagDb = this.displayMagDb;
+    }
     // Feed the loudness meter only the NEW samples since last frame (the
     // analyser exposes a sliding window; overlap would double-count)
     const fresh = Math.min(
@@ -199,6 +238,7 @@ export class RealtimeAnalyzer {
     ]);
     return this.pipeline.update({
       magDb: this.magDb,
+      ...(displayMagDb ? { displayMagDb } : {}),
       waveform: gated ? this.silence : this.timeData,
       time: trackTime,
       dt,

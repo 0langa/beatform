@@ -1,6 +1,7 @@
 import { Fragment, memo, useState, type ReactNode } from "react";
-import type { SyncMode, SyncSettings } from "../audio/types";
+import type { SpectrumResolution, SyncMode, SyncSettings } from "../audio/types";
 import { MAX_FREQ, MIN_FREQ } from "../audio/featurePipeline";
+import { spectrumDiagnostics } from "../audio/dsp/displaySpectrum";
 import type {
   BgFit,
   BgMode,
@@ -72,10 +73,8 @@ function rgbToHex([r, g, b]: [number, number, number]): string {
 }
 
 /**
- * The high-edge readout. Its slider starts at 1000 Hz, so the value is always
- * in the kHz branch of what this row used to print by hand — and stating the
- * unit as a scale (rather than a format function) is what lets the numeric
- * editor read "18.05" back as 18050 Hz instead of 18 Hz.
+ * High-edge readout. Stating unit as a scale (rather than a format function)
+ * lets numeric editor read "18.05" back as 18050 Hz instead of 18 Hz.
  */
 const KILOHERTZ: ValueUnit = { scale: 0.001, unit: " kHz", decimals: 1 };
 
@@ -352,6 +351,8 @@ export interface ParamsPanelProps {
   /** Offer the Video background option (desktop only). */
   showVideoBg: boolean;
   sync: SyncSettings;
+  /** Actual AudioContext rate; analyzer-quality readout must not assume 48 kHz. */
+  analysisSampleRate: number;
   onSync: (sync: SyncSettings) => void;
   rendererKind: string;
   /**
@@ -508,6 +509,14 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
   const changedCount = advanced.filter(
     (p) => (props.params[p.key] ?? p.default) !== p.default,
   ).length;
+  const spectrumInfo = spectrumDiagnostics(props.sync, props.analysisSampleRate);
+  const resolutionLabel = (resolution: SpectrumResolution) =>
+    `${Math.round(
+      spectrumDiagnostics(
+        { ...props.sync, spectrumResolution: resolution },
+        props.analysisSampleRate,
+      ).windowMs,
+    )} ms`;
 
   // Which global masters actually move THIS mode — used to hide inert sliders
   // (e.g. Rotation on a mode that can't spin, Detail on a non-discrete mode).
@@ -928,7 +937,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       title: "Sync",
       tab: "sync",
       search:
-        "sync react kick energy bass melody voice treble snare hats smoothing attack release spectrum smooth curve merge rounding contrast monstercat flatten shape frequency range low high edge hz analyzer",
+        "sync react kick energy bass melody voice treble snare hats smoothing attack release spectrum smooth curve merge rounding contrast monstercat flatten shape frequency range low high edge hz analyzer resolution fft measured bins interpolation linear logarithmic",
       body: (
         <>
           <div className="sync-grid">
@@ -999,6 +1008,88 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 onChange={props.onSmoothSpectrum}
                 onHint={setHint}
               />
+              <div className="row">
+                <span className="row-label">Resolution</span>
+                <div style={{ flex: 1 }}>
+                  <Segmented
+                    value={props.sync.spectrumResolution ?? "responsive"}
+                    onChange={(spectrumResolution) =>
+                      props.onSync({ ...props.sync, spectrumResolution })
+                    }
+                    onHint={setHint}
+                    ariaLabel="Drawn spectrum resolution"
+                    options={(["responsive", "detailed", "precise"] as const).map((value) => ({
+                      value,
+                      label: resolutionLabel(value),
+                      hint:
+                        value === "responsive"
+                          ? "Fastest response; existing 85 ms-class display window"
+                          : "Longer display-only FFT: finer low-frequency detail, with matching visual history",
+                    }))}
+                  />
+                </div>
+              </div>
+              <div className="row">
+                <span className="row-label">Axis</span>
+                <div style={{ flex: 1 }}>
+                  <Segmented
+                    value={
+                      props.sync.spectrumSampling === "measured"
+                        ? "linear"
+                        : (props.sync.spectrumAxis ?? "log")
+                    }
+                    onChange={(spectrumAxis) => props.onSync({ ...props.sync, spectrumAxis })}
+                    disabled={props.sync.spectrumSampling === "measured"}
+                    onHint={setHint}
+                    ariaLabel="Spectrum frequency axis"
+                    options={[
+                      {
+                        value: "log" as const,
+                        label: "Musical",
+                        hint: "Log axis: equal width per octave; display bands are resampled",
+                      },
+                      {
+                        value: "linear" as const,
+                        label: "Linear",
+                        hint: "Linear hertz axis: equal frequency width across the frame",
+                      },
+                    ]}
+                  />
+                </div>
+              </div>
+              <div className="row">
+                <span className="row-label">Sampling</span>
+                <div style={{ flex: 1 }}>
+                  <Segmented
+                    value={props.sync.spectrumSampling ?? "interpolated"}
+                    onChange={(spectrumSampling) =>
+                      props.onSync({ ...props.sync, spectrumSampling })
+                    }
+                    onHint={setHint}
+                    ariaLabel="Spectrum sampling"
+                    options={[
+                      {
+                        value: "interpolated" as const,
+                        label: "96 bands",
+                        hint: "Keep 96 bars by resampling FFT data into display bands",
+                      },
+                      {
+                        value: "measured" as const,
+                        label: "FFT bins",
+                        hint: "Read integer FFT bins only; no interpolation, linear axis, fewer bars when physics provides fewer",
+                      },
+                    ]}
+                  />
+                </div>
+              </div>
+              <p className="section-hint">
+                {Math.round(spectrumInfo.windowMs)} ms window · {spectrumInfo.hzPerBin.toFixed(2)}
+                Hz/bin · {spectrumInfo.nativeBins} native bins in range ·{" "}
+                {spectrumInfo.measured
+                  ? `${spectrumInfo.displayBins} measured bars, no interpolation`
+                  : `${spectrumInfo.displayBins} display bands`}
+                . Detector timing stays on responsive resolution.
+              </p>
               <SliderRow
                 label="Merge"
                 hint="Bars prop up their neighbors (Monstercat-style) — melts lone spikes into one connected shape"
@@ -1052,7 +1143,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               <SliderRow
                 label="High edge"
                 hint="Highest frequency the bars cover — lower it to give the musical range more of the width"
-                min={1000}
+                min={200}
                 max={22050}
                 step={50}
                 value={props.sync.freqMax ?? MAX_FREQ}

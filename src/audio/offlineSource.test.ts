@@ -110,6 +110,50 @@ describe("OfflineAnalyzer", () => {
     expect(a.trace).toEqual(b.trace); // exact float equality, all 120 frames
   });
 
+  it("uses a separate precise display FFT without retuning detector features", () => {
+    const pcm = makeTestBuffer();
+    const baseline = new OfflineAnalyzer(pcm, FPS);
+    const precise = new OfflineAnalyzer(pcm, FPS, 96, {
+      mode: "kick",
+      smooth: 0.5,
+      spectrumResolution: "precise",
+      spectrumAxis: "linear",
+      spectrumSampling: "measured",
+      freqMin: 30,
+      freqMax: 300,
+    });
+    for (let n = 0; n < precise.frameCount; n++) {
+      const a = baseline.nextFrameFeatures();
+      const b = precise.nextFrameFeatures();
+      expect(b.bins).toHaveLength(92);
+      expect({
+        rms: b.rms,
+        energy: b.energy,
+        bass: b.bass,
+        mid: b.mid,
+        treble: b.treble,
+        drive: b.drive,
+        beat: b.beat,
+        beatIntensity: b.beatIntensity,
+        kick: b.kick,
+        snare: b.snare,
+        hat: b.hat,
+      }).toEqual({
+        rms: a.rms,
+        energy: a.energy,
+        bass: a.bass,
+        mid: a.mid,
+        treble: a.treble,
+        drive: a.drive,
+        beat: a.beat,
+        beatIntensity: a.beatIntensity,
+        kick: a.kick,
+        snare: a.snare,
+        hat: a.hat,
+      });
+    }
+  });
+
   it("matches the golden feature trace (regression pin)", () => {
     const analyzer = new OfflineAnalyzer(makeTestBuffer(), FPS);
     const { beatFrames, trace } = collectTrace(analyzer);

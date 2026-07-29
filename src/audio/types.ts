@@ -55,6 +55,11 @@ export interface AudioFeatures {
 export type SyncMode =
   "energy" | "bass" | "kick" | "melody" | "voice" | "treble" | "snare" | "hats";
 
+/** Drawn-spectrum quality only. Detector analysis stays on responsive. */
+export type SpectrumResolution = "responsive" | "detailed" | "precise";
+export type SpectrumAxis = "log" | "linear";
+export type SpectrumSampling = "interpolated" | "measured";
+
 export interface SyncSettings {
   mode: SyncMode;
   /** Overall response macro: 0 = instant/punchy, 1 = very smooth. Also the
@@ -82,6 +87,14 @@ export interface SyncSettings {
   freqMin?: number;
   /** High edge of the analysed span, Hz. Defaults to MAX_FREQ. */
   freqMax?: number;
+  /** Drawn-spectrum FFT window. Longer windows resolve closer low tones but
+   * add matching visual history; onset detectors never use this setting. */
+  spectrumResolution?: SpectrumResolution;
+  /** Display-band spacing. Measured FFT bins are always linear in hertz. */
+  spectrumAxis?: SpectrumAxis;
+  /** Interpolated bands keep the 96-bar budget; measured reads integer FFT
+   * bins only and may expose fewer bars when the chosen span contains fewer. */
+  spectrumSampling?: SpectrumSampling;
 }
 
 /** Hard bounds for the user-settable analysed span. The low bound sits at the
@@ -104,6 +117,9 @@ const SYNC_MODES: readonly SyncMode[] = [
   "snare",
   "hats",
 ];
+const SPECTRUM_RESOLUTIONS: readonly SpectrumResolution[] = ["responsive", "detailed", "precise"];
+const SPECTRUM_AXES: readonly SpectrumAxis[] = ["log", "linear"];
+const SPECTRUM_SAMPLING: readonly SpectrumSampling[] = ["interpolated", "measured"];
 
 /**
  * Coerce untrusted sync settings (imported .avpreset / .avproj, localStorage)
@@ -146,6 +162,15 @@ export function sanitizeSync(v: unknown): SyncSettings {
     ...(p.shapeMerge !== undefined ? { shapeMerge: clamp01(p.shapeMerge, 0) } : {}),
     ...(p.shapeRound !== undefined ? { shapeRound: clamp01(p.shapeRound, 0) } : {}),
     ...(p.contrast !== undefined ? { contrast: clamp01(p.contrast, 0.5) } : {}),
+    ...(SPECTRUM_RESOLUTIONS.includes(p.spectrumResolution as SpectrumResolution)
+      ? { spectrumResolution: p.spectrumResolution as SpectrumResolution }
+      : {}),
+    ...(SPECTRUM_AXES.includes(p.spectrumAxis as SpectrumAxis)
+      ? { spectrumAxis: p.spectrumAxis as SpectrumAxis }
+      : {}),
+    ...(SPECTRUM_SAMPLING.includes(p.spectrumSampling as SpectrumSampling)
+      ? { spectrumSampling: p.spectrumSampling as SpectrumSampling }
+      : {}),
     ...span,
   };
 }

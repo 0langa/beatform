@@ -25,7 +25,7 @@ Free and open source. Built to become a professional-grade tool for producers an
 ## Features
 
 - Local file playback (mp3/flac/wav/ogg/m4a) via Web Audio — drag & drop or file picker; gapless loop toggle
-- Log-spaced spectrum analysis, asymmetric smoothing, peak hold, band energies, spectral-flux beat detection, slow energy envelope, phase-locked waveform
+- Configurable log/linear spectrum analysis with 85/171/341 ms-class drawn-spectrum resolution, optional measured FFT bins with no interpolation, asymmetric smoothing, peak hold, band energies, spectral-flux beat detection, slow energy envelope, phase-locked waveform. Longer display FFTs never retune onset detectors
 - **16 visual modes** (WebGPU shader presets): Spectrum Bars, Radial Burst,
   Oscilloscope, Particles, Tunnel, Kaleido Nebula, Metaballs, LED Matrix,
   Voice Orb (narration mode), Echo Trails (feedback), Particle Flow (120k GPU

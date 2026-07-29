@@ -13,14 +13,23 @@ const FFT = 4096;
  */
 function fakeEngine(signal: (t: number) => number, liveInput = false) {
   let now = 0;
+  let displayReads = 0;
   const fill = (buf: Float32Array) => {
     // Window ending at the current clock, like a real analyser tap.
     for (let i = 0; i < buf.length; i++) buf[i] = signal(now - (buf.length - 1 - i) / SR);
   };
   const analyser = { fftSize: FFT, getFloatTimeDomainData: fill };
+  const displayAnalyser = {
+    fftSize: FFT,
+    getFloatTimeDomainData(buf: Float32Array) {
+      displayReads++;
+      fill(buf);
+    },
+  };
   return {
     engine: {
       analyser,
+      displayAnalyser,
       analyserL: analyser,
       analyserR: analyser,
       ctx: { sampleRate: SR },
@@ -32,6 +41,7 @@ function fakeEngine(signal: (t: number) => number, liveInput = false) {
     setNow: (t: number) => {
       now = t;
     },
+    getDisplayReads: () => displayReads,
   };
 }
 
@@ -89,6 +99,51 @@ function runAtRefresh(hz: number, seconds: number) {
 const SLOW = 30_000;
 
 describe("RealtimeAnalyzer analysis cadence", () => {
+  it("does no second transform work on the legacy/default path", () => {
+    const { engine, setNow, getDisplayReads } = fakeEngine(dense);
+    const ana = new RealtimeAnalyzer(engine);
+    for (let n = 0; n < 60; n++) {
+      const t = n / 60;
+      setNow(t);
+      ana.update(t, t);
+    }
+    expect(getDisplayReads()).toBe(0);
+    expect(ana.features.bins).toHaveLength(96);
+  });
+
+  it("runs an opt-in long display FFT only on fixed analysis ticks", () => {
+    const { engine, setNow, getDisplayReads } = fakeEngine(dense);
+    const ana = new RealtimeAnalyzer(engine);
+    ana.setSync({
+      mode: "kick",
+      smooth: 0.5,
+      spectrumResolution: "precise",
+      spectrumAxis: "linear",
+      spectrumSampling: "measured",
+      freqMin: 30,
+      freqMax: 300,
+    });
+    for (let n = 0; n < 120; n++) {
+      const t = n / 120;
+      setNow(t);
+      ana.update(t, t);
+    }
+    expect(engine.analyser.fftSize).toBe(4096);
+    expect(engine.displayAnalyser.fftSize).toBe(16384);
+    expect(getDisplayReads()).toBe(60);
+    expect(ana.features.bins).toHaveLength(92);
+
+    ana.setSync({ mode: "kick", smooth: 0.5 });
+    for (let n = 120; n < 180; n++) {
+      const t = n / 120;
+      setNow(t);
+      ana.update(t, t);
+    }
+    expect(engine.displayAnalyser.fftSize).toBe(4096);
+    expect(getDisplayReads()).toBe(60);
+    expect(ana.features.bins).toHaveLength(96);
+  });
+
   /**
    * The live counterpart of the offline fixed-cadence guarantee. Before this,
    * the detectors stepped once per animation frame, so a 144 Hz display got

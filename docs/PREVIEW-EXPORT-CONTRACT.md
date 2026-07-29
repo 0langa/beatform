@@ -37,7 +37,11 @@ metadata may differ without changing decoded content.
 ### Audio analysis
 
 Both paths use Beatform's `RealFFT`, Hann window, bin mapping, and
-`FeaturePipeline`. Sample acquisition differs:
+`FeaturePipeline`. The responsive detector transform is separate from the
+optional longer drawn-spectrum transform: changing display resolution, axis,
+or interpolation cannot retune bands, sync, or onset decisions. Long display
+FFTs refresh on the same fixed 60 Hz analysis ticks and are held between them.
+Sample acquisition differs:
 
 - Export uses a fixed 16.67 ms analysis lookahead.
 - Preview reads a live Web Audio tap ahead of the speakers by device-dependent,

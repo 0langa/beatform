@@ -689,10 +689,21 @@ describe("per-preset sync survives a save/load round trip", () => {
    */
   it("keeps a custom analysed frequency range", () => {
     const out = validSyncByPreset({
-      "spectrum-bars": { mode: "bass", smooth: 0.5, freqMin: 60, freqMax: 12000 },
+      "spectrum-bars": {
+        mode: "bass",
+        smooth: 0.5,
+        freqMin: 60,
+        freqMax: 12000,
+        spectrumResolution: "precise",
+        spectrumAxis: "linear",
+        spectrumSampling: "measured",
+      },
     });
     expect(out["spectrum-bars"].freqMin).toBe(60);
     expect(out["spectrum-bars"].freqMax).toBe(12000);
+    expect(out["spectrum-bars"].spectrumResolution).toBe("precise");
+    expect(out["spectrum-bars"].spectrumAxis).toBe("linear");
+    expect(out["spectrum-bars"].spectrumSampling).toBe("measured");
   });
 
   it("still rejects an entry with an unknown mode", () => {

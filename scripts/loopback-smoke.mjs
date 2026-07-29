@@ -5,6 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const built = process.argv.includes("--built");
+const exeArg = process.argv.find((arg) => arg.startsWith("--exe="));
 const fpsArg = process.argv.find((arg) => arg.startsWith("--fps="));
 const testFps = Number(fpsArg?.slice("--fps=".length) ?? 0);
 const port = 9900 + (process.pid % 80);
@@ -13,17 +14,22 @@ let log = "";
 let child;
 let ws;
 
-const command = built
-  ? {
-      file: path.join(root, "src-tauri", "target", "debug", "beatform.exe"),
-      args: [],
-    }
-  : process.platform === "win32"
+const command = exeArg
+  ? { file: path.resolve(exeArg.slice("--exe=".length)), args: [] }
+  : built
     ? {
-        file: process.env.ComSpec ?? "cmd.exe",
-        args: ["/d", "/s", "/c", "npm run tauri -- dev --no-watch"],
+        // Debug shell still serves Vite's DEV frontend, which exposes required
+        // diagnostic hooks. For optimized validation, build with
+        // VITE_E2E_HOOKS=1 into an isolated target and pass --exe=<path>.
+        file: path.join(root, "src-tauri", "target", "debug", "beatform.exe"),
+        args: [],
       }
-    : { file: "npm", args: ["run", "tauri", "--", "dev", "--no-watch"] };
+    : process.platform === "win32"
+      ? {
+          file: process.env.ComSpec ?? "cmd.exe",
+          args: ["/d", "/s", "/c", "npm run tauri -- dev --no-watch"],
+        }
+      : { file: "npm", args: ["run", "tauri", "--", "dev", "--no-watch"] };
 
 async function page() {
   const deadline = Date.now() + 240_000;
@@ -249,7 +255,13 @@ try {
     } catch (error) {
       ws?.close();
       ws = null;
-      if (attempt === 3 || !/context was destroyed|websocket/i.test(String(error))) throw error;
+      if (
+        attempt === 3 ||
+        !/context was destroyed|cannot find default execution context|websocket/i.test(
+          String(error),
+        )
+      )
+        throw error;
       await sleep(1000);
     }
   }

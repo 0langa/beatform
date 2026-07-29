@@ -107,6 +107,7 @@ describe("audio graph", () => {
     const { AudioEngine } = await import("./engine");
 
     const engine = new AudioEngine();
+    expect(engine.displayAnalyser).not.toBe(engine.analyser);
     // A 1-second silent buffer is enough — we assert graph SHAPE, not signal.
     const buffer = {
       duration: 1,

@@ -195,6 +195,8 @@ interface SessionSlice {
   /** Routes of the active preset — same precompute reasoning. */
   activeMods: ModRoute[];
   sync: SyncSettings;
+  /** Current output-device analysis rate; session-only, for honest UI math. */
+  analysisSampleRate: number;
   playback: PlaybackState;
   volume: number;
   muted: boolean;
@@ -951,6 +953,7 @@ export const useVizStore = create<VizState>((set, get) => {
     activeMods: initialMods[initialPresetId] ?? [],
     sync: initialSync[initialPresetId] ?? { ...DEFAULT_SYNC },
     playback: { playing: false, time: 0, duration: 0, trackName: null, loop: false },
+    analysisSampleRate: 48000,
     volume: loadStoredVolume(),
     muted: false,
     seeking: false,
@@ -1080,6 +1083,7 @@ export const useVizStore = create<VizState>((set, get) => {
         getSync: () => get().sync,
         isSeeking: () => get().seeking,
         onPlayback: (playback) => set({ playback }),
+        onAnalysisSampleRate: (analysisSampleRate) => set({ analysisSampleRate }),
         onRendererChanged: (kind, warning) => {
           const simplified = kind === "canvas2d";
           // A degraded renderer (Canvas2D fallback) is WORKING, not failed, so
