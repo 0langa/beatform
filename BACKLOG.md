@@ -116,6 +116,45 @@ Acceptance gate:
 - Any failure becomes a focused GitHub issue or a new ledger item with exact
   reproduction steps.
 
+### ALIGN-002 — Windows uninstall registry stuck at 2.39.0
+
+**Status:** READY  
+**Found:** 2026-07-30, while forensically checking how the 2.61→2.63 update
+was applied.
+
+Evidence:
+
+- `HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*` has exactly
+  one Beatform entry with `DisplayVersion = 2.39.0`; HKLM and WOW6432Node
+  have none.
+- Installed `Beatform.exe` reports product version `2.63.0`.
+- Consequence: Windows "Installed apps" / "Apps & Features" shows Beatform
+  as version 2.39.0 — roughly 24 releases stale. User-visible metadata
+  defect; uninstaller path itself untested.
+
+Open questions to answer before fixing:
+
+- Why did registry writes stop exactly after 2.39.0? Candidates: NSIS
+  installer config change around v2.40 (installMode, product GUID, or
+  per-user key naming), or the tauri-plugin-updater silent-install flags
+  skipping the registry section.
+- Whether a fresh manual installer run (vs in-app update) rewrites the key —
+  the next release naturally provides the experiment: check DisplayVersion
+  right after updating.
+
+Acceptance gate:
+
+- After the next release's update, `DisplayVersion` matches the installed
+  binary, and the uninstall entry still points at a working uninstaller.
+- Root cause named in this entry; regression check added to the release
+  ritual (query the key post-update).
+
+Side note recorded for ALIGN-001: NSIS extracts files with their packaged
+build timestamps (exe shows 2026-07-29 21:28, the release build time), so
+file times cannot distinguish in-app update from manual installer run.
+"Updater path remains functional" is only truly testable on the NEXT
+release; the smoke should not block on it.
+
 ### DOC-001 — Public metadata and planning truth
 
 **Status:** DONE 2026-07-30 (standing per-release check remains below)
