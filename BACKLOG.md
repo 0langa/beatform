@@ -47,7 +47,7 @@ Time-sensitive values below were checked on 2026-07-30:
 | Latest public release   | `v2.63.0`, published 2026-07-29                                                        |
 | Open GitHub issues      | 0                                                                                      |
 | Open pull requests      | 0 (PRs #9 and #10 merged 2026-07-30)                                                   |
-| Installed desktop app   | `2.61.0` at `C:\Users\Julius\AppData\Local\Beatform\Beatform.exe`                      |
+| Installed desktop app   | `2.63.0` at `C:\Users\Julius\AppData\Local\Beatform\Beatform.exe`                      |
 | Running desktop app     | None during audit                                                                      |
 | Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers found in `src`, `src-tauri`, or `scripts` |
 
@@ -63,19 +63,18 @@ Current product constraints remain:
 
 Work top to bottom unless fresh evidence changes priority.
 
-| Order | ID         | Status      | Work                                                                          |
-| ----- | ---------- | ----------- | ----------------------------------------------------------------------------- |
-| 1     | ALIGN-001  | READY       | Install/update to current release and smoke `v2.63.0` (owner presence needed) |
-| 2     | DOC-001    | READY       | Remaining: GitHub repo description (token lacks scope)                        |
-| 3     | FEAT-001   | RESEARCH    | Spike 1 DONE (feasible); next: real-corpus pass rate                          |
-| 4     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index                               |
-| 5     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior                                    |
-| 6     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback                       |
-| 7     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic                                     |
-| 8     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture                                   |
-| 9     | FEAT-009   | CONSIDERING | True second-display performance window                                        |
+| Order | ID         | Status      | Work                                                     |
+| ----- | ---------- | ----------- | -------------------------------------------------------- |
+| 1     | ALIGN-001  | READY       | Smoke installed `v2.63.0` (update done, binary verified) |
+| 2     | FEAT-001   | RESEARCH    | Spike 1 DONE (feasible); next: real-corpus pass rate     |
+| 3     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index          |
+| 4     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior               |
+| 5     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback  |
+| 6     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic                |
+| 7     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture              |
+| 8     | FEAT-009   | CONSIDERING | True second-display performance window                   |
 
-`DEP-001` and `DEP-002` completed 2026-07-30 — see Cleared work.
+`DEP-001`, `DEP-002` and `DOC-001` completed 2026-07-30 — see Cleared work and the DOC-001 entry.
 
 `VERIFY-002`, `VIS-001`, and `DSP-001` remain gated or decision-bound. They do
 not block work above.
@@ -84,18 +83,18 @@ not block work above.
 
 ### ALIGN-001 — Current installed-release acceptance
 
-**Status:** READY — **needs owner presence.** Updating the installed app runs
-the NSIS installer (elevation prompt) and the smoke needs the real desktop
-app driven interactively; a headless agent session cannot approve either.
-2026-07-30 check: installed binary still reports `2.61.0`.  
-**Why:** Source and public release are `v2.63.0`, but audited installed app is
-still `2.61.0`. Source tests and release artifacts do not replace installed-app
-evidence for the two intervening releases.
+**Status:** READY — smoke only. Owner updated the installed app on
+2026-07-30; installed binary verified reporting `2.63.0`. The interactive
+smoke below is the remaining work.  
+**Why:** Source and public release are `v2.63.0`. The install step is done;
+the v2.62 analyzer and v2.63 A-B loop deltas still lack installed-app smoke
+evidence.
 
 Scope:
 
-- Update/install from the public `v2.63.0` release.
-- Confirm executable product version is `2.63.0`.
+- ~~Update/install from the public `v2.63.0` release.~~ Done 2026-07-30
+  (owner-driven; record in `TESTING.md` whether it was in-app or installer).
+- ~~Confirm executable product version is `2.63.0`.~~ Verified 2026-07-30.
 - Confirm updater path remains functional; record whether the update was
   in-app or installer-driven.
 - Smoke launch, file open, preview playback, one short MP4 export, and shutdown.
@@ -119,7 +118,7 @@ Acceptance gate:
 
 ### DOC-001 — Public metadata and planning truth
 
-**Status:** READY (one owner step remains)
+**Status:** DONE 2026-07-30 (standing per-release check remains below)
 
 Completed 2026-07-30:
 
@@ -127,17 +126,13 @@ Completed 2026-07-30:
   (`5876eee`); README's 16-mode claim verified against the preset registry
   (15 named strip presets + Builder Studio in
   `src/render/presets/index.ts`).
+- GitHub repository description updated (10 → 16 modes, deterministic-export
+  positioning) with the owner's elevated token, owner-authorized;
+  verified live via `gh repo view`.
 
-Remaining:
+Standing:
 
-- **GitHub repository description still says 10 WebGPU visual modes.**
-  `gh repo edit --description` fails with HTTP 403 — the configured personal
-  access token lacks repo-metadata write scope. Owner: either update the
-  description by hand or grant the scope. Prepared text (mirrors README's own
-  claims): "Desktop music visualizer — 16 WebGPU visual modes with styles,
-  per-setting hints and ~300 tunable knobs, plus sample-exact deterministic
-  MP4/ProRes export. Tauri 2 + React + TypeScript."
-- Add installed-release evidence to `TESTING.md` after ALIGN-001.
+- Add installed-release evidence to `TESTING.md` after ALIGN-001 smoke.
 - Check root docs for version/capability drift after each release.
 
 Acceptance gate:
