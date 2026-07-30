@@ -1,6 +1,6 @@
 # Beatform Backlog and Alignment Ledger
 
-Last reconciled: **2026-07-30**
+Last reconciled: **2026-07-30** (second pass, post DEP/FEAT-001-spike session)
 
 This is Beatform's canonical current-work ledger. It records what is complete,
 what still needs evidence, what is ready to execute, and what remains only a
@@ -46,7 +46,7 @@ Time-sensitive values below were checked on 2026-07-30:
 | HEAD / tag              | `bfe171d` / `v2.63.0`                                                                  |
 | Latest public release   | `v2.63.0`, published 2026-07-29                                                        |
 | Open GitHub issues      | 0                                                                                      |
-| Open pull requests      | 2: Dependabot PRs #9 and #10                                                           |
+| Open pull requests      | 0 (PRs #9 and #10 merged 2026-07-30)                                                   |
 | Installed desktop app   | `2.61.0` at `C:\Users\Julius\AppData\Local\Beatform\Beatform.exe`                      |
 | Running desktop app     | None during audit                                                                      |
 | Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers found in `src`, `src-tauri`, or `scripts` |
@@ -65,17 +65,17 @@ Work top to bottom unless fresh evidence changes priority.
 
 | Order | ID         | Status      | Work                                                    |
 | ----- | ---------- | ----------- | ------------------------------------------------------- |
-| 1     | ALIGN-001  | READY       | Install/update to current release and smoke `v2.63.0`   |
-| 2     | DEP-001    | READY       | Resolve jsdom 30 Dependabot PR #9                       |
-| 3     | DEP-002    | READY       | Resolve Rust base64 0.23 Dependabot PR #10              |
-| 4     | DOC-001    | READY       | Repair public metadata and planning-document drift      |
-| 5     | FEAT-001   | RESEARCH    | Prove or reject Shadertoy/GLSL compatibility            |
-| 6     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index         |
-| 7     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior              |
-| 8     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
-| 9     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic               |
-| 10    | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture             |
-| 11    | FEAT-009   | CONSIDERING | True second-display performance window                  |
+| 1     | ALIGN-001  | READY       | Install/update to current release and smoke `v2.63.0` (owner presence needed) |
+| 2     | DOC-001    | READY       | Remaining: GitHub repo description (token lacks scope)  |
+| 3     | FEAT-001   | RESEARCH    | Spike 1 DONE (feasible); next: real-corpus pass rate    |
+| 4     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index         |
+| 5     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior              |
+| 6     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
+| 7     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic               |
+| 8     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture             |
+| 9     | FEAT-009   | CONSIDERING | True second-display performance window                  |
+
+`DEP-001` and `DEP-002` completed 2026-07-30 — see Cleared work.
 
 `VERIFY-002`, `VIS-001`, and `DSP-001` remain gated or decision-bound. They do
 not block work above.
@@ -84,7 +84,10 @@ not block work above.
 
 ### ALIGN-001 — Current installed-release acceptance
 
-**Status:** READY  
+**Status:** READY — **needs owner presence.** Updating the installed app runs
+the NSIS installer (elevation prompt) and the smoke needs the real desktop
+app driven interactively; a headless agent session cannot approve either.
+2026-07-30 check: installed binary still reports `2.61.0`.  
 **Why:** Source and public release are `v2.63.0`, but audited installed app is
 still `2.61.0`. Source tests and release artifacts do not replace installed-app
 evidence for the two intervening releases.
@@ -114,81 +117,27 @@ Acceptance gate:
 - Any failure becomes a focused GitHub issue or a new ledger item with exact
   reproduction steps.
 
-### DEP-001 — jsdom 30 dependency update
-
-**Status:** READY  
-**Source:** [Dependabot PR #9](https://github.com/0langa/beatform/pull/9)
-
-Audited state:
-
-- Updates `jsdom` from `29.1.1` to `30.0.1`.
-- Development dependency, semver-major.
-- PR is clean and mergeable.
-- CI, Rust, and audit checks are green.
-
-Action:
-
-1. Review upstream breaking changes against Beatform's test environment.
-2. Check lockfile diff for unrelated movement.
-3. Run full local gate.
-4. Merge if green; otherwise document exact incompatibility and close or pin.
-5. Pull merged `main` and re-run version agreement plus a focused UI test.
-
-Acceptance gate:
-
-- Full local and GitHub gates pass.
-- No hidden DOM-environment behavior change in UI tests.
-- PR is merged or explicitly closed with a durable reason.
-
-### DEP-002 — Rust base64 0.23 dependency update
-
-**Status:** READY  
-**Source:** [Dependabot PR #10](https://github.com/0langa/beatform/pull/10)
-
-Audited state:
-
-- Updates Rust `base64` from `0.22.1` to `0.23.0`.
-- Direct production dependency.
-- PR is clean and mergeable.
-- CI, Rust, and audit checks are green.
-
-Action:
-
-1. Review upstream API and behavior changes.
-2. Inspect every repository call site; confirm chosen engine and padding
-   behavior remain intentional.
-3. Run full local gate, including loopback/native tests.
-4. Merge if green; otherwise document exact incompatibility and close or pin.
-
-Acceptance gate:
-
-- Encoding/decoding behavior is unchanged where compatibility matters.
-- Rust and loopback gates pass locally and in GitHub Actions.
-- PR is merged or explicitly closed with a durable reason.
-
 ### DOC-001 — Public metadata and planning truth
 
-**Status:** READY
+**Status:** READY (one owner step remains)
 
-Known drift:
+Completed 2026-07-30:
 
-- GitHub repository description says **10** WebGPU visual modes; current
-  product and README expose **16**.
-- README roadmap compresses current work into “second display still to come”
-  and does not point to the full candidate/evidence queue.
-- Ignored `ROADMAP.md` still calls `v2.30` current and contains work that has
-  since shipped.
-- `TESTING.md` records a completed historical acceptance batch but has not yet
-  recorded installed `v2.63.0` acceptance.
+- `BACKLOG.md` committed and linked from README as the canonical queue
+  (`5876eee`); README's 16-mode claim verified against the preset registry
+  (15 named strip presets + Builder Studio in
+  `src/render/presets/index.ts`).
 
-Action:
+Remaining:
 
-- Update GitHub description to current capability count and concise current
-  positioning.
-- Keep README's short roadmap, but link this ledger as canonical detail.
-- Treat ignored `ROADMAP.md` as historical; do not copy its stale queue into
-  new work.
-- Add current installed-release evidence to `TESTING.md` after ALIGN-001.
+- **GitHub repository description still says 10 WebGPU visual modes.**
+  `gh repo edit --description` fails with HTTP 403 — the configured personal
+  access token lacks repo-metadata write scope. Owner: either update the
+  description by hand or grant the scope. Prepared text (mirrors README's own
+  claims): "Desktop music visualizer — 16 WebGPU visual modes with styles,
+  per-setting hints and ~300 tunable knobs, plus sample-exact deterministic
+  MP4/ProRes export. Tauri 2 + React + TypeScript."
+- Add installed-release evidence to `TESTING.md` after ALIGN-001.
 - Check root docs for version/capability drift after each release.
 
 Acceptance gate:
@@ -201,8 +150,39 @@ Acceptance gate:
 
 ### FEAT-001 — Shadertoy/GLSL import compatibility
 
-**Status:** RESEARCH  
+**Status:** RESEARCH — spike 1 complete 2026-07-30, verdict: **feasible as a
+bounded compatibility format**. Remaining before implementation approval:
+real-corpus pass rate, license/attribution flow, resource limits, import UI.  
 **Decision after spike:** implement a bounded compatibility format, or reject.
+
+**Spike 1 results (2026-07-30).** Full evidence, corpus, harness and emitted
+WGSL archived at
+`F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\2026-07-30_shadertoy-spike\`
+(KEEP-marked), `REPORT.md` there is the decision record. Headlines:
+
+- 22-shader self-authored idiom corpus through naga 30 (glsl-in → wgsl-out):
+  **21/21 expected-pass shaders pass** (~1 ms each); the cubemap shader
+  rejects as required; multipass feedback parses, so multipass must be
+  rejected from import metadata, not source.
+- All 21 emitted WGSL modules **compile clean on a real WebGPU device**, and
+  8 representative ones **render correctly** with a full synthetic bind group
+  (uniforms + 512×2 audio texture); numeric spot check exact
+  (0.5+0.5·sin(t) → measured 128/235/204).
+- Working wrapper contract found (GLSL 460, UBO for all iUniforms, SEPARATE
+  texture/sampler bindings, `iChannelN` as object-like macros expanding to
+  `sampler2D(tex, samp)`, `texture2D` alias placed after declarations,
+  Y-flip footer). naga has NO combined-sampler support; loose uniforms are
+  rejected; naga 30.0.0 needs the `spv-in` cargo feature to build at all.
+- **Known cap on real-world pass rate:** `sampler2D` as a function parameter
+  fails to parse. Real Shadertoy helpers use this constantly — production
+  needs an import-layer rewrite pass (specialize/inline channel args) or an
+  upstream naga fix. `#if/#else` works.
+- Architecture decision: **dedicated compatibility render path** (standalone
+  pipeline, `@group(0)` bindings 0–5, Beatform-fed deterministic uniforms,
+  audio as Shadertoy-convention 512×2 texture), NOT an AST merge into the
+  snippet-prelude ABI. Emitted modules are self-contained; merging would be
+  fragile surgery with no user benefit. Determinism holds by construction
+  (all uniforms from track clock).
 
 Why this is not a parser toggle:
 
@@ -215,26 +195,24 @@ Why this is not a parser toggle:
   snippet ABI.
 - Shader licensing and attribution must remain valid.
 
-Required spike:
+Spike plan status: steps 1–5 and 7 done 2026-07-30 (see results above);
+step 6 (threat model) is partially covered by the existing custom-preset
+safety model (compile check, device-loss recovery, WebGPU sandbox) and
+completes with the resource-limit design below.
 
-1. Build a small, representative, redistribution-safe shader corpus:
-   simple color, audio-reactive, feedback-free texture use, multiple channels,
-   common Shadertoy idioms, and known unsupported constructs.
-2. Define candidate input contract:
-   accepted GLSL version, `mainImage`, supported uniforms/channels, texture
-   rules, size limits, loop/complexity limits, and license metadata.
-3. Prototype preprocess → parse/transpile → validate.
-4. Compare two architectures:
-   - AST/module integration with existing shared renderer ABI.
-   - Dedicated compatibility render path with explicit uniforms and textures.
-5. Measure:
-   - Corpus parse/compile/pass rate.
-   - Visual correctness, not compile success alone.
-   - Startup and per-frame cost.
-   - Failure diagnostics.
-   - Preview/export determinism.
-6. Threat-model imported shader workload and persistence.
-7. Write a decision record before production implementation.
+Required spike 2 (real corpus):
+
+1. Fetch 30–50 real CC-licensed Shadertoy shaders through the API with
+   license filtering, at analysis time only — never redistributed.
+2. Measure honest pass rate; classify failures (expect sampler-param to
+   dominate). Decide: import-layer rewrite pass vs upstream naga PR.
+3. Define resource limits: loop/complexity caps, compile timeout, source
+   size cap (existing 50 KB custom cap is the reference point).
+4. Design license/attribution UX: paste-to-import is the clean path;
+   Shadertoy's default license is CC BY-NC-SA — attribution metadata must
+   survive `.avshader` export.
+5. Map naga diagnostics back to user source lines (subtract wrapper header,
+   same pattern as `compilePresetCheck`).
 
 Acceptance gate for approving implementation:
 
@@ -560,6 +538,8 @@ These are valid ideas but not active work:
 
 | Area                               | Verified shipped state                                                           |
 | ---------------------------------- | -------------------------------------------------------------------------------- |
+| DEP-001 jsdom 30                   | Merged 2026-07-30 (#9, `d24f714`). Node floor satisfied (local 24.18, CI 24); full web gate green on merge-with-main: typecheck, lint, format, 984/984 tests, build |
+| DEP-002 base64 0.23                | Merged 2026-07-30 (#10). Encode-only call site (`loopback.rs`, `STANDARD` engine — semantics unchanged in 0.23); cargo fmt/clippy/test green; built loopback gates green at 60 fps (depth 80.7 ms, visible 100%) and 30 fps (depth 90 ms, visible 100%, 0 underruns) |
 | Video background blur              | Preview/export WYSIWYG path shipped                                              |
 | Lyric animation                    | Plain, slide, pop, wipe/karaoke behavior shipped                                 |
 | Web MIDI controls                  | Mapping/state feature shipped; only transport evidence gap remains               |
