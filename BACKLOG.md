@@ -63,17 +63,17 @@ Current product constraints remain:
 
 Work top to bottom unless fresh evidence changes priority.
 
-| Order | ID         | Status      | Work                                                    |
-| ----- | ---------- | ----------- | ------------------------------------------------------- |
+| Order | ID         | Status      | Work                                                                          |
+| ----- | ---------- | ----------- | ----------------------------------------------------------------------------- |
 | 1     | ALIGN-001  | READY       | Install/update to current release and smoke `v2.63.0` (owner presence needed) |
-| 2     | DOC-001    | READY       | Remaining: GitHub repo description (token lacks scope)  |
-| 3     | FEAT-001   | RESEARCH    | Spike 1 DONE (feasible); next: real-corpus pass rate    |
-| 4     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index         |
-| 5     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior              |
-| 6     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
-| 7     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic               |
-| 8     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture             |
-| 9     | FEAT-009   | CONSIDERING | True second-display performance window                  |
+| 2     | DOC-001    | READY       | Remaining: GitHub repo description (token lacks scope)                        |
+| 3     | FEAT-001   | RESEARCH    | Spike 1 DONE (feasible); next: real-corpus pass rate                          |
+| 4     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index                               |
+| 5     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior                                    |
+| 6     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback                       |
+| 7     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic                                     |
+| 8     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture                                   |
+| 9     | FEAT-009   | CONSIDERING | True second-display performance window                                        |
 
 `DEP-001` and `DEP-002` completed 2026-07-30 — see Cleared work.
 
@@ -536,24 +536,24 @@ These are valid ideas but not active work:
 
 ## Cleared work — do not reopen without evidence
 
-| Area                               | Verified shipped state                                                           |
-| ---------------------------------- | -------------------------------------------------------------------------------- |
-| DEP-001 jsdom 30                   | Merged 2026-07-30 (#9, `d24f714`). Node floor satisfied (local 24.18, CI 24); full web gate green on merge-with-main: typecheck, lint, format, 984/984 tests, build |
+| Area                               | Verified shipped state                                                                                                                                                                                                                                               |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DEP-001 jsdom 30                   | Merged 2026-07-30 (#9, `d24f714`). Node floor satisfied (local 24.18, CI 24); full web gate green on merge-with-main: typecheck, lint, format, 984/984 tests, build                                                                                                  |
 | DEP-002 base64 0.23                | Merged 2026-07-30 (#10). Encode-only call site (`loopback.rs`, `STANDARD` engine — semantics unchanged in 0.23); cargo fmt/clippy/test green; built loopback gates green at 60 fps (depth 80.7 ms, visible 100%) and 30 fps (depth 90 ms, visible 100%, 0 underruns) |
-| Video background blur              | Preview/export WYSIWYG path shipped                                              |
-| Lyric animation                    | Plain, slide, pop, wipe/karaoke behavior shipped                                 |
-| Web MIDI controls                  | Mapping/state feature shipped; only transport evidence gap remains               |
-| Stage performance                  | Stage mode, blackout, HUD, and beat-quantized switching shipped                  |
-| A-B looping                        | Shipped in `v2.63.0`                                                             |
-| Audio fixed-clock contract         | Sample-rate handling, deterministic reset/seek, and fixed-clock analysis shipped |
-| Loopback capture                   | Native loopback path and deterministic smoke gate shipped                        |
-| Analyzer presentation              | Analyzer modes, color modes, and opt-in display-spectrum path shipped            |
-| FEAT-002                           | Shipped in `v2.63.0`                                                             |
-| FEAT-006                           | Shipped in `v2.62.0`                                                             |
-| FEAT-007 / FEAT-008                | Shipped in `v2.61.0` / `v2.62.0`; old bass-bin interpolation note is superseded  |
-| Audio DSP plan phases              | v2.58–v2.60 work complete; only limitations above remain                         |
-| Physical non-US keyboard           | Owner-reported physical pass                                                     |
-| Original hardware acceptance batch | Green in `TESTING.md`; current-version delta still belongs to ALIGN-001          |
+| Video background blur              | Preview/export WYSIWYG path shipped                                                                                                                                                                                                                                  |
+| Lyric animation                    | Plain, slide, pop, wipe/karaoke behavior shipped                                                                                                                                                                                                                     |
+| Web MIDI controls                  | Mapping/state feature shipped; only transport evidence gap remains                                                                                                                                                                                                   |
+| Stage performance                  | Stage mode, blackout, HUD, and beat-quantized switching shipped                                                                                                                                                                                                      |
+| A-B looping                        | Shipped in `v2.63.0`                                                                                                                                                                                                                                                 |
+| Audio fixed-clock contract         | Sample-rate handling, deterministic reset/seek, and fixed-clock analysis shipped                                                                                                                                                                                     |
+| Loopback capture                   | Native loopback path and deterministic smoke gate shipped                                                                                                                                                                                                            |
+| Analyzer presentation              | Analyzer modes, color modes, and opt-in display-spectrum path shipped                                                                                                                                                                                                |
+| FEAT-002                           | Shipped in `v2.63.0`                                                                                                                                                                                                                                                 |
+| FEAT-006                           | Shipped in `v2.62.0`                                                                                                                                                                                                                                                 |
+| FEAT-007 / FEAT-008                | Shipped in `v2.61.0` / `v2.62.0`; old bass-bin interpolation note is superseded                                                                                                                                                                                      |
+| Audio DSP plan phases              | v2.58–v2.60 work complete; only limitations above remain                                                                                                                                                                                                             |
+| Physical non-US keyboard           | Owner-reported physical pass                                                                                                                                                                                                                                         |
+| Original hardware acceptance batch | Green in `TESTING.md`; current-version delta still belongs to ALIGN-001                                                                                                                                                                                              |
 
 ## Standard gates
 
