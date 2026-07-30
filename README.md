@@ -196,6 +196,10 @@ storytelling → motion arc is **complete and shipped**; live-performance
 Stage mode have landed, with a true second-display output window still to come.
 Everything stays free and open source, GitHub-only, with no monetization.
 
+Current work, evidence gaps, feature candidates and explicit non-goals are kept
+in [`BACKLOG.md`](BACKLOG.md). That ledger is the canonical detailed queue;
+older local roadmap and plan files are historical records.
+
 The full on-hardware acceptance pass is **complete** — every item in
 `TESTING.md` is green, including real-hardware drag-and-drop, a physical
 non-US keyboard, a two-hour export soak and ProRes 4444 alpha round-trip.
