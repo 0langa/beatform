@@ -1,6 +1,6 @@
 # Beatform Backlog and Alignment Ledger
 
-Last reconciled: **2026-07-30** (second pass, post DEP/FEAT-001-spike session)
+Last reconciled: **2026-08-02** (post v2.64.0 Shadertoy-import release)
 
 This is Beatform's canonical current-work ledger. It records what is complete,
 what still needs evidence, what is ready to execute, and what remains only a
@@ -36,20 +36,20 @@ Listing a feature here does **not** approve implementation. Respect its status:
 
 ## Reconciled baseline
 
-Time-sensitive values below were checked on 2026-07-30:
+Time-sensitive values below were checked on 2026-08-02:
 
-| Fact                    | Verified state                                                                         |
-| ----------------------- | -------------------------------------------------------------------------------------- |
-| Repository              | `0langa/beatform`                                                                      |
-| Branch                  | Clean `main`, aligned with `origin/main`                                               |
-| Source version          | `2.63.0` in all five version-bearing files                                             |
-| HEAD / tag              | `bfe171d` / `v2.63.0`                                                                  |
-| Latest public release   | `v2.63.0`, published 2026-07-29                                                        |
-| Open GitHub issues      | 0                                                                                      |
-| Open pull requests      | 0 (PRs #9 and #10 merged 2026-07-30)                                                   |
-| Installed desktop app   | `2.63.0` at `C:\Users\Julius\AppData\Local\Beatform\Beatform.exe`                      |
-| Running desktop app     | None during audit                                                                      |
-| Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers found in `src`, `src-tauri`, or `scripts` |
+| Fact                    | Verified state                                                                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository              | `0langa/beatform`                                                                                                                                     |
+| Branch                  | Clean `main`, aligned with `origin/main`                                                                                                              |
+| Source version          | `2.64.0` in all five version-bearing files                                                                                                            |
+| HEAD / tag              | `bd3f210` / `v2.64.0`                                                                                                                                 |
+| Latest public release   | `v2.64.0`, published 2026-08-02; setup-exe SHA-256 matches `SHA256SUMS.txt`, updater manifest signature present, live latest endpoint serves `2.64.0` |
+| Open GitHub issues      | 0                                                                                                                                                     |
+| Open pull requests      | 0                                                                                                                                                     |
+| Installed desktop app   | `2.63.0` at `C:\Users\Julius\AppData\Local\Beatform\Beatform.exe` (v2.64.0 update pending — it doubles as the ALIGN-002 experiment)                   |
+| Running desktop app     | None during audit                                                                                                                                     |
+| Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers found in `src`, `src-tauri`, or `scripts`                                                                |
 
 Current product constraints remain:
 
@@ -65,7 +65,7 @@ Work top to bottom unless fresh evidence changes priority.
 
 | Order | ID         | Status      | Work                                                    |
 | ----- | ---------- | ----------- | ------------------------------------------------------- |
-| 1     | FEAT-001   | READY       | Both spikes done, verdict IMPLEMENT — build the import  |
+| 1     | ALIGN-002  | READY       | v2.64.0 update IS the experiment: updater + registry    |
 | 2     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index         |
 | 3     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior              |
 | 4     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
@@ -74,8 +74,11 @@ Work top to bottom unless fresh evidence changes priority.
 | 7     | FEAT-009   | CONSIDERING | True second-display performance window                  |
 
 `DEP-001`, `DEP-002` and `DOC-001` completed 2026-07-30; `ALIGN-001` completed
-2026-08-01 — see Cleared work. `ALIGN-002` waits on the next release's update
-(its experiment needs one).
+2026-08-01; `FEAT-001` **shipped in v2.64.0** (2026-08-01) — see Cleared work
+and the FEAT-001 entry. **Owner: when updating the installed app to v2.64.0,
+that update IS the ALIGN-002 experiment** — note whether the in-app updater
+worked, then check the `HKCU` Uninstall `DisplayVersion` right after (stuck at
+2.39.0 since ~v2.40).
 
 `VERIFY-002`, `VIS-001`, and `DSP-001` remain gated or decision-bound. They do
 not block work above.
@@ -168,10 +171,24 @@ Acceptance gate:
 
 ### FEAT-001 — Shadertoy/GLSL import compatibility
 
-**Status:** READY — spike 1 (2026-07-30) and spike 2 (2026-08-01) complete,
-verdict: **IMPLEMENT as a bounded compatibility format.** Owner authorized
-working open features 2026-08-01. No further product decision required; the
-implementation outline below is the work.
+**Status:** DONE — **shipped in v2.64.0, 2026-08-01.** Paste-the-Image-tab
+import dialog; Rust/naga transpiler with the spike-proven contract and
+GLSL-line diagnostics; dedicated compat render pipeline through fs_composite
+(overlays/backgrounds/post apply); iChannel0 audio texture in Shadertoy's
+music layout; every uniform track-clock-derived so preview === export;
+attribution part of the def; conditional `.avshader` v2 / `.avproj` v12
+schemas. Evidence: 10 Rust tests, 1003/1003 web tests, GPU matrix 136 cases
+zero raw hash changes, built loopback green, and the permanent e2e gate
+`npm run test:shadertoy:built` (paste→transpile→render→export×2,
+bit-identical hashes). Full history in the notes doc's shipped section.
+
+**Deliberately out of scope for v1 (candidate follow-ups, not defects):**
+multipass buffers, cubemap/video/keyboard channels, static textures on
+iChannel1–3, and sampler-typed function parameters — lifting that last
+translator gap (import-layer function specialization or an upstream naga
+contribution) raises real-corpus pass rate from 85% toward ~92%.
+
+Spike record below is kept for the contract details and their evidence.
 
 **Spike 2 results (2026-08-01).** 40 real single-pass shaders (Reinder
 Nijhoff's self-published GitHub backup — deliberately the HARD end: advanced
@@ -581,26 +598,27 @@ These are valid ideas but not active work:
 
 ## Cleared work — do not reopen without evidence
 
-| Area                               | Verified shipped state                                                                                                                                                                                                                                                                                                           |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DEP-001 jsdom 30                   | Merged 2026-07-30 (#9, `d24f714`). Node floor satisfied (local 24.18, CI 24); full web gate green on merge-with-main: typecheck, lint, format, 984/984 tests, build                                                                                                                                                              |
-| DEP-002 base64 0.23                | Merged 2026-07-30 (#10). Encode-only call site (`loopback.rs`, `STANDARD` engine — semantics unchanged in 0.23); cargo fmt/clippy/test green; built loopback gates green at 60 fps (depth 80.7 ms, visible 100%) and 30 fps (depth 90 ms, visible 100%, 0 underruns)                                                             |
-| Video background blur              | Preview/export WYSIWYG path shipped                                                                                                                                                                                                                                                                                              |
-| Lyric animation                    | Plain, slide, pop, wipe/karaoke behavior shipped                                                                                                                                                                                                                                                                                 |
-| Web MIDI controls                  | Mapping/state feature shipped; only transport evidence gap remains                                                                                                                                                                                                                                                               |
-| Stage performance                  | Stage mode, blackout, HUD, and beat-quantized switching shipped                                                                                                                                                                                                                                                                  |
-| A-B looping                        | Shipped in `v2.63.0`                                                                                                                                                                                                                                                                                                             |
-| Audio fixed-clock contract         | Sample-rate handling, deterministic reset/seek, and fixed-clock analysis shipped                                                                                                                                                                                                                                                 |
-| Loopback capture                   | Native loopback path and deterministic smoke gate shipped                                                                                                                                                                                                                                                                        |
-| Analyzer presentation              | Analyzer modes, color modes, and opt-in display-spectrum path shipped                                                                                                                                                                                                                                                            |
-| FEAT-002                           | Shipped in `v2.63.0`                                                                                                                                                                                                                                                                                                             |
-| FEAT-006                           | Shipped in `v2.62.0`                                                                                                                                                                                                                                                                                                             |
-| FEAT-007 / FEAT-008                | Shipped in `v2.61.0` / `v2.62.0`; old bass-bin interpolation note is superseded                                                                                                                                                                                                                                                  |
-| Audio DSP plan phases              | v2.58–v2.60 work complete; only limitations above remain                                                                                                                                                                                                                                                                         |
-| Physical non-US keyboard           | Owner-reported physical pass                                                                                                                                                                                                                                                                                                     |
-| ALIGN-001 v2.63.0 acceptance       | DONE 2026-08-01: installed-binary version + nine-check UI smoke green, export artifact hash-verified — recorded in `TESTING.md`                                                                                                                                                                                                  |
-| Original hardware acceptance batch | Green in `TESTING.md`; v2.63.0 delta closed by ALIGN-001 above                                                                                                                                                                                                                                                                   |
-| CI ffmpeg sidecar pin              | Re-pinned 2026-08-01 after upstream pruned the mid-month autobuild (CI 404 on `rust` job). Now n8.1.2-34 from BtbN's July month-end tag; only month-end tags are retained permanently — rule documented in `scripts/fetch-ffmpeg.mjs`. New hash pinned, fetch verified end-to-end locally, Rust suite green with the new sidecar |
+| Area                               | Verified shipped state                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DEP-001 jsdom 30                   | Merged 2026-07-30 (#9, `d24f714`). Node floor satisfied (local 24.18, CI 24); full web gate green on merge-with-main: typecheck, lint, format, 984/984 tests, build                                                                                                                                                                                                                                                                                      |
+| DEP-002 base64 0.23                | Merged 2026-07-30 (#10). Encode-only call site (`loopback.rs`, `STANDARD` engine — semantics unchanged in 0.23); cargo fmt/clippy/test green; built loopback gates green at 60 fps (depth 80.7 ms, visible 100%) and 30 fps (depth 90 ms, visible 100%, 0 underruns)                                                                                                                                                                                     |
+| Video background blur              | Preview/export WYSIWYG path shipped                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Lyric animation                    | Plain, slide, pop, wipe/karaoke behavior shipped                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Web MIDI controls                  | Mapping/state feature shipped; only transport evidence gap remains                                                                                                                                                                                                                                                                                                                                                                                       |
+| Stage performance                  | Stage mode, blackout, HUD, and beat-quantized switching shipped                                                                                                                                                                                                                                                                                                                                                                                          |
+| A-B looping                        | Shipped in `v2.63.0`                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Audio fixed-clock contract         | Sample-rate handling, deterministic reset/seek, and fixed-clock analysis shipped                                                                                                                                                                                                                                                                                                                                                                         |
+| Loopback capture                   | Native loopback path and deterministic smoke gate shipped                                                                                                                                                                                                                                                                                                                                                                                                |
+| Analyzer presentation              | Analyzer modes, color modes, and opt-in display-spectrum path shipped                                                                                                                                                                                                                                                                                                                                                                                    |
+| FEAT-002                           | Shipped in `v2.63.0`                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| FEAT-006                           | Shipped in `v2.62.0`                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| FEAT-007 / FEAT-008                | Shipped in `v2.61.0` / `v2.62.0`; old bass-bin interpolation note is superseded                                                                                                                                                                                                                                                                                                                                                                          |
+| Audio DSP plan phases              | v2.58–v2.60 work complete; only limitations above remain                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Physical non-US keyboard           | Owner-reported physical pass                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| FEAT-001 Shadertoy import          | **Shipped v2.64.0, 2026-08-01.** Full import feature: Rust/naga transpiler with GLSL-line diagnostics, dedicated compat pipeline (overlays/bg/post apply), Shadertoy-layout audio texture, track-clock uniforms (preview === export), attribution, conditional v2/v12 schemas. Gates: 10 Rust tests, 1003/1003 web, GPU matrix 136 cases zero raw hash changes, loopback green, new e2e gate `test:shadertoy:built` bit-identical across two export runs |
+| ALIGN-001 v2.63.0 acceptance       | DONE 2026-08-01: installed-binary version + nine-check UI smoke green, export artifact hash-verified — recorded in `TESTING.md`                                                                                                                                                                                                                                                                                                                          |
+| Original hardware acceptance batch | Green in `TESTING.md`; v2.63.0 delta closed by ALIGN-001 above                                                                                                                                                                                                                                                                                                                                                                                           |
+| CI ffmpeg sidecar pin              | Re-pinned 2026-08-01 after upstream pruned the mid-month autobuild (CI 404 on `rust` job). Now n8.1.2-34 from BtbN's July month-end tag; only month-end tags are retained permanently — rule documented in `scripts/fetch-ffmpeg.mjs`. New hash pinned, fetch verified end-to-end locally, Rust suite green with the new sidecar                                                                                                                         |
 
 ## Standard gates
 
