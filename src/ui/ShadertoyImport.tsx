@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import type { PresetDef } from "../render/types";
+import { askConfirm } from "../state/platform";
 import { IconClose } from "./Icons";
 import { useFocusTrap } from "./useFocusTrap";
 
@@ -46,9 +47,15 @@ export const ShadertoyImport = memo(function ShadertoyImport(props: ShadertoyImp
   const [dirty, setDirty] = useState(false);
   const dialogRef = useFocusTrap(true);
 
+  // askConfirm, not window.confirm: the Tauri dialog plugin patches
+  // window.confirm into `plugin:dialog|confirm`, which the capability file
+  // deliberately does not allow (only `ask` is granted). Raw confirm threw
+  // "not allowed by ACL" in the installed v2.64.0 build.
   const requestClose = () => {
-    if (dirty && !window.confirm("Discard this import?")) return;
-    props.onClose();
+    void (async () => {
+      if (dirty && !(await askConfirm("Discard this import?", "Import Shadertoy shader"))) return;
+      props.onClose();
+    })();
   };
 
   const apply = async () => {

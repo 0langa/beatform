@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import type { ParamSpec, PresetDef } from "../render/types";
 import { NEW_SHADER_TEMPLATE, newCustomPresetId } from "../render/presets/custom";
+import { askConfirm } from "../state/platform";
 import { IconClose } from "./Icons";
 import { useFocusTrap } from "./useFocusTrap";
 
@@ -130,9 +131,17 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
     setDirty(false);
   };
 
+  // askConfirm, not window.confirm — same ACL trap as ShadertoyImport: the
+  // dialog plugin routes window.confirm to `plugin:dialog|confirm`, which the
+  // capability file does not grant. This dirty-close confirm had been broken
+  // in every installed build since it was added (L12); the Shadertoy smoke
+  // finally exercised the path.
   const requestClose = () => {
-    if (dirty && !window.confirm("Discard unsaved changes to this shader?")) return;
-    props.onClose();
+    void (async () => {
+      if (dirty && !(await askConfirm("Discard unsaved changes to this shader?", "Shader editor")))
+        return;
+      props.onClose();
+    })();
   };
 
   const apply = async () => {

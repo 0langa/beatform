@@ -261,6 +261,9 @@ export async function scratchDir(): Promise<string | null> {
 /** Yes/no prompt. Native on desktop; `window.confirm` in the browser build
  * (the same fallback ShaderEditor's discard prompt uses). */
 export async function askConfirm(message: string, title: string): Promise<boolean> {
+  // The one sanctioned raw-confirm call site: outside Tauri there is no
+  // dialog plugin (and no ACL), so the native browser prompt is correct.
+  // eslint-disable-next-line no-restricted-properties
   if (!isTauri()) return window.confirm(message);
   const { ask } = await import("@tauri-apps/plugin-dialog");
   return ask(message, { title, kind: "warning" });
