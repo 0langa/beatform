@@ -1,5 +1,47 @@
 # Beatform — Manual Testing Batch (agent-executable)
 
+## ⚠️ v2.64.0 updater + Shadertoy import smoke — 2026-08-02
+
+Executed against repository HEAD `ba84330` using Computer Use. Installed app
+started at `2.63.0` and was updated only through Beatform's in-app updater.
+Feature smoke used `Demo: Groove (120 BPM house)` (0:16).
+
+| Check                                | Result      | Evidence                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Startup update prompt + notes        | ✅ PASS     | Launching installed v2.63.0 immediately showed `v2.63.0 → v2.64.0`. Notes rendered under `WHAT'S NEW IN V2.64.0` / `ADDED` and included the Shadertoy import changelog, audio-texture/iChannel0 support, metadata/license, original-GLSL re-edit, error reporting, and preview/export parity.                                                                                               |
+| In-app install + relaunch            | ✅ PASS     | `Install now` handed off to the updater, closed the original Beatform window, completed, and relaunched Beatform automatically within about 4 seconds. No UAC prompt, elevation dialog, or other consent UI appeared. No manual download was used.                                                                                                                                          |
+| Installed executable version         | ✅ PASS     | `(Get-Item 'C:\Users\Julius\AppData\Local\Beatform\Beatform.exe').VersionInfo.ProductVersion` returned `2.64.0` after relaunch and again after final cleanup.                                                                                                                                                                                                                               |
+| ALIGN-002 registry observation       | ⚠️ OBSERVED | Uninstall registry entry returned `DisplayName = Beatform`, `DisplayVersion = 2.63.0` verbatim. It advanced from the historically stuck `2.39.0`, but remained one release behind the `2.64.0` executable.                                                                                                                                                                                  |
+| Track load + preview                 | ✅ PASS     | Loaded `Demo: Groove (120 BPM house)`; duration resolved to 0:16 and playback drove the selected custom visual.                                                                                                                                                                                                                                                                             |
+| Shadertoy translate + add            | ✅ PASS     | Named `Verify Import`, author `e2e`, left default `CC BY-NC-SA 3.0`, and translated the supplied GLSL. Dialog closed; status reported `Custom visual "Verify Import" saved`; chip appeared, was selected, and canvas rendered it.                                                                                                                                                           |
+| Music/time reaction                  | ✅ PASS     | During playback the FFT bar silhouette changed substantially between observations near 0:00 and 0:11, while the time-driven color shifted/pulsed across green/yellow tones.                                                                                                                                                                                                                 |
+| Unsupported function-parameter error | ✅ PASS     | Invalid GLSL produced: `line 1: Passing a channel as a function parameter (sampler2D argument) is not supported yet — use iChannel0..3 directly inside the function`. No broken visual was added.                                                                                                                                                                                           |
+| Close invalid-import dialog          | ❌ FAIL     | Clicking Close after the expected translator error closed the dialog, then Beatform showed `Unexpected error: Command plugin:dialog                                                                                                                                                                                                                                                         | confirm not allowed by ACL`. Exact failure screenshot listed below. No fix attempted. |
+| Re-edit imported visual              | ✅ PASS     | Clicking `Verify Import` reopened `Edit imported shader` with name `Verify Import`, author `e2e`, license `CC BY-NC-SA 3.0`, and the original supplied GLSL—not generated WGSL. Closing this re-edit dialog did not reproduce the ACL toast.                                                                                                                                                |
+| Short MP4 export + playback          | ✅ PASS     | `Verify Import` Canvas-loop MP4 completed: 3.01 s, 1080×1920, 30 fps, H.264 High/yuv420p + AAC-LC 48 kHz stereo, 90 frames, 2,362,534 bytes. Windows Media Player opened and rendered the same green-gradient/yellow FFT visual; play completed the 3-second clip. Bundled ffmpeg full-decode to null exited 0. SHA-256 `05EF8258B52275F483D6FD8DC13C0CB26E4881847138D23DD49EE54D9073912B`. |
+| Persistence                          | ✅ PASS     | Quit Beatform normally, confirmed process count 0, and relaunched. `Verify Import` remained selected on the strip; loading the Groove demo rendered and animated it again.                                                                                                                                                                                                                  |
+| Cleanup + final shutdown             | ✅ PASS     | Deleted `Verify Import` through its shader-editor × after action-time confirmation; chip disappeared. Closed Beatform normally; final `Get-Process -Name Beatform` check returned process count 0.                                                                                                                                                                                          |
+
+Export artifact:
+`E:\agent-devstorage\shared-cache\audio-visualizer\artifacts\2026-08-02_beatform-v2.64-shadertoy-smoke\beatform-v2.64-verify-import-canvas-loop-3s.mp4`.
+
+Failure screenshot:
+`C:\Users\Julius\.codex\visualizations\2026\08\01\019fbeca-4b59-7d53-81be-01a888147388\beatform-v2.64-shadertoy-close-acl-error-2026-08-02.jpg`.
+
+**Outcome: updater and Shadertoy core smoke passed. ALIGN-002 found executable
+`2.64.0` versus uninstall registry `2.63.0`. One product failure remains: closing
+the invalid-import dialog raised the ACL error above. Test visual was removed;
+no Beatform process remained. No fix attempted.**
+
+> **Follow-up (2026-08-02):** the ACL failure was root-caused and fixed the
+> same day — both shader dialogs used raw `window.confirm`, which the dialog
+> plugin routes to `plugin:dialog|confirm`, a permission the capability file
+> deliberately does not grant (the shader editor's own discard prompt had
+> shipped broken this way since it was added). Both now use the `askConfirm`
+> helper (`ask` is granted), and a lint rule bans raw `confirm`/`alert`/
+> `prompt`. Shipped as **v2.64.1**; the installed-app re-check of both
+> dirty-close prompts plus the ALIGN-002 registry reading rides that update.
+
 ## ✅ v2.63.0 UI smoke — 2026-08-01
 
 Executed against installed `C:\Users\Julius\AppData\Local\Beatform\beatform.exe`
