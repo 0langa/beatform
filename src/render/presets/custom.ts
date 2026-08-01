@@ -1,4 +1,4 @@
-import type { ParamSpec, PresetDef } from "../types";
+import type { ParamSpec, PresetDef, ShadertoySpec } from "../types";
 
 /**
  * Custom presets — the WGSL SDK's runtime registry. A custom preset is the
@@ -68,6 +68,26 @@ function validParamSpec(v: unknown): ParamSpec | null {
   };
 }
 
+/**
+ * Whitelist-validate an untrusted shadertoy marker. Null = reject (which
+ * rejects the whole def — a shadertoy def without its GLSL source cannot be
+ * re-edited or attributed, so it must not survive validation).
+ */
+function validShadertoySpec(v: unknown): ShadertoySpec | null {
+  const s = v as Partial<ShadertoySpec>;
+  if (typeof s !== "object" || s === null) return null;
+  if (typeof s.glsl !== "string" || s.glsl.length === 0 || s.glsl.length > MAX_WGSL_BYTES)
+    return null;
+  const opt = (x: unknown, max: number) =>
+    typeof x === "string" && x.trim() ? x.slice(0, max) : undefined;
+  return {
+    glsl: s.glsl,
+    ...(opt(s.author, 80) ? { author: opt(s.author, 80) } : {}),
+    ...(opt(s.source, 200) ? { source: opt(s.source, 200) } : {}),
+    ...(opt(s.license, 80) ? { license: opt(s.license, 80) } : {}),
+  };
+}
+
 /** Whitelist-validate an untrusted custom-preset blob. Null = reject. */
 export function validCustomPreset(v: unknown): PresetDef | null {
   const d = v as Partial<PresetDef>;
@@ -75,7 +95,16 @@ export function validCustomPreset(v: unknown): PresetDef | null {
   if (typeof d.id !== "string" || !CUSTOM_ID_RE.test(d.id)) return null;
   if (typeof d.name !== "string" || d.name.trim().length === 0) return null;
   if (typeof d.wgsl !== "string" || d.wgsl.length > MAX_WGSL_BYTES) return null;
-  if (!/fn\s+preset\s*\(/.test(d.wgsl)) return null;
+  // Two shapes share the registry: snippet presets define `fn preset(...)`;
+  // imported Shadertoy defs carry a complete transpiled module whose entry is
+  // `@fragment fn main` plus the compat uniform block, and MUST carry their
+  // original GLSL (validated below).
+  const shadertoy = d.shadertoy !== undefined ? validShadertoySpec(d.shadertoy) : null;
+  if (d.shadertoy !== undefined && !shadertoy) return null;
+  if (shadertoy) {
+    if (!/@fragment\s/.test(d.wgsl) || !/fn\s+main\s*\(/.test(d.wgsl)) return null;
+    if (!d.wgsl.includes("BeatformShadertoyUniforms")) return null;
+  } else if (!/fn\s+preset\s*\(/.test(d.wgsl)) return null;
   const params = Array.isArray(d.params)
     ? (d.params.map(validParamSpec).filter(Boolean) as ParamSpec[])
     : [];
@@ -95,19 +124,24 @@ export function validCustomPreset(v: unknown): PresetDef | null {
     params,
     ...(advanced.length ? { advanced } : {}),
     wgsl: d.wgsl,
+    ...(shadertoy ? { shadertoy } : {}),
   };
 }
 
 // --- .avshader file format (share a custom visual as one JSON file) ---
 
-export const SHADER_FILE_VERSION = 1;
+/**
+ * v1: snippet presets. v2: adds imported Shadertoy defs (`shadertoy` marker +
+ * full-module `wgsl`). Files stay at the OLDEST version that can represent
+ * them — a plain snippet still writes v1, so older apps keep reading it; only
+ * shadertoy defs write v2, which older apps refuse with their existing
+ * "newer app version" message instead of misreading the module as a snippet.
+ */
+export const SHADER_FILE_VERSION = 2;
 
 export function serializeCustomPreset(def: PresetDef, appVersion: string): string {
-  return JSON.stringify(
-    { kind: "avshader", schemaVersion: SHADER_FILE_VERSION, appVersion, preset: def },
-    null,
-    2,
-  );
+  const schemaVersion = def.shadertoy ? 2 : 1;
+  return JSON.stringify({ kind: "avshader", schemaVersion, appVersion, preset: def }, null, 2);
 }
 
 export class ShaderParseError extends Error {}
@@ -157,7 +191,8 @@ export function sameCustomDef(a: PresetDef, b: PresetDef): boolean {
     a.wgsl === b.wgsl &&
     a.name === b.name &&
     JSON.stringify(a.params) === JSON.stringify(b.params) &&
-    JSON.stringify(a.advanced ?? []) === JSON.stringify(b.advanced ?? [])
+    JSON.stringify(a.advanced ?? []) === JSON.stringify(b.advanced ?? []) &&
+    JSON.stringify(a.shadertoy ?? null) === JSON.stringify(b.shadertoy ?? null)
   );
 }
 

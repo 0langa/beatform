@@ -119,7 +119,10 @@ describe("project files (.avproj)", () => {
   it("stamps metadata", () => {
     const file = JSON.parse(serializeProject(doc, "1.2.0"));
     expect(file.kind).toBe("avproj");
-    expect(file.schemaVersion).toBe(PROJECT_VERSION);
+    // v12 is conditional (shadertoy defs only — see the version-history
+    // note): a document without one stays at v11 so older apps keep opening
+    // it. projectShadertoy.test.ts covers the v12 path.
+    expect(file.schemaVersion).toBe(11);
     expect(file.appVersion).toBe("1.2.0");
     expect(typeof file.savedAt).toBe("string");
   });
@@ -338,9 +341,13 @@ describe("project files (.avproj)", () => {
   // were both stamped schemaVersion 7 and indistinguishable. v8 gives the
   // current (video-capable) shape its own number; old files must still open.
   describe("schema v7 -> v8 (video backgrounds)", () => {
-    it("the current shape is stamped with the current schema version", () => {
+    it("the current shape is stamped with its OWN schema version", () => {
+      // Not PROJECT_VERSION: since the conditional v12 (shadertoy defs), a
+      // video-capable document without one writes the oldest schema that can
+      // represent it — v11. The M26 property this test protects still holds:
+      // the video-capable shape is distinguishable from the pre-video v7.
       const file = JSON.parse(serializeProject(doc, "2.35.0"));
-      expect(file.schemaVersion).toBe(PROJECT_VERSION);
+      expect(file.schemaVersion).toBe(11);
     });
 
     it("still opens a real v7 file saved before video backgrounds existed", () => {

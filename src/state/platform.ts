@@ -124,6 +124,25 @@ export async function scanAudioLibrary(dir: string): Promise<LibraryTrack[]> {
   return invoke<LibraryTrack[]>("scan_audio_library", { dir });
 }
 
+export interface ShadertoyTranspileError {
+  /** 1-based line in the pasted GLSL, when the diagnostic maps into it. */
+  line: number | null;
+  message: string;
+}
+
+export interface ShadertoyTranspileResult {
+  ok: boolean;
+  wgsl: string | null;
+  errors: ShadertoyTranspileError[];
+}
+
+/** Tauri only: translate a Shadertoy-style GLSL mainImage shader into a
+ * standalone WGSL module for the compat pipeline (Rust side — naga). */
+export async function transpileShadertoy(glsl: string): Promise<ShadertoyTranspileResult> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<ShadertoyTranspileResult>("transpile_shadertoy", { glsl });
+}
+
 export interface LoopbackInfo {
   sampleRate: number;
   channels: number;

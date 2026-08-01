@@ -69,9 +69,17 @@ import { validTimeline, type Timeline } from "./timeline";
  * already hardcoded, so a v11 file written before they existed renders
  * byte-identically after loading. A version bump is for shape changes that
  * older readers would MISREAD — this one they simply do not see.
+ *
+ * v12 (+) imported Shadertoy defs may appear in customDefs (`shadertoy`
+ *        marker + full-module `wgsl`). CONDITIONAL: a file is written at v12
+ *        only when it actually embeds one — an older reader's validator would
+ *        silently DROP such a def (its `wgsl` has no `fn preset(`) and fall
+ *        back to Spectrum Bars, which is a misread, so those files must
+ *        refuse to open there. Projects without shadertoy defs keep writing
+ *        v11 and stay compatible.
  */
 
-export const PROJECT_VERSION = 11;
+export const PROJECT_VERSION = 12;
 export const PROJECT_EXTENSION = "avproj";
 
 /** Frame aspect: "free" fills the window; fixed ratios letterbox the stage. */
@@ -122,8 +130,11 @@ export interface ProjectFile {
 }
 
 export function serializeProject(document: ProjectDocument, appVersion: string): string {
+  // Write the OLDEST schema that can represent the document (see the v12
+  // history note): only an embedded shadertoy def forces v12.
+  const needsV12 = document.customDefs.some((d) => d.shadertoy);
   const file: ProjectFile = {
-    schemaVersion: PROJECT_VERSION,
+    schemaVersion: needsV12 ? PROJECT_VERSION : 11,
     kind: "avproj",
     appVersion,
     savedAt: new Date().toISOString(),

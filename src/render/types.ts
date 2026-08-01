@@ -198,6 +198,29 @@ export interface PresetDef {
    * regular params so they are keyframeable via automation + modulation.
    */
   mesh3d?: Mesh3DSpec;
+  /**
+   * Marks an imported Shadertoy visual. `wgsl` then holds a COMPLETE
+   * standalone fragment module (own @group(0) bindings 0–5: uniform block,
+   * four channel textures, one sampler; entry `@fragment fn main`) emitted by
+   * the Rust-side transpiler, NOT a `fn preset` snippet — the renderer runs
+   * it on a dedicated compatibility pipeline. `glsl` is the user's original
+   * source, kept for re-editing and attribution; attribution fields ship in
+   * .avshader exports and project embeds. Deterministic by construction:
+   * every Shadertoy uniform derives from track time (see the renderer's
+   * shadertoy uniform packer), so preview === export holds.
+   */
+  shadertoy?: ShadertoySpec;
+}
+
+export interface ShadertoySpec {
+  /** Original GLSL mainImage source as pasted. */
+  glsl: string;
+  /** Attribution: shader author (Shadertoy username or name). */
+  author?: string;
+  /** Attribution: source URL (typically the shadertoy.com page). */
+  source?: string;
+  /** License of the original shader (Shadertoy default: CC BY-NC-SA 3.0). */
+  license?: string;
 }
 
 export interface ParticleSpec {
