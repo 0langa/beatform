@@ -65,7 +65,7 @@ Work top to bottom unless fresh evidence changes priority.
 
 | Order | ID         | Status      | Work                                                    |
 | ----- | ---------- | ----------- | ------------------------------------------------------- |
-| 1     | FEAT-001   | RESEARCH    | Spike 1 DONE (feasible); next: real-corpus pass rate    |
+| 1     | FEAT-001   | READY       | Both spikes done, verdict IMPLEMENT — build the import  |
 | 2     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index         |
 | 3     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior              |
 | 4     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
