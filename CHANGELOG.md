@@ -11,6 +11,21 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.64.1] - 2026-08-02
+
+### Fixed
+
+- **Closing a shader dialog with unsaved changes no longer errors.** The
+  "discard changes?" prompt in the shader editor and the new Shadertoy import
+  dialog used the browser's raw `confirm()`, which the desktop shell routes
+  through a dialog permission the app deliberately doesn't grant — so the
+  installed build showed "Command plugin:dialog|confirm not allowed by ACL"
+  instead of asking. Both dialogs now use the app's native yes/no prompt (the
+  same one the export disk check uses). Found by the v2.64.0 installed-app
+  smoke; the shader editor's prompt had been silently broken this way since it
+  was added. A lint rule now blocks raw `confirm`/`alert`/`prompt` so the
+  mistake can't ship again.
+
 ## [2.64.0] - 2026-08-01
 
 ### Added

@@ -119,15 +119,27 @@ Evidence:
   as version 2.39.0 — roughly 24 releases stale. User-visible metadata
   defect; uninstaller path itself untested.
 
-Open questions to answer before fixing:
+**Experiment 1 result (2026-08-02, in-app update 2.63.0 → 2.64.0):** the
+registry DID advance — from the stuck `2.39.0` to `2.63.0` — but reads ONE
+RELEASE BEHIND the installed executable. So the updater path writes the key,
+with a lagging value. Two candidate models, decided by the next update:
 
-- Why did registry writes stop exactly after 2.39.0? Candidates: NSIS
-  installer config change around v2.40 (installMode, product GUID, or
-  per-user key naming), or the tauri-plugin-updater silent-install flags
-  skipping the registry section.
-- Whether a fresh manual installer run (vs in-app update) rewrites the key —
-  the next release naturally provides the experiment: check DisplayVersion
-  right after updating.
+- **One-behind:** something records the OUTGOING version during the update
+  (e.g. a re-registration step running before the new payload lands). After
+  updating to v2.64.1 the key would read `2.64.0`.
+- **Now-fixed:** `2.63.0` was a one-off transitional artifact and writes are
+  correct going forward. After updating to v2.64.1 the key would read
+  `2.64.1`.
+
+(The years-long `2.39.0` freeze remains unexplained under both models —
+possibly an installer-template change fixed writing somewhere between v2.40
+and v2.63, with this the first update to exercise it. Root-cause via the NSIS
+template only if the next reading is still wrong.)
+
+Remaining question:
+
+- Whether a fresh manual installer run behaves differently from the in-app
+  update — only worth testing if the v2.64.1 reading is still lagging.
 
 Acceptance gate:
 
