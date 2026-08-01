@@ -1,6 +1,7 @@
 mod diskspace;
 mod loopback;
 mod prores;
+mod shadertoy;
 
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::tag::Accessor;
@@ -125,7 +126,8 @@ pub fn run() {
             prores::prores_finish,
             prores::prores_abort,
             diskspace::disk_space,
-            diskspace::scratch_dir
+            diskspace::scratch_dir,
+            shadertoy::transpile_shadertoy
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
