@@ -1,5 +1,34 @@
 # Beatform — Manual Testing Batch (agent-executable)
 
+## ✅ v2.63.0 UI smoke — 2026-08-01
+
+Executed against installed `C:\Users\Julius\AppData\Local\Beatform\beatform.exe`
+(`FileVersion`/`ProductVersion` `2.63.0`) using Computer Use. Repository HEAD:
+`39e53c5`. Test track:
+`E:\Timmy Turnup\Don Omar x Lucenzo - Danza Kuduro (Timmy Turnup Mashup) 320kbps mp3.mp3`
+(2:11). Renderer badge: `WEBGPU`.
+
+Version-source mapping checked before testing: analyzer-quality spectrum mode was
+introduced by `b7debf3`/`v2.61.0`; spectrum color controls by
+`d609d86`/`v2.62.0`; A-B loop regions by `bfe171d`/`v2.63.0`.
+
+| Check                                     | Result  | Evidence                                                                                                                                                                                                                                                                  |
+| ----------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Launch, open track, preview               | ✅ PASS | Beatform launched cleanly, MP3 opened through native picker, duration resolved to 2:11, button changed to `Pause (Space)`, and playhead advanced from 0:00 to 0:13.                                                                                                       |
+| Analyzer mode switching                   | ✅ PASS | Spectrum Bars switched through 341 ms, Linear, and FFT bins. UI reported `341 ms window`, `2.93 Hz/bin`, `5451 native bins in range`, and `96 measured bars, no interpolation`; preview stayed live.                                                                      |
+| v2.62 color-mode switching                | ✅ PASS | Spectrum Bars Saturation moved to 0.00 (neutral grayscale) and Lightness to 2.00 (bright endpoint). Switched live through Radial Burst, Bass Circle, and LED Matrix; each retained its own 1.00/1.00 color defaults while Spectrum Bars kept its edited values.           |
+| Seek/restart determinism                  | ✅ PASS | At natural end 2:11, Play restarted exactly at 0:00. While paused at 1:30: Right → 1:35, Left → 1:30, Right → 1:35; paused state remained stable.                                                                                                                         |
+| v2.63 A-B set/toggle/wrap                 | ✅ PASS | `I` set A=1:35; `O` set B=1:40. Enabling with `L` while paused exactly at B snapped to A and stayed paused. Resume from 1:38 crossed B and wrapped to 1:36. Disabling near 1:37 allowed playback through 1:49.                                                            |
+| v2.63 marker drag/outside-region behavior | ✅ PASS | Dragged A from 1:35 to 1:30 without moving paused playhead at 2:04. Enabling while paused outside region normalized to A=1:30 and stayed paused.                                                                                                                          |
+| v2.63 clear behavior                      | ✅ PASS | Clear removed both A/B markers and their times. Whole-track loop remained on, matching documented `X` behavior; playhead stayed at 1:30.                                                                                                                                  |
+| Short MP4 export                          | ✅ PASS | LED Matrix Canvas-loop export completed: 3.01 s, 1080×1920, 30 fps, H.264 High/yuv420p + AAC-LC 48 kHz stereo, 90 video frames, 2,079,766 bytes. Bundled ffmpeg full-decode to null exited 0. SHA-256 `B9742E178102CBCA9E8783B301EF5F1F56FED55D5DB1B04225DBC51F99172891`. |
+| Clean shutdown/orphan check               | ✅ PASS | Closed Beatform normally. Task Manager Processes view opened after shutdown and showed no Beatform entry; independent `Get-Process -Name Beatform` check returned process count 0.                                                                                        |
+
+Export artifact:
+`E:\agent-devstorage\shared-cache\audio-visualizer\artifacts\2026-08-01_beatform-v2.63-ui-smoke\beatform-v2.63-led-matrix-canvas-loop-3s.mp4`.
+
+**Outcome: all requested checks passed. No Beatform process remained after exit.**
+
 > ## ✅ BATCH COMPLETE — closed 2026-07-27 against v2.51.0/v2.52.0
 >
 > Every item below is green, including the owner's sign-off on the one item no

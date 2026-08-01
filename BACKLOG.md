@@ -63,18 +63,19 @@ Current product constraints remain:
 
 Work top to bottom unless fresh evidence changes priority.
 
-| Order | ID         | Status      | Work                                                     |
-| ----- | ---------- | ----------- | -------------------------------------------------------- |
-| 1     | ALIGN-001  | READY       | Smoke installed `v2.63.0` (update done, binary verified) |
-| 2     | FEAT-001   | RESEARCH    | Spike 1 DONE (feasible); next: real-corpus pass rate     |
-| 3     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index          |
-| 4     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior               |
-| 5     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback  |
-| 6     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic                |
-| 7     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture              |
-| 8     | FEAT-009   | CONSIDERING | True second-display performance window                   |
+| Order | ID         | Status      | Work                                                    |
+| ----- | ---------- | ----------- | ------------------------------------------------------- |
+| 1     | FEAT-001   | RESEARCH    | Spike 1 DONE (feasible); next: real-corpus pass rate    |
+| 2     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index         |
+| 3     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior              |
+| 4     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
+| 5     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic               |
+| 6     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture             |
+| 7     | FEAT-009   | CONSIDERING | True second-display performance window                  |
 
-`DEP-001`, `DEP-002` and `DOC-001` completed 2026-07-30 — see Cleared work and the DOC-001 entry.
+`DEP-001`, `DEP-002` and `DOC-001` completed 2026-07-30; `ALIGN-001` completed
+2026-08-01 — see Cleared work. `ALIGN-002` waits on the next release's update
+(its experiment needs one).
 
 `VERIFY-002`, `VIS-001`, and `DSP-001` remain gated or decision-bound. They do
 not block work above.
@@ -83,38 +84,21 @@ not block work above.
 
 ### ALIGN-001 — Current installed-release acceptance
 
-**Status:** READY — smoke only. Owner updated the installed app on
-2026-07-30; installed binary verified reporting `2.63.0`. The interactive
-smoke below is the remaining work.  
-**Why:** Source and public release are `v2.63.0`. The install step is done;
-the v2.62 analyzer and v2.63 A-B loop deltas still lack installed-app smoke
-evidence.
+**Status:** DONE 2026-08-01.
 
-Scope:
-
-- ~~Update/install from the public `v2.63.0` release.~~ Done 2026-07-30
-  (owner-driven; record in `TESTING.md` whether it was in-app or installer).
-- ~~Confirm executable product version is `2.63.0`.~~ Verified 2026-07-30.
-- Confirm updater path remains functional; record whether the update was
-  in-app or installer-driven.
-- Smoke launch, file open, preview playback, one short MP4 export, and shutdown.
-- Smoke v2.62 analysis changes:
-  - Analyzer mode selection.
-  - Color mode selection.
-  - Deterministic behavior after seek/restart.
-- Smoke v2.63 A-B loop behavior:
-  - Set, edit, enable, disable, and clear loop.
-  - Boundary behavior at start/end.
-  - Seek and pause/resume interactions.
-- Recheck clean shutdown and absence of an orphaned Beatform process.
-- Record results in `TESTING.md`.
-
-Acceptance gate:
-
-- Installed binary reports `2.63.0`.
-- No launch, playback, export, updater, analyzer, or A-B loop regression.
-- Any failure becomes a focused GitHub issue or a new ledger item with exact
-  reproduction steps.
+- Install step: owner-driven update 2026-07-30; binary verified `2.63.0`.
+- Smoke: executed 2026-08-01 by a Computer Use agent against the installed
+  app — all nine checks green (launch/open/preview, analyzer modes with
+  correct 341 ms / 2.93 Hz/bin / 5451-native-bin readouts, v2.62 per-mode
+  color controls, seek/restart determinism, full A-B loop matrix including
+  wrap/drag/clear semantics, 3 s 1080×1920 MP4 export with ffmpeg
+  decode-back exit 0, clean shutdown with zero orphaned processes).
+  Full table in `TESTING.md`; export artifact + SHA-256 verified against
+  the on-disk file on bulk-secondary devstorage.
+- Updater-path verification deliberately excluded: NSIS preserves packaged
+  build timestamps, so the applied update's path is unrecoverable after the
+  fact. It is testable only on the NEXT release, together with ALIGN-002's
+  registry experiment.
 
 ### ALIGN-002 — Windows uninstall registry stuck at 2.39.0
 
@@ -587,7 +571,8 @@ These are valid ideas but not active work:
 | FEAT-007 / FEAT-008                | Shipped in `v2.61.0` / `v2.62.0`; old bass-bin interpolation note is superseded                                                                                                                                                                                      |
 | Audio DSP plan phases              | v2.58–v2.60 work complete; only limitations above remain                                                                                                                                                                                                             |
 | Physical non-US keyboard           | Owner-reported physical pass                                                                                                                                                                                                                                         |
-| Original hardware acceptance batch | Green in `TESTING.md`; current-version delta still belongs to ALIGN-001                                                                                                                                                                                              |
+| ALIGN-001 v2.63.0 acceptance       | DONE 2026-08-01: installed-binary version + nine-check UI smoke green, export artifact hash-verified — recorded in `TESTING.md`                                                                                                                                      |
+| Original hardware acceptance batch | Green in `TESTING.md`; v2.63.0 delta closed by ALIGN-001 above                                                                                                                                                                                                       |
 
 ## Standard gates
 
