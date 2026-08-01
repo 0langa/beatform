@@ -11,6 +11,44 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.64.0] - 2026-08-01
+
+### Added
+
+- **Shadertoy import.** Paste the Image tab of a single-pass Shadertoy shader
+  into the new import dialog (shader editor → _Shadertoy…_) and it becomes a
+  Beatform visual: the GLSL is translated to WGSL locally by the app itself —
+  no network, no build tools — compile-checked on your GPU, and added to the
+  mode strip like any custom visual.
+
+  The track's audio arrives exactly the way Shadertoy's own music channel
+  does: `iChannel0` is a 512×2 texture with the spectrum on row 0 and the
+  waveform on row 1, so audio-reactive shaders work unmodified. `iTime`,
+  `iFrame` and `iDate` all follow the track clock — an imported visual
+  renders frame-identically in the live preview and in every export.
+
+  Author, source URL and license travel with the visual (Shadertoy's default
+  CC BY-NC-SA is preselected), show up in the mode description, and survive
+  `.avshader` sharing and project embedding. Re-opening an imported visual
+  edits its original GLSL, never the generated WGSL. Clear, line-numbered
+  errors point at your GLSL when something isn't supported — multi-pass
+  buffers, cubemap/video/keyboard channels, sound shaders, and channels
+  passed as `sampler2D` function parameters are declined by name.
+
+  Under the hood: a dedicated render pipeline runs the translated module and
+  routes through the shared composite pass, so lyric and text overlays,
+  background modes and the whole post chain (bloom, tonemap, grain…) apply to
+  imported visuals too. Legacy WebGL-era idioms (`texture2D`,
+  `precision`, `const` parameters, BOM/CRLF files) are cleaned up
+  automatically; texture reads are rewritten to explicit-LOD form so shaders
+  sampling inside branches — most of them — pass WGSL's uniformity rules.
+  Project files embedding an imported visual are stamped schema v12 (and
+  `.avshader` files v2) so older app versions decline them cleanly instead of
+  silently rendering the wrong mode; everything else keeps writing the old
+  versions and stays backward-compatible. A new end-to-end gate
+  (`npm run test:shadertoy:built`) drives paste → translate → render →
+  export twice and asserts bit-identical frame hashes.
+
 ## [2.63.0] - 2026-07-29
 
 ### Added
