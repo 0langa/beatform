@@ -40,6 +40,11 @@ Free and open source. Built to become a professional-grade tool for producers an
   live hint bar), all persisted per mode
 - **User looks**: save your own named looks per visual mode, share them as
   `.avpreset` files (import/export)
+- **Shadertoy import**: paste a single-pass Shadertoy shader (the Image tab)
+  and it becomes a Beatform visual — translated to WGSL locally, audio on
+  `iChannel0` in Shadertoy's own music-texture layout, track-clock time so
+  exports match previews exactly, author/license attribution kept with the
+  visual and its `.avshader` exports
 - **Auto-updates**: the app checks GitHub Releases and installs new versions
   in one click (signature-verified; no telemetry — the check is a plain fetch
   of a static file). **App settings** (Ctrl+,): autosave delay, live frame

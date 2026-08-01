@@ -1,18 +1,30 @@
 # Preset SDK — add a visual mode
 
-Two ways in:
+Three ways in:
 
 - **In-app shader editor** (the `+` chip on the mode strip): write the WGSL,
   add parameters (each becomes a `P_<key>()` accessor and an automatic
   slider), hit _Compile_ — errors come back with line numbers. Custom
   visuals persist, use the same export pipeline as built-ins, and share as one
   `.avshader` file (drop one on the window to import). No build tools.
+- **Shadertoy import** (the _Shadertoy…_ button in the shader editor): paste
+  the **Image** tab of a single-pass Shadertoy shader and it is translated to
+  WGSL on the spot. `iChannel0` carries the track's audio the way Shadertoy's
+  music channel does (512×2 texture — row 0 spectrum, row 1 waveform);
+  `iTime`, `iFrame` and `iDate` all follow the track clock, so previews and
+  exports stay frame-identical. Attribution (author, source URL, license —
+  Shadertoy's default is CC BY-NC-SA) is part of the visual and travels with
+  `.avshader` files and project embeds. Not supported: multi-pass buffers,
+  cubemap/video/keyboard channels, sound/VR shaders, and channels passed as
+  `sampler2D` function parameters (use `iChannelN` directly inside helpers).
 - **A TypeScript preset file** in the repo: one file exporting a
   `PresetDef` plus a registry line in `src/render/presets/index.ts` — the
   path for contributing a built-in. Workflow:
   [CONTRIBUTING.md](https://github.com/0langa/beatform/blob/main/CONTRIBUTING.md).
 
-Everything below applies to both.
+Everything below applies to the WGSL paths; an imported Shadertoy visual is a
+complete translated program and uses its own uniform contract instead of the
+`u.`/`P_` ABI.
 
 ## The two laws
 
