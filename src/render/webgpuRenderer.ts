@@ -13,6 +13,7 @@ import type {
   PresetDef,
   RenderOptions,
   Renderer,
+  ShadertoySpec,
   TransitionState,
 } from "./types";
 
@@ -1336,6 +1337,25 @@ export function assemblePresetModule(preset: PresetDef): string {
  * modules so the whole compiled shader surface is covered, not just fragment
  * presets. These are the literal strings compiled at runtime.
  */
+// ---------------------------------------------------------------------------
+// Imported Shadertoy visuals (FEAT-001) — dedicated compatibility pipeline.
+//
+// A `shadertoy` preset's `wgsl` is a COMPLETE fragment module emitted by the
+// Rust-side transpiler: own uniform block + four channel textures + one
+// sampler on @group(0) bindings 0–5, entry `@fragment fn main`. It cannot
+// share the snippet ABI's pipeline layout (11 bindings, storage buffers), so
+// it runs on its own layout with this fullscreen-triangle vertex stage
+// appended to the module.
+// ---------------------------------------------------------------------------
+
+const SHADERTOY_VS_WGSL = /* wgsl */ `
+@vertex
+fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+  var pos = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
+  return vec4f(pos[i], 0.0, 1.0);
+}
+`;
+
 export const SHADER_SOURCES = {
   header: HEADER,
   composite: COMPOSITE_BODY,
@@ -1346,7 +1366,100 @@ export const SHADER_SOURCES = {
   blend: BLEND_WGSL,
   post: POST_WGSL,
   sceneComposite: COMPOSITE_WGSL,
+  shadertoyVs: SHADERTOY_VS_WGSL,
 } as const;
+
+/** Shadertoy audio texture geometry: 512 columns, row 0 = spectrum,
+ * row 1 = waveform — the site's own music-channel convention. */
+export const SHADERTOY_AUDIO_WIDTH = 512;
+/** Bytes per shadertoy uniform block (matches the transpiler's emitted
+ * struct: 36 f32/i32 lanes, relaxed-layout f32 array tail). */
+export const SHADERTOY_UNIFORM_SIZE = 144;
+
+/**
+ * Pack the Shadertoy uniform block. EVERY value derives from track time or
+ * constants — no wall clock, no mouse, no frame counters that could differ
+ * between the live loop and the export loop — so preview === export holds by
+ * construction:
+ *  - iTime is track time; iFrame/iDate.w are derived from it, never counted.
+ *  - iTimeDelta/iFrameRate are the fixed 60 Hz analysis clock, not the
+ *    display's — a 144 Hz preview and a 30 fps export see identical values.
+ *  - iMouse is 0 (no pointer in an export) and iDate's calendar part is a
+ *    fixed epoch, so date-seeded randomness is stable across runs.
+ */
+export function packShadertoyUniforms(
+  buf: ArrayBuffer,
+  time: number,
+  width: number,
+  height: number,
+): void {
+  const f = new Float32Array(buf);
+  const i = new Int32Array(buf);
+  f[0] = width;
+  f[1] = height;
+  f[2] = 1; // iResolution.z — Shadertoy sends pixel aspect, always 1 here
+  f[3] = time;
+  f[4] = 1 / 60; // iTimeDelta: fixed analysis-clock step
+  f[5] = 60; // iFrameRate
+  i[6] = Math.round(time * 60); // iFrame on the same fixed clock
+  f[7] = 48000; // iSampleRate
+  f[8] = 0; // iMouse
+  f[9] = 0;
+  f[10] = 0;
+  f[11] = 0;
+  f[12] = 2026; // iDate: fixed epoch + track time as seconds-of-day
+  f[13] = 0;
+  f[14] = 1;
+  f[15] = time;
+  // iChannelResolution[4], vec3 stride 16: ch0 is the audio texture, the
+  // rest are 1x1 black placeholders.
+  f[16] = SHADERTOY_AUDIO_WIDTH;
+  f[17] = 2;
+  f[18] = 1;
+  for (let c = 1; c < 4; c++) {
+    f[16 + c * 4] = 1;
+    f[17 + c * 4] = 1;
+    f[18 + c * 4] = 1;
+  }
+  // iChannelTime[4], f32 stride 4 (relaxed uniform layout, tint-verified).
+  f[32] = time;
+  f[33] = time;
+  f[34] = time;
+  f[35] = time;
+}
+
+/**
+ * Fill the audio texture's pixel rows (rgba8unorm, value in R) from the same
+ * arrays the storage-buffer path uploads, so both ABIs see one truth:
+ * row 0 = display spectrum bins linearly resampled across 512 columns
+ * (bins are 0..1), row 1 = the already-downsampled 512-point waveform
+ * mapped from -1..1 to 0..1, Shadertoy's own encoding.
+ */
+export function packShadertoyAudioRows(
+  out: Uint8Array,
+  bins: Float32Array,
+  wave: Float32Array,
+): void {
+  const w = SHADERTOY_AUDIO_WIDTH;
+  const n = bins.length;
+  for (let x = 0; x < w; x++) {
+    let v = 0;
+    if (n === 1) {
+      v = bins[0];
+    } else if (n > 1) {
+      const pos = (x / (w - 1)) * (n - 1);
+      const i0 = Math.floor(pos);
+      const i1 = Math.min(n - 1, i0 + 1);
+      v = bins[i0] + (bins[i1] - bins[i0]) * (pos - i0);
+    }
+    const spec = Math.max(0, Math.min(1, v));
+    out[x * 4] = Math.round(spec * 255);
+    out[x * 4 + 3] = 255;
+    const wv = Math.max(-1, Math.min(1, wave[Math.min(x, wave.length - 1)] ?? 0));
+    out[(w + x) * 4] = Math.round((0.5 + 0.5 * wv) * 255);
+    out[(w + x) * 4 + 3] = 255;
+  }
+}
 
 export class WebGPURenderer implements Renderer {
   readonly kind = "webgpu" as const;
@@ -1421,6 +1534,18 @@ export class WebGPURenderer implements Renderer {
   >();
   /** Previous render's track time, for the per-frame dt uniform (-1 = none). */
   private lastRenderTime = -1;
+  /** Active imported-Shadertoy marker (null for every other preset kind). */
+  private shadertoySpec: ShadertoySpec | null = null;
+  /** Compat-pipeline resources, created on first shadertoy preset. */
+  private stBindLayout: GPUBindGroupLayout | null = null;
+  private stPipelineLayout: GPUPipelineLayout | null = null;
+  private stUniformBuf: GPUBuffer | null = null;
+  private stAudioTex: GPUTexture | null = null;
+  private stEmptyChannel: GPUTexture | null = null;
+  private stSampler: GPUSampler | null = null;
+  private stBindGroup: GPUBindGroup | null = null;
+  private stUniformData = new ArrayBuffer(SHADERTOY_UNIFORM_SIZE);
+  private stAudioData = new Uint8Array(SHADERTOY_AUDIO_WIDTH * 2 * 4);
   private postUniform: GPUBuffer;
   private postUniformData = new Float32Array(POST_UNIFORM_SIZE / 4);
   private postSampler: GPUSampler;
@@ -1773,7 +1898,10 @@ export class WebGPURenderer implements Renderer {
   setTransitionPreset(preset: PresetDef | null): void {
     this.transitionPreset = preset;
     this.transitionPresetUsesFeedback = preset ? presetUsesFeedback(preset) : false;
-    if (!preset) {
+    if (!preset || preset.shadertoy) {
+      // A shadertoy def cannot compile against the snippet ABI, and shadertoy
+      // presets hard-cut anyway (`special` in render()) — never build a
+      // transition pipeline from one.
       this.transitionPipeline = null;
       this.transitionPipelineFor = null;
       return;
@@ -2509,6 +2637,22 @@ export class WebGPURenderer implements Renderer {
     if (specs.length > MAX_PARAMS) {
       return [`too many params: ${specs.length} (max ${MAX_PARAMS})`];
     }
+    if (preset.shadertoy) {
+      // Standalone transpiled module — no snippet prefix. The user wrote
+      // GLSL, not this WGSL, so report positions against the generated
+      // module; the transpiler already mapped GLSL-level errors upstream.
+      // This device pass is the tint gate naga cannot replace (uniformity
+      // analysis lives here).
+      this.device.pushErrorScope("validation");
+      const module = this.device.createShaderModule({
+        code: preset.wgsl + SHADERTOY_VS_WGSL,
+      });
+      const info = await module.getCompilationInfo();
+      await this.device.popErrorScope().catch(() => null);
+      return info.messages
+        .filter((m) => m.type === "error")
+        .map((m) => `generated WGSL line ${m.lineNum}: ${m.message}`);
+    }
     const prefix = presetPrefix(preset);
     const prefixLines = prefix.split("\n").length - 1;
     this.device.pushErrorScope("validation");
@@ -2535,6 +2679,38 @@ export class WebGPURenderer implements Renderer {
     }
     // 3D preset marker (camera + grid params drive it via the normal params).
     this.mesh3dSpec = preset.mesh3d ?? null;
+    // Imported Shadertoy visual: complete standalone module, own pipeline
+    // layout (see the SHADERTOY_VS_WGSL block). Shares the same pipeline
+    // cache; getBindGroup()/directPipelineFor() branch on the marker.
+    this.shadertoySpec = preset.shadertoy ?? null;
+    if (this.shadertoySpec) {
+      this.ensureShadertoyResources();
+      const cachedSt = this.pipelineCache.get(preset);
+      if (cachedSt) {
+        this.pipeline = cachedSt.scene;
+        this.bindGroup = null;
+        return;
+      }
+      const stModule = this.device.createShaderModule({
+        code: preset.wgsl + SHADERTOY_VS_WGSL,
+      });
+      void stModule.getCompilationInfo().then((info) => {
+        for (const m of info.messages) {
+          if (m.type === "error") {
+            console.error(`[shadertoy ${preset.id}] ${m.lineNum}:${m.linePos} ${m.message}`);
+          }
+        }
+      });
+      this.pipeline = this.device.createRenderPipeline({
+        layout: this.stPipelineLayout!,
+        vertex: { module: stModule, entryPoint: "vs_main" },
+        fragment: { module: stModule, entryPoint: "main", targets: [{ format: SCENE_FORMAT }] },
+        primitive: { topology: "triangle-list" },
+      });
+      this.pipelineCache.set(preset, { module: stModule, scene: this.pipeline });
+      this.bindGroup = null;
+      return;
+    }
     // Generate named accessors (P_<key>) for every param in ABI order so
     // preset WGSL never touches raw indices.
     const specs = allParams(preset);
@@ -2596,6 +2772,91 @@ export class WebGPURenderer implements Renderer {
       });
     }
     return entry.direct;
+  }
+
+  /** Lazily create the shadertoy compat pipeline's shared GPU resources —
+   * they cost nothing unless an imported visual is actually used. */
+  private ensureShadertoyResources(): void {
+    if (this.stBindLayout) return;
+    const tex = { sampleType: "float" as const };
+    this.stBindLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: tex },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: tex },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: tex },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: tex },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+      ],
+    });
+    this.stPipelineLayout = this.device.createPipelineLayout({
+      bindGroupLayouts: [this.stBindLayout],
+    });
+    this.stUniformBuf = this.device.createBuffer({
+      size: SHADERTOY_UNIFORM_SIZE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.stAudioTex = this.device.createTexture({
+      size: [SHADERTOY_AUDIO_WIDTH, 2],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    // 1x1 black for iChannel1..3 — matches Shadertoy's unbound-channel look.
+    this.stEmptyChannel = this.device.createTexture({
+      size: [1, 1],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.device.queue.writeTexture(
+      { texture: this.stEmptyChannel },
+      new Uint8Array([0, 0, 0, 255]),
+      { bytesPerRow: 4 },
+      [1, 1],
+    );
+    this.stSampler = this.device.createSampler({
+      magFilter: "linear",
+      minFilter: "linear",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+    });
+  }
+
+  private getShadertoyBindGroup(): GPUBindGroup {
+    if (!this.stBindGroup) {
+      const empty = this.stEmptyChannel!.createView();
+      this.stBindGroup = this.device.createBindGroup({
+        layout: this.stBindLayout!,
+        entries: [
+          { binding: 0, resource: { buffer: this.stUniformBuf! } },
+          { binding: 1, resource: this.stAudioTex!.createView() },
+          { binding: 2, resource: empty },
+          { binding: 3, resource: empty },
+          { binding: 4, resource: empty },
+          { binding: 5, resource: this.stSampler! },
+        ],
+      });
+    }
+    return this.stBindGroup;
+  }
+
+  /** Per-frame shadertoy uploads: the uniform block and both audio rows.
+   * Called after the waveform downsample so row 1 reuses the exact values
+   * the storage-buffer ABI receives. */
+  private uploadShadertoyFrame(f: AudioFeatures, time: number): void {
+    packShadertoyUniforms(
+      this.stUniformData,
+      time,
+      Math.max(1, this.canvas.width),
+      Math.max(1, this.canvas.height),
+    );
+    this.device.queue.writeBuffer(this.stUniformBuf!, 0, this.stUniformData);
+    packShadertoyAudioRows(this.stAudioData, f.bins, this.waveData);
+    this.device.queue.writeTexture(
+      { texture: this.stAudioTex! },
+      this.stAudioData,
+      { bytesPerRow: SHADERTOY_AUDIO_WIDTH * 4 },
+      [SHADERTOY_AUDIO_WIDTH, 2],
+    );
   }
 
   /** Release render-target groups that have sat unused for RT_IDLE_FRAMES
@@ -2740,7 +3001,10 @@ export class WebGPURenderer implements Renderer {
     // fragment/feedback/crossfade machinery (they cut, not crossfade).
     const particlesActive = !!this.particleSpec;
     const mesh3dActive = !!this.mesh3dSpec;
-    const special = particlesActive || mesh3dActive;
+    // Shadertoy compat presets cut instead of crossfading (like particles /
+    // mesh3d): the blend stage itself is kind-agnostic, but the transition
+    // pipeline machinery compiles the outgoing def against the snippet ABI.
+    const special = particlesActive || mesh3dActive || !!this.shadertoySpec;
     const fading = !special && !!(transition && this.transitionPipeline && this.transitionPreset);
     // Advance incoming feedback on its fixed clock even while presentation is
     // crossfading. Presentation itself still uses the transition branch.
@@ -2768,6 +3032,9 @@ export class WebGPURenderer implements Renderer {
     });
     this.device.queue.writeBuffer(this.paramsBuf, 0, this.paramsData);
 
+    // Imported Shadertoy visual: its own uniform block + audio texture.
+    if (this.shadertoySpec) this.uploadShadertoyFrame(f, time);
+
     const clearA = this.bg.mode === 2 ? 0 : 1;
     if (fading) {
       // Outgoing setup's params into the second storage buffer
@@ -2786,12 +3053,16 @@ export class WebGPURenderer implements Renderer {
     // straight to the swapchain and skip the full-res HDR intermediate plus
     // the extra fullscreen pass every frame. This is the app's DEFAULT state
     // (DEFAULT_POST is neutral), so most users get the win.
+    const shadertoyActive = !!this.shadertoySpec;
     const direct =
       feedbackPresent &&
       !fading &&
       !useFeedback &&
       !particlesActive &&
       !mesh3dActive &&
+      // Shadertoy modules cannot inline-composite overlays (that lives in
+      // fs_main), so they always route through visTex + fs_composite.
+      !shadertoyActive &&
       this.postIsNeutral();
     const needsGraph = feedbackPresent && !direct;
     // M23: stamp which target groups this frame actually uses; anything idle
@@ -2801,6 +3072,7 @@ export class WebGPURenderer implements Renderer {
       useFeedback ||
       particlesActive ||
       mesh3dActive ||
+      shadertoyActive ||
       (fading && (this.presetUsesFeedback || this.transitionPresetUsesFeedback));
     if (fading) this.fadeLastUsed = this.frameIndex;
     if (feedbackTargetsInUse) this.feedbackLastUsed = this.frameIndex;
@@ -2839,6 +3111,12 @@ export class WebGPURenderer implements Renderer {
         this.getBindGroup(),
         this.context.getCurrentTexture().createView(),
       );
+    } else if (shadertoyActive) {
+      // Imported Shadertoy module draws the raw visual into visTex, then the
+      // shared composite pass layers overlays (lyrics/text) and honours the
+      // central background modes — same shape as the particle path.
+      drawPass(this.pipeline, this.getShadertoyBindGroup(), this.visTex!.createView());
+      drawPass(this.compositePipeline!, this.getCompositeBindGroup(), scene!);
     } else if (particlesActive) {
       // Sim + additive draw into visTex, then the shared composite -> sceneTex.
       this.renderParticles(encoder, time, f, params);
@@ -3031,6 +3309,7 @@ export class WebGPURenderer implements Renderer {
   }
 
   private getBindGroup(): GPUBindGroup {
+    if (this.shadertoySpec) return this.getShadertoyBindGroup();
     if (!this.bindGroup) {
       this.bindGroup = this.device.createBindGroup({
         layout: this.bindLayout,
