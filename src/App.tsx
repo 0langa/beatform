@@ -21,6 +21,7 @@ import { midiSupported } from "./state/midiInput";
 import { TimelinePanel, type TimelinePanelProps } from "./ui/TimelinePanel";
 import { PresetStrip } from "./ui/PresetStrip";
 import { ShaderEditor, type ShaderEditorProps } from "./ui/ShaderEditor";
+import { ShadertoyImport, type ShadertoyImportProps } from "./ui/ShadertoyImport";
 import { ParamsPanel, type ParamsPanelProps } from "./ui/ParamsPanel";
 import { EmptyState } from "./ui/EmptyState";
 import { useFocusTrap } from "./ui/useFocusTrap";
@@ -147,6 +148,8 @@ export default function App() {
   const showBatch = useVizStore((s) => s.showBatch);
   const customDefs = useVizStore((s) => s.customDefs);
   const showShaderEditor = useVizStore((s) => s.showShaderEditor);
+  const showShadertoyImport = useVizStore((s) => s.showShadertoyImport);
+  const shadertoyImportEditId = useVizStore((s) => s.shadertoyImportEditId);
   const presetOrder = useVizStore((s) => s.presetOrder);
   const allPresets = useMemo(
     () => orderedPresets(presetOrder, customDefs),
@@ -495,6 +498,18 @@ export default function App() {
   );
   const closeShaderEditor: ShaderEditorProps["onClose"] = useCallback(
     () => store().setShowShaderEditor(false),
+    [store],
+  );
+  const openShadertoyImport: ShaderEditorProps["onOpenShadertoy"] = useCallback(
+    (id) => store().openShadertoyImport(id ?? undefined),
+    [store],
+  );
+  const importShadertoy: ShadertoyImportProps["onImport"] = useCallback(
+    (glsl, meta) => store().importShadertoyGlsl(glsl, meta, store().shadertoyImportEditId),
+    [store],
+  );
+  const closeShadertoyImport: ShadertoyImportProps["onClose"] = useCallback(
+    () => store().closeShadertoyImport(),
     [store],
   );
 
@@ -1143,7 +1158,16 @@ export default function App() {
           onDelete={deleteCustomPreset}
           onExport={exportCustomPreset}
           onImportFile={importCustomPresetFile}
+          onOpenShadertoy={openShadertoyImport}
           onClose={closeShaderEditor}
+        />
+      )}
+
+      {showShadertoyImport && (
+        <ShadertoyImport
+          editDef={customDefs.find((d) => d.id === shadertoyImportEditId) ?? null}
+          onImport={importShadertoy}
+          onClose={closeShadertoyImport}
         />
       )}
 

@@ -403,6 +403,19 @@ interface Actions {
   /** Import a stem file (analysis-only mod source). Max 4. */
   addStem(file: File): Promise<void>;
   setShowShaderEditor(open: boolean): void;
+  /** Shadertoy GLSL import dialog (FEAT-001). `editId` = re-editing an
+   * existing imported visual's GLSL; null = fresh import. */
+  showShadertoyImport: boolean;
+  shadertoyImportEditId: string | null;
+  openShadertoyImport(editId?: string): void;
+  closeShadertoyImport(): void;
+  /** Transpile pasted Shadertoy GLSL (Rust/naga), device-check the module,
+   * register + persist + switch. [] = success, else display-ready errors. */
+  importShadertoyGlsl(
+    glsl: string,
+    meta: { name: string; author?: string; source?: string; license?: string },
+    editId: string | null,
+  ): Promise<string[]>;
   /** Compile-check a custom preset; [] = clean, else error strings. */
   checkCustomPreset(def: PresetDef): Promise<string[]>;
   /** Compile-check, register, persist and switch to a custom preset. */
@@ -1048,6 +1061,8 @@ export const useVizStore = create<VizState>((set, get) => {
     videoBgLoading: false,
     customDefs: initialCustomDefs,
     showShaderEditor: false,
+    showShadertoyImport: false,
+    shadertoyImportEditId: null,
     showBatch: false,
     exporting: null,
     exportError: null,

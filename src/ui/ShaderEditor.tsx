@@ -19,6 +19,10 @@ export interface ShaderEditorProps {
   onDelete: (id: string) => void;
   onExport: (id: string) => void;
   onImportFile: (file: File) => void;
+  /** Open the Shadertoy GLSL import dialog — null = fresh import, an id =
+   * re-edit that imported visual's GLSL. Imported defs carry a transpiled
+   * module, not a snippet, so THIS editor must never load them. */
+  onOpenShadertoy: (id: string | null) => void;
   onClose: () => void;
 }
 
@@ -112,6 +116,12 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
   const dialogRef = useFocusTrap(true);
 
   const loadExisting = (def: PresetDef) => {
+    if (def.shadertoy) {
+      // Imported visuals are edited as GLSL in the import dialog; their
+      // `wgsl` is generated output no one should hand-edit.
+      props.onOpenShadertoy(def.id);
+      return;
+    }
     setEditingId(def.id);
     setName(def.name);
     setRows(specsToRows([...(def.params ?? []), ...(def.advanced ?? [])]));
@@ -254,6 +264,13 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
               }}
             />
           </label>
+          <button
+            className="text-btn"
+            title="Paste a Shadertoy GLSL shader and translate it into a visual"
+            onClick={() => props.onOpenShadertoy(null)}
+          >
+            Shadertoy…
+          </button>
         </div>
 
         <div className="shader-params">

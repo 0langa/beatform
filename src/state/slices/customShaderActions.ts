@@ -13,7 +13,7 @@ import {
 import { presets } from "../../render/presets";
 import { APP_VERSION } from "../../version";
 import { safeName } from "../batch";
-import { saveTextFile } from "../platform";
+import { isTauri, saveTextFile, transpileShadertoy } from "../platform";
 import { saveCustomPresets, saveStoredTimeline } from "../persistence";
 import { getRenderer } from "../services";
 import type { VizState } from "../store";
@@ -23,6 +23,48 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
     setShowShaderEditor(open) {
       set({ showShaderEditor: open });
+    },
+
+    openShadertoyImport(editId) {
+      set({ showShadertoyImport: true, shadertoyImportEditId: editId ?? null });
+    },
+
+    closeShadertoyImport() {
+      set({ showShadertoyImport: false, shadertoyImportEditId: null });
+    },
+
+    async importShadertoyGlsl(glsl, meta, editId) {
+      if (!isTauri()) {
+        return ["Importing Shadertoy shaders needs the desktop app (the translator runs there)"];
+      }
+      let result;
+      try {
+        result = await transpileShadertoy(glsl);
+      } catch (e) {
+        return [`Shader translator unavailable: ${(e as Error).message}`];
+      }
+      if (!result.ok || !result.wgsl) {
+        return result.errors.map((e) => (e.line ? `line ${e.line}: ${e.message}` : e.message));
+      }
+      const attribution = [meta.author?.trim() && `by ${meta.author.trim()}`, meta.license?.trim()]
+        .filter(Boolean)
+        .join(" — ");
+      const def: PresetDef = {
+        id: editId ?? newCustomPresetId(),
+        name: meta.name.trim() || "Imported visual",
+        ...(attribution ? { description: attribution } : {}),
+        params: [],
+        wgsl: result.wgsl,
+        shadertoy: {
+          glsl,
+          ...(meta.author?.trim() ? { author: meta.author.trim() } : {}),
+          ...(meta.source?.trim() ? { source: meta.source.trim() } : {}),
+          ...(meta.license?.trim() ? { license: meta.license.trim() } : {}),
+        },
+      };
+      // saveCustomPreset runs the on-device compile check (the tint gate the
+      // Rust-side validator cannot replace), registers, persists, switches.
+      return get().saveCustomPreset(def);
     },
 
     async checkCustomPreset(def) {
