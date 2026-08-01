@@ -26,8 +26,13 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEST = path.join(ROOT, "src-tauri", "binaries", "ffmpeg-x86_64-pc-windows-msvc.exe");
 
 // Pinned: BtbN release-branch build of ffmpeg 8.1 (win64, LGPL, static).
-const TAG = "autobuild-2026-07-15-14-01";
-const ASSET = "ffmpeg-n8.1.2-22-g94138f6973-win64-lgpl-8.1.zip";
+//
+// RETENTION RULE (learned 2026-08-01 when the previous mid-month pin 404'd
+// and broke CI): BtbN keeps only ~2 weeks of daily autobuilds, but the LAST
+// autobuild of each month is retained permanently (verified back to 2023).
+// ONLY pin month-end tags, or this breaks again two weeks after the bump.
+const TAG = "autobuild-2026-07-31-14-10";
+const ASSET = "ffmpeg-n8.1.2-34-g9b6c8969e0-win64-lgpl-8.1.zip";
 const URL = `https://github.com/BtbN/FFmpeg-Builds/releases/download/${TAG}/${ASSET}`;
 
 // SHA-256 of the EXTRACTED ffmpeg.exe. The tag+filename alone do not pin
@@ -36,7 +41,7 @@ const URL = `https://github.com/BtbN/FFmpeg-Builds/releases/download/${TAG}/${AS
 // name — and this script runs unattended on every release build and Rust CI
 // run, with the result bundled into the shipped installer. Verified below;
 // a mismatch is fatal rather than a warning.
-const EXPECTED_SHA256 = "d901ac0f574fd22b0f429afc209acd7c0cfca846325f102b634170ca487df72b";
+const EXPECTED_SHA256 = "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb";
 
 function sha256(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
