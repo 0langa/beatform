@@ -11,6 +11,30 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.65.0] - 2026-08-02
+
+### Added
+
+- **Imported Shadertoy shaders can now use helper functions that take a
+  channel.** Passing `iChannel0` into a helper —
+  `float peak(sampler2D ch, float x)` and friends — is one of the most common
+  shapes in real Shadertoy code, and it was the single biggest reason an
+  import got refused. Those helpers are now translated automatically, one
+  copy per channel they're actually called with, so the shader just works.
+
+  Two more real-world stumbles went with it: shaders that sample with a bias
+  (`texture(ch, uv, -100.0)`, a common "always use the sharpest mip" trick)
+  now translate instead of failing on the GPU, and a shader that carries an
+  extra `mainSound` or `mainVR` entry next to its Image code imports normally
+  rather than being turned away — only genuinely sound-only or VR-only
+  shaders are declined, and they now say which they are.
+
+  Measured on the same 40-shader real-world set used to design the feature,
+  imports went from 34 to **37 of 40**, with every translated shader
+  compiling cleanly on the GPU. If a channel still can't be resolved — say
+  it's picked by a condition at runtime — the error names the function and
+  the line instead of showing a translator dump.
+
 ## [2.64.1] - 2026-08-02
 
 ### Fixed
