@@ -14,9 +14,11 @@ Three ways in:
   `iTime`, `iFrame` and `iDate` all follow the track clock, so previews and
   exports stay frame-identical. Attribution (author, source URL, license —
   Shadertoy's default is CC BY-NC-SA) is part of the visual and travels with
-  `.avshader` files and project embeds. Not supported: multi-pass buffers,
-  cubemap/video/keyboard channels, sound/VR shaders, and channels passed as
-  `sampler2D` function parameters (use `iChannelN` directly inside helpers).
+  `.avshader` files and project embeds. Helpers that take `sampler2D`
+  parameters are specialized per channel automatically (as long as call
+  sites pass `iChannel0..3` directly). Not supported: multi-pass buffers,
+  cubemap/video/keyboard channels, and sound-only/VR-only shaders (an extra
+  `mainSound`/`mainVR` next to `mainImage` is simply ignored).
 - **A TypeScript preset file** in the repo: one file exporting a
   `PresetDef` plus a registry line in `src/render/presets/index.ts` — the
   path for contributing a built-in. Workflow:

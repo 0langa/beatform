@@ -109,9 +109,9 @@ export const ShadertoyImport = memo(function ShadertoyImport(props: ShadertoyImp
           Paste the <b>Image</b> tab of a single-pass Shadertoy shader. <code>iChannel0</code>{" "}
           carries Beatform's audio (row 0 spectrum, row 1 waveform — Shadertoy's music-texture
           layout); <code>iTime</code> follows the track, so previews and exports match exactly.
-          Multi-pass (Buffer A–D), cubemap, video and keyboard channels are not supported. Respect
-          the original shader's license — most Shadertoy work is <code>CC BY-NC-SA</code> and needs
-          credit.
+          Helpers taking <code>sampler2D</code> parameters are translated automatically. Multi-pass
+          (Buffer A–D), cubemap, video and keyboard channels are not supported. Respect the original
+          shader's license — most Shadertoy work is <code>CC BY-NC-SA</code> and needs credit.
         </p>
 
         <div className="save-look-row">

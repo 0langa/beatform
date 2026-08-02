@@ -135,15 +135,27 @@ async function evaluate(url) {
       const avg = a.pngBytes.reduce((x, y) => x + y, 0) / Math.max(1, a.pngBytes.length);
       if (avg < 3000) failures.push("frames look black (avg png " + Math.round(avg) + " B)");
 
-      // 5) Diagnostic path: sampler-typed parameter must fail with the
-      //    plain-language message and a line number, not a naga dump.
+      // 5a) v2.65.0: sampler-typed parameters SPECIALIZE now — a helper
+      //     taking a channel must import and render.
+      const specErrs = await s().importShadertoyGlsl(
+        "float peak(sampler2D ch, float x) { return texture(ch, vec2(x, 0.25)).x; }\\nvoid mainImage(out vec4 c, in vec2 f) { vec2 uv = f / iResolution.xy; c = vec4(step(uv.y, peak(iChannel0, uv.x))); }",
+        { name: "Smoke Specialized" },
+        null,
+      );
+      if (specErrs.length) failures.push("sampler-param import failed: " + specErrs.join(" | "));
+      const specDef = s().customDefs.find((d) => d.name === "Smoke Specialized");
+      if (!specDef) failures.push("specialized def not registered");
+      else s().deleteCustomPreset(specDef.id);
+
+      // 5b) Diagnostic path: a channel that never resolves to a concrete
+      //     iChannelN must fail with the plain-language message.
       const bad = await s().importShadertoyGlsl(
-        "float peak(sampler2D ch, float x) { return texture(ch, vec2(x, 0.25)).x; }\\nvoid mainImage(out vec4 c, in vec2 f) { c = vec4(peak(iChannel0, 0.5)); }",
+        "float peak(sampler2D ch, float x) { return texture(ch, vec2(x, 0.25)).x; }\\nfloat route(sampler2D a, sampler2D b, float x) { return peak(x > 0.5 ? a : b, x); }\\nvoid mainImage(out vec4 c, in vec2 f) { c = vec4(route(iChannel0, iChannel1, f.x)); }",
         { name: "Should Fail" },
         null,
       );
-      if (!bad.length || !/function parameter/.test(bad[0])) {
-        failures.push("sampler-param error missing/wrong: " + JSON.stringify(bad));
+      if (!bad.length || !/iChannel0\\.\\.3|channel/.test(bad[0])) {
+        failures.push("non-concrete channel error missing/wrong: " + JSON.stringify(bad));
       }
       if (s().customDefs.some((d) => d.name === "Should Fail")) {
         failures.push("failed import still registered a def");
