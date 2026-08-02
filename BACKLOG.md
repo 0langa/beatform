@@ -1,6 +1,6 @@
 # Beatform Backlog and Alignment Ledger
 
-Last reconciled: **2026-08-02** (post v2.64.0 Shadertoy-import release)
+Last reconciled: **2026-08-02** (post v2.64.1; stabilization block cleared)
 
 This is Beatform's canonical current-work ledger. It records what is complete,
 what still needs evidence, what is ready to execute, and what remains only a
@@ -42,12 +42,12 @@ Time-sensitive values below were checked on 2026-08-02:
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Repository              | `0langa/beatform`                                                                                                                                     |
 | Branch                  | Clean `main`, aligned with `origin/main`                                                                                                              |
-| Source version          | `2.64.0` in all five version-bearing files                                                                                                            |
-| HEAD / tag              | `bd3f210` / `v2.64.0`                                                                                                                                 |
-| Latest public release   | `v2.64.0`, published 2026-08-02; setup-exe SHA-256 matches `SHA256SUMS.txt`, updater manifest signature present, live latest endpoint serves `2.64.0` |
+| Source version          | `2.64.1` in all five version-bearing files                                                                                                            |
+| HEAD / tag              | `870cebc` / `v2.64.1`                                                                                                                                 |
+| Latest public release   | `v2.64.1`, published 2026-08-02; setup-exe SHA-256 matches `SHA256SUMS.txt`, updater manifest signature present, live latest endpoint serves `2.64.1` |
 | Open GitHub issues      | 0                                                                                                                                                     |
 | Open pull requests      | 0                                                                                                                                                     |
-| Installed desktop app   | `2.63.0` at `C:\Users\Julius\AppData\Local\Beatform\Beatform.exe` (v2.64.0 update pending — it doubles as the ALIGN-002 experiment)                   |
+| Installed desktop app   | `2.64.1` at `C:\Users\Julius\AppData\Local\Beatform\Beatform.exe` — matches source, release, and uninstall registry                                   |
 | Running desktop app     | None during audit                                                                                                                                     |
 | Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers found in `src`, `src-tauri`, or `scripts`                                                                |
 
@@ -65,20 +65,19 @@ Work top to bottom unless fresh evidence changes priority.
 
 | Order | ID         | Status      | Work                                                    |
 | ----- | ---------- | ----------- | ------------------------------------------------------- |
-| 1     | ALIGN-002  | READY       | v2.64.0 update IS the experiment: updater + registry    |
-| 2     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index         |
-| 3     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior              |
-| 4     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
-| 5     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic               |
-| 6     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture             |
-| 7     | FEAT-009   | CONSIDERING | True second-display performance window                  |
+| 1     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index         |
+| 2     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior              |
+| 3     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
+| 4     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic               |
+| 5     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture             |
+| 6     | FEAT-009   | CONSIDERING | True second-display performance window                  |
 
 `DEP-001`, `DEP-002` and `DOC-001` completed 2026-07-30; `ALIGN-001` completed
-2026-08-01; `FEAT-001` **shipped in v2.64.0** (2026-08-01) — see Cleared work
-and the FEAT-001 entry. **Owner: when updating the installed app to v2.64.0,
-that update IS the ALIGN-002 experiment** — note whether the in-app updater
-worked, then check the `HKCU` Uninstall `DisplayVersion` right after (stuck at
-2.39.0 since ~v2.40).
+2026-08-01; `FEAT-001` **shipped in v2.64.0** and its ACL-confirm fix in
+**v2.64.1** (both 2026-08-02, both smoke-verified on the installed build);
+`ALIGN-002` resolved 2026-08-02 — registry now matches the binary, check
+folded into the release ritual. The stabilization block is EMPTY: every
+remaining item is a strategic candidate or research task.
 
 `VERIFY-002`, `VIS-001`, and `DSP-001` remain gated or decision-bound. They do
 not block work above.
@@ -105,7 +104,21 @@ not block work above.
 
 ### ALIGN-002 — Windows uninstall registry stuck at 2.39.0
 
-**Status:** READY  
+**Status:** DONE 2026-08-02 — resolved by observation across two updates.
+
+**Experiment 2 result (in-app update 2.64.0 → 2.64.1):** registry
+`DisplayVersion = 2.64.1`, matching the installed executable exactly. The
+"now-fixed" model wins: registry writing works correctly; the intermediate
+`2.63.0` reading was a one-off transitional artifact of the first
+correctly-writing update after the long freeze. Apps & Features now shows
+the true version. Acceptance gate met (value matches binary). The historical
+mechanism of the 2.39.0-era freeze stays unexplained and DELIBERATELY
+unpursued — the observable defect is gone; reopen only if a future
+post-update check regresses. That check is now part of the release ritual
+(see Version/release agreement below).
+
+Original finding and experiment history kept for the record:
+
 **Found:** 2026-07-30, while forensically checking how the 2.61→2.63 update
 was applied.
 
@@ -684,7 +697,13 @@ Before a release:
 - GitHub release workflow succeeds.
 - Published artifact names, hashes, manifest, updater signature, and download
   URLs are independently checked.
+- The GitHub release workflow leaves a DRAFT — publish it
+  (`gh release edit vX.Y.Z --draft=false --title "Beatform vX.Y.Z" --latest`)
+  and confirm the live latest endpoint serves the new version before calling
+  the release done.
 - Installed artifact is smoke-tested; source/dev server alone is insufficient.
+- After the installed app updates, the HKCU uninstall entry's
+  `DisplayVersion` matches the new binary (ALIGN-002 regression check).
 
 Large builds, caches, and regenerated artifacts must follow host
 `agent-devstorage` routing policy. Source files stay in the repository.

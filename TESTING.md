@@ -1,5 +1,24 @@
 # Beatform — Manual Testing Batch (agent-executable)
 
+## ✅ v2.64.1 updater + ACL prompt quick pass — 2026-08-02
+
+Executed against repository HEAD `870cebc` using Computer Use. Installed app
+started at `2.64.0` and was updated only through Beatform's in-app updater.
+
+| Check                         | Result  | Evidence                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Startup update prompt + notes | ✅ PASS | Launch immediately showed `v2.64.0 → v2.64.1`. `WHAT'S NEW IN V2.64.1` rendered the full fix note describing both broken unsaved-change prompts, the raw `confirm()` ACL cause, the native yes/no replacement, and the lint guard.                                                                                                     |
+| In-app install + relaunch     | ✅ PASS | `Install now` entered the download flow, closed the old Beatform window (`17762776`), and automatically relaunched a new window (`17893848`) within the next 5-second observation. No UAC or elevation UI appeared.                                                                                                                    |
+| Installed executable version  | ✅ PASS | `(Get-Item 'C:\Users\Julius\AppData\Local\Beatform\Beatform.exe').VersionInfo.ProductVersion` returned `2.64.1` after relaunch and again after final shutdown.                                                                                                                                                                         |
+| ALIGN-002 experiment 2        | ✅ PASS | Registry query returned `DisplayName = Beatform`, `DisplayVersion = 2.64.1` verbatim. Decisive interpretation: uninstall-registry version writing now works correctly; it is not one release behind.                                                                                                                                   |
+| WGSL dirty-close prompt       | ✅ PASS | Typed one temporary `x` into the WGSL textarea and clicked the header ×. Native `Discard unsaved changes to this shader?` yes/no dialog appeared with no error toast. `No` closed the prompt and kept the dirty editor open; clicking × again and choosing `Yes` discarded the character and closed the editor. No ACL error appeared. |
+| Shadertoy dirty-close prompt  | ✅ PASS | Entered `garbage`; translation showed `No mainImage(out vec4 fragColor, in vec2 fragCoord) found — paste the Image tab of a Shadertoy shader`. Header × opened native `Discard this import?`; `Yes` closed the importer and returned to the shader editor. No `plugin:dialog                                                           | confirm not allowed by ACL` error appeared. |
+| Clean shutdown/orphan check   | ✅ PASS | Closed shader editor and Beatform normally. Final `Get-Process -Name Beatform` check returned process count 0.                                                                                                                                                                                                                         |
+
+**Outcome: all requested v2.64.1 quick-pass checks passed. ALIGN-002 is resolved:
+installed executable and uninstall registry both report `2.64.1`; both repaired
+native discard prompts work without ACL errors; no Beatform process remained.**
+
 ## ⚠️ v2.64.0 updater + Shadertoy import smoke — 2026-08-02
 
 Executed against repository HEAD `ba84330` using Computer Use. Installed app
