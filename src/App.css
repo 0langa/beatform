@@ -1761,6 +1761,21 @@ button.row-value:focus-visible {
   cursor: pointer;
 }
 
+/* The dropdown POPUP is native: under a light OS theme WebView2 renders it
+ * light while optgroup labels inherit the app's white `color` — white on
+ * white (owner screenshot, modulation target list). Explicit colors on
+ * option/optgroup force Chromium to draw the popup itself dark and legible
+ * regardless of OS theme. */
+.select option,
+.select optgroup {
+  background: #14161c;
+  color: var(--text);
+}
+
+.select optgroup {
+  color: var(--text-dim);
+}
+
 .select option {
   background: var(--bg-strong);
 }
@@ -2592,6 +2607,24 @@ kbd {
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
+}
+
+/* Keep the route row's slider, readout and remove-✕ from crowding into each
+ * other (owner screenshot: ✕ sat on the value even at max panel width): the
+ * readout keeps its column, the slider absorbs the flex, the ✕ never
+ * shrinks and gets a hair of breathing room. */
+.mod-row .slider {
+  flex: 1 1 40px;
+  min-width: 24px;
+}
+
+.mod-row .row-value {
+  flex: 0 0 34px;
+}
+
+.mod-row .chip-x {
+  flex: 0 0 auto;
+  margin-left: 2px;
 }
 
 .mod-select {
