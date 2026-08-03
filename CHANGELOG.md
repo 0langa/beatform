@@ -11,6 +11,55 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.66.0] - 2026-08-03
+
+### Added
+
+- **Tunnel becomes a waterslide.** A new **Curve** knob (with an advanced
+  Curve length) bends the tube into sweeping turns — up, down, left, right —
+  with the camera leaning into each bend, instead of the straight illuminated
+  bore. The path is part of the tube itself, so preview and export always
+  agree and pausing mid-bend holds a stable frame. The **speed ceiling
+  doubled**, with the wall pattern automatically softening at speeds that
+  used to strobe. A new **Waterslide** factory style shows it off. Existing
+  projects are untouched — Curve defaults to off and saved speeds render
+  identically.
+
+### Changed
+
+- **The Pulse slider is now usable across its whole range.** Tunnel,
+  Metaballs and Particles were tuned around 100% and scaled linearly, so
+  anything above ~50% teleported the tunnel camera, strobed the lava lamp
+  and blew the particle field into a washed-out flood. All three now shape
+  their beat response: at 100% they feel like before, at 200% they hit
+  visibly harder yet stay composed — no teleports, no strobing, no
+  full-frame flashes.
+
+- **Particles moves forward, never back.** Beat motion used to shove every
+  particle out and drag it back as the beat faded — the field visibly
+  rubber-banded on every hit. Particles now glide to a new resting spot on
+  each beat of the tempo grid and stay there. Also fixed: particles no
+  longer clip against invisible edges mid-screen, and the frame-rate
+  collapse at high Pulse settings is gone (about a tenth of the overdraw it
+  used to burn).
+
+- **The drawn spectrum now sits on the beat.** Long analysis windows (171
+  and 341 ms) painted their bars roughly half a window late — noticeably
+  behind the music in the live preview, and behind the transient in
+  exports too. Exports are now aligned to the hit (a click lands within one
+  analysis frame of its true position), and the live preview's visual
+  latency drops from ~85 ms to ~21 ms (171 ms window) and from ~171 ms to
+  ~43 ms (341 ms window). Beat detection was never affected — it always ran
+  on its own fast path — and the resolution hints now state the actual
+  visual latency.
+
+### Fixed
+
+- The modulation target dropdown's group headers were white-on-white under
+  a light Windows theme; the list now renders dark and legible everywhere.
+- The remove-route ✕ no longer crowds into the value readout in the
+  modulation list.
+
 ## [2.65.0] - 2026-08-02
 
 ### Added
