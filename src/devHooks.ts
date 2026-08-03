@@ -13,6 +13,9 @@ import { runBatch } from "./state/batchRunner";
 import type { ProjectDocument } from "./state/project";
 import { runGpuPixelMatrix } from "./render/gpuMatrix";
 import { getPrefs, setPrefs } from "./state/prefs";
+import { pcmFromAudioBuffer } from "./audio/offlineSource";
+import { wavFromPcm } from "./audio/dsp/wav";
+import { proresSetAudio, av1Begin, proresWrite, proresFinish, proresAbort } from "./state/platform";
 
 /**
  * Dev-only E2E probes, extracted whole from App.tsx (they were ~240 lines and
@@ -171,6 +174,12 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
       codec: VideoCodecId;
       /** Render a PNG sequence instead of MP4; frames are counted, not written. */
       png: boolean;
+      /**
+       * Debug shell only (needs Tauri IPC): run the REAL AV1 10-bit lane —
+       * deep-color tap, raw rgba64le frames into the av1 ffmpeg sidecar,
+       * finished .mp4 at this path. Mirrors exportActions' av1Mode leg.
+       */
+      av1Path: string;
       /** Normalize the exported audio (audio lane only). */
       loudness: import("./export/exportCore").LoudnessJob;
       /**
@@ -208,6 +217,20 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
     // silently passes the exact regressions it exists to catch.
     const pngHashes: string[] = [];
     const doc = docFromState(s);
+    // AV1 10-bit probe lane: real sidecar handshake, real deep-color tap —
+    // the same chain-serialized backpressure as exportActions' av1Mode leg.
+    let rawFrames = 0;
+    let rawDistinct = 0;
+    let proresChain = Promise.resolve();
+    const proresFail: { err: unknown } = { err: null };
+    if (opts.av1Path) {
+      // Headless stand-in for the save dialog's allow_file — debug builds only
+      // (the command is a hard error in release).
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("debug_allow_path", { path: opts.av1Path });
+      await proresSetAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
+      await av1Begin(opts.fps ?? 30, w, h, opts.av1Path);
+    }
     // Everything the document contributes goes through the SAME builder the
     // app's export path and the batch runner use. This probe used to re-derive
     // bg / coverArt / bgImage / bgVideo itself — a THIRD copy of rules that
@@ -272,12 +295,42 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
                 );
               }
             : undefined,
+          deepColor: opts.av1Path ? true : undefined,
+          onRawFrame: opts.av1Path
+            ? (data: Uint16Array) => {
+                rawFrames++;
+                // Renderer-leg proof: distinct u16 red-channel values in the
+                // final frame. An 8-bit-quantized source can't exceed 256.
+                const set = new Set<number>();
+                for (let i = 0; i < data.length; i += 4) set.add(data[i]);
+                rawDistinct = set.size;
+                proresChain = proresChain
+                  .then(() =>
+                    proresWrite(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)),
+                  )
+                  .catch((e: unknown) => {
+                    proresFail.err ??= e;
+                  });
+                return proresChain;
+              }
+            : undefined,
           segment: opts.canvasLoop,
           loopCrossfadeSec: opts.canvasLoop ? 0.5 : undefined,
           loudness: opts.loudness,
         },
       ),
-    );
+    ).catch(async (e: unknown) => {
+      if (opts.av1Path) await proresAbort().catch(() => undefined);
+      throw proresFail.err ?? e;
+    });
+    if (opts.av1Path) {
+      await proresChain;
+      if (proresFail.err != null) {
+        await proresAbort().catch(() => undefined);
+        throw proresFail.err;
+      }
+      await proresFinish();
+    }
     // Decode what we actually wrote and measure it. AAC is lossy, so this is
     // the honest number a delivery target would see — not what we intended.
     let measured: { lufs: number; truePeakDb: number } | undefined;
@@ -304,6 +357,7 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
       ...(result.loudness ? { loudness: result.loudness } : {}),
       ...(measured ? { measured } : {}),
       ...(opts.png ? { pngFrames: pngFrames.length, pngBytes: pngFrames, pngHashes } : {}),
+      ...(opts.av1Path ? { rawFrames, rawDistinct } : {}),
     };
     (window as unknown as { __lastExport: unknown }).__lastExport = info;
     (window as unknown as { __lastExportBlob: Blob | undefined }).__lastExportBlob = result.blob;

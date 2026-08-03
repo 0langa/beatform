@@ -10,7 +10,14 @@ export default tseslint.config(
   {
     // Node build scripts (fetch-ffmpeg etc.) — Node globals, not browser ones
     files: ["scripts/**/*.mjs"],
-    languageOptions: { globals: { console: "readonly", process: "readonly", fetch: "readonly" } },
+    languageOptions: {
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        fetch: "readonly",
+        Buffer: "readonly",
+      },
+    },
   },
   {
     // AudioWorklet global scope (the bundled loopback worklet, v2.44.1) —

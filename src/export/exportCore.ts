@@ -156,6 +156,20 @@ export interface ExportJob {
    */
   mode: "buffer" | "stream" | "png";
   /**
+   * Deep-colour lane (FEAT-005): render through the full post chain into the
+   * renderer's rgba16float tap and hand each frame to hooks.onRawFrame as
+   * tightly-packed rgba64le-order u16 — post-tonemap, pre-quantize pixels for
+   * a genuine 10-bit sidecar encode. Like the PNG lane, this bypasses the
+   * WebCodecs/mediabunny encode entirely (the ffmpeg sidecar owns mux + audio
+   * via the same WAV staging ProRes uses), so `mode`'s buffer/stream
+   * distinction is inert and `codec` is ignored. Mutually exclusive with
+   * mode "png" (two frame sinks would collide) and with loopCrossfadeSec
+   * (the loop blend runs through an 8-bit 2D canvas, which would silently
+   * re-quantize exactly the pixels this lane exists to protect) — both are
+   * rejected at job start rather than half-honoured.
+   */
+  deepColor?: boolean;
+  /**
    * Loudness normalization for the delivered audio. Undefined = off (the track
    * is encoded at its own level).
    *
@@ -216,6 +230,19 @@ export interface ExportCoreHooks {
    * discarded in TypeScript.
    */
   onFrame?: (data: Uint8Array, index: number) => void | Promise<void>;
+  /**
+   * Deep-colour lane (job.deepColor): one raw frame per video frame, in
+   * order — tightly-packed rgba64le-order u16 (R,G,B,A per pixel, row-major,
+   * no padding), length = width×height×4. Feed it to ffmpeg as
+   * `-f rawvideo -pix_fmt rgba64le -s WxH`.
+   *
+   * MAY return a promise, and the core AWAITS it — the same backpressure
+   * contract as onFrame, and it matters MORE here: a raw 1080p frame is
+   * ~16.6 MB (4K ~66 MB), so a fire-and-forget sink would grow the backlog
+   * by (render fps − encode fps) × frame size per second and OOM a long
+   * export far faster than the PNG lane ever could.
+   */
+  onRawFrame?: (data: Uint16Array) => void | Promise<void>;
   signal?: AbortSignal;
 }
 
@@ -237,6 +264,27 @@ export async function runExportJob(
     if (hooks.signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
   };
   abort();
+
+  // Deep-colour lane preconditions — reject impossible combinations up front
+  // with a reason, before any GPU/encoder resource exists. See the deepColor
+  // field's doc for why each pairing is forbidden.
+  const isDeep = job.deepColor === true;
+  if (isDeep) {
+    if (job.mode === "png") {
+      throw new Error("deepColor is mutually exclusive with PNG mode (one frame sink per job)");
+    }
+    if (job.loopCrossfadeSec) {
+      throw new Error(
+        "deepColor is mutually exclusive with loop crossfade — the loop blend runs " +
+          "through an 8-bit canvas and would re-quantize the deep frames",
+      );
+    }
+    if (!hooks.onRawFrame) {
+      // Without a sink every rendered frame would be silently discarded and
+      // the job would "succeed" while producing nothing.
+      throw new Error("deepColor requires hooks.onRawFrame");
+    }
+  }
 
   // Custom WGSL presets: the worker is a fresh module instance with an empty
   // registry — re-register (re-validated; a job is still untrusted input).
@@ -278,7 +326,9 @@ export async function runExportJob(
   // and muxed with BlockAdditions — the transparent-video path. The render walk
   // above these sources is byte-identical either way; only the encode/mux
   // stage differs.
-  const isWebm = !isPng && (job.codec ?? "h264") === "vp9a";
+  // Deep mode rides the sidecar exactly like PNG/ProRes: no muxer, no
+  // WebCodecs audio — the ffmpeg process encodes audio from the staged WAV.
+  const isWebm = !isPng && !isDeep && (job.codec ?? "h264") === "vp9a";
   let output: Output | null = null;
   let videoSource: VideoSampleSource | null = null;
   let audioSource: AudioSampleSource | null = null;
@@ -368,7 +418,7 @@ export async function runExportJob(
     output.addVideoTrack(videoSource, { frameRate: job.fps });
     output.addAudioTrack(audioSource);
     await output.start();
-  } else if (!isPng) {
+  } else if (!isPng && !isDeep) {
     try {
       if (!(await AudioEncoder.isConfigSupported(aacConfig)).supported) {
         audioCodec = "opus";
@@ -488,6 +538,10 @@ export async function runExportJob(
     clockSec: -2,
   };
   try {
+    // Deep lane: flip the renderer into deep capture BEFORE the first frame —
+    // every presented frame then runs the full post graph into the rgba16float
+    // tap (the neutral-post swapchain fast path is bypassed inside).
+    if (isDeep) renderer.setDeepCapture(true);
     renderer.setPreset(presetById(job.presetId));
     renderer.setBackground(job.bg);
     if (!dynamicOverlay) renderer.setOverlay(job.overlay ?? null);
@@ -802,7 +856,17 @@ export async function runExportJob(
         }
       }
 
-      if (isPng) {
+      if (isDeep) {
+        // Deep lane: read the rgba16float tap back as packed u16 — the canvas
+        // holds nothing in deep mode (the final pass rendered into the
+        // offscreen deep target instead of the swapchain), so `source` is
+        // deliberately never touched here.
+        const raw = await renderer.readbackDeepFrame();
+        bytesOut += raw.byteLength;
+        // Awaited: the deep lane's backpressure (see onRawFrame's docs — at
+        // ~16.6 MB per 1080p frame this await matters more than the PNG one).
+        await hooks.onRawFrame!(raw);
+      } else if (isPng) {
         // PNG sequence: snapshot the canvas straight to a file. Alpha survives
         // when the background is transparent (the context is premultiplied).
         const blob = await source.convertToBlob({ type: "image/png" });

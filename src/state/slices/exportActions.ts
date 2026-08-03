@@ -10,6 +10,7 @@ import { autoBitrateMbps, RESOLUTIONS, SIMPLIFIED_EXPORT_REASON } from "../expor
 import {
   animBegin,
   askConfirm,
+  av1Begin,
   diskSpace,
   downloadBlob,
   isTauri,
@@ -56,10 +57,13 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
 
     setExportSettings(patch) {
       const next = { ...get().exportSettings, ...patch };
-      // Canvas loops upload as videos — PNG/ProRes make no sense there, and
-      // leaving them selected silently exported an MP4 while the panel still
-      // said PNG. Coerce so the UI always tells the truth.
-      if (next.mode === "canvas" && (next.format === "png" || next.format === "prores")) {
+      // Canvas loops upload as videos — PNG/ProRes/AV1 make no sense there,
+      // and leaving them selected silently exported an MP4 while the panel
+      // still said PNG. Coerce so the UI always tells the truth.
+      if (
+        next.mode === "canvas" &&
+        (next.format === "png" || next.format === "prores" || next.format === "av1-10")
+      ) {
         next.format = "mp4";
       }
       set({ exportSettings: next });
@@ -111,6 +115,9 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       const pngMode = settings.format === "png" && !canvasMode;
       // ProRes goes through the ffmpeg sidecar; canvas loops stay MP4.
       const proresMode = settings.format === "prores" && !canvasMode;
+      // AV1 10-bit: the same sidecar session commands, but fed raw rgba64le
+      // frames from the deep-color tap instead of encoded PNGs.
+      const av1Mode = settings.format === "av1-10" && !canvasMode;
       // GIF/WebP loops go through the same sidecar — allowed in canvas mode
       // too (a seamless 3-8 s loop is the format's whole point).
       const animFormat =
@@ -144,29 +151,33 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
             fileName,
             proresMode
               ? [{ name: "QuickTime (ProRes)", extensions: ["mov"] }]
-              : animFormat
-                ? [
-                    {
-                      name: animFormat === "gif" ? "GIF animation" : "WebP animation",
-                      extensions: [animFormat],
-                    },
-                  ]
-                : webmMode
-                  ? [{ name: "WebM video", extensions: ["webm"] }]
-                  : [{ name: "MP4 video", extensions: ["mp4"] }],
+              : av1Mode
+                ? [{ name: "MP4 (AV1 10-bit)", extensions: ["mp4"] }]
+                : animFormat
+                  ? [
+                      {
+                        name: animFormat === "gif" ? "GIF animation" : "WebP animation",
+                        extensions: [animFormat],
+                      },
+                    ]
+                  : webmMode
+                    ? [{ name: "WebM video", extensions: ["webm"] }]
+                    : [{ name: "MP4 video", extensions: ["mp4"] }],
           );
           if (!savePath) {
             shared.exportStarting = false;
             return;
           }
         }
-      } else if (pngMode || proresMode || animFormat) {
+      } else if (pngMode || proresMode || av1Mode || animFormat) {
         set({
           exportError: pngMode
             ? "PNG sequence export needs the desktop app (it writes a folder)"
             : animFormat
               ? "GIF/WebP export needs the desktop app (it runs the bundled ffmpeg)"
-              : "ProRes export needs the desktop app (it runs the bundled ffmpeg)",
+              : av1Mode
+                ? "AV1 10-bit export needs the desktop app (it runs the bundled ffmpeg)"
+                : "ProRes export needs the desktop app (it runs the bundled ffmpeg)",
         });
         shared.exportStarting = false;
         return;
@@ -195,7 +206,9 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           ? "png"
           : proresMode
             ? "prores"
-            : (animFormat ?? (webmMode ? "webm" : "mp4"));
+            : av1Mode
+              ? "av1-10"
+              : (animFormat ?? (webmMode ? "webm" : "mp4"));
         const warning = preflightWarning(
           estimateExportBytes({
             format: kind,
@@ -232,8 +245,11 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // analysis can't see on a plain let (it narrows the reads to null).
       // `unknown`, not Error: Tauri command rejections are raw strings.
       const proresFail: { err: unknown } = { err: null };
-      // GIF/WebP share the ProRes frame pipe (one sidecar session at a time).
-      const sidecarMode = proresMode || !!animFormat;
+      // GIF/WebP share the ProRes frame pipe (one sidecar session at a time),
+      // and so does AV1 — but AV1 is fed raw rgba64le frames (onRawFrame),
+      // not encoded PNGs, so the PNG-frame sink is gated separately below.
+      const pngSidecarMode = proresMode || !!animFormat;
+      const sidecarMode = pngSidecarMode || av1Mode;
       // Tauri invoke() rejects with the Rust command's raw STRING, not an
       // Error — reading .message off it yields undefined, which is what the
       // export error toast used to show for every sidecar failure.
@@ -248,6 +264,11 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           // Original (un-normalized) audio: a mezzanine keeps source levels.
           await proresSetAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
           await proresBegin(fps, savePath);
+        } else if (av1Mode && savePath) {
+          // Same staged-WAV handshake as ProRes (ffmpeg re-encodes it to AAC
+          // in the .mp4); raw frames need width/height pinned at spawn time.
+          await proresSetAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
+          await av1Begin(fps, res.w, res.h, savePath);
         } else if (animFormat && savePath) {
           // GIF's single-pass palettegen graph makes ffmpeg buffer EVERY
           // decoded frame until EOF (audit E2) — a long track at full fps is
@@ -312,7 +333,7 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
               // ProRes renders PNG frames into the sidecar instead.
               streamToPath: sidecarMode ? undefined : (savePath ?? undefined),
               pngDir: pngDir ?? undefined,
-              onPngFrame: sidecarMode
+              onPngFrame: pngSidecarMode
                 ? (data) => {
                     proresChain = proresChain
                       .then(() => proresWrite(data))
@@ -327,10 +348,35 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                     return proresChain;
                   }
                 : undefined,
+              // AV1 10-bit: ask the core for the deep-color tap, and feed the
+              // raw frames down the same serialized sidecar chain as ProRes'
+              // PNGs — same ordering guarantee, same ffmpeg backpressure.
+              deepColor: av1Mode ? true : undefined,
+              onRawFrame: av1Mode
+                ? (data: Uint16Array) => {
+                    proresChain = proresChain
+                      .then(() =>
+                        // The Uint16Array is tightly-packed R,G,B,A u16s; its
+                        // underlying bytes go to the write command verbatim.
+                        // Assumption, noted: JS typed arrays use the host's
+                        // byte order, which is little-endian on every target
+                        // this app ships to — so the raw byte view IS the
+                        // rgba64le stream ffmpeg was told to expect.
+                        proresWrite(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)),
+                      )
+                      .catch((e: unknown) => {
+                        proresFail.err ??= e;
+                        ac.abort(); // stop rendering — ffmpeg is gone
+                      });
+                    // RETURN the chain: the core awaits it (backpressure).
+                    return proresChain;
+                  }
+                : undefined,
               segment,
               loopCrossfadeSec: canvasMode ? 0.5 : undefined,
-              // Only MP4 normalizes: PNG carries no audio, and a ProRes
-              // mezzanine deliberately keeps the source levels.
+              // Only MP4 normalizes: PNG carries no audio, and the sidecar
+              // mezzanine lanes (ProRes, AV1 10-bit) deliberately keep the
+              // source levels — a mastering deliverable is not re-leveled.
               loudness:
                 settings.loudnessTarget != null && settings.format === "mp4"
                   ? { targetLufs: settings.loudnessTarget, truePeakDb: settings.truePeakDb }
@@ -357,7 +403,9 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           set({
             exportDone: proresMode
               ? `ProRes 4444 MOV (PCM audio) saved to ${savePath}`
-              : `${animFormat === "gif" ? "GIF" : "WebP"} loop saved to ${savePath}`,
+              : av1Mode
+                ? `AV1 10-bit MP4 (AAC audio) saved to ${savePath}`
+                : `${animFormat === "gif" ? "GIF" : "WebP"} loop saved to ${savePath}`,
           });
         } else {
           if (result.blob) downloadBlob(result.blob, fileName);

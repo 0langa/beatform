@@ -11,10 +11,12 @@ import { runExportJob, type ExportJob } from "./exportCore";
  *  in:  { type: "start", job: ExportJob }   — begin (channels transferred in)
  *  in:  { type: "abort" }                   — cancel
  *  in:  { type: "frameAck" }                — png mode: main thread wrote a frame
+ *  in:  { type: "rawFrameAck" }             — deep mode: main thread wrote a raw frame
  *  in:  { type: "chunkAck" }                — stream mode: main thread wrote a chunk
  *  out: { type: "progress", done, total }
  *  out: { type: "chunk", data, position }   — stream mode file chunks
  *  out: { type: "frame", data, index }      — png mode: one encoded PNG/frame
+ *  out: { type: "rawFrame", data }          — deep mode: one rgba64le u16 frame
  *  out: { type: "done", result }            — buffer transferred out if present
  *  out: { type: "error", message, name }
  *
@@ -33,12 +35,15 @@ type InMessage =
   | { type: "start"; job: ExportJob }
   | { type: "abort" }
   | { type: "frameAck" }
+  | { type: "rawFrameAck" }
   | { type: "chunkAck" };
 
 const controller = new AbortController();
 
 /** Resolver for the frame the main thread is currently writing (png mode). */
 let pendingFrameAck: (() => void) | null = null;
+/** Resolver for the deep-colour raw frame in flight (rgba64le lane). */
+let pendingRawAck: (() => void) | null = null;
 /** Resolver for the file chunk the main thread is currently writing (stream). */
 let pendingChunkAck: (() => void) | null = null;
 
@@ -49,6 +54,8 @@ self.onmessage = (e: MessageEvent<InMessage>) => {
     // Don't strand the render on an ack that will never come.
     pendingFrameAck?.();
     pendingFrameAck = null;
+    pendingRawAck?.();
+    pendingRawAck = null;
     pendingChunkAck?.();
     pendingChunkAck = null;
     return;
@@ -56,6 +63,11 @@ self.onmessage = (e: MessageEvent<InMessage>) => {
   if (msg.type === "frameAck") {
     pendingFrameAck?.();
     pendingFrameAck = null;
+    return;
+  }
+  if (msg.type === "rawFrameAck") {
+    pendingRawAck?.();
+    pendingRawAck = null;
     return;
   }
   if (msg.type === "chunkAck") {
@@ -93,6 +105,15 @@ async function run(job: ExportJob): Promise<void> {
         self.postMessage({ type: "frame", data, index }, [data.buffer]);
         return new Promise<void>((resolve) => {
           pendingFrameAck = resolve;
+        });
+      },
+      // Deep-colour lane: same flow control as frame/frameAck — one ~16 MB
+      // (1080p) rgba64le frame in flight, transferred not copied, and the
+      // core's await pins the render to the ffmpeg sidecar's pace.
+      onRawFrame: (data) => {
+        self.postMessage({ type: "rawFrame", data }, [data.buffer]);
+        return new Promise<void>((resolve) => {
+          pendingRawAck = resolve;
         });
       },
     });

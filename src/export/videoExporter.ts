@@ -93,6 +93,12 @@ export interface ExportOptions {
    * for callers without desktop fs access. Setting either selects PNG mode.
    */
   onPngFrame?: (data: Uint8Array, index: number) => void | Promise<void>;
+  /** Deep-color tap request (AV1 10-bit lane): render through the offscreen
+   * rgba16float target instead of the swapchain and deliver raw frames. */
+  deepColor?: boolean;
+  /** Raw rgba64le u16 frame sink (AV1 10-bit lane). Awaited per frame — the
+   * ffmpeg sidecar's write speed is what paces the render. */
+  onRawFrame?: (data: Uint16Array) => Promise<void> | void;
   /**
    * Normalize the delivered audio to a loudness target with a true-peak
    * ceiling. Audio-only: toggling this does not change this export job's
@@ -301,6 +307,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     fps: o.fps,
     bitrate: o.bitrate,
     codec: o.codec,
+    deepColor: o.deepColor,
     presetId: o.presetId,
     params: o.params,
     bg: o.bg,
@@ -400,19 +407,26 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
         await o.onPngFrame?.(data, index);
       }
     : undefined;
+  // Deep-colour lane (av1-10): rgba64le frames straight to the caller's
+  // sidecar sink; awaiting it is the flow control, same as onFrame.
+  const onRaw = o.deepColor
+    ? async (data: Uint16Array) => {
+        await o.onRawFrame?.(data);
+      }
+    : undefined;
   try {
     let result: ExportCoreResult;
     if (typeof Worker === "undefined") {
-      result = await runInline(buildJob(buildPcm()), oo, writer, onFrame);
+      result = await runInline(buildJob(buildPcm()), oo, writer, onFrame, onRaw);
     } else {
       try {
-        result = await runInWorker(buildJob(buildPcm()), oo, writer, onFrame);
+        result = await runInWorker(buildJob(buildPcm()), oo, writer, onFrame, onRaw);
       } catch (e) {
         // A worker may lack WebGPU where the main thread has it (older
         // WebView2). The worker run transferred (detached) its job's PCM, so
         // the inline fallback gets a FRESH job with fresh copies.
         if ((e as Error).message.startsWith("__fallback__")) {
-          result = await runInline(buildJob(buildPcm()), oo, writer, onFrame);
+          result = await runInline(buildJob(buildPcm()), oo, writer, onFrame, onRaw);
         } else {
           throw e;
         }
@@ -437,12 +451,14 @@ async function runInline(
   o: ExportOptions,
   writer: FileWriter | null,
   onFrame: ((data: Uint8Array, index: number) => void | Promise<void>) | undefined,
+  onRawFrame: ((data: Uint16Array) => void | Promise<void>) | undefined,
 ): Promise<ExportCoreResult> {
   return runExportJob(job, {
     signal: o.signal,
     onProgress: o.onProgress,
     onChunk: writer ? (data, position) => writer.write(data, position) : undefined,
     onFrame,
+    onRawFrame,
   });
 }
 
@@ -464,6 +480,7 @@ function runInWorker(
   o: ExportOptions,
   writer: FileWriter | null,
   onFrame: ((data: Uint8Array, index: number) => void | Promise<void>) | undefined,
+  onRawFrame: ((data: Uint16Array) => void | Promise<void>) | undefined,
 ): Promise<ExportCoreResult> {
   const worker = new Worker(new URL("./exportWorker.ts", import.meta.url), {
     type: "module",
@@ -520,6 +537,7 @@ function runInWorker(
         | { type: "progress"; done: number; total: number }
         | { type: "chunk"; data: Uint8Array; position: number }
         | { type: "frame"; data: Uint8Array; index: number }
+        | { type: "rawFrame"; data: Uint16Array }
         | { type: "done"; result: ExportCoreResult }
         | { type: "error"; message: string; name: string }
       >,
@@ -560,6 +578,19 @@ function runInWorker(
             .then(() => {
               sinkBusy--;
               worker.postMessage({ type: "frameAck" });
+            });
+          break;
+        case "rawFrame":
+          wroteAnything = true;
+          // Deep-colour lane: identical flow control to "frame" above — the
+          // ack releases the worker's render, so the ffmpeg sidecar's write
+          // speed paces the GPU. Ack even on failure for the same reason.
+          sinkBusy++;
+          void Promise.resolve(onRawFrame?.(msg.data))
+            .catch(() => undefined)
+            .then(() => {
+              sinkBusy--;
+              worker.postMessage({ type: "rawFrameAck" });
             });
           break;
         case "done":

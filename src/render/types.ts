@@ -574,6 +574,23 @@ export interface Renderer {
   updateBackgroundVideoFrame(source: ImageBitmap): void;
   /** Global smooth-spectrum toggle: spline-connected bins, no hard corners. */
   setSmoothSpectrum(v: boolean): void;
+  /**
+   * Deep-colour capture mode (FEAT-005, the genuine-10-bit export lane).
+   * While enabled the renderer must route every presented frame through its
+   * full post chain into a high-precision offscreen target — bypassing any
+   * 8-bit fast path — so readbackDeepFrame() can return post-tonemap,
+   * pre-quantize pixels. WebGPU-only capability: the Canvas2D fallback is
+   * 8-bit end to end and throws on enable (honesty doctrine — the store
+   * gates deep formats off there; the throw is the backstop, not the UX).
+   */
+  setDeepCapture(enabled: boolean): void;
+  /**
+   * The high-precision frame tap: the last deep-captured frame as
+   * tightly-packed rgba64le-order u16 (R,G,B,A per pixel, row-major, no
+   * padding), length = width×height×4, value = round(clamp(c, 0, 1)×65535).
+   * Requires setDeepCapture(true) and a rendered frame; rejects otherwise.
+   */
+  readbackDeepFrame(): Promise<Uint16Array>;
   /** Global motion masters (rotation / pulse / detail), applied across modes. */
   setMotion(motion: MotionSettings): void;
   /** Post-processing chain (bloom, tonemap, vignette, grain, chromatic). */

@@ -78,6 +78,24 @@ describe("buildExportOptions", () => {
     expect(o.signal).toBeDefined();
   });
 
+  it("passes the deep-color lane's fields through the chokepoint (AV1 10-bit)", () => {
+    // The AV1 sidecar feed rides ExportIo like onPngFrame does for ProRes: a
+    // dropped field here would silently downgrade a "10-bit" export to the
+    // 8-bit canvas path — the exact honesty class FEAT-005 exists to close.
+    const onRawFrame = (_data: Uint16Array) => undefined;
+    const o = buildExportOptions(doc(), FMT, track, undefined, {
+      deepColor: true,
+      onRawFrame,
+    });
+    expect(o.deepColor).toBe(true);
+    expect(o.onRawFrame).toBe(onRawFrame);
+    // And absent stays absent — the 8-bit lanes must not accidentally ask
+    // the core for the deep-color tap.
+    const off = buildExportOptions(doc(), FMT, track, undefined, {});
+    expect(off.deepColor).toBeUndefined();
+    expect(off.onRawFrame).toBeUndefined();
+  });
+
   it("passes the timeline only when it is enabled", () => {
     // exportCore treats a present-but-disabled timeline as active, so this
     // gate is what keeps a disabled timeline from taking over the render.

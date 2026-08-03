@@ -326,6 +326,7 @@ export function loadStoredExportSettings(): Partial<ExportSettings> {
     raw.format === "mp4" ||
     raw.format === "png" ||
     raw.format === "prores" ||
+    raw.format === "av1-10" ||
     raw.format === "gif" ||
     raw.format === "webp"
   ) {

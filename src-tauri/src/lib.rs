@@ -32,6 +32,25 @@ const MAX_TRACKS: usize = 5000;
 /// this walked ANY path and returned up to MAX_TRACKS file paths + tags — a
 /// filesystem-inventory primitive available to any script running in the
 /// webview.
+/// DEBUG BUILDS ONLY: widen the fs scope to one explicit file path, standing
+/// in for the save dialog's `allow_file` so the E2E harness can drive the
+/// sidecar export lanes headlessly. Compiled to a hard error in release —
+/// the dialog stays the only scope-widening path users ever run.
+#[tauri::command]
+fn debug_allow_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    {
+        app.fs_scope()
+            .allow_file(std::path::Path::new(&path))
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = (app, path);
+        Err("debug builds only".into())
+    }
+}
+
 #[tauri::command]
 fn scan_audio_library(app: tauri::AppHandle, dir: String) -> Result<Vec<LibraryTrack>, String> {
     let root = std::path::Path::new(&dir);
@@ -113,6 +132,7 @@ pub fn run() {
         .manage(loopback::LoopbackCtl::default())
         .manage(prores::ProresState::default())
         .invoke_handler(tauri::generate_handler![
+            debug_allow_path,
             scan_audio_library,
             loopback::start_loopback,
             loopback::stop_loopback,
@@ -121,6 +141,7 @@ pub fn run() {
             prores::prores_audio_chunk,
             prores::prores_audio_end,
             prores::prores_begin,
+            prores::av1_begin,
             prores::anim_begin,
             prores::prores_write,
             prores::prores_finish,
