@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  deepFrameToRgba64,
-  f16BitsToF32,
-  f16ToUnorm16,
-  stripRowPadding,
-} from "./webgpuRenderer";
+import { deepFrameToRgba64, f16BitsToF32, f16ToUnorm16, stripRowPadding } from "./webgpuRenderer";
 
 /**
  * FEAT-005 deep-colour tap — the CPU side of readbackDeepFrame().
@@ -121,8 +116,8 @@ describe("stripRowPadding — 256-byte row alignment removal", () => {
     const out = stripRowPadding(src, 2, 3, 256);
     expect(out.length).toBe(2 * 3 * 4);
     expect(Array.from(out)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7, 1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 2000, 2001,
-      2002, 2003, 2004, 2005, 2006, 2007,
+      0, 1, 2, 3, 4, 5, 6, 7, 1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 2000, 2001, 2002,
+      2003, 2004, 2005, 2006, 2007,
     ]);
     // The sentinel never leaks through.
     expect(out.includes(0xdead)).toBe(false);

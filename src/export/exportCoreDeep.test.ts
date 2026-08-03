@@ -44,15 +44,15 @@ afterEach(() => {
 
 describe("runExportJob deepColor validation", () => {
   it("rejects deepColor + PNG mode (one frame sink per job)", async () => {
-    await expect(
-      runExportJob(deepJob({ mode: "png" }), { onRawFrame }),
-    ).rejects.toThrow(/deepColor is mutually exclusive with PNG mode/);
+    await expect(runExportJob(deepJob({ mode: "png" }), { onRawFrame })).rejects.toThrow(
+      /deepColor is mutually exclusive with PNG mode/,
+    );
   });
 
   it("rejects deepColor + loop crossfade (the blend canvas is 8-bit)", async () => {
-    await expect(
-      runExportJob(deepJob({ loopCrossfadeSec: 1.5 }), { onRawFrame }),
-    ).rejects.toThrow(/mutually exclusive with loop crossfade/);
+    await expect(runExportJob(deepJob({ loopCrossfadeSec: 1.5 }), { onRawFrame })).rejects.toThrow(
+      /mutually exclusive with loop crossfade/,
+    );
   });
 
   it("rejects deepColor without an onRawFrame sink", async () => {
@@ -72,9 +72,9 @@ describe("runExportJob deepColor validation", () => {
     vi.stubGlobal("VideoEncoder", { isConfigSupported: videoProbe });
     vi.stubGlobal("AudioEncoder", { isConfigSupported: audioProbe });
 
-    await expect(
-      runExportJob(deepJob({ codec: "vp9a" }), { onRawFrame }),
-    ).rejects.toThrow(/OffscreenCanvas/);
+    await expect(runExportJob(deepJob({ codec: "vp9a" }), { onRawFrame })).rejects.toThrow(
+      /OffscreenCanvas/,
+    );
     expect(videoProbe).not.toHaveBeenCalled();
     expect(audioProbe).not.toHaveBeenCalled();
   });

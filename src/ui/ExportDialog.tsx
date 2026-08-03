@@ -165,10 +165,10 @@ export function ExportDialog() {
 
         {exportSettings.format === "av1-10" && (
           <p className="section-hint">
-            Genuine 10-bit AV1 (.mp4) — every frame reaches the encoder at 10-bit depth, for
-            grading and mastering where 8-bit banding matters. Software-encoded by the bundled
-            ffmpeg (LGPL), so it works on any machine — and is slower and larger than H.264. No
-            alpha: a Transparent background encodes as black.
+            Genuine 10-bit AV1 (.mp4) — every frame reaches the encoder at 10-bit depth, for grading
+            and mastering where 8-bit banding matters. Software-encoded by the bundled ffmpeg
+            (LGPL), so it works on any machine — and is slower and larger than H.264. No alpha: a
+            Transparent background encodes as black.
           </p>
         )}
 
