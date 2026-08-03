@@ -10,6 +10,10 @@ import type { PresetDef } from "../types";
  * 3D tube" cue); a one-sided cylinder shade curves the wall; fog recedes the
  * far end into haze. Spectrum lights the circumference, beats send a ring of
  * light receding to the core, and a corkscrew twist reads as a waterslide.
+ * The Curve knob bends the tube's PATH: the centreline wanders as a fixed
+ * function of travel distance, so perspective shows the bends ahead and the
+ * camera leans into them — up, down, left, right, like riding a flume
+ * instead of staring down a straight illuminated bore.
  */
 export const tunnelRings: PresetDef = {
   id: "tunnel-rings",
@@ -180,6 +184,34 @@ export const tunnelRings: PresetDef = {
         vignette: 0.55,
       },
     },
+    // Waterslide — the curve feature at full song: fast cruise around strong
+    // bends, rounded wet wall, the camera leaning through every turn.
+    {
+      id: "waterslide",
+      name: "Waterslide",
+      values: {
+        hue: 200,
+        hueSpread: 60,
+        speed: 1.5,
+        curve: 0.7,
+        curveScale: 1.2,
+        rings: 9,
+        twist: 1.4,
+        roundness: 0.9,
+        surfaceWarp: 1.6,
+        tileSat: 0.8,
+        tileSpectrum: 0.4,
+        groutWidth: 0.07,
+        groutLevel: 0.3,
+        fogFar: 0.9,
+        centerGlow: 0.5,
+        beatPulse: 0.8,
+        beatBright: 0.2,
+        cruiseFloor: 0.6,
+        cruiseEnergy: 1.2,
+        vignette: 0.4,
+      },
+    },
     // Foundry — few huge high-contrast tiles, heavy checker — molten plates flying past.
     {
       id: "foundry",
@@ -232,8 +264,12 @@ export const tunnelRings: PresetDef = {
       key: "speed",
       label: "Speed",
       group: "motion",
+      // Max was 1 through v2.65; the owner wanted real velocity headroom, so
+      // the range doubled. Pure multiplier on u.time — every saved value
+      // renders identically, and the shader derates ring contrast above the
+      // OLD ceiling so the new top end streams instead of strobing.
       min: 0.05,
-      max: 1,
+      max: 2,
       step: 0.05,
       default: 0.15,
       hint: "Base flight speed into the tunnel",
@@ -268,6 +304,18 @@ export const tunnelRings: PresetDef = {
       default: 0.7,
       hint: "Each beat sends a ring of light flying into the tunnel",
     },
+    {
+      // Default 0 = the straight bore every project saved before this param
+      // existed — old looks render identically without storing a value.
+      key: "curve",
+      label: "Curve",
+      group: "motion",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0,
+      hint: "Bends the tube's path like a waterslide — 0 keeps it straight",
+    },
   ],
   advanced: [
     {
@@ -279,6 +327,16 @@ export const tunnelRings: PresetDef = {
       step: 0.02,
       default: 0.35,
       hint: "Minimum speed even in silence",
+    },
+    {
+      key: "curveScale",
+      label: "Curve length",
+      group: "motion",
+      min: 0.25,
+      max: 2,
+      step: 0.05,
+      default: 1,
+      hint: "How tight the bends are — low is long sweeping arcs, high is a twisty flume",
     },
     {
       key: "cruiseEnergy",
@@ -477,15 +535,100 @@ export const tunnelRings: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+// The tube's centreline as a lateral offset (tube-radius units) per unit of
+// TRAVEL distance -- two incommensurate sines per axis, so the path bends
+// left, right, up and down without visibly repeating. A function of travel,
+// never of time: the bend is a fixed property of the tube itself, which is
+// what makes preview === export trivial and lets a parked camera (speed 0,
+// silence) stand mid-bend with zero drift.
+fn tubePath(s: f32) -> vec2f {
+  // Frequencies are deliberately LOW: the screen-space remap below is only
+  // injective while path-slope * visible-depth stays near 1, so tighter
+  // bends here would not read as tighter bends -- they would fold the
+  // centre of the frame over itself (observed live before the retune).
+  return vec2f(sin(s * 0.34) + 0.60 * sin(s * 0.121),
+               cos(s * 0.26) + 0.60 * sin(s * 0.089)) * 0.35;
+}
+
+// Analytic d/ds of tubePath: the camera's forward tangent along the bend.
+fn tubePathD(s: f32) -> vec2f {
+  return vec2f(0.340 * cos(s * 0.34) + 0.073 * cos(s * 0.121),
+               -0.260 * sin(s * 0.26) + 0.053 * cos(s * 0.089)) * 0.35;
+}
+
 fn preset(uv: vec2f) -> vec4f {
   // Club mirror folds the tube into radial wedges. 1 = off.
   let mirrorN = P_mirror();
   var p = kaleido(centered(uv), mirrorN);
-  let r = max(length(p), 2e-3);
-  let a = atan2(p.y, p.x);
 
   // Beat kick, tempo-grid locked with a flux fallback.
   let kickP = max(u.driveBeat, gridPulse(6.0));
+
+  // POSITION gets its own beat envelope. kickP's instant attack is right for
+  // brightness pops and wrong for travel: the camera crossing the whole shove
+  // distance in one frame is the owner's "camera is just teleporting". With a
+  // tempo grid the shove rises over the first tenth of the beat and has
+  // decayed to zero by the wrap, so travel is CONTINUOUS across every beat
+  // boundary (the 1.5 restores unit peak -- rise*decay tops out near 0.66 at
+  // phase 0.1). Without a grid there is no phase to ease across (determinism
+  // forbids accumulated smoothing), so driveBeat's attack stays and the
+  // saturated amplitude below keeps it a nudge rather than a jump.
+  var kickPos = u.driveBeat;
+  if (u.bpm > 0.5) {
+    kickPos = 1.5 * smoothstep(0.0, 0.1, u.beatPhase)
+            * max(exp(-u.beatPhase * 4.0) - 0.018, 0.0) / 0.982;
+  }
+
+  // What multiplies u.time is PARAMS-ONLY. Folding u.drive/kickP into the speed
+  // made travel = t*v(t) instead of the integral of v, so every change in
+  // loudness snapped the whole wall forward or back by t*(speed change): fine
+  // in the first seconds, a hard stutter/strobe after ~30 s of track. Loudness
+  // and beats are now BOUNDED additive travel offsets — they still shove you
+  // down the pipe, but the ring pattern can never be re-seeded mid-track.
+  // The beat shove is GATED by the pulse master and SATURATES: softLimit is
+  // identity through the whole default range (0.08 * pulse 2 sits far below
+  // the 0.288 knee, so stock feel is untouched), while Beat speed kick maxed
+  // out at pulse 200% lands on the 0.4-depth-unit ceiling instead of shoving
+  // a full depth unit -- punchy, never a teleport.
+  let travelT = u.time * P_speed() * P_cruiseFloor() * 2.2
+              + u.drive * P_cruiseEnergy() * 0.3
+              + kickPos * softLimit(P_beatSpeed() * u.pulse, 0.4);
+
+  // Waterslide curvature: the cross-section centre this fragment belongs to
+  // is displaced by where the centreline sits at the fragment's depth,
+  // relative to where the camera sits now. A wall point at depth z projects
+  // to (C(t + z) - C(t)) / z - lean: bends ahead sweep the far tube off
+  // centre while the mouth around the viewer stays put -- exactly the
+  // water-slide view. "lean" is the camera looking along its own tangent,
+  // slightly exaggerated (1.15) so the vanishing point swings against each
+  // bend and the near field tips the other way; the lean is what sells
+  // "riding the slide" over "watching a bent pipe". Deliberately NOT gated by
+  // u.spin: this is orientation of travel, not decoration rotation.
+  var q = p;
+  let curveAmt = P_curve();
+  if (curveAmt > 1e-4) {
+    let cw = P_curveScale();
+    let cam = tubePath(travelT * cw) * curveAmt;
+    let lean = tubePathD(travelT * cw) * (cw * curveAmt * 1.15);
+    // The path is sampled at the STRAIGHT-tube depth, once, explicitly. The
+    // exact bent depth would be a fixed-point problem (depth depends on the
+    // bent centre depends on depth), and solving it was tried and rejected
+    // live: where the bend rate approaches the contraction limit the
+    // iteration stops converging and the centre of the frame collapses into
+    // a flat untextured disc (and softLimit's tanh fed with depth 500
+    // overflowed exp() on the GPU into NaN specks). The explicit map is the
+    // classic demoscene form: geometrically first-order, visually identical
+    // in motion, and it degrades gracefully -- extreme Curve x Curve length
+    // gives a slight lens-like stretch near the centre, never an artifact
+    // disc. The depth cap at 5 makes the offset CONSTANT for the far field:
+    // past it the tube continues as a rigid shift (the vanishing point
+    // parked off-centre), which fog has mostly swallowed anyway.
+    let cz = min(1.0 / max(length(p), 2e-3), 5.0);
+    let off = (tubePath((travelT + cz) * cw) * curveAmt - cam) / cz - lean;
+    q = p - off;
+  }
+  let r = max(length(q), 2e-3);
+  let a = atan2(q.y, q.x);
 
   // Depth. 1/r is the pinhole distance down the axis of a cylinder: the centre
   // of the frame (r -> 0) is infinitely far, the frame edge is the near mouth
@@ -493,15 +636,7 @@ fn preset(uv: vec2f) -> vec4f {
   // point OUTWARD toward the viewer -- the actual motion of flying down a
   // pipe, not a texture being zoomed.
   let depth = 1.0 / r;
-  // What multiplies u.time is PARAMS-ONLY. Folding u.drive/kickP into the speed
-  // made travel = t*v(t) instead of the integral of v, so every change in
-  // loudness snapped the whole wall forward or back by t*(speed change): fine
-  // in the first seconds, a hard stutter/strobe after ~30 s of track. Loudness
-  // and beats are now BOUNDED additive travel offsets — they still shove you
-  // down the pipe, but the ring pattern can never be re-seeded mid-track.
-  let travel = depth + u.time * P_speed() * P_cruiseFloor() * 2.2
-             + u.drive * P_cruiseEnergy() * 0.3
-             + kickP * P_beatSpeed() * u.pulse;
+  let travel = depth + travelT;
   // Corkscrew: flutes spiral with depth like a waterslide auger.
   let aTwist = a + travel * P_twist() * 0.15;
 
@@ -532,11 +667,19 @@ fn preset(uv: vec2f) -> vec4f {
   // exactly the abs(seg * 2 - 1) sweep the unfolded branch performs by hand —
   // bass meeting bass at one wedge edge, treble meeting treble at the next.
   // Above the fold does the reflecting; below the preset does it itself.
+  //
+  // Curve addendum: kaleido() folded p into the fundamental domain, but the
+  // angle is read off q — the BENT frame — so with curvature the local angle
+  // can step outside that domain. The folded branch therefore MIRRORS
+  // out-of-domain angles back in (the same reflection the fold itself
+  // performs, in triangle form) instead of clamping, which would pin a
+  // whole arc of wall to bin 0 or bin 95 mid-bend. Inside [0, 1] the
+  // triangle IS the identity, so a straight tube renders bit-identically.
   let folded = mirrorN >= 1.5;
   let foldLo = select(TAU * -0.25, 0.0, mirrorN >= 2.5);
   let foldSpan = select(TAU * 0.5, TAU * 0.5 / mirrorN, mirrorN >= 2.5);
   let xs = select(abs(fract(a / TAU + 0.5) * 2.0 - 1.0),
-                  clamp((a - foldLo) / foldSpan, 0.0, 1.0), folded);
+                  abs(fract(((a - foldLo) / foldSpan + 1.0) * 0.5) * 2.0 - 1.0), folded);
   let v = binAt(xs);
   let pk = peakAt(xs);
 
@@ -553,6 +696,17 @@ fn preset(uv: vec2f) -> vec4f {
   let ringD = fract(ringF);
   let ringLine = smoothstep(P_groutWidth() * 1.6, 0.0, min(ringD, 1.0 - ringD));
   let ringParity = f32(i32(floor(ringF)) & 1);
+
+  // The speed range tops out at 2x its old ceiling. The sustained ring pass
+  // rate is PARAMS-ONLY (audio only adds bounded offsets, never sustained
+  // rate), so it can be derated deterministically: above ~11 rings/s — just
+  // past the old ceiling of 10.78, unreachable by any saved look — radial
+  // bands cross a third of a period per 24 fps export frame and strobe
+  // instead of streaming. Ring structure (lines + parity checker) fades to
+  // 30% there; flutes, palette drift and fog are angular/low-frequency and
+  // keep carrying the sense of speed without aliasing.
+  let ringRate = P_speed() * P_cruiseFloor() * 2.2 * P_rings() * 0.35;
+  let ringVis = 1.0 - 0.7 * smoothstep(11.0, 21.0, ringRate);
 
   // Longitudinal flutes running down the tube LENGTH and converging at the
   // vanishing point. Converging perspective lines are the single strongest
@@ -573,7 +727,7 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Wall base: DARK, lifted by structure + spectrum. Alternating ring parity
   // (checker) gives neighbouring segments distinct tone so travel reads.
-  var lit = P_tileLevel() * (0.55 + ringParity * P_checker())
+  var lit = P_tileLevel() * (0.55 + ringParity * P_checker() * ringVis)
           + fluteShade * 0.22
           + surf * 0.3
           + v * P_tileSpectrum();
@@ -581,7 +735,7 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Bright seams (ring + flute lines), spectrum-lit; the loudest angle's seams
   // flare near-white (a hot desaturated core reads as emitting).
-  let seam = max(ringLine, fluteLine);
+  let seam = max(ringLine * ringVis, fluteLine);
   col += pal * seam * P_groutLevel() * (0.6 + v * 1.6);
   col += vec3f(1.0, 0.98, 0.94) * seam * pk * pk * P_groutLevel() * 1.4;
 
@@ -611,7 +765,11 @@ fn preset(uv: vec2f) -> vec4f {
   // Whole-wall beat flash: a brief global lift on each grid beat (kickP is
   // grid-locked with a flux fallback), stacked on top of the travelling ring
   // and hot core — VJ punch that still reads on busy, spectrum-lit walls.
-  col *= 1.0 + kickP * P_beatBright() * u.pulse;
+  // Pulse gates it, and the response saturates: defaults live in softLimit's
+  // identity region (0.15 * pulse 2 = 0.3, knee 0.54) so nothing changes out
+  // of the box, but Beat flash maxed at pulse 200% lifts +75% instead of
+  // +120% — a flash, not a full-frame strobe.
+  col *= 1.0 + kickP * softLimit(P_beatBright() * u.pulse, 0.75);
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.25);
