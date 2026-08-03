@@ -1,6 +1,6 @@
 # Beatform Backlog and Alignment Ledger
 
-Last reconciled: **2026-08-03** (post v2.66.0 owner-feedback round)
+Last reconciled: **2026-08-03** (post v2.67.0 — FEAT-005 10-bit AV1 export)
 
 This is Beatform's canonical current-work ledger. It records what is complete,
 what still needs evidence, what is ready to execute, and what remains only a
@@ -42,12 +42,12 @@ Time-sensitive values below were checked on 2026-08-03:
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Repository              | `0langa/beatform`                                                                                                                                     |
 | Branch                  | Clean `main`, aligned with `origin/main`                                                                                                              |
-| Source version          | `2.66.0` in all five version-bearing files                                                                                                            |
-| HEAD / tag              | `3bd49fa` / `v2.66.0`                                                                                                                                 |
-| Latest public release   | `v2.66.0`, published 2026-08-03; setup-exe SHA-256 matches `SHA256SUMS.txt`, updater manifest signature present, live latest endpoint serves `2.66.0` |
+| Source version          | `2.67.0` in all five version-bearing files                                                                                                            |
+| HEAD / tag              | `6ff05f7` / `v2.67.0`                                                                                                                                 |
+| Latest public release   | `v2.67.0`, published 2026-08-03; setup-exe SHA-256 matches `SHA256SUMS.txt`, updater manifest signature present, live latest endpoint serves `2.67.0` |
 | Open GitHub issues      | 0                                                                                                                                                     |
 | Open pull requests      | 0                                                                                                                                                     |
-| Installed desktop app   | `2.65.0` — v2.66.0 update pending; post-update, run the ritual's registry check (expect `2.66.0`)                                                     |
+| Installed desktop app   | `2.65.0` — v2.66.0 and v2.67.0 updates pending; post-update, run the ritual's registry check (expect the installed version)                           |
 | Running desktop app     | None during audit                                                                                                                                     |
 | Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers found in `src`, `src-tauri`, or `scripts`                                                                |
 
@@ -68,8 +68,9 @@ Work top to bottom unless fresh evidence changes priority.
 | 1     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index         |
 | 2     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
 | 3     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic               |
-| 4     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture             |
-| 5     | FEAT-009   | CONSIDERING | True second-display performance window                  |
+| 4     | FEAT-009   | CONSIDERING | True second-display performance window                  |
+
+`FEAT-005` **shipped in v2.67.0** (2026-08-03) — see its DONE entry.
 
 `VERIFY-001` closed 2026-08-03 (no leak — see its DONE entry); the FEAT-001
 sampler-param follow-up shipped in `v2.65.0` the same day.
@@ -398,8 +399,50 @@ Approval gate:
 
 ### FEAT-005 — Genuine 10-bit HEVC/AV1 export
 
-**Status:** READY — architecture decided 2026-08-03 from a full export-path
-map; implementation phases below. Owner pre-authorized the queue.
+**Status:** DONE — **shipped in v2.67.0** (2026-08-03). Every acceptance-gate
+item met with independent evidence:
+
+- **Implementation** (two worktree agents + central integration, all merged
+  via `feat/av1-10`): `fs_final` deep variant renders into an offscreen
+  `rgba16float` target with `COPY_SRC` (zero new shader text — the same
+  fs_final WGSL, so preview===export holds by construction); readback strips
+  256-byte row padding and a 65536-entry LUT converts f16→u16
+  (`webgpuRenderer.ts` `setDeepCapture`/`readbackDeepFrame`,
+  `deepFrameToRgba64`). `ExportJob.deepColor` + `hooks.onRawFrame` in
+  exportCore (awaited = ffmpeg-paced backpressure; rejects png-mode and
+  loop-crossfade combos). Worker relay mirrors frame/frameAck as
+  rawFrame/rawFrameAck, one transferred frame in flight, abort releases the
+  pending ack. Rust `av1_begin` reuses the ProRes sidecar verbatim with the
+  arg vector `-f rawvideo -pix_fmt rgba64le … -c:v libsvtav1 -preset 6
+-crf 24 -pix_fmt yuv420p10le` + explicit bt709/tv flags (cargo contract
+  test pins it). New format `"av1-10"` (a format like prores, NOT a
+  VideoCodecId), desktop-gated "AV1 10-bit" UI, preflight at 0.15 B/px-frame.
+- **Independent inspection:** `scripts/deepcolor-verify.mjs` (ffmpeg leg,
+  synthetic u16 ramp): av1 + yuv420p10le + bt709 metadata, **880 distinct
+  decoded luma levels** (8-bit ceiling 256).
+- **Beyond-8-bit end to end on device:** `scripts/av1-e2e.mjs` drives the
+  debug shell over CDP through a REAL export (tunnel preset, 8 s, 640×360):
+  final raw frame carries **4961 distinct u16 red values**; the finished
+  .mp4 decodes back to **752 distinct 10-bit luma levels**. (Needs Vite dev
+  on 127.0.0.1:1420; uses debug-only `debug_allow_path` — a hard error in
+  release builds — to stand in for the save dialog's `allow_file`.)
+- **No regression:** GPU pixel matrix 137 cases zero hash changes (deep
+  capture defaults off); 1032 vitest + 54 Rust tests green.
+- **Deterministic:** two independent device E2E runs produced
+  **byte-identical** .mp4 files (663881 bytes, same level counts) — the
+  determinism law holds through the deep tap AND the SVT-AV1 software
+  encoder.
+- **Unsupported hardware is a non-issue by construction:** libsvtav1 is
+  software encoding via the bundled pinned ffmpeg — no hardware gate, no
+  fake label. Slow machines just encode slower.
+
+**Shipped follow-up still open (recorded, not yet done):** switch the ProRes
+frame payload from 8-bit PNG to the same `rgba64le` pipe so ProRes 4444
+becomes genuinely deep (today ffmpeg merely widens 8-bit PNGs to
+`yuva444p10le`).
+
+<details>
+<summary>Original architecture decision (2026-08-03, pre-implementation)</summary>
 
 **Decisive map findings (file:line verified):**
 
@@ -486,6 +529,8 @@ Acceptance gate:
 - Pixel tests prove information beyond 8-bit survives end to end.
 - Preview/export color transform is documented and visually controlled.
 - Unsupported hardware fails clearly; no fake “10-bit” label.
+
+</details>
 
 ### FEAT-009 — True second-display performance window
 
