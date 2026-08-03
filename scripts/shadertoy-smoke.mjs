@@ -198,8 +198,28 @@ try {
   child.stdout.on("data", keep);
   child.stderr.on("data", keep);
 
-  const target = await page();
-  const evaluated = await evaluate(target.webSocketDebuggerUrl);
+  // Attach can race the page's first load (visible under machine load, e.g.
+  // a soak run in parallel) — same transient set loopback-smoke retries.
+  let evaluated;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const target = await page();
+      evaluated = await evaluate(target.webSocketDebuggerUrl);
+      break;
+    } catch (error) {
+      ws?.close();
+      ws = null;
+      if (
+        attempt === 3 ||
+        !/context was destroyed|cannot find default execution context|websocket/i.test(
+          String(error),
+        )
+      )
+        throw error;
+      await sleep(1000);
+    }
+  }
+  if (!evaluated) throw new Error("shadertoy smoke evaluation did not return");
   if (evaluated.exceptionDetails) {
     throw new Error(evaluated.exceptionDetails.exception?.description ?? "shadertoy smoke failed");
   }
