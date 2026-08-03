@@ -54,11 +54,14 @@ export interface ExportSettings {
   /**
    * "mp4" = H.264 + audio in one file. "png" = PNG image sequence into a
    * folder, keeping alpha when the background is Transparent (for editors).
-   * "prores" = ProRes 4444 .mov via the ffmpeg sidecar. "gif"/"webp" =
-   * animated loop files via the same sidecar (no audio; pair with Canvas
-   * loop mode for seamless loops).
+   * "prores" = ProRes 4444 .mov via the ffmpeg sidecar. "av1-10" = genuine
+   * 10-bit AV1 .mp4 via the same sidecar, fed raw rgba64le frames from the
+   * renderer's deep-color tap (a FORMAT, not a codec: codec ids route through
+   * the WebCodecs probe and its 8-bit lane). "gif"/"webp" = animated loop
+   * files via the same sidecar (no audio; pair with Canvas loop mode for
+   * seamless loops).
    */
-  format: "mp4" | "png" | "prores" | "gif" | "webp";
+  format: "mp4" | "png" | "prores" | "av1-10" | "gif" | "webp";
   /**
    * Integrated-loudness target for the exported audio (LUFS), or null to leave
    * the track at its own level. Off by default — silently changing someone's

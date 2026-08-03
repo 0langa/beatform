@@ -121,6 +121,7 @@ pub fn run() {
             prores::prores_audio_chunk,
             prores::prores_audio_end,
             prores::prores_begin,
+            prores::av1_begin,
             prores::anim_begin,
             prores::prores_write,
             prores::prores_finish,

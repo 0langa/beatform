@@ -69,6 +69,30 @@ describe("estimateExportBytes", () => {
     expect(need.outputBytes).toBeLessThan(7506e6 * 2);
   });
 
+  it("bills the AV1 10-bit mezzanine WAV to the scratch drive like ProRes", () => {
+    // The AV1 lane stages the same PCM WAV in %TEMP% before ffmpeg starts
+    // (same prores_audio_* handshake) — only the muxed audio differs (AAC,
+    // not the WAV itself), so scratch pays for the WAV and the file does not.
+    const seconds = 3600;
+    const need = estimateExportBytes({
+      format: "av1-10",
+      width: 1920,
+      height: 1080,
+      fps: 60,
+      seconds,
+      bitrate: 0,
+      sampleRate: 48000,
+      channels: 2,
+    });
+    const wav = wavBytes(seconds, 48000, 2);
+    expect(need.scratchBytes).toBe(wav);
+    // crf output has no chosen bitrate to trust: 0.15 bytes/pixel-frame is
+    // the deliberately conservative ceiling, plus 192 kbit/s AAC in the file.
+    expect(need.outputBytes).toBe(
+      Math.round(1920 * 1080 * seconds * 60 * 0.15 + Math.round(24_000 * seconds)),
+    );
+  });
+
   it("uses the chosen bitrate for mp4 and stages nothing", () => {
     const need = estimateExportBytes({
       format: "mp4",
