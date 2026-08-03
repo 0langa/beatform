@@ -1473,12 +1473,31 @@ fn preset(uv: vec2f) -> vec4f {
   // Detail = 1 this is exactly P_count(), so saved looks render unchanged.
   let count = i32(clamp(round(P_count() * u.detail), 2.0, 8.0));
 
+  // Pulse gate shaping (v2.66): the Pulse master spans 0..2 but the beat
+  // geometry below was tuned at 1, and a LINEAR gate blew it past its design
+  // envelope above ~50% (owner: "lava lamp suffering from epilepsy").
+  // softLimit is identity through 1.15 — the shipped 0..100% response is
+  // byte-identical — and compresses the top so 200% lands near 1.6x: "more",
+  // not "twice the violence". Each geometry term below ALSO saturates its own
+  // total, so a maxed param and a maxed Pulse cannot stack into a strobe.
+  let pulseG = softLimit(u.pulse, 1.6);
+
   // Beat squash: the whole lamp squishes flatter for an instant on each beat
   // (grid-locked when a tempo grid exists, flux fallback otherwise), like a
   // gulping lava lamp. It is a per-axis SCALE of the sample point, never an
   // angle offset, so it obeys the monotonic law; u.pulse gates it. Only the
   // blob field reads this warped point — the background wash stays still.
-  let squashB = max(u.driveBeat, gridPulse(6.0)) * P_squash() * u.pulse;
+  // The envelope leans 3:1 on gridPulse: beatPhase advances smoothly frame to
+  // frame while driveBeat attacks in a single frame, and at high Pulse that
+  // frame-edge read as a strobe — off-grid flux hits still land at quarter
+  // weight (with no grid gridPulse RETURNS driveBeat, so the mix is a no-op).
+  // The smoothstep eases the visual edge — same peak, but the response holds
+  // near the top and lands gently instead of snapping — and softLimit
+  // saturates the TOTAL squash so max-param x max-Pulse tops out at a 1.55x
+  // axis scale instead of the old 2.2x.
+  let squashEnv = clamp(mix(u.driveBeat, gridPulse(6.0), 0.75), 0.0, 1.0);
+  let squashEase = squashEnv * squashEnv * (3.0 - 2.0 * squashEnv);
+  let squashB = softLimit(squashEase * P_squash() * pulseG, 0.55);
   let sq = 1.0 + squashB;
   let pf = vec2f(p.x / sq, p.y * sq);
 
@@ -1516,6 +1535,21 @@ fn preset(uv: vec2f) -> vec4f {
       let bph = fract(u.beatPhase + fi * 0.6180339887);
       beatMul = max(exp(-bph * 5.0) - 0.03, 0.0) / 0.97;
     }
+    // Ease the gulp the same way as the squash: smoothstep keeps the peak but
+    // softens the attack frame and the decay tail so the swell reads as a
+    // breath, not a flash.
+    let beatCl = clamp(beatMul, 0.0, 1.0);
+    let beatEase = beatCl * beatCl * (3.0 - 2.0 * beatCl);
+
+    // The swell saturates BEFORE joining the calm terms: the outer softLimit
+    // below caps the SUM, so at high Pulse a raw swell simply dominated the
+    // calm size and every beat slammed each ball to the frame ceiling and
+    // back (the other half of the strobe). Capping the swell contribution
+    // itself keeps it a big confident gulp ON TOP of the calm size — 200%
+    // reads bigger, never "full-size flash". Identity through swell 0.36, so
+    // the default (0.2) and every factory style pass through untouched at
+    // Pulse = 1.
+    let swell = softLimit(beatEase * P_beatSwell() * pulseG, 0.5);
 
     // Size = calm floor + smooth energy breathing (primary sync) + a gentle
     // per-band accent + a staggered beat gulp. Capped so a loud beat can't
@@ -1524,7 +1558,7 @@ fn preset(uv: vec2f) -> vec4f {
     // Soft frame limit (v2.44): a maxed Size approaches a frame-filling
     // blob smoothly instead of pinning every ball to one clipped radius.
     let rad = softLimit(P_size() * (P_radiusFloor() + u.drive * P_energyGrow()
-            + band * P_radiusBand() + beatMul * P_beatSwell() * u.pulse), frameCircle() * 0.8);
+            + band * P_radiusBand() + swell), frameCircle() * 0.8);
     let diff = pf - pos;
     let d2 = dot(diff, diff);
     let contrib = rad * rad / (d2 + 1e-5);
@@ -3979,8 +4013,51 @@ fn P_sizeVar() -> f32 { return params[25u]; }
 fn P_bandColor() -> f32 { return params[26u]; }
 fn P_beatPop() -> f32 { return params[27u]; }
 
+// Per-beat resting spot for one star: direction and radius hashed from the
+// star's cell seed AND the beat index. beatRamp() indexes beats mod 4, so the
+// walk is bar-periodic and the bar wrap resumes exactly where beat 3's glide
+// ended -- continuous by construction, no state, no snap. Radius floor of 0.4
+// keeps every hop visible; the unit-disc bound is what the cell-coverage
+// budget below is computed from.
+fn danceTarget(seed: vec2f, i: f32) -> vec2f {
+  let a = hash21(seed + i * 19.19 + 3.7) * TAU;
+  let r = 0.4 + 0.6 * hash21(seed + i * 7.31 + 11.3);
+  return vec2f(cos(a), sin(a)) * r;
+}
+
 fn preset(uv: vec2f) -> vec4f {
   var p = kaleido(centered(uv), P_mirror());
+
+  // ---- Pulse + beat-grid masters (v2.66 overhaul) --------------------------
+  // pGeo replaces raw u.pulse on every GEOMETRIC beat term. The slider runs
+  // 0..2 but the geometry was tuned at 1.0, and linear scaling doubled every
+  // displacement at 200% (the "explodes outward then floods" video). This
+  // curve is exact at 0 and 1 and compresses the top (2.0 -> ~1.45), so 200%
+  // reads punchier, not twice as far. Still a true gate: pulse 0 -> 0.
+  let pGeo = u.pulse * 1.6 / (1.0 + 0.6 * u.pulse);
+  // Tempo-grid beat walk. bIdx/bFr slice beatRamp() (0..4, advancing 1.0 per
+  // grid beat, bar-wrap continuous) into "which beat" and "how far into it".
+  // The glide eases over the first 45% of the beat, then RESTS: each beat
+  // moves a star TO a new hashed spot, never back. The old scat term scaled
+  // the instantaneous driveBeat envelope, so its decay dragged every star
+  // back to where it started -- the long-standing "jerked back" complaint.
+  let ramp = beatRamp();
+  let bIdx = floor(ramp);
+  let bPrev = (bIdx + 3.0) % 4.0;
+  let bFr = smoothstep(0.0, 0.45, fract(ramp));
+  // Bounded surge shape for fly mode: eased beat count minus the linear ramp.
+  // Both wrap identically at the bar, so the difference is continuous and
+  // stays within about [-0.03, 0.55] -- a per-beat forward surge with zero
+  // net phase drift, and (capped at the use site) no backward motion between
+  // surges.
+  let surgeCurve = bIdx + bFr - ramp;
+  // The beat grid ticks straight through silence; gate tempo-locked motion on
+  // the smoothed drive so a quiet intro stays still (the calm look is
+  // unchanged) and the release is a slow settle, never a per-beat rubber-band.
+  let gate = smoothstep(0.02, 0.2, u.drive);
+  // Dance amplitude in CELL units. Max 1.0 * 0.3 * 1.45 = 0.44 cells at
+  // Beat dance 1.0 / pulse 200% -- the coverage bound below relies on this.
+  let danceAmp = P_beatDance() * 0.3 * pGeo * gate;
 
   // Dark hued field (a cosine tint stays saturated near black where an hsl hue
   // would go grey), plus a faint warped nebula breathing with bass -- ambient
@@ -3993,12 +4070,18 @@ fn preset(uv: vec2f) -> vec4f {
   // cost for no visible gain.
   let nebT = fbm(p * 0.5 + u.time * 0.02);
   col += bgPal * nebT * nebT * 0.05 * (0.4 + u.mid * 0.8);
-  col += bgPal * u.driveBeat * P_beatFlash() * u.pulse;
+  // Full-frame flash saturates at 0.3 (softLimit, identity below the knee so
+  // pulse 100% is untouched at the default Beat flash): linear-in-pulse it hit
+  // 0.5 * 2.0 = a solid frame of palette on every beat, the magenta flood in
+  // the owner's video. A wash must stay a wash.
+  col += bgPal * softLimit(u.driveBeat * P_beatFlash() * pGeo, 0.3);
 
   // Grid-locked beat brightness pop applied to every particle's luminance in
-  // both modes. Frame-constant, so hoisted out of the cell loops. u.pulse gates
-  // it; default Beat brightness of 0 makes this exactly 1.0 (no change).
-  let beatPop = 1.0 + max(u.driveBeat, gridPulse(7.0)) * P_beatPop() * u.pulse;
+  // both modes. Frame-constant, so hoisted out of the cell loops. pGeo gates
+  // it; default Beat brightness of 0 makes this exactly 1.0 (no change). The
+  // softLimit cap (max 2.6x luminance) keeps a maxed slider from bleaching
+  // the whole field white at pulse 200% (was 4.0x).
+  let beatPop = 1.0 + softLimit(max(u.driveBeat, gridPulse(7.0)) * P_beatPop() * pGeo, 1.6);
 
   if (P_fly() > 0.5) {
     // ---- TRUE 3D STARFIELD: discrete stars stream from far to the camera ----
@@ -4020,13 +4103,31 @@ fn preset(uv: vec2f) -> vec4f {
       // integral of v: whenever the rate moved, the phase jumped by
       // t*(rate change) — an error that grows LINEARLY with track time. A beat
       // shifted the shell phase 0.20 at t=5 s but 4.68 at t=120 s, i.e. the
-      // whole field re-rolled mid-track. Loudness and beats now ride as a
-      // BOUNDED additive phase offset, so they still push the field toward you
+      // whole field re-rolled mid-track. Loudness and beats still ride as
+      // BOUNDED additive phase offsets, so they push the field toward you
       // without ever re-seeding it.
       let baseRate = P_speed() * (1.0 - P_parallax() * fract(fs * 0.37) * 0.45);
+      var beatPh = 0.0;
+      if (u.bpm >= 1.0) {
+        // Tempo-locked surge: the shell travels its normal distance but
+        // bunches that travel onto the beats. Cap: base scroll advances
+        // baseRate*0.28 phase/s and the ramp runs u.bpm/60 beats/s, so any
+        // amp <= ampMax keeps total phase velocity >= 0 — the field surges
+        // forward on each beat and NEVER slides back (the envelope push it
+        // replaces returned all of its displacement as driveBeat decayed).
+        // Floor guards softLimit's knee math when Motion is 0 (ampMax -> 0
+        // would divide 0/0 inside softLimit); the surge is invisible there
+        // anyway because a parked field has no travel to bunch up.
+        let ampMax = max(baseRate * 0.28 * 60.0 / max(u.bpm, 1.0), 1e-4);
+        beatPh = softLimit(P_beatDance() * 0.2 * pGeo * gate, ampMax) * surgeCurve;
+      } else {
+        // No grid yet: keep the envelope push, halved and capped, so the
+        // residual settle-back is a small ease instead of a lurch.
+        beatPh = softLimit(u.driveBeat * P_beatDance() * 0.12 * pGeo, 0.15);
+      }
       let phase = fract(fs * 0.6180339887 + u.time * baseRate * 0.28
                       + u.drive * P_energyDrive() * 0.4
-                      + u.driveBeat * P_beatDance() * 0.25 * u.pulse);
+                      + beatPh);
       let Z = mix(1.25, 0.05, phase);           // far -> at the camera
       // Rotate each shell's grid by a different angle. Otherwise every shell's
       // naturally-sparse vanishing point (the grid origin) sits on the same
@@ -4061,11 +4162,26 @@ fn preset(uv: vec2f) -> vec4f {
           let rad = min(P_size() * (0.3 + h1) / (Z * gs) * (1.0 + band * P_sizePulse()) * szExtra, 0.05);
           let flight = normalize(starScreen + vec2f(1e-4, 0.0));
           let perp = vec2f(-flight.y, flight.x);
-          let stretch = 1.0 + P_streak() * (1.0 - Z) * (2.5 + u.driveBeat * 3.0 * u.pulse);
+          // Beat stretch, soft-capped: linear in u.pulse it ran to 2.5 + 6.0
+          // at 200% — a ~13x smear whose covered area multiplied the
+          // per-pixel tail cost across every shell (the 10 FPS cliff) while
+          // blowing past cell coverage (the mid-screen cutoff).
+          var stretch = 1.0 + P_streak() * (1.0 - Z) * (2.5 + softLimit(u.driveBeat * 3.0 * pGeo, 3.0));
+          // COVERAGE BOUND: the 3x3 neighbourhood only sees a star whose full
+          // extent stays within 1.5 cells of its cell centre; jitter spends
+          // 0.3 of that, leaving 1.2 cells for glow reach. Anything longer
+          // used to clip at a straight invisible cell edge. Shorten the
+          // streak to fit; the reach min() below radially caps the rare case
+          // where the unstretched radius alone overflows (giant Size +
+          // Size pulse combos, which clipped far worse before).
+          let reachMax = 1.2 / (Z * gs);
+          if (rad * stretch * 3.0 + 0.003 > reachMax) {
+            stretch = max((reachMax - 0.003) / max(rad * 3.0, 1e-5), 1.0);
+          }
           // EARLY DISTANCE CULL: a star's glow reaches at most ~3 core-radii, so
           // past that skip the sqrt / twinkle sins / palette cos / halo exp that
           // dominate the per-star cost. Stars are sparse, so most cells stop here.
-          let reach = rad * stretch * 3.0 + 0.003;
+          let reach = min(rad * stretch * 3.0 + 0.003, reachMax);
           if (dot(dvec, dvec) > reach * reach) { continue; }
           let dl = dot(dvec, flight);
           let dp = dot(dvec, perp);
@@ -4092,10 +4208,15 @@ fn preset(uv: vec2f) -> vec4f {
     // Same rule as fly mode: what multiplies u.time is params-only, so the
     // field can never teleport by t*(rate change) when loudness moves. Audio
     // becomes a bounded positional PUSH added below. (The beat kick the eye
-    // actually reads in drift mode is scat, already an additive offset.)
+    // actually reads in drift mode is the per-star dance, a bounded additive
+    // offset walked on the tempo grid.)
     let baseSpd = P_speed() * 0.6;
-    let push = u.drive * P_energyDrive() * 0.08
-             + u.driveBeat * P_beatDance() * 0.06 * u.pulse;
+    // The driveBeat term that used to ride here shifted the WHOLE field along
+    // dir and slid it back as the envelope decayed — that beat energy now
+    // lives entirely in the per-star dance below, which never retraces. Only
+    // the slow drive push remains; its seconds-scale envelope reads as swell,
+    // not snap.
+    let push = u.drive * P_energyDrive() * 0.08;
     let ang = radians(P_direction());
     let dir = vec2f(cos(ang), -sin(ang));
     let layerCount = i32(P_layers());
@@ -4132,8 +4253,29 @@ fn preset(uv: vec2f) -> vec4f {
           let drift = vec2f(sin(wt * (0.8 + 0.5 * h2) + fph), cos(wt * (0.7 + 0.5 * h3) + fph * 1.3)) * 0.34;
           let wob = (drift + gCur) * P_wander();
           let scatDir = normalize(vec2f(h2 - 0.5, h3 - 0.5) + 1e-4);
-          let scat = scatDir * u.driveBeat * P_beatDance() * 0.35 * u.pulse;
-          let home = (base + vec2f(f32(ox), f32(oy)) + vec2f(0.5) + wob + scat) / scl;
+          // Beat dance: glide to a NEW hashed resting offset each grid beat
+          // (see the bIdx/bFr note up top) instead of displacing by the beat
+          // envelope, whose decay yanked the star straight back. danceVel is
+          // the hop direction, kept for the streak so it stretches along the
+          // actual motion. Targets live in a unit disc scaled by danceAmp
+          // (<= 0.44 cells at pulse 200%), which the coverage budget below
+          // counts on.
+          var dance = vec2f(0.0);
+          var danceVel = vec2f(0.0);
+          if (u.bpm >= 1.0) {
+            let tPrev = danceTarget(cell, bPrev);
+            let tCur = danceTarget(cell, bIdx);
+            dance = mix(tPrev, tCur, bFr) * danceAmp;
+            danceVel = (tCur - tPrev) * danceAmp * 2.0;
+          } else {
+            // No beat grid: fall back to the envelope scatter, softLimit-
+            // capped at 0.45 cells — the residual settle-back is a small
+            // ease instead of the old full-amplitude rubber-band.
+            dance = scatDir * softLimit(u.driveBeat * P_beatDance() * 0.35 * pGeo, 0.45);
+            danceVel = scatDir * softLimit(u.driveBeat * 1.4 * pGeo, 2.0);
+          }
+          let off = wob + dance;
+          let home = (base + vec2f(f32(ox), f32(oy)) + vec2f(0.5) + off) / scl;
           let d = p - home;
           var band = u.bass;
           var bandTint = 0.0;
@@ -4142,17 +4284,30 @@ fn preset(uv: vec2f) -> vec4f {
           // Extra per-particle size spread (neutral at Size variance = 0).
           let szExtra = max(1.0 + (h1 - 0.5) * P_sizeVar() * 1.4, 0.1);
           let rad = P_size() * 0.4 / scl * depthV * (0.7 + band * P_sizePulse()) * szExtra;
-          let stretch = 1.0 + P_streak() * (0.2 + u.driveBeat * 1.0 * u.pulse);
+          // Beat stretch, soft-capped: linear in u.pulse the term hit
+          // 0.2 + 2.0 at 200%, smearing every particle into a dash (and past
+          // its cell coverage). Max is now 0.2 + 1.1.
+          var stretch = 1.0 + P_streak() * (0.2 + softLimit(u.driveBeat * pGeo, 1.1));
+          // COVERAGE BOUND (mirror of fly mode): the 3x3 neighbourhood covers
+          // 1.5 cells beyond the cell centre; wob + dance spend at most ~0.9
+          // of that, and the glow reach may not spend more than the rest —
+          // shorten the streak to fit, radially cap the reach (min below) as
+          // the last resort for oversized Size combos. This is what removes
+          // the straight invisible clip edges mid-screen.
+          let reachMax = (1.5 - max(abs(off.x), abs(off.y))) / scl;
+          if (rad * stretch * 2.8 + 0.004 > reachMax) {
+            stretch = max((reachMax - 0.004) / max(rad * 2.8, 1e-5), 1.0);
+          }
           // EARLY DISTANCE CULL — the real speedup. A particle's glow reaches at
           // most ~2.8 core-radii; beyond that its contribution is under 1% yet
           // was computed anyway. Particles are sparse, so most of the
           // 3x3-times-layers cells stop HERE, before the sqrt / twinkle sin /
           // palette cos / bloom exp that dominate the per-particle cost.
-          let reach = rad * stretch * 2.8 + 0.004;
+          let reach = min(rad * stretch * 2.8 + 0.004, reachMax);
           if (dot(d, d) > reach * reach) { continue; }
           // Streak follows the particle's own drift; light in drift mode so
           // free-floating particles stay mostly point-like, stretching on a beat.
-          let vel = normalize(gCur + drift * 0.5 + scatDir * u.driveBeat * 1.4 * u.pulse + vec2f(1e-4, 0.0));
+          let vel = normalize(gCur + drift * 0.5 + danceVel + vec2f(1e-4, 0.0));
           let perp = vec2f(-vel.y, vel.x);
           let dl = dot(d, vel);
           let dp = dot(d, perp);
@@ -4549,35 +4704,122 @@ fn P_speed() -> f32 { return params[2u]; }
 fn P_rings() -> f32 { return params[3u]; }
 fn P_spokes() -> f32 { return params[4u]; }
 fn P_beatPulse() -> f32 { return params[5u]; }
-fn P_cruiseFloor() -> f32 { return params[6u]; }
-fn P_cruiseEnergy() -> f32 { return params[7u]; }
-fn P_beatSpeed() -> f32 { return params[8u]; }
-fn P_tileLevel() -> f32 { return params[9u]; }
-fn P_tileSpectrum() -> f32 { return params[10u]; }
-fn P_pulseWidth() -> f32 { return params[11u]; }
-fn P_tileSat() -> f32 { return params[12u]; }
-fn P_checker() -> f32 { return params[13u]; }
-fn P_groutWidth() -> f32 { return params[14u]; }
-fn P_groutLevel() -> f32 { return params[15u]; }
-fn P_fogNear() -> f32 { return params[16u]; }
-fn P_fogFar() -> f32 { return params[17u]; }
-fn P_centerGlow() -> f32 { return params[18u]; }
-fn P_vignette() -> f32 { return params[19u]; }
-fn P_mirror() -> f32 { return params[20u]; }
-fn P_twist() -> f32 { return params[21u]; }
-fn P_roundness() -> f32 { return params[22u]; }
-fn P_surfaceWarp() -> f32 { return params[23u]; }
-fn P_beatBright() -> f32 { return params[24u]; }
+fn P_curve() -> f32 { return params[6u]; }
+fn P_cruiseFloor() -> f32 { return params[7u]; }
+fn P_curveScale() -> f32 { return params[8u]; }
+fn P_cruiseEnergy() -> f32 { return params[9u]; }
+fn P_beatSpeed() -> f32 { return params[10u]; }
+fn P_tileLevel() -> f32 { return params[11u]; }
+fn P_tileSpectrum() -> f32 { return params[12u]; }
+fn P_pulseWidth() -> f32 { return params[13u]; }
+fn P_tileSat() -> f32 { return params[14u]; }
+fn P_checker() -> f32 { return params[15u]; }
+fn P_groutWidth() -> f32 { return params[16u]; }
+fn P_groutLevel() -> f32 { return params[17u]; }
+fn P_fogNear() -> f32 { return params[18u]; }
+fn P_fogFar() -> f32 { return params[19u]; }
+fn P_centerGlow() -> f32 { return params[20u]; }
+fn P_vignette() -> f32 { return params[21u]; }
+fn P_mirror() -> f32 { return params[22u]; }
+fn P_twist() -> f32 { return params[23u]; }
+fn P_roundness() -> f32 { return params[24u]; }
+fn P_surfaceWarp() -> f32 { return params[25u]; }
+fn P_beatBright() -> f32 { return params[26u]; }
+
+// The tube's centreline as a lateral offset (tube-radius units) per unit of
+// TRAVEL distance -- two incommensurate sines per axis, so the path bends
+// left, right, up and down without visibly repeating. A function of travel,
+// never of time: the bend is a fixed property of the tube itself, which is
+// what makes preview === export trivial and lets a parked camera (speed 0,
+// silence) stand mid-bend with zero drift.
+fn tubePath(s: f32) -> vec2f {
+  // Frequencies are deliberately LOW: the screen-space remap below is only
+  // injective while path-slope * visible-depth stays near 1, so tighter
+  // bends here would not read as tighter bends -- they would fold the
+  // centre of the frame over itself (observed live before the retune).
+  return vec2f(sin(s * 0.34) + 0.60 * sin(s * 0.121),
+               cos(s * 0.26) + 0.60 * sin(s * 0.089)) * 0.35;
+}
+
+// Analytic d/ds of tubePath: the camera's forward tangent along the bend.
+fn tubePathD(s: f32) -> vec2f {
+  return vec2f(0.340 * cos(s * 0.34) + 0.073 * cos(s * 0.121),
+               -0.260 * sin(s * 0.26) + 0.053 * cos(s * 0.089)) * 0.35;
+}
 
 fn preset(uv: vec2f) -> vec4f {
   // Club mirror folds the tube into radial wedges. 1 = off.
   let mirrorN = P_mirror();
   var p = kaleido(centered(uv), mirrorN);
-  let r = max(length(p), 2e-3);
-  let a = atan2(p.y, p.x);
 
   // Beat kick, tempo-grid locked with a flux fallback.
   let kickP = max(u.driveBeat, gridPulse(6.0));
+
+  // POSITION gets its own beat envelope. kickP's instant attack is right for
+  // brightness pops and wrong for travel: the camera crossing the whole shove
+  // distance in one frame is the owner's "camera is just teleporting". With a
+  // tempo grid the shove rises over the first tenth of the beat and has
+  // decayed to zero by the wrap, so travel is CONTINUOUS across every beat
+  // boundary (the 1.5 restores unit peak -- rise*decay tops out near 0.66 at
+  // phase 0.1). Without a grid there is no phase to ease across (determinism
+  // forbids accumulated smoothing), so driveBeat's attack stays and the
+  // saturated amplitude below keeps it a nudge rather than a jump.
+  var kickPos = u.driveBeat;
+  if (u.bpm > 0.5) {
+    kickPos = 1.5 * smoothstep(0.0, 0.1, u.beatPhase)
+            * max(exp(-u.beatPhase * 4.0) - 0.018, 0.0) / 0.982;
+  }
+
+  // What multiplies u.time is PARAMS-ONLY. Folding u.drive/kickP into the speed
+  // made travel = t*v(t) instead of the integral of v, so every change in
+  // loudness snapped the whole wall forward or back by t*(speed change): fine
+  // in the first seconds, a hard stutter/strobe after ~30 s of track. Loudness
+  // and beats are now BOUNDED additive travel offsets — they still shove you
+  // down the pipe, but the ring pattern can never be re-seeded mid-track.
+  // The beat shove is GATED by the pulse master and SATURATES: softLimit is
+  // identity through the whole default range (0.08 * pulse 2 sits far below
+  // the 0.288 knee, so stock feel is untouched), while Beat speed kick maxed
+  // out at pulse 200% lands on the 0.4-depth-unit ceiling instead of shoving
+  // a full depth unit -- punchy, never a teleport.
+  let travelT = u.time * P_speed() * P_cruiseFloor() * 2.2
+              + u.drive * P_cruiseEnergy() * 0.3
+              + kickPos * softLimit(P_beatSpeed() * u.pulse, 0.4);
+
+  // Waterslide curvature: the cross-section centre this fragment belongs to
+  // is displaced by where the centreline sits at the fragment's depth,
+  // relative to where the camera sits now. A wall point at depth z projects
+  // to (C(t + z) - C(t)) / z - lean: bends ahead sweep the far tube off
+  // centre while the mouth around the viewer stays put -- exactly the
+  // water-slide view. "lean" is the camera looking along its own tangent,
+  // slightly exaggerated (1.15) so the vanishing point swings against each
+  // bend and the near field tips the other way; the lean is what sells
+  // "riding the slide" over "watching a bent pipe". Deliberately NOT gated by
+  // u.spin: this is orientation of travel, not decoration rotation.
+  var q = p;
+  let curveAmt = P_curve();
+  if (curveAmt > 1e-4) {
+    let cw = P_curveScale();
+    let cam = tubePath(travelT * cw) * curveAmt;
+    let lean = tubePathD(travelT * cw) * (cw * curveAmt * 1.15);
+    // The path is sampled at the STRAIGHT-tube depth, once, explicitly. The
+    // exact bent depth would be a fixed-point problem (depth depends on the
+    // bent centre depends on depth), and solving it was tried and rejected
+    // live: where the bend rate approaches the contraction limit the
+    // iteration stops converging and the centre of the frame collapses into
+    // a flat untextured disc (and softLimit's tanh fed with depth 500
+    // overflowed exp() on the GPU into NaN specks). The explicit map is the
+    // classic demoscene form: geometrically first-order, visually identical
+    // in motion, and it degrades gracefully -- extreme Curve x Curve length
+    // gives a slight lens-like stretch near the centre, never an artifact
+    // disc. The depth cap at 5 makes the offset CONSTANT for the far field:
+    // past it the tube continues as a rigid shift (the vanishing point
+    // parked off-centre), which fog has mostly swallowed anyway.
+    let cz = min(1.0 / max(length(p), 2e-3), 5.0);
+    let off = (tubePath((travelT + cz) * cw) * curveAmt - cam) / cz - lean;
+    q = p - off;
+  }
+  let r = max(length(q), 2e-3);
+  let a = atan2(q.y, q.x);
 
   // Depth. 1/r is the pinhole distance down the axis of a cylinder: the centre
   // of the frame (r -> 0) is infinitely far, the frame edge is the near mouth
@@ -4585,15 +4827,7 @@ fn preset(uv: vec2f) -> vec4f {
   // point OUTWARD toward the viewer -- the actual motion of flying down a
   // pipe, not a texture being zoomed.
   let depth = 1.0 / r;
-  // What multiplies u.time is PARAMS-ONLY. Folding u.drive/kickP into the speed
-  // made travel = t*v(t) instead of the integral of v, so every change in
-  // loudness snapped the whole wall forward or back by t*(speed change): fine
-  // in the first seconds, a hard stutter/strobe after ~30 s of track. Loudness
-  // and beats are now BOUNDED additive travel offsets — they still shove you
-  // down the pipe, but the ring pattern can never be re-seeded mid-track.
-  let travel = depth + u.time * P_speed() * P_cruiseFloor() * 2.2
-             + u.drive * P_cruiseEnergy() * 0.3
-             + kickP * P_beatSpeed() * u.pulse;
+  let travel = depth + travelT;
   // Corkscrew: flutes spiral with depth like a waterslide auger.
   let aTwist = a + travel * P_twist() * 0.15;
 
@@ -4624,11 +4858,19 @@ fn preset(uv: vec2f) -> vec4f {
   // exactly the abs(seg * 2 - 1) sweep the unfolded branch performs by hand —
   // bass meeting bass at one wedge edge, treble meeting treble at the next.
   // Above the fold does the reflecting; below the preset does it itself.
+  //
+  // Curve addendum: kaleido() folded p into the fundamental domain, but the
+  // angle is read off q — the BENT frame — so with curvature the local angle
+  // can step outside that domain. The folded branch therefore MIRRORS
+  // out-of-domain angles back in (the same reflection the fold itself
+  // performs, in triangle form) instead of clamping, which would pin a
+  // whole arc of wall to bin 0 or bin 95 mid-bend. Inside [0, 1] the
+  // triangle IS the identity, so a straight tube renders bit-identically.
   let folded = mirrorN >= 1.5;
   let foldLo = select(TAU * -0.25, 0.0, mirrorN >= 2.5);
   let foldSpan = select(TAU * 0.5, TAU * 0.5 / mirrorN, mirrorN >= 2.5);
   let xs = select(abs(fract(a / TAU + 0.5) * 2.0 - 1.0),
-                  clamp((a - foldLo) / foldSpan, 0.0, 1.0), folded);
+                  abs(fract(((a - foldLo) / foldSpan + 1.0) * 0.5) * 2.0 - 1.0), folded);
   let v = binAt(xs);
   let pk = peakAt(xs);
 
@@ -4645,6 +4887,17 @@ fn preset(uv: vec2f) -> vec4f {
   let ringD = fract(ringF);
   let ringLine = smoothstep(P_groutWidth() * 1.6, 0.0, min(ringD, 1.0 - ringD));
   let ringParity = f32(i32(floor(ringF)) & 1);
+
+  // The speed range tops out at 2x its old ceiling. The sustained ring pass
+  // rate is PARAMS-ONLY (audio only adds bounded offsets, never sustained
+  // rate), so it can be derated deterministically: above ~11 rings/s — just
+  // past the old ceiling of 10.78, unreachable by any saved look — radial
+  // bands cross a third of a period per 24 fps export frame and strobe
+  // instead of streaming. Ring structure (lines + parity checker) fades to
+  // 30% there; flutes, palette drift and fog are angular/low-frequency and
+  // keep carrying the sense of speed without aliasing.
+  let ringRate = P_speed() * P_cruiseFloor() * 2.2 * P_rings() * 0.35;
+  let ringVis = 1.0 - 0.7 * smoothstep(11.0, 21.0, ringRate);
 
   // Longitudinal flutes running down the tube LENGTH and converging at the
   // vanishing point. Converging perspective lines are the single strongest
@@ -4665,7 +4918,7 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Wall base: DARK, lifted by structure + spectrum. Alternating ring parity
   // (checker) gives neighbouring segments distinct tone so travel reads.
-  var lit = P_tileLevel() * (0.55 + ringParity * P_checker())
+  var lit = P_tileLevel() * (0.55 + ringParity * P_checker() * ringVis)
           + fluteShade * 0.22
           + surf * 0.3
           + v * P_tileSpectrum();
@@ -4673,7 +4926,7 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Bright seams (ring + flute lines), spectrum-lit; the loudest angle's seams
   // flare near-white (a hot desaturated core reads as emitting).
-  let seam = max(ringLine, fluteLine);
+  let seam = max(ringLine * ringVis, fluteLine);
   col += pal * seam * P_groutLevel() * (0.6 + v * 1.6);
   col += vec3f(1.0, 0.98, 0.94) * seam * pk * pk * P_groutLevel() * 1.4;
 
@@ -4703,7 +4956,11 @@ fn preset(uv: vec2f) -> vec4f {
   // Whole-wall beat flash: a brief global lift on each grid beat (kickP is
   // grid-locked with a flux fallback), stacked on top of the travelling ring
   // and hot core — VJ punch that still reads on busy, spectrum-lit walls.
-  col *= 1.0 + kickP * P_beatBright() * u.pulse;
+  // Pulse gates it, and the response saturates: defaults live in softLimit's
+  // identity region (0.15 * pulse 2 = 0.3, knee 0.54) so nothing changes out
+  // of the box, but Beat flash maxed at pulse 200% lifts +75% instead of
+  // +120% — a flash, not a full-frame strobe.
+  col *= 1.0 + kickP * softLimit(P_beatBright() * u.pulse, 0.75);
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.25);
@@ -4740,8 +4997,16 @@ exports[`shader golden baseline > tunnel-rings: param ABI (key + default, in ord
     "key": "beatPulse",
   },
   {
+    "default": 0,
+    "key": "curve",
+  },
+  {
     "default": 0.35,
     "key": "cruiseFloor",
+  },
+  {
+    "default": 1,
+    "key": "curveScale",
   },
   {
     "default": 0.9,
