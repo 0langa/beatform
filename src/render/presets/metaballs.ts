@@ -426,12 +426,31 @@ fn preset(uv: vec2f) -> vec4f {
   // Detail = 1 this is exactly P_count(), so saved looks render unchanged.
   let count = i32(clamp(round(P_count() * u.detail), 2.0, 8.0));
 
+  // Pulse gate shaping (v2.66): the Pulse master spans 0..2 but the beat
+  // geometry below was tuned at 1, and a LINEAR gate blew it past its design
+  // envelope above ~50% (owner: "lava lamp suffering from epilepsy").
+  // softLimit is identity through 1.15 — the shipped 0..100% response is
+  // byte-identical — and compresses the top so 200% lands near 1.6x: "more",
+  // not "twice the violence". Each geometry term below ALSO saturates its own
+  // total, so a maxed param and a maxed Pulse cannot stack into a strobe.
+  let pulseG = softLimit(u.pulse, 1.6);
+
   // Beat squash: the whole lamp squishes flatter for an instant on each beat
   // (grid-locked when a tempo grid exists, flux fallback otherwise), like a
   // gulping lava lamp. It is a per-axis SCALE of the sample point, never an
   // angle offset, so it obeys the monotonic law; u.pulse gates it. Only the
   // blob field reads this warped point — the background wash stays still.
-  let squashB = max(u.driveBeat, gridPulse(6.0)) * P_squash() * u.pulse;
+  // The envelope leans 3:1 on gridPulse: beatPhase advances smoothly frame to
+  // frame while driveBeat attacks in a single frame, and at high Pulse that
+  // frame-edge read as a strobe — off-grid flux hits still land at quarter
+  // weight (with no grid gridPulse RETURNS driveBeat, so the mix is a no-op).
+  // The smoothstep eases the visual edge — same peak, but the response holds
+  // near the top and lands gently instead of snapping — and softLimit
+  // saturates the TOTAL squash so max-param x max-Pulse tops out at a 1.55x
+  // axis scale instead of the old 2.2x.
+  let squashEnv = clamp(mix(u.driveBeat, gridPulse(6.0), 0.75), 0.0, 1.0);
+  let squashEase = squashEnv * squashEnv * (3.0 - 2.0 * squashEnv);
+  let squashB = softLimit(squashEase * P_squash() * pulseG, 0.55);
   let sq = 1.0 + squashB;
   let pf = vec2f(p.x / sq, p.y * sq);
 
@@ -469,6 +488,21 @@ fn preset(uv: vec2f) -> vec4f {
       let bph = fract(u.beatPhase + fi * 0.6180339887);
       beatMul = max(exp(-bph * 5.0) - 0.03, 0.0) / 0.97;
     }
+    // Ease the gulp the same way as the squash: smoothstep keeps the peak but
+    // softens the attack frame and the decay tail so the swell reads as a
+    // breath, not a flash.
+    let beatCl = clamp(beatMul, 0.0, 1.0);
+    let beatEase = beatCl * beatCl * (3.0 - 2.0 * beatCl);
+
+    // The swell saturates BEFORE joining the calm terms: the outer softLimit
+    // below caps the SUM, so at high Pulse a raw swell simply dominated the
+    // calm size and every beat slammed each ball to the frame ceiling and
+    // back (the other half of the strobe). Capping the swell contribution
+    // itself keeps it a big confident gulp ON TOP of the calm size — 200%
+    // reads bigger, never "full-size flash". Identity through swell 0.36, so
+    // the default (0.2) and every factory style pass through untouched at
+    // Pulse = 1.
+    let swell = softLimit(beatEase * P_beatSwell() * pulseG, 0.5);
 
     // Size = calm floor + smooth energy breathing (primary sync) + a gentle
     // per-band accent + a staggered beat gulp. Capped so a loud beat can't
@@ -477,7 +511,7 @@ fn preset(uv: vec2f) -> vec4f {
     // Soft frame limit (v2.44): a maxed Size approaches a frame-filling
     // blob smoothly instead of pinning every ball to one clipped radius.
     let rad = softLimit(P_size() * (P_radiusFloor() + u.drive * P_energyGrow()
-            + band * P_radiusBand() + beatMul * P_beatSwell() * u.pulse), frameCircle() * 0.8);
+            + band * P_radiusBand() + swell), frameCircle() * 0.8);
     let diff = pf - pos;
     let d2 = dot(diff, diff);
     let contrib = rad * rad / (d2 + 1e-5);
