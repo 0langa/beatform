@@ -517,6 +517,13 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
         props.analysisSampleRate,
       ).windowMs,
     )} ms`;
+  const resolutionLatency = (resolution: SpectrumResolution) =>
+    `≈${Math.round(
+      spectrumDiagnostics(
+        { ...props.sync, spectrumResolution: resolution },
+        props.analysisSampleRate,
+      ).latencyMs,
+    )} ms visual latency`;
 
   // Which global masters actually move THIS mode — used to hide inert sliders
   // (e.g. Rotation on a mode that can't spin, Detail on a non-discrete mode).
@@ -1023,8 +1030,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                       label: resolutionLabel(value),
                       hint:
                         value === "responsive"
-                          ? "Fastest response; existing 85 ms-class display window"
-                          : "Longer display-only FFT: finer low-frequency detail, with matching visual history",
+                          ? `Fastest response; existing 85 ms-class display window (${resolutionLatency(value)})`
+                          : `Longer display-only FFT: finer low-frequency detail (${resolutionLatency(value)})`,
                     }))}
                   />
                 </div>
@@ -1083,7 +1090,9 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 </div>
               </div>
               <p className="section-hint">
-                {Math.round(spectrumInfo.windowMs)} ms window · {spectrumInfo.hzPerBin.toFixed(2)}
+                {Math.round(spectrumInfo.windowMs)} ms window · ≈
+                {Math.round(spectrumInfo.latencyMs)} ms visual latency ·{" "}
+                {spectrumInfo.hzPerBin.toFixed(2)}
                 Hz/bin · {spectrumInfo.nativeBins} native bins in range ·{" "}
                 {spectrumInfo.measured
                   ? `${spectrumInfo.displayBins} measured bars, no interpolation`

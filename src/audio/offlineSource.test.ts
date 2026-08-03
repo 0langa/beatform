@@ -154,6 +154,50 @@ describe("OfflineAnalyzer", () => {
     }
   });
 
+  it("aligns the precise display spectrum with the audible click (export latency)", () => {
+    // THE point of the asymmetric display window: before it, the display
+    // window simply ended at the frame time, so a 341 ms symmetric window read
+    // a click strongest ~half a window (~10 analysis ticks) after it was
+    // heard. The window is now shifted so its peak weight lands on the frame's
+    // analysis endpoint; the raw display spectrum must peak within ±1 tick of
+    // the click's frame. Measured on the raw magnitudes on purpose — the
+    // pipeline's attack/release EMA is a deliberate aesthetic layer shared by
+    // preview and export, not acquisition latency.
+    const length = SAMPLE_RATE * DURATION;
+    const data = new Float32Array(length);
+    const clickAt = SAMPLE_RATE; // t = 1.0 s → frame 60 at 60 fps
+    for (let i = 0; i < 48; i++) data[clickAt + i] = 1; // 1 ms full-scale click
+    const pcm: PcmData = { sampleRate: SAMPLE_RATE, duration: DURATION, length, channels: [data] };
+    const analyzer = new OfflineAnalyzer(pcm, FPS, 96, {
+      mode: "kick",
+      smooth: 0.5,
+      spectrumResolution: "precise",
+      spectrumAxis: "linear",
+      spectrumSampling: "measured",
+      freqMin: 30,
+      freqMax: 300,
+    });
+    let peakFrame = -1;
+    let peakEnergy = 0;
+    for (let n = 0; n < analyzer.frameCount; n++) {
+      analyzer.nextFrameFeatures();
+      const db = analyzer.displaySpectrumDb;
+      expect(db).not.toBeNull();
+      let energy = 0;
+      for (const v of db as Float32Array) {
+        if (v !== -Infinity) energy += Math.pow(10, v / 10);
+      }
+      if (energy > peakEnergy) {
+        peakEnergy = energy;
+        peakFrame = n;
+      }
+    }
+    expect(peakEnergy).toBeGreaterThan(0);
+    // One tick of slack covers the detector's shared 1/60 s analysis
+    // lookahead; the symmetric window failed this by ~9 ticks.
+    expect(Math.abs(peakFrame - 60)).toBeLessThanOrEqual(1);
+  });
+
   it("matches the golden feature trace (regression pin)", () => {
     const analyzer = new OfflineAnalyzer(makeTestBuffer(), FPS);
     const { beatFrames, trace } = collectTrace(analyzer);

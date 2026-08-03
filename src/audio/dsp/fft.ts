@@ -3,14 +3,41 @@
  * AnalyserNode.getFloatFrequencyData output (fftSize/2 bins). Used by the
  * offline analysis path (MP4 export) where no realtime AnalyserNode exists.
  */
+/**
+ * Fall length E of the asymmetric display window: the last E samples carry the
+ * half-Hann fall, everything before them the rise. Shared with
+ * `spectrumDiagnostics` so the UI reports the same latency the transform has.
+ */
+export function asymmetricWindowFallLength(size: number): number {
+  return Math.round(size / 8);
+}
+
 export class RealFFT {
   readonly size: number;
+  /**
+   * Distance in samples from the window END to the sample of maximum weight —
+   * where a transient reads strongest, and therefore the display's effective
+   * latency when the window simply ends at "now".
+   *
+   * Symmetric Hann peaks at its centre: (N−1)/2, the familiar half-window lag.
+   * The asymmetric window peaks E = round(N/8) samples from the end.
+   *
+   * Deliberately the PEAK, not the first moment. The first-moment centroid
+   * sum(i·w)/sum(w) of the rise/fall shape sits ≈0.35·N from the end (the long
+   * rise carries most of the mass), but the drawn bar for a transient maxes
+   * out when the transient sits under the window's peak weight — aligning the
+   * first moment instead would make exported bars peak ~4–5 analysis ticks
+   * BEFORE the audible hit. The click-alignment test in offlineSource.test.ts
+   * pins the peak definition.
+   */
+  readonly peakOffsetSamples: number;
   private cosTable: Float32Array;
   private sinTable: Float32Array;
   private window: Float32Array;
   private re: Float32Array;
   private im: Float32Array;
   private blockDc: boolean;
+  private scale: number;
   private windowSum = 0;
 
   /**
@@ -31,8 +58,16 @@ export class RealFFT {
    * has long excluded bin 0 for exactly this reason, but that only ever
    * addressed part of it — worth 0.65 % — because a Hann window leaks DC into
    * bin 1 at about -6 dB and it cannot reach that.
+   *
+   * `asymmetricWindow` (same opt-in style, display paths only) swaps the
+   * symmetric Hann for a half-Hann RISE over the first N−E samples and a
+   * half-Hann FALL over the last E = round(N/8): most of the window's weight
+   * moves next to its end, so the analyzer-length windows (85/171/341 ms) stop
+   * dragging the drawn bars half a window behind the audible transient. The
+   * detector transforms never set it — beat/onset timing stays byte-identical
+   * (fft.test.ts pins the default window against a naive DFT).
    */
-  constructor(size: number, blockDc = false) {
+  constructor(size: number, blockDc = false, asymmetricWindow = false) {
     if ((size & (size - 1)) !== 0) throw new Error("FFT size must be power of 2");
     this.size = size;
     this.blockDc = blockDc;
@@ -42,13 +77,35 @@ export class RealFFT {
       this.cosTable[i] = Math.cos((2 * Math.PI * i) / size);
       this.sinTable[i] = Math.sin((2 * Math.PI * i) / size);
     }
-    // Hann window (AnalyserNode uses Blackman; close enough — offline features
-    // must be self-consistent, not bit-identical to the realtime path)
     this.window = new Float32Array(size);
-    for (let i = 0; i < size; i++) {
-      this.window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (size - 1)));
-      this.windowSum += this.window[i];
+    if (asymmetricWindow) {
+      const fall = asymmetricWindowFallLength(size);
+      const rise = size - fall;
+      for (let i = 0; i < rise; i++) {
+        this.window[i] = 0.5 * (1 - Math.cos((Math.PI * i) / (rise - 1)));
+      }
+      for (let j = 0; j < fall; j++) {
+        this.window[rise + j] = 0.5 * (1 + Math.cos((Math.PI * (j + 1)) / fall));
+      }
+      this.peakOffsetSamples = fall; // unique maximum (weight 1) at index rise−1
+    } else {
+      // Hann window (AnalyserNode uses Blackman; close enough — offline
+      // features must be self-consistent, not bit-identical to the realtime
+      // path)
+      for (let i = 0; i < size; i++) {
+        this.window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (size - 1)));
+      }
+      this.peakOffsetSamples = (size - 1) / 2;
     }
+    for (let i = 0; i < size; i++) this.windowSum += this.window[i];
+    // Magnitude normalization: 2/sum(w) puts a full-scale bin-centred sine at
+    // 0 dB for ANY window (one-sided factor 2, coherent gain sum(w)). For the
+    // default Hann, sum(w) is exactly (N−1)/2, so 2/sum(w) = 4/(N−1) — which
+    // is NOT the shipped 4/N (2.4e-4 relative at N=4096, far beyond float
+    // noise). The detector spectra are pinned byte-for-byte by fft.test.ts and
+    // the offline golden trace, so the symmetric case keeps the literal 4/N
+    // and only the new asymmetric window uses the general form.
+    this.scale = asymmetricWindow ? 2 / this.windowSum : 4 / size;
     this.re = new Float32Array(size);
     this.im = new Float32Array(size);
   }
@@ -112,9 +169,10 @@ export class RealFFT {
       }
     }
 
-    // Magnitude -> dB. Scale: 2/N for one-sided spectrum, ~2x for Hann
-    // coherent gain (sum(w)/N = 0.5).
-    const scale = 4 / n;
+    // Magnitude -> dB. Scale: 2/N for one-sided spectrum times the window's
+    // coherent gain — see the constructor for why the symmetric case keeps the
+    // historical literal 4/N.
+    const scale = this.scale;
     const bins = n >> 1;
     for (let i = 0; i < bins; i++) {
       const m = Math.hypot(re[i], im[i]) * scale;

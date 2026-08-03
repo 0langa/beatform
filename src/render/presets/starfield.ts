@@ -284,7 +284,7 @@ export const starfield: PresetDef = {
       max: 1,
       step: 0.01,
       default: 0.35,
-      hint: "Each beat kicks every particle in its own direction",
+      hint: "Each beat sends every particle gliding to a new spot of its own",
     },
     {
       key: "sizePulse",
@@ -532,8 +532,51 @@ export const starfield: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+// Per-beat resting spot for one star: direction and radius hashed from the
+// star's cell seed AND the beat index. beatRamp() indexes beats mod 4, so the
+// walk is bar-periodic and the bar wrap resumes exactly where beat 3's glide
+// ended -- continuous by construction, no state, no snap. Radius floor of 0.4
+// keeps every hop visible; the unit-disc bound is what the cell-coverage
+// budget below is computed from.
+fn danceTarget(seed: vec2f, i: f32) -> vec2f {
+  let a = hash21(seed + i * 19.19 + 3.7) * TAU;
+  let r = 0.4 + 0.6 * hash21(seed + i * 7.31 + 11.3);
+  return vec2f(cos(a), sin(a)) * r;
+}
+
 fn preset(uv: vec2f) -> vec4f {
   var p = kaleido(centered(uv), P_mirror());
+
+  // ---- Pulse + beat-grid masters (v2.66 overhaul) --------------------------
+  // pGeo replaces raw u.pulse on every GEOMETRIC beat term. The slider runs
+  // 0..2 but the geometry was tuned at 1.0, and linear scaling doubled every
+  // displacement at 200% (the "explodes outward then floods" video). This
+  // curve is exact at 0 and 1 and compresses the top (2.0 -> ~1.45), so 200%
+  // reads punchier, not twice as far. Still a true gate: pulse 0 -> 0.
+  let pGeo = u.pulse * 1.6 / (1.0 + 0.6 * u.pulse);
+  // Tempo-grid beat walk. bIdx/bFr slice beatRamp() (0..4, advancing 1.0 per
+  // grid beat, bar-wrap continuous) into "which beat" and "how far into it".
+  // The glide eases over the first 45% of the beat, then RESTS: each beat
+  // moves a star TO a new hashed spot, never back. The old scat term scaled
+  // the instantaneous driveBeat envelope, so its decay dragged every star
+  // back to where it started -- the long-standing "jerked back" complaint.
+  let ramp = beatRamp();
+  let bIdx = floor(ramp);
+  let bPrev = (bIdx + 3.0) % 4.0;
+  let bFr = smoothstep(0.0, 0.45, fract(ramp));
+  // Bounded surge shape for fly mode: eased beat count minus the linear ramp.
+  // Both wrap identically at the bar, so the difference is continuous and
+  // stays within about [-0.03, 0.55] -- a per-beat forward surge with zero
+  // net phase drift, and (capped at the use site) no backward motion between
+  // surges.
+  let surgeCurve = bIdx + bFr - ramp;
+  // The beat grid ticks straight through silence; gate tempo-locked motion on
+  // the smoothed drive so a quiet intro stays still (the calm look is
+  // unchanged) and the release is a slow settle, never a per-beat rubber-band.
+  let gate = smoothstep(0.02, 0.2, u.drive);
+  // Dance amplitude in CELL units. Max 1.0 * 0.3 * 1.45 = 0.44 cells at
+  // Beat dance 1.0 / pulse 200% -- the coverage bound below relies on this.
+  let danceAmp = P_beatDance() * 0.3 * pGeo * gate;
 
   // Dark hued field (a cosine tint stays saturated near black where an hsl hue
   // would go grey), plus a faint warped nebula breathing with bass -- ambient
@@ -546,12 +589,18 @@ fn preset(uv: vec2f) -> vec4f {
   // cost for no visible gain.
   let nebT = fbm(p * 0.5 + u.time * 0.02);
   col += bgPal * nebT * nebT * 0.05 * (0.4 + u.mid * 0.8);
-  col += bgPal * u.driveBeat * P_beatFlash() * u.pulse;
+  // Full-frame flash saturates at 0.3 (softLimit, identity below the knee so
+  // pulse 100% is untouched at the default Beat flash): linear-in-pulse it hit
+  // 0.5 * 2.0 = a solid frame of palette on every beat, the magenta flood in
+  // the owner's video. A wash must stay a wash.
+  col += bgPal * softLimit(u.driveBeat * P_beatFlash() * pGeo, 0.3);
 
   // Grid-locked beat brightness pop applied to every particle's luminance in
-  // both modes. Frame-constant, so hoisted out of the cell loops. u.pulse gates
-  // it; default Beat brightness of 0 makes this exactly 1.0 (no change).
-  let beatPop = 1.0 + max(u.driveBeat, gridPulse(7.0)) * P_beatPop() * u.pulse;
+  // both modes. Frame-constant, so hoisted out of the cell loops. pGeo gates
+  // it; default Beat brightness of 0 makes this exactly 1.0 (no change). The
+  // softLimit cap (max 2.6x luminance) keeps a maxed slider from bleaching
+  // the whole field white at pulse 200% (was 4.0x).
+  let beatPop = 1.0 + softLimit(max(u.driveBeat, gridPulse(7.0)) * P_beatPop() * pGeo, 1.6);
 
   if (P_fly() > 0.5) {
     // ---- TRUE 3D STARFIELD: discrete stars stream from far to the camera ----
@@ -573,13 +622,31 @@ fn preset(uv: vec2f) -> vec4f {
       // integral of v: whenever the rate moved, the phase jumped by
       // t*(rate change) — an error that grows LINEARLY with track time. A beat
       // shifted the shell phase 0.20 at t=5 s but 4.68 at t=120 s, i.e. the
-      // whole field re-rolled mid-track. Loudness and beats now ride as a
-      // BOUNDED additive phase offset, so they still push the field toward you
+      // whole field re-rolled mid-track. Loudness and beats still ride as
+      // BOUNDED additive phase offsets, so they push the field toward you
       // without ever re-seeding it.
       let baseRate = P_speed() * (1.0 - P_parallax() * fract(fs * 0.37) * 0.45);
+      var beatPh = 0.0;
+      if (u.bpm >= 1.0) {
+        // Tempo-locked surge: the shell travels its normal distance but
+        // bunches that travel onto the beats. Cap: base scroll advances
+        // baseRate*0.28 phase/s and the ramp runs u.bpm/60 beats/s, so any
+        // amp <= ampMax keeps total phase velocity >= 0 — the field surges
+        // forward on each beat and NEVER slides back (the envelope push it
+        // replaces returned all of its displacement as driveBeat decayed).
+        // Floor guards softLimit's knee math when Motion is 0 (ampMax -> 0
+        // would divide 0/0 inside softLimit); the surge is invisible there
+        // anyway because a parked field has no travel to bunch up.
+        let ampMax = max(baseRate * 0.28 * 60.0 / max(u.bpm, 1.0), 1e-4);
+        beatPh = softLimit(P_beatDance() * 0.2 * pGeo * gate, ampMax) * surgeCurve;
+      } else {
+        // No grid yet: keep the envelope push, halved and capped, so the
+        // residual settle-back is a small ease instead of a lurch.
+        beatPh = softLimit(u.driveBeat * P_beatDance() * 0.12 * pGeo, 0.15);
+      }
       let phase = fract(fs * 0.6180339887 + u.time * baseRate * 0.28
                       + u.drive * P_energyDrive() * 0.4
-                      + u.driveBeat * P_beatDance() * 0.25 * u.pulse);
+                      + beatPh);
       let Z = mix(1.25, 0.05, phase);           // far -> at the camera
       // Rotate each shell's grid by a different angle. Otherwise every shell's
       // naturally-sparse vanishing point (the grid origin) sits on the same
@@ -614,11 +681,26 @@ fn preset(uv: vec2f) -> vec4f {
           let rad = min(P_size() * (0.3 + h1) / (Z * gs) * (1.0 + band * P_sizePulse()) * szExtra, 0.05);
           let flight = normalize(starScreen + vec2f(1e-4, 0.0));
           let perp = vec2f(-flight.y, flight.x);
-          let stretch = 1.0 + P_streak() * (1.0 - Z) * (2.5 + u.driveBeat * 3.0 * u.pulse);
+          // Beat stretch, soft-capped: linear in u.pulse it ran to 2.5 + 6.0
+          // at 200% — a ~13x smear whose covered area multiplied the
+          // per-pixel tail cost across every shell (the 10 FPS cliff) while
+          // blowing past cell coverage (the mid-screen cutoff).
+          var stretch = 1.0 + P_streak() * (1.0 - Z) * (2.5 + softLimit(u.driveBeat * 3.0 * pGeo, 3.0));
+          // COVERAGE BOUND: the 3x3 neighbourhood only sees a star whose full
+          // extent stays within 1.5 cells of its cell centre; jitter spends
+          // 0.3 of that, leaving 1.2 cells for glow reach. Anything longer
+          // used to clip at a straight invisible cell edge. Shorten the
+          // streak to fit; the reach min() below radially caps the rare case
+          // where the unstretched radius alone overflows (giant Size +
+          // Size pulse combos, which clipped far worse before).
+          let reachMax = 1.2 / (Z * gs);
+          if (rad * stretch * 3.0 + 0.003 > reachMax) {
+            stretch = max((reachMax - 0.003) / max(rad * 3.0, 1e-5), 1.0);
+          }
           // EARLY DISTANCE CULL: a star's glow reaches at most ~3 core-radii, so
           // past that skip the sqrt / twinkle sins / palette cos / halo exp that
           // dominate the per-star cost. Stars are sparse, so most cells stop here.
-          let reach = rad * stretch * 3.0 + 0.003;
+          let reach = min(rad * stretch * 3.0 + 0.003, reachMax);
           if (dot(dvec, dvec) > reach * reach) { continue; }
           let dl = dot(dvec, flight);
           let dp = dot(dvec, perp);
@@ -645,10 +727,15 @@ fn preset(uv: vec2f) -> vec4f {
     // Same rule as fly mode: what multiplies u.time is params-only, so the
     // field can never teleport by t*(rate change) when loudness moves. Audio
     // becomes a bounded positional PUSH added below. (The beat kick the eye
-    // actually reads in drift mode is scat, already an additive offset.)
+    // actually reads in drift mode is the per-star dance, a bounded additive
+    // offset walked on the tempo grid.)
     let baseSpd = P_speed() * 0.6;
-    let push = u.drive * P_energyDrive() * 0.08
-             + u.driveBeat * P_beatDance() * 0.06 * u.pulse;
+    // The driveBeat term that used to ride here shifted the WHOLE field along
+    // dir and slid it back as the envelope decayed — that beat energy now
+    // lives entirely in the per-star dance below, which never retraces. Only
+    // the slow drive push remains; its seconds-scale envelope reads as swell,
+    // not snap.
+    let push = u.drive * P_energyDrive() * 0.08;
     let ang = radians(P_direction());
     let dir = vec2f(cos(ang), -sin(ang));
     let layerCount = i32(P_layers());
@@ -685,8 +772,29 @@ fn preset(uv: vec2f) -> vec4f {
           let drift = vec2f(sin(wt * (0.8 + 0.5 * h2) + fph), cos(wt * (0.7 + 0.5 * h3) + fph * 1.3)) * 0.34;
           let wob = (drift + gCur) * P_wander();
           let scatDir = normalize(vec2f(h2 - 0.5, h3 - 0.5) + 1e-4);
-          let scat = scatDir * u.driveBeat * P_beatDance() * 0.35 * u.pulse;
-          let home = (base + vec2f(f32(ox), f32(oy)) + vec2f(0.5) + wob + scat) / scl;
+          // Beat dance: glide to a NEW hashed resting offset each grid beat
+          // (see the bIdx/bFr note up top) instead of displacing by the beat
+          // envelope, whose decay yanked the star straight back. danceVel is
+          // the hop direction, kept for the streak so it stretches along the
+          // actual motion. Targets live in a unit disc scaled by danceAmp
+          // (<= 0.44 cells at pulse 200%), which the coverage budget below
+          // counts on.
+          var dance = vec2f(0.0);
+          var danceVel = vec2f(0.0);
+          if (u.bpm >= 1.0) {
+            let tPrev = danceTarget(cell, bPrev);
+            let tCur = danceTarget(cell, bIdx);
+            dance = mix(tPrev, tCur, bFr) * danceAmp;
+            danceVel = (tCur - tPrev) * danceAmp * 2.0;
+          } else {
+            // No beat grid: fall back to the envelope scatter, softLimit-
+            // capped at 0.45 cells — the residual settle-back is a small
+            // ease instead of the old full-amplitude rubber-band.
+            dance = scatDir * softLimit(u.driveBeat * P_beatDance() * 0.35 * pGeo, 0.45);
+            danceVel = scatDir * softLimit(u.driveBeat * 1.4 * pGeo, 2.0);
+          }
+          let off = wob + dance;
+          let home = (base + vec2f(f32(ox), f32(oy)) + vec2f(0.5) + off) / scl;
           let d = p - home;
           var band = u.bass;
           var bandTint = 0.0;
@@ -695,17 +803,30 @@ fn preset(uv: vec2f) -> vec4f {
           // Extra per-particle size spread (neutral at Size variance = 0).
           let szExtra = max(1.0 + (h1 - 0.5) * P_sizeVar() * 1.4, 0.1);
           let rad = P_size() * 0.4 / scl * depthV * (0.7 + band * P_sizePulse()) * szExtra;
-          let stretch = 1.0 + P_streak() * (0.2 + u.driveBeat * 1.0 * u.pulse);
+          // Beat stretch, soft-capped: linear in u.pulse the term hit
+          // 0.2 + 2.0 at 200%, smearing every particle into a dash (and past
+          // its cell coverage). Max is now 0.2 + 1.1.
+          var stretch = 1.0 + P_streak() * (0.2 + softLimit(u.driveBeat * pGeo, 1.1));
+          // COVERAGE BOUND (mirror of fly mode): the 3x3 neighbourhood covers
+          // 1.5 cells beyond the cell centre; wob + dance spend at most ~0.9
+          // of that, and the glow reach may not spend more than the rest —
+          // shorten the streak to fit, radially cap the reach (min below) as
+          // the last resort for oversized Size combos. This is what removes
+          // the straight invisible clip edges mid-screen.
+          let reachMax = (1.5 - max(abs(off.x), abs(off.y))) / scl;
+          if (rad * stretch * 2.8 + 0.004 > reachMax) {
+            stretch = max((reachMax - 0.004) / max(rad * 2.8, 1e-5), 1.0);
+          }
           // EARLY DISTANCE CULL — the real speedup. A particle's glow reaches at
           // most ~2.8 core-radii; beyond that its contribution is under 1% yet
           // was computed anyway. Particles are sparse, so most of the
           // 3x3-times-layers cells stop HERE, before the sqrt / twinkle sin /
           // palette cos / bloom exp that dominate the per-particle cost.
-          let reach = rad * stretch * 2.8 + 0.004;
+          let reach = min(rad * stretch * 2.8 + 0.004, reachMax);
           if (dot(d, d) > reach * reach) { continue; }
           // Streak follows the particle's own drift; light in drift mode so
           // free-floating particles stay mostly point-like, stretching on a beat.
-          let vel = normalize(gCur + drift * 0.5 + scatDir * u.driveBeat * 1.4 * u.pulse + vec2f(1e-4, 0.0));
+          let vel = normalize(gCur + drift * 0.5 + danceVel + vec2f(1e-4, 0.0));
           let perp = vec2f(-vel.y, vel.x);
           let dl = dot(d, vel);
           let dp = dot(d, perp);

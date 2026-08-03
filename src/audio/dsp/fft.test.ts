@@ -151,6 +151,13 @@ describe("RealFFT", () => {
     for (const v of outDb) expect(v).toBe(-Infinity);
   });
 
+  it("reports the symmetric window's half-window peak offset", () => {
+    // The legacy display latency: a symmetric Hann reads a transient strongest
+    // at its centre, half a window behind the window end.
+    expect(new RealFFT(4096).peakOffsetSamples).toBe((4096 - 1) / 2);
+    expect(new RealFFT(16384, true).peakOffsetSamples).toBe((16384 - 1) / 2);
+  });
+
   it("is deterministic across repeated calls", () => {
     const size = 2048;
     const rand = prng(42);
@@ -163,5 +170,75 @@ describe("RealFFT", () => {
     fft.magnitudesDb(input, a);
     fft.magnitudesDb(input, b);
     expect(Array.from(a)).toEqual(Array.from(b));
+  });
+});
+
+describe("RealFFT asymmetric display window", () => {
+  it("keeps a full-scale bin-centered sine at 0 dB (2/windowSum calibration)", () => {
+    // The asymmetric window's coherent gain differs sample-for-sample from the
+    // symmetric Hann's, so the historical 4/N literal would mis-calibrate it.
+    // The general 2/sum(w) normalization must land a full-scale sine at 0 dB
+    // exactly like the default window does.
+    for (const size of [4096, 16384]) {
+      const k = 100;
+      const input = new Float32Array(size);
+      for (let n = 0; n < size; n++) input[n] = Math.sin((2 * Math.PI * k * n) / size);
+      const outDb = new Float32Array(size / 2);
+      new RealFFT(size, false, true).magnitudesDb(input, outDb);
+      let maxBin = 0;
+      for (let i = 1; i < size / 2; i++) if (outDb[i] > outDb[maxBin]) maxBin = i;
+      expect(maxBin).toBe(k);
+      expect(outDb[k]).toBeGreaterThan(-0.1);
+      expect(outDb[k]).toBeLessThan(0.1);
+    }
+  });
+
+  it("puts the effective display latency in the window/6..window/10 region", () => {
+    // E = round(N/8): far enough from the end to keep a usable main lobe, far
+    // enough from the symmetric N/2 that a 341 ms window stops reading a
+    // transient 171 ms late.
+    for (const size of [4096, 8192, 16384]) {
+      const fft = new RealFFT(size, true, true);
+      expect(fft.peakOffsetSamples).toBe(Math.round(size / 8));
+      expect(fft.peakOffsetSamples).toBeGreaterThan(size / 10);
+      expect(fft.peakOffsetSamples).toBeLessThan(size / 6);
+    }
+  });
+
+  it("reads an impulse loudest when it sits peakOffsetSamples before the end", () => {
+    // Behavioral pin of the alignment contract: the exported display window is
+    // shifted so this exact point lands on the frame time.
+    const size = 4096;
+    const fft = new RealFFT(size, false, true);
+    const outDb = new Float32Array(size / 2);
+    const levelAt = (pos: number) => {
+      const input = new Float32Array(size);
+      input[pos] = 1;
+      fft.magnitudesDb(input, outDb);
+      return outDb[100]; // impulse spectrum is flat; any non-DC bin will do
+    };
+    const atPeak = levelAt(size - 1 - fft.peakOffsetSamples);
+    expect(atPeak).toBeGreaterThan(levelAt(size - 8)); // near the very end
+    expect(atPeak).toBeGreaterThan(levelAt(Math.floor(size / 2))); // old centre
+    expect(atPeak).toBeGreaterThan(levelAt(256)); // deep in the rise
+  });
+
+  it("does not change the default window (spot check against the naive DFT)", () => {
+    // The asymmetric flag must be strictly opt-in: a default-constructed
+    // RealFFT keeps matching the symmetric-Hann reference to the same bound
+    // the long-standing tests assert.
+    const size = 1024;
+    const rand = prng(0xbeefcafe);
+    const input = new Float32Array(size);
+    for (let i = 0; i < size; i++) input[i] = rand() * 2 - 1;
+    const outDb = new Float32Array(size / 2);
+    new RealFFT(size).magnitudesDb(input, outDb);
+    const expected = naiveMagnitudes(input, size);
+    for (let k = 0; k < size / 2; k++) {
+      const got = dbToLinear(outDb[k]);
+      expect(Math.abs(got - expected[k])).toBeLessThanOrEqual(
+        1e-4 + 2e-3 * Math.max(got, expected[k]),
+      );
+    }
   });
 });

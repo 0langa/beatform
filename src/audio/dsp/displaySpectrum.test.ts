@@ -27,6 +27,9 @@ describe("drawn-spectrum resolution", () => {
     );
     expect(d.fftSize).toBe(16384);
     expect(d.windowMs).toBeCloseTo(341.333, 3);
+    // Asymmetric display window: latency is the peak offset E = N/8, not the
+    // symmetric window's N/2 (which would be ~171 ms here).
+    expect(d.latencyMs).toBeCloseTo(42.667, 3);
     expect(d.hzPerBin).toBeCloseTo(2.9296875, 8);
     expect(d.nativeBins).toBe(92);
     expect(d.displayBins).toBe(92);
@@ -39,5 +42,21 @@ describe("drawn-spectrum resolution", () => {
     expect(d.displayBins).toBe(96);
     expect(d.measured).toBe(false);
     expect(d.axis).toBe("log");
+    // Responsive shares the detector's symmetric Hann: half-window latency.
+    expect(d.latencyMs).toBeCloseTo(d.windowMs / 2, 6);
+  });
+
+  it("reports the asymmetric peak-offset latency for the longer windows", () => {
+    const detailed = spectrumDiagnostics(
+      { ...DEFAULT_SYNC, spectrumResolution: "detailed" },
+      48000,
+    );
+    expect(detailed.windowMs).toBeCloseTo(170.667, 3);
+    expect(detailed.latencyMs).toBeCloseTo(21.333, 3); // round(8192/8) samples
+    const precise = spectrumDiagnostics({ ...DEFAULT_SYNC, spectrumResolution: "precise" }, 48000);
+    expect(precise.latencyMs).toBeCloseTo(42.667, 3); // round(16384/8) samples
+    // The honesty readout's whole point: latency no longer scales with the
+    // window; a 341 ms window is not a 171 ms-late display.
+    expect(precise.latencyMs).toBeLessThan(precise.windowMs / 4);
   });
 });

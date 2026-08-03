@@ -1,5 +1,6 @@
 import type { SpectrumResolution, SyncSettings } from "../types";
 import { analysisFftSize } from "./fftSize";
+import { asymmetricWindowFallLength } from "./fft";
 
 /** Web Audio's AnalyserNode maximum, and a practical ceiling for export FFTs. */
 export const MAX_DISPLAY_FFT_SIZE = 32768;
@@ -27,7 +28,18 @@ export function displaySpectrumFftSize(sampleRate: number, resolution: SpectrumR
 
 export interface SpectrumDiagnostics {
   fftSize: number;
+  /** Literal analysis window length — what the segmented labels name. */
   windowMs: number;
+  /**
+   * Effective display latency: how far the drawn bars' point of maximum
+   * sensitivity sits behind the window end. Half the window for the legacy
+   * symmetric Hann (the shared detector-size transform); the asymmetric
+   * display window's peak offset (E = round(N/8), see RealFFT) for the longer
+   * display-only transforms. The export path cancels this by centring the
+   * window's peak on the frame time; live it is what remains, minus output
+   * latency.
+   */
+  latencyMs: number;
   hzPerBin: number;
   /** Integer, non-DC FFT bins whose centres fall inside selected span. */
   nativeBins: number;
@@ -45,6 +57,10 @@ export function spectrumDiagnostics(
 ): SpectrumDiagnostics {
   const safeRate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000;
   const fftSize = displaySpectrumFftSize(safeRate, spectrumResolution(sync));
+  // Responsive shares the detector transform (symmetric Hann, half-window
+  // latency); the longer display-only transforms use the asymmetric window.
+  const latencySamples =
+    fftSize === analysisFftSize(safeRate) ? fftSize / 2 : asymmetricWindowFallLength(fftSize);
   const hzPerBin = safeRate / fftSize;
   const nyquist = safeRate / 2;
   const loHz = Math.max(0, sync.freqMin ?? 30);
@@ -56,6 +72,7 @@ export function spectrumDiagnostics(
   return {
     fftSize,
     windowMs: (fftSize / safeRate) * 1000,
+    latencyMs: (latencySamples / safeRate) * 1000,
     hzPerBin,
     nativeBins,
     displayBins: measured ? Math.min(maxDisplayBins, nativeBins) : maxDisplayBins,
