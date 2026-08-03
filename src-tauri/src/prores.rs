@@ -1,11 +1,13 @@
 //! Frame-pipe exports via the bundled ffmpeg sidecar (LGPL build, separate
-//! binary — see binaries/FFMPEG-LICENSE.txt): ProRes 4444 (.mov), GIF and
-//! animated WebP loops.
+//! binary — see binaries/FFMPEG-LICENSE.txt): ProRes 4444 (.mov), 10-bit AV1
+//! (.mp4), GIF and animated WebP loops.
 //!
 //! The webview renders frames exactly as the PNG-sequence export does and
 //! streams each encoded PNG here; ffmpeg reads them over stdin (image2pipe)
 //! and writes the output file (muxing the pre-written PCM WAV for ProRes;
-//! GIF/WebP carry no audio). Args are built HERE from structured parameters —
+//! GIF/WebP carry no audio). The AV1 lane pipes RAW rgba64le frames instead
+//! of PNGs — PNG would quantize the deep-color tap back to 8 bits before
+//! ffmpeg ever saw it. Args are built HERE from structured parameters —
 //! the webview can never pass raw arguments to a process. Blocking stdin
 //! writes give natural backpressure: the IPC call doesn't return until
 //! ffmpeg accepted the frame. One session at a time; prores_write/finish/
@@ -140,6 +142,75 @@ fn prores_args(fps: u32, wav: &str, out: &str) -> Vec<String> {
         "apl0",
         "-c:a",
         "pcm_s16le",
+        "-shortest",
+        out,
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+/// 10-bit AV1 invocation. Kept separate and pure for testing, like
+/// prores_args.
+///
+/// The input is RAW video — `-f rawvideo -pix_fmt rgba64le -s WxH` — because
+/// the whole point of this lane is that the renderer's deep-color tap reaches
+/// the encoder without an 8-bit PNG in between. rgba64le is little-endian u16
+/// R,G,B,A per pixel, tightly packed, which is exactly the byte layout of the
+/// webview's Uint16Array frames on this platform.
+///
+/// Encoder choices, quality-first (this is a mastering/grading deliverable,
+/// speed is secondary):
+///  - `libsvtav1`: software 10-bit AV1 — works on every machine, zero
+///    hardware dependency (the WebCodecs hardware probe rejects 10-bit AV1 on
+///    most consumer GPUs; the bundled pinned build ships libsvtav1 with
+///    yuv420p10le support).
+///  - `-crf 24`: visually-transparent territory for SVT-AV1 on this app's
+///    content; lower would balloon files for no visible gain, higher starts
+///    to cost the gradients that 10 bits exist to preserve.
+///  - `-preset 6`: the quality/speed knee — presets below 6 multiply encode
+///    time for marginal quality; above it quality drops measurably.
+///  - Explicit bt709 primaries/trc/matrix + tv range: the RGB→YUV conversion
+///    happens in swscale, and untagged output would leave players guessing —
+///    the tags make the documented conversion part of the file.
+fn av1_args(fps: u32, width: u32, height: u32, wav: &str, out: &str) -> Vec<String> {
+    [
+        "-hide_banner",
+        "-y",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgba64le",
+        "-s",
+        &format!("{width}x{height}"),
+        "-framerate",
+        &fps.to_string(),
+        "-i",
+        "-",
+        "-i",
+        wav,
+        "-c:v",
+        "libsvtav1",
+        "-preset",
+        "6",
+        "-crf",
+        "24",
+        "-pix_fmt",
+        "yuv420p10le",
+        "-color_primaries",
+        "bt709",
+        "-color_trc",
+        "bt709",
+        "-colorspace",
+        "bt709",
+        "-color_range",
+        "tv",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart",
         "-shortest",
         out,
     ]
@@ -354,17 +425,49 @@ pub fn prores_audio_end(state: tauri::State<'_, ProresState>) -> Result<(), Stri
     Ok(())
 }
 
-/// Everything that can reject a ProRes start, evaluated BEFORE the staged WAV
-/// is consumed. Pure and total so a test can assert every rejection, and so the
-/// single caller pairs all of them with one drop_stale_audio().
-fn begin_guards(job_running: bool, fps: u32, scope_allows: bool, out: &Path) -> Result<(), String> {
+/// Everything that can reject a WAV-muxing sidecar start (ProRes and AV1),
+/// evaluated BEFORE the staged WAV is consumed. Pure and total so a test can
+/// assert every rejection, and so each caller pairs all of them with one
+/// drop_stale_audio().
+fn begin_guards(
+    job_running: bool,
+    fps: u32,
+    scope_allows: bool,
+    out: &Path,
+    ext: &str,
+) -> Result<(), String> {
     if job_running {
-        return Err("A ProRes export is already running".into());
+        return Err("A sidecar export is already running".into());
     }
     if !(1..=240).contains(&fps) {
         return Err(format!("Unreasonable fps: {fps}"));
     }
-    check_out_path(scope_allows, out, "mov")
+    check_out_path(scope_allows, out, ext)
+}
+
+/// The AV1 lane's extra rejections on top of begin_guards. Raw video has no
+/// per-frame header: ffmpeg slices the stdin stream purely by `-s WxH`, so a
+/// wrong dimension doesn't fail — it renders garbage. Bound and even-check
+/// here rather than trusting the webview. Even dims are a yuv420p10le
+/// requirement (2x2 chroma subsampling); every offered resolution is even.
+fn av1_begin_guards(
+    job_running: bool,
+    fps: u32,
+    width: u32,
+    height: u32,
+    scope_allows: bool,
+    out: &Path,
+) -> Result<(), String> {
+    begin_guards(job_running, fps, scope_allows, out, "mp4")?;
+    if !(16..=7680).contains(&width) || !(16..=7680).contains(&height) {
+        return Err(format!("Unreasonable dimensions: {width}x{height}"));
+    }
+    if !width.is_multiple_of(2) || !height.is_multiple_of(2) {
+        return Err(format!(
+            "Dimensions must be even for 4:2:0 output: {width}x{height}"
+        ));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -392,6 +495,7 @@ pub fn prores_begin(
         fps,
         app.fs_scope().is_allowed(&out),
         &out,
+        "mov",
     ) {
         drop_stale_audio(&state);
         return Err(e);
@@ -407,6 +511,68 @@ pub fn prores_begin(
     // failure must not leak it in %TEMP% (pending_wav was already taken).
     let (mut child, log_path) = match spawn_sidecar(prores_args(
         fps,
+        &wav_path.to_string_lossy(),
+        &out.to_string_lossy(),
+    )) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = std::fs::remove_file(&wav_path);
+            return Err(e);
+        }
+    };
+    *state.stdin.lock().map_err(|_| "state poisoned")? = child.stdin.take();
+    *job_guard = Some(ProresJob {
+        child,
+        wav_path: Some(wav_path),
+        log_path,
+        out_path: out,
+    });
+    Ok(())
+}
+
+/// Begin a 10-bit AV1 (.mp4) session. Mirrors prores_begin exactly — the
+/// staged WAV is consumed the same way, and frames/finish/abort are the same
+/// prores_write/prores_finish/prores_abort commands — except the frames piped
+/// in are RAW rgba64le (see av1_args), so width/height must be pinned at
+/// spawn time.
+#[tauri::command]
+pub fn av1_begin(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ProresState>,
+    fps: u32,
+    width: u32,
+    height: u32,
+    out_path: String,
+) -> Result<(), String> {
+    let mut job_guard = state.job.lock().map_err(|_| "state poisoned")?;
+    let out = PathBuf::from(&out_path);
+    // ONE rejection point paired with ONE cleanup, same as prores_begin: the
+    // staged mezzanine WAV is already on disk, and any early return that skips
+    // drop_stale_audio strands it in %TEMP% (~691 MB for an hour of stereo).
+    if let Err(e) = av1_begin_guards(
+        job_guard.is_some(),
+        fps,
+        width,
+        height,
+        app.fs_scope().is_allowed(&out),
+        &out,
+    ) {
+        drop_stale_audio(&state);
+        return Err(e);
+    }
+    let wav_path = state
+        .pending_wav
+        .lock()
+        .map_err(|_| "state poisoned")?
+        .take()
+        .ok_or("No audio staged — call prores_audio_begin/chunk/end first")?;
+
+    // From here the staged WAV is this function's to clean up: a spawn
+    // failure must not leak it in %TEMP% (pending_wav was already taken).
+    let (mut child, log_path) = match spawn_sidecar(av1_args(
+        fps,
+        width,
+        height,
         &wav_path.to_string_lossy(),
         &out.to_string_lossy(),
     )) {
@@ -742,24 +908,126 @@ mod tests {
     fn begin_guards_reject_before_the_wav_is_consumed() {
         let ok = Path::new(r"C:\out\x.mov");
         // Happy path first, so the rejections below mean something.
-        assert!(begin_guards(false, 60, true, ok).is_ok());
+        assert!(begin_guards(false, 60, true, ok, "mov").is_ok());
         // Each rejection the caller must pair with drop_stale_audio(). A staged
         // mezzanine WAV is already on disk here, so a path that returns without
         // cleanup leaks up to ~691 MB into %TEMP% on the system drive.
-        assert!(begin_guards(true, 60, true, ok).is_err(), "already running");
-        assert!(begin_guards(false, 0, true, ok).is_err(), "fps 0");
-        assert!(begin_guards(false, 241, true, ok).is_err(), "fps 241");
         assert!(
-            begin_guards(false, 60, false, ok).is_err(),
+            begin_guards(true, 60, true, ok, "mov").is_err(),
+            "already running"
+        );
+        assert!(begin_guards(false, 0, true, ok, "mov").is_err(), "fps 0");
+        assert!(
+            begin_guards(false, 241, true, ok, "mov").is_err(),
+            "fps 241"
+        );
+        assert!(
+            begin_guards(false, 60, false, ok, "mov").is_err(),
             "outside fs scope"
         );
         assert!(
-            begin_guards(false, 60, true, Path::new("relative.mov")).is_err(),
+            begin_guards(false, 60, true, Path::new("relative.mov"), "mov").is_err(),
             "relative path"
         );
         assert!(
-            begin_guards(false, 60, true, Path::new(r"C:\out\x.mp4")).is_err(),
+            begin_guards(false, 60, true, Path::new(r"C:\out\x.mp4"), "mov").is_err(),
             "wrong extension"
+        );
+    }
+
+    #[test]
+    fn av1_begin_guards_pin_extension_and_dimensions() {
+        let ok = Path::new(r"C:\out\x.mp4");
+        // Happy path first, so the rejections below mean something.
+        assert!(av1_begin_guards(false, 60, 1920, 1080, true, ok).is_ok());
+        // Everything begin_guards rejects still rejects here (same WAV-leak
+        // pairing with drop_stale_audio in the caller).
+        assert!(
+            av1_begin_guards(true, 60, 1920, 1080, true, ok).is_err(),
+            "already running"
+        );
+        assert!(
+            av1_begin_guards(false, 0, 1920, 1080, true, ok).is_err(),
+            "fps 0"
+        );
+        assert!(
+            av1_begin_guards(false, 60, 1920, 1080, false, ok).is_err(),
+            "outside fs scope"
+        );
+        assert!(
+            av1_begin_guards(false, 60, 1920, 1080, true, Path::new(r"C:\out\x.mov")).is_err(),
+            "the AV1 lane writes .mp4, not .mov"
+        );
+        // Raw-video specifics: ffmpeg slices stdin purely by -s WxH, so a bad
+        // dimension renders garbage instead of failing — refuse it here.
+        assert!(
+            av1_begin_guards(false, 60, 0, 1080, true, ok).is_err(),
+            "zero width"
+        );
+        assert!(
+            av1_begin_guards(false, 60, 1920, 100_000, true, ok).is_err(),
+            "absurd height"
+        );
+        assert!(
+            av1_begin_guards(false, 60, 1921, 1080, true, ok).is_err(),
+            "odd width breaks 4:2:0 chroma subsampling"
+        );
+        assert!(
+            av1_begin_guards(false, 60, 1920, 1081, true, ok).is_err(),
+            "odd height breaks 4:2:0 chroma subsampling"
+        );
+    }
+
+    #[test]
+    fn av1_args_are_exactly_the_proven_contract() {
+        let args = av1_args(30, 1920, 1080, "C:/t/a.wav", "C:/t/out.mp4");
+        assert_eq!(
+            args,
+            vec![
+                "-hide_banner",
+                "-y",
+                // RAW frames in — the deep-color tap must reach the encoder
+                // without an 8-bit PNG in between.
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgba64le",
+                "-s",
+                "1920x1080",
+                "-framerate",
+                "30",
+                "-i",
+                "-",
+                "-i",
+                "C:/t/a.wav",
+                // Software 10-bit AV1: works on any machine, no hardware gate.
+                "-c:v",
+                "libsvtav1",
+                "-preset",
+                "6",
+                "-crf",
+                "24",
+                "-pix_fmt",
+                "yuv420p10le",
+                // Explicit tags: the RGB->YUV conversion in swscale must be
+                // declared in the file, not guessed by the player.
+                "-color_primaries",
+                "bt709",
+                "-color_trc",
+                "bt709",
+                "-colorspace",
+                "bt709",
+                "-color_range",
+                "tv",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                "-shortest",
+                "C:/t/out.mp4",
+            ]
         );
     }
 

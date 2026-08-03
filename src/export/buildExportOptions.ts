@@ -75,6 +75,13 @@ export interface ExportIo {
   /** Per-frame PNG sink (ProRes sidecar feed / browser probes). Setting it
    * puts the core in PNG-frame mode, same as pngDir. */
   onPngFrame?: (data: Uint8Array, index: number) => void;
+  /** Ask the core for the deep-color tap (post-tonemap rgba16float target
+   * instead of the 8-bit canvas readback). Wired by the renderer-tap branch. */
+  deepColor?: boolean;
+  /** Per-frame raw sink for the deep-color lane (AV1 10-bit sidecar feed):
+   * tightly-packed rgba64le u16 (R,G,B,A row-major, length w*h*4). The core
+   * awaits it — that is the backpressure. Wired by the renderer-tap branch. */
+  onRawFrame?: (data: Uint16Array) => Promise<void> | void;
   loudness?: LoudnessJob;
   segment?: { start: number; duration: number };
   loopCrossfadeSec?: number;
@@ -164,6 +171,8 @@ export function buildExportOptions(
     streamToPath: io.streamToPath,
     pngDir: io.pngDir,
     onPngFrame: io.onPngFrame,
+    deepColor: io.deepColor,
+    onRawFrame: io.onRawFrame,
     loudness: io.loudness,
     segment: io.segment,
     loopCrossfadeSec: io.loopCrossfadeSec,

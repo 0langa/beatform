@@ -199,6 +199,19 @@ export async function proresBegin(fps: number, outPath: string): Promise<void> {
   await invoke("prores_begin", { fps, outPath });
 }
 
+/** Begin a 10-bit AV1 (.mp4) session. Same staged-WAV handshake and the same
+ * proresWrite/Finish/Abort as ProRes — but the frames piped in are RAW
+ * rgba64le, so the Rust side must pin width/height at spawn time. */
+export async function av1Begin(
+  fps: number,
+  width: number,
+  height: number,
+  outPath: string,
+): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("av1_begin", { fps, width, height, outPath });
+}
+
 /** Begin a GIF/animated-WebP session (no audio). Frames flow through the
  * same proresWrite/Finish/Abort — one sidecar session at a time. */
 export async function animBegin(

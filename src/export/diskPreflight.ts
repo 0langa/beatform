@@ -29,7 +29,7 @@
  */
 
 /** Which lane an export runs down. Mirrors the format picker, not the muxer. */
-export type ExportFormatKind = "mp4" | "webm" | "prores" | "gif" | "webp" | "png";
+export type ExportFormatKind = "mp4" | "webm" | "prores" | "av1-10" | "gif" | "webp" | "png";
 
 export interface ExportSizeInput {
   format: ExportFormatKind;
@@ -85,9 +85,16 @@ export interface VolumeSpace {
  * PNG: measured 1.80 MB for a 2560x1440 gradient frame = 0.49 bytes/px.
  * GIF: 8-bit palette + LZW, which on flat synthetic frames lands well under
  * one byte per pixel. WebP animation is lossy and much smaller again.
+ *
+ * AV1 10-bit (libsvtav1, crf 24, preset 6): rate-factor output has no chosen
+ * bitrate to trust, so this is a deliberately conservative ceiling — real
+ * crf-24 AV1 on visualiser content lands an order of magnitude under it, but
+ * a pre-flight that under-estimates a mastering export is the failure mode
+ * this file exists to prevent.
  */
 const BYTES_PER_PIXEL_FRAME: Partial<Record<ExportFormatKind, number>> = {
   prores: 0.66,
+  "av1-10": 0.15,
   png: 0.5,
   gif: 0.35,
   webp: 0.12,
@@ -116,14 +123,20 @@ export function estimateExportBytes(i: ExportSizeInput): DiskNeed {
     return { outputBytes: Math.round(bits / 8), scratchBytes: 0, framesThroughScratch: false };
   }
   // ProRes muxes the PCM mezzanine into the .mov, so the audio is paid for
-  // twice: once staged in %TEMP%, once inside the output file.
-  const audioInFile = i.format === "prores" ? wav : 0;
+  // twice: once staged in %TEMP%, once inside the output file. AV1 re-encodes
+  // the staged WAV to 192 kbit/s AAC inside the .mp4 (24 kB/s).
+  const audioInFile =
+    i.format === "prores"
+      ? wav
+      : i.format === "av1-10"
+        ? Math.round(24_000 * Math.max(0, i.seconds))
+        : 0;
   return {
     outputBytes: Math.round(pixels * frames * bpp + audioInFile),
     // The mezzanine WAV is the only thing we stage at a size worth counting,
-    // and only ProRes stages one. Per-frame blob traffic is handled by the
-    // floor check instead — see SCRATCH_FLOOR_BYTES.
-    scratchBytes: i.format === "prores" ? wav : 0,
+    // and only the WAV-muxing sidecar lanes (ProRes, AV1) stage one. Per-frame
+    // blob traffic is handled by the floor check — see SCRATCH_FLOOR_BYTES.
+    scratchBytes: i.format === "prores" || i.format === "av1-10" ? wav : 0,
     framesThroughScratch: true,
   };
 }

@@ -93,6 +93,12 @@ export interface ExportOptions {
    * for callers without desktop fs access. Setting either selects PNG mode.
    */
   onPngFrame?: (data: Uint8Array, index: number) => void | Promise<void>;
+  /** Deep-color tap request (AV1 10-bit lane). Type only here — the mapping
+   * onto ExportJob.deepColor is wired by the renderer-tap branch. */
+  deepColor?: boolean;
+  /** Raw rgba64le u16 frame sink (AV1 10-bit lane). Type only here — the
+   * mapping onto hooks.onRawFrame is wired by the renderer-tap branch. */
+  onRawFrame?: (data: Uint16Array) => Promise<void> | void;
   /**
    * Normalize the delivered audio to a loudness target with a true-peak
    * ceiling. Audio-only: toggling this does not change this export job's

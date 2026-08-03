@@ -125,6 +125,14 @@ export function ExportDialog() {
                         : "One .mov file: ProRes 4444 with alpha + PCM audio — drops straight into Premiere/Resolve/After Effects",
                     },
                     {
+                      value: "av1-10" as const,
+                      label: "AV1 10-bit",
+                      disabled: canvasMode,
+                      hint: canvasMode
+                        ? "Not available for Canvas loops (they upload as MP4)"
+                        : "One .mp4 file: genuine 10-bit AV1 + AAC audio — for grading and mastering; software-encoded, works on any machine",
+                    },
+                    {
                       value: "gif" as const,
                       label: "GIF",
                       hint: "Animated .gif loop — no audio; pairs with Canvas loop mode for a seamless loop",
@@ -152,6 +160,15 @@ export function ExportDialog() {
             ProRes 4444 (.mov) with alpha + untouched PCM audio — the editorial mezzanine. Set
             Background to <strong>Transparent</strong> to keep alpha. Encoded by the bundled ffmpeg
             (LGPL). Files are large by design.
+          </p>
+        )}
+
+        {exportSettings.format === "av1-10" && (
+          <p className="section-hint">
+            Genuine 10-bit AV1 (.mp4) — every frame reaches the encoder at 10-bit depth, for
+            grading and mastering where 8-bit banding matters. Software-encoded by the bundled
+            ffmpeg (LGPL), so it works on any machine — and is slower and larger than H.264. No
+            alpha: a Transparent background encodes as black.
           </p>
         )}
 
