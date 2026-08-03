@@ -516,10 +516,7 @@ fn specialize_sampler_params(src: &str) -> Result<String, Vec<TranspileError>> {
     // — on the first line of the blanked region. Reverse order keeps earlier
     // byte ranges valid while later ones are edited.
     let leftover_fns = find_sampler_fns(&work);
-    let leftover_names: Vec<(String, u32)> = leftover_fns
-        .iter()
-        .map(|f| (f.name.clone(), line_of(&work, f.def_start)))
-        .collect();
+    let leftover_names: Vec<String> = leftover_fns.iter().map(|f| f.name.clone()).collect();
     for f in leftover_fns.iter().rev() {
         blank_range(&mut work, f.def_start, f.def_end);
         let embedded = clones
@@ -588,7 +585,7 @@ fn specialize_sampler_params(src: &str) -> Result<String, Vec<TranspileError>> {
     // A remaining call to a blanked function = a channel argument that never
     // became a concrete iChannelN. Report the call's line when it is in the
     // user's own code, else the unresolvable helper's definition line.
-    for (name, def_line) in leftover_names {
+    for name in leftover_names {
         let mut search = 0usize;
         while let Some(rel) = work[search..].find(&name) {
             let at = search + rel;
@@ -606,9 +603,10 @@ fn specialize_sampler_params(src: &str) -> Result<String, Vec<TranspileError>> {
             }
             let after_call = tail.trim_start().starts_with('(');
             if before_ok && after_call {
-                let line = Some(line_of(&work, at)).filter(|_| at < work.len());
+                // A residual call inside an embedded clone sits on the origin
+                // definition's line, so line_of covers both cases directly.
                 return Err(vec![TranspileError {
-                    line: line.or(Some(def_line)),
+                    line: Some(line_of(&work, at)),
                     message: format!(
                         "'{name}' takes a channel argument that isn't a direct iChannel0..3 — variable or computed channels aren't supported"
                     ),
