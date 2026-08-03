@@ -1,6 +1,6 @@
 # Beatform Backlog and Alignment Ledger
 
-Last reconciled: **2026-08-02** (post v2.64.1; stabilization block cleared)
+Last reconciled: **2026-08-03** (post v2.65.0 sampler-specialization release)
 
 This is Beatform's canonical current-work ledger. It records what is complete,
 what still needs evidence, what is ready to execute, and what remains only a
@@ -36,18 +36,18 @@ Listing a feature here does **not** approve implementation. Respect its status:
 
 ## Reconciled baseline
 
-Time-sensitive values below were checked on 2026-08-02:
+Time-sensitive values below were checked on 2026-08-03:
 
 | Fact                    | Verified state                                                                                                                                        |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Repository              | `0langa/beatform`                                                                                                                                     |
 | Branch                  | Clean `main`, aligned with `origin/main`                                                                                                              |
-| Source version          | `2.64.1` in all five version-bearing files                                                                                                            |
-| HEAD / tag              | `870cebc` / `v2.64.1`                                                                                                                                 |
-| Latest public release   | `v2.64.1`, published 2026-08-02; setup-exe SHA-256 matches `SHA256SUMS.txt`, updater manifest signature present, live latest endpoint serves `2.64.1` |
+| Source version          | `2.65.0` in all five version-bearing files                                                                                                            |
+| HEAD / tag              | `ea588f8` (tag `v2.65.0`) + lint-only `1df846a` on main                                                                                               |
+| Latest public release   | `v2.65.0`, published 2026-08-03; setup-exe SHA-256 matches `SHA256SUMS.txt`, updater manifest signature present, live latest endpoint serves `2.65.0` |
 | Open GitHub issues      | 0                                                                                                                                                     |
 | Open pull requests      | 0                                                                                                                                                     |
-| Installed desktop app   | `2.64.1` at `C:\Users\Julius\AppData\Local\Beatform\Beatform.exe` — matches source, release, and uninstall registry                                   |
+| Installed desktop app   | `2.64.1` — v2.65.0 update pending; post-update, run the ritual's registry check (expect `2.65.0`)                                                     |
 | Running desktop app     | None during audit                                                                                                                                     |
 | Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers found in `src`, `src-tauri`, or `scripts`                                                                |
 
@@ -66,11 +66,13 @@ Work top to bottom unless fresh evidence changes priority.
 | Order | ID         | Status      | Work                                                    |
 | ----- | ---------- | ----------- | ------------------------------------------------------- |
 | 1     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index         |
-| 2     | VERIFY-001 | RESEARCH    | Measure long-export renderer heap behavior              |
-| 3     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
-| 4     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic               |
-| 5     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture             |
-| 6     | FEAT-009   | CONSIDERING | True second-display performance window                  |
+| 2     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
+| 3     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic               |
+| 4     | FEAT-005   | RESEARCH    | Genuine 10-bit HEVC/AV1 export architecture             |
+| 5     | FEAT-009   | CONSIDERING | True second-display performance window                  |
+
+`VERIFY-001` closed 2026-08-03 (no leak — see its DONE entry); the FEAT-001
+sampler-param follow-up shipped in `v2.65.0` the same day.
 
 `DEP-001`, `DEP-002` and `DOC-001` completed 2026-07-30; `ALIGN-001` completed
 2026-08-01; `FEAT-001` **shipped in v2.64.0** and its ACL-confirm fix in
@@ -207,11 +209,25 @@ zero raw hash changes, built loopback green, and the permanent e2e gate
 `npm run test:shadertoy:built` (paste→transpile→render→export×2,
 bit-identical hashes). Full history in the notes doc's shipped section.
 
-**Deliberately out of scope for v1 (candidate follow-ups, not defects):**
+**Follow-up shipped in v2.65.0 (2026-08-02): sampler-param specialization.**
+Helpers taking `sampler2D` parameters — the #1 real-world failure class —
+now translate: the transpiler clones each such function per concrete
+`iChannelN` argument (fixpoint pass; nested forwarding resolves naturally;
+clones embed at the original's blanked location so line mapping AND naga's
+declaration-order rules survive). Bias sampling (`texture(ch, uv, bias)`)
+rewrites to level 0 like plain sampling, and an extra `mainSound`/`mainVR`
+next to `mainImage` is dead code, not a rejection. Real-corpus pass rate:
+**34/40 → 37/40 (92.5%)**, all 37 device-compile clean; remaining rejects
+are two GLSL quines and one `texture()` overload mismatch. Non-resolvable
+channels (ternary/variable) get a named per-line error. Evidence: 19 unit
+tests + `corpus_pass_rate` (ignored, CORPUS_DIR), e2e smoke imports a
+specialized shader and asserts the diagnostic case, release verified
+end-to-end (tag `ea588f8`, SHA/manifest/endpoint checked).
+
+**Still deliberately out of scope (candidate follow-ups, not defects):**
 multipass buffers, cubemap/video/keyboard channels, static textures on
-iChannel1–3, and sampler-typed function parameters — lifting that last
-translator gap (import-layer function specialization or an upstream naga
-contribution) raises real-corpus pass rate from 85% toward ~92%.
+iChannel1–3, and channels chosen at runtime (specialization needs a
+literal `iChannel0..3` at the call site).
 
 Spike record below is kept for the contract details and their evidence.
 
@@ -458,7 +474,39 @@ Acceptance gate:
 
 ### VERIFY-001 — Long-export renderer memory characterization
 
-**Status:** RESEARCH  
+**Status:** DONE 2026-08-03 — no leak; both acceptance criteria met.
+
+Method: `scripts/heap-soak.mjs` drives the debug shell over CDP through a
+full-length PNG-probe export (renders every frame through the real export
+chokepoints, discards frame data so no video blob contaminates the
+measurement) while sampling renderer JS heap and this app's process working
+sets every 15 s, plus 90 s of post-finalize settling. Two 85-minute runs
+(153,000 frames each) and one 5-minute control, CSVs KEEP-marked at
+`F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\2026-08-02_verify-001-heap\`.
+
+Findings:
+
+- **JS heap: bounded plateau, dead flat.** Per-third averages 1021/1024/1024
+  and 1024/1023/1023 MB across the two long runs. The plateau height IS the
+  decoded track (85 min mono at the 48 kHz context rate ≈ 979 MB float32) plus
+  ~45 MB app baseline — confirmed by the control scaling to ~101 MB for a
+  5-minute track. Zero growth trend over 340+ samples.
+- **Working set: transient cache, not retention.** Fluctuates 2–6.5 GB during
+  the export with NO consistent direction (run 1 thirds rose 3.2→3.9 GB, run
+  2 went 3.9→2.9→3.3 GB), and settles post-finalize to ≈ the JS heap
+  (920–1090 MB long runs, 730–810 MB control). The 2026-07 `TESTING.md`
+  observation (1.8→3.3 GB WorkingSet64) was this same reclaimable
+  GPU/driver/WebView cache pressure.
+- Post-finalize resources return to the explained baseline: the decoded
+  track stays loaded by design; everything else is released.
+
+No app code was added — the sampling is entirely harness-side (CDP +
+PowerShell), so there is no diagnostic flag to remove. No follow-up item.
+Reopen only with a reproducible OOM or a post-finalize baseline that stops
+matching the decoded-track explanation.
+
+Original research plan kept for the record:
+
 **Priority:** Medium; not a proven leak or a v3 blocker.
 
 Existing evidence in `TESTING.md`:
