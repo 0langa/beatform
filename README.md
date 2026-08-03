@@ -102,6 +102,10 @@ Free and open source. Built to become a professional-grade tool for producers an
   the editorial mezzanine that drops straight into an NLE. Encoded by a bundled
   LGPL ffmpeg sidecar (separate binary; see THIRD_PARTY_LICENSES.md); frames
   stream from the renderer into ffmpeg, so memory stays flat
+- **AV1 10-bit export** (desktop): genuine 10-bit MP4 (yuv420p10le, BT.709) —
+  the render is tapped at 16-bit float **before** the 8-bit swapchain, so
+  smooth gradients keep all their levels instead of banding. Raw 64-bit
+  frames stream into the bundled ffmpeg's SVT-AV1 encoder; memory stays flat
 - **GIF / animated WebP export** (desktop): seamless loop files via the bundled
   ffmpeg — GIF for anywhere, WebP for small files with alpha. Pairs with Canvas
   loop mode

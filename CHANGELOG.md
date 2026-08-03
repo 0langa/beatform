@@ -11,6 +11,20 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.67.0] - 2026-08-03
+
+### Added
+
+- **AV1 10-bit export.** A new **AV1 10-bit** format in the export dialog
+  (desktop) writes a genuine 10-bit MP4 — yuv420p10le, BT.709, SVT-AV1 —
+  with AAC audio. Every other lane is 8-bit the moment frames leave the GPU;
+  this one taps the render at 16-bit float **before** that quantization, so
+  slow gradients, glows and dark falloffs keep their levels instead of
+  banding. Raw frames stream straight into the bundled ffmpeg with the same
+  flat-memory backpressure as ProRes. Verified end-to-end on device: a real
+  export decodes back to 752 distinct 10-bit luma levels where 8-bit tops
+  out at 256.
+
 ## [2.66.0] - 2026-08-03
 
 ### Added
