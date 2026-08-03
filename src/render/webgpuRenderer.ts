@@ -1461,6 +1461,100 @@ export function packShadertoyAudioRows(
   }
 }
 
+// ---------------------------------------------------------------------------
+// FEAT-005 deep-colour frame tap — f16 → u16 conversion (pure, CPU-side).
+//
+// readbackDeepFrame() maps the rgba16float deep target and hands the encoder
+// tightly-packed rgba64le-order u16. The conversion lives in exported pure
+// functions (not inline in the readback) because JS has no native f16 decode —
+// the IEEE 754 half decode below is hand-rolled and MUST stay pinned by unit
+// tests against known bit patterns, or a silent decode bug would ship subtly
+// wrong colour in every "10-bit" file while looking plausible on screen.
+// ---------------------------------------------------------------------------
+
+/**
+ * Decode one IEEE 754 binary16 bit pattern to a JS number.
+ * Handles zero, subnormals (exp 0: mant × 2^-24), normals, ±Infinity and NaN.
+ */
+export function f16BitsToF32(bits: number): number {
+  const sign = bits & 0x8000 ? -1 : 1;
+  const exp = (bits >> 10) & 0x1f;
+  const mant = bits & 0x3ff;
+  if (exp === 0) return sign * mant * 2 ** -24; // ±0 and subnormals
+  if (exp === 0x1f) return mant !== 0 ? NaN : sign * Infinity;
+  return sign * (1 + mant / 1024) * 2 ** (exp - 15);
+}
+
+/**
+ * One f16 bit pattern → one rgba64le channel value:
+ * round(clamp(f16, 0, 1) × 65535). The clamp is the quantize step the deep
+ * lane deliberately delays until AFTER tonemapping: fs_final's output is
+ * already display-referred 0..1, so anything outside that range is either
+ * bloom overshoot (clamps to white, same as the 8-bit path) or a NaN from a
+ * degenerate shader input — mapped to 0 (black) because NaN has no order and
+ * must never leak driver-dependent garbage into a deterministic export.
+ */
+export function f16ToUnorm16(bits: number): number {
+  const v = f16BitsToF32(bits);
+  if (Number.isNaN(v)) return 0;
+  return Math.round(Math.min(1, Math.max(0, v)) * 65535);
+}
+
+/**
+ * Strip WebGPU's 256-byte row alignment from a mapped texture readback:
+ * copyTextureToBuffer pads every row to a 256-byte multiple, and the encoder
+ * contract is tightly-packed rows. `src` is the mapped buffer viewed as u16
+ * words (still f16 bit patterns); output rows are width × 4 words.
+ */
+export function stripRowPadding(
+  src: Uint16Array,
+  width: number,
+  height: number,
+  paddedBytesPerRow: number,
+): Uint16Array {
+  const rowWords = width * 4; // RGBA, one u16 word per channel
+  const srcRowWords = paddedBytesPerRow >> 1;
+  const out = new Uint16Array(rowWords * height);
+  for (let y = 0; y < height; y++) {
+    out.set(src.subarray(y * srcRowWords, y * srcRowWords + rowWords), y * rowWords);
+  }
+  return out;
+}
+
+/** f16-bits → u16 lookup table (all 65536 patterns), built once on first use.
+ * A 1080p frame is ~8.3M channel conversions; the table turns each into one
+ * indexed load, and — because it is generated FROM f16ToUnorm16 — it cannot
+ * drift from the tested decode. */
+let f16Lut: Uint16Array | null = null;
+
+/**
+ * Fused strip-padding + f16→u16 conversion: one pass, one allocation.
+ * Semantically identical to `f16ToUnorm16` mapped over `stripRowPadding`
+ * (the unit tests assert exactly that equivalence); fused because composing
+ * the two would allocate a second ~16 MB array per 1080p frame.
+ */
+export function deepFrameToRgba64(
+  src: Uint16Array,
+  width: number,
+  height: number,
+  paddedBytesPerRow: number,
+): Uint16Array {
+  if (!f16Lut) {
+    f16Lut = new Uint16Array(0x10000);
+    for (let i = 0; i < 0x10000; i++) f16Lut[i] = f16ToUnorm16(i);
+  }
+  const lut = f16Lut;
+  const rowWords = width * 4;
+  const srcRowWords = paddedBytesPerRow >> 1;
+  const out = new Uint16Array(rowWords * height);
+  for (let y = 0; y < height; y++) {
+    const s = y * srcRowWords;
+    const d = y * rowWords;
+    for (let x = 0; x < rowWords; x++) out[d + x] = lut[src[s + x]];
+  }
+  return out;
+}
+
 export class WebGPURenderer implements Renderer {
   readonly kind = "webgpu" as const;
 
@@ -1561,6 +1655,27 @@ export class WebGPURenderer implements Renderer {
   private blurVBind: GPUBindGroup | null = null;
   private finalBind: GPUBindGroup | null = null;
   private finalBloomSource: GPUTexture | null = null;
+  /** POST_WGSL module, shared by the swapchain and deep fs_final pipelines so
+   * enabling deep capture never pays a second compile of identical WGSL. */
+  private postModule: GPUShaderModule | null = null;
+
+  // FEAT-005 deep-colour capture: while enabled, the final post pass renders
+  // into an offscreen rgba16float target ("deepOut") INSTEAD of the swapchain
+  // — post-tonemap, pre-quantize pixels, readable via readbackDeepFrame().
+  // "Instead" is deliberate: the only caller is exportCore, which never
+  // presents its OffscreenCanvas and never reads it in deep mode, so a second
+  // swapchain pass would be pure waste. Shading is byte-identical to the
+  // 8-bit path — same POST_WGSL module, same fs_final entry, same bind group;
+  // only the attachment format differs — which is what keeps preview===export
+  // intact at the pixel-math level.
+  private deepCapture = false;
+  private deepTex: GPUTexture | null = null;
+  private deepSize: [number, number] = [0, 0];
+  private deepLastUsed = -1;
+  private finalPipelineDeep: GPURenderPipeline | null = null;
+  /** Readback staging buffer, reused across frames (recreated on size change). */
+  private deepReadBuf: GPUBuffer | null = null;
+  private deepReadBufSize = 0;
 
   // Feedback/trails: presets that call feedbackSample() render their raw
   // visual into visTex; a composite pass finishes it into sceneTex, and the
@@ -1990,19 +2105,47 @@ export class WebGPURenderer implements Renderer {
     this.finalBind = null;
 
     if (!this.finalPipeline) {
-      const module = this.device.createShaderModule({ code: POST_WGSL });
-      const mk = (entry: string, format: GPUTextureFormat) =>
-        this.device.createRenderPipeline({
-          layout: this.postPipelineLayout,
-          vertex: { module, entryPoint: "vs" },
-          fragment: { module, entryPoint: entry, targets: [{ format }] },
-          primitive: { topology: "triangle-list" },
-        });
+      const mk = this.postPipelineFor.bind(this);
       this.brightPipeline = mk("fs_bright", SCENE_FORMAT);
       this.blurHPipeline = mk("fs_blur_h", SCENE_FORMAT);
       this.blurVPipeline = mk("fs_blur_v", SCENE_FORMAT);
       this.finalPipeline = mk("fs_final", this.format);
     }
+  }
+
+  /** Build one post-chain pipeline from the shared POST_WGSL module. */
+  private postPipelineFor(entry: string, format: GPUTextureFormat): GPURenderPipeline {
+    if (!this.postModule) {
+      this.postModule = this.device.createShaderModule({ code: POST_WGSL });
+    }
+    return this.device.createRenderPipeline({
+      layout: this.postPipelineLayout,
+      vertex: { module: this.postModule, entryPoint: "vs" },
+      fragment: { module: this.postModule, entryPoint: entry, targets: [{ format }] },
+      primitive: { topology: "triangle-list" },
+    });
+  }
+
+  /** (Re)create the deep-capture target ("deepOut") + the rgba16float variant
+   * of the fs_final pipeline. Lazy: costs nothing until setDeepCapture(true)
+   * and the next presented frame. COPY_SRC is the whole point — this is the
+   * texture readbackDeepFrame() copies out. */
+  private ensureDeepTarget(): void {
+    const w = Math.max(1, this.canvas.width);
+    const h = Math.max(1, this.canvas.height);
+    if (!this.finalPipelineDeep) {
+      // Zero new shader text: identical fs_final, only the target format
+      // differs (rgba16float instead of the 8-bit swapchain format).
+      this.finalPipelineDeep = this.postPipelineFor("fs_final", SCENE_FORMAT);
+    }
+    if (this.deepTex && this.deepSize[0] === w && this.deepSize[1] === h) return;
+    this.deepTex?.destroy();
+    this.deepTex = this.device.createTexture({
+      size: [w, h],
+      format: SCENE_FORMAT,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+    });
+    this.deepSize = [w, h];
   }
 
   /** (Re)create the feedback targets (raw visual + history) and the composite
@@ -2166,7 +2309,15 @@ export class WebGPURenderer implements Renderer {
       this.finalBind = this.postBind(this.sceneTex!, bloomSource);
       this.finalBloomSource = bloomSource;
     }
-    pass(this.finalPipeline!, this.finalBind, this.context.getCurrentTexture().createView());
+    // Deep capture routes the final pass into deepOut instead of the
+    // swapchain (see the deepCapture field comment for why "instead"). Same
+    // bind group, same entry point — only pipeline target format and
+    // attachment differ.
+    if (this.deepCapture && this.deepTex) {
+      pass(this.finalPipelineDeep!, this.finalBind, this.deepTex.createView());
+    } else {
+      pass(this.finalPipeline!, this.finalBind, this.context.getCurrentTexture().createView());
+    }
   }
 
   private ensureParticleBuffers(count: number): void {
@@ -2627,6 +2778,69 @@ export class WebGPURenderer implements Renderer {
   }
 
   /**
+   * Deep-colour capture (FEAT-005). While enabled, every presented frame runs
+   * the FULL render graph (the neutral-post direct-to-swapchain path is
+   * bypassed) and the final post pass lands in the offscreen rgba16float
+   * deepOut target instead of the swapchain — see the deepCapture field
+   * comment for why "instead" and why the pixels stay identical. Export-only
+   * by design: the live loop must keep presenting, so it never turns this on.
+   */
+  setDeepCapture(enabled: boolean): void {
+    this.deepCapture = enabled;
+    // Targets are lazily (re)created on the next presented frame and reaped
+    // by the normal idle-release stamping after disable — no eager teardown
+    // here, so a disable/enable pair mid-export cannot thrash allocations.
+  }
+
+  /**
+   * Read back the most recent deep-captured frame as tightly-packed
+   * rgba64le-order u16: R,G,B,A per pixel, row-major, no padding, length
+   * width×height×4, value = round(clamp(f16, 0, 1) × 65535).
+   *
+   * Caller sequence (exportCore): render(...present...) → gpuDone() → this.
+   * gpuDone() is NOT required for correctness — the copy below is queued
+   * after the frame's passes, so the mapAsync resolves with this frame's
+   * pixels either way — but the export loop already awaits it for device-loss
+   * detection. One staging buffer is reused across frames; only a resize
+   * recreates it.
+   */
+  async readbackDeepFrame(): Promise<Uint16Array> {
+    if (!this.deepCapture) {
+      throw new Error("readbackDeepFrame() requires setDeepCapture(true)");
+    }
+    if (!this.deepTex) {
+      throw new Error("readbackDeepFrame() before any deep frame was rendered");
+    }
+    const [w, h] = this.deepSize;
+    // rgba16float = 8 bytes/pixel; rows padded to WebGPU's mandatory 256-byte
+    // alignment for buffer copies. The padding is stripped CPU-side below.
+    const bytesPerRow = Math.ceil((w * 8) / 256) * 256;
+    const size = bytesPerRow * h;
+    if (!this.deepReadBuf || this.deepReadBufSize !== size) {
+      this.deepReadBuf?.destroy();
+      this.deepReadBuf = this.device.createBuffer({
+        size,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+      });
+      this.deepReadBufSize = size;
+    }
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyTextureToBuffer(
+      { texture: this.deepTex },
+      { buffer: this.deepReadBuf, bytesPerRow, rowsPerImage: h },
+      [w, h],
+    );
+    this.device.queue.submit([encoder.finish()]);
+    await this.deepReadBuf.mapAsync(GPUMapMode.READ);
+    // Convert while mapped (one pass over the padded words), then unmap so
+    // the same buffer is free for the next frame's copy.
+    const raw = new Uint16Array(this.deepReadBuf.getMappedRange());
+    const out = deepFrameToRgba64(raw, w, h, bytesPerRow);
+    this.deepReadBuf.unmap();
+    return out;
+  }
+
+  /**
    * Compile a preset's WGSL against the full ABI WITHOUT installing it —
    * the editor's check step. Returns compiler errors ("line N: message",
    * line numbers relative to the USER's code, header subtracted), empty
@@ -2892,6 +3106,15 @@ export class WebGPURenderer implements Renderer {
       this.brightBind = this.blurHBind = this.blurVBind = this.finalBind = null;
       this.finalBloomSource = null;
     }
+    if (this.deepTex && idle(this.deepLastUsed)) {
+      this.deepTex.destroy();
+      this.deepTex = null;
+      // The staging buffer only exists to read deepTex — release it with the
+      // target (at 4K it is ~66 MB, too big to idle for a whole session).
+      this.deepReadBuf?.destroy();
+      this.deepReadBuf = null;
+      this.deepReadBufSize = 0;
+    }
   }
 
   /** All-neutral post = fs_final is a pure copy, so the whole graph can be
@@ -3063,6 +3286,11 @@ export class WebGPURenderer implements Renderer {
       // Shadertoy modules cannot inline-composite overlays (that lives in
       // fs_main), so they always route through visTex + fs_composite.
       !shadertoyActive &&
+      // Deep capture MUST run the full graph: the direct path draws straight
+      // to the 8-bit swapchain, which is exactly the quantize the deep lane
+      // exists to avoid — a neutral-post deep export would otherwise capture
+      // nothing (deepOut only fills in runPost's final pass).
+      !this.deepCapture &&
       this.postIsNeutral();
     const needsGraph = feedbackPresent && !direct;
     // M23: stamp which target groups this frame actually uses; anything idle
@@ -3079,6 +3307,15 @@ export class WebGPURenderer implements Renderer {
     if (mesh3dActive) this.depthLastUsed = this.frameIndex;
     if (needsGraph) this.graphLastUsed = this.frameIndex;
     if (needsGraph) this.ensureGraphTargets();
+    // Deep target participates in the same idle-release scheme as the other
+    // groups: stamped on every presented deep frame, released after
+    // RT_IDLE_FRAMES once capture is switched off (or the caller stops
+    // presenting), re-created by the guard on re-entry.
+    const deepActive = this.deepCapture && feedbackPresent;
+    if (deepActive) {
+      this.deepLastUsed = this.frameIndex;
+      this.ensureDeepTarget();
+    }
     // Particles + feedback both draw into visTex, then composite -> sceneTex.
     // A crossfade needs histTex too whenever either side of it uses feedback
     // (M14) — the fading branch below shares it exactly like the plain
@@ -3277,6 +3514,8 @@ export class WebGPURenderer implements Renderer {
     this.bloomTexA?.destroy();
     this.bloomTexB?.destroy();
     this.emptyFeedback.destroy();
+    this.deepTex?.destroy();
+    this.deepReadBuf?.destroy();
     this.visTex?.destroy();
     this.histTex?.destroy();
     this.particleUniform.destroy();

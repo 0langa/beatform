@@ -106,6 +106,22 @@ export class Canvas2DRenderer implements Renderer {
     // disabled while it is active (F1).
   }
 
+  setDeepCapture(enabled: boolean): void {
+    // A 2D canvas is 8-bit end to end: there is no high-precision frame to
+    // capture, and quietly accepting the flag would put a "10-bit" label on
+    // widened 8-bit pixels — the exact dishonesty FEAT-005 exists to remove
+    // (same class as the canvas2d findings in the v3 audit). The store-level
+    // gating that hides deep formats while this renderer is active lives in
+    // the export UI's scope; this throw is the backstop, not the UX.
+    if (enabled) throw new Error("Deep-colour capture requires the WebGPU renderer");
+  }
+
+  readbackDeepFrame(): Promise<Uint16Array> {
+    // Unreachable through honest callers (setDeepCapture(true) already threw),
+    // kept explicit so a future caller cannot mistake silence for support.
+    return Promise.reject(new Error("Deep-colour capture requires the WebGPU renderer"));
+  }
+
   /** The document's background colour as a CSS string (0..1 rgb -> 0..255). */
   private cssBgColor(): string {
     const [r, g, b] = this.bg.color;
