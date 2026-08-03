@@ -398,7 +398,49 @@ Approval gate:
 
 ### FEAT-005 — Genuine 10-bit HEVC/AV1 export
 
-**Status:** RESEARCH  
+**Status:** READY — architecture decided 2026-08-03 from a full export-path
+map; implementation phases below. Owner pre-authorized the queue.
+
+**Decisive map findings (file:line verified):**
+
+- The 8-bit boundary is `fs_final` targeting the swapchain
+  (`webgpuRenderer.ts:2169`, fast path `:3112`); EVERY export lane sits
+  downstream of it — **including ProRes, whose "10-bit" `yuva444p10le`
+  output is fed 8-bit canvas PNGs** (`exportCore.ts:808`) that ffmpeg merely
+  widens. The same honesty class as the old canvas2d findings; the new tap
+  fixes it as a follow-up.
+- No high-precision readback exists anywhere; `sceneTex` lacks `COPY_SRC`
+  (`:1979`, one-token change), and the correct tap is NOT sceneTex (that is
+  pre-tonemap HDR) but a **new `fs_final` variant rendering
+  post-tonemap-pre-quantize into an offscreen `rgba16float`** target, with
+  the neutral-post fast path forced off in 10-bit mode.
+- Sidecar plumbing (`prores.rs` begin/write/finish/abort + WAV staging +
+  backpressure chain in `exportActions.ts:236-356`) reuses essentially
+  verbatim. The bundled pinned ffmpeg has `libsvtav1` + `yuv420p10le`
+  (pin-implied capability; the pin hash IS the probe).
+- "AV1 10-bit" must be a **format** (like `prores`), NOT a `VideoCodecId` —
+  codec ids route through the WebCodecs probe and mediabunny's 8-bit lane.
+
+**Decided architecture:**
+
+1. Renderer tap: `COPY_SRC` on the offscreen 16f target; new `fs_final`
+   variant + `copyTextureToBuffer`/`mapAsync` readback returning f16 rows;
+   WGSL or CPU converts to `rgba64le` u16 (linear scale of the tonemapped
+   0..1 output, ×65535).
+2. Pipe `-f rawvideo -pix_fmt rgba64le -s WxH` into ffmpeg; RGB→YUV in
+   swscale with EXPLICIT bt709 matrix/primaries/trc + tv range flags (this
+   is the "documented conversion"; swscale dithers on 16→10 reduction);
+   `-c:v libsvtav1 -pix_fmt yuv420p10le` + native aac; mp4 container.
+3. New `ExportSettings.format: "av1-10"`, desktop-gated UI beside ProRes,
+   preflight/batch/buildExportOptions plumbing mirroring prores exactly.
+4. Verification harness (the acceptance gate — no existing tool measures
+   exported pixel fidelity): export a smooth synthetic gradient, ffprobe
+   asserts `yuv420p10le` + bt709 metadata, decode back to 16-bit raw and
+   assert >256 distinct levels across the gradient (proves beyond-8-bit
+   information survived end to end), plus deterministic double-run hashes.
+5. Follow-up once the tap is proven: switch the ProRes frame payload from
+   8-bit PNG to the same `rgba64le` pipe, making ProRes genuinely deep.
+
 **Size:** Rendering/export architecture project, not a codec-string change.
 
 Current truth:
