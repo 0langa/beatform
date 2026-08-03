@@ -123,7 +123,17 @@ export class RealtimeAnalyzer {
       } else {
         // Independent AnalyserNode history: changing this cannot lengthen the
         // detector window or alter onset timing.
-        this.displayFft = new RealFFT(fftSize, true);
+        //
+        // Asymmetric display window (see RealFFT), same flag as the export
+        // path. Live, the window necessarily still ENDS at the analyser's
+        // "now" — a tap cannot read the future — so the remaining display lag
+        // is the window's peak offset (E = round(N/8), the ~window/8 region:
+        // ~21 ms detailed / ~43 ms precise at 48 kHz) MINUS the output
+        // latency the tap already leads the speakers by (10–40 ms, device
+        // dependent). The export path shifts the same window forward so its
+        // peak lands ON the frame time (offlineSource.updateDisplaySpectrum);
+        // live approximates that alignment as closely as physics allows.
+        this.displayFft = new RealFFT(fftSize, true, true);
         this.displayMagDb = new Float32Array(fftSize / 2);
         this.displayTimeData = new Float32Array(fftSize);
       }

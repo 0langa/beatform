@@ -167,7 +167,9 @@ export class OfflineAnalyzer {
     const safeSync = sync ? sanitizeSync(sync) : DEFAULT_SYNC;
     const displayFftSize = displaySpectrumFftSize(pcm.sampleRate, spectrumResolution(safeSync));
     if (displayFftSize !== fftSize) {
-      this.displayFft = new RealFFT(displayFftSize, true);
+      // Asymmetric display window (see RealFFT): drawn bars must not trail the
+      // audible transient by half of a 171/341 ms window.
+      this.displayFft = new RealFFT(displayFftSize, true, true);
       this.displayMagDb = new Float32Array(displayFftSize / 2);
       this.displayWindowBuf = new Float32Array(displayFftSize);
       this.pipeline.setDisplayFftBins(displayFftSize / 2);
@@ -176,11 +178,39 @@ export class OfflineAnalyzer {
     this.primePipeline();
   }
 
-  /** Refresh long drawn-spectrum window on canonical analysis ticks only. */
+  /**
+   * Latest RAW drawn-spectrum magnitudes (dB), before the pipeline's
+   * attack/release shaping. Null on the legacy path where the display shares
+   * the detector transform. Exists for the export-alignment test and
+   * diagnostics: the alignment contract is defined on the raw spectrum, not on
+   * the deliberately-smoothed bins.
+   */
+  get displaySpectrumDb(): Float32Array | null {
+    return this.displayMagDb;
+  }
+
+  /**
+   * Refresh long drawn-spectrum window on canonical analysis ticks only.
+   *
+   * The window is shifted FORWARD of the detector window so that its peak
+   * weight lands on the frame's analysis endpoint: end = detector end +
+   * peakOffsetSamples. Offline has the whole track in hand, so unlike the live
+   * tap (which can only end at "now") the export can centre the display
+   * window's sensitivity on the frame it is drawn with — exported bars peak in
+   * the frame where the transient is heard, pinned by the click-alignment
+   * test. The detector window and every feature derived from it keep the
+   * un-shifted `endIn` exactly as before (offlineSource.test.ts parity test).
+   *
+   * Clamping handles both edges: at the track TAIL the shifted end saturates
+   * at the PCM length and the last ~peakOffset of the track degrades gracefully
+   * toward end-at-now; at the HEAD, `start` clamps to 0 and the existing
+   * right-align + zero-pad machinery fills the missing past with silence.
+   */
   private updateDisplaySpectrum(endIn: number, analysisTick: boolean): Float32Array | undefined {
     if (!this.displayFft || !this.displayMagDb || !this.displayWindowBuf) return undefined;
     if (!analysisTick && this.displayReady) return this.displayMagDb;
-    const end = Math.max(0, Math.min(this.mono.length, endIn));
+    const shifted = endIn + Math.round(this.displayFft.peakOffsetSamples);
+    const end = Math.max(0, Math.min(this.mono.length, shifted));
     const start = Math.max(0, end - this.displayFft.size);
     this.displayWindowBuf.fill(0);
     if (end > start) {

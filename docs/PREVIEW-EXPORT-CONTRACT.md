@@ -36,11 +36,30 @@ metadata may differ without changing decoded content.
 
 ### Audio analysis
 
-Both paths use Beatform's `RealFFT`, Hann window, bin mapping, and
-`FeaturePipeline`. The responsive detector transform is separate from the
-optional longer drawn-spectrum transform: changing display resolution, axis,
-or interpolation cannot retune bands, sync, or onset decisions. Long display
-FFTs refresh on the same fixed 60 Hz analysis ticks and are held between them.
+Both paths use Beatform's `RealFFT`, bin mapping, and `FeaturePipeline`. The
+responsive detector transform is separate from the optional longer
+drawn-spectrum transform: changing display resolution, axis, or interpolation
+cannot retune bands, sync, or onset decisions. Long display FFTs refresh on
+the same fixed 60 Hz analysis ticks and are held between them.
+
+Windowing differs by purpose. Detector transforms keep the symmetric Hann
+window unchanged — beat, onset, band, and every derived feature stay
+byte-identical. The longer display-only transforms use an asymmetric window
+(half-Hann rise, half-Hann fall over the last N/8) whose peak weight sits
+`round(N/8)` samples from the window end, so a 171/341 ms display window no
+longer reads a transient half a window late:
+
+- Export shifts the display window forward so its peak lands ON the frame's
+  analysis endpoint — exported bars peak within one analysis tick of the
+  audible transient (pinned by the click-alignment test). At the track tail
+  the shift clamps to the PCM length and gracefully degrades toward
+  ends-at-now.
+- Preview's display window necessarily still ends at the analyser's "now"; the
+  residual display lag is the peak offset (≈ window/8: ~21 ms detailed,
+  ~43 ms precise at 48 kHz) minus the output latency the tap already leads
+  the speakers by. `spectrumDiagnostics.latencyMs` reports this number and the
+  UI shows it.
+
 Sample acquisition differs:
 
 - Export uses a fixed 16.67 ms analysis lookahead.
