@@ -350,6 +350,29 @@ redistribution rights exist.
   extensions before public indexing). Also gated behind FEAT-004 completion
   per owner priority ("finish lyrics fully first").
 
+### FEAT-004 owner first-impressions (2026-08-04, overloaded-PC session — retest pending)
+
+Recorded from the owner's first hands-on with v2.69.0 (PC concurrently
+running three AI sessions — numbers not representative, owner retests on a
+clean boot):
+
+- **Progress stall at stage boundary:** "Finding vocal lines — 100%" sat
+  > 5 min before whisper-medium visibly started. Stage pct reaches 100 before
+  > the next stage emits its first progress (medium's first-token latency is
+  > the worst case). Polish: stage-transition display ("starting
+  > transcription…"), never a stale 100%.
+- **Estimate source question:** owner asked if ETA is hardware-detected —
+  it is a sustained-RTF table measured on the reference machine, split only
+  by the DML probe. Refinement (already recorded): persist measured RTF from
+  completed runs into later estimates.
+- **Quality read:** word/line DETECTION "rock solid"; TIMINGS "pretty
+  unreliable right now" — tuning target for the next lyrics round, editor
+  covers the gap meanwhile. Small tier ~5 min under heavy load.
+- Debug shell feels slower than installed build (expected: dev overhead +
+  load; sidecar is release-profile either way).
+- MIDI learn untested (no hardware; owner may access equipment on the
+  weekend).
+
 ### EXT-RENAME — file extensions `.av*` → `.bf*`
 
 **Status:** READY (queued after FEAT-004). Owner-approved 2026-08-04 with
