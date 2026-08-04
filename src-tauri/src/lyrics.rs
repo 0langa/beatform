@@ -39,7 +39,8 @@ pub struct ModelSpec {
     pub file_name: &'static str,
     pub bytes: u64,
     pub sha256: &'static str,
-    /// "isolation" (always required) | "whisper-small" | "whisper-medium".
+    /// "isolation" (always required) | "whisper-small" | "whisper-medium" |
+    /// "alignment" (phase 3 word timing; part of every tier).
     pub role: &'static str,
 }
 
@@ -64,6 +65,25 @@ pub const MODELS: &[ModelSpec] = &[
         bytes: 1_533_763_059,
         sha256: "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
         role: "whisper-medium",
+    },
+    // Phase-3 word alignment: first-party ONNX export from the Apache-2.0
+    // facebook/wav2vec2-base-960h safetensors, MatMul-only dynamic int8
+    // (full dynamic quantization FAILS on the weight-norm pos_conv; this
+    // recipe is argmax-identical to fp32 — phase-2 prep notes). Uploaded to
+    // the same release; GitHub's own asset digests match these bytes.
+    ModelSpec {
+        id: "wav2vec2-align",
+        file_name: "wav2vec2-base-960h-ctc-int8.onnx",
+        bytes: 121_925_528,
+        sha256: "788e9cef53464fd9229ee5a1b48a307971d8209f2a040439f14c4aec586e15bf",
+        role: "alignment",
+    },
+    ModelSpec {
+        id: "wav2vec2-vocab",
+        file_name: "wav2vec2-base-960h-vocab.json",
+        bytes: 392,
+        sha256: "8ae64b2ec10a2ea5c4416ed0394dcad8643b764ef979109fbf5261cb88eb836f",
+        role: "alignment",
     },
 ];
 
@@ -646,6 +666,23 @@ pub fn lyrics_generate(
             ));
         }
     }
+    // Phase-3 word alignment is an ENHANCEMENT: with both files installed the
+    // sidecar emits word-tag LRC; absent, the job runs line-level exactly
+    // like phase 2 — never a hard block on the extra download.
+    let installed = |spec: &ModelSpec| {
+        let path = dir.join(spec.file_name);
+        path.metadata()
+            .map(|m| m.len() == spec.bytes)
+            .unwrap_or(false)
+            .then_some(path)
+    };
+    let align_paths = match (
+        spec_by_id("wav2vec2-align").ok().and_then(installed),
+        spec_by_id("wav2vec2-vocab").ok().and_then(installed),
+    ) {
+        (Some(model), Some(vocab)) => Some((model, vocab)),
+        _ => None,
+    };
     // Language strings reach a child-process argv; keep them boring.
     if !(language == "auto"
         || (language.len() <= 8
@@ -726,8 +763,14 @@ pub fn lyrics_generate(
         .arg("--language")
         .arg(&language)
         .arg("--threads")
-        .arg("4")
-        .stdin(Stdio::piped())
+        .arg("4");
+    if let Some((align_model, align_vocab)) = &align_paths {
+        cmd.arg("--align-model")
+            .arg(align_model)
+            .arg("--align-vocab")
+            .arg(align_vocab);
+    }
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     #[cfg(windows)]
@@ -827,9 +870,11 @@ mod tests {
     fn the_manifest_matches_the_spike_hash_matrix() {
         // These triples are the release contract: URL file name, byte size,
         // SHA-256 — exactly what the phase-1 spike verified against the
-        // upstream HF LFS oids. A drive-by edit here would repoint the
-        // download at unverified bytes, so the test pins the pins.
-        assert_eq!(MODELS.len(), 3);
+        // upstream HF LFS oids (and, for the phase-3 wav2vec2 export, what
+        // the phase-2 prep uploaded and GitHub's asset digests confirm). A
+        // drive-by edit here would repoint the download at unverified bytes,
+        // so the test pins the pins.
+        assert_eq!(MODELS.len(), 5);
         let voc = spec_by_id("mdx-voc-ft").unwrap();
         assert_eq!(voc.file_name, "UVR-MDX-NET-Voc_FT.onnx");
         assert_eq!(voc.bytes, 66_762_490);
@@ -849,6 +894,22 @@ mod tests {
             medium.sha256,
             "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208"
         );
+        let align = spec_by_id("wav2vec2-align").unwrap();
+        assert_eq!(align.file_name, "wav2vec2-base-960h-ctc-int8.onnx");
+        assert_eq!(align.bytes, 121_925_528);
+        assert_eq!(
+            align.sha256,
+            "788e9cef53464fd9229ee5a1b48a307971d8209f2a040439f14c4aec586e15bf"
+        );
+        assert_eq!(align.role, "alignment");
+        let vocab = spec_by_id("wav2vec2-vocab").unwrap();
+        assert_eq!(vocab.file_name, "wav2vec2-base-960h-vocab.json");
+        assert_eq!(vocab.bytes, 392);
+        assert_eq!(
+            vocab.sha256,
+            "8ae64b2ec10a2ea5c4416ed0394dcad8643b764ef979109fbf5261cb88eb836f"
+        );
+        assert_eq!(vocab.role, "alignment");
         assert!(spec_by_id("nope").is_err());
     }
 

@@ -30,6 +30,7 @@ const STAGE_LABELS: Record<SidecarStage, string> = {
   isolate: "Isolating vocals",
   vad: "Finding vocal lines",
   transcribe: "Transcribing",
+  align: "Timing words",
   assemble: "Building lyrics",
 };
 
@@ -145,10 +146,12 @@ export function LyricsGenPanel() {
         </button>
       )}
       <p className="section-hint">
-        Runs entirely on this PC — vocals are isolated (UVR MDX-Net), then transcribed (Whisper{" "}
-        {tier}) into timed lines{estimate ? `; ${estimate} for this track` : ""}
-        {dml === false ? " (no GPU acceleration found — CPU timing)" : ""}. Words will need a few
-        fixes — that is normal for sung vocals.
+        Runs entirely on this PC — vocals are isolated (UVR MDX-Net), transcribed (Whisper {tier}),
+        then every word is timed against the vocal (wav2vec2 forced alignment) so the karaoke fill
+        follows the singer word by word{estimate ? `; ${estimate} for this track` : ""}
+        {dml === false ? " (no GPU acceleration found — CPU timing)" : ""}. Word timing happens
+        automatically once its model is installed. Words will need a few fixes — that is normal for
+        sung vocals.
       </p>
     </div>
   );

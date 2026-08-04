@@ -35,6 +35,75 @@ describe("parseLrc", () => {
     expect(lines[4].t).toBeCloseTo(60.5, 5);
     // LRC lines have implicit ends
     expect(lines.every((l) => l.end === null)).toBe(true);
+    // Plain LRC carries no word timing at all
+    expect(lines.every((l) => l.words === undefined)).toBe(true);
+  });
+});
+
+describe("parseLrc — enhanced (A2 word tags)", () => {
+  it("round-trips the sidecar writer's exact output", () => {
+    // This document is asserted string-for-string by the Rust writer test
+    // (lrc.rs word_timed_lines_write_a2_tags_with_a_trailing_end); change
+    // both together or writer and parser have silently diverged.
+    const doc =
+      "[re:Beatform local lyrics v1]\n" +
+      "[00:12.00]<00:12.00>Out <00:12.40>of <00:12.60>my <00:13.30>mind<00:14.42>\n" +
+      "[00:19.65]Plain fallback line\n";
+    const lines = parseLrc(doc);
+    expect(lines).toHaveLength(2);
+    expect(lines[0].text).toBe("Out of my mind");
+    expect(lines[0].words).toEqual([
+      { t: 12.0, end: null, text: "Out" },
+      { t: 12.4, end: null, text: "of" },
+      { t: 12.6, end: null, text: "my" },
+      { t: 13.3, end: 14.42, text: "mind" }, // trailing tag = last word's end
+    ]);
+    expect(lines[1].text).toBe("Plain fallback line");
+    expect(lines[1].words).toBeUndefined();
+  });
+
+  it("reads foreign ELRC variants: spaced tags, per-word end tags, untagged prefixes", () => {
+    // Space after each tag (a common exporter style)
+    const spaced = parseLrc("[00:01.00] <00:01.00> alpha <00:02.00> beta");
+    expect(spaced[0].text).toBe("alpha beta");
+    expect(spaced[0].words).toEqual([
+      { t: 1, end: null, text: "alpha" },
+      { t: 2, end: null, text: "beta" },
+    ]);
+    // Per-word end tags: <start>word<end> pairs
+    const paired = parseLrc("[00:01.00]<00:01.00>hold<00:01.50> <00:03.00>on<00:03.40>");
+    expect(paired[0].words).toEqual([
+      { t: 1, end: 1.5, text: "hold" },
+      { t: 3, end: 3.4, text: "on" },
+    ]);
+    // Untagged leading text stays in the display line, untimed
+    const prefix = parseLrc("[00:05.00]Oh <00:06.00>yes");
+    expect(prefix[0].text).toBe("Oh yes");
+    expect(prefix[0].words).toEqual([{ t: 6, end: null, text: "yes" }]);
+  });
+
+  it("applies [offset:] to word times and sanitizes backwards timings", () => {
+    const withOffset = parseLrc("[offset:+1000]\n[00:01.00]<00:01.00>one <00:02.00>two");
+    expect(withOffset[0].t).toBeCloseTo(2, 5);
+    expect(withOffset[0].words![0].t).toBeCloseTo(2, 5);
+    expect(withOffset[0].words![1].t).toBeCloseTo(3, 5);
+    // A backwards second word clamps to its predecessor; an end before its
+    // own start is dropped rather than kept as a lie.
+    const dirty = parseLrc("[00:10.00]<00:11.00>a <00:10.50>b<00:10.20>");
+    expect(dirty[0].words).toEqual([
+      { t: 11, end: null, text: "a" },
+      { t: 11, end: null, text: "b" },
+    ]);
+  });
+
+  it("attaches words to exactly one copy of a multi-stamp line", () => {
+    const lines = parseLrc("[00:10.00][01:00.00]<01:00.20>same <01:00.80>words");
+    expect(lines).toHaveLength(2);
+    const [first, second] = lines;
+    expect(first.t).toBeCloseTo(10, 5);
+    expect(first.words).toBeUndefined(); // absolute word times belong to the 1:00 copy
+    expect(second.t).toBeCloseTo(60, 5);
+    expect(second.words).toHaveLength(2);
   });
 });
 
@@ -100,5 +169,43 @@ describe("activeLyricIndex + lyricAlphaAt", () => {
     expect(lyricProgressAt(lines, 0, 4.5)).toBe(1);
     expect(lyricProgressAt(lines, 0, 5)).toBe(1); // clamped past the end
     expect(lyricProgressAt(lines, -1, 3)).toBe(0); // no active line
+  });
+
+  it("karaoke wipe follows real word timings when the line has them", () => {
+    // "Out of my mind": 14 fill-weighted chars (11 letters + 3 separators).
+    const wordLines = parseLrc(
+      "[00:12.00]<00:12.00>Out <00:12.40>of <00:12.60>my <00:13.30>mind<00:14.42>\n[00:19.65]next",
+    );
+    const p = (t: number) => lyricProgressAt(wordLines, 0, t);
+    expect(p(11.9)).toBe(0); // line active machinery aside, nothing sung
+    expect(p(12.0)).toBe(0); // first word about to start
+    // Halfway through "Out" (12.0-12.4): 1.5 of 14 chars
+    expect(p(12.2)).toBeCloseTo(1.5 / 14, 5);
+    // "Out of" done + "my" (12.6-13.3) at 6/7: (3 + 3 + 3*(6/7)) / 14
+    expect(p(13.2)).toBeCloseTo((6 + 3 * (0.6 / 0.7)) / 14, 5);
+    // Past the last word's explicit end: fully filled although the line
+    // stays on screen until 19.65 — that hold IS the word-timing payoff.
+    expect(p(14.42)).toBe(1);
+    expect(p(16)).toBe(1);
+  });
+
+  it("holds the fill between a word's explicit end and the next word's start", () => {
+    const gap = parseLrc("[00:01.00]<00:01.00>hold<00:01.50> <00:03.00>on<00:03.40>\n[00:09]x");
+    const p = (t: number) => lyricProgressAt(gap, 0, t);
+    // 7 weighted chars: hold=4, on=3 (2 + separator).
+    expect(p(1.5)).toBeCloseTo(4 / 7, 5);
+    expect(p(2.2)).toBeCloseTo(4 / 7, 5); // held through the gap
+    expect(p(3.2)).toBeCloseTo((4 + 3 * 0.5) / 7, 5);
+    expect(p(3.4)).toBe(1);
+  });
+
+  it("word-timed last line without an end tag completes at the line window end", () => {
+    const open = parseLrc("[00:01.00]<00:01.20>only");
+    // Open-ended single line: nominal 4 s window ends at 5.0.
+    expect(lyricProgressAt(open, 0, 1.1)).toBe(0);
+    expect(lyricProgressAt(open, 0, 5.0)).toBe(1);
+    const mid = lyricProgressAt(open, 0, 3.1);
+    expect(mid).toBeGreaterThan(0.4);
+    expect(mid).toBeLessThan(0.6);
   });
 });

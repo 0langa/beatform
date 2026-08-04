@@ -255,11 +255,14 @@ const SECTIONS: GuideSection[] = [
         <h4>Generate lyrics (desktop)</h4>
         <p>
           No .lrc at hand? The Text tab can generate timed lyrics from the loaded track, entirely on
-          your PC: vocals are isolated with an Ultimate Vocal Remover (UVR) MDX-Net model, then
-          transcribed with OpenAI's Whisper running on whisper.cpp. The AI models download once
-          (size and a time estimate are shown first, checksum-verified) and nothing ever leaves your
-          machine. Sung words are hard even for good models — expect to fix a few lines, and thanks
-          to the UVR and whisper.cpp projects for making local isolation and transcription possible.
+          your PC: vocals are isolated with an Ultimate Vocal Remover (UVR) MDX-Net model,
+          transcribed with OpenAI's Whisper running on whisper.cpp, then each word is timed against
+          the isolated vocal with a wav2vec2 forced aligner — the karaoke fill follows the singer
+          word by word. (Enhanced .lrc files with word tags from other tools get the same per-word
+          fill when imported.) The AI models download once (size and a time estimate are shown
+          first, checksum-verified) and nothing ever leaves your machine. Sung words are hard even
+          for good models — expect to fix a few lines, and thanks to the UVR and whisper.cpp
+          projects for making local isolation and transcription possible.
         </p>
         <h4>Audiogram</h4>
         <p>
