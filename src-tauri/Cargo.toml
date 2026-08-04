@@ -1,3 +1,9 @@
+[workspace]
+# The app package is the workspace root; the lyrics sidecar (FEAT-004) builds
+# as a separate exe exactly like the ffmpeg sidecar ships as a separate exe —
+# one workspace so fmt/clippy/test cover both in one invocation.
+members = ["lyrics-sidecar"]
+
 [package]
 name = "beatform"
 version = "2.68.1"

@@ -1,0 +1,30 @@
+[package]
+name = "lyrics-sidecar"
+version = "0.1.0"
+description = "Beatform local-lyrics sidecar: MDX-Net vocal isolation (ONNX Runtime) + whisper.cpp transcription -> line-level LRC. Separate exe, same isolation pattern as the ffmpeg sidecar."
+authors = ["0langa"]
+edition = "2021"
+
+[[bin]]
+name = "lyrics-sidecar"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# ONNX Runtime for the MDX vocal-isolation stage. Pinned exactly: `ort` is a
+# release-candidate line and its API moves between rcs. load-dynamic = we ship
+# the PINNED official onnxruntime.dll (DirectML build, MIT) fetched by
+# scripts/fetch-onnxruntime.mjs instead of letting the build download
+# third-party-compiled binaries; api-22 = bind the ONNX Runtime 1.22 API that
+# matches that dylib. directml = the EP the spike measured 4-5x faster than
+# sustained CPU on the reference Iris Xe (REPORT.md adjustment 2).
+ort = { version = "=2.0.0-rc.13", default-features = false, features = [
+  "std",
+  "load-dynamic",
+  "directml",
+  "api-22",
+] }
+# Mixed-radix real FFT for the MDX STFT (n_fft 7680 = 2^9*3*5 — not a power
+# of two, which is the whole reason the spike needed numpy for this stage).
+realfft = "3.5"
