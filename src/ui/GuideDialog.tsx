@@ -252,6 +252,15 @@ const SECTIONS: GuideSection[] = [
           follows the music karaoke-style, live and in every export. Position, size, color, an
           animation style (plain, slide, pop, or karaoke fill) and fade timing live in the Text tab.
         </p>
+        <h4>Generate lyrics (desktop)</h4>
+        <p>
+          No .lrc at hand? The Text tab can generate timed lyrics from the loaded track, entirely on
+          your PC: vocals are isolated with an Ultimate Vocal Remover (UVR) MDX-Net model, then
+          transcribed with OpenAI's Whisper running on whisper.cpp. The AI models download once
+          (size and a time estimate are shown first, checksum-verified) and nothing ever leaves your
+          machine. Sung words are hard even for good models — expect to fix a few lines, and thanks
+          to the UVR and whisper.cpp projects for making local isolation and transcription possible.
+        </p>
         <h4>Audiogram</h4>
         <p>
           The audiogram adds podcast/reel-style track-driven elements: a progress bar, an
