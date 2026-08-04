@@ -426,6 +426,47 @@ data: `F:\...\artifacts\feat004-spike\REPORT.md` + license-hash-matrix +
 - Default download ≈ 0.65 GB (small tier); medium opt-in +1.53 GB; peak
   stage RAM 3.3 GB — sequential-stage-safe on 16 GB.
 
+**Phase 2 COMPLETE 2026-08-04 — isolation + transcription → line-level LRC,
+on branch `feat/lyrics-p2` (release is central):**
+
+- New workspace sidecar `src-tauri/lyrics-sidecar` (separate exe, ffmpeg
+  pattern): ort `=2.0.0-rc.13` load-dynamic against the pinned official
+  onnxruntime.dll 1.22.1 (DirectML build) + DirectML.dll 1.15.4, both
+  nupkg- and per-DLL-SHA-256-pinned in `scripts/fetch-onnxruntime.mjs`;
+  whisper.cpp v1.9.1 zip pinned in `scripts/fetch-whisper.mjs`. The MDX
+  STFT is a Rust/realfft port of the spike's verified loop — stem RMS
+  −16.52 dB vs the spike python stem's −16.4/−16.5. All three adjustments
+  implemented: sustained-RTF estimates, DML-default-with-detected-CPU-
+  fallback, whisper on the FULL MIX + separation-as-VAD post-split
+  (hallucination drop / run-on split / trusted-empty-silent-stem rule).
+- Model manager: manifest pinned in `lyrics.rs` (a test pins the pins);
+  `beatform-app/models` release `v1` is LIVE and GitHub's own asset digests
+  match the matrix byte-for-byte; Range-resume + streamed SHA-256 before
+  the final name; device-E2E proved download→cancel→RESUME→verify against
+  the real release. UI: Text tab "Generate lyrics" with tier picker
+  (small 554 MB / medium +1.53 GB), DML-probe-split time estimate,
+  staged progress + cancel; result lands through loadLyricsText — the
+  import path, unchanged.
+- Owner's dense-mix test (Muse – Madness, 341 s) through the real store
+  flow: 29 musically-segmented lines, 270 s warm (615 s thermally
+  degraded), isolate DML RTF 0.73, whisper small RTF 0.53, VAD found
+  238 s of vocals; stem-vs-mix shared-vocab 96 % (text parity — exactly
+  adjustment 3). Transcript + stem archived under
+  `F:\...\artifacts\feat004-p2-e2e\`.
+- Phase-3 prep DONE: first-party wav2vec2 ONNX export from the Apache-2.0
+  safetensors (optimum), MatMul-only dynamic int8 (122 MB), argmax-
+  identical to fp32 AND to the reference copy; uploaded to the same
+  release with vocab.json.
+- Gotchas for the ledger: reqwest `rustls-no-provider` PANICS without an
+  installed provider (the updater installs its own — never inherit that
+  accident); ORT DirectML wedges/fast-fails in DLL_PROCESS_DETACH → the
+  sidecar exits via TerminateProcess after flushing its result; a REAL
+  mid-inference DML crash (0xffffffff, hot package) is handled by a
+  one-shot announced CPU retry in the store action; CDP evals cannot
+  resolve bare import specifiers → `__invoke` dev hook; optimum 2.x moved
+  ONNX export to `optimum-onnx`; non-virtual workspace root = bare cargo
+  commands skip member crates (CI now `--workspace`).
+
 **Size:** Multi-release epic. A cheap Whisper-only MVP is explicitly rejected.
 
 Target pipeline:
