@@ -1,5 +1,5 @@
 import { BUILDER2_ID } from "../render/builder2";
-import { presets } from "../render/presets";
+import { canonicalPresetId, presets } from "../render/presets";
 import type { PresetDef } from "../render/types";
 
 /**
@@ -37,7 +37,7 @@ export const DEFAULT_PRESET_ORDER: readonly string[] = [
   "voice-orb",
   "spectrum-scape",
   "synthwave",
-  "starfield",
+  "particles",
   BUILDER2_ID,
 ];
 
@@ -82,10 +82,16 @@ export function reconcilePresetOrder(
   const kept: string[] = [];
   const seen = new Set<string>();
   const take = (src: readonly unknown[]) => {
-    for (const id of src) {
+    for (const raw of src) {
       // Non-strings and duplicates are skipped rather than treated as
       // corruption: one bad entry should not cost the user the whole order.
-      if (typeof id !== "string" || !known.has(id) || seen.has(id)) continue;
+      if (typeof raw !== "string") continue;
+      // A RENAMED id (v13: "starfield" -> "particles") is the user's own
+      // customised position for that mode, not corruption — map it in place
+      // so the strip keeps their order instead of appending the mode at the
+      // end as if an update had just added it.
+      const id = canonicalPresetId(raw);
+      if (!known.has(id) || seen.has(id)) continue;
       seen.add(id);
       kept.push(id);
     }

@@ -63,7 +63,7 @@ const PARTICLE_WARM_FRAMES = 120;
 const THUMB_PARAMS: Record<string, Record<string, number>> = {
   // Particles: fewer, much bigger, brighter points, and a real bass/mid/treble
   // hue split — at chip size the default field is 1.3% of pixels above black.
-  starfield: {
+  particles: {
     density: 10,
     size: 0.24,
     sizeVar: 0.5,

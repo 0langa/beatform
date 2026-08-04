@@ -42,7 +42,7 @@ describe("default order", () => {
       "voice-orb",
       "spectrum-scape",
       "synthwave",
-      "starfield",
+      "particles",
       BUILDER2_ID,
     ]);
     // Set equality with the registry: no strip preset may be missing (it would
@@ -80,13 +80,31 @@ describe("reconcile: a stored order meeting a different build", () => {
   it("APPENDS an id the update added instead of dropping it", () => {
     // Exactly what an older build would have written: the full strip minus a
     // mode that shipped afterwards.
-    const older = stripPresetIds().filter((id) => id !== "starfield");
+    const older = stripPresetIds().filter((id) => id !== "particles");
     const order = reconcilePresetOrder(older);
-    expect(order).toContain("starfield");
+    expect(order).toContain("particles");
     expect([...order].sort()).toEqual([...stripPresetIds()].sort());
     // Before Builder, which stays the last chip.
     expect(order[order.length - 1]).toBe(BUILDER2_ID);
-    expect(order.indexOf("starfield")).toBe(order.indexOf(BUILDER2_ID) - 1);
+    expect(order.indexOf("particles")).toBe(order.indexOf(BUILDER2_ID) - 1);
+  });
+
+  it("maps a RENAMED id in place, keeping the user's position for it", () => {
+    // A pre-v2.68 prefs order carries the legacy "starfield" id wherever the
+    // user dragged it. Dropping it as unknown would re-append the mode at the
+    // end — losing the customised position — so it must map in place.
+    const stored = ["starfield", "aurora", "spectrum-bars"];
+    const order = reconcilePresetOrder(stored);
+    expect(order.slice(0, 3)).toEqual(["particles", "aurora", "spectrum-bars"]);
+    expect(order).not.toContain("starfield");
+    expect([...order].sort()).toEqual([...stripPresetIds()].sort());
+  });
+
+  it("collapses a legacy id and its current form to one entry", () => {
+    const order = reconcilePresetOrder(["particles", "starfield", "aurora"]);
+    expect(order.filter((id) => id === "particles")).toHaveLength(1);
+    expect(order[0]).toBe("particles");
+    expect(order[1]).toBe("aurora");
   });
 
   it("keeps every customised position while adding the new mode", () => {

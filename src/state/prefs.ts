@@ -1,5 +1,23 @@
 import { isQuantizeMode, type QuantizeMode } from "./quantize";
 
+/** Corner the performance overlay anchors to (plain CSS anchor, no collision
+ * logic — the four offsets simply clear the top bar and the player bar). */
+export type PerfOverlayCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+export type PerfOverlaySize = "s" | "m" | "l";
+export type PerfOverlayColor = "accent" | "white" | "green" | "amber";
+
+/** Which lines the performance overlay shows. */
+export interface PerfOverlayStats {
+  fps: boolean;
+  frameTime: boolean;
+  renderer: boolean;
+  jsHeap: boolean;
+  cpu: boolean;
+  ram: boolean;
+  disk: boolean;
+  gpu: boolean;
+}
+
 /**
  * App-level preferences — one typed, versioned object under
  * `beatform.prefs.v1`, replacing the scatter of small ad-hoc localStorage
@@ -56,6 +74,18 @@ export interface AppPrefs {
    * presetOrder.ts), never trusted as-is.
    */
   presetOrder: string[];
+  /** Live stats overlay over the preview canvas. Default OFF — while off it
+   * mounts nothing, polls nothing and costs nothing. Pure DOM, never part of
+   * the render canvas, so exports are untouched by construction. */
+  perfOverlay: boolean;
+  /** Which corner the overlay anchors to. */
+  perfOverlayCorner: PerfOverlayCorner;
+  /** Overlay font scale. */
+  perfOverlaySize: PerfOverlaySize;
+  /** Overlay text colour. */
+  perfOverlayColor: PerfOverlayColor;
+  /** Per-stat visibility. */
+  perfOverlayStats: PerfOverlayStats;
 }
 
 export const DEFAULT_PREFS: AppPrefs = {
@@ -73,6 +103,22 @@ export const DEFAULT_PREFS: AppPrefs = {
   paramsTab: "visual",
   collapsedSections: [],
   presetOrder: [],
+  perfOverlay: false,
+  perfOverlayCorner: "top-left",
+  perfOverlaySize: "m",
+  perfOverlayColor: "accent",
+  // GPU % is honestly "—" on this build and disk churn is niche — both start
+  // hidden; the headline numbers start visible.
+  perfOverlayStats: {
+    fps: true,
+    frameTime: true,
+    renderer: true,
+    jsHeap: true,
+    cpu: true,
+    ram: true,
+    disk: false,
+    gpu: false,
+  },
 };
 
 const LS_PREFS = "beatform.prefs.v1";
@@ -90,6 +136,30 @@ const LEGACY = {
 
 function num(v: unknown, def: number, lo: number, hi: number): number {
   return typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def;
+}
+
+function bool(v: unknown, def: boolean): boolean {
+  return typeof v === "boolean" ? v : def;
+}
+
+/** Membership-checked enum field — anything unknown degrades to the default. */
+function oneOf<T extends string>(v: unknown, options: readonly T[], def: T): T {
+  return options.includes(v as T) ? (v as T) : def;
+}
+
+function validOverlayStats(raw: unknown): PerfOverlayStats {
+  const p = (typeof raw === "object" && raw !== null ? raw : {}) as Partial<PerfOverlayStats>;
+  const d = DEFAULT_PREFS.perfOverlayStats;
+  return {
+    fps: bool(p.fps, d.fps),
+    frameTime: bool(p.frameTime, d.frameTime),
+    renderer: bool(p.renderer, d.renderer),
+    jsHeap: bool(p.jsHeap, d.jsHeap),
+    cpu: bool(p.cpu, d.cpu),
+    ram: bool(p.ram, d.ram),
+    disk: bool(p.disk, d.disk),
+    gpu: bool(p.gpu, d.gpu),
+  };
 }
 
 function validPrefs(raw: unknown): AppPrefs {
@@ -126,6 +196,19 @@ function validPrefs(raw: unknown): AppPrefs {
     presetOrder: Array.isArray(p.presetOrder)
       ? p.presetOrder.filter((s): s is string => typeof s === "string").slice(0, 64)
       : [],
+    perfOverlay: bool(p.perfOverlay, d.perfOverlay),
+    perfOverlayCorner: oneOf(
+      p.perfOverlayCorner,
+      ["top-left", "top-right", "bottom-left", "bottom-right"],
+      d.perfOverlayCorner,
+    ),
+    perfOverlaySize: oneOf(p.perfOverlaySize, ["s", "m", "l"], d.perfOverlaySize),
+    perfOverlayColor: oneOf(
+      p.perfOverlayColor,
+      ["accent", "white", "green", "amber"],
+      d.perfOverlayColor,
+    ),
+    perfOverlayStats: validOverlayStats(p.perfOverlayStats),
   };
 }
 
@@ -222,8 +305,23 @@ export function getPrefs(): AppPrefs {
   return prefs;
 }
 
+/** Change listeners (App's useSyncExternalStore). setPrefs replaces the whole
+ * prefs object, so `getPrefs` is a valid snapshot function: a new reference
+ * means a change, an identical reference means none. */
+const listeners = new Set<() => void>();
+
+/** Subscribe to prefs changes; returns the unsubscribe. Shape matches
+ * React's useSyncExternalStore(subscribePrefs, getPrefs). */
+export function subscribePrefs(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
 export function setPrefs(patch: Partial<AppPrefs>): AppPrefs {
   prefs = validPrefs({ ...prefs, ...patch });
   persist();
+  for (const listener of listeners) listener();
   return prefs;
 }

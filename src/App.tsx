@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { demos } from "./audio/demoTrack";
 import { BG_TRANSPARENT } from "./render/types";
 import { presetById } from "./render/presets";
@@ -7,7 +7,7 @@ import { APP_VERSION } from "./version";
 import { BatchPanel, type BatchPanelProps } from "./ui/BatchPanel";
 import { RESOLUTIONS, useVizStore } from "./state/store";
 import { installDevHooks } from "./devHooks";
-import { getPrefs, setPrefs } from "./state/prefs";
+import { getPrefs, setPrefs, subscribePrefs } from "./state/prefs";
 import { PlayerBar, type PlayerBarProps } from "./ui/PlayerBar";
 import { LibraryPanel, type LibraryPanelProps } from "./ui/LibraryPanel";
 import { isTauri } from "./state/platform";
@@ -28,6 +28,7 @@ import { useFocusTrap } from "./ui/useFocusTrap";
 import { useAppShortcuts, toggleFullscreen } from "./ui/useAppShortcuts";
 import { ExportDialog } from "./ui/ExportDialog";
 import { SettingsDialog } from "./ui/SettingsDialog";
+import { PerfOverlay } from "./ui/PerfOverlay";
 import { UpdatePrompt } from "./ui/UpdatePrompt";
 import { GuideDialog } from "./ui/GuideDialog";
 import {
@@ -157,6 +158,13 @@ export default function App() {
   );
 
   const store = useVizStore.getState; // stable accessor for actions/handlers
+
+  // App prefs, read reactively: prefs are module state (not the store), and
+  // the render loop reads them fresh via getPrefs() — but the perf overlay
+  // mount/config must RE-RENDER on change, so App subscribes through the
+  // prefs emitter. setPrefs replaces the whole object, so getPrefs is a
+  // valid useSyncExternalStore snapshot.
+  const appPrefs = useSyncExternalStore(subscribePrefs, getPrefs);
 
   // Stable handlers for the always-mounted PresetStrip so it can stay memoized
   // across playback ticks (store.getState is itself stable). Clicking a mode
@@ -739,6 +747,15 @@ export default function App() {
           onDoubleClick={toggleFullscreen}
         />
       </div>
+      {appPrefs.perfOverlay && (
+        <PerfOverlay
+          corner={appPrefs.perfOverlayCorner}
+          size={appPrefs.perfOverlaySize}
+          color={appPrefs.perfOverlayColor}
+          show={appPrefs.perfOverlayStats}
+          rendererKind={rendererKind}
+        />
+      )}
       {stageMode && blackout && <div className="blackout-overlay" />}
       {/* Keyed by presetId so it re-mounts and replays the fade on each switch
           — the CSS animation ends hidden, so no timer/state is needed. */}

@@ -77,3 +77,82 @@ describe("prefs: presetOrder", () => {
     expect(getPrefs().presetOrder).toEqual(["aurora", "synthwave"]);
   });
 });
+
+describe("prefs: performance overlay", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("defaults OFF with the documented config on a blob that predates it", async () => {
+    seed(JSON.stringify({ volume: 0.5 }));
+    const { getPrefs } = await importFresh();
+    const p = getPrefs();
+    expect(p.perfOverlay).toBe(false);
+    expect(p.perfOverlayCorner).toBe("top-left");
+    expect(p.perfOverlaySize).toBe("m");
+    expect(p.perfOverlayColor).toBe("accent");
+    expect(p.perfOverlayStats).toEqual({
+      fps: true,
+      frameTime: true,
+      renderer: true,
+      jsHeap: true,
+      cpu: true,
+      ram: true,
+      disk: false,
+      gpu: false,
+    });
+    // The rest of the blob is untouched.
+    expect(p.volume).toBe(0.5);
+  });
+
+  it("round-trips a customised overlay config", async () => {
+    seed(undefined);
+    const { getPrefs, setPrefs } = await importFresh();
+    setPrefs({
+      perfOverlay: true,
+      perfOverlayCorner: "bottom-right",
+      perfOverlaySize: "l",
+      perfOverlayColor: "green",
+      perfOverlayStats: { ...getPrefs().perfOverlayStats, disk: true, fps: false },
+    });
+    const p = getPrefs();
+    expect(p.perfOverlay).toBe(true);
+    expect(p.perfOverlayCorner).toBe("bottom-right");
+    expect(p.perfOverlaySize).toBe("l");
+    expect(p.perfOverlayColor).toBe("green");
+    expect(p.perfOverlayStats.disk).toBe(true);
+    expect(p.perfOverlayStats.fps).toBe(false);
+    expect(p.perfOverlayStats.cpu).toBe(true);
+  });
+
+  it("degrades corrupt overlay values to defaults without losing the blob", async () => {
+    seed(
+      `{"volume":0.3,"perfOverlay":"yes","perfOverlayCorner":"middle","perfOverlaySize":"xl","perfOverlayColor":"magenta","perfOverlayStats":"all"}`,
+    );
+    const { getPrefs } = await importFresh();
+    const p = getPrefs();
+    expect(p.perfOverlay).toBe(false);
+    expect(p.perfOverlayCorner).toBe("top-left");
+    expect(p.perfOverlaySize).toBe("m");
+    expect(p.perfOverlayColor).toBe("accent");
+    expect(p.perfOverlayStats.fps).toBe(true);
+    expect(p.volume).toBe(0.3);
+  });
+
+  it("notifies subscribers on setPrefs and stops after unsubscribe", async () => {
+    seed(undefined);
+    const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
+    const before = getPrefs();
+    let calls = 0;
+    const unsub = subscribePrefs(() => {
+      calls++;
+    });
+    setPrefs({ perfOverlay: true });
+    expect(calls).toBe(1);
+    // A new snapshot object per write — what useSyncExternalStore keys on.
+    expect(getPrefs()).not.toBe(before);
+    unsub();
+    setPrefs({ perfOverlay: false });
+    expect(calls).toBe(1);
+  });
+});

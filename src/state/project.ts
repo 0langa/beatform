@@ -9,7 +9,7 @@ import {
   DEFAULT_MOTION,
   DEFAULT_POST,
 } from "../render/types";
-import { knownPresetId, presets } from "../render/presets";
+import { canonicalPresetId, knownPresetId, presets } from "../render/presets";
 import { registerCustomPreset, validCustomPreset } from "../render/presets/custom";
 import type { PresetDef } from "../render/types";
 import { validLyricStyle, type LyricStyle } from "./lyrics";
@@ -77,9 +77,20 @@ import { validTimeline, type Timeline } from "./timeline";
  *        back to Spectrum Bars, which is a misread, so those files must
  *        refuse to open there. Projects without shadertoy defs keep writing
  *        v11 and stay compatible.
+ *
+ * v13 (=) the Particles mode's internal preset id was renamed
+ *        "starfield" -> "particles" (RENAMED_PRESET_IDS in render/presets).
+ *        Loading migrates the old id at EVERY site it persists — presetId,
+ *        the five per-preset maps and timeline scenes — before validation,
+ *        for files of every prior version. CONDITIONAL like v12: only a
+ *        document whose presetId or a scene actually references "particles"
+ *        is stamped v13, because an older reader would MISREAD exactly those
+ *        (validPresetId falls back to the default mode; validTimeline drops
+ *        the scene). Per-preset map keys are merely preserved-unknown there,
+ *        so they don't force the bump.
  */
 
-export const PROJECT_VERSION = 12;
+export const PROJECT_VERSION = 13;
 export const PROJECT_EXTENSION = "avproj";
 
 /** Frame aspect: "free" fills the window; fixed ratios letterbox the stage. */
@@ -130,11 +141,15 @@ export interface ProjectFile {
 }
 
 export function serializeProject(document: ProjectDocument, appVersion: string): string {
-  // Write the OLDEST schema that can represent the document (see the v12
-  // history note): only an embedded shadertoy def forces v12.
+  // Write the OLDEST schema that can represent the document (see the v12/v13
+  // history notes): a shadertoy def forces v12; an ACTIVE reference to the
+  // renamed "particles" id (presetId or a scene) forces v13.
+  const needsV13 =
+    document.presetId === "particles" ||
+    document.timeline.scenes.some((s) => s.presetId === "particles");
   const needsV12 = document.customDefs.some((d) => d.shadertoy);
   const file: ProjectFile = {
-    schemaVersion: needsV12 ? PROJECT_VERSION : 11,
+    schemaVersion: needsV13 ? PROJECT_VERSION : needsV12 ? 12 : 11,
     kind: "avproj",
     appVersion,
     savedAt: new Date().toISOString(),
@@ -177,11 +192,77 @@ export function parseProject(json: string): ProjectDocument {
 }
 
 /**
+ * Re-key a Record whose keys are preset ids through canonicalPresetId, so a
+ * map saved under a renamed id (v13: "starfield" -> "particles") lands under
+ * the current one. Untrusted input: non-objects pass through untouched for
+ * the field validators to reject, and an existing entry under the NEW id
+ * wins over a legacy one (a hand-edited file carrying both). Built with
+ * Object.fromEntries, which defines own properties — a "__proto__" key
+ * cannot become the result's prototype. Exported for the localStorage
+ * loaders in persistence.ts, which persist the same per-preset maps.
+ */
+export function migratePresetIdKeys(v: unknown): unknown {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return v;
+  const entries = Object.entries(v);
+  if (!entries.some(([k]) => canonicalPresetId(k) !== k)) return v;
+  const taken = new Set(entries.map(([k]) => k));
+  return Object.fromEntries(
+    entries.flatMap(([k, val]) => {
+      const canon = canonicalPresetId(k);
+      if (canon === k) return [[k, val]];
+      return taken.has(canon) ? [] : [[canon, val]];
+    }),
+  );
+}
+
+/** Timeline with every scene's presetId mapped through canonicalPresetId —
+ * shapes the validator would reject pass through untouched. Exported for
+ * persistence.ts (the localStorage timeline cache persists scene ids too). */
+export function migrateTimelinePresetIds(v: unknown): unknown {
+  if (typeof v !== "object" || v === null) return v;
+  const t = v as { scenes?: unknown };
+  if (!Array.isArray(t.scenes)) return v;
+  const scenes = t.scenes.map((s) => {
+    if (typeof s !== "object" || s === null) return s;
+    const scene = s as { presetId?: unknown };
+    if (typeof scene.presetId !== "string") return s;
+    const canon = canonicalPresetId(scene.presetId);
+    return canon === scene.presetId ? s : { ...scene, presetId: canon };
+  });
+  return { ...t, scenes };
+}
+
+/**
+ * v13 pre-pass: map renamed preset ids at every site a document persists
+ * them, BEFORE any validator runs — validPresetId/validTimeline would
+ * otherwise treat the legacy id as unknown and fall back / drop the scene.
+ * Applies to files of every prior version (the rename map is the honest
+ * record of which ids ever changed; a legacy id cannot collide with a
+ * custom one, which are "custom-"-prefixed).
+ */
+function migrateRenamedPresetIds(doc: Partial<ProjectDocument>): Partial<ProjectDocument> {
+  const out: Partial<ProjectDocument> = { ...doc };
+  if (typeof doc.presetId === "string") {
+    out.presetId = canonicalPresetId(doc.presetId);
+  }
+  out.paramsByPreset = migratePresetIdKeys(doc.paramsByPreset) as typeof doc.paramsByPreset;
+  out.syncByPreset = migratePresetIdKeys(doc.syncByPreset) as typeof doc.syncByPreset;
+  out.bgByPreset = migratePresetIdKeys(doc.bgByPreset) as typeof doc.bgByPreset;
+  out.centerImageByPreset = migratePresetIdKeys(
+    doc.centerImageByPreset,
+  ) as typeof doc.centerImageByPreset;
+  out.modsByPreset = migratePresetIdKeys(doc.modsByPreset) as typeof doc.modsByPreset;
+  out.timeline = migrateTimelinePresetIds(doc.timeline) as typeof doc.timeline;
+  return out;
+}
+
+/**
  * Field-by-field validation + defaulting of an untrusted document. This IS
  * the migration path: older schemas simply lack fields and the validators
  * default them. Shared by .avproj projects and .avtheme templates.
  */
-export function validateDocument(doc: Partial<ProjectDocument>): ProjectDocument {
+export function validateDocument(rawDoc: Partial<ProjectDocument>): ProjectDocument {
+  const doc = migrateRenamedPresetIds(rawDoc);
   // Custom defs FIRST, and registered immediately: validPresetId and
   // validTimeline both resolve custom-* ids through the runtime registry, so
   // a project that embeds the defs it references must have them registered
