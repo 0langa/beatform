@@ -498,6 +498,80 @@ describe("schema v11 (per-mode backgrounds + center images)", () => {
   });
 });
 
+describe("schema v13 (preset id rename: starfield -> particles)", () => {
+  /** A v11 file exactly as a pre-rename app wrote it: the legacy id at every
+   * site a document can persist it. */
+  const legacyFile = () => ({
+    schemaVersion: 11,
+    kind: "avproj",
+    appVersion: "2.67.0",
+    savedAt: "2026-08-01T00:00:00.000Z",
+    document: {
+      presetId: "starfield",
+      paramsByPreset: { starfield: { density: 19, size: 0.22 }, aurora: { bright: 0.3 } },
+      syncByPreset: { starfield: { mode: "kick" as const, smooth: 0.4 } },
+      bgByPreset: { starfield: { mode: 1, color: [0.1, 0.1, 0.1] } },
+      centerImageByPreset: { starfield: "as-1" },
+      assets: { "as-1": { id: "as-1", name: "x.png", dataUrl: PIXEL } },
+      modsByPreset: {
+        starfield: [{ id: "m1", source: "kick", param: "beatDance", amount: 0.4 }],
+      },
+      timeline: {
+        enabled: true,
+        scenes: [
+          { id: "sc-1", name: "Drop", presetId: "starfield", start: 30 },
+          { id: "sc-2", name: "Outro", presetId: "aurora", start: 90 },
+        ],
+        lanes: [],
+      },
+    },
+  });
+
+  it("re-keys EVERY site to the new id and loses nothing", () => {
+    const parsed = parseProject(JSON.stringify(legacyFile()));
+    expect(parsed.presetId).toBe("particles");
+    expect(parsed.paramsByPreset.particles).toEqual({ density: 19, size: 0.22 });
+    expect(parsed.paramsByPreset.starfield).toBeUndefined();
+    expect(parsed.paramsByPreset.aurora).toEqual({ bright: 0.3 }); // untouched
+    expect(parsed.syncByPreset.particles?.mode).toBe("kick");
+    expect(parsed.syncByPreset.starfield).toBeUndefined();
+    expect(parsed.bgByPreset.particles?.mode).toBe(1);
+    expect(parsed.centerImageByPreset.particles).toBe("as-1");
+    expect(parsed.modsByPreset.particles).toHaveLength(1);
+    expect(parsed.timeline.scenes.map((s) => s.presetId)).toEqual(["particles", "aurora"]);
+    // Nothing anywhere still references the legacy id.
+    expect(JSON.stringify(parsed)).not.toContain("starfield");
+  });
+
+  it("round-trips: re-saving the migrated document writes the new id at v13", () => {
+    const parsed = parseProject(JSON.stringify(legacyFile()));
+    const file = JSON.parse(serializeProject(parsed, "2.68.0"));
+    // presetId "particles" is exactly what an older reader would MISREAD
+    // (validPresetId falls back to the default mode), so the conditional
+    // bump fires — mirroring the v12 shadertoy rule.
+    expect(file.schemaVersion).toBe(13);
+    expect(parseProject(JSON.stringify(file))).toEqual(parsed);
+  });
+
+  it("does NOT bump for a document that merely stores params under the new id", () => {
+    const document = validateDocument({
+      presetId: "spectrum-bars",
+      paramsByPreset: { particles: { density: 10 } },
+    });
+    const file = JSON.parse(serializeProject(document, "2.68.0"));
+    // Older readers preserve unknown map keys — no misread, no bump.
+    expect(file.schemaVersion).toBe(11);
+  });
+
+  it("a hand-edited file carrying BOTH ids keeps the current one's entry", () => {
+    const file = legacyFile();
+    (file.document.paramsByPreset as Record<string, unknown>).particles = { density: 7 };
+    const parsed = parseProject(JSON.stringify(file));
+    expect(parsed.paramsByPreset.particles).toEqual({ density: 7 });
+    expect(parsed.paramsByPreset.starfield).toBeUndefined();
+  });
+});
+
 /**
  * Background framing (BgFit) — added WITHOUT a schema bump, so the neutral
  * defaults have to be exactly the cover crop the shader used to hardcode.

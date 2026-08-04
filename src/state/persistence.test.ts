@@ -97,3 +97,50 @@ describe("clean-exit marker", () => {
     expect(() => markSessionDirty()).not.toThrow();
   });
 });
+
+describe("legacy preset ids in the session cache", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("maps legacy preset ids in every cached site (v13 rename: starfield -> particles)", async () => {
+    // The "last session" cache outlives app updates, so a user who quit on
+    // the Particles mode before the rename must reopen on it — with their
+    // params/sync/mods/backgrounds/scenes intact — not on a defaulted mode.
+    const store = installStorage();
+    store.setItem("viz.activePreset", "starfield");
+    store.setItem("viz.params.v1", JSON.stringify({ starfield: { density: 19, size: 0.22 } }));
+    store.setItem("viz.sync.v1", JSON.stringify({ starfield: { mode: "kick", smooth: 0.4 } }));
+    store.setItem(
+      "viz.mods.v1",
+      JSON.stringify({
+        starfield: [{ id: "m1", source: "kick", param: "beatDance", amount: 0.4 }],
+      }),
+    );
+    store.setItem(
+      "viz.bgByPreset.v1",
+      JSON.stringify({ starfield: { mode: 1, color: [0.1, 0.1, 0.1] } }),
+    );
+    store.setItem("viz.centerImages.v1", JSON.stringify({ starfield: "as-1" }));
+    store.setItem(
+      "viz.timeline.v1",
+      JSON.stringify({
+        enabled: true,
+        scenes: [{ id: "sc-1", name: "Drop", presetId: "starfield", start: 30 }],
+        lanes: [],
+      }),
+    );
+    const assets = {
+      "as-1": { id: "as-1", name: "x.png", dataUrl: "data:image/png;base64,AA==" },
+    };
+    const mod = await importFresh();
+    expect(mod.loadStoredPresetId()).toBe("particles");
+    expect(mod.loadStoredParams()).toEqual({ particles: { density: 19, size: 0.22 } });
+    expect(mod.loadStoredSync().particles?.mode).toBe("kick");
+    expect(mod.loadStoredSync().starfield).toBeUndefined();
+    expect(mod.loadStoredMods().particles).toHaveLength(1);
+    expect(mod.loadStoredBgByPreset(assets).particles?.mode).toBe(1);
+    expect(mod.loadStoredCenterImages(assets)).toEqual({ particles: "as-1" });
+    expect(mod.loadStoredTimeline().scenes.map((s) => s.presetId)).toEqual(["particles"]);
+  });
+});

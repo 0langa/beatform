@@ -47,9 +47,10 @@ describe("project schema is conditional on shadertoy defs", () => {
   });
 
   it("still refuses files newer than the app", () => {
+    // v13 (particles rename) is a real schema now, so "newer" starts at 14.
     const json = serializeProject({ ...baseDoc(), customDefs: [shadertoyDef] }, "0.0.0").replace(
       '"schemaVersion": 12',
-      '"schemaVersion": 13',
+      '"schemaVersion": 14',
     );
     expect(() => parseProject(json)).toThrow(/newer app version/);
   });

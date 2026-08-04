@@ -20,8 +20,11 @@ import type { PresetDef } from "../types";
  *     shell's grid is rotated by its own angle so the naturally-sparse
  *     vanishing point doesn't stack into a hard dark cross at screen centre.
  */
-export const starfield: PresetDef = {
-  id: "starfield",
+export const particles: PresetDef = {
+  // Renamed from the legacy internal id "starfield" (the display name has been
+  // "Particles" since long before). Loaders migrate the old id everywhere it
+  // persists — see RENAMED_PRESET_IDS in ./index.ts.
+  id: "particles",
   name: "Particles",
   description:
     "Individual particles that dance to the music — beats scatter and streak them, bass/mid/treble pulse their sizes.",
@@ -609,6 +612,21 @@ fn preset(uv: vec2f) -> vec4f {
     // streaking outward, then the shell wraps = despawn + a fresh one far away.
     // Flying THROUGH independent particles, not a zoomed image.
     let gs = 2.0 + P_density() * 0.45;
+    // Frame-constant hoists — each of these was recomputed in the innermost
+    // cell loop (3x3 x shells = up to 54x per pixel) for a value that cannot
+    // vary within a frame. The surge term buys back a softLimit (tanh) per
+    // cell. Beat stretch itself is soft-capped: linear in u.pulse it ran to
+    // 2.5 + 6.0 at 200% — a ~13x smear whose covered area multiplied the
+    // per-pixel tail cost across every shell (the 10 FPS cliff) while
+    // blowing past cell coverage (the mid-screen cutoff).
+    let streakSurge = 2.5 + softLimit(u.driveBeat * 3.0 * pGeo, 3.0);
+    // Upper bound on fillP over every possible clump-noise value (noise2 is
+    // in [0,1]), so an empty cell can be rejected BEFORE paying for the
+    // clump noise2 — exact: h1 above the bound can never pass the full test.
+    let fillPMax = clamp(P_fill() * (1.0 + 0.7 * P_clump()), 0.0, 1.0);
+    // Identity gate: mix(a, b, 0) = a, so at Clumping 0 the noise2 result is
+    // discarded anyway — skip the call (27+ noise2 evals/pixel at 3 layers).
+    let clumpOn = P_clump() > 1e-3;
     // Shells are the fly-mode cost multiplier: every shell walks a 3x3 cell
     // neighbourhood, so 4-per-layer meant 108 cell iterations PER PIXEL (and
     // 108 clump noise2 evals with it) — several times the cost of any other
@@ -660,10 +678,14 @@ fn preset(uv: vec2f) -> vec4f {
       for (var oy = -1; oy <= 1; oy = oy + 1) {
         for (var ox = -1; ox <= 1; ox = ox + 1) {
           let cell = baseCell + vec2f(f32(ox), f32(oy)) + fs * 17.0;
-          let clumpN = noise2(cell * 0.15 + fs * 7.0);
           let h1 = hash21(cell + fs * 31.7);
-          let fillP = clamp(mix(P_fill(), P_fill() * (1.7 - 1.4 * clumpN), P_clump()), 0.0, 1.0);
-          if (h1 > fillP) { continue; }
+          // Cheap exact reject first, clump noise only for survivors.
+          if (h1 > fillPMax) { continue; }
+          if (clumpOn) {
+            let clumpN = noise2(cell * 0.15 + fs * 7.0);
+            let fillP = clamp(mix(P_fill(), P_fill() * (1.7 - 1.4 * clumpN), P_clump()), 0.0, 1.0);
+            if (h1 > fillP) { continue; }
+          }
           let h2 = hash21(cell + 41.3 + fs * 3.1);
           let h3 = hash21(cell + 77.7 + fs * 5.3);
           let h4 = hash21(cell + 13.1 + fs * 9.7);
@@ -679,13 +701,7 @@ fn preset(uv: vec2f) -> vec4f {
           // Small, crisp point; capped so a near star becomes a thin STREAK
           // flying past rather than a fat soft blob.
           let rad = min(P_size() * (0.3 + h1) / (Z * gs) * (1.0 + band * P_sizePulse()) * szExtra, 0.05);
-          let flight = normalize(starScreen + vec2f(1e-4, 0.0));
-          let perp = vec2f(-flight.y, flight.x);
-          // Beat stretch, soft-capped: linear in u.pulse it ran to 2.5 + 6.0
-          // at 200% — a ~13x smear whose covered area multiplied the
-          // per-pixel tail cost across every shell (the 10 FPS cliff) while
-          // blowing past cell coverage (the mid-screen cutoff).
-          var stretch = 1.0 + P_streak() * (1.0 - Z) * (2.5 + softLimit(u.driveBeat * 3.0 * pGeo, 3.0));
+          var stretch = 1.0 + P_streak() * (1.0 - Z) * streakSurge;
           // COVERAGE BOUND: the 3x3 neighbourhood only sees a star whose full
           // extent stays within 1.5 cells of its cell centre; jitter spends
           // 0.3 of that, leaving 1.2 cells for glow reach. Anything longer
@@ -702,6 +718,10 @@ fn preset(uv: vec2f) -> vec4f {
           // dominate the per-star cost. Stars are sparse, so most cells stop here.
           let reach = min(rad * stretch * 3.0 + 0.003, reachMax);
           if (dot(dvec, dvec) > reach * reach) { continue; }
+          // Deferred past the cull: normalize costs a sqrt and most cells
+          // stop at the cull above.
+          let flight = normalize(starScreen + vec2f(1e-4, 0.0));
+          let perp = vec2f(-flight.y, flight.x);
           let dl = dot(dvec, flight);
           let dp = dot(dvec, perp);
           let dist = sqrt(dl * dl / (stretch * stretch) + dp * dp);
@@ -744,6 +764,22 @@ fn preset(uv: vec2f) -> vec4f {
     // frame) that sways every particle together instead of a per-cell flow.
     let wt = u.time * (0.25 + P_wanderSpeed() * 0.6);
     let gCur = vec2f(sin(u.time * 0.3), cos(u.time * 0.26)) * 0.12;
+    // More frame-constant hoists (each was recomputed 27x per pixel at 3
+    // layers). The beat stretch buys back a softLimit (tanh) per cell; it is
+    // soft-capped because linear in u.pulse the term hit 0.2 + 2.0 at 200%,
+    // smearing every particle into a dash (and past its cell coverage) —
+    // max is 0.2 + 1.1.
+    let stretchBase = 1.0 + P_streak() * (0.2 + softLimit(u.driveBeat * pGeo, 1.1));
+    // Upper bound on fillP over every clump-noise value (noise2 in [0,1]):
+    // rejects an empty cell BEFORE its clump noise2 — exact, h1 above the
+    // bound can never pass the full test.
+    let fillPMax = clamp(P_fill() * (1.0 + 0.7 * P_clump()), 0.0, 1.0);
+    // Identity gates: mix(a, b, 0) = a and dance * 0 = 0, so at Clumping 0
+    // the clump noise2 (27/pixel) and at danceAmp 0 (Beat dance 0, pulse 0,
+    // or the drive gate closed — all frame-uniform) the two danceTarget
+    // hashes per cell are computed only to be discarded. Skip them.
+    let clumpOn = P_clump() > 1e-3;
+    let danceOn = danceAmp > 1e-5;
     for (var l = 0; l < layerCount; l = l + 1) {
       let fl = f32(l);
       let scl = (P_density() + fl * 3.0) * 0.5;
@@ -754,14 +790,19 @@ fn preset(uv: vec2f) -> vec4f {
       let flow = dir * baseSpd * par * 0.06;
       let q = p * scl - flow * u.time - dir * push * par;
       let base = floor(q);
+      let radBase = P_size() * 0.4 / scl;
       // 3x3 neighbourhood so a jittered star near a cell edge still draws.
       for (var oy = -1; oy <= 1; oy = oy + 1) {
         for (var ox = -1; ox <= 1; ox = ox + 1) {
           let cell = base + vec2f(f32(ox), f32(oy)) + fl * 93.17;
           let h1 = hash21(cell);
-          let clumpN = noise2((base + vec2f(f32(ox), f32(oy))) * 0.1 + fl * 6.0);
-          let fillP = clamp(mix(P_fill(), P_fill() * (1.7 - 1.4 * clumpN), P_clump()), 0.0, 1.0);
-          if (h1 > fillP) { continue; }
+          // Cheap exact reject first, clump noise only for survivors.
+          if (h1 > fillPMax) { continue; }
+          if (clumpOn) {
+            let clumpN = noise2((base + vec2f(f32(ox), f32(oy))) * 0.1 + fl * 6.0);
+            let fillP = clamp(mix(P_fill(), P_fill() * (1.7 - 1.4 * clumpN), P_clump()), 0.0, 1.0);
+            if (h1 > fillP) { continue; }
+          }
           let h2 = hash21(cell + 41.3);
           let h3 = hash21(cell + 77.7);
           let h4 = hash21(cell + 13.1);
@@ -771,7 +812,6 @@ fn preset(uv: vec2f) -> vec4f {
           let fph = h2 * TAU;
           let drift = vec2f(sin(wt * (0.8 + 0.5 * h2) + fph), cos(wt * (0.7 + 0.5 * h3) + fph * 1.3)) * 0.34;
           let wob = (drift + gCur) * P_wander();
-          let scatDir = normalize(vec2f(h2 - 0.5, h3 - 0.5) + 1e-4);
           // Beat dance: glide to a NEW hashed resting offset each grid beat
           // (see the bIdx/bFr note up top) instead of displacing by the beat
           // envelope, whose decay yanked the star straight back. danceVel is
@@ -782,37 +822,50 @@ fn preset(uv: vec2f) -> vec4f {
           var dance = vec2f(0.0);
           var danceVel = vec2f(0.0);
           if (u.bpm >= 1.0) {
-            let tPrev = danceTarget(cell, bPrev);
-            let tCur = danceTarget(cell, bIdx);
-            dance = mix(tPrev, tCur, bFr) * danceAmp;
-            danceVel = (tCur - tPrev) * danceAmp * 2.0;
+            if (danceOn) {
+              let tPrev = danceTarget(cell, bPrev);
+              let tCur = danceTarget(cell, bIdx);
+              dance = mix(tPrev, tCur, bFr) * danceAmp;
+              danceVel = (tCur - tPrev) * danceAmp * 2.0;
+            }
           } else {
             // No beat grid: fall back to the envelope scatter, softLimit-
             // capped at 0.45 cells — the residual settle-back is a small
             // ease instead of the old full-amplitude rubber-band.
+            let scatDir = normalize(vec2f(h2 - 0.5, h3 - 0.5) + 1e-4);
             dance = scatDir * softLimit(u.driveBeat * P_beatDance() * 0.35 * pGeo, 0.45);
             danceVel = scatDir * softLimit(u.driveBeat * 1.4 * pGeo, 2.0);
           }
           let off = wob + dance;
-          let home = (base + vec2f(f32(ox), f32(oy)) + vec2f(0.5) + off) / scl;
-          let d = p - home;
+          // Distance measured in q-SPACE (then rescaled to p units): q already
+          // carries the flow/push translation, so cell ENUMERATION and drawn
+          // particle POSITION share one drifting frame — the field genuinely
+          // translates along Direction. The old form placed the particle's
+          // home in p-space, WITHOUT the flow offset that q subtracts, so the
+          // enumeration window slid away from the drawn positions at flow
+          // rate; once ~1.5 cells apart, a pixel's true neighbours fell
+          // outside its 3x3 window and particles + glow cut off along
+          // straight cell-boundary lines perpendicular to Direction (~2:20
+          // into a track at default Motion, sooner when faster), and a
+          // Direction change teleported the offset — instant full-frame
+          // smeared strips. Now a Direction change is an ordinary clean
+          // param change.
+          let d = (q - (base + vec2f(f32(ox), f32(oy)) + vec2f(0.5) + off)) / scl;
           var band = u.bass;
           var bandTint = 0.0;
           if (h4 < 0.3333) { band = u.mid; bandTint = 1.0; } else if (h4 < 0.6666) { band = u.treble; bandTint = 2.0; }
           let depthV = mix(0.5, 1.4, h1);
           // Extra per-particle size spread (neutral at Size variance = 0).
           let szExtra = max(1.0 + (h1 - 0.5) * P_sizeVar() * 1.4, 0.1);
-          let rad = P_size() * 0.4 / scl * depthV * (0.7 + band * P_sizePulse()) * szExtra;
-          // Beat stretch, soft-capped: linear in u.pulse the term hit
-          // 0.2 + 2.0 at 200%, smearing every particle into a dash (and past
-          // its cell coverage). Max is now 0.2 + 1.1.
-          var stretch = 1.0 + P_streak() * (0.2 + softLimit(u.driveBeat * pGeo, 1.1));
-          // COVERAGE BOUND (mirror of fly mode): the 3x3 neighbourhood covers
-          // 1.5 cells beyond the cell centre; wob + dance spend at most ~0.9
-          // of that, and the glow reach may not spend more than the rest —
-          // shorten the streak to fit, radially cap the reach (min below) as
-          // the last resort for oversized Size combos. This is what removes
-          // the straight invisible clip edges mid-screen.
+          let rad = radBase * depthV * (0.7 + band * P_sizePulse()) * szExtra;
+          var stretch = stretchBase;
+          // COVERAGE BOUND (mirror of fly mode): d is measured in q-space, so
+          // this budget is exact under any amount of drift — the 3x3
+          // neighbourhood covers 1.5 cells beyond the cell centre; wob +
+          // dance spend at most ~0.9 of that, and the glow reach may not
+          // spend more than the rest — shorten the streak to fit, radially
+          // cap the reach (min below) as the last resort for oversized Size
+          // combos. This is what removes the streak-overflow clip edges.
           let reachMax = (1.5 - max(abs(off.x), abs(off.y))) / scl;
           if (rad * stretch * 2.8 + 0.004 > reachMax) {
             stretch = max((reachMax - 0.004) / max(rad * 2.8, 1e-5), 1.0);

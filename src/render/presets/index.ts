@@ -4,7 +4,7 @@ import { BUILDER2_ID, currentBuilder2Def } from "../builder2";
 import { spectrumBars } from "./spectrumBars";
 import { radialBurst } from "./radialBurst";
 import { oscilloscope } from "./oscilloscope";
-import { starfield } from "./starfield";
+import { particles } from "./particles";
 import { tunnelRings } from "./tunnelRings";
 import { nebula } from "./nebula";
 import { metaballs } from "./metaballs";
@@ -23,7 +23,7 @@ export const presets: PresetDef[] = [
   spectrumBars,
   radialBurst,
   oscilloscope,
-  starfield,
+  particles,
   tunnelRings,
   nebula,
   metaballs,
@@ -39,6 +39,27 @@ export const presets: PresetDef[] = [
   // rendering resolves through presetById -> currentBuilder2Def().
   currentBuilder2Def(),
 ];
+
+/**
+ * Built-in preset ids that were RENAMED. Persisted data keeps the old id
+ * forever (project/theme documents, .avpreset looks, localStorage caches,
+ * the prefs strip order), so every loader that reads a persisted preset id
+ * maps it through {@link canonicalPresetId} before validating — the map is
+ * the single source of truth for those migrations. Custom ids are prefixed
+ * "custom-", so a legacy built-in id can never collide with one.
+ */
+export const RENAMED_PRESET_IDS: Readonly<Record<string, string>> = {
+  // v2.68: the mode has displayed as "Particles" since v2.4x; the internal
+  // id/file finally follow (was src/render/presets/starfield.ts).
+  starfield: "particles",
+};
+
+/** Resolve a possibly-legacy preset id to its current one. */
+export function canonicalPresetId(id: string): string {
+  // Own-property check: a plain-object map would otherwise answer for
+  // prototype keys ("toString", "constructor") out of untrusted files.
+  return Object.prototype.hasOwnProperty.call(RENAMED_PRESET_IDS, id) ? RENAMED_PRESET_IDS[id] : id;
+}
 
 // Built-in id -> def, built once. Includes HIDDEN presets that left the
 // strip but must keep resolving forever: the classic `builder` renders
