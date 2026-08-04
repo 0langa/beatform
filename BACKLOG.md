@@ -1,6 +1,6 @@
 # Beatform Backlog and Alignment Ledger
 
-Last reconciled: **2026-08-04** (post v2.68.1 — owner-feedback round 2 + perf-display patch)
+Last reconciled: **2026-08-04** (post v2.69.0 — FEAT-004 local automatic lyrics complete)
 
 This is Beatform's canonical current-work ledger. It records what is complete,
 what still needs evidence, what is ready to execute, and what remains only a
@@ -38,18 +38,18 @@ Listing a feature here does **not** approve implementation. Respect its status:
 
 Time-sensitive values below were checked on 2026-08-04:
 
-| Fact                    | Verified state                                                                                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository              | `0langa/beatform`                                                                                                                                     |
-| Branch                  | Clean `main`, aligned with `origin/main`                                                                                                              |
-| Source version          | `2.68.1` in all five version-bearing files                                                                                                            |
-| HEAD / tag              | `c6330b3` / `v2.68.1`                                                                                                                                 |
-| Latest public release   | `v2.68.1`, published 2026-08-04; setup-exe SHA-256 matches `SHA256SUMS.txt`, updater manifest signature present, live latest endpoint serves `2.68.1` |
-| Open GitHub issues      | 0                                                                                                                                                     |
-| Open pull requests      | 0                                                                                                                                                     |
-| Installed desktop app   | `2.67.0` (binary verified 2026-08-04) — v2.68.1 update pending; post-update, run the ritual's registry check (expect `2.68.1`)                        |
-| Running desktop app     | None during audit                                                                                                                                     |
-| Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers found in `src`, `src-tauri`, or `scripts`                                                                |
+| Fact                    | Verified state                                                                                                                                                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository              | `0langa/beatform`                                                                                                                                                                                                          |
+| Branch                  | Clean `main`, aligned with `origin/main`                                                                                                                                                                                   |
+| Source version          | `2.69.0` in all five version-bearing files                                                                                                                                                                                 |
+| HEAD / tag              | `8dac157` / `v2.69.0`                                                                                                                                                                                                      |
+| Latest public release   | `v2.69.0`, published 2026-08-04 (59.8 MB setup — lyrics sidecar + whisper + onnxruntime now bundled); setup-exe SHA-256 matches `SHA256SUMS.txt`, updater manifest signature present, live latest endpoint serves `2.69.0` |
+| Open GitHub issues      | 0                                                                                                                                                                                                                          |
+| Open pull requests      | 0                                                                                                                                                                                                                          |
+| Installed desktop app   | `2.67.0` (binary verified 2026-08-04) — v2.69.0 update pending; post-update, run the ritual's registry check (expect `2.69.0`)                                                                                             |
+| Running desktop app     | None during audit                                                                                                                                                                                                          |
+| Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers found in `src`, `src-tauri`, or `scripts`                                                                                                                                     |
 
 Current product constraints remain:
 
@@ -399,7 +399,7 @@ Acceptance gate:
 
 ### FEAT-004 — Best-possible local automatic lyrics
 
-**Status:** IN PROGRESS — owner approved 2026-08-04 (order swapped with
+**Status:** DONE — **shipped in v2.69.0** (2026-08-04). All four phases device-proven same day: spike (GO + 3 adjustments), sidecar+model manager+line LRC (Madness 29 lines, 3 crashers caught pre-user), word alignment (29/29 lines word-timed, conf bimodal, aligner corrects whisper stamps), correction editor (byte-identical round-trip, per-line re-align, red/amber flags). Gates: 1110 web + 108 Rust tests, device E2E exit 0 each phase. Evidence: feat004-* dirs on devstorage + models release v1. Approval gate met on every item: quality > whisper-only (isolation+VAD+alignment), fully local practical (4 min GPU / 15-18 min CPU per song, honest estimates), MIT/Apache only, costs explicit pre-download, correction UI makes imperfect output useful. Open (recorded): whisper Vulkan self-build benchmark; measured-RTF estimate refinement; language picker UI. Originally: IN PROGRESS — owner approved 2026-08-04 (order swapped with
 FEAT-003; owner does the index repo setup in parallel). Desk research
 complete same day; full cited report at
 `F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\feat004-research.md`.
