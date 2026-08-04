@@ -20,6 +20,12 @@ export interface LyricLine {
    * .avproj (only lyricStyle is), so this additive field needs no
    * PROJECT_VERSION bump — the persistent artifact is the .lrc file. */
   words?: LyricWord[];
+  /** Aligner confidence for the line (mean of word confidences, 0..1) —
+   * SESSION-ONLY editor metadata. The A2 format cannot carry confidence, so
+   * this arrives on the sidecar's result event (never from parsing) and
+   * feeds the correction editor's red/amber flags. Absent = no data (an
+   * imported file, or the user reviewed the line — edits clear it). */
+  conf?: number;
 }
 
 /** One timed word. `end` is null when the word runs until the next word's
@@ -29,6 +35,9 @@ export interface LyricWord {
   t: number;
   end: number | null;
   text: string;
+  /** Aligner confidence 0..1 (peak-relative, see the sidecar). Session-only
+   * editor metadata like LyricLine.conf; never parsed from or written to LRC. */
+  conf?: number;
 }
 
 /** One display style knob-set for the overlay compositor. */

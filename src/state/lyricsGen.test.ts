@@ -53,6 +53,22 @@ describe("sidecar protocol parsing", () => {
       vocalSec: 82.86000000000001,
       ep: "dml",
       language: "en",
+      lineDetails: undefined,
+    });
+    // Phase-4 per-line confidence rides the result; malformed entries
+    // degrade instead of rejecting the event.
+    expect(
+      parseSidecarEvent(
+        '{"type":"result","lrcPath":"y.lrc","lines":2,"words":2,"alignedLines":1,"lowConfLines":1,' +
+          '"vocalSec":5,"ep":"cpu","language":"en",' +
+          '"lineDetails":[{"conf":0.81,"words":[0.9,"x",0.72]},{"words":[]}]}',
+      ),
+    ).toMatchObject({
+      type: "result",
+      lineDetails: [
+        { conf: 0.81, words: [0.9, 0.72] },
+        { conf: null, words: [] },
+      ],
     });
     // A phase-2 result line (no alignment fields) still parses — the counts
     // default to zero, meaning "line-level LRC".

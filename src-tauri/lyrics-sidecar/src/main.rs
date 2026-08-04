@@ -56,8 +56,29 @@ struct Args {
     align_vocab: Option<PathBuf>,
 }
 
+/// `--align-line` (phase 4): re-align ONE line's text against a short WAV
+/// slice the app cut around that line. Same isolation + CTC stages as the
+/// full run, no whisper — the text is the user's own correction.
+#[derive(Debug, PartialEq)]
+struct AlignLineArgs {
+    input: PathBuf,
+    ffmpeg: PathBuf,
+    mdx_model: PathBuf,
+    ort_dylib: PathBuf,
+    align_model: PathBuf,
+    align_vocab: PathBuf,
+    gpu: mdx::GpuMode,
+    threads: usize,
+    /// Line window, seconds RELATIVE TO THE SLICE (the app cut the slice, so
+    /// only it can say where the line sits inside it).
+    line_t: f64,
+    line_end: f64,
+    text: String,
+}
+
 enum Mode {
     Run(Box<Args>),
+    AlignLine(Box<AlignLineArgs>),
     ProbeGpu { ort_dylib: PathBuf },
 }
 
@@ -67,11 +88,17 @@ enum Mode {
 fn parse_args(argv: &[String]) -> Result<Mode, String> {
     let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut probe = false;
+    let mut align_line = false;
     let mut i = 0;
     while i < argv.len() {
         let a = &argv[i];
         if a == "--probe-gpu" {
             probe = true;
+            i += 1;
+            continue;
+        }
+        if a == "--align-line" {
+            align_line = true;
             i += 1;
             continue;
         }
@@ -97,6 +124,47 @@ fn parse_args(argv: &[String]) -> Result<Mode, String> {
             return Err(format!("unknown argument for probe mode: --{k}"));
         }
         return Ok(Mode::ProbeGpu { ort_dylib });
+    }
+    if align_line {
+        let take_f64 =
+            |map: &mut std::collections::HashMap<String, String>, k: &str| -> Result<f64, String> {
+                map.remove(k)
+                    .ok_or(format!("missing required --{k}"))?
+                    .parse::<f64>()
+                    .map_err(|_| format!("bad --{k}"))
+            };
+        let args = AlignLineArgs {
+            input: take(&mut map, "input")?,
+            ffmpeg: take(&mut map, "ffmpeg")?,
+            mdx_model: take(&mut map, "mdx-model")?,
+            ort_dylib: take(&mut map, "ort-dylib")?,
+            align_model: take(&mut map, "align-model")?,
+            align_vocab: take(&mut map, "align-vocab")?,
+            gpu: mdx::GpuMode::parse(map.remove("gpu").as_deref().unwrap_or("auto"))?,
+            threads: map
+                .remove("threads")
+                .map(|t| {
+                    t.parse::<usize>()
+                        .map_err(|_| format!("bad --threads: {t}"))
+                })
+                .transpose()?
+                .unwrap_or(4),
+            line_t: take_f64(&mut map, "line-t")?,
+            line_end: take_f64(&mut map, "line-end")?,
+            text: map
+                .remove("line-text")
+                .ok_or("missing required --line-text")?,
+        };
+        if args.line_end <= args.line_t || args.line_t < 0.0 {
+            return Err("--line-end must be after --line-t (both >= 0)".into());
+        }
+        if args.text.trim().is_empty() {
+            return Err("--line-text must not be empty".into());
+        }
+        if let Some(k) = map.keys().next() {
+            return Err(format!("unknown argument for align-line mode: --{k}"));
+        }
+        return Ok(Mode::AlignLine(Box::new(args)));
     }
     let args = Args {
         input: take(&mut map, "input")?,
@@ -220,11 +288,94 @@ fn main() {
             });
             hard_exit(0);
         }
+        Mode::AlignLine(args) => {
+            run_align_line(*args);
+            hard_exit(0);
+        }
         Mode::Run(args) => {
             run(*args);
             // run() emitted the result; never fall into DLL teardown.
             hard_exit(0);
         }
+    }
+}
+
+/// `--align-line`: decode the slice, isolate its vocal, re-align the given
+/// text against it, emit ONE AlignedLine event. Times stay slice-relative —
+/// the app knows where the slice sits in the track; this process never does.
+fn run_align_line(args: AlignLineArgs) {
+    let cancel = Arc::new(Canceller {
+        flag: AtomicBool::new(false),
+        child: Mutex::new(None),
+    });
+    spawn_cancel_watcher(Arc::clone(&cancel));
+
+    let slice = match audio::decode(&args.ffmpeg, &args.input) {
+        Ok(m) => m,
+        Err(e) => fail(&e),
+    };
+    let duration = slice.duration_sec();
+    if duration < 0.3 {
+        fail("audio slice too short to align");
+    }
+    if cancel.cancelled() {
+        cancelled_exit();
+    }
+
+    if let Err(e) = mdx::init_runtime(&args.ort_dylib) {
+        fail(&e);
+    }
+    let mut session = match mdx::Mdx::create(&args.mdx_model, args.gpu, args.threads) {
+        Ok(s) => s,
+        Err(e) => fail(&e),
+    };
+    let stem = {
+        let result = session.separate(&slice.left, &slice.right, &cancel.flag, |done, total| {
+            emit(&Event::Progress {
+                stage: Stage::Isolate,
+                pct: Some(100.0 * done as f64 / total as f64),
+                eta_sec: None,
+                rtf: None,
+            });
+        });
+        match result {
+            Ok(Some(stem)) => stem,
+            Ok(None) => cancelled_exit(),
+            Err(e) => fail(&e),
+        }
+    };
+    let stem16 = resample::stem_to_16k_mono(&stem.0, &stem.1);
+    drop(stem);
+    if cancel.cancelled() {
+        cancelled_exit();
+    }
+
+    let mut aligner =
+        match align::Aligner::create(&args.align_model, &args.align_vocab, args.threads) {
+            Ok(a) => a,
+            Err(e) => fail(&e),
+        };
+    let line = lines::Line {
+        t: args.line_t.min(duration),
+        end: args.line_end.min(duration),
+        text: args.text.clone(),
+        words: Vec::new(),
+    };
+    let track_sec = stem16.len() as f64 / resample::OUT_RATE as f64;
+    match align::align_one(&mut aligner, &stem16, track_sec, &line) {
+        Ok(words) => {
+            let out: Vec<protocol::AlignedWord> = words
+                .into_iter()
+                .map(|w| protocol::AlignedWord {
+                    t: w.t,
+                    end: w.end,
+                    conf: w.conf,
+                    text: w.text,
+                })
+                .collect();
+            emit(&Event::AlignedLine { words: &out });
+        }
+        Err(e) => fail(&format!("could not align this line: {e}")),
     }
 }
 
@@ -378,6 +529,20 @@ fn run(args: Args) {
         rtf: None,
         detail: None,
     });
+    // Phase-4 confidence sidechannel: one entry per line, in LRC order. The
+    // A2 format cannot carry confidence, so the correction editor gets it
+    // here — session-side, never in the artifact.
+    let line_details: Option<Vec<protocol::LineDetail>> = align_summary.as_ref().map(|_| {
+        assembled
+            .iter()
+            .map(|l| protocol::LineDetail {
+                conf: (!l.words.is_empty()).then(|| {
+                    l.words.iter().map(|w| w.conf).sum::<f64>() / l.words.len().max(1) as f64
+                }),
+                words: l.words.iter().map(|w| w.conf).collect(),
+            })
+            .collect()
+    });
     emit(&Event::Result {
         lrc_path: &args.out.to_string_lossy(),
         lines: assembled.len(),
@@ -390,6 +555,7 @@ fn run(args: Args) {
         vocal_sec,
         ep,
         language: &parsed.result.language,
+        line_details: line_details.as_deref(),
     });
 }
 
@@ -725,6 +891,55 @@ mod tests {
         assert!(parse_args(&full).is_err());
         assert!(parse_args(&v(&["stray"])).is_err());
         assert!(parse_args(&v(&["--input"])).is_err(), "flag without value");
+    }
+
+    #[test]
+    fn align_line_mode_parses_and_validates() {
+        let base = [
+            "--align-line",
+            "--input",
+            "C:/slice.wav",
+            "--ffmpeg",
+            "C:/ffmpeg.exe",
+            "--mdx-model",
+            "C:/voc_ft.onnx",
+            "--ort-dylib",
+            "C:/onnxruntime.dll",
+            "--align-model",
+            "C:/w2v2.onnx",
+            "--align-vocab",
+            "C:/vocab.json",
+            "--gpu",
+            "cpu",
+            "--line-t",
+            "0.5",
+            "--line-end",
+            "3.25",
+            "--line-text",
+            "out of my mind",
+        ];
+        let Ok(Mode::AlignLine(args)) = parse_args(&v(&base)) else {
+            panic!("align-line should parse");
+        };
+        assert_eq!(args.line_t, 0.5);
+        assert_eq!(args.line_end, 3.25);
+        assert_eq!(args.text, "out of my mind");
+        assert_eq!(args.gpu, mdx::GpuMode::Cpu);
+        assert_eq!(args.threads, 4);
+
+        // Window must be forward and the text non-empty.
+        let mut bad = v(&base);
+        let end_at = bad.iter().position(|a| a == "3.25").unwrap();
+        bad[end_at] = "0.5".into();
+        assert!(parse_args(&bad).is_err(), "line-end == line-t");
+        let mut empty = v(&base);
+        let text_at = empty.iter().position(|a| a == "out of my mind").unwrap();
+        empty[text_at] = "  ".into();
+        assert!(parse_args(&empty).is_err(), "blank text");
+        // Whisper flags are unknown here — a mixed argv is a bug upstream.
+        let mut mixed = v(&base);
+        mixed.extend(v(&["--whisper-cli", "w"]));
+        assert!(parse_args(&mixed).is_err());
     }
 
     #[test]

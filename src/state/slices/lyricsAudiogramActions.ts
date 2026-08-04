@@ -10,6 +10,7 @@ export function lyricsAudiogramActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       try {
         const lyrics = parseLyrics(fileName, contents);
         set({ lyrics, lyricFileName: fileName, error: null });
+        get().resetLyricsEditHistory(); // a fresh document, a fresh editor
         shared.lastFrameKey = NULL_FRAME_KEY; // force the first recompose
         get().refreshOverlay();
         ctx.flashNotice(`Lyrics loaded — ${lyrics.length} lines from ${fileName}`);
@@ -25,6 +26,7 @@ export function lyricsAudiogramActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
 
     clearLyrics() {
       set({ lyrics: null, lyricFileName: null });
+      get().resetLyricsEditHistory();
       get().refreshOverlay();
     },
 

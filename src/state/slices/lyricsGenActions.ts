@@ -225,6 +225,11 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         // (low aligner confidence or failed alignment). Honest, not scary —
         // sung-lyrics ASR needing fixes is the documented normal.
         const stats = captured.result;
+        // Per-line confidence (phase 4): the LRC can't carry it, the result
+        // event does — attach it to the parsed lines for the editor's flags.
+        if (stats?.lineDetails && get().lyrics) {
+          get().applyLyricsConfidence(stats.lineDetails);
+        }
         if (stats != null && stats.words > 0 && get().lyrics) {
           const low = stats.lowConfLines;
           ctx.flashNotice(

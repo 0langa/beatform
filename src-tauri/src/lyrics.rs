@@ -839,6 +839,231 @@ pub fn lyrics_generate(
     result
 }
 
+// ---------------------------------------------------------------------------
+// Per-line re-alignment (phase 4 correction editor)
+
+/// One re-aligned word, slice-relative seconds (the webview cut the slice
+/// and owns the offset back to track time).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlignedWordOut {
+    t: f64,
+    end: f64,
+    conf: f64,
+    text: String,
+}
+
+/// Re-align ONE line's (edited) text against the staged audio slice using
+/// the sidecar's `--align-line` mode: isolation + CTC forced alignment, no
+/// whisper. The webview stages a short WAV cut around the line (same
+/// begin/chunk/end handshake as generation) and passes the line window in
+/// SLICE-relative seconds. Blocking-pool command like lyrics_generate;
+/// shares the job slot, so generate and re-align exclude each other and
+/// lyrics_generate_cancel / app shutdown reach this child too.
+#[tauri::command(async)]
+pub fn lyrics_align_line(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LyricsState>,
+    line_t: f64,
+    line_end: f64,
+    text: String,
+    use_gpu: bool,
+) -> Result<Vec<AlignedWordOut>, String> {
+    // The text reaches a child argv: normalize whitespace and bound it.
+    // (No shell involved — std::process quotes — but a 10 kB argv or
+    // embedded newlines have no business in a lyric line either way.)
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return Err("The line has no text to align".into());
+    }
+    if text.chars().count() > 300 {
+        return Err("Line too long to re-align (300 characters max)".into());
+    }
+    if !(line_t >= 0.0 && line_end > line_t && line_end - line_t <= 40.0) {
+        return Err("Line window out of range for re-alignment".into());
+    }
+
+    let dir = models_dir(&app, &state)?;
+    let need = |id: &str| -> Result<PathBuf, String> {
+        let spec = spec_by_id(id)?;
+        let path = dir.join(spec.file_name);
+        let ok = path
+            .metadata()
+            .map(|m| m.len() == spec.bytes)
+            .unwrap_or(false);
+        if ok {
+            Ok(path)
+        } else {
+            Err(format!(
+                "Model not installed: {} — download the lyrics models first",
+                spec.id
+            ))
+        }
+    };
+    let mdx_path = need("mdx-voc-ft")?;
+    let align_model = need("wav2vec2-align")?;
+    let align_vocab = need("wav2vec2-vocab")?;
+
+    let staged = state
+        .staged
+        .lock()
+        .map_err(|_| "state poisoned")?
+        .take()
+        .ok_or("No audio staged — call lyrics_audio_begin/chunk/end first")?;
+    let cleanup_staged = |p: &PathBuf| {
+        let _ = std::fs::remove_file(p);
+    };
+
+    {
+        let guard = state.job.lock().map_err(|_| "state poisoned")?;
+        if guard.is_some() {
+            cleanup_staged(&staged);
+            return Err("Lyrics generation is already running".into());
+        }
+    }
+
+    let spawn_inputs = (|| -> Result<(PathBuf, PathBuf, PathBuf), String> {
+        Ok((
+            sidecar_exe(&app)?,
+            ffmpeg_exe(&app)?,
+            resolve_bundled(&app, "onnxruntime/onnxruntime.dll")?,
+        ))
+    })();
+    let (exe, ffmpeg, ort_dylib) = match spawn_inputs {
+        Ok(v) => v,
+        Err(e) => {
+            cleanup_staged(&staged);
+            return Err(e);
+        }
+    };
+
+    let mut cmd = Command::new(&exe);
+    cmd.arg("--align-line")
+        .arg("--input")
+        .arg(&staged)
+        .arg("--ffmpeg")
+        .arg(&ffmpeg)
+        .arg("--mdx-model")
+        .arg(&mdx_path)
+        .arg("--ort-dylib")
+        .arg(&ort_dylib)
+        .arg("--align-model")
+        .arg(&align_model)
+        .arg("--align-vocab")
+        .arg(&align_vocab)
+        .arg("--gpu")
+        .arg(if use_gpu { "auto" } else { "cpu" })
+        .arg("--threads")
+        .arg("4")
+        .arg("--line-t")
+        .arg(format!("{line_t:.3}"))
+        .arg("--line-end")
+        .arg(format!("{line_end:.3}"))
+        .arg("--line-text")
+        .arg(&text);
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            cleanup_staged(&staged);
+            return Err(format!("lyrics sidecar spawn failed: {e}"));
+        }
+    };
+    let stdout = child.stdout.take().expect("stdout piped");
+    *state.job_stdin.lock().map_err(|_| "state poisoned")? = child.stdin.take();
+    *state.job.lock().map_err(|_| "state poisoned")? = Some(child);
+
+    // Supervise to EOF: capture the one terminal event. Seconds-long job, no
+    // progress channel — the UI shows a per-line spinner.
+    enum AlignOutcome {
+        Words(Vec<AlignedWordOut>),
+        Error(String),
+        Cancelled,
+    }
+    let mut outcome: Option<AlignOutcome> = None;
+    let reader = std::io::BufReader::new(stdout);
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        match v["type"].as_str() {
+            Some("alignedLine") => {
+                let words = v["words"]
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|w| {
+                                Some(AlignedWordOut {
+                                    t: w["t"].as_f64()?,
+                                    end: w["end"].as_f64()?,
+                                    conf: w["conf"].as_f64().unwrap_or(0.0),
+                                    text: w["text"].as_str()?.to_string(),
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                outcome = Some(AlignOutcome::Words(words));
+            }
+            Some("error") => {
+                outcome = Some(AlignOutcome::Error(
+                    v["message"]
+                        .as_str()
+                        .unwrap_or("re-alignment failed")
+                        .to_string(),
+                ));
+            }
+            Some("cancelled") => outcome = Some(AlignOutcome::Cancelled),
+            _ => {}
+        }
+    }
+
+    // Reap (bounded), release stdin, clean the slice — lyrics_generate's ritual.
+    let status = {
+        let mut guard = state.job.lock().map_err(|_| "state poisoned")?;
+        match guard.take() {
+            Some(mut child) => {
+                let deadline = std::time::Instant::now() + Duration::from_secs(30);
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(s)) => break Some(s),
+                        Ok(None) if std::time::Instant::now() >= deadline => {
+                            let _ = child.kill();
+                            break None;
+                        }
+                        Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                        Err(_) => break None,
+                    }
+                }
+            }
+            None => None,
+        }
+    };
+    if let Ok(mut stdin) = state.job_stdin.lock() {
+        drop(stdin.take());
+    }
+    cleanup_staged(&staged);
+
+    match outcome {
+        Some(AlignOutcome::Words(words)) if !words.is_empty() => Ok(words),
+        Some(AlignOutcome::Words(_)) => Err("re-alignment produced no words".into()),
+        Some(AlignOutcome::Error(message)) => Err(message),
+        Some(AlignOutcome::Cancelled) => Err("cancelled".into()),
+        None => match status {
+            Some(s) if !s.success() => Err(format!("lyrics sidecar exited abnormally ({s})")),
+            _ => Err("lyrics sidecar ended without a result".into()),
+        },
+    }
+}
+
 /// DEBUG BUILDS ONLY: point the model manager at an arbitrary directory so
 /// the E2E harness can use pre-cached models without a 0.65 GB download.
 /// Compiled to a hard error in release, exactly like debug_allow_path.

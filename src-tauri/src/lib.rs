@@ -191,6 +191,7 @@ pub fn run() {
             lyrics::lyrics_gpu_probe,
             lyrics::lyrics_generate,
             lyrics::lyrics_generate_cancel,
+            lyrics::lyrics_align_line,
             lyrics::debug_set_lyrics_models_dir
         ])
         .run(tauri::generate_context!())

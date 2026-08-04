@@ -15,6 +15,16 @@
 
 export type SidecarStage = "decode" | "isolate" | "vad" | "transcribe" | "align" | "assemble";
 
+/** Per-line confidence detail riding the result event (phase 4): the LRC
+ * cannot carry confidence, so the correction editor gets it session-side.
+ * One entry per LRC line, in order. */
+export interface LineDetail {
+  /** Mean word confidence 0..1; null = the line has no word timing. */
+  conf: number | null;
+  /** Per-word confidences, in word order (empty when conf is null). */
+  words: number[];
+}
+
 export type SidecarEvent =
   | { type: "progress"; stage: SidecarStage; pct?: number; etaSec?: number; rtf?: number }
   | { type: "stageDone"; stage: SidecarStage; wallSec: number; rtf?: number; detail?: string }
@@ -31,6 +41,8 @@ export type SidecarEvent =
       vocalSec: number;
       ep: "dml" | "cpu";
       language: string;
+      /** Present when the alignment stage ran (phase 4). */
+      lineDetails?: LineDetail[];
     }
   | { type: "error"; message: string }
   | { type: "cancelled" }
@@ -40,6 +52,23 @@ const STAGES: SidecarStage[] = ["decode", "isolate", "vad", "transcribe", "align
 
 function isStage(v: unknown): v is SidecarStage {
   return typeof v === "string" && (STAGES as string[]).includes(v);
+}
+
+/** Lenient LineDetail[] reader: anything malformed degrades to undefined —
+ * confidence is an enhancement, never a reason to reject a result. */
+function parseLineDetails(v: unknown): LineDetail[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: LineDetail[] = [];
+  for (const item of v) {
+    const o = (typeof item === "object" && item !== null ? item : {}) as Record<string, unknown>;
+    out.push({
+      conf: typeof o.conf === "number" ? o.conf : null,
+      words: Array.isArray(o.words)
+        ? o.words.filter((w): w is number => typeof w === "number")
+        : [],
+    });
+  }
+  return out;
 }
 
 /** Parse one line of sidecar stdout. Null for anything malformed — the
@@ -84,6 +113,7 @@ export function parseSidecarEvent(line: string): SidecarEvent | null {
         vocalSec: typeof o.vocalSec === "number" ? o.vocalSec : 0,
         ep: o.ep === "dml" ? "dml" : "cpu",
         language: typeof o.language === "string" ? o.language : "",
+        lineDetails: parseLineDetails(o.lineDetails),
       };
     case "error":
       return {
