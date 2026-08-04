@@ -1,19 +1,23 @@
-// FEAT-004 phase-2 device end-to-end proof: the REAL local-lyrics flow
+// FEAT-004 phase-2+3 device end-to-end proof: the REAL local-lyrics flow
 // through the debug shell (Vite dev frontend + Tauri IPC) over the WebView2
 // devtools protocol. Covers, in order:
 //   1. model manager against the LIVE beatform-app/models release:
 //      real download -> mid-flight cancel -> Range-RESUME -> SHA-256 verify
-//      (positive + negative verify)
+//      (positive + negative verify); the phase-3 alignment pair installs
+//      with the tier (downloaded from the release on the first run, then
+//      cached on devstorage)
 //   2. generation on a spike-corpus track through the store action: staged
 //      audio -> sidecar -> LRC lands in store.lyrics via loadLyricsText,
-//      timestamps strictly monotonic
+//      timestamps strictly monotonic + PHASE 3: >=80% of lines carry word
+//      timing, word spans sane/monotonic, store notice reports words timed
 //   3. cancel mid-isolation: phase returns to idle, no lyrics, no error
 //   4. (unless --skip-madness) the owner's dense-mix test file
 //      (Muse - Madness.flac, read in place from devstorage) through the
-//      same store flow — the case the spike corpus could not cover
-//   5. (unless --skip-compare) direct-sidecar run on Madness with
-//      --dump-stem + a whisper pass on the ISOLATED STEM, so the
-//      isolated-vs-mix transcripts can be compared honestly
+//      same store flow — the case the spike corpus could not cover — with
+//      the same word assertions + an honest per-word sample report
+//   5. (unless --skip-compare) direct-sidecar run on Madness (with the
+//      alignment stage) + --dump-stem + a whisper pass on the ISOLATED
+//      STEM, so the isolated-vs-mix transcripts can be compared honestly
 //
 //   node scripts/lyrics-e2e.mjs [--skip-madness] [--skip-compare] [--out=<dir>]
 //
@@ -63,8 +67,13 @@ function fatal(msg) {
 // --- prep: models dir the app will be pointed at ---------------------------
 // ggml-small is pre-seeded from the spike cache (a 487 MB download has no
 // place in a routine E2E); mdx-voc-ft is deliberately ABSENT so the download
-// leg exercises the real release. exFAT has no links, so this is one copy,
-// reused across runs.
+// leg exercises the real release. The phase-3 alignment pair seeds from the
+// devstorage cache when present — the FIRST run downloads it from the live
+// release (exercising the multi-model download) and then caches it. exFAT
+// has no links, so these are single copies, reused across runs.
+const ALIGN_FILES = ["wav2vec2-base-960h-ctc-int8.onnx", "wav2vec2-base-960h-vocab.json"];
+const ALIGN_CACHE = path.join(CACHE, "wav2vec2-int8");
+
 function prepModelsDir() {
   mkdirSync(E2E_MODELS, { recursive: true });
   const small = path.join(E2E_MODELS, "ggml-small.bin");
@@ -75,6 +84,71 @@ function prepModelsDir() {
   // The download leg must start from nothing: no installed file, no .part.
   rmSync(path.join(E2E_MODELS, "UVR-MDX-NET-Voc_FT.onnx"), { force: true });
   rmSync(path.join(E2E_MODELS, "UVR-MDX-NET-Voc_FT.onnx.part"), { force: true });
+  for (const f of ALIGN_FILES) {
+    rmSync(path.join(E2E_MODELS, f), { force: true });
+    rmSync(path.join(E2E_MODELS, `${f}.part`), { force: true });
+    const cached = path.join(ALIGN_CACHE, f);
+    if (existsSync(cached)) copyFileSync(cached, path.join(E2E_MODELS, f));
+  }
+}
+
+/** After the download leg installed the alignment pair, keep a devstorage
+ * copy so later runs skip the 122 MB fetch. */
+function cacheAlignModels() {
+  mkdirSync(ALIGN_CACHE, { recursive: true });
+  for (const f of ALIGN_FILES) {
+    const src = path.join(E2E_MODELS, f);
+    const dst = path.join(ALIGN_CACHE, f);
+    if (existsSync(src) && !existsSync(dst)) copyFileSync(src, dst);
+  }
+}
+
+// --- phase-3 word-timing assertions ----------------------------------------
+/** Assert the parsed store lines carry sane word timing: >=80% of lines
+ * aligned, word texts reproduce the line text, starts monotonic within each
+ * line, spans inside the (padded) line window. Returns the aligned count. */
+function assertWordTiming(lines, label) {
+  const norm = (s) => s.replace(/\s+/g, " ").trim();
+  let aligned = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const words = line.words;
+    if (!words || words.length === 0) continue;
+    aligned++;
+    if (norm(words.map((w) => w.text).join(" ")) !== norm(line.text)) {
+      fatal(`${label}: line ${i} word texts diverge from the line text`);
+    }
+    for (let k = 0; k < words.length; k++) {
+      const w = words[k];
+      if (!Number.isFinite(w.t)) fatal(`${label}: line ${i} word ${k} has no start`);
+      if (k > 0 && w.t < words[k - 1].t) {
+        fatal(`${label}: line ${i} word ${k} starts before its predecessor`);
+      }
+      if (w.end != null && w.end <= w.t)
+        fatal(`${label}: line ${i} word ${k} ends before it starts`);
+    }
+    // Window sanity: the aligner pads ±0.4 s around the whisper line span and
+    // whisper ends drift on held notes — 0.5/1.0 s tolerances, not slack for
+    // wholesale misplacement.
+    const nextT = i + 1 < lines.length ? lines[i + 1].t : Infinity;
+    if (words[0].t < line.t - 0.5) {
+      fatal(
+        `${label}: line ${i} first word ${words[0].t.toFixed(2)} predates line ${line.t.toFixed(2)}`,
+      );
+    }
+    const last = words[words.length - 1];
+    const lastEnd = last.end ?? last.t;
+    if (nextT !== Infinity && lastEnd > nextT + 1.0) {
+      fatal(
+        `${label}: line ${i} last word ends ${lastEnd.toFixed(2)}, next line starts ${nextT.toFixed(2)}`,
+      );
+    }
+  }
+  const frac = aligned / Math.max(1, lines.length);
+  if (frac < 0.8) {
+    fatal(`${label}: only ${aligned}/${lines.length} lines have word timing (<80%)`);
+  }
+  return aligned;
 }
 
 // --- media server: corpus + Madness, read in place -------------------------
@@ -239,6 +313,10 @@ function runSidecarDirect(input, lrcOut, stemOut) {
     "4",
     "--dump-stem",
     stemOut,
+    "--align-model",
+    path.join(E2E_MODELS, "wav2vec2-base-960h-ctc-int8.onnx"),
+    "--align-vocab",
+    path.join(E2E_MODELS, "wav2vec2-base-960h-vocab.json"),
   ];
   const res = spawnSync(sidecar, argv, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   if (res.status !== 0) fatal(`direct sidecar run failed (${res.status}): ${res.stdout}`);
@@ -360,19 +438,35 @@ try {
 
   await cdp.eval(`window.__store.getState().downloadLyricsTier("small"); true`, false);
   await pollUntil(cdp, (s) => s.phase === "downloading", 60_000, "resume-start");
-  await pollUntil(cdp, (s) => s.phase === "idle", 300_000, "resume-finish");
+  await pollUntil(cdp, (s) => s.phase === "idle", 600_000, "resume-finish");
   const afterResume = await cdp.eval(
-    `window.__store.getState().lyricsGen.models.models.find((m) => m.id === "mdx-voc-ft")`,
+    `window.__store.getState().lyricsGen.models.models
+       .filter((m) => ["mdx-voc-ft", "wav2vec2-align", "wav2vec2-vocab"].includes(m.id))`,
     false,
   );
-  if (!afterResume.installed) fatal(`resume did not install: ${JSON.stringify(afterResume)}`);
+  for (const m of afterResume) {
+    if (!m.installed) fatal(`resume did not install ${m.id}: ${JSON.stringify(afterResume)}`);
+  }
   const verifyOk = await cdp.eval(`window.__invoke("lyrics_model_verify", { id: "mdx-voc-ft" })`);
   if (verifyOk !== true) fatal("post-resume SHA-256 verify must pass");
+  // Phase 3: the alignment model + vocab hashes must match the manifest pins
+  // whether they came from this run's release download or the devstorage seed.
+  const verifyAlign = await cdp.eval(
+    `window.__invoke("lyrics_model_verify", { id: "wav2vec2-align" })`,
+  );
+  if (verifyAlign !== true) fatal("wav2vec2-align SHA-256 verify must pass");
+  const verifyVocab = await cdp.eval(
+    `window.__invoke("lyrics_model_verify", { id: "wav2vec2-vocab" })`,
+  );
+  if (verifyVocab !== true) fatal("wav2vec2-vocab SHA-256 verify must pass");
   const verifyAbsent = await cdp.eval(
     `window.__invoke("lyrics_model_verify", { id: "whisper-medium" })`,
   );
   if (verifyAbsent !== false) fatal("verify of an uninstalled model must be false");
-  console.log("RESUME+VERIFY OK: real release download, hash-verified, negative case false");
+  cacheAlignModels();
+  console.log(
+    "RESUME+VERIFY OK: real release download, hash-verified (incl. alignment pair), negative case false",
+  );
 
   // ---- 2. generation on the corpus track through the store ---------------
   await cdp.eval(`(async () => {
@@ -401,7 +495,14 @@ try {
   if (!lines.some((l) => /say can you see/i.test(l.text))) {
     fatal(`corpus transcript unexpectedly off: ${JSON.stringify(lines.slice(0, 3))}`);
   }
-  console.log(`GEN OK: ${lines.length} lines in store via loadLyricsText (${done.fileName})`);
+  const corpusAligned = assertWordTiming(lines, "corpus");
+  if (!/words timed/.test(done.notice ?? "")) {
+    fatal(`store notice must report word timing, got: ${done.notice}`);
+  }
+  console.log(
+    `GEN OK: ${lines.length} lines (${corpusAligned} word-timed) in store via loadLyricsText (${done.fileName})`,
+  );
+  console.log(`GEN NOTICE: ${done.notice}`);
 
   // ---- 3. cancel mid-isolation -------------------------------------------
   await cdp.eval(`window.__store.getState().clearLyrics(); true`, false);
@@ -443,15 +544,30 @@ try {
     for (let i = 1; i < mlines.length; i++) {
       if (!(mlines[i].t > mlines[i - 1].t)) fatal(`madness timestamps not monotonic at ${i}`);
     }
+    const mAligned = assertWordTiming(mlines, "madness");
+    if (!/words timed/.test(mdone.notice ?? "")) {
+      fatal(`madness notice must report word timing, got: ${mdone.notice}`);
+    }
     const wall = Math.round((Date.now() - t0) / 1000);
     writeFileSync(
       path.join(outDir, "madness-app-flow.json"),
       JSON.stringify({ wallSec: wall, fileName: mdone.fileName, lines: mlines }, null, 2),
     );
     console.log(
-      `MADNESS OK: ${mlines.length} lines in ${wall}s via the real store flow — transcript saved to ${outDir}`,
+      `MADNESS OK: ${mlines.length} lines (${mAligned} word-timed) in ${wall}s via the real store flow — transcript saved to ${outDir}`,
     );
+    console.log(`MADNESS NOTICE: ${mdone.notice}`);
     for (const l of mlines) console.log(`  [${l.t.toFixed(2)}] ${l.text}`);
+    // Honest per-word sample: the first three word-timed lines with their
+    // spans, so the timing quality is inspectable against the actual song —
+    // machine timings on the owner's local file, judged by ear.
+    console.log("MADNESS WORD SAMPLE (first 3 word-timed lines):");
+    for (const l of mlines.filter((x) => x.words && x.words.length > 0).slice(0, 3)) {
+      const spans = l.words
+        .map((w) => `${w.t.toFixed(2)}${w.end != null ? `-${w.end.toFixed(2)}` : ""} ${w.text}`)
+        .join(" | ");
+      console.log(`  [${l.t.toFixed(2)}] ${spans}`);
+    }
   }
 
   // ---- 5. isolated-vs-mix comparison (direct sidecar) --------------------
@@ -463,8 +579,15 @@ try {
     writeFileSync(path.join(outDir, "madness-direct-events.json"), JSON.stringify(events, null, 2));
     const result = events.find((e) => e.type === "result");
     const iso = events.find((e) => e.type === "stageDone" && e.stage === "isolate");
+    const alignDone = events.find((e) => e.type === "stageDone" && e.stage === "align");
+    if (!alignDone) fatal("direct run must emit an align stageDone");
+    if (!(result?.words > 0))
+      fatal(`direct run produced no word timing: ${JSON.stringify(result)}`);
     console.log(
-      `COMPARE: direct run done — ep=${result?.ep} isolateRTF=${iso?.rtf?.toFixed(3)} vocalSec=${result?.vocalSec?.toFixed(1)} lines=${result?.lines}`,
+      `COMPARE: direct run done — ep=${result?.ep} isolateRTF=${iso?.rtf?.toFixed(3)} ` +
+        `vocalSec=${result?.vocalSec?.toFixed(1)} lines=${result?.lines} words=${result?.words} ` +
+        `aligned=${result?.alignedLines} lowConf=${result?.lowConfLines} ` +
+        `alignWall=${alignDone.wallSec?.toFixed(1)}s (${alignDone.detail ?? ""})`,
     );
     console.log("COMPARE: whisper small on the ISOLATED STEM…");
     const stemText = runWhisperOnStem(stemOut, path.join(outDir, "madness-stem-transcript"));
