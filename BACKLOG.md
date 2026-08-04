@@ -395,7 +395,36 @@ wipe interpolates line duration and needs a per-word schema + wipe upgrade.
 **Phases:** (1) legal/eval spike — frozen corpus, license/hash matrix,
 measured RTF/WER on device; (2) isolation + transcription → line-level LRC
 (already-shippable value); (3) word alignment + A2 word-tag LRC + parser/
-schema/wipe upgrade; (4) correction-editor polish. Phase 1 running.
+schema/wipe upgrade; (4) correction-editor polish.
+
+**Phase 1 COMPLETE 2026-08-04 — verdict GO with three adjustments** (full
+data: `F:\...\artifacts\feat004-spike\REPORT.md` + license-hash-matrix +
+5-track PD corpus + stems + 14 runs, all KEEP-marked; models ~2.7 GB cached):
+
+- Every stage ran on the reference machine with release-pinnable artifacts.
+  Voc_FT isolation clean (synthetic-instrumental control collapsed to
+  −67.9 dB — no hallucinated vocals); wav2vec2 CTC leg real and cheap
+  (logits [1,1499,32] @ 20 ms resolution, RTF 0.095 CPU); whisper medium
+  measurably better on sung text than small; word stamps drift up to ±1 s on
+  held notes → forced alignment justified.
+- **Adjustment 1 — thermals:** sustained CPU RTF is 2–3× cold (MDX 0.85 →
+  1.86–2.45). CPU-only 4-min song ≈ 15–18 min, not the research's estimate.
+  Time-estimate UX must use sustained numbers.
+- **Adjustment 2 — DirectML inverts per stage:** MDX via DML RTF 0.52 (4–5×
+  win, default-when-available); wav2vec2 via DML 4× SLOWER than CPU (CPU
+  only). Whisper Vulkan: NO official Windows binary exists — phase-2
+  build+benchmark task, not an assumption. GPU-assisted 4-min song ≈ 4 min.
+- **Adjustment 3 — separation-as-VAD, not naive stem feeding:** on this
+  vocal-forward PD corpus the stem did not improve Whisper text and the
+  full mix segmented into nicer musical lines; stem stays mandatory for
+  alignment + no-vocals detection (per arXiv:2506.15514). Dense-mix benefit
+  needs an owner-supplied modern track in phase 2.
+- Licensing: Voc_FT MIT per UVR README but no license file beside weights
+  and UVR's LICENSE link 404s today (evidence archived) — phase 2 credits
+  UVR in-app + mirrors vetted hashes; production wav2vec2 ONNX self-exported
+  from Apache-2.0 facebook safetensors (community export lacks license tag).
+- Default download ≈ 0.65 GB (small tier); medium opt-in +1.53 GB; peak
+  stage RAM 3.3 GB — sequential-stage-safe on 16 GB.
 
 **Size:** Multi-release epic. A cheap Whisper-only MVP is explicitly rejected.
 
