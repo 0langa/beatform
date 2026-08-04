@@ -43,11 +43,16 @@ export async function startMidi(
   onMessage: (data: Uint8Array) => void,
   onDevices: (names: string[]) => void,
 ): Promise<MidiHandle | null> {
-  const req = (navigator as unknown as { requestMIDIAccess?: RequestMIDIAccess }).requestMIDIAccess;
-  if (!req) return null;
+  // Called as a METHOD on navigator, never extracted into a local: a native
+  // method invoked without its receiver throws "Illegal invocation", which
+  // the catch below silently turned into "MIDI isn't available" on every
+  // real Chromium (VERIFY-003 finding — spoofed test doubles are plain
+  // functions and never caught this).
+  const nav = navigator as unknown as { requestMIDIAccess?: RequestMIDIAccess };
+  if (!nav.requestMIDIAccess) return null;
   let access: WebMidiAccess;
   try {
-    access = await req({ sysex: false });
+    access = await nav.requestMIDIAccess({ sysex: false });
   } catch {
     return null; // denied or unsupported context
   }

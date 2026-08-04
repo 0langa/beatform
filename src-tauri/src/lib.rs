@@ -1,5 +1,7 @@
 mod diskspace;
 mod loopback;
+#[cfg(windows)]
+mod midi_permission;
 mod perfstats;
 mod prores;
 mod shadertoy;
@@ -124,6 +126,20 @@ pub fn run() {
     // never granted it, so nothing was exposed — but a plugin that is present
     // and unused is one `opener:default` away from being exposed by accident.
     tauri::Builder::default()
+        .on_page_load(|_webview, _payload| {
+            // Web MIDI: without this, Chromium's permission gate silently
+            // denies requestMIDIAccess inside WebView2 (VERIFY-003 finding).
+            // on_page_load, NOT setup: the window doesn't exist yet in setup.
+            // Fires on every navigation; install exactly once.
+            #[cfg(windows)]
+            {
+                use std::sync::atomic::{AtomicBool, Ordering};
+                static INSTALLED: AtomicBool = AtomicBool::new(false);
+                if !INSTALLED.swap(true, Ordering::SeqCst) {
+                    midi_permission::allow_midi(_webview);
+                }
+            }
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         // Auto-updater: checks the signed latest.json on GitHub Releases;

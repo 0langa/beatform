@@ -33,3 +33,10 @@ naga = { version = "30", features = ["glsl-in", "spv-in", "wgsl-out"] }
 # Perf overlay stats (CPU/RAM/disk). "system" only — no disk-list, network,
 # component or gpu features; the overlay needs processes + memory + cpu.
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+
+[target."cfg(windows)".dependencies]
+# Web MIDI permission handler (midi_permission.rs): Chromium denies
+# requestMIDIAccess unless the WebView2 PermissionRequested event grants it.
+# Versions track what wry/tauri already pull in — no new tree entries.
+webview2-com = "0.38"
+windows-core = "0.61"
