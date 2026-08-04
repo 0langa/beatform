@@ -47,7 +47,7 @@ Time-sensitive values below were checked on 2026-08-04:
 | Latest public release   | `v2.68.0`, published 2026-08-04; setup-exe SHA-256 matches `SHA256SUMS.txt`, updater manifest signature present, live latest endpoint serves `2.68.0` |
 | Open GitHub issues      | 0                                                                                                                                                     |
 | Open pull requests      | 0                                                                                                                                                     |
-| Installed desktop app   | `2.65.0` — updates through v2.68.0 pending; post-update, run the ritual's registry check (expect the installed version)                               |
+| Installed desktop app   | `2.67.0` (binary verified 2026-08-04) — v2.68.0 update pending; post-update, run the ritual's registry check (expect `2.68.0`)                        |
 | Running desktop app     | None during audit                                                                                                                                     |
 | Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers found in `src`, `src-tauri`, or `scripts`                                                                |
 
