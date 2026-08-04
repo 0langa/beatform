@@ -53,11 +53,13 @@ jobs:
       - run: npm run build
       - run: cargo fmt --all -- --check
         working-directory: src-tauri
-      - run: cargo clippy --all-targets -- -D warnings
+      # --workspace everywhere below: src-tauri is a non-virtual workspace
+      # root, so bare cargo commands cover ONLY the app package and would
+      # silently skip the lyrics sidecar (a bin-target member — its whole
+      # test suite lives under --bins).
+      - run: cargo clippy --workspace --all-targets -- -D warnings
         working-directory: src-tauri
-      # --lib + --bins: the lyrics sidecar is a bin-target crate — a bare
-      # `--lib` would silently skip its whole test suite.
-      - run: cargo test --lib --bins
+      - run: cargo test --workspace --lib --bins
         working-directory: src-tauri
 
   audit:
