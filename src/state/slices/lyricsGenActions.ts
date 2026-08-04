@@ -1,0 +1,209 @@
+/**
+ * Local automatic lyrics (FEAT-004 phase 2) — store actions around the
+ * lyrics sidecar: model tier download (resume + verify live in Rust),
+ * generation with staged audio, progress, cancel. On success the finished
+ * LRC goes through loadLyricsText — the SAME path as the import button, so
+ * the overlay, exports and the .avproj document treat generated lyrics
+ * exactly like imported ones.
+ */
+
+import { wavFromPcm } from "../../audio/dsp/wav";
+import { pcmFromAudioBuffer } from "../../audio/offlineSource";
+import {
+  missingModels,
+  overallProgress,
+  parseDownloadProgress,
+  parseSidecarEvent,
+  tierDownloadBytes,
+  TIER_WHISPER_ID,
+  type LyricsTier,
+} from "../lyricsGen";
+import {
+  askConfirm,
+  diskSpace,
+  isTauri,
+  lyricsDownloadCancel,
+  lyricsGenerate,
+  lyricsGenerateCancel,
+  lyricsGpuProbe,
+  lyricsModelDownload,
+  lyricsModelsState,
+  lyricsStageAudio,
+} from "../platform";
+import { getEngine } from "../services";
+import type { VizState } from "../store";
+import type { GetFn, SetFn, SliceCtx } from "./ctx";
+
+/** Free-space margin beyond the download itself before we ask instead of
+ * just doing it — models land on the app-data volume (usually C:). */
+const DISK_MARGIN_BYTES = 500 * 1e6;
+
+export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
+  return {
+    async refreshLyricsGen() {
+      if (!isTauri()) return;
+      try {
+        const models = await lyricsModelsState();
+        set({ lyricsGen: { ...get().lyricsGen, models } });
+      } catch (e) {
+        set({ error: `Could not read lyrics models: ${(e as Error).message ?? e}` });
+        return;
+      }
+      // The GPU probe spawns the sidecar once (~1 s) and is cached Rust-side;
+      // fire it lazily after the models land so the estimate can be honest.
+      if (get().lyricsGen.dml === null) {
+        try {
+          const dml = await lyricsGpuProbe();
+          set({ lyricsGen: { ...get().lyricsGen, dml } });
+        } catch {
+          // Probe failure = estimate falls back to CPU numbers; not an error
+          // worth a toast — generation itself still auto-detects.
+          set({ lyricsGen: { ...get().lyricsGen, dml: false } });
+        }
+      }
+    },
+
+    async downloadLyricsTier(tier: LyricsTier) {
+      const s = get();
+      if (!isTauri() || s.lyricsGen.phase !== "idle") return;
+      const models = s.lyricsGen.models;
+      if (!models) return;
+      const missing = missingModels(models, tier);
+      if (missing.length === 0) return;
+
+      // Disk pre-flight on the models volume (warn-and-override, the export
+      // pre-flight's contract — never a silent hard block).
+      const { remaining } = tierDownloadBytes(models, tier);
+      const disk = await diskSpace(models.modelsDir);
+      if (disk && disk.freeBytes < remaining + DISK_MARGIN_BYTES) {
+        const proceed = await askConfirm(
+          `This download needs ${Math.round(remaining / 1e6)} MB and drive ${disk.root} has ` +
+            `${Math.round(disk.freeBytes / 1e6)} MB free. Download anyway?`,
+          "Low disk space",
+        );
+        if (!proceed) return;
+      }
+
+      set({
+        lyricsGen: {
+          ...get().lyricsGen,
+          phase: "downloading",
+          download: { id: missing[0].id, received: 0, total: missing[0].bytes },
+        },
+      });
+      try {
+        for (const model of missing) {
+          await lyricsModelDownload(model.id, (line) => {
+            const p = parseDownloadProgress(line);
+            if (!p) return;
+            set({ lyricsGen: { ...get().lyricsGen, download: p } });
+          });
+          // Refresh install state between files so the UI ticks per-model.
+          const fresh = await lyricsModelsState();
+          set({ lyricsGen: { ...get().lyricsGen, models: fresh } });
+        }
+        ctx.flashNotice("Lyrics models ready");
+      } catch (e) {
+        const message = String((e as Error).message ?? e);
+        if (message !== "cancelled") {
+          set({ error: `Model download failed: ${message}` });
+        }
+      } finally {
+        const fresh = await lyricsModelsState().catch(() => get().lyricsGen.models);
+        set({
+          lyricsGen: { ...get().lyricsGen, phase: "idle", download: null, models: fresh },
+        });
+      }
+    },
+
+    cancelLyricsDownload() {
+      void lyricsDownloadCancel();
+    },
+
+    async generateLyrics(tier: LyricsTier, language: string) {
+      const s = get();
+      if (!isTauri()) {
+        set({ error: "Lyrics generation needs the desktop app" });
+        return;
+      }
+      if (s.lyricsGen.phase !== "idle") return;
+      const engine = getEngine();
+      const buf = engine.audioBuffer;
+      if (!buf) {
+        set({ error: "Load a track first — lyrics are generated from the loaded audio" });
+        return;
+      }
+      if (s.lyrics && s.lyrics.length > 0) {
+        // Generated lines land through the SAME store slot as imported ones;
+        // never silently replace a file the user imported by hand.
+        const replace = await askConfirm(
+          `Replace the loaded lyrics (${s.lyricFileName ?? "imported"}) with generated ones?`,
+          "Replace lyrics",
+        );
+        if (!replace) return;
+      }
+
+      set({
+        lyricsGen: {
+          ...get().lyricsGen,
+          phase: "generating",
+          gen: { stage: "decode", pct: null, etaSec: null, overall: 0 },
+        },
+      });
+      try {
+        // Stage the decoded track as WAV — works for every source (file,
+        // drag-drop, library) because it reads the engine's own buffer.
+        await lyricsStageAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
+        const lrc = await lyricsGenerate(
+          {
+            whisperModelId: TIER_WHISPER_ID[tier],
+            useGpu: true, // sidecar auto-detects; CPU fallback is internal
+            language,
+          },
+          (line) => {
+            const ev = parseSidecarEvent(line);
+            if (!ev) return;
+            if (ev.type === "progress") {
+              set({
+                lyricsGen: {
+                  ...get().lyricsGen,
+                  gen: {
+                    stage: ev.stage,
+                    pct: ev.pct ?? null,
+                    etaSec: ev.etaSec ?? null,
+                    overall: overallProgress(ev.stage, ev.pct ?? null),
+                  },
+                },
+              });
+            } else if (ev.type === "stageDone") {
+              set({
+                lyricsGen: {
+                  ...get().lyricsGen,
+                  gen: {
+                    stage: ev.stage,
+                    pct: 100,
+                    etaSec: null,
+                    overall: overallProgress(ev.stage, 100),
+                  },
+                },
+              });
+            }
+          },
+        );
+        const trackName = engine.state.trackName ?? "track";
+        get().loadLyricsText(`${trackName.replace(/\.[^.]+$/, "")} (generated).lrc`, lrc);
+      } catch (e) {
+        const message = String((e as Error).message ?? e);
+        if (message !== "cancelled") {
+          set({ error: `Lyrics generation failed: ${message}` });
+        }
+      } finally {
+        set({ lyricsGen: { ...get().lyricsGen, phase: "idle", gen: null } });
+      }
+    },
+
+    cancelLyricsGenerate() {
+      void lyricsGenerateCancel();
+    },
+  } satisfies Partial<VizState>;
+}

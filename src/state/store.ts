@@ -35,6 +35,7 @@ import { type ModRoute, type ModSource } from "./modMatrix";
 import { historyDepths, pushHistory } from "./history";
 import type { Timeline } from "./timeline";
 import { type LyricLine, type LyricStyle } from "./lyrics";
+import { IDLE_LYRICS_GEN, type LyricsGenState, type LyricsTier } from "./lyricsGen";
 import { autoArrangeScenes, overviewEnergy } from "./autoArrange";
 import {
   composeOverlayFrame,
@@ -140,6 +141,7 @@ import { customShaderActions } from "./slices/customShaderActions";
 import { exportActions } from "./slices/exportActions";
 import { libraryActions } from "./slices/libraryActions";
 import { lyricsAudiogramActions } from "./slices/lyricsAudiogramActions";
+import { lyricsGenActions } from "./slices/lyricsGenActions";
 import { midiActions } from "./slices/midiActions";
 import { overlayActions } from "./slices/overlayActions";
 import { projectIOActions } from "./slices/projectIOActions";
@@ -330,6 +332,10 @@ interface SessionSlice {
   lyrics: LyricLine[] | null;
   /** Source file name of the loaded lyrics, for the UI. */
   lyricFileName: string | null;
+  /** Local automatic lyrics (FEAT-004): model manager + generation job UI
+   * state. Session-only; the finished LRC lands in `lyrics` via the same
+   * loadLyricsText path as an import. */
+  lyricsGen: LyricsGenState;
   /** How lyric lines render (position/size/color/fade); persisted. */
   lyricStyle: LyricStyle;
   /** Audiogram overlay elements (progress bar / time / waveform); persisted. */
@@ -429,6 +435,15 @@ interface Actions {
   /** Import timed lyrics (.lrc/.srt contents) — karaoke overlay. */
   loadLyricsText(fileName: string, contents: string): void;
   clearLyrics(): void;
+  /** Refresh lyrics model manifest state + (once) the DirectML probe. */
+  refreshLyricsGen(): Promise<void>;
+  /** Download the missing models of a tier (resume + SHA-256 in Rust). */
+  downloadLyricsTier(tier: LyricsTier): Promise<void>;
+  cancelLyricsDownload(): void;
+  /** Run the local pipeline on the loaded track; lines land via
+   * loadLyricsText exactly like an imported .lrc. */
+  generateLyrics(tier: LyricsTier, language: string): Promise<void>;
+  cancelLyricsGenerate(): void;
   setLyricStyle(patch: Partial<LyricStyle>): void;
   /** Toggle/adjust the audiogram overlay elements. */
   setAudiogram(patch: Partial<AudiogramSettings>): void;
@@ -1056,6 +1071,7 @@ export const useVizStore = create<VizState>((set, get) => {
     stemAnalyzing: null,
     lyrics: null,
     lyricFileName: null,
+    lyricsGen: IDLE_LYRICS_GEN,
     lyricStyle: loadStoredLyricStyle(),
     audiogram: loadStoredAudiogram(),
     videoBgLoading: false,
@@ -1078,6 +1094,7 @@ export const useVizStore = create<VizState>((set, get) => {
     ...libraryActions(set, get, ctx),
     ...customShaderActions(set, get, ctx),
     ...lyricsAudiogramActions(set, get, ctx),
+    ...lyricsGenActions(set, get, ctx),
     ...overlayActions(set, get, ctx),
     ...stemsModsActions(set, get, ctx),
     ...midiActions(set, get, ctx),
