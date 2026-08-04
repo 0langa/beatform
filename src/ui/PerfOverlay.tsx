@@ -37,8 +37,13 @@ export interface PerfOverlayProps {
 /** perf_stats payload (src-tauri/src/perfstats.rs, serde camelCase). */
 interface PerfStatsPayload {
   processCpuPct: number;
+  /** Whole Beatform family (exe + its WebView2 processes) — the honest cost;
+   * Task Manager splits it across "Beatform" and "WebView2 Manager". */
+  familyCpuPct: number;
   systemCpuPct: number;
   processMemBytes: number;
+  familyMemBytes: number;
+  familyCount: number;
   memUsedBytes: number;
   memTotalBytes: number;
   diskReadBytesTotal: number;
@@ -173,15 +178,17 @@ export function PerfOverlay(props: PerfOverlayProps) {
       const rust = rustRef.current;
       const pending = desktop ? "…" : "n/a";
       if (show.cpu && cpuRef.current) {
+        // Family = the whole app (exe + WebView2 processes); "main" is the
+        // exe alone. Family is the number to compare against Task Manager.
         cpuRef.current.textContent = rust
-          ? `${rust.stats.processCpuPct.toFixed(0)}% · sys ${rust.stats.systemCpuPct.toFixed(0)}%`
+          ? `${rust.stats.familyCpuPct.toFixed(0)}% (main ${rust.stats.processCpuPct.toFixed(0)}%) · sys ${rust.stats.systemCpuPct.toFixed(0)}%`
           : pending;
       }
       if (show.ram && ramRef.current) {
         ramRef.current.textContent = rust
-          ? `${fmtMB(rust.stats.processMemBytes)} · ${fmtGB(rust.stats.memUsedBytes)}/${fmtGB(
-              rust.stats.memTotalBytes,
-            )} GB`
+          ? `${fmtMB(rust.stats.familyMemBytes)} (main ${fmtMB(rust.stats.processMemBytes)}) · ${fmtGB(
+              rust.stats.memUsedBytes,
+            )}/${fmtGB(rust.stats.memTotalBytes)} GB`
           : pending;
       }
       if (show.disk && diskRef.current) {
