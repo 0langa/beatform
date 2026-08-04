@@ -38,3 +38,9 @@ public/testdata/
 
 # ffmpeg sidecar binary (LGPL, ~110 MB) — fetched by scripts/fetch-ffmpeg.mjs
 src-tauri/binaries/ffmpeg-*.exe
+
+# lyrics pipeline binaries (FEAT-004) — fetched/built by scripts/
+# fetch-whisper.mjs, fetch-onnxruntime.mjs and build-lyrics-sidecar.mjs
+src-tauri/binaries/whisper/
+src-tauri/binaries/onnxruntime/
+src-tauri/binaries/lyrics-sidecar-*.exe

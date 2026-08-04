@@ -43,14 +43,21 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       # tauri's build script validates externalBin + frontend dist at
-      # COMPILE time, so even `cargo test` needs both present
+      # COMPILE time, so even `cargo test` needs all of them present.
+      # The lyrics pipeline (FEAT-004) adds whisper-cli + onnxruntime
+      # fetches and the sidecar build to that set.
       - run: node scripts/fetch-ffmpeg.mjs
+      - run: node scripts/fetch-whisper.mjs
+      - run: node scripts/fetch-onnxruntime.mjs
+      - run: node scripts/build-lyrics-sidecar.mjs
       - run: npm run build
       - run: cargo fmt --all -- --check
         working-directory: src-tauri
       - run: cargo clippy --all-targets -- -D warnings
         working-directory: src-tauri
-      - run: cargo test --lib
+      # --lib + --bins: the lyrics sidecar is a bin-target crate — a bare
+      # `--lib` would silently skip its whole test suite.
+      - run: cargo test --lib --bins
         working-directory: src-tauri
 
   audit:
