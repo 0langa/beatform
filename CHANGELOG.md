@@ -11,6 +11,19 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.68.1] - 2026-08-04
+
+### Fixed
+
+- **Performance display: FPS now reports frames actually drawn.** It used to
+  count the browser's animation ticks, which fire at your monitor's refresh
+  rate no matter what — so the readout pinned at the panel's Hz even with
+  the frame cap at 30 (the cap skips draws inside ticks, it doesn't slow
+  the ticks). It now counts frames the renderer actually presents, so the
+  frame cap, the resolution setting and real GPU load all show truthfully.
+- **Performance display: the "Frame" row is now labeled "Frame time"**,
+  matching the settings checkbox.
+
 ## [2.68.0] - 2026-08-04
 
 ### Added

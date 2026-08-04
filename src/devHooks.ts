@@ -1,5 +1,5 @@
 import { useVizStore, type VizState } from "./state/store";
-import { getAnalyzer, getEngine } from "./state/services";
+import { getAnalyzer, getEngine, getPresentedFrames } from "./state/services";
 import { rasterizeOverlay } from "./render/overlay";
 import { exportVideo } from "./export/videoExporter";
 import type { VideoCodecId } from "./export/codecProbe";
@@ -86,6 +86,9 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
   // The live audio engine, for E2E probes (module import from the console
   // would get a DIFFERENT instance — "services not initialized").
   (window as unknown as { __engine: unknown }).__engine = getEngine();
+  // Presented-frame counter from the live render loop (perf-overlay FPS
+  // source) — lets E2E prove caps/scale act on PRESENTS, not rAF ticks.
+  (window as unknown as { __presentedFrames: unknown }).__presentedFrames = getPresentedFrames;
   (window as unknown as { __analyzer: unknown }).__analyzer = getAnalyzer();
   (window as unknown as { __prefs: unknown }).__prefs = { get: getPrefs, set: setPrefs };
   // UI clipping auditor for the browser-pane harness (referenced by the

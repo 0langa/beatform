@@ -4,6 +4,17 @@ import { act, cleanup, render } from "@testing-library/react";
 import { DEFAULT_PREFS, type PerfOverlayStats } from "../state/prefs";
 import { PerfOverlay, type PerfOverlayProps } from "./PerfOverlay";
 
+// The overlay derives FPS from the renderer's presented-frame counter (rAF is
+// only its sampling clock — see the note in PerfOverlay.tsx). jsdom runs no
+// renderer, so present one frame per counter read: every sampling tick sees
+// an advance, i.e. an uncapped presented rate equal to the tick rate.
+let presentCalls = 0;
+/** Sampling ticks per presented frame: 1 = uncapped, 4 = a 4:1 frame cap. */
+let ticksPerPresent = 1;
+vi.mock("../state/services", () => ({
+  getPresentedFrames: () => Math.floor(presentCalls++ / ticksPerPresent),
+}));
+
 /**
  * The overlay is a pure DOM diagnostic: it must never intercept pointer
  * input, and its readouts are written via refs from a rAF loop — so the tests
@@ -14,6 +25,8 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.useRealTimers();
+  presentCalls = 0;
+  ticksPerPresent = 1;
 });
 
 const ALL_ON: PerfOverlayStats = {
@@ -101,7 +114,7 @@ describe("PerfOverlay", () => {
     expect(el!.style.left).toBe("");
   });
 
-  it("measures FPS from rAF deltas and writes readouts without re-rendering", () => {
+  it("measures FPS from presented frames and writes readouts without re-rendering", () => {
     const step = fakeRaf();
     const { container } = renderOverlay({ rendererKind: "webgpu" });
     // 60 fps for ~1.3 s: the window fills, then a text tick fires (>250 ms).
@@ -114,7 +127,7 @@ describe("PerfOverlay", () => {
     const fps = parseFloat(byLabel.get("FPS") ?? "");
     expect(fps).toBeGreaterThan(55);
     expect(fps).toBeLessThan(65);
-    expect(byLabel.get("Frame")).toMatch(/16\.\d \/ 16\.\d ms/);
+    expect(byLabel.get("Frame time")).toMatch(/16\.\d \/ 16\.\d ms/);
     // No canvas in jsdom — the renderer row still names the backend.
     expect(byLabel.get("Renderer")).toBe("webgpu");
     // jsdom has no performance.memory — the guarded readout says so.
@@ -124,5 +137,23 @@ describe("PerfOverlay", () => {
     expect(byLabel.get("RAM")).toBe("n/a");
     expect(byLabel.get("Disk")).toBe("n/a");
     expect(byLabel.get("GPU")).toBe("n/a");
+  });
+
+  it("reads the CAPPED rate when presents are skipped inside ticks", () => {
+    // The v2.68.0 overlay counted its own rAF ticks, so a 30 fps cap on a
+    // 120 Hz panel still read 120 — the cap skips presents, not ticks. With
+    // one present every 4th tick at 60 Hz ticks, the readout must say ~15.
+    ticksPerPresent = 4;
+    const step = fakeRaf();
+    const { container } = renderOverlay({ show: { ...ALL_ON, frameTime: false } });
+    step(16.6667, 80);
+    const rows = container.querySelectorAll<HTMLElement>(".perf-overlay span");
+    const byLabel = new Map<string, string>();
+    for (let i = 0; i < rows.length; i += 2) {
+      byLabel.set(rows[i].textContent ?? "", rows[i + 1]?.textContent ?? "");
+    }
+    const fps = parseFloat(byLabel.get("FPS") ?? "");
+    expect(fps).toBeGreaterThan(12);
+    expect(fps).toBeLessThan(18);
   });
 });

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { isTauri } from "../state/platform";
+import { getPresentedFrames } from "../state/services";
 import type {
   PerfOverlayColor,
   PerfOverlayCorner,
@@ -200,8 +201,19 @@ export function PerfOverlay(props: PerfOverlayProps) {
       }
     };
 
+    // Sample PRESENTED frames, not rAF ticks: rAF fires at display refresh
+    // regardless of the frame cap (the cap skips presents inside ticks), so
+    // tick-counting pinned the readout at the panel's Hz whatever the cap.
+    // The rAF here is only the sampling clock; a timestamp is recorded when
+    // the renderer's presented-frame counter advances. Granularity is one
+    // tick, which is exact for any presented rate <= the display rate.
+    let lastPresented = getPresentedFrames();
     const tick = (t: number) => {
-      times.push(t);
+      const presented = getPresentedFrames();
+      if (presented !== lastPresented) {
+        lastPresented = presented;
+        times.push(t);
+      }
       while (times.length > 0 && times[0] < t - WINDOW_MS) times.shift();
       if (t - lastText >= TEXT_INTERVAL_MS) {
         lastText = t;
@@ -261,7 +273,7 @@ export function PerfOverlay(props: PerfOverlayProps) {
       )}
       {show.frameTime && (
         <>
-          <span style={labelStyle}>Frame</span>
+          <span style={labelStyle}>Frame time</span>
           <span ref={frameRef} style={valueStyle}>
             …
           </span>

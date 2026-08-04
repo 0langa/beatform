@@ -49,6 +49,16 @@ let analyzer: RealtimeAnalyzer | null = null;
 let renderer: Renderer | null = null;
 let measure: (() => void) | null = null;
 let liveRenderPaused = false;
+/** Monotonic count of frames actually PRESENTED to the live canvas. The
+ * perf overlay derives FPS/frame-time from this instead of its own rAF
+ * ticks: rAF fires at display refresh no matter what, so tick-counting
+ * showed 120 on a 120 Hz panel even with the frame cap at 30 — the cap
+ * skips presents inside ticks, it doesn't slow the ticks. */
+let presentedFrames = 0;
+
+export function getPresentedFrames(): number {
+  return presentedFrames;
+}
 /**
  * Identity guard for the three module-level singletons above (engine already
  * had its own ad hoc version of this — `if (engine === eng) engine = null`).
@@ -412,6 +422,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
               : "present-only",
         },
       );
+      if (renderer && !capSkipped) presentedFrames++;
       if (capSkipped) {
         // State advanced offscreen; keep presentation cadence and UI cadence
         // exactly as before.
