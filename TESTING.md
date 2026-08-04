@@ -1,5 +1,50 @@
 # Beatform — Manual Testing Batch (agent-executable)
 
+## ✅ VERIFY-003: Web MIDI browser-to-adapter transport — 2026-08-04
+
+Executed against repository HEAD `2e6bfbb` (debug build, Vite dev shell)
+driven over the WebView2 devtools protocol. Virtual transport: **loopMIDI**
+port `loopMIDI Beatform` (teVirtualMIDI 1.3.0.43,
+`C:\WINDOWS\SYSTEM32\teVirtualMIDI32.dll`), messages sent from outside the
+app via winmm (`scripts/midi-send.ps1`, P/Invoke `midiOutShortMsg`).
+Harness: `scripts/midi-e2e.mjs` (full run), `scripts/midi-probe.mjs`
+(diagnostics).
+
+**Two shipped-code findings, both fixed in `2e6bfbb`** (the pure mapping
+core was fine; the transport in front of it was double-dead on every real
+Chromium — exactly the gap this item existed to close):
+
+1. `startMidi` extracted `requestMIDIAccess` into a local and called it
+   unbound — a native method without its `navigator` receiver throws
+   `TypeError: Illegal invocation`, which the surrounding catch silently
+   turned into the "MIDI isn't available here" notice. Spoofed test doubles
+   are plain functions with no receiver requirement, so unit tests passed.
+2. Chromium gates all Web MIDI behind a permission; WebView2 raises it as
+   `PermissionRequested` kind 11 (`MIDI_SYSTEM_EXCLUSIVE_MESSAGES` — its
+   only MIDI kind, sysex or not) and denies silently when unhandled. New
+   `src-tauri/src/midi_permission.rs` allows exactly that kind for the
+   app's own origins, installed from `on_page_load` (in `setup` the window
+   does not exist yet — a first wiring there silently did nothing).
+
+| Check                        | Result  | Evidence                                                                                                                                                              |
+| ---------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Permission + access          | ✅ PASS | `enableMidi()` resolves with `midiEnabled: true`; Rust trace shows `request kind=11` from `http://localhost:1420/` answered `allow=true`                              |
+| Device discovery             | ✅ PASS | `midiDevices = ["loopMIDI Beatform"]`                                                                                                                                 |
+| CC learn                     | ✅ PASS | Armed learn for `speed` (0..1.5); one external `B0-07-40` produced binding `{kind:"cc", cc:7, param:"speed", min:0, max:1.5}` and cleared `midiLearn`                 |
+| CC apply, scaling, no dupes  | ✅ PASS | External `B0-07-7F` → `speed = 1.5` exactly, and exactly **1** observed param change for 1 message                                                                    |
+| Note learn + preset switch   | ✅ PASS | Armed note learn for `metaballs`; external `90-3C-7F` bound note 60, second message switched `presetId` to `metaballs` (via queuePreset, quantize off)                |
+| Reconnect, no stuck handlers | ✅ PASS | `disableMidi()` cleared enabled+devices; `enableMidi()` rediscovered the port; external `B0-07-00` → `speed = 0` with exactly **1** change — no stacked subscriptions |
+
+Scope note: hot-plug re-enumeration (`onstatechange` → re-attach) is
+exercised indirectly by the disable/enable cycle and by code review; adding
+or removing the virtual port mid-run was deliberately not driven — the
+owner's loopMIDI instance stays untouched per instruction. Acceptance gate
+("at least one real browser MIDI transport path passes end to end; no stuck
+subscriptions or duplicate messages after reconnect") is met.
+
+**Outcome: VERIFY-003 closed. The Web MIDI feature works on the real
+WebView2 transport for the first time; fix ships with the next release.**
+
 ## ✅ v2.64.1 updater + ACL prompt quick pass — 2026-08-02
 
 Executed against repository HEAD `870cebc` using Computer Use. Installed app

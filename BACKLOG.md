@@ -63,12 +63,17 @@ Current product constraints remain:
 
 Work top to bottom unless fresh evidence changes priority.
 
-| Order | ID         | Status      | Work                                                    |
-| ----- | ---------- | ----------- | ------------------------------------------------------- |
-| 1     | FEAT-003   | CONSIDERING | Design a trusted, seeded community preset index         |
-| 2     | VERIFY-003 | READY       | Close Web MIDI transport gap with free virtual loopback |
-| 3     | FEAT-004   | CONSIDERING | Best-possible local automatic lyrics epic               |
-| 4     | FEAT-009   | CONSIDERING | True second-display performance window                  |
+| Order | ID       | Status      | Work                                            |
+| ----- | -------- | ----------- | ----------------------------------------------- |
+| 1     | FEAT-003 | CONSIDERING | Design a trusted, seeded community preset index |
+| 2     | FEAT-004 | CONSIDERING | Best-possible local automatic lyrics epic       |
+| 3     | FEAT-009 | CONSIDERING | True second-display performance window          |
+
+`VERIFY-003` **closed 2026-08-04** — found the MIDI transport double-dead
+(unbound `requestMIDIAccess` + unhandled WebView2 permission), both fixed
+and E2E-proven against loopMIDI; see its DONE entry. Unreleased-on-main
+alongside it: the perf-overlay process-family aggregation. Both ship with
+the next release.
 
 `FEAT-005` **shipped in v2.67.0** (2026-08-03) — see its DONE entry.
 
@@ -646,7 +651,30 @@ This does not block current releases. Close when target software is available.
 
 ### VERIFY-003 — Web MIDI browser-to-adapter transport
 
-**Status:** READY  
+**Status:** DONE 2026-08-04 — and it found the feature dead on the shipped
+transport. Full table in `TESTING.md`; fixes in `2e6bfbb`, ship with the
+next release.
+
+- **Finding 1 (frontend):** `startMidi` called `requestMIDIAccess` unbound —
+  "Illegal invocation" on every real Chromium, silently converted to the
+  "MIDI isn't available" notice. Spoofed doubles never caught it (plain
+  functions have no receiver requirement). Fixed: method call on navigator.
+- **Finding 2 (WebView2):** Chromium's MIDI permission gate surfaces as
+  `PermissionRequested` kind 11 and is silently denied when unhandled. New
+  `midi_permission.rs` allows that kind for the app's own origins only,
+  installed from `on_page_load` (in `setup` the window doesn't exist yet).
+- **Proof:** `scripts/midi-e2e.mjs` against loopMIDI (`loopMIDI Beatform`,
+  teVirtualMIDI 1.3.0.43) with a winmm sender: permission + discovery + CC
+  learn + CC apply (exact scaling, exactly one change per message) + note
+  learn/preset switch + disable/re-enable with still exactly one change per
+  message. Acceptance gate met.
+- **Scope:** physical hot-plug (port add/remove mid-run) not driven — the
+  owner's loopMIDI stays untouched; `onstatechange` re-attach covered by the
+  reconnect cycle + review. Reopen only if a real controller misbehaves.
+
+Original entry for the record:
+
+**Status (historical):** READY  
 **Priority:** Low.
 
 Existing evidence:
