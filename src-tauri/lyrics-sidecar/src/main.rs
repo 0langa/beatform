@@ -1,19 +1,24 @@
-//! Beatform lyrics sidecar (FEAT-004 phase 2): fully-local automatic lyrics.
+//! Beatform lyrics sidecar (FEAT-004 phases 2+3): fully-local automatic
+//! lyrics.
 //!
 //! decode (ffmpeg) -> MDX-Net vocal isolation (ONNX Runtime, DirectML-first)
 //! -> separation-as-VAD -> whisper.cpp on the FULL MIX with VAD post-split
-//! -> line-level LRC. One JSON event per stdout line (protocol.rs); cancel =
-//! one "cancel" line on stdin, or a plain kill. Every path/argument comes
-//! from the supervising app — this binary never invents paths of its own.
+//! -> (phase 3, when the alignment model is provided) wav2vec2 CTC forced
+//! alignment of each line against the vocal stem -> enhanced word-tag LRC.
+//! One JSON event per stdout line (protocol.rs); cancel = one "cancel" line
+//! on stdin, or a plain kill. Every path/argument comes from the supervising
+//! app — this binary never invents paths of its own.
 //!
 //! This is OFFLINE AUTHORING: the output is an .lrc ARTIFACT consumed by the
 //! app's existing import path. Nothing here touches render determinism.
 
+mod align;
 mod audio;
 mod lines;
 mod lrc;
 mod mdx;
 mod protocol;
+mod resample;
 mod stft;
 mod vad;
 mod whisper;
@@ -45,6 +50,10 @@ struct Args {
     language: String,
     threads: usize,
     dump_stem: Option<PathBuf>,
+    /// wav2vec2 CTC model + vocab (phase 3). Both or neither: absent = the
+    /// job stays line-level, exactly the phase-2 behavior.
+    align_model: Option<PathBuf>,
+    align_vocab: Option<PathBuf>,
 }
 
 enum Mode {
@@ -108,7 +117,12 @@ fn parse_args(argv: &[String]) -> Result<Mode, String> {
             .transpose()?
             .unwrap_or(4),
         dump_stem: map.remove("dump-stem").map(PathBuf::from),
+        align_model: map.remove("align-model").map(PathBuf::from),
+        align_vocab: map.remove("align-vocab").map(PathBuf::from),
     };
+    if args.align_model.is_some() != args.align_vocab.is_some() {
+        return Err("--align-model and --align-vocab must be passed together".into());
+    }
     if let Some(k) = map.keys().next() {
         return Err(format!("unknown argument: --{k}"));
     }
@@ -296,8 +310,13 @@ fn run(args: Args) {
         cancelled_exit();
     }
 
-    // ---- vad -----------------------------------------------------------
+    // ---- vad (+ the 16 kHz mono stem the alignment stage reads) --------
     let t0 = Instant::now();
+    let stem16: Vec<f32> = if args.align_model.is_some() {
+        resample::stem_to_16k_mono(&stem.0, &stem.1)
+    } else {
+        Vec::new() // alignment not requested — skip the resample entirely
+    };
     let verdict = vad::detect(&stem.0, &stem.1);
     let regions = verdict.regions;
     let vocal_sec = vad::total_active(&regions).max(0.0);
@@ -327,9 +346,9 @@ fn run(args: Args) {
         cancelled_exit();
     }
 
-    // ---- assemble + write ---------------------------------------------
+    // ---- assemble ------------------------------------------------------
     let t0 = Instant::now();
-    let assembled = lines::assemble(lines::AssembleInput {
+    let mut assembled = lines::assemble(lines::AssembleInput {
         segments: &parsed.transcription,
         vad: &regions,
         stem_peak_db: verdict.stem_peak_db,
@@ -341,23 +360,104 @@ fn run(args: Args) {
         }
         fail("Transcription produced no usable lines for this track");
     }
+    let assemble_wall = t0.elapsed().as_secs_f64();
+
+    // ---- align (phase 3 — only when the model was provided) ------------
+    let align_summary = align_stage(&args, &stem16, &mut assembled, &cancel, duration);
+    drop(stem16);
+
+    // ---- write ---------------------------------------------------------
+    let t0 = Instant::now();
     let lrc_text = lrc::write_lrc(&assembled, GENERATOR_TAG);
     if let Err(e) = std::fs::write(&args.out, &lrc_text) {
         fail(&format!("could not write LRC: {e}"));
     }
     emit(&Event::StageDone {
         stage: Stage::Assemble,
-        wall_sec: t0.elapsed().as_secs_f64(),
+        wall_sec: assemble_wall + t0.elapsed().as_secs_f64(),
         rtf: None,
         detail: None,
     });
     emit(&Event::Result {
         lrc_path: &args.out.to_string_lossy(),
         lines: assembled.len(),
+        words: align_summary.as_ref().map(|s| s.words).unwrap_or(0),
+        aligned_lines: align_summary.as_ref().map(|s| s.aligned_lines).unwrap_or(0),
+        low_conf_lines: align_summary
+            .as_ref()
+            .map(|s| s.low_conf_lines)
+            .unwrap_or(0),
         vocal_sec,
         ep,
         language: &parsed.result.language,
     });
+}
+
+/// Run the forced-alignment stage when requested. Alignment is an
+/// ENHANCEMENT: any failure here (model unloadable, vocab wrong) degrades
+/// the job to line-level with a diagnostic — the transcript still ships.
+/// Only cancellation exits.
+fn align_stage(
+    args: &Args,
+    stem16: &[f32],
+    assembled: &mut [lines::Line],
+    cancel: &Arc<Canceller>,
+    duration: f64,
+) -> Option<align::Summary> {
+    let (Some(model), Some(vocab)) = (&args.align_model, &args.align_vocab) else {
+        return None;
+    };
+    emit(&Event::Progress {
+        stage: Stage::Align,
+        pct: None,
+        eta_sec: None,
+        rtf: None,
+    });
+    let t0 = Instant::now();
+    let mut aligner = match align::Aligner::create(model, vocab, args.threads) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("[lyrics-sidecar] alignment unavailable: {e}");
+            emit(&Event::StageDone {
+                stage: Stage::Align,
+                wall_sec: t0.elapsed().as_secs_f64(),
+                rtf: None,
+                detail: Some("unavailable — line timing only"),
+            });
+            return None;
+        }
+    };
+    let started = Instant::now();
+    let total_lines = assembled.len();
+    let outcome = align::align_lines(
+        &mut aligner,
+        stem16,
+        assembled,
+        &cancel.flag,
+        |done, total| {
+            let elapsed = started.elapsed().as_secs_f64();
+            emit(&Event::Progress {
+                stage: Stage::Align,
+                pct: Some(100.0 * done as f64 / total as f64),
+                eta_sec: (done > 0).then(|| elapsed / done as f64 * (total - done) as f64),
+                rtf: None,
+            });
+        },
+    );
+    match outcome {
+        align::Outcome::Done(summary) => {
+            let wall = t0.elapsed().as_secs_f64();
+            let detail = format!("{}/{total_lines} lines", summary.aligned_lines);
+            emit(&Event::StageDone {
+                stage: Stage::Align,
+                wall_sec: wall,
+                rtf: Some(wall / duration),
+                detail: Some(&detail),
+            });
+            Some(summary)
+        }
+        align::Outcome::Cancelled => cancelled_exit(),
+    }
 }
 
 enum TranscribeError {
@@ -531,6 +631,10 @@ mod tests {
             "2",
             "--dump-stem",
             "C:/stem.wav",
+            "--align-model",
+            "C:/w2v2.onnx",
+            "--align-vocab",
+            "C:/vocab.json",
         ]);
         let Ok(Mode::Run(args)) = parse_args(&argv) else {
             panic!("should parse");
@@ -539,6 +643,8 @@ mod tests {
         assert_eq!(args.language, "en");
         assert_eq!(args.threads, 2);
         assert_eq!(args.dump_stem, Some(PathBuf::from("C:/stem.wav")));
+        assert_eq!(args.align_model, Some(PathBuf::from("C:/w2v2.onnx")));
+        assert_eq!(args.align_vocab, Some(PathBuf::from("C:/vocab.json")));
     }
 
     #[test]
@@ -566,6 +672,34 @@ mod tests {
         assert_eq!(args.language, "auto");
         assert_eq!(args.threads, 4);
         assert_eq!(args.dump_stem, None);
+        assert_eq!(args.align_model, None);
+        assert_eq!(args.align_vocab, None);
+    }
+
+    #[test]
+    fn align_flags_must_come_as_a_pair() {
+        let base = [
+            "--input",
+            "i",
+            "--out",
+            "o",
+            "--ffmpeg",
+            "f",
+            "--whisper-cli",
+            "w",
+            "--whisper-model",
+            "m",
+            "--mdx-model",
+            "x",
+            "--ort-dylib",
+            "d",
+        ];
+        let mut model_only = v(&base);
+        model_only.extend(v(&["--align-model", "a.onnx"]));
+        assert!(parse_args(&model_only).is_err());
+        let mut vocab_only = v(&base);
+        vocab_only.extend(v(&["--align-vocab", "v.json"]));
+        assert!(parse_args(&vocab_only).is_err());
     }
 
     #[test]

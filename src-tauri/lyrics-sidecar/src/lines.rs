@@ -13,6 +13,24 @@ use crate::whisper::{is_meta_token, is_non_speech_text, WhisperSegment};
 pub struct Line {
     /// Start, seconds.
     pub t: f64,
+    /// End, seconds (from the last token's span; alignment windows and the
+    /// enhanced-LRC trailing tag both need a real end, not just the next
+    /// line's start).
+    pub end: f64,
+    pub text: String,
+    /// Per-word timing from the phase-3 forced-alignment stage. Empty =
+    /// line-level only (alignment not run, or degraded for this line).
+    pub words: Vec<Word>,
+}
+
+/// One aligned word (track-time seconds). `conf` is the geometric-mean
+/// probability of the frames the aligner chose (0 = interpolated, not
+/// aligned — e.g. digits, which have no acoustic tokens).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Word {
+    pub t: f64,
+    pub end: f64,
+    pub conf: f64,
     pub text: String,
 }
 
@@ -83,6 +101,9 @@ pub fn assemble(input: AssembleInput) -> Vec<Line> {
     for i in 1..capped.len() {
         if capped[i].t <= capped[i - 1].t {
             capped[i].t = capped[i - 1].t + MONOTONIC_STEP;
+        }
+        if capped[i].end <= capped[i].t {
+            capped[i].end = capped[i].t + MONOTONIC_STEP;
         }
     }
     capped
@@ -162,7 +183,9 @@ fn split_segment(
         if !text.is_empty() {
             out.push(Line {
                 t: start,
+                end: end.max(start + MONOTONIC_STEP),
                 text: text.to_string(),
+                words: Vec::new(),
             });
         }
     } else {
@@ -176,7 +199,18 @@ fn push_token_line(toks: &[(f64, f64, &str)], out: &mut Vec<Line>) {
     if text.is_empty() || is_non_speech_text(&text) {
         return;
     }
-    out.push(Line { t: toks[0].0, text });
+    let t = toks[0].0;
+    let end = toks
+        .iter()
+        .map(|(_, e, _)| *e)
+        .fold(f64::NEG_INFINITY, f64::max)
+        .max(t + MONOTONIC_STEP);
+    out.push(Line {
+        t,
+        end,
+        text,
+        words: Vec::new(),
+    });
 }
 
 /// Trim + collapse internal whitespace runs. Case and punctuation stay —
@@ -202,19 +236,25 @@ fn cap_length(line: Line, out: &mut Vec<Line>) {
         Some(idx) if idx > 0 && idx < chars.len() - 1 => {
             let first: String = chars[..idx].iter().collect();
             let second: String = chars[idx + 1..].iter().collect();
-            // No token data at this depth; nudge the tail forward so order holds.
-            let t2 = line.t + MONOTONIC_STEP;
+            // No token data at this depth; interpolate the boundary by
+            // character position so both halves keep plausible spans.
+            let frac = idx as f64 / chars.len() as f64;
+            let cut = (line.t + (line.end - line.t).max(0.0) * frac).max(line.t + MONOTONIC_STEP);
             cap_length(
                 Line {
                     t: line.t,
+                    end: cut,
                     text: first.trim().to_string(),
+                    words: Vec::new(),
                 },
                 out,
             );
             cap_length(
                 Line {
-                    t: t2,
+                    t: cut,
+                    end: line.end.max(cut + MONOTONIC_STEP),
                     text: second.trim().to_string(),
+                    words: Vec::new(),
                 },
                 out,
             );
@@ -337,6 +377,10 @@ mod tests {
         assert_eq!(lines[1].text, "second phrase");
         assert!((lines[0].t - 0.0).abs() < 1e-9);
         assert!((lines[1].t - 15.0).abs() < 1e-9);
+        // Ends come from the last token of each half — the alignment stage
+        // windows on [t, end], so these must be real spans, not zeros.
+        assert!((lines[0].end - 9.0).abs() < 1e-9, "{lines:?}");
+        assert!((lines[1].end - 25.0).abs() < 1e-9, "{lines:?}");
     }
 
     #[test]
