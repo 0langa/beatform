@@ -344,7 +344,18 @@ pub async fn lyrics_model_download(
     // A .part at (or beyond) full size skips straight to verification —
     // beyond happens when a previous run appended after a 200-not-206.
     if offset < spec.bytes {
+        // reqwest with `rustls-no-provider` PANICS (not Err) on Client build
+        // unless a process-level crypto provider is installed first — the
+        // updater installs one on its own path, but this download must not
+        // depend on the updater having run. Idempotent: install_default errs
+        // when one is already set, which is fine either way.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let client = reqwest::Client::builder()
+            // Bounded failure beats a wedged download: without these a dead
+            // connection hangs chunk().await forever and even cancel (polled
+            // between chunks) can never fire.
+            .connect_timeout(Duration::from_secs(30))
+            .read_timeout(Duration::from_secs(60))
             .build()
             .map_err(|e| e.to_string())?;
         let url = format!("{MODELS_BASE_URL}{}", spec.file_name);

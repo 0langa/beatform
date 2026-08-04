@@ -1,0 +1,507 @@
+// FEAT-004 phase-2 device end-to-end proof: the REAL local-lyrics flow
+// through the debug shell (Vite dev frontend + Tauri IPC) over the WebView2
+// devtools protocol. Covers, in order:
+//   1. model manager against the LIVE beatform-app/models release:
+//      real download -> mid-flight cancel -> Range-RESUME -> SHA-256 verify
+//      (positive + negative verify)
+//   2. generation on a spike-corpus track through the store action: staged
+//      audio -> sidecar -> LRC lands in store.lyrics via loadLyricsText,
+//      timestamps strictly monotonic
+//   3. cancel mid-isolation: phase returns to idle, no lyrics, no error
+//   4. (unless --skip-madness) the owner's dense-mix test file
+//      (Muse - Madness.flac, read in place from devstorage) through the
+//      same store flow — the case the spike corpus could not cover
+//   5. (unless --skip-compare) direct-sidecar run on Madness with
+//      --dump-stem + a whisper pass on the ISOLATED STEM, so the
+//      isolated-vs-mix transcripts can be compared honestly
+//
+//   node scripts/lyrics-e2e.mjs [--skip-madness] [--skip-compare] [--out=<dir>]
+//
+// Prereqs: Vite dev on 127.0.0.1:1420; debug build of the app (fetch scripts
+// + build-lyrics-sidecar run); spike model cache on devstorage.
+// Env: BEATFORM_EXE overrides the app path (e.g. a CARGO_TARGET_DIR build).
+import { spawn, spawnSync } from "node:child_process";
+import { createServer as createHttpServer } from "node:http";
+import {
+  copyFileSync,
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { setTimeout as sleep } from "node:timers/promises";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const args = new Set(process.argv.slice(2).filter((a) => !a.startsWith("--out=")));
+const outDir =
+  (process.argv.find((a) => a.startsWith("--out=")) ?? "").slice("--out=".length) ||
+  "F:/agent-devstorage/shared-cache/audio-visualizer/artifacts/feat004-p2-e2e";
+mkdirSync(outDir, { recursive: true });
+
+const exe =
+  process.env.BEATFORM_EXE ?? path.join(root, "src-tauri", "target", "debug", "beatform.exe");
+const CACHE = "F:/agent-devstorage/shared-cache/audio-visualizer/cache/feat004-models";
+const CORPUS = "F:/agent-devstorage/shared-cache/audio-visualizer/artifacts/feat004-spike/corpus";
+const MADNESS = "F:/agent-devstorage/claude-cache/beatform/bf-test/media/Muse - Madness.flac";
+const E2E_MODELS = path.join(CACHE, "e2e-app-models");
+const port = 9700 + (process.pid % 80);
+let child;
+let mediaServer;
+let log = "";
+
+function fatal(msg) {
+  console.error(`FAIL: ${msg}`);
+  process.exitCode = 1;
+  throw new Error(msg);
+}
+
+// --- prep: models dir the app will be pointed at ---------------------------
+// ggml-small is pre-seeded from the spike cache (a 487 MB download has no
+// place in a routine E2E); mdx-voc-ft is deliberately ABSENT so the download
+// leg exercises the real release. exFAT has no links, so this is one copy,
+// reused across runs.
+function prepModelsDir() {
+  mkdirSync(E2E_MODELS, { recursive: true });
+  const small = path.join(E2E_MODELS, "ggml-small.bin");
+  if (!existsSync(small)) {
+    console.log("seeding ggml-small.bin into the e2e models dir (one-time copy)…");
+    copyFileSync(path.join(CACHE, "ggml", "ggml-small.bin"), small);
+  }
+  // The download leg must start from nothing: no installed file, no .part.
+  rmSync(path.join(E2E_MODELS, "UVR-MDX-NET-Voc_FT.onnx"), { force: true });
+  rmSync(path.join(E2E_MODELS, "UVR-MDX-NET-Voc_FT.onnx.part"), { force: true });
+}
+
+// --- media server: corpus + Madness, read in place -------------------------
+const MEDIA = {
+  "/ssb.wav": path.join(CORPUS, "ssb-navy-solo.wav"),
+  "/madness.flac": MADNESS,
+};
+
+function startMediaServer() {
+  mediaServer = createHttpServer((req, res) => {
+    const file = MEDIA[req.url ?? ""];
+    if (!file || !existsSync(file)) {
+      res.writeHead(404).end();
+      return;
+    }
+    const size = statSync(file).size;
+    res.writeHead(200, {
+      "Content-Type": req.url.endsWith(".flac") ? "audio/flac" : "audio/wav",
+      "Content-Length": size,
+      "Access-Control-Allow-Origin": "*",
+    });
+    if (req.method === "HEAD") {
+      res.end();
+      return;
+    }
+    createReadStream(file).pipe(res);
+  });
+  return new Promise((resolve, reject) => {
+    mediaServer.listen(0, "127.0.0.1", () => resolve(mediaServer.address().port));
+    mediaServer.on("error", reject);
+  });
+}
+
+// --- CDP plumbing (midi-e2e pattern) ---------------------------------------
+async function page() {
+  const deadline = Date.now() + 240_000;
+  while (Date.now() < deadline) {
+    if (child.exitCode != null) fatal(`app exited ${child.exitCode}\n${log}`);
+    try {
+      const pages = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json());
+      const m = pages.find(
+        (p) => p.type === "page" && p.webSocketDebuggerUrl && /localhost|127\.0\.0\.1/.test(p.url),
+      );
+      if (m) return m;
+    } catch {
+      /* not ready */
+    }
+    await sleep(500);
+  }
+  fatal(`timed out waiting for WebView2\n${log}`);
+}
+
+class Cdp {
+  constructor(url) {
+    this.id = 0;
+    this.pending = new Map();
+    this.ws = new globalThis.WebSocket(url);
+  }
+  async open() {
+    await new Promise((res, rej) => {
+      this.ws.addEventListener("open", res, { once: true });
+      this.ws.addEventListener("error", rej, { once: true });
+    });
+    this.ws.addEventListener("message", (e) => {
+      const m = JSON.parse(e.data);
+      const p = this.pending.get(m.id);
+      if (!p) return;
+      this.pending.delete(m.id);
+      if (m.error) p.reject(new Error(m.error.message));
+      else p.resolve(m.result);
+    });
+    // A dying app (crash, OOM) closes the socket; every in-flight eval must
+    // REJECT, or a poll loop waits forever on a corpse — the failure mode of
+    // this harness's first run.
+    const failAll = (why) => () => {
+      for (const p of this.pending.values()) p.reject(new Error(why));
+      this.pending.clear();
+    };
+    this.ws.addEventListener("close", failAll("CDP socket closed — app gone?"), { once: true });
+    this.ws.addEventListener("error", failAll("CDP socket error"), { once: true });
+    await this.send("Runtime.enable");
+  }
+  send(method, params = {}) {
+    return new Promise((resolve, reject) => {
+      const id = ++this.id;
+      this.pending.set(id, { resolve, reject });
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+  async eval(expression, awaitPromise = true) {
+    const r = await this.send("Runtime.evaluate", {
+      expression,
+      awaitPromise,
+      returnByValue: true,
+    });
+    if (r.exceptionDetails) {
+      const ex = r.exceptionDetails.exception;
+      throw new Error(
+        ex?.description ??
+          (ex?.value != null ? JSON.stringify(ex.value) : null) ??
+          r.exceptionDetails.text ??
+          "eval failed",
+      );
+    }
+    return r.result.value;
+  }
+}
+
+/** Store snapshot the polls read — one shape for every leg. */
+const SNAPSHOT = `(() => {
+  const s = window.__store.getState();
+  return {
+    phase: s.lyricsGen.phase,
+    stage: s.lyricsGen.gen?.stage ?? null,
+    pct: s.lyricsGen.gen?.pct ?? null,
+    dl: s.lyricsGen.download,
+    lyricsLen: s.lyrics ? s.lyrics.length : null,
+    fileName: s.lyricFileName,
+    error: s.error,
+    notice: s.notice,
+  };
+})()`;
+
+async function pollUntil(cdp, pred, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (child.exitCode != null) {
+      fatal(`${label}: app exited ${child.exitCode} mid-poll\n${log}`);
+    }
+    const snap = await cdp.eval(SNAPSHOT, false).catch((e) => {
+      fatal(`${label}: ${e.message}\n${log}`);
+    });
+    if (pred(snap)) return snap;
+    if (snap.error) fatal(`${label}: store error surfaced: ${snap.error}`);
+    if (Date.now() > deadline) fatal(`${label}: timed out after ${timeoutMs} ms`);
+    await sleep(1000);
+  }
+}
+
+// --- direct sidecar run (comparison leg) -----------------------------------
+function runSidecarDirect(input, lrcOut, stemOut) {
+  const sidecar = path.join(path.dirname(exe), "lyrics-sidecar.exe");
+  const bin = path.join(root, "src-tauri", "binaries");
+  const argv = [
+    "--input",
+    input,
+    "--out",
+    lrcOut,
+    "--ffmpeg",
+    path.join(bin, "ffmpeg-x86_64-pc-windows-msvc.exe"),
+    "--whisper-cli",
+    path.join(bin, "whisper", "whisper-cli.exe"),
+    "--whisper-model",
+    path.join(E2E_MODELS, "ggml-small.bin"),
+    "--mdx-model",
+    path.join(E2E_MODELS, "UVR-MDX-NET-Voc_FT.onnx"),
+    "--ort-dylib",
+    path.join(bin, "onnxruntime", "onnxruntime.dll"),
+    "--gpu",
+    "auto",
+    "--threads",
+    "4",
+    "--dump-stem",
+    stemOut,
+  ];
+  const res = spawnSync(sidecar, argv, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (res.status !== 0) fatal(`direct sidecar run failed (${res.status}): ${res.stdout}`);
+  const events = res.stdout
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
+  return events;
+}
+
+function runWhisperOnStem(stemWav, prefix) {
+  const bin = path.join(root, "src-tauri", "binaries");
+  const res = spawnSync(
+    path.join(bin, "whisper", "whisper-cli.exe"),
+    [
+      "-m",
+      path.join(E2E_MODELS, "ggml-small.bin"),
+      "-f",
+      stemWav,
+      "-otxt",
+      "-of",
+      prefix,
+      "-t",
+      "4",
+      "-bs",
+      "5",
+      "-np",
+    ],
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (res.status !== 0) fatal(`whisper on stem failed: ${res.stderr?.slice(-400)}`);
+  return readFileSync(`${prefix}.txt`, "utf8");
+}
+
+// --- main ------------------------------------------------------------------
+try {
+  if (!existsSync(exe)) fatal(`app not built: ${exe} (set BEATFORM_EXE or cargo build)`);
+  prepModelsDir();
+  const mediaPort = await startMediaServer();
+
+  const existingArgs = process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS ?? "";
+  child = spawn(exe, [], {
+    cwd: root,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:
+        `${existingArgs} --remote-debugging-port=${port}`.trim(),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const keep = (c) => (log = (log + c.toString()).slice(-20_000));
+  child.stdout.on("data", keep);
+  child.stderr.on("data", keep);
+
+  const attach = async () => {
+    const t = await page();
+    const c = new Cdp(t.webSocketDebuggerUrl);
+    await c.open();
+    return c;
+  };
+  let cdp = await attach();
+  const waitHooks = `(async () => {
+    const deadline = Date.now() + 60000;
+    while (!window.__store || !window.__loadFile || !window.__invoke) {
+      if (Date.now() > deadline) throw new Error("hooks unavailable");
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return true;
+  })()`;
+  await cdp.eval(waitHooks);
+  // First IPC call through the app graph: on a cold Vite dep cache the
+  // dynamic @tauri-apps import triggers "new dependencies optimized —
+  // reloading page", destroying the eval context. Absorb + re-attach
+  // (midi-e2e lesson; CDP itself cannot import bare specifiers, hence
+  // the __invoke dev hook).
+  try {
+    await cdp.eval(`window.__invoke("scratch_dir")`);
+  } catch {
+    await sleep(2000);
+    cdp = await attach();
+    await cdp.eval(waitHooks);
+  }
+
+  // Models-dir override + fresh state.
+  await cdp.eval(`(async () => {
+    await window.__invoke("debug_set_lyrics_models_dir", { dir: ${JSON.stringify(E2E_MODELS)} });
+    await window.__store.getState().refreshLyricsGen();
+    return true;
+  })()`);
+  const models0 = await cdp.eval(`window.__store.getState().lyricsGen.models`, false);
+  if (!models0 || models0.models.length !== 3)
+    fatal(`models state wrong: ${JSON.stringify(models0)}`);
+  const mdx0 = models0.models.find((m) => m.id === "mdx-voc-ft");
+  const small0 = models0.models.find((m) => m.id === "whisper-small");
+  if (mdx0.installed) fatal("precondition: mdx must start uninstalled");
+  if (!small0.installed) fatal("precondition: seeded ggml-small must count as installed");
+  console.log("SETUP OK: hooks + models override; small seeded, mdx absent");
+
+  // ---- 1. download -> cancel -> resume -> verify (live release) ----------
+  await cdp.eval(`window.__store.getState().downloadLyricsTier("small"); true`, false);
+  const midway = await pollUntil(
+    cdp,
+    (s) => s.phase === "downloading" && s.dl && s.dl.received > 8_000_000,
+    120_000,
+    "download-start",
+  );
+  console.log(`DOWNLOAD: ${midway.dl.received} of ${midway.dl.total} bytes — cancelling`);
+  await cdp.eval(`window.__store.getState().cancelLyricsDownload(); true`, false);
+  await pollUntil(cdp, (s) => s.phase === "idle", 60_000, "download-cancel");
+  const afterCancel = await cdp.eval(
+    `window.__store.getState().refreshLyricsGen().then(() =>
+       window.__store.getState().lyricsGen.models.models.find((m) => m.id === "mdx-voc-ft"))`,
+  );
+  if (afterCancel.installed || afterCancel.partBytes <= 0) {
+    fatal(`cancel must keep a resumable part: ${JSON.stringify(afterCancel)}`);
+  }
+  console.log(`CANCEL OK: ${afterCancel.partBytes} bytes kept for resume`);
+
+  await cdp.eval(`window.__store.getState().downloadLyricsTier("small"); true`, false);
+  await pollUntil(cdp, (s) => s.phase === "downloading", 60_000, "resume-start");
+  await pollUntil(cdp, (s) => s.phase === "idle", 300_000, "resume-finish");
+  const afterResume = await cdp.eval(
+    `window.__store.getState().lyricsGen.models.models.find((m) => m.id === "mdx-voc-ft")`,
+    false,
+  );
+  if (!afterResume.installed) fatal(`resume did not install: ${JSON.stringify(afterResume)}`);
+  const verifyOk = await cdp.eval(`window.__invoke("lyrics_model_verify", { id: "mdx-voc-ft" })`);
+  if (verifyOk !== true) fatal("post-resume SHA-256 verify must pass");
+  const verifyAbsent = await cdp.eval(
+    `window.__invoke("lyrics_model_verify", { id: "whisper-medium" })`,
+  );
+  if (verifyAbsent !== false) fatal("verify of an uninstalled model must be false");
+  console.log("RESUME+VERIFY OK: real release download, hash-verified, negative case false");
+
+  // ---- 2. generation on the corpus track through the store ---------------
+  await cdp.eval(`(async () => {
+    await window.__loadFile("http://127.0.0.1:${mediaPort}/ssb.wav", "ssb-navy-solo.wav");
+    window.__store.getState().pause?.();
+    window.__store.getState().clearLyrics();
+    return true;
+  })()`);
+  await cdp.eval(`window.__store.getState().generateLyrics("small", "auto"); true`, false);
+  await pollUntil(cdp, (s) => s.phase === "generating", 60_000, "gen-start");
+  const done = await pollUntil(
+    cdp,
+    (s) => s.phase === "idle" && s.lyricsLen != null,
+    10 * 60_000,
+    "gen-finish",
+  );
+  const lines = await cdp.eval(
+    `JSON.parse(JSON.stringify(window.__store.getState().lyrics))`,
+    false,
+  );
+  if (!lines || lines.length < 5) fatal(`too few lines: ${lines?.length}`);
+  for (let i = 1; i < lines.length; i++) {
+    if (!(lines[i].t > lines[i - 1].t)) fatal(`timestamps not monotonic at ${i}`);
+  }
+  if (!/\(generated\)\.lrc$/.test(done.fileName ?? "")) fatal(`fileName wrong: ${done.fileName}`);
+  if (!lines.some((l) => /say can you see/i.test(l.text))) {
+    fatal(`corpus transcript unexpectedly off: ${JSON.stringify(lines.slice(0, 3))}`);
+  }
+  console.log(`GEN OK: ${lines.length} lines in store via loadLyricsText (${done.fileName})`);
+
+  // ---- 3. cancel mid-isolation -------------------------------------------
+  await cdp.eval(`window.__store.getState().clearLyrics(); true`, false);
+  await cdp.eval(`window.__store.getState().generateLyrics("small", "auto"); true`, false);
+  await pollUntil(
+    cdp,
+    (s) => s.phase === "generating" && s.stage === "isolate" && (s.pct ?? 0) > 5,
+    120_000,
+    "cancel-arm",
+  );
+  await cdp.eval(`window.__store.getState().cancelLyricsGenerate(); true`, false);
+  const cancelled = await pollUntil(cdp, (s) => s.phase === "idle", 30_000, "cancel-finish");
+  if (cancelled.lyricsLen != null) fatal("cancel must not land lyrics");
+  if (cancelled.error) fatal(`cancel must be silent, got error: ${cancelled.error}`);
+  console.log("GEN-CANCEL OK: idle again, no lyrics, no error");
+
+  // ---- 4. the owner's dense mix ------------------------------------------
+  if (!args.has("--skip-madness")) {
+    if (!existsSync(MADNESS)) fatal(`Madness.flac not found at ${MADNESS}`);
+    await cdp.eval(`(async () => {
+      await window.__loadFile("http://127.0.0.1:${mediaPort}/madness.flac", "Muse - Madness.flac");
+      window.__store.getState().pause?.();
+      window.__store.getState().clearLyrics();
+      return true;
+    })()`);
+    const t0 = Date.now();
+    await cdp.eval(`window.__store.getState().generateLyrics("small", "auto"); true`, false);
+    await pollUntil(cdp, (s) => s.phase === "generating", 60_000, "madness-start");
+    const mdone = await pollUntil(
+      cdp,
+      (s) => s.phase === "idle" && s.lyricsLen != null,
+      25 * 60_000,
+      "madness-finish",
+    );
+    const mlines = await cdp.eval(
+      `JSON.parse(JSON.stringify(window.__store.getState().lyrics))`,
+      false,
+    );
+    for (let i = 1; i < mlines.length; i++) {
+      if (!(mlines[i].t > mlines[i - 1].t)) fatal(`madness timestamps not monotonic at ${i}`);
+    }
+    const wall = Math.round((Date.now() - t0) / 1000);
+    writeFileSync(
+      path.join(outDir, "madness-app-flow.json"),
+      JSON.stringify({ wallSec: wall, fileName: mdone.fileName, lines: mlines }, null, 2),
+    );
+    console.log(
+      `MADNESS OK: ${mlines.length} lines in ${wall}s via the real store flow — transcript saved to ${outDir}`,
+    );
+    for (const l of mlines) console.log(`  [${l.t.toFixed(2)}] ${l.text}`);
+  }
+
+  // ---- 5. isolated-vs-mix comparison (direct sidecar) --------------------
+  if (!args.has("--skip-compare") && !args.has("--skip-madness")) {
+    console.log("COMPARE: direct sidecar run on Madness with --dump-stem…");
+    const lrcOut = path.join(outDir, "madness-direct-mix.lrc");
+    const stemOut = path.join(outDir, "madness-stem.wav");
+    const events = runSidecarDirect(MADNESS, lrcOut, stemOut);
+    writeFileSync(path.join(outDir, "madness-direct-events.json"), JSON.stringify(events, null, 2));
+    const result = events.find((e) => e.type === "result");
+    const iso = events.find((e) => e.type === "stageDone" && e.stage === "isolate");
+    console.log(
+      `COMPARE: direct run done — ep=${result?.ep} isolateRTF=${iso?.rtf?.toFixed(3)} vocalSec=${result?.vocalSec?.toFixed(1)} lines=${result?.lines}`,
+    );
+    console.log("COMPARE: whisper small on the ISOLATED STEM…");
+    const stemText = runWhisperOnStem(stemOut, path.join(outDir, "madness-stem-transcript"));
+    const mixLrc = readFileSync(lrcOut, "utf8");
+    writeFileSync(path.join(outDir, "madness-mix.lrc"), mixLrc);
+    const norm = (t) =>
+      t
+        .toLowerCase()
+        .replace(/\[[^\]]*\]/g, " ")
+        .replace(/[^a-z' ]+/g, " ")
+        .split(/\s+/)
+        .filter(Boolean);
+    const mixWords = norm(mixLrc);
+    const stemWords = norm(stemText);
+    const overlap = mixWords.filter((w) => stemWords.includes(w)).length;
+    console.log(
+      `COMPARE: mix-pipeline words=${mixWords.length} stem-only words=${stemWords.length} ` +
+        `shared-vocab overlap=${((100 * overlap) / Math.max(1, mixWords.length)).toFixed(0)}% ` +
+        `(full texts in ${outDir})`,
+    );
+  }
+
+  console.log(
+    "LYRICS-E2E OK: download+cancel+resume+verify, corpus generation, mid-run cancel" +
+      (args.has("--skip-madness") ? "" : ", dense-mix generation + stem comparison") +
+      " all pass",
+  );
+} finally {
+  child?.kill();
+  mediaServer?.close();
+  try {
+    spawnSync("powershell", [
+      "-NoProfile",
+      "-Command",
+      "Get-Process -Name beatform,lyrics-sidecar,whisper-cli -ErrorAction SilentlyContinue | Stop-Process -Force",
+    ]);
+  } catch {
+    /* gone */
+  }
+}

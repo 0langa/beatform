@@ -150,46 +150,63 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           gen: { stage: "decode", pct: null, etaSec: null, overall: 0 },
         },
       });
-      try {
-        // Stage the decoded track as WAV — works for every source (file,
-        // drag-drop, library) because it reads the engine's own buffer.
+      const onLine = (line: string) => {
+        const ev = parseSidecarEvent(line);
+        if (!ev) return;
+        if (ev.type === "progress") {
+          set({
+            lyricsGen: {
+              ...get().lyricsGen,
+              gen: {
+                stage: ev.stage,
+                pct: ev.pct ?? null,
+                etaSec: ev.etaSec ?? null,
+                overall: overallProgress(ev.stage, ev.pct ?? null),
+              },
+            },
+          });
+        } else if (ev.type === "stageDone") {
+          set({
+            lyricsGen: {
+              ...get().lyricsGen,
+              gen: {
+                stage: ev.stage,
+                pct: 100,
+                etaSec: null,
+                overall: overallProgress(ev.stage, 100),
+              },
+            },
+          });
+        }
+      };
+      // One attempt = stage the decoded track as WAV (works for every source
+      // — file, drag-drop, library — because it reads the engine's own
+      // buffer), then run the sidecar to completion.
+      const attempt = async (useGpu: boolean) => {
         await lyricsStageAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
-        const lrc = await lyricsGenerate(
-          {
-            whisperModelId: TIER_WHISPER_ID[tier],
-            useGpu: true, // sidecar auto-detects; CPU fallback is internal
-            language,
-          },
-          (line) => {
-            const ev = parseSidecarEvent(line);
-            if (!ev) return;
-            if (ev.type === "progress") {
-              set({
-                lyricsGen: {
-                  ...get().lyricsGen,
-                  gen: {
-                    stage: ev.stage,
-                    pct: ev.pct ?? null,
-                    etaSec: ev.etaSec ?? null,
-                    overall: overallProgress(ev.stage, ev.pct ?? null),
-                  },
-                },
-              });
-            } else if (ev.type === "stageDone") {
-              set({
-                lyricsGen: {
-                  ...get().lyricsGen,
-                  gen: {
-                    stage: ev.stage,
-                    pct: 100,
-                    etaSec: null,
-                    overall: overallProgress(ev.stage, 100),
-                  },
-                },
-              });
-            }
-          },
-        );
+        return lyricsGenerate({ whisperModelId: TIER_WHISPER_ID[tier], useGpu, language }, onLine);
+      };
+      try {
+        let lrc: string;
+        try {
+          lrc = await attempt(true); // sidecar auto-detects; CPU fallback inside
+        } catch (e) {
+          const message = String((e as Error).message ?? e);
+          // A native GPU-driver crash kills the sidecar without a Rust error
+          // (observed on the reference Iris Xe under sustained thermal load:
+          // exit 0xffffffff mid-isolation). Nothing in-process can catch
+          // that — the honest recovery is one retry with the GPU stage
+          // disabled, announced, not silent.
+          if (!/exited abnormally/.test(message)) throw e;
+          ctx.flashNotice("Graphics acceleration crashed — retrying on CPU (slower)");
+          set({
+            lyricsGen: {
+              ...get().lyricsGen,
+              gen: { stage: "decode", pct: null, etaSec: null, overall: 0 },
+            },
+          });
+          lrc = await attempt(false);
+        }
         const trackName = engine.state.trackName ?? "track";
         get().loadLyricsText(`${trackName.replace(/\.[^.]+$/, "")} (generated).lrc`, lrc);
       } catch (e) {

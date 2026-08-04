@@ -14,6 +14,8 @@
     "test:loopback": "node scripts/loopback-smoke.mjs",
     "test:loopback:built": "node scripts/loopback-smoke.mjs --built",
     "test:loopback:built:30": "node scripts/loopback-smoke.mjs --built --fps=30",
+    "test:lyrics": "node scripts/lyrics-e2e.mjs",
+    "test:lyrics:quick": "node scripts/lyrics-e2e.mjs --skip-madness",
     "test:shadertoy:built": "node scripts/shadertoy-smoke.mjs",
     "test:watch": "vitest",
     "lint": "eslint .",

@@ -149,14 +149,42 @@ fn spawn_cancel_watcher(state: Arc<Canceller>) {
     });
 }
 
+/// End the process WITHOUT running atexit/DLL teardown.
+///
+/// Device finding (reference Iris Xe, sustained load): after the pipeline
+/// fully succeeded — LRC on disk, result event flushed — ONNX Runtime's
+/// DirectML stack misbehaved in `DLL_PROCESS_DETACH` in two observed ways:
+/// a fast-fail 0xC0000409 that turned a clean run into a crash exit, and a
+/// process that never exited at all (alive for 20+ minutes with the session
+/// memory still mapped). Everything this process produces is out (stdout is
+/// flushed per event, files are written) by the time an exit happens, so
+/// skipping loader teardown is safe — and it is the only reliable way to
+/// end a process whose GPU driver stack can't unload itself.
+fn hard_exit(code: i32) -> ! {
+    #[cfg(windows)]
+    {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetCurrentProcess() -> isize;
+            fn TerminateProcess(handle: isize, code: u32) -> i32;
+        }
+        // SAFETY: the pseudo-handle from GetCurrentProcess is always valid;
+        // terminating the current process does not return.
+        unsafe {
+            TerminateProcess(GetCurrentProcess(), code as u32);
+        }
+    }
+    std::process::exit(code)
+}
+
 fn fail(message: &str) -> ! {
     emit(&Event::Error { message });
-    std::process::exit(EXIT_ERROR);
+    hard_exit(EXIT_ERROR);
 }
 
 fn cancelled_exit() -> ! {
     emit(&Event::Cancelled);
-    std::process::exit(EXIT_CANCELLED);
+    hard_exit(EXIT_CANCELLED);
 }
 
 fn main() {
@@ -165,7 +193,7 @@ fn main() {
         Ok(m) => m,
         Err(e) => {
             emit(&Event::Error { message: &e });
-            std::process::exit(EXIT_USAGE);
+            std::process::exit(EXIT_USAGE); // nothing GPU-ish loaded yet
         }
     };
     match mode {
@@ -176,8 +204,13 @@ fn main() {
             emit(&Event::Probe {
                 dml: mdx::probe_dml(),
             });
+            hard_exit(0);
         }
-        Mode::Run(args) => run(*args),
+        Mode::Run(args) => {
+            run(*args);
+            // run() emitted the result; never fall into DLL teardown.
+            hard_exit(0);
+        }
     }
 }
 
