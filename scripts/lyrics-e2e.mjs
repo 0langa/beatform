@@ -44,7 +44,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = new Set(process.argv.slice(2).filter((a) => !a.startsWith("--out=")));
 const outDir =
   (process.argv.find((a) => a.startsWith("--out=")) ?? "").slice("--out=".length) ||
-  "F:/agent-devstorage/shared-cache/audio-visualizer/artifacts/feat004-p2-e2e";
+  // p3: phase-2's artifacts under feat004-p2-e2e are frozen ledger evidence —
+  // word-timing runs land in their own directory.
+  "F:/agent-devstorage/shared-cache/audio-visualizer/artifacts/feat004-p3-e2e";
 mkdirSync(outDir, { recursive: true });
 
 const exe =
@@ -408,13 +410,16 @@ try {
     return true;
   })()`);
   const models0 = await cdp.eval(`window.__store.getState().lyricsGen.models`, false);
-  if (!models0 || models0.models.length !== 3)
+  if (!models0 || models0.models.length !== 5)
     fatal(`models state wrong: ${JSON.stringify(models0)}`);
   const mdx0 = models0.models.find((m) => m.id === "mdx-voc-ft");
   const small0 = models0.models.find((m) => m.id === "whisper-small");
   if (mdx0.installed) fatal("precondition: mdx must start uninstalled");
   if (!small0.installed) fatal("precondition: seeded ggml-small must count as installed");
-  console.log("SETUP OK: hooks + models override; small seeded, mdx absent");
+  const alignSeeded = models0.models.find((m) => m.id === "wav2vec2-align").installed;
+  console.log(
+    `SETUP OK: hooks + models override; small seeded, mdx absent, align ${alignSeeded ? "cached" : "will download"}`,
+  );
 
   // ---- 1. download -> cancel -> resume -> verify (live release) ----------
   await cdp.eval(`window.__store.getState().downloadLyricsTier("small"); true`, false);
