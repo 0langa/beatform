@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 // Sidecar protocol (mirrors src-tauri/lyrics-sidecar/src/protocol.rs)
 
-export type SidecarStage = "decode" | "isolate" | "vad" | "transcribe" | "assemble";
+export type SidecarStage = "decode" | "isolate" | "vad" | "transcribe" | "align" | "assemble";
 
 export type SidecarEvent =
   | { type: "progress"; stage: SidecarStage; pct?: number; etaSec?: number; rtf?: number }
@@ -22,6 +22,12 @@ export type SidecarEvent =
       type: "result";
       lrcPath: string;
       lines: number;
+      /** Words that received timing (phase 3; 0 = line-level LRC). */
+      words: number;
+      /** Lines that carry word timing. */
+      alignedLines: number;
+      /** Lines flagged for review (low confidence or failed alignment). */
+      lowConfLines: number;
       vocalSec: number;
       ep: "dml" | "cpu";
       language: string;
@@ -30,7 +36,7 @@ export type SidecarEvent =
   | { type: "cancelled" }
   | { type: "probe"; dml: boolean };
 
-const STAGES: SidecarStage[] = ["decode", "isolate", "vad", "transcribe", "assemble"];
+const STAGES: SidecarStage[] = ["decode", "isolate", "vad", "transcribe", "align", "assemble"];
 
 function isStage(v: unknown): v is SidecarStage {
   return typeof v === "string" && (STAGES as string[]).includes(v);
@@ -72,6 +78,9 @@ export function parseSidecarEvent(line: string): SidecarEvent | null {
         type: "result",
         lrcPath: o.lrcPath,
         lines: o.lines,
+        words: typeof o.words === "number" ? o.words : 0,
+        alignedLines: typeof o.alignedLines === "number" ? o.alignedLines : 0,
+        lowConfLines: typeof o.lowConfLines === "number" ? o.lowConfLines : 0,
         vocalSec: typeof o.vocalSec === "number" ? o.vocalSec : 0,
         ep: o.ep === "dml" ? "dml" : "cpu",
         language: typeof o.language === "string" ? o.language : "",
@@ -116,7 +125,7 @@ export interface LyricsModelInfo {
   fileName: string;
   bytes: number;
   sha256: string;
-  role: "isolation" | "whisper-small" | "whisper-medium" | string;
+  role: "isolation" | "whisper-small" | "whisper-medium" | "alignment" | string;
   installed: boolean;
   partBytes: number;
 }
@@ -134,9 +143,11 @@ export const TIER_WHISPER_ID: Record<LyricsTier, string> = {
   medium: "whisper-medium",
 };
 
-/** Model ids a tier needs installed (isolation is shared by both). */
+/** Model ids a tier needs installed. Isolation and the phase-3 alignment
+ * pair (word timing) are shared by both tiers — the small tier stays the
+ * ~0.68 GB default bundle, medium adds only the bigger whisper. */
 export function tierModelIds(tier: LyricsTier): string[] {
-  return ["mdx-voc-ft", TIER_WHISPER_ID[tier]];
+  return ["mdx-voc-ft", "wav2vec2-align", "wav2vec2-vocab", TIER_WHISPER_ID[tier]];
 }
 
 export function missingModels(state: LyricsModelsState, tier: LyricsTier): LyricsModelInfo[] {
@@ -186,6 +197,11 @@ const WHISPER_RTF: Record<LyricsTier, { low: number; high: number }> = {
   small: { low: 0.25, high: 0.45 }, // measured 0.24-0.42
   medium: { low: 1.5, high: 2.1 }, // measured 1.5-2.01
 };
+/** Word alignment (phase 3, CPU-only by design — DML measured 4x slower for
+ * this model). Device: whole-stage RTF 0.12-0.14 cool (corpus + dense-mix
+ * runs), 0.37 thermally degraded — the high end honors adjustment 1's
+ * sustained-thermal rule, same as the other stages. */
+const ALIGN_RTF = { low: 0.1, high: 0.4 };
 /** decode + VAD + assembly + model/session loads. */
 const OVERHEAD_SEC = { low: 8, high: 25 };
 
@@ -203,8 +219,8 @@ export function estimateGenerateSeconds(
   const iso = dmlAvailable ? ISOLATE_RTF.dml : ISOLATE_RTF.cpu;
   const wh = WHISPER_RTF[tier];
   return {
-    lowSec: d * (iso.low + wh.low) + OVERHEAD_SEC.low,
-    highSec: d * (iso.high + wh.high) + OVERHEAD_SEC.high,
+    lowSec: d * (iso.low + wh.low + ALIGN_RTF.low) + OVERHEAD_SEC.low,
+    highSec: d * (iso.high + wh.high + ALIGN_RTF.high) + OVERHEAD_SEC.high,
   };
 }
 
@@ -235,9 +251,10 @@ export function formatEta(sec: number): string {
  * per-stage ETA carry the honest numbers. */
 const STAGE_WEIGHTS: Record<SidecarStage, number> = {
   decode: 0.02,
-  isolate: 0.55,
+  isolate: 0.52,
   vad: 0.01,
-  transcribe: 0.4,
+  transcribe: 0.36,
+  align: 0.07,
   assemble: 0.02,
 };
 

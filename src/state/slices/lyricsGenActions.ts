@@ -17,6 +17,7 @@ import {
   tierDownloadBytes,
   TIER_WHISPER_ID,
   type LyricsTier,
+  type SidecarEvent,
 } from "../lyricsGen";
 import {
   askConfirm,
@@ -150,10 +151,19 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           gen: { stage: "decode", pct: null, etaSec: null, overall: 0 },
         },
       });
+      // The terminal result event carries the phase-3 word-timing stats
+      // (words, low-confidence lines) — the LRC text itself only carries the
+      // timings. Captured here for the post-load notice (an object property,
+      // not a bare let: closure writes defeat TS's flow narrowing on locals).
+      const captured: { result: Extract<SidecarEvent, { type: "result" }> | null } = {
+        result: null,
+      };
       const onLine = (line: string) => {
         const ev = parseSidecarEvent(line);
         if (!ev) return;
-        if (ev.type === "progress") {
+        if (ev.type === "result") {
+          captured.result = ev;
+        } else if (ev.type === "progress") {
           set({
             lyricsGen: {
               ...get().lyricsGen,
@@ -199,6 +209,7 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           // disabled, announced, not silent.
           if (!/exited abnormally/.test(message)) throw e;
           ctx.flashNotice("Graphics acceleration crashed — retrying on CPU (slower)");
+          captured.result = null; // no stale stats from the crashed attempt
           set({
             lyricsGen: {
               ...get().lyricsGen,
@@ -209,6 +220,18 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         }
         const trackName = engine.state.trackName ?? "track";
         get().loadLyricsText(`${trackName.replace(/\.[^.]+$/, "")} (generated).lrc`, lrc);
+        // Word-timing summary on top of loadLyricsText's own notice: how many
+        // words got karaoke timing, and how many lines deserve a second look
+        // (low aligner confidence or failed alignment). Honest, not scary —
+        // sung-lyrics ASR needing fixes is the documented normal.
+        const stats = captured.result;
+        if (stats != null && stats.words > 0 && get().lyrics) {
+          const low = stats.lowConfLines;
+          ctx.flashNotice(
+            `Lyrics ready — ${stats.lines} lines, ${stats.words} words timed` +
+              (low > 0 ? `; ${low} low-confidence line${low === 1 ? "" : "s"}` : ""),
+          );
+        }
       } catch (e) {
         const message = String((e as Error).message ?? e);
         if (message !== "cancelled") {

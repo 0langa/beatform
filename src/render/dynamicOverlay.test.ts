@@ -60,4 +60,39 @@ describe("overlayFrameKeyAt", () => {
     expect(k.clockSec).toBe(-1);
     expect(k.lyricIdx).toBe(-1);
   });
+
+  it("word timing moves the wipe frame key (re-rasterize on word boundaries)", () => {
+    // One line [10, 20) with two words: "slow" sung 10-11, "burn" 15-19.
+    const lyrics = {
+      lines: [
+        {
+          t: 10,
+          end: null,
+          text: "slow burn",
+          words: [
+            { t: 10, end: 11, text: "slow" },
+            { t: 15, end: 19, text: "burn" },
+          ],
+        },
+        { t: 20, end: null, text: "next" },
+      ],
+      style: { ...DEFAULT_LYRIC_STYLE, fadeSec: 0, anim: "wipe" as const },
+    };
+    const at = (t: number) => overlayFrameKeyAt({ lyrics }, t, 1000);
+    // During "slow": progress sweeps -> key moves between 10.2 and 10.8.
+    expect(sameOverlayFrame(at(10.2), at(10.8))).toBe(false);
+    // Fill holds through the gap between the words -> key does NOT move.
+    expect(sameOverlayFrame(at(11.5), at(14.5))).toBe(true);
+    // Plain linear interpolation would have moved across that same span.
+    const plain = {
+      lines: [{ t: 10, end: null, text: "slow burn" }, lyrics.lines[1]],
+      style: lyrics.style,
+    };
+    expect(
+      sameOverlayFrame(
+        overlayFrameKeyAt({ lyrics: plain }, 11.5, 1000),
+        overlayFrameKeyAt({ lyrics: plain }, 14.5, 1000),
+      ),
+    ).toBe(false);
+  });
 });

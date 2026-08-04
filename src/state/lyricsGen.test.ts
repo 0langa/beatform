@@ -41,16 +41,35 @@ describe("sidecar protocol parsing", () => {
     });
     expect(
       parseSidecarEvent(
-        '{"type":"result","lrcPath":"ssb.lrc","lines":7,"vocalSec":82.86000000000001,"ep":"dml","language":"en"}',
+        '{"type":"result","lrcPath":"ssb.lrc","lines":7,"words":52,"alignedLines":7,"lowConfLines":1,"vocalSec":82.86000000000001,"ep":"dml","language":"en"}',
       ),
     ).toEqual({
       type: "result",
       lrcPath: "ssb.lrc",
       lines: 7,
+      words: 52,
+      alignedLines: 7,
+      lowConfLines: 1,
       vocalSec: 82.86000000000001,
       ep: "dml",
       language: "en",
     });
+    // A phase-2 result line (no alignment fields) still parses — the counts
+    // default to zero, meaning "line-level LRC".
+    expect(
+      parseSidecarEvent(
+        '{"type":"result","lrcPath":"x.lrc","lines":3,"vocalSec":10,"ep":"cpu","language":"en"}',
+      ),
+    ).toMatchObject({ type: "result", lines: 3, words: 0, alignedLines: 0, lowConfLines: 0 });
+    expect(parseSidecarEvent('{"type":"progress","stage":"align","pct":50,"etaSec":12.5}')).toEqual(
+      {
+        type: "progress",
+        stage: "align",
+        pct: 50,
+        etaSec: 12.5,
+        rtf: undefined,
+      },
+    );
     expect(parseSidecarEvent('{"type":"progress","stage":"decode"}')).toEqual({
       type: "progress",
       stage: "decode",
@@ -98,6 +117,7 @@ function modelsFixture(overrides?: {
   vocInstalled?: boolean;
   smallInstalled?: boolean;
   mediumInstalled?: boolean;
+  alignInstalled?: boolean;
   smallPart?: number;
 }): LyricsModelsState {
   return {
@@ -130,44 +150,88 @@ function modelsFixture(overrides?: {
         installed: overrides?.mediumInstalled ?? false,
         partBytes: 0,
       },
+      {
+        id: "wav2vec2-align",
+        fileName: "wav2vec2-base-960h-ctc-int8.onnx",
+        bytes: 121_925_528,
+        sha256: "788e",
+        role: "alignment",
+        installed: overrides?.alignInstalled ?? false,
+        partBytes: 0,
+      },
+      {
+        id: "wav2vec2-vocab",
+        fileName: "wav2vec2-base-960h-vocab.json",
+        bytes: 392,
+        sha256: "8ae6",
+        role: "alignment",
+        installed: overrides?.alignInstalled ?? false,
+        partBytes: 0,
+      },
     ],
   };
 }
 
 describe("tier math", () => {
-  it("tiers require isolation plus their whisper model", () => {
-    expect(tierModelIds("small")).toEqual(["mdx-voc-ft", "whisper-small"]);
-    expect(tierModelIds("medium")).toEqual(["mdx-voc-ft", "whisper-medium"]);
+  it("tiers require isolation, the alignment pair, and their whisper model", () => {
+    expect(tierModelIds("small")).toEqual([
+      "mdx-voc-ft",
+      "wav2vec2-align",
+      "wav2vec2-vocab",
+      "whisper-small",
+    ]);
+    expect(tierModelIds("medium")).toEqual([
+      "mdx-voc-ft",
+      "wav2vec2-align",
+      "wav2vec2-vocab",
+      "whisper-medium",
+    ]);
   });
 
   it("missing/installed reflect per-model state", () => {
     const none = modelsFixture();
-    expect(missingModels(none, "small").map((m) => m.id)).toEqual(["mdx-voc-ft", "whisper-small"]);
+    expect(missingModels(none, "small").map((m) => m.id)).toEqual([
+      "mdx-voc-ft",
+      "wav2vec2-align",
+      "wav2vec2-vocab",
+      "whisper-small",
+    ]);
     expect(tierInstalled(none, "small")).toBe(false);
 
-    const smallReady = modelsFixture({ vocInstalled: true, smallInstalled: true });
+    const smallReady = modelsFixture({
+      vocInstalled: true,
+      smallInstalled: true,
+      alignInstalled: true,
+    });
     expect(tierInstalled(smallReady, "small")).toBe(true);
     // ...but medium still needs its own whisper model.
     expect(missingModels(smallReady, "medium").map((m) => m.id)).toEqual(["whisper-medium"]);
+    // A phase-2 install (no alignment yet) is missing exactly the align pair.
+    const p2 = modelsFixture({ vocInstalled: true, smallInstalled: true });
+    expect(missingModels(p2, "small").map((m) => m.id)).toEqual([
+      "wav2vec2-align",
+      "wav2vec2-vocab",
+    ]);
   });
 
   it("download bytes are resume-aware; install total is the full tier", () => {
-    const st = modelsFixture({ vocInstalled: true, smallPart: 100_000_000 });
+    const st = modelsFixture({ vocInstalled: true, alignInstalled: true, smallPart: 100_000_000 });
     const { remaining, installTotal } = tierDownloadBytes(st, "small");
-    expect(installTotal).toBe(66_762_490 + 487_601_967);
+    expect(installTotal).toBe(66_762_490 + 487_601_967 + 121_925_528 + 392);
     expect(remaining).toBe(487_601_967 - 100_000_000);
-    // The small tier at defaults ≈ 554 MB — the number the disclosure shows.
-    expect(formatBytes(installTotal)).toBe("554 MB");
+    // The small tier with word alignment ≈ 676 MB — the disclosure number.
+    expect(formatBytes(installTotal)).toBe("676 MB");
   });
 });
 
 describe("time estimates (sustained-thermal — spike adjustment 1)", () => {
   it("a 4-minute song lands in the spike's measured windows", () => {
     const d = 240;
-    // GPU-assisted small: REPORT projects ≈4 min total.
+    // GPU-assisted small: REPORT projects ≈4 min; phase 3 adds the CPU-only
+    // align leg (device 0.1-0.4 RTF across thermal states).
     const dmlSmall = estimateGenerateSeconds(d, "small", true);
     expect(dmlSmall.lowSec).toBeGreaterThan(120);
-    expect(dmlSmall.highSec).toBeLessThan(6.5 * 60);
+    expect(dmlSmall.highSec).toBeLessThan(7 * 60);
     // CPU-only medium: REPORT says 15-18 min per song; the range must
     // contain it (sustained numbers, not cold-run flattery).
     const cpuMedium = estimateGenerateSeconds(d, "medium", false);
@@ -204,12 +268,16 @@ describe("overall progress", () => {
       overallProgress("vad", null),
       overallProgress("transcribe", 10),
       overallProgress("transcribe", 90),
+      overallProgress("align", 20),
+      overallProgress("align", 100),
       overallProgress("assemble", null),
     ];
     for (let i = 1; i < points.length; i++) {
       expect(points[i]).toBeGreaterThanOrEqual(points[i - 1]);
     }
     expect(points[points.length - 1]).toBeLessThanOrEqual(1);
-    expect(overallProgress("isolate", 50)).toBeCloseTo(0.02 + 0.275, 5);
+    expect(overallProgress("isolate", 50)).toBeCloseTo(0.02 + 0.26, 5);
+    // The align stage slots between transcribe and assemble.
+    expect(overallProgress("align", 0)).toBeCloseTo(0.02 + 0.52 + 0.01 + 0.36, 5);
   });
 });

@@ -16,6 +16,9 @@ pub enum Stage {
     Isolate,
     Vad,
     Transcribe,
+    /// Phase-3 word-level forced alignment (only when the alignment model
+    /// was passed; absent from the stream otherwise).
+    Align,
     Assemble,
 }
 
@@ -53,6 +56,14 @@ pub enum Event<'a> {
     Result {
         lrc_path: &'a str,
         lines: usize,
+        /// Words that received timing across all lines (0 = alignment not
+        /// run or fully degraded — the LRC is then plain line-level).
+        words: usize,
+        /// Lines that carry word timing.
+        aligned_lines: usize,
+        /// Lines flagged for review: low mean word confidence, or alignment
+        /// attempted and failed (the UI's "N low-confidence lines" notice).
+        low_conf_lines: usize,
         /// Seconds of vocal-active audio the VAD found (0 = likely instrumental).
         vocal_sec: f64,
         /// Execution provider the isolation stage actually used.
@@ -97,14 +108,18 @@ mod tests {
         let r = Event::Result {
             lrc_path: "C:/t/out.lrc",
             lines: 42,
+            words: 310,
+            aligned_lines: 40,
+            low_conf_lines: 3,
             vocal_sec: 180.25,
             ep: "dml",
             language: "en",
         };
         assert_eq!(
             serde_json::to_string(&r).unwrap(),
-            r#"{"type":"result","lrcPath":"C:/t/out.lrc","lines":42,"vocalSec":180.25,"ep":"dml","language":"en"}"#
+            r#"{"type":"result","lrcPath":"C:/t/out.lrc","lines":42,"words":310,"alignedLines":40,"lowConfLines":3,"vocalSec":180.25,"ep":"dml","language":"en"}"#
         );
+        assert_eq!(serde_json::to_string(&Stage::Align).unwrap(), r#""align""#);
 
         let e = Event::Error { message: "boom" };
         assert_eq!(

@@ -25,6 +25,15 @@ in this repository) that orchestrates the following third-party components:
   UVR — **vocal isolation in Beatform is powered by UVR's MDX-Net models;
   thank you to the UVR developers.** (The credit also appears in-app in the
   lyrics feature and the user guide.)
+- **wav2vec 2.0 forced-alignment model**
+  (`wav2vec2-base-960h-ctc-int8.onnx` + `wav2vec2-base-960h-vocab.json`) —
+  Beatform's own ONNX export (int8-quantized) of Meta AI's
+  `facebook/wav2vec2-base-960h` speech model
+  (<https://huggingface.co/facebook/wav2vec2-base-960h>), used for per-word
+  lyric timing (CTC forced alignment). Downloaded on first use from the same
+  pinned mirror, SHA-256-verified. License: **Apache-2.0** (the model's
+  published license; the export is a mechanical format/precision conversion
+  of the same weights).
 - **ONNX Runtime** (<https://github.com/microsoft/onnxruntime>) — bundled as
   the unmodified official `onnxruntime.dll` (DirectML build, version pinned by
   SHA-256 in `scripts/fetch-onnxruntime.mjs`), loaded dynamically by the
