@@ -328,7 +328,38 @@ redistribution rights exist.
 
 ### FEAT-003 — Community preset index
 
-**Status:** CONSIDERING  
+**Status:** IN PROGRESS — owner decisions locked 2026-08-04:
+
+- **Home:** GitHub org `beatform-app` (owner-created; 0langa auth has org
+  admin — verified push/admin on repos). Public contact:
+  `beatformapp@gmail.com` (custom domain later, needs domain first).
+- **Repo:** `beatform-app/gallery`; in-app label **"Gallery"** (rename-able
+  later if scope grows). Content lives IN the repo; the app fetches
+  commit-pinned `raw.githubusercontent.com` URLs (immutability by
+  construction); removal = tombstone.
+- **Launch types:** looks (.avpreset-class) + themes; type enum extensible.
+- **License:** repo MIT; per-entry required license field, CC0-1.0 or
+  CC-BY-4.0 only at launch.
+- **Moderation:** owner-curated only (0langa merges every PR).
+- **Seed content:** agent-generated candidates, owner validates; bar =
+  impressive/visually stunning, shows Beatform's ceiling, inspires user
+  submissions.
+- Skeleton (registry schema + hand-rolled validator + CI + submission
+  template + policies) generated into the repo by agent 2026-08-04.
+- **GATE before public launch: EXT-RENAME below** (owner: fix legacy `.av*`
+  extensions before public indexing). Also gated behind FEAT-004 completion
+  per owner priority ("finish lyrics fully first").
+
+### EXT-RENAME — file extensions `.av*` → `.bf*`
+
+**Status:** READY (queued after FEAT-004). Owner-approved 2026-08-04 with
+**no backwards compatibility** (current userbase = for-fun + e2e helpers).
+Legacy: extensions still say audio-visualizer (`.avpreset`, `.avproj`,
+`.avtheme`); app is Beatform. Rename all user-facing extensions, file-dialog
+filters, docs, and gallery schema references before the Gallery goes public.
+
+### FEAT-003 original design notes (kept)
+
 **Dependency:** FEAT-001 only if index will include GLSL/Shadertoy content.
 
 Existing foundation:
@@ -397,7 +428,7 @@ measured RTF/WER on device; (2) isolation + transcription → line-level LRC
 (already-shippable value); (3) word alignment + A2 word-tag LRC + parser/
 schema/wipe upgrade; (4) correction-editor polish.
 
-**Phase 1 COMPLETE 2026-08-04 — verdict GO with three adjustments** (full
+**Phase 2 STARTED 2026-08-04** (worktree agent on `feat/lyrics-p2`: sidecar + model manager + line-level LRC UI; dense-mix validation track = owner-supplied Muse - Madness.flac on devstorage). **Phase 1 COMPLETE 2026-08-04 — verdict GO with three adjustments** (full
 data: `F:\...\artifacts\feat004-spike\REPORT.md` + license-hash-matrix +
 5-track PD corpus + stems + 14 runs, all KEEP-marked; models ~2.7 GB cached):
 
