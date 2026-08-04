@@ -11,6 +11,46 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.69.0] - 2026-08-04
+
+### Added
+
+- **Automatic lyrics — fully local, with word-level karaoke timing.** The
+  Text tab can now generate timed lyrics from your track entirely on your
+  machine: vocal isolation, transcription, and word-level forced alignment
+  run in a local engine — no cloud, no account, nothing leaves your PC.
+  Models download on first use (about 0.7 GB for the standard tier, larger
+  optional quality tier) with verified, resumable downloads, honest disk and
+  time estimates up front, and full cancel support. Uses your integrated or
+  discrete GPU when it helps and falls back to CPU automatically. The
+  karaoke wipe now follows the real timing of each sung word — including
+  long held notes — instead of gliding across the line.
+- **Lyrics correction editor.** Generated (or imported) lyrics open in a
+  proper editor: fix words and lines inline, nudge timings, split and merge
+  lines, click a timestamp to jump the track there, and export a standard
+  .lrc file (with word timing when present). Lines the engine is unsure
+  about are flagged red or amber, with a one-click jump to the next flagged
+  line — and a per-line "re-align" that re-times just the line you edited
+  in seconds. Undo/redo included.
+- **Enhanced LRC import.** Word-timed (A2/enhanced) LRC files from other
+  tools now import with their word timing intact.
+
+### Changed
+
+- **Performance display: RAM and CPU now count the whole app.** The
+  readouts include Beatform's WebView2 processes (the majority of real
+  usage), shown as "total (main …)" — matching what Task Manager splits
+  across two groups.
+
+### Fixed
+
+- **MIDI control works over real hardware transports.** Two long-standing
+  issues silently blocked Web MIDI on the shipped app — a browser
+  permission WebView2 denies by default, and an internal call pattern every
+  real Chromium rejects. Both fixed and verified end to end against a
+  virtual MIDI port; MIDI Learn in the Live tab now works with real
+  controllers.
+
 ## [2.68.1] - 2026-08-04
 
 ### Fixed
