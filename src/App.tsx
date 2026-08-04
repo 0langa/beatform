@@ -10,7 +10,7 @@ import { installDevHooks } from "./devHooks";
 import { getPrefs, setPrefs, subscribePrefs } from "./state/prefs";
 import { PlayerBar, type PlayerBarProps } from "./ui/PlayerBar";
 import { LibraryPanel, type LibraryPanelProps } from "./ui/LibraryPanel";
-import { isTauri } from "./state/platform";
+import { askConfirm, isTauri } from "./state/platform";
 import {
   checkForUpdate,
   downloadAndInstallUpdate,
@@ -407,10 +407,22 @@ export default function App() {
     (f) => void f.text().then((t) => store().loadLyricsText(f.name, t)),
     [store],
   );
-  const clearLyrics: ParamsPanelProps["onClearLyrics"] = useCallback(
-    () => store().clearLyrics(),
-    [store],
-  );
+  const clearLyrics: ParamsPanelProps["onClearLyrics"] = useCallback(async () => {
+    // Destructive clear-all: with the correction editor, loaded lyrics can
+    // carry real editing work — never drop them on a stray click. UI-level
+    // confirm so the programmatic action (E2E, generate-replace flow, which
+    // asks its own question) stays prompt-free.
+    const s = store();
+    const n = s.lyrics?.length ?? 0;
+    if (n > 0) {
+      const ok = await askConfirm(
+        `Remove the loaded lyrics (${n} line${n === 1 ? "" : "s"})? Unsaved edits are lost.`,
+        "Remove lyrics",
+      );
+      if (!ok) return;
+    }
+    s.clearLyrics();
+  }, [store]);
   const setLyricStyle: ParamsPanelProps["onLyricStyle"] = useCallback(
     (patch) => store().setLyricStyle(patch),
     [store],

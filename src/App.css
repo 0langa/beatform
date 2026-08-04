@@ -3002,3 +3002,220 @@ kbd {
   color: var(--text-faint);
   background: none;
 }
+
+/* ---- Lyrics correction editor (FEAT-004 phase 4) ---------------------- */
+
+.lyrics-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lyr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.lyr-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.lyr-head-btns {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The line list scrolls inside the panel section so a 40-line song doesn't
+   bury the Audiogram section below it. */
+.lyr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.lyr-row {
+  border-left: 2px solid transparent;
+  border-radius: 6px;
+  padding: 1px 2px 1px 4px;
+}
+
+/* Confidence flags: the aligner's own uncertainty, on the row's left edge.
+   Red = below the calibrated garbage line (0.2), amber = the measured
+   partially-correct band (0.45). */
+.lyr-row.warn {
+  border-left-color: rgba(255, 200, 120, 0.75);
+}
+
+.lyr-row.flag {
+  border-left-color: rgba(255, 120, 120, 0.85);
+}
+
+.lyr-row.active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lyr-row-main {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lyr-time {
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  padding: 2px 3px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.lyr-time:hover {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.lyr-time-input {
+  width: 62px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  outline: none;
+}
+
+.lyr-text {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 11.5px;
+  padding: 3px 5px;
+  outline: none;
+}
+
+.lyr-text:hover {
+  border-color: var(--border);
+}
+
+.lyr-text:focus {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-strong);
+}
+
+.lyr-chevron {
+  font-size: 10px;
+  color: var(--text-faint);
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: transform 0.12s;
+}
+
+.lyr-chevron:hover {
+  color: var(--text);
+}
+
+.lyr-chevron.open {
+  transform: rotate(90deg);
+}
+
+.lyr-tools {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 0 3px 2px;
+  flex-wrap: wrap;
+}
+
+.lyr-tools .text-btn {
+  padding: 2px 6px;
+  font-size: 11.5px;
+}
+
+.lyr-tool-gap {
+  width: 6px;
+}
+
+.lyr-nudge {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-dim);
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.lyr-nudge:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.lyr-words {
+  padding: 2px 2px 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lyr-word-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: center;
+}
+
+.lyr-word {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.lyr-word:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.lyr-word.warn {
+  border-color: rgba(255, 200, 120, 0.6);
+}
+
+.lyr-word.flag {
+  border-color: rgba(255, 120, 120, 0.7);
+}
+
+.lyr-word.active {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: rgba(106, 168, 255, 0.5);
+  color: var(--accent-fg);
+}
+
+.lyr-word-spread {
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.lyr-word-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lyr-word-text {
+  flex: 1;
+  min-width: 40px;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border);
+}

@@ -1,5 +1,6 @@
 import { useVizStore, type VizState } from "./state/store";
 import { getAnalyzer, getEngine, getPresentedFrames } from "./state/services";
+import { writeLrc } from "./state/lyricsEdit";
 import { rasterizeOverlay } from "./render/overlay";
 import { exportVideo } from "./export/videoExporter";
 import type { VideoCodecId } from "./export/codecProbe";
@@ -98,6 +99,11 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
   // The live audio engine, for E2E probes (module import from the console
   // would get a DIFFERENT instance — "services not initialized").
   (window as unknown as { __engine: unknown }).__engine = getEngine();
+  // The lyrics-editor LRC writer over the CURRENT store lines — the e2e's
+  // round-trip leg (writer -> loadLyricsText -> parser) needs the exact text
+  // the Save button would write, without driving a native save dialog.
+  (window as unknown as { __lyricsLrc: unknown }).__lyricsLrc = () =>
+    writeLrc(useVizStore.getState().lyrics ?? []);
   // Presented-frame counter from the live render loop (perf-overlay FPS
   // source) — lets E2E prove caps/scale act on PRESENTS, not rAF ticks.
   (window as unknown as { __presentedFrames: unknown }).__presentedFrames = getPresentedFrames;

@@ -320,6 +320,28 @@ export async function lyricsGenerateCancel(): Promise<void> {
   await invoke("lyrics_generate_cancel");
 }
 
+/** One re-aligned word from lyrics_align_line, slice-relative seconds. */
+export interface RealignedWord {
+  t: number;
+  end: number;
+  conf: number;
+  text: string;
+}
+
+/** Re-align ONE line's text against the staged audio slice (the sidecar's
+ * --align-line mode: isolation + CTC forced alignment, no whisper). The
+ * caller stages the slice first (lyricsStageAudio) and owns the offset from
+ * slice time back to track time. Rejects with "cancelled" on user cancel. */
+export async function lyricsAlignLine(
+  lineT: number,
+  lineEnd: number,
+  text: string,
+  useGpu: boolean,
+): Promise<RealignedWord[]> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<RealignedWord[]>("lyrics_align_line", { lineT, lineEnd, text, useGpu });
+}
+
 // --- Disk pre-flight (desktop only) ---
 
 /** Free/total bytes on the volume holding `path`; `path` need not exist yet.

@@ -29,6 +29,7 @@ import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../rende
 import { MOD_SOURCES, POST_TARGET_PREFIX, type ModRoute, type ModSource } from "../state/modMatrix";
 import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../audio/stems";
 import { LYRIC_ANIMS, type LyricStyle } from "../state/lyrics";
+import { LyricsEditPanel } from "./LyricsEditPanel";
 import { LyricsGenPanel } from "./LyricsGenPanel";
 import type { AudiogramSettings } from "../state/audiogram";
 import {
@@ -1710,6 +1711,17 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
           {!props.lyricFileName && <LyricsGenPanel />}
         </>
       ),
+    },
+    {
+      id: "LyricsEdit",
+      title: "Edit lyrics",
+      tab: "text",
+      search:
+        "edit lyrics correct fix words timing nudge split merge insert delete line word karaoke " +
+        "confidence flagged re-align align save lrc export undo redo",
+      // Store-connected (LyricsGenPanel idiom): the editor re-renders on its
+      // own lyric edits without dragging the whole memoized panel along.
+      body: <LyricsEditPanel />,
     },
     {
       id: "Audiogram",

@@ -141,6 +141,7 @@ import { customShaderActions } from "./slices/customShaderActions";
 import { exportActions } from "./slices/exportActions";
 import { libraryActions } from "./slices/libraryActions";
 import { lyricsAudiogramActions } from "./slices/lyricsAudiogramActions";
+import { lyricsEditActions } from "./slices/lyricsEditActions";
 import { lyricsGenActions } from "./slices/lyricsGenActions";
 import { midiActions } from "./slices/midiActions";
 import { overlayActions } from "./slices/overlayActions";
@@ -336,6 +337,13 @@ interface SessionSlice {
    * state. Session-only; the finished LRC lands in `lyrics` via the same
    * loadLyricsText path as an import. */
   lyricsGen: LyricsGenState;
+  /** Correction editor's local undo/redo depths (stacks live in the slice
+   * module — lyrics are session state, so the document history can't carry
+   * them; see lyricsEditActions). */
+  lyricsEditUndoDepth: number;
+  lyricsEditRedoDepth: number;
+  /** A per-line re-alignment sidecar run in flight (null = none). */
+  lyricsRealign: { index: number } | null;
   /** How lyric lines render (position/size/color/fade); persisted. */
   lyricStyle: LyricStyle;
   /** Audiogram overlay elements (progress bar / time / waveform); persisted. */
@@ -444,6 +452,32 @@ interface Actions {
    * loadLyricsText exactly like an imported .lrc. */
   generateLyrics(tier: LyricsTier, language: string): Promise<void>;
   cancelLyricsGenerate(): void;
+  // --- lyrics correction editor (FEAT-004 phase 4) ---
+  /** Replace line i's text (word timings follow; see lyricsEdit.setLineText). */
+  editLyricLineText(i: number, text: string): void;
+  /** Move line i's start (clamped between neighbours; words travel with it). */
+  setLyricLineTime(i: number, t: number): void;
+  nudgeLyricLine(i: number, deltaSec: number): void;
+  /** Split line i at a caret position in its text. */
+  splitLyricLine(i: number, charPos: number): void;
+  mergeLyricLineWithNext(i: number): void;
+  /** Insert an empty line after i (-1 = before the first line). */
+  insertLyricLineAfter(i: number): void;
+  deleteLyricLine(i: number): void;
+  editLyricWord(i: number, k: number, text: string): void;
+  setLyricWordTime(i: number, k: number, t: number): void;
+  nudgeLyricWord(i: number, k: number, deltaSec: number): void;
+  /** Spread line i's words evenly across its window. */
+  redistributeLyricWords(i: number): void;
+  undoLyricsEdit(): void;
+  redoLyricsEdit(): void;
+  resetLyricsEditHistory(): void;
+  /** Attach generation-result confidence to the parsed lines (session-only). */
+  applyLyricsConfidence(details: import("./lyricsGen").LineDetail[]): void;
+  /** Save the current (edited) lines as an .lrc via the save dialog. */
+  exportLyricsLrc(): Promise<void>;
+  /** Re-run forced alignment for one line against the loaded track. */
+  realignLyricLine(i: number): Promise<void>;
   setLyricStyle(patch: Partial<LyricStyle>): void;
   /** Toggle/adjust the audiogram overlay elements. */
   setAudiogram(patch: Partial<AudiogramSettings>): void;
@@ -1072,6 +1106,9 @@ export const useVizStore = create<VizState>((set, get) => {
     lyrics: null,
     lyricFileName: null,
     lyricsGen: IDLE_LYRICS_GEN,
+    lyricsEditUndoDepth: 0,
+    lyricsEditRedoDepth: 0,
+    lyricsRealign: null,
     lyricStyle: loadStoredLyricStyle(),
     audiogram: loadStoredAudiogram(),
     videoBgLoading: false,
@@ -1094,6 +1131,7 @@ export const useVizStore = create<VizState>((set, get) => {
     ...libraryActions(set, get, ctx),
     ...customShaderActions(set, get, ctx),
     ...lyricsAudiogramActions(set, get, ctx),
+    ...lyricsEditActions(set, get, ctx),
     ...lyricsGenActions(set, get, ctx),
     ...overlayActions(set, get, ctx),
     ...stemsModsActions(set, get, ctx),
