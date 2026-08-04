@@ -1,5 +1,6 @@
 mod diskspace;
 mod loopback;
+mod perfstats;
 mod prores;
 mod shadertoy;
 
@@ -131,6 +132,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(loopback::LoopbackCtl::default())
         .manage(prores::ProresState::default())
+        .manage(perfstats::PerfState::default())
         .invoke_handler(tauri::generate_handler![
             debug_allow_path,
             scan_audio_library,
@@ -148,6 +150,7 @@ pub fn run() {
             prores::prores_abort,
             diskspace::disk_space,
             diskspace::scratch_dir,
+            perfstats::perf_stats,
             shadertoy::transpile_shadertoy
         ])
         .run(tauri::generate_context!())
