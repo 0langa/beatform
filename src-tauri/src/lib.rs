@@ -1,5 +1,6 @@
 mod diskspace;
 mod loopback;
+mod lyrics;
 #[cfg(windows)]
 mod midi_permission;
 mod perfstats;
@@ -149,6 +150,17 @@ pub fn run() {
         .manage(loopback::LoopbackCtl::default())
         .manage(prores::ProresState::default())
         .manage(perfstats::PerfState::default())
+        .manage(lyrics::LyricsState::default())
+        // The lyrics sidecar is a long-running child (minutes of model
+        // inference): closing the app must not orphan it. Window destruction
+        // is the reliable shutdown signal here (RunEvent::Exit never fires
+        // for the plain `.run(ctx)` shape this app uses).
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                use tauri::Manager;
+                lyrics::kill_running_job(&window.state::<lyrics::LyricsState>());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             debug_allow_path,
             scan_audio_library,
@@ -167,7 +179,19 @@ pub fn run() {
             diskspace::disk_space,
             diskspace::scratch_dir,
             perfstats::perf_stats,
-            shadertoy::transpile_shadertoy
+            shadertoy::transpile_shadertoy,
+            lyrics::lyrics_models_state,
+            lyrics::lyrics_model_download,
+            lyrics::lyrics_download_cancel,
+            lyrics::lyrics_model_verify,
+            lyrics::lyrics_model_remove,
+            lyrics::lyrics_audio_begin,
+            lyrics::lyrics_audio_chunk,
+            lyrics::lyrics_audio_end,
+            lyrics::lyrics_gpu_probe,
+            lyrics::lyrics_generate,
+            lyrics::lyrics_generate_cancel,
+            lyrics::debug_set_lyrics_models_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
