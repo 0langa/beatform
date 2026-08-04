@@ -1,6 +1,6 @@
 import { sanitizeSync, type SyncSettings } from "../audio/types";
 import type { ParamValues } from "../render/types";
-import { presets } from "../render/presets";
+import { canonicalPresetId, presets } from "../render/presets";
 
 /**
  * User presets ("my looks"): a named snapshot of one visual mode's params
@@ -107,14 +107,18 @@ export function parseUserPreset(json: string): UserPreset {
  */
 function validUserPreset(v: unknown): UserPreset | null {
   const p = v as Partial<UserPreset>;
+  // Renamed built-in ids (v13: "starfield" -> "particles") are mapped before
+  // the membership check — a saved look for a renamed mode must keep loading,
+  // not be silently dropped from the library on the next save.
+  const presetId = typeof p.presetId === "string" ? canonicalPresetId(p.presetId) : null;
   if (
     typeof p !== "object" ||
     p === null ||
     typeof p.id !== "string" ||
     typeof p.name !== "string" ||
     p.name.length === 0 ||
-    typeof p.presetId !== "string" ||
-    !presets.some((x) => x.id === p.presetId) ||
+    presetId === null ||
+    !presets.some((x) => x.id === presetId) ||
     typeof p.params !== "object" ||
     p.params === null ||
     !Object.values(p.params).every((n) => typeof n === "number" && Number.isFinite(n))
@@ -124,7 +128,7 @@ function validUserPreset(v: unknown): UserPreset | null {
   return {
     id: p.id,
     name: p.name,
-    presetId: p.presetId,
+    presetId,
     params: { ...p.params },
     ...(p.sync !== undefined ? { sync: sanitizeSync(p.sync) } : {}),
     createdAt: typeof p.createdAt === "string" ? p.createdAt : new Date().toISOString(),

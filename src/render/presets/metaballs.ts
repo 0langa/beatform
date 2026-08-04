@@ -457,6 +457,14 @@ fn preset(uv: vec2f) -> vec4f {
   var field = 0.0;
   var hueAcc = 0.0;
   var nrm = vec2f(0.0);
+  // Merge-artifact bookkeeping (v2.68): gMag sums the MAGNITUDES of the
+  // per-blob gradient terms while nrm sums the vectors, so |nrm|/gMag is a
+  // dimensionless 0..1 measure of gradient agreement — 1 on an isolated
+  // flank, ~0 at a merge saddle where opposing gradients cancel. maxContrib
+  // is the strongest single blob's field share, so the hot nucleus below can
+  // key off "one ball's own core" instead of the merged sum.
+  var gMag = 0.0;
+  var maxContrib = 0.0;
   for (var i = 0; i < count; i++) {
     let fi = f32(i);
     let h = hash11(fi + 1.0);
@@ -521,6 +529,10 @@ fn preset(uv: vec2f) -> vec4f {
     // gloss pass below has a real surface normal to light — folded into this
     // same loop, no extra neighbourhood walk.
     nrm += diff * (contrib / (d2 + 1e-5));
+    // |diff * contrib/d²| = contrib/d — the same term's length, summed
+    // without cancellation, for the gradient-confidence ratio.
+    gMag += contrib * inverseSqrt(d2 + 1e-5);
+    maxContrib = max(maxContrib, contrib);
   }
 
   // Cosine palette keyed by the same contribution-weighted blend that used
@@ -528,8 +540,16 @@ fn preset(uv: vec2f) -> vec4f {
   let paletteT = fract(P_hue() / 360.0 + (hueAcc / max(field, 1e-4)) / 360.0);
   let pal = cosPalette(paletteT, vec3f(0.5), vec3f(0.42), vec3f(1.0, 1.0, 1.0), vec3f(0.0, 0.33, 0.67));
 
-  // Surface + rim
-  let surface = smoothstep(P_threshold(), P_threshold() * 1.12, field);
+  // Surface + rim. The surface window is widened to at least ~1.5 pixels of
+  // field change (fwidth(field) = per-pixel field delta): the fixed
+  // threshold..1.12x band is 0.12x threshold wide in FIELD space, which at
+  // default scales spans many pixels — there aa is a small fraction of the
+  // band and the look is unchanged — but where iso-lines bunch (merge pinches,
+  // small fast blobs) that same band collapses below a pixel and the
+  // silhouette aliased into an inconsistent hard edge. max() keeps the wider
+  // of the two windows, so edges only ever gain softness, never lose it.
+  let aa = fwidth(field) * 1.5;
+  let surface = smoothstep(P_threshold() - aa, max(P_threshold() * 1.12, P_threshold() + aa), field);
   let rim = smoothstep(P_threshold() * P_rimStart(), P_threshold(), field) * (1.0 - surface);
 
   // Background: dark complementary wash with a slow fbm texture so the void
@@ -550,9 +570,25 @@ fn preset(uv: vec2f) -> vec4f {
   // scaled by the Rotation master). The accumulated field gradient gives the
   // outward surface normal; a tight power makes a sharp chrome/mercury sheen.
   // Confined to the surface, with a little life from the drive envelope.
+  //
+  // Gradient confidence (v2.68): at a merge saddle the per-blob gradients
+  // cancel, normalize() then blows up a near-zero vector and N spins across a
+  // few pixels — the sheen tore into pointy creases exactly along merge lines.
+  // An ABSOLUTE magnitude gate can't fix this portably: at the isosurface of
+  // an isolated blob |nrm| = contrib/d = threshold^1.5/rad, which across the
+  // factory styles (rad 0.05..0.28, threshold 0.78..1.5) spans roughly 4..40,
+  // so any fixed lo/hi window melts one style's gloss while missing another's
+  // saddles. |nrm|/gMag is scale-free: on an isolated flank one term
+  // dominates (a blob at 3x the surface distance adds contrib/d proportional
+  // to 1/d^3, about 4% — even several far blobs leave the ratio above ~0.75)
+  // while equal opposing gradients at a saddle drive it to 0. smoothstep
+  // 0.25..0.7 therefore keeps today's gloss on every isolated-blob flank
+  // (ratio >= 0.7 -> conf = 1) and melts the sheen smoothly to nothing as the
+  // normal loses definition, instead of letting it tear.
+  let conf = smoothstep(0.25, 0.7, length(nrm) / max(gMag, 1e-6));
   let N = normalize(nrm + vec2f(1e-5, 0.0));
   let L = vec2f(cos(radians(P_lightAngle())), sin(radians(P_lightAngle())));
-  let sheen = pow(max(dot(N, L), 0.0), 6.0);
+  let sheen = pow(max(dot(N, L), 0.0), 6.0) * conf;
   col += mix(pal, vec3f(1.0), 0.7) * sheen * surface * P_gloss() * (0.6 + u.drive * 0.5);
 
   // Hot core: the field's own 1/d^2 falloff spikes to huge values only very
@@ -561,7 +597,14 @@ fn preset(uv: vec2f) -> vec4f {
   // interior (field >> threshold everywhere inside) and turned the whole blob
   // into one white mass, the exact blow-out this was meant to avoid. 3x..10x
   // isolates just the nucleus; the tone map then rolls it off as emission.
-  let hot = smoothstep(P_threshold() * 3.0, P_threshold() * 10.0, field);
+  // Keyed off maxContrib, NOT the summed field (v2.68): overlapping blobs
+  // pushed the SUM past 3x threshold over the whole merged region and washed
+  // it blurry white. maxContrib is one ball's own share, so each ball keeps
+  // its tight nucleus and merging never multiplies white area — for an
+  // isolated blob maxContrib == field (minus far-blob crumbs), so the
+  // single-blob nucleus is pixel-identical. Band semantics stay 3x..10x
+  // relative to threshold.
+  let hot = smoothstep(P_threshold() * 3.0, P_threshold() * 10.0, maxContrib);
   col = mix(col, vec3f(1.0, 0.97, 0.92), hot * 0.6);
   col += pal * hot * (0.5 + u.driveBeat * 0.5);
 

@@ -11,6 +11,54 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.68.0] - 2026-08-04
+
+### Added
+
+- **Tunnel: Color fade.** A new slider in the Color section smooths the
+  tunnel's color transitions. At 0 the color still switches with a hard edge
+  exactly as before; raise it and each color crossfades into the next — at
+  maximum the tunnel is always mid-fade, one color melting into the next
+  with no visible switch at all.
+- **Performance display.** App Settings → Performance can now show a live
+  diagnostic overlay over the preview: FPS, frame time, renderer, JS heap,
+  CPU, RAM and disk (GPU shows "—" for now). Off by default; position, size,
+  color and each individual stat are configurable. It is drawn over the
+  preview only and never appears in exports.
+- **Preview resolution.** Also in App Settings → Performance: render the
+  live preview at Native, 75% or 50% resolution. On integrated GPUs the 50%
+  setting is the single biggest smoothness lever — and exports are
+  completely unaffected, they always render at the exact size you pick in
+  the export dialog.
+
+### Fixed
+
+- **Particles: the cutoff lines are gone.** Particles and their glow used to
+  clip along straight lines (horizontal at the default Direction), appearing
+  a couple of minutes into a track and getting worse the longer it played —
+  and changing Direction mid-track could shred the whole frame into smeared
+  strips. The drift field's bookkeeping drifted apart from its drawing over
+  time; both now live in one frame of reference, so the field stays clean at
+  any track position, and the particles now genuinely travel in the chosen
+  Direction (they previously only wandered in place).
+- **Particles: faster.** The same pass removed a pile of per-pixel work that
+  was being burned even when its settings were at zero (clumping noise, beat
+  targets, redundant math in the inner loops) — a real frame-rate lift on
+  integrated GPUs, with identical output.
+- **Metaballs: clean merges.** Merging blobs no longer grow pointy creases
+  at the join (the gloss highlight's surface direction is undefined exactly
+  there — it now fades out smoothly instead of tearing), no longer flood
+  into big blurry white patches (the hot core now belongs to each blob
+  individually instead of summing across overlaps), and silhouette edges
+  stay consistently soft at every scale instead of turning hard and jagged
+  where the field gets steep.
+
+### Changed
+
+- **Internal rename: `starfield` → `particles`.** The Particles mode's
+  internal id now matches its name. Saved projects, looks, presets, layouts
+  and the mode-strip order from any older version migrate automatically.
+
 ## [2.67.0] - 2026-08-03
 
 ### Added

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useVizStore } from "../state/store";
-import { getPrefs, setPrefs, type AppPrefs } from "../state/prefs";
+import { getPrefs, setPrefs, type AppPrefs, type PerfOverlayStats } from "../state/prefs";
 import { isTauri } from "../state/platform";
 import { presets } from "../render/presets";
 import { isDefaultPresetOrder } from "../state/presetOrder";
@@ -29,6 +29,18 @@ type Tab = "general" | "modes" | "performance" | "updates";
 /** Built-in defs by id — the strip order is a list of ids, and this turns it
  * back into names/thumbs. Module-level: the registry cannot change at runtime. */
 const PRESETS_BY_ID = new Map(presets.map((p) => [p.id, p]));
+
+/** The overlay's per-stat visibility checkboxes, in overlay row order. */
+const PERF_STAT_TOGGLES: Array<{ key: keyof PerfOverlayStats; label: string }> = [
+  { key: "fps", label: "FPS" },
+  { key: "frameTime", label: "Frame time" },
+  { key: "renderer", label: "Renderer" },
+  { key: "jsHeap", label: "JS heap" },
+  { key: "cpu", label: "CPU" },
+  { key: "ram", label: "RAM" },
+  { key: "disk", label: "Disk I/O" },
+  { key: "gpu", label: "GPU" },
+];
 
 export function SettingsDialog(props: SettingsDialogProps) {
   const store = useVizStore.getState;
@@ -160,6 +172,31 @@ export function SettingsDialog(props: SettingsDialogProps) {
               Caps only the live preview — exports always render every frame at the exact export
               frame rate, so files are unaffected.
             </p>
+            <div className="field">
+              <span>Preview resolution</span>
+              <Segmented<1 | 0.75 | 0.5>
+                value={prefs.previewScale}
+                onChange={(v) => apply({ previewScale: v })}
+                ariaLabel="Live preview resolution"
+                options={[
+                  { value: 1, label: "Native", hint: "Render the preview at full resolution" },
+                  {
+                    value: 0.75,
+                    label: "75%",
+                    hint: "Render the preview at 75% resolution — a solid FPS boost, barely visible",
+                  },
+                  {
+                    value: 0.5,
+                    label: "50%",
+                    hint: "Render the preview at half resolution — biggest FPS boost on weak GPUs",
+                  },
+                ]}
+              />
+            </div>
+            <p className="section-hint">
+              Lowers only the live canvas — every export still renders at the exact size you pick in
+              the export dialog.
+            </p>
             <SelectRow
               label="GPU preference"
               hint="Which adapter the renderer asks for on dual-GPU machines. Takes effect after a restart."
@@ -173,6 +210,86 @@ export function SettingsDialog(props: SettingsDialogProps) {
               parse={(raw) => raw as AppPrefs["powerPreference"]}
             />
             <p className="section-hint">GPU preference applies the next time the app starts.</p>
+            <ToggleRow
+              label="Performance display"
+              hint="Live FPS / CPU / memory readout drawn over the preview"
+              checked={prefs.perfOverlay}
+              onChange={(v) => apply({ perfOverlay: v })}
+            />
+            {prefs.perfOverlay && (
+              <>
+                <SelectRow
+                  label="Position"
+                  value={prefs.perfOverlayCorner}
+                  options={[
+                    { value: "top-left", label: "Top left" },
+                    { value: "top-right", label: "Top right" },
+                    { value: "bottom-left", label: "Bottom left" },
+                    { value: "bottom-right", label: "Bottom right" },
+                  ]}
+                  onChange={(v) => apply({ perfOverlayCorner: v })}
+                  parse={(raw) => raw as AppPrefs["perfOverlayCorner"]}
+                />
+                <div className="field">
+                  <span>Size</span>
+                  <Segmented<AppPrefs["perfOverlaySize"]>
+                    value={prefs.perfOverlaySize}
+                    onChange={(v) => apply({ perfOverlaySize: v })}
+                    ariaLabel="Performance display size"
+                    options={[
+                      { value: "s", label: "S" },
+                      { value: "m", label: "M" },
+                      { value: "l", label: "L" },
+                    ]}
+                  />
+                </div>
+                <SelectRow
+                  label="Colour"
+                  value={prefs.perfOverlayColor}
+                  options={[
+                    { value: "accent", label: "Theme accent" },
+                    { value: "white", label: "White" },
+                    { value: "green", label: "Green" },
+                    { value: "amber", label: "Amber" },
+                  ]}
+                  onChange={(v) => apply({ perfOverlayColor: v })}
+                  parse={(raw) => raw as AppPrefs["perfOverlayColor"]}
+                />
+                <div className="field">
+                  <span>Stats</span>
+                  <div
+                    role="group"
+                    aria-label="Performance display stats"
+                    style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px" }}
+                  >
+                    {PERF_STAT_TOGGLES.map((s) => (
+                      <label
+                        key={s.key}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={prefs.perfOverlayStats[s.key]}
+                          onChange={(e) =>
+                            apply({
+                              perfOverlayStats: {
+                                ...prefs.perfOverlayStats,
+                                [s.key]: e.target.checked,
+                              },
+                            })
+                          }
+                        />
+                        {s.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+            <p className="section-hint">
+              The performance display is a live diagnostic drawn over the preview only — it is never
+              part of the rendered frame, so it can't appear in exports.
+            </p>
           </>
         )}
 

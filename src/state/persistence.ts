@@ -11,6 +11,8 @@ import {
   type Aspect,
 } from "./project";
 import { validBgByPreset, validCenterImages } from "./project";
+import { migratePresetIdKeys, migrateTimelinePresetIds } from "./project";
+import { canonicalPresetId } from "../render/presets";
 import { validModsByPreset, type ModRoute } from "./modMatrix";
 import { validPost, validMotion } from "./project";
 import type { MotionSettings, PostSettings, PresetDef } from "../render/types";
@@ -156,8 +158,14 @@ if (typeof window !== "undefined") {
   });
 }
 
+/* Every loader below that reads persisted preset ids maps them through
+ * canonicalPresetId / migratePresetIdKeys first (v13 rename, "starfield" ->
+ * "particles"): this cache outlives app updates, and an unmapped legacy key
+ * would silently boot the mode at its defaults. */
+
 export function loadStoredPresetId(): string | null {
-  return localStorage.getItem(LS_PRESET);
+  const id = localStorage.getItem(LS_PRESET);
+  return id === null ? null : canonicalPresetId(id);
 }
 
 export function saveStoredPresetId(id: string): void {
@@ -167,7 +175,7 @@ export function saveStoredPresetId(id: string): void {
 export function loadStoredParams(): Record<string, ParamValues> {
   // Validate like the .avproj path: a corrupt/format-shifted cache must not
   // put a non-finite value into a Float32 uniform (NaN corrupts the visual).
-  return validParamsByPreset(readJson(LS_PARAMS, {}));
+  return validParamsByPreset(migratePresetIdKeys(readJson(LS_PARAMS, {})));
 }
 
 export function saveStoredParams(params: Record<string, ParamValues>): void {
@@ -175,7 +183,7 @@ export function saveStoredParams(params: Record<string, ParamValues>): void {
 }
 
 export function loadStoredSync(): Record<string, SyncSettings> {
-  return validSyncByPreset(readJson(LS_SYNC, {}));
+  return validSyncByPreset(migratePresetIdKeys(readJson(LS_SYNC, {})));
 }
 
 export function saveStoredSync(sync: Record<string, SyncSettings>): void {
@@ -198,7 +206,7 @@ export function saveStoredBg(bg: BgSettings): void {
 export function loadStoredBgByPreset(
   assets: Record<string, OverlayAsset>,
 ): Record<string, BgSettings> {
-  return validBgByPreset(readJson(LS_BG_BY_PRESET, {}), assets);
+  return validBgByPreset(migratePresetIdKeys(readJson(LS_BG_BY_PRESET, {})), assets);
 }
 
 export function saveStoredBgByPreset(v: Record<string, BgSettings>): void {
@@ -209,7 +217,7 @@ export function saveStoredBgByPreset(v: Record<string, BgSettings>): void {
 export function loadStoredCenterImages(
   assets: Record<string, OverlayAsset>,
 ): Record<string, string> {
-  return validCenterImages(readJson(LS_CENTER_IMAGES, {}), assets);
+  return validCenterImages(migratePresetIdKeys(readJson(LS_CENTER_IMAGES, {})), assets);
 }
 
 export function saveStoredCenterImages(v: Record<string, string>): void {
@@ -383,7 +391,7 @@ export function saveStoredBuilderStack(stack: BuilderStack): void {
 }
 
 export function loadStoredTimeline(): Timeline {
-  return validTimeline(readJson(LS_TIMELINE, null));
+  return validTimeline(migrateTimelinePresetIds(readJson(LS_TIMELINE, null)));
 }
 
 export function saveStoredTimeline(timeline: Timeline): void {
@@ -391,7 +399,7 @@ export function saveStoredTimeline(timeline: Timeline): void {
 }
 
 export function loadStoredMods(): Record<string, ModRoute[]> {
-  return validModsByPreset(readJson(LS_MODS, {}));
+  return validModsByPreset(migratePresetIdKeys(readJson(LS_MODS, {})));
 }
 
 export function saveStoredMods(mods: Record<string, ModRoute[]>): void {

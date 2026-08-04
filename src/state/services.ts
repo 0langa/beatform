@@ -6,7 +6,7 @@ import type { BgSettings, ParamValues, PostSettings, PresetDef, Renderer } from 
 import { applyMods, applyPostMods } from "./modMatrix";
 import { resolveActiveFrame, type FrameResolveInput } from "./frameResolve";
 import { presetById } from "../render/presets";
-import { getPrefs } from "./prefs";
+import { getPrefs, subscribePrefs } from "./prefs";
 import type { PlaybackState, SyncSettings } from "../audio/types";
 
 /**
@@ -126,6 +126,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
   let disposed = false;
   let raf = 0;
   let ro: ResizeObserver | null = null;
+  let unsubPrefs: (() => void) | null = null;
   let fallback: ReturnType<typeof setTimeout> | undefined;
   let gpuRetries = 0;
   /** Previous frame's track position, for detecting loop wraps (see below). */
@@ -222,7 +223,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     next.setPreset(hooks.getPreset());
     next.setBackground(hooks.getBackground());
     const r = canvas.getBoundingClientRect();
-    next.resize(r.width, r.height, window.devicePixelRatio);
+    next.resize(r.width, r.height, window.devicePixelRatio * getPrefs().previewScale);
     renderer = next;
     myRenderer = next;
     resyncRenderer(); // a rebuilt renderer must re-receive preset/transition
@@ -240,11 +241,17 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
 
     measure = () => {
       const r = canvas.getBoundingClientRect();
-      renderer?.resize(r.width, r.height, window.devicePixelRatio);
+      // previewScale multiplies the LIVE backing store only — exports size
+      // their own offscreen canvas and never pass through this path.
+      renderer?.resize(r.width, r.height, window.devicePixelRatio * getPrefs().previewScale);
       hooks.onResize?.(canvas.width, canvas.height);
     };
     ro = new ResizeObserver(measure);
     ro.observe(canvas);
+    // Re-measure when prefs change so a new Preview resolution applies
+    // immediately (cheap no-op resize otherwise — resize() early-outs on
+    // unchanged dimensions).
+    unsubPrefs = subscribePrefs(() => measure?.());
 
     let lastUiUpdate = 0;
     /** Smoothed output latency (s); <0 = not sampled yet. */
@@ -461,6 +468,8 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     clearTimeout(fallback);
     cancelAnimationFrame(raf);
     ro?.disconnect();
+    unsubPrefs?.();
+    unsubPrefs = null;
   };
 
   return () => {

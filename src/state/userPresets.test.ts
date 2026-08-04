@@ -41,6 +41,16 @@ describe("user presets (.avpreset)", () => {
     expect(() => parseUserPreset(JSON.stringify(file))).toThrow(UserPresetParseError);
   });
 
+  it("migrates a look saved under a RENAMED mode id (starfield -> particles)", () => {
+    // Pre-v2.68 .avpreset files (and localStorage entries) carry the legacy
+    // id; dropping them as unknown would silently delete the user's looks.
+    const file = JSON.parse(serializeUserPreset(look));
+    file.preset.presetId = "starfield";
+    const parsed = parseUserPreset(JSON.stringify(file));
+    expect(parsed.presetId).toBe("particles");
+    expect(parsed.params).toEqual(look.params);
+  });
+
   it("rejects malformed params", () => {
     const file = JSON.parse(serializeUserPreset(look));
     file.preset.params = { a: "not a number" };

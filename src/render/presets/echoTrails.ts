@@ -651,7 +651,7 @@ fn preset(uv: vec2f) -> vec4f {
   // middle and comes out muddy olive/brown. Hue spin/drift now phase a
   // cosPalette cosine gradient instead — same two knobs, stays saturated.
   // (The classic basis runs its rainbow opposite HSL, hence "1.0 - hue/360" —
-  // see the identical note in starfield.ts.)
+  // see the identical note in particles.ts.)
   let hueT = 1.0 - P_hue() / 360.0;
   // The angular hue term wraps at the SAME joint the spectrum does, and it is
   // its own seam: ang / TAU steps a full -1 at ang = pi, so the palette phase
