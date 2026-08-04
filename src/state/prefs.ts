@@ -58,6 +58,11 @@ export interface AppPrefs {
   fpsCap: 0 | 30 | 60;
   /** WebGPU adapter request hint (dual-GPU laptops). Applies on restart. */
   powerPreference: "default" | "high-performance" | "low-power";
+  /** Live-preview render resolution scale. Multiplies devicePixelRatio for
+   * the LIVE canvas backing store only — exports render offscreen at the
+   * exact chosen output size and are unaffected by construction. 1 = native;
+   * lower trades sharpness for frame rate on weak GPUs. */
+  previewScale: 1 | 0.75 | 0.5;
   /** Check GitHub Releases for updates shortly after launch. */
   updateAutoCheck: boolean;
   /** Active tab of the per-visual settings panel. */
@@ -99,6 +104,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   autosaveIntervalSec: 5,
   fpsCap: 0,
   powerPreference: "default",
+  previewScale: 1,
   updateAutoCheck: true,
   paramsTab: "visual",
   collapsedSections: [],
@@ -179,6 +185,7 @@ function validPrefs(raw: unknown): AppPrefs {
       p.powerPreference === "high-performance" || p.powerPreference === "low-power"
         ? p.powerPreference
         : "default",
+    previewScale: p.previewScale === 0.75 || p.previewScale === 0.5 ? p.previewScale : 1,
     updateAutoCheck: typeof p.updateAutoCheck === "boolean" ? p.updateAutoCheck : d.updateAutoCheck,
     paramsTab:
       p.paramsTab === "sync" ||

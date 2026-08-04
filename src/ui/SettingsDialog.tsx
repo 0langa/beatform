@@ -172,6 +172,31 @@ export function SettingsDialog(props: SettingsDialogProps) {
               Caps only the live preview — exports always render every frame at the exact export
               frame rate, so files are unaffected.
             </p>
+            <div className="field">
+              <span>Preview resolution</span>
+              <Segmented<1 | 0.75 | 0.5>
+                value={prefs.previewScale}
+                onChange={(v) => apply({ previewScale: v })}
+                ariaLabel="Live preview resolution"
+                options={[
+                  { value: 1, label: "Native", hint: "Render the preview at full resolution" },
+                  {
+                    value: 0.75,
+                    label: "75%",
+                    hint: "Render the preview at 75% resolution — a solid FPS boost, barely visible",
+                  },
+                  {
+                    value: 0.5,
+                    label: "50%",
+                    hint: "Render the preview at half resolution — biggest FPS boost on weak GPUs",
+                  },
+                ]}
+              />
+            </div>
+            <p className="section-hint">
+              Lowers only the live canvas — every export still renders at the exact size you pick in
+              the export dialog.
+            </p>
             <SelectRow
               label="GPU preference"
               hint="Which adapter the renderer asks for on dual-GPU machines. Takes effect after a restart."

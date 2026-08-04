@@ -24,15 +24,6 @@ const AUDIO_EXTS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"]
 /// Backstop against scanning a whole drive by accident; the UI says so when hit.
 const MAX_TRACKS: usize = 5000;
 
-/// Recursively scan a user-picked folder for audio files and read their tags.
-///
-/// Gated on the fs plugin scope: tauri-plugin-dialog's folder picker calls
-/// `allow_directory` on the chosen path (recursively — pickFolder passes
-/// `recursive: true`), so a folder the user actually picked passes while an
-/// arbitrary path a compromised renderer invents does not. Without the gate
-/// this walked ANY path and returned up to MAX_TRACKS file paths + tags — a
-/// filesystem-inventory primitive available to any script running in the
-/// webview.
 /// DEBUG BUILDS ONLY: widen the fs scope to one explicit file path, standing
 /// in for the save dialog's `allow_file` so the E2E harness can drive the
 /// sidecar export lanes headlessly. Compiled to a hard error in release —
@@ -52,6 +43,15 @@ fn debug_allow_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
     }
 }
 
+/// Recursively scan a user-picked folder for audio files and read their tags.
+///
+/// Gated on the fs plugin scope: tauri-plugin-dialog's folder picker calls
+/// `allow_directory` on the chosen path (recursively — pickFolder passes
+/// `recursive: true`), so a folder the user actually picked passes while an
+/// arbitrary path a compromised renderer invents does not. Without the gate
+/// this walked ANY path and returned up to MAX_TRACKS file paths + tags — a
+/// filesystem-inventory primitive available to any script running in the
+/// webview.
 #[tauri::command]
 fn scan_audio_library(app: tauri::AppHandle, dir: String) -> Result<Vec<LibraryTrack>, String> {
     let root = std::path::Path::new(&dir);
