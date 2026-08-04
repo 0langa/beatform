@@ -423,7 +423,9 @@ pub fn align_lines(
     Outcome::Done(summary)
 }
 
-fn align_one(
+/// Align ONE line. Public for the `--align-line` mode (phase 4), which
+/// re-runs exactly this on a slice after the user edits a line's text.
+pub fn align_one(
     aligner: &mut Aligner,
     stem16: &[f32],
     track_sec: f64,
