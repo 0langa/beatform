@@ -368,7 +368,35 @@ Acceptance gate:
 
 ### FEAT-004 — Best-possible local automatic lyrics
 
-**Status:** CONSIDERING  
+**Status:** IN PROGRESS — owner approved 2026-08-04 (order swapped with
+FEAT-003; owner does the index repo setup in parallel). Desk research
+complete same day; full cited report at
+`F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\feat004-research.md`.
+
+**Research verdict (2026-08-04):** fully-local pipeline is feasible on the
+reference machine (i5-1135G7/Iris Xe) with an all-MIT/Apache stack and zero
+Python. v1 architecture: one Rust sidecar exe (ffmpeg-sidecar supervision +
+license-isolation pattern) — UVR MDX-Net vocal ONNX (~50–70 MB, MIT) via
+`ort` for isolation → whisper.cpp (MIT, Vulkan ~12× on Intel iGPUs;
+medium/small default, large-v3-turbo documented WORSE on sung vocals) →
+wav2vec2-base-960h (Apache-2.0) ONNX emissions + ~100-line Rust CTC Viterbi
+for word alignment (whisper's own word stamps are ±100–400 ms — not
+karaoke-grade). Separation-as-VAD segmentation matches the published
+open-source SOTA lyrics recipe (arXiv 2506.15514). ~5–10 min per 4-min song
+on the reference machine, cancellable. Models download on first use
+(0.6–2 GB user-chosen tier) from a Beatform-owned GitHub models release,
+SHA-256 pinned. EXCLUSIONS found: torchaudio MMS aligner /
+ctc-forced-aligner weights are CC-BY-NC (poison for free OSS); Demucs v4 =
+RTF ≈ 1.0 + unclear weight license → optional HQ tier later, not v1.
+Ledger corrections: no lyrics editor exists today (only LRC/SRT import +
+styling) — the correction UI is NEW work and the hero feature; the karaoke
+wipe interpolates line duration and needs a per-word schema + wipe upgrade.
+
+**Phases:** (1) legal/eval spike — frozen corpus, license/hash matrix,
+measured RTF/WER on device; (2) isolation + transcription → line-level LRC
+(already-shippable value); (3) word alignment + A2 word-tag LRC + parser/
+schema/wipe upgrade; (4) correction-editor polish. Phase 1 running.
+
 **Size:** Multi-release epic. A cheap Whisper-only MVP is explicitly rejected.
 
 Target pipeline:
