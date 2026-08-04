@@ -261,6 +261,19 @@ export const tunnelRings: PresetDef = {
       hint: "Color variation between ring rows",
     },
     {
+      // Default 0 = the hard palette step every saved look renders today. The
+      // shader skips the blend branch entirely at 0, so old projects (and every
+      // factory style, none of which set this) stay bit-identical.
+      key: "colorFade",
+      label: "Color fade",
+      group: "color",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "Smooths the tunnel's color transitions — 0 is a hard switch, 1 crossfades continuously",
+    },
+    {
       key: "speed",
       label: "Speed",
       group: "motion",
@@ -687,7 +700,35 @@ fn preset(uv: vec2f) -> vec4f {
   // colours instead of a drifting hue (a drifting hue is how this went muddy).
   let t = fract(travel * 0.05 + P_hue() / 360.0);
   let spread = max(P_hueSpread() / 360.0, 0.08);
-  let pal = cosPalette(t, vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, vec3f(0.0, 0.33, 0.67));
+  var pal = cosPalette(t, vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, vec3f(0.0, 0.33, 0.67));
+
+  // Color fade. cosPalette's frequency vector is "spread" -- non-integer over
+  // its whole range -- so cosPalette(1-) != cosPalette(0+) and the fract wrap
+  // above is a hard colour step. travel is per-pixel (depth = 1/r), so that
+  // step is a RING in screen space sweeping outward as travelT advances: the
+  // owner's "abrupt colour switch". The fix crossfades across the wrap
+  // between THE SAME curve one period apart -- cosPalette(t) against
+  // cosPalette(t -/+ 1), i.e. exactly outgoing colour against incoming
+  // colour -- inside a window of width P_colorFade() centred on the wrap.
+  // uw is the signed distance to the nearest wrap and is CONTINUOUS through
+  // it (t: 1- -> 0+ maps to uw: 0- -> 0+), so the mix passes through 50/50
+  // exactly at the seam: C0-continuous in travel for any fade > 0.
+  // smoothstep's flat ends make the window edges seamless too, and outside
+  // the window mw is exactly 0, so the wall matches the unfaded palette
+  // there bit-for-bit. At fade 1 the window spans the whole period -- the
+  // wall is permanently mid-crossfade. Guarded so fade 0 (the default, every
+  // factory style, every saved look) never touches pal at all, and the one
+  // extra cosPalette eval is only paid when the fade is actually on.
+  let fadeW = P_colorFade();
+  if (fadeW > 1e-4) {
+    let hw = fadeW * 0.5;
+    let uw = t - select(0.0, 1.0, t >= 0.5);
+    let m = smoothstep(-hw, hw, uw);
+    let mw = 0.5 - abs(m - 0.5);
+    let palIn = cosPalette(t - select(-1.0, 1.0, t >= 0.5),
+                           vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, vec3f(0.0, 0.33, 0.67));
+    pal = mix(pal, palIn, mw);
+  }
 
   // Circular rings stacked in depth, rushing outward past the viewer. Thin
   // BRIGHT bands on a dark wall (high contrast) read as pipe segments flying

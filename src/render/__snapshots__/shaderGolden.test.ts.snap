@@ -4700,31 +4700,32 @@ exports[`shader golden baseline > synthwave: param ABI (key + default, in order)
 exports[`shader golden baseline > tunnel-rings: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
 fn P_hueSpread() -> f32 { return params[1u]; }
-fn P_speed() -> f32 { return params[2u]; }
-fn P_rings() -> f32 { return params[3u]; }
-fn P_spokes() -> f32 { return params[4u]; }
-fn P_beatPulse() -> f32 { return params[5u]; }
-fn P_curve() -> f32 { return params[6u]; }
-fn P_cruiseFloor() -> f32 { return params[7u]; }
-fn P_curveScale() -> f32 { return params[8u]; }
-fn P_cruiseEnergy() -> f32 { return params[9u]; }
-fn P_beatSpeed() -> f32 { return params[10u]; }
-fn P_tileLevel() -> f32 { return params[11u]; }
-fn P_tileSpectrum() -> f32 { return params[12u]; }
-fn P_pulseWidth() -> f32 { return params[13u]; }
-fn P_tileSat() -> f32 { return params[14u]; }
-fn P_checker() -> f32 { return params[15u]; }
-fn P_groutWidth() -> f32 { return params[16u]; }
-fn P_groutLevel() -> f32 { return params[17u]; }
-fn P_fogNear() -> f32 { return params[18u]; }
-fn P_fogFar() -> f32 { return params[19u]; }
-fn P_centerGlow() -> f32 { return params[20u]; }
-fn P_vignette() -> f32 { return params[21u]; }
-fn P_mirror() -> f32 { return params[22u]; }
-fn P_twist() -> f32 { return params[23u]; }
-fn P_roundness() -> f32 { return params[24u]; }
-fn P_surfaceWarp() -> f32 { return params[25u]; }
-fn P_beatBright() -> f32 { return params[26u]; }
+fn P_colorFade() -> f32 { return params[2u]; }
+fn P_speed() -> f32 { return params[3u]; }
+fn P_rings() -> f32 { return params[4u]; }
+fn P_spokes() -> f32 { return params[5u]; }
+fn P_beatPulse() -> f32 { return params[6u]; }
+fn P_curve() -> f32 { return params[7u]; }
+fn P_cruiseFloor() -> f32 { return params[8u]; }
+fn P_curveScale() -> f32 { return params[9u]; }
+fn P_cruiseEnergy() -> f32 { return params[10u]; }
+fn P_beatSpeed() -> f32 { return params[11u]; }
+fn P_tileLevel() -> f32 { return params[12u]; }
+fn P_tileSpectrum() -> f32 { return params[13u]; }
+fn P_pulseWidth() -> f32 { return params[14u]; }
+fn P_tileSat() -> f32 { return params[15u]; }
+fn P_checker() -> f32 { return params[16u]; }
+fn P_groutWidth() -> f32 { return params[17u]; }
+fn P_groutLevel() -> f32 { return params[18u]; }
+fn P_fogNear() -> f32 { return params[19u]; }
+fn P_fogFar() -> f32 { return params[20u]; }
+fn P_centerGlow() -> f32 { return params[21u]; }
+fn P_vignette() -> f32 { return params[22u]; }
+fn P_mirror() -> f32 { return params[23u]; }
+fn P_twist() -> f32 { return params[24u]; }
+fn P_roundness() -> f32 { return params[25u]; }
+fn P_surfaceWarp() -> f32 { return params[26u]; }
+fn P_beatBright() -> f32 { return params[27u]; }
 
 // The tube's centreline as a lateral offset (tube-radius units) per unit of
 // TRAVEL distance -- two incommensurate sines per axis, so the path bends
@@ -4878,7 +4879,35 @@ fn preset(uv: vec2f) -> vec4f {
   // colours instead of a drifting hue (a drifting hue is how this went muddy).
   let t = fract(travel * 0.05 + P_hue() / 360.0);
   let spread = max(P_hueSpread() / 360.0, 0.08);
-  let pal = cosPalette(t, vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, vec3f(0.0, 0.33, 0.67));
+  var pal = cosPalette(t, vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, vec3f(0.0, 0.33, 0.67));
+
+  // Color fade. cosPalette's frequency vector is "spread" -- non-integer over
+  // its whole range -- so cosPalette(1-) != cosPalette(0+) and the fract wrap
+  // above is a hard colour step. travel is per-pixel (depth = 1/r), so that
+  // step is a RING in screen space sweeping outward as travelT advances: the
+  // owner's "abrupt colour switch". The fix crossfades across the wrap
+  // between THE SAME curve one period apart -- cosPalette(t) against
+  // cosPalette(t -/+ 1), i.e. exactly outgoing colour against incoming
+  // colour -- inside a window of width P_colorFade() centred on the wrap.
+  // uw is the signed distance to the nearest wrap and is CONTINUOUS through
+  // it (t: 1- -> 0+ maps to uw: 0- -> 0+), so the mix passes through 50/50
+  // exactly at the seam: C0-continuous in travel for any fade > 0.
+  // smoothstep's flat ends make the window edges seamless too, and outside
+  // the window mw is exactly 0, so the wall matches the unfaded palette
+  // there bit-for-bit. At fade 1 the window spans the whole period -- the
+  // wall is permanently mid-crossfade. Guarded so fade 0 (the default, every
+  // factory style, every saved look) never touches pal at all, and the one
+  // extra cosPalette eval is only paid when the fade is actually on.
+  let fadeW = P_colorFade();
+  if (fadeW > 1e-4) {
+    let hw = fadeW * 0.5;
+    let uw = t - select(0.0, 1.0, t >= 0.5);
+    let m = smoothstep(-hw, hw, uw);
+    let mw = 0.5 - abs(m - 0.5);
+    let palIn = cosPalette(t - select(-1.0, 1.0, t >= 0.5),
+                           vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, vec3f(0.0, 0.33, 0.67));
+    pal = mix(pal, palIn, mw);
+  }
 
   // Circular rings stacked in depth, rushing outward past the viewer. Thin
   // BRIGHT bands on a dark wall (high contrast) read as pipe segments flying
@@ -4979,6 +5008,10 @@ exports[`shader golden baseline > tunnel-rings: param ABI (key + default, in ord
   {
     "default": 70,
     "key": "hueSpread",
+  },
+  {
+    "default": 0,
+    "key": "colorFade",
   },
   {
     "default": 0.15,
