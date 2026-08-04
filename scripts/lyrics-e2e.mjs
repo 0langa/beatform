@@ -10,6 +10,14 @@
 //      audio -> sidecar -> LRC lands in store.lyrics via loadLyricsText,
 //      timestamps strictly monotonic + PHASE 3: >=80% of lines carry word
 //      timing, word spans sane/monotonic, store notice reports words timed
+//      + PHASE 4: per-line confidence rode the result event into the lines
+//   2b. correction-editor leg on the generated lines, all through __store:
+//      text edit (word timings kept), line + word nudges, split/merge with
+//      a full undo walk back to the pre-edit snapshot, then the round-trip
+//      proof: editor LRC writer -> loadLyricsText -> identical lines incl.
+//      word starts + trailing ends, and a byte-identical second write;
+//      finally a REAL per-line re-align (sidecar --align-line) on the
+//      edited text, words verified against the line + conf attached
 //   3. cancel mid-isolation: phase returns to idle, no lyrics, no error
 //   4. (unless --skip-madness) the owner's dense-mix test file
 //      (Muse - Madness.flac, read in place from devstorage) through the
@@ -153,6 +161,170 @@ function assertWordTiming(lines, label) {
   return aligned;
 }
 
+// --- phase-4 correction-editor leg -----------------------------------------
+const LINES = `JSON.parse(JSON.stringify(window.__store.getState().lyrics))`;
+
+/** Drive the correction editor through the real store actions on the lines
+ * the generation leg just produced: edits, undo walk, writer round-trip,
+ * and a REAL per-line re-align through the sidecar's --align-line mode. */
+async function runEditorLeg(cdp) {
+  const call = (expr) => cdp.eval(`window.__store.getState().${expr}; true`, false);
+  const lines0 = await cdp.eval(LINES, false);
+
+  // Phase-4 conf transport: the result event's lineDetails landed on the
+  // parsed lines (session-side; the LRC itself carries none).
+  const confLines = lines0.filter((l) => typeof l.conf === "number");
+  if (confLines.length === 0) fatal("editor: no line carries aligner confidence");
+  for (const l of confLines) {
+    if (!(l.conf >= 0 && l.conf <= 1)) fatal(`editor: conf out of range: ${l.conf}`);
+  }
+  const withWordConf = lines0.filter(
+    (l) => (l.words ?? []).every((w) => typeof w.conf === "number") && l.words?.length,
+  );
+  if (withWordConf.length === 0) fatal("editor: no per-word confidences arrived");
+  console.log(
+    `EDITOR: conf transport OK — ${confLines.length}/${lines0.length} lines carry confidence`,
+  );
+
+  const wi = lines0.findIndex((l) => l.words && l.words.length >= 3);
+  if (wi < 0) fatal("editor: no word-timed line with >=3 words to edit");
+
+  // -- text edit that keeps the token count: timings must survive ----------
+  const tokens = lines0[wi].text.split(/\s+/);
+  tokens[tokens.length - 1] = "edited";
+  await call(`editLyricLineText(${wi}, ${JSON.stringify(tokens.join(" "))})`);
+  let now = await cdp.eval(LINES, false);
+  if (now[wi].text !== tokens.join(" ")) fatal(`editor: text edit did not land: ${now[wi].text}`);
+  if (now[wi].words.length !== lines0[wi].words.length) {
+    fatal("editor: same-count text edit must keep the word list");
+  }
+  for (let k = 0; k < now[wi].words.length; k++) {
+    if (Math.abs(now[wi].words[k].t - lines0[wi].words[k].t) > 1e-9) {
+      fatal(`editor: word ${k} start moved on a text edit`);
+    }
+  }
+  if (now[wi].words.at(-1).conf !== undefined) fatal("editor: edited word kept its conf");
+
+  // -- line nudge: start + words travel together ----------------------------
+  await call(`nudgeLyricLine(${wi}, 0.05)`);
+  now = await cdp.eval(LINES, false);
+  if (Math.abs(now[wi].t - (lines0[wi].t + 0.05)) > 1e-6) {
+    fatal(`editor: line nudge landed at ${now[wi].t}, expected ${lines0[wi].t + 0.05}`);
+  }
+  if (Math.abs(now[wi].words[0].t - (lines0[wi].words[0].t + 0.05)) > 1e-6) {
+    fatal("editor: line nudge did not move its words");
+  }
+
+  // -- word ops -------------------------------------------------------------
+  const w1Before = now[wi].words[1].t;
+  await call(`nudgeLyricWord(${wi}, 1, 0.02)`);
+  await call(`editLyricWord(${wi}, 0, "yo")`);
+  now = await cdp.eval(LINES, false);
+  if (Math.abs(now[wi].words[1].t - (w1Before + 0.02)) > 1e-6) {
+    fatal("editor: word nudge did not move the word start");
+  }
+  if (!now[wi].text.startsWith("yo ")) fatal(`editor: word edit must re-derive the line text`);
+
+  // -- split + merge, then a full undo walk back ----------------------------
+  const preStructural = await cdp.eval(`JSON.stringify(window.__store.getState().lyrics)`, false);
+  const preLen = now.length;
+  await call(`splitLyricLine(${wi}, ${now[wi].text.indexOf(" ") + 1})`);
+  now = await cdp.eval(LINES, false);
+  if (now.length !== preLen + 1) fatal("editor: split did not add a line");
+  if (now[wi].text !== "yo") fatal(`editor: split first half wrong: ${now[wi].text}`);
+  await call(`mergeLyricLineWithNext(${wi})`);
+  now = await cdp.eval(LINES, false);
+  if (now.length !== preLen) fatal("editor: merge did not remove a line");
+  await call("undoLyricsEdit()");
+  await call("undoLyricsEdit()");
+  const walked = await cdp.eval(`JSON.stringify(window.__store.getState().lyrics)`, false);
+  if (walked !== preStructural) fatal("editor: undo walk did not restore the pre-split state");
+  const depths = await cdp.eval(SNAPSHOT, false);
+  if (depths.redoDepth !== 2) fatal(`editor: redo depth after two undos: ${depths.redoDepth}`);
+  console.log("EDITOR: text/nudge/word/split/merge + undo walk OK");
+
+  // -- round-trip proof: writer -> loadLyricsText -> identical lines --------
+  const preExport = await cdp.eval(LINES, false);
+  const lrcText = await cdp.eval(`window.__lyricsLrc()`, false);
+  writeFileSync(path.join(outDir, "editor-roundtrip.lrc"), lrcText);
+  await cdp.eval(
+    `window.__store.getState().loadLyricsText("editor-roundtrip.lrc", window.__lyricsLrc()); true`,
+    false,
+  );
+  const re = await cdp.eval(LINES, false);
+  if (re.length !== preExport.length) {
+    fatal(`editor: round-trip line count ${re.length} != ${preExport.length}`);
+  }
+  for (let i = 0; i < re.length; i++) {
+    if (Math.abs(re[i].t - preExport[i].t) > 0.006) {
+      fatal(`editor: round-trip line ${i} start ${re[i].t} != ${preExport[i].t}`);
+    }
+    if (re[i].text !== preExport[i].text) {
+      fatal(`editor: round-trip line ${i} text "${re[i].text}" != "${preExport[i].text}"`);
+    }
+    const a = preExport[i].words ?? [];
+    const b = re[i].words ?? [];
+    if (a.length !== b.length)
+      fatal(`editor: round-trip line ${i} word count ${b.length} != ${a.length}`);
+    for (let k = 0; k < a.length; k++) {
+      if (b[k].text !== a[k].text)
+        fatal(`editor: round-trip word text ${b[k].text} != ${a[k].text}`);
+      if (Math.abs(b[k].t - a[k].t) > 0.006)
+        fatal(`editor: round-trip word start ${b[k].t} != ${a[k].t}`);
+      const aEnd = a[k].end;
+      const bEnd = b[k].end;
+      if ((aEnd == null) !== (bEnd == null))
+        fatal(`editor: round-trip word end nullity differs at line ${i} word ${k}`);
+      if (aEnd != null && Math.abs(bEnd - aEnd) > 0.006)
+        fatal(`editor: round-trip word end ${bEnd} != ${aEnd}`);
+      if (b[k].conf !== undefined) fatal("editor: conf must NOT survive the artifact");
+    }
+  }
+  const secondWrite = await cdp.eval(`window.__lyricsLrc()`, false);
+  if (secondWrite !== lrcText) fatal("editor: second write is not byte-identical");
+  const resetDepths = await cdp.eval(SNAPSHOT, false);
+  if (resetDepths.undoDepth !== 0) fatal("editor: re-import must reset the edit history");
+  console.log(
+    `EDITOR: round-trip OK — ${re.length} lines incl. words survive writer->parser byte-stable`,
+  );
+
+  // -- REAL per-line re-align (sidecar --align-line) ------------------------
+  const target = re.findIndex((l) => l.words && l.words.length >= 3);
+  if (target < 0) fatal("editor: no line to re-align");
+  const targetText = re[target].text;
+  await call(`realignLyricLine(${target})`);
+  const t0 = Date.now();
+  for (;;) {
+    const snap = await cdp.eval(SNAPSHOT, false);
+    if (snap.error) fatal(`editor: re-align surfaced error: ${snap.error}`);
+    if (snap.realign === null && Date.now() - t0 > 2_000) break;
+    if (Date.now() - t0 > 180_000) fatal("editor: re-align timed out");
+    await sleep(1000);
+  }
+  const aligned = await cdp.eval(LINES, false);
+  const words = aligned[target].words ?? [];
+  if (words.length === 0) fatal("editor: re-align produced no words");
+  if (words.map((w) => w.text).join(" ") !== targetText.split(/\s+/).join(" ")) {
+    fatal(`editor: re-aligned words diverge from the line text`);
+  }
+  for (let k = 0; k < words.length; k++) {
+    if (!(typeof words[k].conf === "number" && words[k].conf >= 0 && words[k].conf <= 1)) {
+      fatal(`editor: re-aligned word ${k} has no conf`);
+    }
+    if (k > 0 && words[k].t < words[k - 1].t) fatal("editor: re-aligned words not monotonic");
+  }
+  if (words[0].t < aligned[target].t - 0.7) {
+    fatal(
+      `editor: re-aligned first word ${words[0].t.toFixed(2)} far before line ${aligned[target].t.toFixed(2)}`,
+    );
+  }
+  if (typeof aligned[target].conf !== "number") fatal("editor: re-align must set line conf");
+  const spans = words
+    .map((w) => `${w.t.toFixed(2)}${w.end != null ? `-${w.end.toFixed(2)}` : ""} ${w.text}`)
+    .join(" | ");
+  console.log(`EDITOR: re-align OK on line ${target} ("${targetText}") -> ${spans}`);
+}
+
 // --- media server: corpus + Madness, read in place -------------------------
 const MEDIA = {
   "/ssb.wav": path.join(CORPUS, "ssb-navy-solo.wav"),
@@ -269,6 +441,9 @@ const SNAPSHOT = `(() => {
     dl: s.lyricsGen.download,
     lyricsLen: s.lyrics ? s.lyrics.length : null,
     fileName: s.lyricFileName,
+    realign: s.lyricsRealign ? s.lyricsRealign.index : null,
+    undoDepth: s.lyricsEditUndoDepth,
+    redoDepth: s.lyricsEditRedoDepth,
     error: s.error,
     notice: s.notice,
   };
@@ -509,6 +684,9 @@ try {
   );
   console.log(`GEN NOTICE: ${done.notice}`);
 
+  // ---- 2b. the correction editor on those lines --------------------------
+  await runEditorLeg(cdp);
+
   // ---- 3. cancel mid-isolation -------------------------------------------
   await cdp.eval(`window.__store.getState().clearLyrics(); true`, false);
   await cdp.eval(`window.__store.getState().generateLyrics("small", "auto"); true`, false);
@@ -616,7 +794,8 @@ try {
   }
 
   console.log(
-    "LYRICS-E2E OK: download+cancel+resume+verify, corpus generation, mid-run cancel" +
+    "LYRICS-E2E OK: download+cancel+resume+verify, corpus generation, editor leg " +
+      "(conf transport, edits, undo walk, LRC round-trip, real re-align), mid-run cancel" +
       (args.has("--skip-madness") ? "" : ", dense-mix generation + stem comparison") +
       " all pass",
   );
