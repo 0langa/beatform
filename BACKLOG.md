@@ -63,11 +63,11 @@ Current product constraints remain:
 
 Work top to bottom unless fresh evidence changes priority.
 
-| Order | ID       | Status      | Work                                            |
-| ----- | -------- | ----------- | ----------------------------------------------- |
-| 1     | FEAT-003 | CONSIDERING | Design a trusted, seeded community preset index |
-| 2     | FEAT-004 | CONSIDERING | Best-possible local automatic lyrics epic       |
-| 3     | FEAT-009 | CONSIDERING | True second-display performance window          |
+| Order | ID       | Status      | Work                                           |
+| ----- | -------- | ----------- | ---------------------------------------------- |
+| 1     | FEAT-004 | IN PROGRESS | Local automatic lyrics epic — phase 2 building |
+| 2     | FEAT-003 | IN PROGRESS | Gallery: skeleton built; gated on EXT-RENAME   |
+| 3     | FEAT-009 | CONSIDERING | True second-display performance window         |
 
 `VERIFY-003` **closed 2026-08-04** — found the MIDI transport double-dead
 (unbound `requestMIDIAccess` + unhandled WebView2 permission), both fixed
