@@ -29,6 +29,7 @@ import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../rende
 import { MOD_SOURCES, POST_TARGET_PREFIX, type ModRoute, type ModSource } from "../state/modMatrix";
 import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../audio/stems";
 import { LYRIC_ANIMS, type LyricStyle } from "../state/lyrics";
+import { LyricsGenPanel } from "./LyricsGenPanel";
 import type { AudiogramSettings } from "../state/audiogram";
 import {
   allParams,
@@ -1592,7 +1593,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       id: "Lyrics",
       title: "Lyrics",
       tab: "text",
-      search: "lyrics lrc srt karaoke position animation slide pop size fade color import timed",
+      search:
+        "lyrics lrc srt karaoke position animation slide pop size fade color import timed generate ai whisper local transcribe vocals",
       body: (
         <>
           <div className="save-look-row">
@@ -1703,6 +1705,9 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               music, karaoke-style, live and in every export.
             </p>
           )}
+          {/* Local automatic lyrics (FEAT-004): generate an .lrc from the
+              loaded track — the result lands exactly where an import would. */}
+          {!props.lyricFileName && <LyricsGenPanel />}
         </>
       ),
     },

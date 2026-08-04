@@ -1,3 +1,9 @@
+[workspace]
+# The app package is the workspace root; the lyrics sidecar (FEAT-004) builds
+# as a separate exe exactly like the ffmpeg sidecar ships as a separate exe —
+# one workspace so fmt/clippy/test cover both in one invocation.
+members = ["lyrics-sidecar"]
+
 [package]
 name = "beatform"
 version = "2.68.1"
@@ -33,6 +39,14 @@ naga = { version = "30", features = ["glsl-in", "spv-in", "wgsl-out"] }
 # Perf overlay stats (CPU/RAM/disk). "system" only — no disk-list, network,
 # component or gpu features; the overlay needs processes + memory + cpu.
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+# Lyrics model manager (lyrics.rs): resumable, SHA-256-verified downloads
+# from the Beatform-owned models release. EXACTLY the updater's TLS recipe
+# (reqwest rustls-no-provider + rustls/ring): all three crates are already
+# in the tree via tauri-plugin-updater, so this adds no new tree entries —
+# reqwest's plain `rustls` feature would drag in the aws-lc-rs/quinn subtree.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+sha2 = "0.10"
 
 [target."cfg(windows)".dependencies]
 # Web MIDI permission handler (midi_permission.rs): Chromium denies

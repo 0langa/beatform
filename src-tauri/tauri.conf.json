@@ -34,8 +34,13 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
-    "externalBin": ["binaries/ffmpeg"],
-    "resources": ["binaries/FFMPEG-LICENSE.txt"],
+    "externalBin": ["binaries/ffmpeg", "binaries/lyrics-sidecar"],
+    "resources": [
+      "binaries/FFMPEG-LICENSE.txt",
+      "binaries/WHISPER-LICENSE.txt",
+      "binaries/whisper/",
+      "binaries/onnxruntime/"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

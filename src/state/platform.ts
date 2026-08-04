@@ -7,6 +7,7 @@
  */
 
 import { getPrefs, setPrefs } from "./prefs";
+import type { LyricsModelsState } from "./lyricsGen";
 
 export function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in window;
@@ -237,6 +238,86 @@ export async function proresFinish(): Promise<void> {
 export async function proresAbort(): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("prores_abort");
+}
+
+// --- Local automatic lyrics (desktop only, FEAT-004) ---
+// The Rust side owns every path and spawns the sidecar; these wrappers move
+// options, bytes and progress lines. All are Tauri-only — the UI shows the
+// feature disabled in the browser build.
+
+/** Manifest + install/resume state of the lyrics models. */
+export async function lyricsModelsState(): Promise<LyricsModelsState> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<LyricsModelsState>("lyrics_models_state");
+}
+
+/** Download one model (Range-resume + SHA-256 verify on the Rust side).
+ * `onProgress` receives raw JSON lines — parse with parseDownloadProgress. */
+export async function lyricsModelDownload(
+  id: string,
+  onProgress: (line: string) => void,
+): Promise<void> {
+  const { invoke, Channel } = await import("@tauri-apps/api/core");
+  const ch = new Channel<string>();
+  ch.onmessage = onProgress;
+  await invoke("lyrics_model_download", { id, onProgress: ch });
+}
+
+export async function lyricsDownloadCancel(): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("lyrics_download_cancel");
+}
+
+/** Re-hash an installed model against the compiled-in manifest. */
+export async function lyricsModelVerify(id: string): Promise<boolean> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("lyrics_model_verify", { id });
+}
+
+export async function lyricsModelRemove(id: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("lyrics_model_remove", { id });
+}
+
+/** Can the sidecar create DirectML sessions here? Cached Rust-side. */
+export async function lyricsGpuProbe(): Promise<boolean> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("lyrics_gpu_probe");
+}
+
+/** Stage the loaded track's WAV for generation (ProRes-style chunking —
+ * the sidecar reads a file, and this works for every track source). */
+export async function lyricsStageAudio(wav: Uint8Array): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("lyrics_audio_begin");
+  for (let off = 0; off < wav.length; off += WAV_CHUNK_BYTES) {
+    // slice(), not subarray(): the invoke body must start at byte offset 0.
+    await invoke("lyrics_audio_chunk", wav.slice(off, Math.min(wav.length, off + WAV_CHUNK_BYTES)));
+  }
+  await invoke("lyrics_audio_end");
+}
+
+/** Run the whole pipeline on the staged audio. Resolves with the LRC text;
+ * `onEvent` receives the sidecar's raw JSON lines (parseSidecarEvent).
+ * Rejects with the string "cancelled" on a user cancel. */
+export async function lyricsGenerate(
+  opts: { whisperModelId: string; useGpu: boolean; language: string },
+  onEvent: (line: string) => void,
+): Promise<string> {
+  const { invoke, Channel } = await import("@tauri-apps/api/core");
+  const ch = new Channel<string>();
+  ch.onmessage = onEvent;
+  return invoke<string>("lyrics_generate", {
+    whisperModelId: opts.whisperModelId,
+    useGpu: opts.useGpu,
+    language: opts.language,
+    onEvent: ch,
+  });
+}
+
+export async function lyricsGenerateCancel(): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("lyrics_generate_cancel");
 }
 
 // --- Disk pre-flight (desktop only) ---

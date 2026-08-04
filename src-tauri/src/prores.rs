@@ -80,7 +80,9 @@ fn temp_path(name: &str, seq: u64) -> PathBuf {
 /// `create_new` fails if ANYTHING is already at the path, symlink included, so
 /// there is no follow to exploit. On collision we advance the sequence rather
 /// than deleting what is there — deleting would reintroduce the TOCTOU.
-fn create_temp_new(name: &str) -> Result<(File, PathBuf), String> {
+/// pub(crate): the lyrics staging path (lyrics.rs) has the exact same
+/// predictable-%TEMP%-name exposure and reuses this primitive.
+pub(crate) fn create_temp_new(name: &str) -> Result<(File, PathBuf), String> {
     use std::sync::atomic::Ordering;
     for _ in 0..64 {
         let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);

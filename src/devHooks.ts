@@ -83,6 +83,18 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
   (window as unknown as { __runGpuMatrix: unknown }).__runGpuMatrix = runGpuPixelMatrix;
   // The app's store instance (HMR-safe), for state assertions in E2E runs
   (window as unknown as { __store: unknown }).__store = useVizStore;
+  // Tauri invoke via the APP's module graph. CDP `Runtime.evaluate` cannot
+  // resolve bare specifiers (`import("@tauri-apps/api/core")` throws in the
+  // eval context — the v2.68.1 lesson), so harnesses that need an IPC call
+  // (lyrics-e2e: debug_set_lyrics_models_dir, lyrics_model_verify) reach it
+  // through this hook instead. DEV-gated like every other probe here.
+  (window as unknown as { __invoke: unknown }).__invoke = async (
+    cmd: string,
+    invokeArgs?: Record<string, unknown>,
+  ) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke(cmd, invokeArgs);
+  };
   // The live audio engine, for E2E probes (module import from the console
   // would get a DIFFERENT instance — "services not initialized").
   (window as unknown as { __engine: unknown }).__engine = getEngine();
