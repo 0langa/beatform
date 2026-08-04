@@ -227,10 +227,11 @@ describe("tier math", () => {
 describe("time estimates (sustained-thermal — spike adjustment 1)", () => {
   it("a 4-minute song lands in the spike's measured windows", () => {
     const d = 240;
-    // GPU-assisted small: REPORT projects ≈4 min total.
+    // GPU-assisted small: REPORT projects ≈4 min; phase 3 adds the CPU-only
+    // align leg (device 0.1-0.4 RTF across thermal states).
     const dmlSmall = estimateGenerateSeconds(d, "small", true);
     expect(dmlSmall.lowSec).toBeGreaterThan(120);
-    expect(dmlSmall.highSec).toBeLessThan(6.5 * 60);
+    expect(dmlSmall.highSec).toBeLessThan(7 * 60);
     // CPU-only medium: REPORT says 15-18 min per song; the range must
     // contain it (sustained numbers, not cold-run flattery).
     const cpuMedium = estimateGenerateSeconds(d, "medium", false);

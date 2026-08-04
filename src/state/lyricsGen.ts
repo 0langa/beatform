@@ -198,9 +198,10 @@ const WHISPER_RTF: Record<LyricsTier, { low: number; high: number }> = {
   medium: { low: 1.5, high: 2.1 }, // measured 1.5-2.01
 };
 /** Word alignment (phase 3, CPU-only by design — DML measured 4x slower for
- * this model). Spike: emissions RTF 0.095 cold; the range covers thermal
- * degradation and the per-line window padding overlap. */
-const ALIGN_RTF = { low: 0.05, high: 0.2 };
+ * this model). Device: whole-stage RTF 0.12-0.14 cool (corpus + dense-mix
+ * runs), 0.37 thermally degraded — the high end honors adjustment 1's
+ * sustained-thermal rule, same as the other stages. */
+const ALIGN_RTF = { low: 0.1, high: 0.4 };
 /** decode + VAD + assembly + model/session loads. */
 const OVERHEAD_SEC = { low: 8, high: 25 };
 

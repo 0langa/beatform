@@ -7,7 +7,8 @@
 //! 4x SLOWER for this model — REPORT adjustment 2), then a classic CTC
 //! Viterbi trellis over the line's characters (blank-interleaved states,
 //! log-space, backtracked) → per-character frames → per-word spans with a
-//! confidence (geometric-mean probability of the chosen frames).
+//! confidence (geometric mean of per-char peak-relative probabilities —
+//! see TokenSpan for why peak and why relative).
 //!
 //! Failure is always LOCAL: a line whose alignment fails keeps line-level
 //! timing (empty `words`) and the job continues — never abort a whole
@@ -31,14 +32,14 @@ pub const PAD_SEC: f64 = 0.4;
 const MAX_WINDOW_SEC: f64 = 35.0;
 const MIN_WINDOW_SEC: f64 = 0.25;
 /// A line whose mean word confidence lands below this is flagged in the
-/// result ("N low-confidence lines"); failed lines count too. Calibrated on
-/// device against the eval corpus: a speech model scoring SUNG chars sits
-/// far below speech-typical confidence even when the alignment is visibly
-/// right — clean well-aligned anthem lines scored 0.18-0.41 (peak-based
-/// geometric mean) while lines with transcript-vs-audio mismatches or
-/// extreme melisma scored 0.03-0.09. The threshold separates those bands;
-/// 0.5 (speech intuition) flagged 6/7 perfectly-usable lines.
-pub const LOW_CONF: f64 = 0.15;
+/// result ("N low-confidence lines"); failed lines count too. Confidence is
+/// the peak-RELATIVE reading (TokenSpan::peak_rel_logp), so the scale
+/// survives int8 quantization. Device-calibrated with the SHIPPED int8
+/// model: eval-corpus lines split 0.036/0.178 (the two genuinely shaky
+/// lines) vs 0.228-0.602 (visibly-correct); the owner's dense mix split
+/// 0.002-0.131 (whisper fragments / transcript-vs-audio mismatches) vs
+/// 0.292-0.841 (real sung lines). 0.2 sits inside the measured gap on both.
+pub const LOW_CONF: f64 = 0.2;
 
 // ---------------------------------------------------------------------------
 // Vocab
@@ -143,19 +144,28 @@ pub fn tokenize(text: &str, vocab: &Vocab) -> LineTokens {
 // ---------------------------------------------------------------------------
 // CTC Viterbi forced alignment (pure — testable without a model)
 
-/// One aligned token: frame span plus two confidence readings. `peak_logp`
-/// (the best single frame of the char) is what the word confidence uses —
-/// on SUNG vocals a held note forces the char onto many frames where the
-/// model prefers blank, so a frame-mean punishes correct alignments of long
-/// notes; the peak still separates "the model saw this char here" from "this
-/// text is not in the audio". The frame-mean stays available for diagnostics.
+/// One aligned token: frame span plus two confidence readings.
+///
+/// `peak_rel_logp` — the word-confidence input — is the best value across
+/// the span of `logp[char] - logp[argmax]` (0 = at least one frame where
+/// the model's TOP choice was this char). Two properties matter here, both
+/// device-measured:
+/// - PEAK, not frame-mean: singing holds notes and the model votes blank
+///   through the hold — a frame-mean flags perfectly-aligned melisma.
+/// - RELATIVE, not absolute: int8 quantization (the shipped model) keeps
+///   the argmax but shifts logit magnitudes, so absolute probabilities
+///   change scale between fp32 and int8; the ratio to the frame's best
+///   token is stable across both. Absolute-peak confidence calibrated on
+///   fp32 flagged 6/7 good lines on int8.
+///
+/// `mean_logp` (absolute frame-mean) stays for diagnostics.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TokenSpan {
     pub start: usize,
     /// Exclusive.
     pub end: usize,
     pub mean_logp: f64,
-    pub peak_logp: f64,
+    pub peak_rel_logp: f64,
 }
 
 /// Forced alignment of `tokens` against per-frame log-probabilities.
@@ -233,7 +243,7 @@ pub fn viterbi_token_spans(
             start: usize::MAX,
             end: 0,
             mean_logp: 0.0,
-            peak_logp: f64::NEG_INFINITY,
+            peak_rel_logp: f64::NEG_INFINITY,
         };
         n
     ];
@@ -246,8 +256,9 @@ pub fn viterbi_token_spans(
                 span.end = t + 1;
             }
             let frame_logp = logp[t][tokens[tok] as usize] as f64;
+            let frame_best = logp[t].iter().cloned().fold(f32::NEG_INFINITY, f32::max) as f64;
             span.mean_logp += frame_logp; // running sum; divided below
-            span.peak_logp = span.peak_logp.max(frame_logp);
+            span.peak_rel_logp = span.peak_rel_logp.max(frame_logp - frame_best);
         }
         if t > 0 {
             state -= bp[t][state] as usize;
@@ -441,15 +452,18 @@ fn align_one(
     let spans = viterbi_token_spans(&logp, &toks.tokens, aligner.vocab.blank)?;
 
     // Token spans -> display-word spans (window-relative seconds). Word
-    // confidence = geometric mean of the per-CHAR PEAK probabilities (see
-    // TokenSpan: frame-means punish held notes; peaks catch fabricated text).
+    // confidence = geometric mean of the per-CHAR peak-RELATIVE
+    // probabilities (see TokenSpan: frame-means punish held notes, absolute
+    // scales drift under quantization; the ratio-to-argmax catches
+    // fabricated text and survives both).
     let display: Vec<&str> = line.text.split_whitespace().collect();
     let mut aligned: Vec<Option<(f64, f64, f64)>> = Vec::with_capacity(display.len());
     for range in &toks.word_ranges {
         aligned.push(range.map(|(a, b)| {
             let start = spans[a].start as f64 * FRAME_SEC;
             let end = spans[b - 1].end as f64 * FRAME_SEC;
-            let peak_mean = spans[a..b].iter().map(|s| s.peak_logp).sum::<f64>() / (b - a) as f64;
+            let peak_mean =
+                spans[a..b].iter().map(|s| s.peak_rel_logp).sum::<f64>() / (b - a) as f64;
             (ws + start, ws + end, peak_mean.exp())
         }));
     }
@@ -571,9 +585,10 @@ mod tests {
         assert_eq!(spans.len(), 2);
         assert_eq!((spans[0].start, spans[0].end), (2, 5));
         assert_eq!((spans[1].start, spans[1].end), (6, 9));
-        // Both readings close to exp(-0.01) ~ 0.99 on sharp emissions.
+        // Sharp emissions: absolute mean near exp(-0.01), and the chosen
+        // char IS the argmax on its frames, so the relative peak is 0.
         assert!(spans[0].mean_logp > -0.02 && spans[0].mean_logp <= 0.0);
-        assert!(spans[0].peak_logp > -0.02 && spans[0].peak_logp <= 0.0);
+        assert!(spans[0].peak_rel_logp.abs() < 1e-9, "{spans:?}");
     }
 
     #[test]
@@ -605,20 +620,21 @@ mod tests {
     }
 
     #[test]
-    fn peak_confidence_forgives_held_notes_but_not_missing_chars() {
-        // A "held note": token A occupies 5 frames, the model votes blank on
-        // 4 of them (logp -6) but clearly sees A once (-0.01). The peak
-        // reading stays high while the frame-mean collapses — exactly why
-        // word confidence uses the peak (singing melisma is not an error).
+    fn peak_relative_confidence_forgives_held_notes_but_not_missing_chars() {
+        // A "held note": token A wins exactly one frame and the model votes
+        // blank through the rest of the hold. The peak-relative reading
+        // stays at 0 (A was the argmax somewhere) while a frame-mean would
+        // collapse — singing melisma is not an error.
         let mut logp = emissions(&[0, 7, 0, 0, 0, 0, 24], 32);
         for row in logp.iter_mut().take(5).skip(1) {
             row[0] = -0.2; // blank plausible everywhere in the hold
         }
         let spans = viterbi_token_spans(&logp, &[7, 24], 0).unwrap();
-        assert!(spans[0].peak_logp > -0.02, "{spans:?}");
-        // A char the model NEVER saw scores a low peak too.
+        assert!(spans[0].peak_rel_logp.abs() < 1e-9, "{spans:?}");
+        // A char the model NEVER saw scores far below the frame's argmax on
+        // every frame — low relative peak, low confidence, flagged.
         let absent = emissions(&[0, 0, 0], 32); // pure blank audio
         let spans = viterbi_token_spans(&absent, &[7], 0).unwrap();
-        assert!(spans[0].peak_logp < -5.0, "{spans:?}");
+        assert!(spans[0].peak_rel_logp < -5.0, "{spans:?}");
     }
 }
