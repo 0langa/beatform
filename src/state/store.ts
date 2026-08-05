@@ -145,6 +145,8 @@ import { lyricsEditActions } from "./slices/lyricsEditActions";
 import { lyricsGenActions } from "./slices/lyricsGenActions";
 import { midiActions } from "./slices/midiActions";
 import { overlayActions } from "./slices/overlayActions";
+import { galleryActions } from "./slices/galleryActions";
+import type { GalleryEntry } from "./gallery";
 import { projectIOActions } from "./slices/projectIOActions";
 import { stemsModsActions } from "./slices/stemsModsActions";
 
@@ -252,6 +254,16 @@ interface SessionSlice {
    */
   recoveredDoc: ProjectDocument | null;
   userPresets: UserPreset[];
+  /** Gallery (public curated registry) browser state — session-only. */
+  galleryStatus: "idle" | "loading" | "ready" | "error";
+  galleryError: string | null;
+  galleryEntries: GalleryEntry[];
+  /** entry id -> verified blob: URL for the preview image. */
+  galleryPreviews: Record<string, string>;
+  /** entry id currently downloading/installing, else null. */
+  galleryBusy: string | null;
+  /** entry ids installed this session (button turns into a checkmark). */
+  galleryInstalled: Record<string, boolean>;
   /** Track metadata for {title}/{artist} overlay templates. */
   trackMeta: OverlayMeta;
   /** Cover art extracted from the loaded file's tags (session-only). */
@@ -411,6 +423,10 @@ interface Actions {
   importThemeText(contents: string): void;
   /** Save the current setup as a shareable .bftheme file. */
   exportCurrentTheme(meta: ThemeMeta): Promise<void>;
+  /** Load (or refresh) the Gallery registry + verified previews. */
+  openGallery(): Promise<void>;
+  /** Download, verify, parse and install/apply one Gallery entry. */
+  installGalleryEntry(id: string): Promise<void>;
   toggleLiveInput(): Promise<void>;
   /** Kick off (once) the lazy thumbnail render for the preset strip. */
   loadPresetThumbnails(): void;
@@ -1048,6 +1064,12 @@ export const useVizStore = create<VizState>((set, get) => {
     notice: null,
     recoveredDoc: null,
     userPresets: loadUserPresets(),
+    galleryStatus: "idle" as const,
+    galleryError: null,
+    galleryEntries: [],
+    galleryPreviews: {},
+    galleryBusy: null,
+    galleryInstalled: {},
     trackMeta: { title: "", artist: "" },
     coverArt: null,
     coverPalette: null,
@@ -1137,6 +1159,7 @@ export const useVizStore = create<VizState>((set, get) => {
     ...stemsModsActions(set, get, ctx),
     ...midiActions(set, get, ctx),
     ...projectIOActions(set, get, ctx),
+    ...galleryActions(set, get, ctx),
 
     initApp(canvas) {
       liveCanvas = canvas;

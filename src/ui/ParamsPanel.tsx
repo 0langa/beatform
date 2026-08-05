@@ -24,6 +24,7 @@ import {
 import type { UserPreset } from "../state/userPresets";
 import { ASPECTS, type Aspect, type ProjectDocument } from "../state/project";
 import { FACTORY_THEMES } from "../state/factoryThemes";
+import { GallerySection } from "./GallerySection";
 import type { ThemeMeta } from "../state/themes";
 import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
 import { MOD_SOURCES, POST_TARGET_PREFIX, type ModRoute, type ModSource } from "../state/modMatrix";
@@ -939,6 +940,14 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
           )}
         </>
       ),
+    },
+    {
+      id: "Gallery",
+      title: "Gallery",
+      tab: "visual",
+      search:
+        "gallery community browse download install looks themes presets share submit online registry",
+      body: <GallerySection />,
     },
     // ---------------- Sync ----------------
     {

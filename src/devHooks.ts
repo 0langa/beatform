@@ -14,6 +14,10 @@ import { runBatch } from "./state/batchRunner";
 import type { ProjectDocument } from "./state/project";
 import { runGpuPixelMatrix } from "./render/gpuMatrix";
 import { getPrefs, setPrefs } from "./state/prefs";
+import { newUserPresetId, serializeUserPreset } from "./state/userPresets";
+import { serializeTheme, type ThemeMeta } from "./state/themes";
+import { presets } from "./render/presets";
+import { APP_VERSION } from "./version";
 import { pcmFromAudioBuffer } from "./audio/offlineSource";
 import { wavFromPcm } from "./audio/dsp/wav";
 import { proresSetAudio, av1Begin, proresWrite, proresFinish, proresAbort } from "./state/platform";
@@ -108,6 +112,48 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
   // source) — lets E2E prove caps/scale act on PRESENTS, not rAF ticks.
   (window as unknown as { __presentedFrames: unknown }).__presentedFrames = getPresentedFrames;
   (window as unknown as { __analyzer: unknown }).__analyzer = getAnalyzer();
+  // Gallery seed tooling (FEAT-003): dump every mode's param schema + factory
+  // styles so candidate looks can be designed offline...
+  (window as unknown as { __presets: unknown }).__presets = () =>
+    presets.map((p) => ({
+      id: p.id,
+      name: p.name,
+      params: p.params.map((s) => ({
+        key: s.key,
+        label: s.label,
+        min: s.min,
+        max: s.max,
+        default: s.default,
+        group: s.group ?? null,
+      })),
+      styles: (p.styles ?? []).map((st) => ({ id: st.id, name: st.name, values: st.values })),
+    }));
+  // ...and serialize the CURRENT setup through the app's own writers, so a
+  // seed .bfpreset/.bftheme is byte-for-byte what the real export buttons
+  // would produce (same schema versions, same field rules).
+  (window as unknown as { __gallerySerialize: unknown }).__gallerySerialize = (
+    kind: "look" | "theme",
+    meta: { name: string; author?: string; description?: string },
+  ) => {
+    const s = store();
+    if (kind === "look") {
+      return serializeUserPreset({
+        id: newUserPresetId(),
+        name: meta.name,
+        presetId: s.presetId,
+        params: { ...(s.paramsByPreset[s.presetId] ?? {}) },
+        ...(s.syncByPreset[s.presetId] ? { sync: s.syncByPreset[s.presetId] } : {}),
+        createdAt: new Date().toISOString(),
+      });
+    }
+    const themeMeta: ThemeMeta = {
+      name: meta.name,
+      author: meta.author ?? "Beatform",
+      license: "CC0-1.0",
+      ...(meta.description !== undefined ? { description: meta.description } : {}),
+    };
+    return serializeTheme(docFromState(s), themeMeta, APP_VERSION);
+  };
   (window as unknown as { __prefs: unknown }).__prefs = { get: getPrefs, set: setPrefs };
   // UI clipping auditor for the browser-pane harness (referenced by the
   // testing hand-off): walks a scope's visible DOM and reports horizontally
