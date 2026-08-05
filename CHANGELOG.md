@@ -11,6 +11,23 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.71.0] - 2026-08-05
+
+### Added
+
+- **Gallery — browse and install community looks and themes.** The Visual
+  tab has a new Gallery section: browse a public, reviewed collection of
+  looks and themes, see who made each one and under which license, and
+  add a look to My Looks or apply a theme in one click. Built for trust:
+  nothing loads until you press Browse, every entry is pinned to an
+  immutable version, and every download is size-checked and
+  checksum-verified before Beatform even parses it — a tampered or
+  corrupted file simply refuses to install. Entries made for a newer
+  Beatform show up but wait politely for you to update. The first curated
+  seed collection is in review and will appear in the Gallery on its own —
+  no app update needed. Want yours listed? Submissions are reviewed on
+  GitHub (beatform-app/gallery).
+
 ## [2.70.0] - 2026-08-05
 
 ### Changed
