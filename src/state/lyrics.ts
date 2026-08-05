@@ -17,7 +17,7 @@ export interface LyricLine {
    * the local pipeline's forced aligner or imported from elsewhere. Absent on
    * plain lines; the karaoke wipe then falls back to linear interpolation.
    * Session-only like the lines themselves: lyrics are NOT serialized into
-   * .avproj (only lyricStyle is), so this additive field needs no
+   * .bfproj (only lyricStyle is), so this additive field needs no
    * PROJECT_VERSION bump — the persistent artifact is the .lrc file. */
   words?: LyricWord[];
   /** Aligner confidence for the line (mean of word confidences, 0..1) —
@@ -75,7 +75,7 @@ export const DEFAULT_LYRIC_STYLE: LyricStyle = {
 };
 
 /** Field-by-field validation + defaulting of an untrusted LyricStyle blob.
- * Shared by the localStorage cache and the .avproj document validator. */
+ * Shared by the localStorage cache and the .bfproj document validator. */
 export function validLyricStyle(v: unknown): LyricStyle {
   const raw = (typeof v === "object" && v !== null ? v : {}) as Partial<LyricStyle>;
   const d = DEFAULT_LYRIC_STYLE;

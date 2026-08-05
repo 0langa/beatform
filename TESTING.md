@@ -166,7 +166,7 @@ each item ✅/❌ with a one-line note.
   (version via `(Get-Item <path>).VersionInfo.ProductVersion` — must be ≥ 2.44.1).
 - Bundled ffmpeg (use it for probing exports AND generating test media):
   `C:\Users\Julius\AppData\Local\Beatform\ffmpeg.exe`.
-- Autosave file: `%APPDATA%\com.olanga.audiovisualizer\autosave.avproj`.
+- Autosave file: `%APPDATA%\com.olanga.audiovisualizer\autosave.bfproj`.
 - **The visual canvas (WebGPU) is INVISIBLE to standard screen capture** of the
   WebView2 window — screenshots show flat dark where the visual renders. Do
   NOT judge visuals from screenshots. Judge via: (a) exported files probed
@@ -209,7 +209,7 @@ clipping) · preview/export contract · lyrics anims · video-bg dim/blur · H.2
 VP9-alpha (`alpha_mode: 1`), ProRes 4444 (`yuva444p12le` + PCM), GIF decode
 clean · batch 20 MP3s with ID3 titles + bad-file isolation · beat-quantized
 switching · OS-fullscreen + Stage as projector output · undo/redo ·
-`.avproj` partial round-trip · Builder duplicate/mute/blend/reorder.
+`.bfproj` partial round-trip · Builder duplicate/mute/blend/reorder.
 
 ## 🔁 Retest on v2.44.1 (fixed since the failures)
 
@@ -228,7 +228,7 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   relaunch showed no recovery bar. Steps: launch app → open Demos menu → load any demo →
   open panel (G) → change any slider → wait 8 s →
   `powershell Stop-Process -Name beatform -Force` → verify the autosave
-  exists: `Test-Path "$env:APPDATA\com.olanga.audiovisualizer\autosave.avproj"`
+  exists: `Test-Path "$env:APPDATA\com.olanga.audiovisualizer\autosave.bfproj"`
   must be **True** (this file never existed before v2.44.1 — its presence
   is the core fix) → relaunch the app. PASS: a "Restore your unsaved
   work?" bar is visible in the UI chrome; click **Restore**; the app
@@ -291,7 +291,7 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   Bass Circle remained independent until separately assigned; with Match
   cover colors enabled, custom image changed Hue 155→335 and the visual
   from green to magenta. Saving both mode-specific images to
-  `center-roundtrip.avproj`, removing them, and reopening the project
+  `center-roundtrip.bfproj`, removing them, and reopening the project
   restored both. Final cleanup returned both modes to track-cover fallback.
 - [✅] **In-app user guide (new in v2.46.0).** PASS 2026-07-26 on installed
   v2.51.0: H opened Keyboard shortcuts → User guide; all 12 TOC sections
@@ -357,8 +357,8 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   long export — worth doing, but it is not what the owner reported and not a
   v3 blocker.
 
-- [✅] **`.avproj` FULL matrix.** PASS 2026-07-23 on v2.44.1: saved and
-  reloaded `C:\bf-test\out\full.avproj` (schema v10). The restored project
+- [✅] **`.bfproj` FULL matrix.** PASS 2026-07-23 on v2.44.1: saved and
+  reloaded `C:\bf-test\out\full.bfproj` (schema v10). The restored project
   contained the six-layer Builder stack, two overlays, valid kick→hue mod
   route, two Builder scenes, hue automation lane/keyframe, Exposure 2.06,
   motion detail 46%, timed karaoke lyrics, all three audiogram elements,
@@ -368,7 +368,7 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   params, a text overlay layer + an image layer, a mod route, a timeline
   with 2 scenes + 1 automation lane, non-default post + motion, edited
   lyric style + audiogram ON, and a custom WGSL visual (Shader editor →
-  compile the default template → save). Ctrl+S → `C:\bf-test\out\full.avproj`.
+  compile the default template → save). Ctrl+S → `C:\bf-test\out\full.bfproj`.
   Then: switch mode, delete the custom visual, change everything → Ctrl+O
   the file back. PASS: every listed piece returns, INCLUDING the custom
   visual rendering (its WGSL travels in the file since schema v9).
@@ -385,21 +385,21 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   click at ~95%) → PASS: the next track starts by itself.
 - [x] **Drag & drop (real Explorer drag, installed build).** ALL FORMATS PASS. Owner-tested
       2026-07-26 — the `dragDropEnabled: false` fix WORKS: drops reach the app
-      at all now, which they never did in any prior installed build. - [x] audio (.mp3/.wav) on v2.49.0 — loads and plays. - [x] timed lyrics (.lrc/.srt) on v2.49.0 — attach to the current track. - [x] `.avtheme` on v2.49.0 — dropped `D:\drop-test.avtheme`, the look
-      applied and the notice read `"Drop Test - Ember Six" by QA applied`. - [x] `.avproj` — PASS 2026-07-26 on v2.50.0, owner-tested: drops in with no
+      at all now, which they never did in any prior installed build. - [x] audio (.mp3/.wav) on v2.49.0 — loads and plays. - [x] timed lyrics (.lrc/.srt) on v2.49.0 — attach to the current track. - [x] `.bftheme` on v2.49.0 — dropped `D:\drop-test.bftheme`, the look
+      applied and the notice read `"Drop Test - Ember Six" by QA applied`. - [x] `.bfproj` — PASS 2026-07-26 on v2.50.0, owner-tested: drops in with no
       issues. Failed on 2.49.0 with "Could not decode ... (Unable to decode audio
-      data)" because the handler dispatched .avshader/.avtheme/.lrc/.srt and let
+      data)" because the handler dispatched .bfshader/.bftheme/.lrc/.srt and let
       everything else fall through to the AUDIO loader, so projects were never
       handled — as old as the feature and unreachable until drops started
-      arriving at all. Fixed in 2.49.1 (`openProjectText` + an .avproj branch).
+      arriving at all. Fixed in 2.49.1 (`openProjectText` + a .bfproj branch).
 - [✅] **Builder file round-trip.** PASS 2026-07-23 on v2.44.1: exported a
-  six-layer stack to `C:\bf-test\out\stack.avbuilder`, removed the added
+  six-layer stack to `C:\bf-test\out\stack.bfbuilder`, removed the added
   `Orb core`, imported the file, and recovered all six layers with
   `Orb core` blend `Add`. Saving/loading
-  `C:\bf-test\out\builder-project.avproj` again restored the same stack.
+  `C:\bf-test\out\builder-project.bfproj` again restored the same stack.
   Select the Builder mode → Visual tab →
   add a layer from the picker (e.g. Orb), change its blend to Add →
-  "Export .avbuilder" → `C:\bf-test\out\stack.avbuilder`. Delete/modify
+  "Export .bfbuilder" → `C:\bf-test\out\stack.bfbuilder`. Delete/modify
   layers, then Import… the file back. PASS: the stack (incl. the added
   Orb with blend Add) returns. Ctrl+S / Ctrl+O a project — PASS: stack
   survives the project round-trip.

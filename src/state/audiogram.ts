@@ -28,7 +28,7 @@ export const DEFAULT_AUDIOGRAM: AudiogramSettings = {
 };
 
 /** Field-by-field validation + defaulting of an untrusted AudiogramSettings
- * blob. Shared by the localStorage cache and the .avproj document validator. */
+ * blob. Shared by the localStorage cache and the .bfproj document validator. */
 export function validAudiogram(v: unknown): AudiogramSettings {
   const raw = (typeof v === "object" && v !== null ? v : {}) as Partial<AudiogramSettings>;
   const d = DEFAULT_AUDIOGRAM;

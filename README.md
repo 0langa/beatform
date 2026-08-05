@@ -34,23 +34,23 @@ Free and open source. Built to become a professional-grade tool for producers an
   compute particles), Spectrum Scape (3D), Aurora, Synthwave,
   **Bass Circle** (circular bass visualizer with album art), and **Builder** — a real
   layer compositor: stack up to twelve layers, each with its own blend mode,
-  color and parameters; share stacks as `.avbuilder` files
+  color and parameters; share stacks as `.bfbuilder` files
 - Every mode: 5-7 curated factory **styles**, curated params + full **Advanced** section
   (~300 knobs app-wide), plain-language **hint** for every setting (tooltip +
   live hint bar), all persisted per mode
 - **User looks**: save your own named looks per visual mode, share them as
-  `.avpreset` files (import/export)
+  `.bfpreset` files (import/export)
 - **Shadertoy import**: paste a single-pass Shadertoy shader (the Image tab)
   and it becomes a Beatform visual — translated to WGSL locally, audio on
   `iChannel0` in Shadertoy's own music-texture layout, track-clock time so
   exports match previews exactly, author/license attribution kept with the
-  visual and its `.avshader` exports
+  visual and its `.bfshader` exports
 - **Auto-updates**: the app checks GitHub Releases and installs new versions
   in one click (signature-verified; no telemetry — the check is a plain fetch
   of a static file). **App settings** (Ctrl+,): autosave delay, live frame
   cap, GPU preference, update controls
 - **Project files**: save/open the whole setup (preset, params, sync,
-  background, layers) as versioned `.avproj` files — Ctrl+S / Ctrl+O,
+  background, layers) as versioned `.bfproj` files — Ctrl+S / Ctrl+O,
   native dialogs
 - **Overlay layers**: text with `{title}`/`{artist}` auto-fill from tags,
   logos/images, one-click album art — anchored, resolution-independent,
@@ -165,8 +165,8 @@ src/
   state/
     store.ts           zustand store: document slice (project payload) + session
     services.ts        engine/analyzer/renderer singletons + frame loop
-    project.ts         .avproj schema, validation, migration point
-    userPresets.ts     .avpreset user looks
+    project.ts         .bfproj schema, validation, migration point
+    userPresets.ts     .bfpreset user looks
     platform.ts        Tauri/browser file dialogs + IO
     persistence.ts     localStorage cache (last session)
   App.tsx              view layer over the store
@@ -180,7 +180,7 @@ as schema and stay pure functions of (features, time, params) — purity is
 what makes the indexed offline frame walk repeatable. Live device sampling and
 cross-hardware pixels remain measured parity, not identity. New visual = one
 preset file + registry entry. Document state lives in the store's document
-slice and is what `.avproj` serializes.
+slice and is what `.bfproj` serializes.
 
 ## Dev
 

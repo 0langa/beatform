@@ -205,7 +205,7 @@ export interface PresetDef {
    * the Rust-side transpiler, NOT a `fn preset` snippet — the renderer runs
    * it on a dedicated compatibility pipeline. `glsl` is the user's original
    * source, kept for re-editing and attribution; attribution fields ship in
-   * .avshader exports and project embeds. Deterministic by construction:
+   * .bfshader exports and project embeds. Deterministic by construction:
    * every Shadertoy uniform derives from track time (see the renderer's
    * shadertoy uniform packer), so preview === export holds.
    */

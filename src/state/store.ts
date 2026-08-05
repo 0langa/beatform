@@ -394,9 +394,9 @@ interface Actions {
   setTimeline(timeline: Timeline): void;
   /** Replace the Builder Studio stack (undoable; recompiles only on structural change). */
   setBuilderStack(stack: BuilderStack): void;
-  /** Save the current Builder Studio stack as a shareable .avbuilder file. */
+  /** Save the current Builder Studio stack as a shareable .bfbuilder file. */
   exportBuilderStack(): Promise<void>;
-  /** Parse + apply an .avbuilder file's text (import). */
+  /** Parse + apply a .bfbuilder file's text (import). */
   importBuilderStackText(text: string): void;
   setShowTimeline(v: boolean): void;
   setPost(patch: Partial<PostSettings>): void;
@@ -405,11 +405,11 @@ interface Actions {
   loadFile(file: File): Promise<void>;
   loadDemo(id: string): Promise<void>;
   setShowLibrary(open: boolean): void;
-  /** Apply a template's document (factory pack or parsed .avtheme). */
+  /** Apply a template's document (factory pack or parsed .bftheme). */
   applyTheme(document: ProjectDocument, name: string): void;
-  /** Parse + apply an .avtheme file's text (drag-import). */
+  /** Parse + apply a .bftheme file's text (drag-import). */
   importThemeText(contents: string): void;
-  /** Save the current setup as a shareable .avtheme file. */
+  /** Save the current setup as a shareable .bftheme file. */
   exportCurrentTheme(meta: ThemeMeta): Promise<void>;
   toggleLiveInput(): Promise<void>;
   /** Kick off (once) the lazy thumbnail render for the preset strip. */
@@ -633,7 +633,7 @@ export const useVizStore = create<VizState>((set, get) => {
   };
 
   /** The custom defs this document actually references (active preset +
-   * timeline scenes) — what travels in the .avproj so it renders identically
+   * timeline scenes) — what travels in the .bfproj so it renders identically
    * elsewhere. Deliberately NOT the whole library: unreferenced defs would
    * bloat every save and every history snapshot for no portability gain. */
   const referencedCustomDefs = (s: VizState): PresetDef[] => {
@@ -1418,7 +1418,7 @@ export const useVizStore = create<VizState>((set, get) => {
       // Orphan-GC the dropped override's image/video asset (audit BG2): a
       // per-mode VIDEO background is a tens-of-MB data URL — without this,
       // toggling the override off left it riding in state, autosave and
-      // .avproj forever. After the set() so assetInUse sees the final refs.
+      // .bfproj forever. After the set() so assetInUse sees the final refs.
       if (!on) {
         const removed = s.bgByPreset[s.presetId];
         for (const id of [removed?.image?.assetId, removed?.video?.assetId]) {
@@ -1506,10 +1506,10 @@ export const useVizStore = create<VizState>((set, get) => {
       const assets = { ...get().assets, [asset.id]: asset };
       const prev = effBg();
       // Replacing the image orphans the old asset — a multi-MB data URL that
-      // would otherwise ride along in state, autosave, .avproj and storage
+      // would otherwise ride along in state, autosave, .bfproj and storage
       // forever. Drop it unless an overlay layer still uses it.
       // Both sub-objects, not just the image: switching video -> image left the
-      // (tens-of-MB) video asset orphaned in state, autosave, .avproj and
+      // (tens-of-MB) video asset orphaned in state, autosave, .bfproj and
       // localStorage forever — exactly what this GC exists to prevent.
       const bg: BgSettings = {
         ...prev,
@@ -1566,7 +1566,7 @@ export const useVizStore = create<VizState>((set, get) => {
       const prev = effBg();
       // Orphan-GC BOTH the previous image and video asset, not just one: with an
       // image bg and a video bg both set, `video ?? image` freed only one and the
-      // other (tens of MB) leaked in state, autosave, .avproj and localStorage
+      // other (tens of MB) leaked in state, autosave, .bfproj and localStorage
       // forever — matching pickBackgroundImage / useAlbumArtBackground.
       const bg: BgSettings = {
         ...prev,

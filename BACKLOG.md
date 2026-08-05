@@ -63,11 +63,16 @@ Current product constraints remain:
 
 Work top to bottom unless fresh evidence changes priority.
 
-| Order | ID       | Status      | Work                                           |
-| ----- | -------- | ----------- | ---------------------------------------------- |
-| 1     | FEAT-004 | IN PROGRESS | Local automatic lyrics epic — phase 2 building |
-| 2     | FEAT-003 | IN PROGRESS | Gallery: skeleton built; gated on EXT-RENAME   |
-| 3     | FEAT-009 | CONSIDERING | True second-display performance window         |
+| Order | ID       | Status      | Work                                        |
+| ----- | -------- | ----------- | ------------------------------------------- |
+| 1     | FEAT-003 | IN PROGRESS | Gallery: seed presets + in-app browser next |
+| 2     | FEAT-009 | CONSIDERING | True second-display performance window      |
+
+`FEAT-004` **shipped in v2.69.0** (2026-08-04) — see its DONE entry; owner
+first-impressions recorded below (retest pending).
+
+`EXT-RENAME` **shipped in v2.70.0** (2026-08-05) — see its DONE entry. The
+Gallery public-launch gate is cleared.
 
 `VERIFY-003` **closed 2026-08-04** — found the MIDI transport double-dead
 (unbound `requestMIDIAccess` + unhandled WebView2 permission), both fixed
@@ -337,7 +342,7 @@ redistribution rights exist.
   later if scope grows). Content lives IN the repo; the app fetches
   commit-pinned `raw.githubusercontent.com` URLs (immutability by
   construction); removal = tombstone.
-- **Launch types:** looks (.avpreset-class) + themes; type enum extensible.
+- **Launch types:** looks (.bfpreset-class) + themes; type enum extensible.
 - **License:** repo MIT; per-entry required license field, CC0-1.0 or
   CC-BY-4.0 only at launch.
 - **Moderation:** owner-curated only (0langa merges every PR).
@@ -346,9 +351,9 @@ redistribution rights exist.
   submissions.
 - Skeleton (registry schema + hand-rolled validator + CI + submission
   template + policies) generated into the repo by agent 2026-08-04.
-- **GATE before public launch: EXT-RENAME below** (owner: fix legacy `.av*`
-  extensions before public indexing). Also gated behind FEAT-004 completion
-  per owner priority ("finish lyrics fully first").
+- ~~GATE before public launch: EXT-RENAME below~~ **CLEARED 2026-08-05**
+  (`.av*` → `.bf*` shipped in v2.70.0; FEAT-004 gate cleared with v2.69.0).
+  Remaining before public launch: seed presets + in-app Gallery browser.
 
 ### FEAT-004 owner first-impressions (2026-08-04, overloaded-PC session — retest pending)
 
@@ -375,11 +380,23 @@ clean boot):
 
 ### EXT-RENAME — file extensions `.av*` → `.bf*`
 
-**Status:** READY (queued after FEAT-004). Owner-approved 2026-08-04 with
-**no backwards compatibility** (current userbase = for-fun + e2e helpers).
-Legacy: extensions still say audio-visualizer (`.avpreset`, `.avproj`,
-`.avtheme`); app is Beatform. Rename all user-facing extensions, file-dialog
-filters, docs, and gallery schema references before the Gallery goes public.
+**Status:** DONE — **shipped in v2.70.0** (2026-08-05). Owner-approved
+2026-08-04 with **no backwards compatibility** (current userbase = for-fun +
+e2e helpers). Full inventory was five formats, not the three first listed:
+`.avproj`, `.avpreset`, `.avtheme`, `.avbuilder`, `.avshader` → `.bf*`.
+Clean break went one level deeper than the filename on purpose: the JSON
+`kind` discriminators inside the files renamed too (`"avproj"`→`"bfproj"`
+etc.), so pre-rename files are rejected at the kind gate even if hand-renamed
+— nothing legacy can leak into Gallery-hosted content, which is hash-pinned
+forever. In-app state (localStorage looks/params/caches) stores bare
+documents without kind wrappers, so nothing user-local was lost; the
+schemaVersion migration chain is untouched (localStorage still rides it).
+41 files touched (dialog filters, drop handlers, accept attrs, autosave
+filename, error strings, docs/, TESTING.md, SECURITY.md); CHANGELOG history
+and this ledger's historical entries intentionally keep the old names.
+Gates: typecheck/lint/prettier clean, 1110 web + 108 Rust tests green,
+clippy clean. Gallery skeleton updated in the same push. Gallery
+public-launch gate: CLEARED.
 
 ### FEAT-003 original design notes (kept)
 

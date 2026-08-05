@@ -261,16 +261,16 @@ export function BuilderPanel(props: BuilderPanelProps) {
       <div className="save-look-row">
         <button
           className="text-btn"
-          title="Save this layer stack as a shareable .avbuilder file"
+          title="Save this layer stack as a shareable .bfbuilder file"
           onClick={props.onExport}
         >
-          Export .avbuilder
+          Export .bfbuilder
         </button>
-        <label className="text-btn" title="Import a .avbuilder layer stack file">
+        <label className="text-btn" title="Import a .bfbuilder layer stack file">
           Import…
           <input
             type="file"
-            accept=".avbuilder"
+            accept=".bfbuilder"
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];

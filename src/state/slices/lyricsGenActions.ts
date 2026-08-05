@@ -3,7 +3,7 @@
  * lyrics sidecar: model tier download (resume + verify live in Rust),
  * generation with staged audio, progress, cancel. On success the finished
  * LRC goes through loadLyricsText — the SAME path as the import button, so
- * the overlay, exports and the .avproj document treat generated lyrics
+ * the overlay, exports and the .bfproj document treat generated lyrics
  * exactly like imported ones.
  */
 

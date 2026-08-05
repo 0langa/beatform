@@ -19,8 +19,8 @@ describe("themes", () => {
 
   it("rejects non-theme files with clear errors", () => {
     expect(() => parseTheme("not json")).toThrow(ThemeParseError);
-    expect(() => parseTheme("{}")).toThrow(/Not an .avtheme/);
-    expect(() => parseTheme(JSON.stringify({ kind: "avproj" }))).toThrow(/Not an .avtheme/);
+    expect(() => parseTheme("{}")).toThrow(/Not a .bftheme/);
+    expect(() => parseTheme(JSON.stringify({ kind: "bfproj" }))).toThrow(/Not a .bftheme/);
   });
 
   it("refuses themes from a newer app instead of misreading them", () => {

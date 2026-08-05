@@ -6,7 +6,7 @@ Three ways in:
   add parameters (each becomes a `P_<key>()` accessor and an automatic
   slider), hit _Compile_ — errors come back with line numbers. Custom
   visuals persist, use the same export pipeline as built-ins, and share as one
-  `.avshader` file (drop one on the window to import). No build tools.
+  `.bfshader` file (drop one on the window to import). No build tools.
 - **Shadertoy import** (the _Shadertoy…_ button in the shader editor): paste
   the **Image** tab of a single-pass Shadertoy shader and it is translated to
   WGSL on the spot. `iChannel0` carries the track's audio the way Shadertoy's
@@ -14,7 +14,7 @@ Three ways in:
   `iTime`, `iFrame` and `iDate` all follow the track clock, so previews and
   exports stay frame-identical. Attribution (author, source URL, license —
   Shadertoy's default is CC BY-NC-SA) is part of the visual and travels with
-  `.avshader` files and project embeds. Helpers that take `sampler2D`
+  `.bfshader` files and project embeds. Helpers that take `sampler2D`
   parameters are specialized per channel automatically (as long as call
   sites pass `iChannel0..3` directly). Not supported: multi-pass buffers,
   cubemap/video/keyboard channels, and sound-only/VR-only shaders (an extra

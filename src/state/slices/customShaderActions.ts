@@ -90,7 +90,7 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       ctx.flashNotice(
         persisted
           ? `Custom visual "${def.name}" saved`
-          : `"${def.name}" is active but too large to remember — export it as .avshader to keep it`,
+          : `"${def.name}" is active but too large to remember — export it as .bfshader to keep it`,
       );
       return [];
     },
@@ -129,9 +129,9 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       if (!def) return;
       try {
         const path = await saveTextFile(
-          `${safeName(def.name)}.avshader`,
+          `${safeName(def.name)}.bfshader`,
           serializeCustomPreset(def, APP_VERSION),
-          [{ name: "Beatform shader", extensions: ["avshader"] }],
+          [{ name: "Beatform shader", extensions: ["bfshader"] }],
         );
         if (path) ctx.flashNotice(`Shader "${def.name}" saved — share the file anywhere`);
       } catch (e) {

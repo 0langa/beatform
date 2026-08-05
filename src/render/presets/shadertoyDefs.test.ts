@@ -1,4 +1,4 @@
-// FEAT-001: imported-Shadertoy custom defs — validation, .avshader schema,
+// FEAT-001: imported-Shadertoy custom defs — validation, .bfshader schema,
 // and identity semantics. The renderer-side packers are covered in
 // src/render/shadertoyPack.test.ts; the GLSL→WGSL translation itself is
 // covered by Rust unit tests in src-tauri/src/shadertoy.rs.
@@ -74,7 +74,7 @@ describe("validCustomPreset — shadertoy defs", () => {
   });
 });
 
-describe(".avshader schema versioning", () => {
+describe(".bfshader schema versioning", () => {
   it("writes v1 for snippet defs (older apps keep reading them)", () => {
     const snippet: PresetDef = {
       id: "custom-snip",

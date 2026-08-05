@@ -42,7 +42,7 @@ export const presets: PresetDef[] = [
 
 /**
  * Built-in preset ids that were RENAMED. Persisted data keeps the old id
- * forever (project/theme documents, .avpreset looks, localStorage caches,
+ * forever (project/theme documents, .bfpreset looks, localStorage caches,
  * the prefs strip order), so every loader that reads a persisted preset id
  * maps it through {@link canonicalPresetId} before validating — the map is
  * the single source of truth for those migrations. Custom ids are prefixed

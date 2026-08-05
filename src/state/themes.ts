@@ -1,7 +1,7 @@
 import { PROJECT_VERSION, validateDocument, type ProjectDocument } from "./project";
 
 /**
- * .avtheme — a shareable look/template. One JSON file: metadata (author,
+ * .bftheme — a shareable look/template. One JSON file: metadata (author,
  * license, tempo hint, optional thumbnail) + a full ProjectDocument
  * (preset/params/styles, background, overlay layers with embedded assets,
  * timeline scenes, post chain, motion masters). No code of any kind — a
@@ -29,9 +29,9 @@ export interface ThemeMeta {
 }
 
 export interface ThemeFile {
-  kind: "avtheme";
+  kind: "bftheme";
   schemaVersion: number;
-  /** Schema of the embedded document — same versioning as .avproj. */
+  /** Schema of the embedded document — same versioning as .bfproj. */
   projectSchemaVersion: number;
   appVersion: string;
   meta: ThemeMeta;
@@ -46,7 +46,7 @@ export function serializeTheme(
   appVersion: string,
 ): string {
   const file: ThemeFile = {
-    kind: "avtheme",
+    kind: "bftheme",
     schemaVersion: THEME_VERSION,
     projectSchemaVersion: PROJECT_VERSION,
     appVersion,
@@ -85,7 +85,7 @@ function validMeta(v: unknown): ThemeMeta {
   };
 }
 
-/** Parse + validate + migrate an .avtheme file. Throws ThemeParseError. */
+/** Parse + validate + migrate a .bftheme file. Throws ThemeParseError. */
 export function parseTheme(json: string): { meta: ThemeMeta; document: ProjectDocument } {
   let raw: unknown;
   try {
@@ -97,8 +97,8 @@ export function parseTheme(json: string): { meta: ThemeMeta; document: ProjectDo
     throw new ThemeParseError("Not a template file");
   }
   const file = raw as Partial<ThemeFile>;
-  if (file.kind !== "avtheme") {
-    throw new ThemeParseError("Not an .avtheme template file");
+  if (file.kind !== "bftheme") {
+    throw new ThemeParseError("Not a .bftheme template file");
   }
   if (typeof file.schemaVersion !== "number" || file.schemaVersion < 1) {
     throw new ThemeParseError("Missing schema version");

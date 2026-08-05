@@ -388,7 +388,7 @@ export function defaultBuilderStack(): BuilderStack {
   };
 }
 
-/** Whitelist-validate an untrusted stack (project files, .avbuilder). */
+/** Whitelist-validate an untrusted stack (project files, .bfbuilder). */
 export function validBuilderStack(v: unknown): BuilderStack {
   const raw = (typeof v === "object" && v !== null ? v : {}) as Partial<BuilderStack>;
   const layers: BuilderLayer[] = [];
@@ -424,13 +424,13 @@ export function validBuilderStack(v: unknown): BuilderStack {
   return { layers };
 }
 
-// --- .avbuilder file format (share a layer stack as one JSON file) ---
+// --- .bfbuilder file format (share a layer stack as one JSON file) ---
 
 export const BUILDER_FILE_VERSION = 1;
 
 export function serializeBuilderStack(stack: BuilderStack, appVersion: string): string {
   return JSON.stringify(
-    { kind: "avbuilder", schemaVersion: BUILDER_FILE_VERSION, appVersion, stack },
+    { kind: "bfbuilder", schemaVersion: BUILDER_FILE_VERSION, appVersion, stack },
     null,
     2,
   );
@@ -450,8 +450,8 @@ export function parseBuilderStack(json: string): BuilderStack {
     schemaVersion?: number;
     stack?: unknown;
   };
-  if (typeof f !== "object" || f === null || f.kind !== "avbuilder") {
-    throw new BuilderParseError("Not an .avbuilder file");
+  if (typeof f !== "object" || f === null || f.kind !== "bfbuilder") {
+    throw new BuilderParseError("Not a .bfbuilder file");
   }
   if (typeof f.schemaVersion !== "number" || f.schemaVersion > BUILDER_FILE_VERSION) {
     throw new BuilderParseError("Builder file from a newer app version; update the app");

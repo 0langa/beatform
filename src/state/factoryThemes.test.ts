@@ -17,11 +17,11 @@ import { builderLayerType, BUILDER_MAX_LAYERS } from "../render/builder2";
  * (dropped), an out-of-order timeline lane (re-sorted), a background pointing
  * at an asset the document does not carry (degraded to the preset background)
  * — shows up there as a diff, because that is exactly the transform an
- * .avtheme goes through on import. Without it, a broken template would still
+ * .bftheme goes through on import. Without it, a broken template would still
  * "apply" and still "round-trip"; it would simply not be the look that was
  * authored.
  *
- * themes.test.ts covers the .avtheme FILE format itself (meta defaulting,
+ * themes.test.ts covers the .bftheme FILE format itself (meta defaulting,
  * hostile input, version refusal); this file covers the pack's content.
  */
 

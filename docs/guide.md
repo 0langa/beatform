@@ -51,7 +51,7 @@ waveform circle, orb, wave line, vignette) — the same type as often as you
 like. Every layer has its own on/off, opacity, **blend mode**
 (Normal / Add / Screen), color (hue + spread) and parameters; reorder with
 ▲▼, duplicate with ⧉. Stacks save inside your project, and
-**Export .avbuilder** shares a stack as a single file anyone can import.
+**Export .bfbuilder** shares a stack as a single file anyone can import.
 
 ## Sync — what drives the motion
 
@@ -230,7 +230,7 @@ off in settings if you prefer manual.
 
 ## Projects, looks, templates
 
-- **Ctrl+S / Ctrl+O** — `.avproj` project files (everything, portable).
-- **Save look** — a named parameter set for one mode (`.avpreset`).
-- **Templates** — a complete setup as one shareable `.avtheme` file; see
+- **Ctrl+S / Ctrl+O** — `.bfproj` project files (everything, portable).
+- **Save look** — a named parameter set for one mode (`.bfpreset`).
+- **Templates** — a complete setup as one shareable `.bftheme` file; see
   [Templates](templates).

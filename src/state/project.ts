@@ -20,7 +20,7 @@ import { validModsByPreset, type ModRoute } from "./modMatrix";
 import { validTimeline, type Timeline } from "./timeline";
 
 /**
- * .avproj — the project file format. Versioned JSON around the store's
+ * .bfproj — the project file format. Versioned JSON around the store's
  * document slice. Rules:
  *  - schemaVersion bumps only on breaking shape changes; parseProject
  *    migrates every older version forward (never strand a user's file).
@@ -48,9 +48,9 @@ import { validTimeline, type Timeline } from "./timeline";
  * v9 (+) lyricStyle, audiogram, and the custom WGSL defs the document
  *        references (presetId / timeline scenes). All three affect rendered
  *        pixels but previously lived only in localStorage, so the same
- *        .avproj rendered differently on another machine — and a project
+ *        .bfproj rendered differently on another machine — and a project
  *        using a custom visual silently fell back to the default mode for
- *        anyone who hadn't separately imported the matching .avshader.
+ *        anyone who hadn't separately imported the matching .bfshader.
  *        Older files simply lack the fields and the validators default them.
  *
  * v10 (+) builderStack — Builder Studio's ordered layer list. Older files
@@ -91,7 +91,7 @@ import { validTimeline, type Timeline } from "./timeline";
  */
 
 export const PROJECT_VERSION = 13;
-export const PROJECT_EXTENSION = "avproj";
+export const PROJECT_EXTENSION = "bfproj";
 
 /** Frame aspect: "free" fills the window; fixed ratios letterbox the stage. */
 export type Aspect = "free" | "16:9" | "9:16" | "1:1";
@@ -126,7 +126,7 @@ export interface ProjectDocument {
   audiogram: AudiogramSettings;
   /** Custom WGSL defs the document references (active preset + timeline
    * scenes) — embedded so the project renders identically on a machine that
-   * never imported the matching .avshader. NOT the user's whole library. */
+   * never imported the matching .bfshader. NOT the user's whole library. */
   customDefs: PresetDef[];
   /** Builder Studio layer stack (renders when presetId === "builder2"). */
   builderStack: BuilderStack;
@@ -134,7 +134,7 @@ export interface ProjectDocument {
 
 export interface ProjectFile {
   schemaVersion: number;
-  kind: "avproj";
+  kind: "bfproj";
   appVersion: string;
   savedAt: string;
   document: ProjectDocument;
@@ -150,7 +150,7 @@ export function serializeProject(document: ProjectDocument, appVersion: string):
   const needsV12 = document.customDefs.some((d) => d.shadertoy);
   const file: ProjectFile = {
     schemaVersion: needsV13 ? PROJECT_VERSION : needsV12 ? 12 : 11,
-    kind: "avproj",
+    kind: "bfproj",
     appVersion,
     savedAt: new Date().toISOString(),
     document,
@@ -172,8 +172,8 @@ export function parseProject(json: string): ProjectDocument {
     throw new ProjectParseError("Not a project file");
   }
   const file = raw as Partial<ProjectFile>;
-  if (file.kind !== "avproj") {
-    throw new ProjectParseError("Not an .avproj project file");
+  if (file.kind !== "bfproj") {
+    throw new ProjectParseError("Not a .bfproj project file");
   }
   if (typeof file.schemaVersion !== "number" || file.schemaVersion < 1) {
     throw new ProjectParseError("Missing schema version");
@@ -259,7 +259,7 @@ function migrateRenamedPresetIds(doc: Partial<ProjectDocument>): Partial<Project
 /**
  * Field-by-field validation + defaulting of an untrusted document. This IS
  * the migration path: older schemas simply lack fields and the validators
- * default them. Shared by .avproj projects and .avtheme templates.
+ * default them. Shared by .bfproj projects and .bftheme templates.
  */
 export function validateDocument(rawDoc: Partial<ProjectDocument>): ProjectDocument {
   const doc = migrateRenamedPresetIds(rawDoc);
@@ -438,7 +438,7 @@ export function validSyncByPreset(v: unknown): Record<string, SyncSettings> {
     ) {
       // Normalize through the SAME sanitizer the live pipeline uses instead of
       // rebuilding the field list here. This copy had drifted: it omitted
-      // freqMin/freqMax, so every saved .avproj/.avtheme silently discarded the
+      // freqMin/freqMax, so every saved .bfproj/.bftheme silently discarded the
       // user's analysed-frequency-range setting and reopened at the defaults.
       // A parallel list also loses the NEXT field added to SyncSettings; there
       // is one canonical normalizer and this is it. The guard above still
@@ -503,7 +503,7 @@ function validColor(v: unknown): [number, number, number] {
  *
  * A WHITELIST, not an escape. The family is pasted straight into `ctx.font`,
  * and the 2D spec requires an unparseable font assignment to be IGNORED — no
- * throw, no warning — so an imported .avproj/.avtheme whose family contains a
+ * throw, no warning — so an imported .bfproj/.bftheme whose family contains a
  * `;`, a `}`, a quote or a leading digit silently renders the layer at the
  * 10px sans-serif default in BOTH the preview and the export, with nothing
  * reported. Unicode letter classes, so real families ("Noto Sans JP",

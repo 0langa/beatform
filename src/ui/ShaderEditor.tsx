@@ -224,8 +224,8 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
                 </button>
                 <button
                   className="chip-x"
-                  title="Export as .avshader file"
-                  aria-label={`Export "${d.name}" as .avshader file`}
+                  title="Export as .bfshader file"
+                  aria-label={`Export "${d.name}" as .bfshader file`}
                   onClick={() => props.onExport(d.id)}
                 >
                   ↗
@@ -260,11 +260,11 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
           >
             New
           </button>
-          <label className="text-btn" title="Import an .avshader file">
+          <label className="text-btn" title="Import a .bfshader file">
             Import…
             <input
               type="file"
-              accept=".avshader,application/json"
+              accept=".bfshader,application/json"
               hidden
               onChange={(e) => {
                 const f = e.target.files?.[0];

@@ -11,6 +11,23 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.70.0] - 2026-08-05
+
+### Changed
+
+- **Beatform file extensions.** All shareable files now carry Beatform's own
+  extensions: projects are `.bfproj`, looks `.bfpreset`, templates
+  `.bftheme`, Builder stacks `.bfbuilder`, and imported shaders `.bfshader`
+  (previously `.avproj`, `.avpreset`, `.avtheme`, `.avbuilder`,
+  `.avshader` — a leftover from the app's pre-Beatform working name).
+  **Files saved by older versions are not importable in this release and
+  won't open by rename** — re-export anything you want to keep shareable
+  from 2.70. Nothing inside the app is lost: your saved looks, settings and
+  library all carry over as usual; only files exported to disk under the
+  old extensions are affected. This clean break
+  lands before the public preset gallery opens, so everything shared there
+  uses the final format from day one.
+
 ## [2.69.0] - 2026-08-04
 
 ### Added

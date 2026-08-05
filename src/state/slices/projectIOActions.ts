@@ -41,9 +41,9 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     async exportCurrentTheme(meta) {
       try {
         const path = await saveTextFile(
-          `${safeName(meta.name)}.avtheme`,
+          `${safeName(meta.name)}.bftheme`,
           serializeTheme(ctx.docOf(get()), meta, APP_VERSION),
-          [{ name: "Beatform template", extensions: ["avtheme"] }],
+          [{ name: "Beatform template", extensions: ["bftheme"] }],
         );
         if (path) ctx.flashNotice(`Template "${meta.name}" saved — share the file anywhere`);
       } catch (e) {
@@ -103,7 +103,7 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
      * Shares every rule with openProject(): parse BEFORE clearHistory so a
      * corrupt file can't cost the undo stack, then applyDocument.
      *
-     * Without this, a dropped .avproj fell through the drop handler's
+     * Without this, a dropped .bfproj fell through the drop handler's
      * extension dispatch to loadFile() and was handed to the AUDIO decoder,
      * which reported the baffling "Unable to decode audio data".
      */

@@ -441,7 +441,7 @@ const VIDEO_MIME_BY_EXT: Record<string, string> = {
  * Background images/videos embed as base64 `data:` URLs (below) that then
  * ride along in EVERY copy of the document: live state, up to 100 undo/redo
  * snapshots (each a full deep clone), the autosave write every 5s of
- * editing, and the .avproj on disk — so an unbounded source file is a
+ * editing, and the .bfproj on disk — so an unbounded source file is a
  * multiplied memory/disk cost, not a one-time one, and a large enough one
  * OOMs the renderer well before any of that. Limits, justified rather than
  * arbitrary:
@@ -568,7 +568,7 @@ export function bytesToDataUrl(bytes: Uint8Array, mime: string): string {
   return `data:${mime};base64,${btoa(bin)}`;
 }
 
-const AUTOSAVE_FILE = "autosave.avproj";
+const AUTOSAVE_FILE = "autosave.bfproj";
 
 /** Tauri only: crash-safe autosave of the current project to app data. */
 export async function writeAutosave(contents: string): Promise<void> {

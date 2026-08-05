@@ -9,9 +9,9 @@ export function builderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     async exportBuilderStack() {
       try {
         const path = await saveTextFile(
-          "stack.avbuilder",
+          "stack.bfbuilder",
           serializeBuilderStack(get().builderStack, APP_VERSION),
-          [{ name: "Beatform builder stack", extensions: ["avbuilder"] }],
+          [{ name: "Beatform builder stack", extensions: ["bfbuilder"] }],
         );
         if (path) ctx.flashNotice("Builder stack saved — share the file anywhere");
       } catch (e) {

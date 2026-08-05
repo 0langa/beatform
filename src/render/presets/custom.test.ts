@@ -66,7 +66,7 @@ describe("registry + presetById", () => {
   });
 });
 
-describe(".avshader files", () => {
+describe(".bfshader files", () => {
   it("round-trips", () => {
     const json = serializeCustomPreset(GOOD as never, "x");
     const def = parseCustomPreset(json);

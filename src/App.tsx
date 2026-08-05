@@ -687,14 +687,14 @@ export default function App() {
         const files = Array.from(e.dataTransfer.files);
         if (files.length === 0) return;
         // Shaders and templates import by drag, from anywhere.
-        const shader = files.find((f) => f.name.toLowerCase().endsWith(".avshader"));
+        const shader = files.find((f) => f.name.toLowerCase().endsWith(".bfshader"));
         if (shader) {
           void shader.text().then((t) => store().importCustomPresetText(t));
           return;
         }
         // Templates import by drag, from anywhere (Explorer, a GitHub
         // download, Discord) — the whole ecosystem loop in one gesture.
-        const theme = files.find((f) => f.name.toLowerCase().endsWith(".avtheme"));
+        const theme = files.find((f) => f.name.toLowerCase().endsWith(".bftheme"));
         if (theme) {
           void theme.text().then((t) => store().importThemeText(t));
           return;
@@ -703,7 +703,7 @@ export default function App() {
         // loadFile() below and the AUDIO decoder rejected it with "Unable to
         // decode audio data" — invisible until v2.49.0 made drops arrive at
         // all on Windows.
-        const project = files.find((f) => f.name.toLowerCase().endsWith(".avproj"));
+        const project = files.find((f) => f.name.toLowerCase().endsWith(".bfproj"));
         if (project) {
           void project.text().then((t) => store().openProjectText(project.name, t));
           return;

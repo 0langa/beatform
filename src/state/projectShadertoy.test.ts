@@ -23,7 +23,7 @@ const baseDoc = () =>
   parseProject(
     JSON.stringify({
       schemaVersion: 11,
-      kind: "avproj",
+      kind: "bfproj",
       appVersion: "0.0.0",
       savedAt: "2026-01-01T00:00:00.000Z",
       document: { presetId: "spectrum-bars" },

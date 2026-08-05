@@ -374,7 +374,7 @@ export interface ParamsPanelProps {
   onImportUserPreset: () => void;
   /** Apply a factory template's full document. */
   onApplyTheme: (document: ProjectDocument, name: string) => void;
-  /** Save the whole current setup as a shareable .avtheme file. */
+  /** Save the whole current setup as a shareable .bftheme file. */
   onExportTheme: (meta: ThemeMeta) => void;
   aspect: Aspect;
   onAspect: (a: Aspect) => void;
@@ -655,8 +655,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     </button>
                     <button
                       className="chip-x"
-                      title={`Export "${p.name}" as .avpreset file`}
-                      aria-label={`Export "${p.name}" as .avpreset file`}
+                      title={`Export "${p.name}" as .bfpreset file`}
+                      aria-label={`Export "${p.name}" as .bfpreset file`}
                       onClick={() => props.onExportUserPreset(p.id)}
                     >
                       ↗
@@ -704,7 +704,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 </button>
                 <button
                   className="text-btn"
-                  title="Import a .avpreset look file"
+                  title="Import a .bfpreset look file"
                   onClick={props.onImportUserPreset}
                 >
                   Import…
@@ -871,11 +871,11 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       title: "Templates",
       tab: "visual",
       search:
-        `templates theme complete looks colors sync post save export import avtheme ${FACTORY_THEMES.map((t) => t.meta.name).join(" ")}`.toLowerCase(),
+        `templates theme complete looks colors sync post save export import bftheme ${FACTORY_THEMES.map((t) => t.meta.name).join(" ")}`.toLowerCase(),
       body: (
         <>
           <p className="section-hint">
-            Complete looks — visual, colors, sync, post — in one click. Drop any .avtheme file onto
+            Complete looks — visual, colors, sync, post — in one click. Drop any .bftheme file onto
             the window to import; save yours to share.
           </p>
           <div className="style-chips">
@@ -930,7 +930,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             <div className="save-look-row">
               <button
                 className="text-btn"
-                title="Save EVERYTHING currently set up (visual, layers, timeline, post) as a shareable .avtheme file (CC0)"
+                title="Save EVERYTHING currently set up (visual, layers, timeline, post) as a shareable .bftheme file (CC0)"
                 onClick={() => setSavingTheme(true)}
               >
                 + Save as template…

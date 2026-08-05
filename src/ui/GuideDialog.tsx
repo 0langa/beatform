@@ -132,7 +132,7 @@ const SECTIONS: GuideSection[] = [
           <li>reorder arrows and a duplicate button.</li>
         </ul>
         <p>
-          Stacks are saved inside your project like any other setting. <em>Export .avbuilder</em>{" "}
+          Stacks are saved inside your project like any other setting. <em>Export .bfbuilder</em>{" "}
           writes a stack as a single small file anyone can import — a good way to share looks.
         </p>
       </>
@@ -408,16 +408,16 @@ const SECTIONS: GuideSection[] = [
         <ul>
           <li>
             <strong>Projects</strong> (<K k="Ctrl+S" /> / <K k="Ctrl+O" />) — a single{" "}
-            <code>.avproj</code> file holds everything: mode, parameters, sync, backgrounds,
+            <code>.bfproj</code> file holds everything: mode, parameters, sync, backgrounds,
             overlays, timeline, Builder stacks, lyrics style, audiogram, even embedded images.
             Opening it on another machine restores the exact setup.
           </li>
           <li>
-            <strong>Themes</strong> — export the whole current look as a <code>.avtheme</code>{" "}
+            <strong>Themes</strong> — export the whole current look as a <code>.bftheme</code>{" "}
             anyone can drop onto their Beatform window.
           </li>
           <li>
-            <strong>Builder stacks</strong> — <code>.avbuilder</code> files share a single Builder
+            <strong>Builder stacks</strong> — <code>.bfbuilder</code> files share a single Builder
             creation.
           </li>
           <li>

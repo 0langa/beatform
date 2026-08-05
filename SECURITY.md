@@ -28,8 +28,8 @@ a private channel.
 Please include, where relevant:
 
 - The app version (Help modal) and OS/build.
-- Whether the issue requires a malicious project file (`.avproj`,
-  `.avpreset`, `.avtheme`), a malicious media file, or local access.
+- Whether the issue requires a malicious project file (`.bfproj`,
+  `.bfpreset`, `.bftheme`), a malicious media file, or local access.
 - Steps to reproduce, or a minimal repro file/track.
 
 ## What counts as a security issue here
@@ -37,7 +37,7 @@ Please include, where relevant:
 Given the app's shape, the reports most worth flagging privately are things
 like:
 
-- A `.avproj` / `.avpreset` / `.avtheme` / `.avshader` file that, when
+- A `.bfproj` / `.bfpreset` / `.bftheme` / `.bfshader` file that, when
   opened, can read/write/execute outside the app's intended scope.
 - A path or filename (batch output, export destination, library scan) that
   escapes the intended directory, follows an unexpected symlink, or reaches

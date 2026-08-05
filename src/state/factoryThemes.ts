@@ -22,7 +22,7 @@ import type { OverlayLayer } from "../render/overlay";
  * Factory template packs — curated, genre-shaped starting points shipped
  * with the app. Authored as TYPED data (not JSON files) so the compiler
  * checks every field against the real document schema; exporting one writes
- * the same .avtheme file a community template uses. Params are partial:
+ * the same .bftheme file a community template uses. Params are partial:
  * anything unspecified resolves to the preset's defaults at apply time,
  * exactly like a saved project.
  *

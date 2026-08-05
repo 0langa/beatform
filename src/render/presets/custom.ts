@@ -128,7 +128,7 @@ export function validCustomPreset(v: unknown): PresetDef | null {
   };
 }
 
-// --- .avshader file format (share a custom visual as one JSON file) ---
+// --- .bfshader file format (share a custom visual as one JSON file) ---
 
 /**
  * v1: snippet presets. v2: adds imported Shadertoy defs (`shadertoy` marker +
@@ -141,7 +141,7 @@ export const SHADER_FILE_VERSION = 2;
 
 export function serializeCustomPreset(def: PresetDef, appVersion: string): string {
   const schemaVersion = def.shadertoy ? 2 : 1;
-  return JSON.stringify({ kind: "avshader", schemaVersion, appVersion, preset: def }, null, 2);
+  return JSON.stringify({ kind: "bfshader", schemaVersion, appVersion, preset: def }, null, 2);
 }
 
 export class ShaderParseError extends Error {}
@@ -158,8 +158,8 @@ export function parseCustomPreset(json: string): PresetDef {
     schemaVersion?: number;
     preset?: unknown;
   };
-  if (typeof f !== "object" || f === null || f.kind !== "avshader") {
-    throw new ShaderParseError("Not an .avshader file");
+  if (typeof f !== "object" || f === null || f.kind !== "bfshader") {
+    throw new ShaderParseError("Not a .bfshader file");
   }
   if (typeof f.schemaVersion !== "number" || f.schemaVersion > SHADER_FILE_VERSION) {
     throw new ShaderParseError("Shader file from a newer app version; update the app");

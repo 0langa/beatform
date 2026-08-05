@@ -110,7 +110,7 @@ const doc: ProjectDocument = {
   builderStack: { layers: [] },
 };
 
-describe("project files (.avproj)", () => {
+describe("project files (.bfproj)", () => {
   it("round-trips serialize → parse", () => {
     const json = serializeProject(doc, "1.2.0");
     expect(parseProject(json)).toEqual(doc);
@@ -118,7 +118,7 @@ describe("project files (.avproj)", () => {
 
   it("stamps metadata", () => {
     const file = JSON.parse(serializeProject(doc, "1.2.0"));
-    expect(file.kind).toBe("avproj");
+    expect(file.kind).toBe("bfproj");
     // v12 is conditional (shadertoy defs only — see the version-history
     // note): a document without one stays at v11 so older apps keep opening
     // it. projectShadertoy.test.ts covers the v12 path.
@@ -351,12 +351,15 @@ describe("project files (.avproj)", () => {
     });
 
     it("still opens a real v7 file saved before video backgrounds existed", () => {
-      // A pre-video .avproj: schemaVersion 7, image background only, no
-      // bg.video anywhere in the shape — exactly what an app version before
-      // video backgrounds landed would have written to disk.
+      // A pre-video project document: schemaVersion 7, image background only,
+      // no bg.video anywhere in the shape — what an app before video
+      // backgrounds wrote. kind is today's (the 2.70 .av*→.bf* rename dropped
+      // pre-rename files at the kind gate, no back-compat); the point here is
+      // the v7→current document migration chain, which localStorage caches
+      // still ride.
       const file = {
         schemaVersion: 7,
-        kind: "avproj",
+        kind: "bfproj",
         appVersion: "2.20.0",
         savedAt: "2025-01-01T00:00:00.000Z",
         document: {
@@ -379,7 +382,7 @@ describe("project files (.avproj)", () => {
     it("opens a v8 file with a video background", () => {
       const file = {
         schemaVersion: 8,
-        kind: "avproj",
+        kind: "bfproj",
         appVersion: "2.35.0",
         savedAt: "2026-07-01T00:00:00.000Z",
         document: {
@@ -503,7 +506,7 @@ describe("schema v13 (preset id rename: starfield -> particles)", () => {
    * site a document can persist it. */
   const legacyFile = () => ({
     schemaVersion: 11,
-    kind: "avproj",
+    kind: "bfproj",
     appVersion: "2.67.0",
     savedAt: "2026-08-01T00:00:00.000Z",
     document: {
@@ -764,7 +767,7 @@ describe("per-preset sync survives a save/load round trip", () => {
   /**
    * validSyncByPreset used to rebuild SyncSettings field by field, and that
    * hand-rolled list had drifted out of sync with the type: freqMin/freqMax
-   * were missing. Every .avproj/.avtheme therefore reopened with the user's
+   * were missing. Every .bfproj/.bftheme therefore reopened with the user's
    * analysed frequency range silently reset to the defaults. Reusing
    * sanitizeSync makes the omission impossible to reintroduce.
    */

@@ -6,7 +6,7 @@
  * the render path stays a pure function of (lines, t).
  *
  * Undo is EDITOR-LOCAL. Lyrics are session state (never serialized into
- * .avproj), so the app's document history cannot carry them without putting
+ * .bfproj), so the app's document history cannot carry them without putting
  * megabyte transcripts into every project snapshot; a bounded local stack
  * gives the editor real undo/redo at zero cost to the document machinery.
  * The stacks reset whenever a new lyrics document loads (import, generate,

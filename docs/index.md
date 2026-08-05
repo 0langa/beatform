@@ -31,7 +31,7 @@ GitHub is the only channel and everything is free forever.
 ## More
 
 - **[User guide](guide)** — every panel, mode, and export option
-- **[Templates (.avtheme)](templates)** — share a complete look as one file
+- **[Templates (.bftheme)](templates)** — share a complete look as one file
 - **[Preset SDK](presets)** — add a visual mode with one WGSL file
 - **[Export design](EXPORT-DESIGN)** — indexed A/V timing and parity boundaries
 - **[Contributing](https://github.com/0langa/beatform/blob/main/CONTRIBUTING.md)**

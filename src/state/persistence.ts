@@ -29,7 +29,7 @@ import type { ExportSettings } from "./store";
 /**
  * localStorage persistence for the current session. Keys and formats are the
  * pre-store ones, so existing installs keep their settings. This layer gets
- * superseded by project files (.avproj); it will remain as the "last session"
+ * superseded by project files (.bfproj); it will remain as the "last session"
  * cache.
  */
 const LS_PRESET = "viz.activePreset";
@@ -54,7 +54,7 @@ function readJson<T>(key: string, fallback: T): T {
  * a drag would otherwise run JSON.stringify + a synchronous localStorage write
  * dozens of times a second on the same thread as the 60fps render loop. We
  * coalesce to one write per key ~200ms after the last change, and flush on tab
- * hide so the final edit is never lost. On desktop the autosave .avproj is the
+ * hide so the final edit is never lost. On desktop the autosave .bfproj is the
  * crash-recovery copy (it also survives the localStorage quota, which multi-MB
  * image/video assets can exceed); this cache is just "last session".
  */
@@ -173,7 +173,7 @@ export function saveStoredPresetId(id: string): void {
 }
 
 export function loadStoredParams(): Record<string, ParamValues> {
-  // Validate like the .avproj path: a corrupt/format-shifted cache must not
+  // Validate like the .bfproj path: a corrupt/format-shifted cache must not
   // put a non-finite value into a Float32 uniform (NaN corrupts the visual).
   return validParamsByPreset(migratePresetIdKeys(readJson(LS_PARAMS, {})));
 }

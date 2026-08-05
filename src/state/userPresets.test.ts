@@ -19,7 +19,7 @@ const look: UserPreset = {
   createdAt: "2026-07-13T00:00:00.000Z",
 };
 
-describe("user presets (.avpreset)", () => {
+describe("user presets (.bfpreset)", () => {
   it("round-trips serialize → parse (with fresh identity)", () => {
     const parsed = parseUserPreset(serializeUserPreset(look));
     expect(parsed.name).toBe(look.name);
@@ -42,8 +42,8 @@ describe("user presets (.avpreset)", () => {
   });
 
   it("migrates a look saved under a RENAMED mode id (starfield -> particles)", () => {
-    // Pre-v2.68 .avpreset files (and localStorage entries) carry the legacy
-    // id; dropping them as unknown would silently delete the user's looks.
+    // Pre-v2.68 saved looks (localStorage entries, hand-carried files) carry
+    // the legacy id; dropping them as unknown would silently delete them.
     const file = JSON.parse(serializeUserPreset(look));
     file.preset.presetId = "starfield";
     const parsed = parseUserPreset(JSON.stringify(file));
@@ -117,7 +117,7 @@ describe("loadUserPresets (localStorage round-trip)", () => {
 
   // Same hardening applies to locally-stored presets, not just imported
   // files: a hand-edited or corrupted localStorage entry gets the same
-  // explicit-build treatment as an imported .avpreset.
+  // explicit-build treatment as an imported .bfpreset.
   it("drops extra keys and sanitizes sync for entries already in storage", () => {
     vi.stubGlobal("localStorage", fakeLocalStorage());
     saveUserPresets([{ ...look, sync: { mode: "psychic" as never, smooth: 99 } } as UserPreset]);

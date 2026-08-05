@@ -1,4 +1,4 @@
-# Templates — the .avtheme format
+# Templates — the .bftheme format
 
 One JSON file = one complete look: visual mode + parameters, background,
 text/logo layers (assets embedded as data URLs), timeline scenes, post
@@ -15,9 +15,9 @@ Community templates live in
 
 ```jsonc
 {
-  "kind": "avtheme",
-  "schemaVersion": 1, // .avtheme format version
-  "projectSchemaVersion": 6, // embedded document schema (same as .avproj)
+  "kind": "bftheme",
+  "schemaVersion": 1, // .bftheme format version
+  "projectSchemaVersion": 6, // embedded document schema (same as .bfproj)
   "appVersion": "2.17.0", // app that wrote it (informational)
   "meta": {
     "name": "Midnight Phonk", // required

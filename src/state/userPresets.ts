@@ -4,13 +4,13 @@ import { canonicalPresetId, presets } from "../render/presets";
 
 /**
  * User presets ("my looks"): a named snapshot of one visual mode's params
- * (+ its sync settings). Stored in localStorage; exchanged as .avpreset
+ * (+ its sync settings). Stored in localStorage; exchanged as .bfpreset
  * files so looks can be shared. Distinct from factory styles (in code) and
- * from projects (whole-session .avproj).
+ * from projects (whole-session .bfproj).
  */
 
 export const USER_PRESET_VERSION = 1;
-export const USER_PRESET_EXTENSION = "avpreset";
+export const USER_PRESET_EXTENSION = "bfpreset";
 const LS_KEY = "viz.userPresets.v1";
 
 export interface UserPreset {
@@ -25,7 +25,7 @@ export interface UserPreset {
 
 interface UserPresetFile {
   schemaVersion: number;
-  kind: "avpreset";
+  kind: "bfpreset";
   preset: UserPreset;
 }
 
@@ -55,7 +55,7 @@ export function newUserPresetId(): string {
 export function serializeUserPreset(preset: UserPreset): string {
   const file: UserPresetFile = {
     schemaVersion: USER_PRESET_VERSION,
-    kind: "avpreset",
+    kind: "bfpreset",
     preset,
   };
   return JSON.stringify(file, null, 2);
@@ -71,8 +71,8 @@ export function parseUserPreset(json: string): UserPreset {
     throw new UserPresetParseError("Not a valid JSON file");
   }
   const file = raw as Partial<UserPresetFile>;
-  if (file?.kind !== "avpreset") {
-    throw new UserPresetParseError("Not an .avpreset file");
+  if (file?.kind !== "bfpreset") {
+    throw new UserPresetParseError("Not a .bfpreset file");
   }
   if (typeof file.schemaVersion !== "number" || file.schemaVersion > USER_PRESET_VERSION) {
     throw new UserPresetParseError(
@@ -95,7 +95,7 @@ export function parseUserPreset(json: string): UserPreset {
  *
  * Previously this was a boolean type-guard (isValidUserPreset) and both
  * call sites spread the ORIGINAL untrusted object after it passed — so any
- * extra key in a hand-edited or foreign .avpreset file (or a corrupted
+ * extra key in a hand-edited or foreign .bfpreset file (or a corrupted
  * localStorage entry) rode straight through into app state and got
  * re-serialized on the next save. It also never looked at `sync` at all:
  * a malformed sync object passed validation unexamined and sat in state/

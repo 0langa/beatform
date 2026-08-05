@@ -55,7 +55,7 @@ describe("shader golden baseline", () => {
 
     it(`${preset.id}: param ABI (key + default, in order) is stable`, () => {
       // Key ORDER is the ABI: P_<key>() maps to params[i] by this index, and
-      // saved .avproj/.avpreset files address params by key. A reorder or
+      // saved .bfproj/.bfpreset files address params by key. A reorder or
       // rename silently changes the render and can break saved documents, so
       // freeze the ordered list, not just the set.
       expect(allParams(preset).map((p) => ({ key: p.key, default: p.default }))).toMatchSnapshot();

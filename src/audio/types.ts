@@ -122,7 +122,7 @@ const SPECTRUM_AXES: readonly SpectrumAxis[] = ["log", "linear"];
 const SPECTRUM_SAMPLING: readonly SpectrumSampling[] = ["interpolated", "measured"];
 
 /**
- * Coerce untrusted sync settings (imported .avpreset / .avproj, localStorage)
+ * Coerce untrusted sync settings (imported .bfpreset / .bfproj, localStorage)
  * into a safe shape. An out-of-range or missing `smooth` fed the drive EMA a
  * NaN/negative coefficient — and a NaN drive self-propagates forever, killing
  * visuals until restart. Every path into the pipeline goes through this.
