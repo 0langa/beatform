@@ -63,10 +63,30 @@ Current product constraints remain:
 
 Work top to bottom unless fresh evidence changes priority.
 
-| Order | ID       | Status      | Work                                        |
-| ----- | -------- | ----------- | ------------------------------------------- |
-| 1     | FEAT-003 | IN PROGRESS | Gallery: seed presets + in-app browser next |
-| 2     | FEAT-009 | CONSIDERING | True second-display performance window      |
+| Order | ID       | Status       | Work                                       |
+| ----- | -------- | ------------ | ------------------------------------------ |
+| 1     | FEAT-003 | OWNER-REVIEW | Browser SHIPPED v2.71.0; seeds await owner |
+| 2     | FEAT-009 | CONSIDERING  | True second-display performance window     |
+
+`FEAT-003 app side` **shipped in v2.71.0** (2026-08-05) — in-app Gallery
+browser with the full verified-download path (allowlist + commit pin +
+exact size + SHA-256 before parse; 17 adversarial unit tests + device E2E
+against the live registry, `scripts/gallery-e2e.mjs`). **11 seed
+candidates** (9 looks + 2 themes, agent-generated per the owner's
+high-effort bar, iterated over 4 visual rounds via
+`scripts/gallery-seed-shots.mjs`) sit on the `seed-candidates` branch of
+beatform-app/gallery, index pinned to a795bac with all hashes validated.
+**OWNER ACTION: review the candidate screenshots + entries, then merge
+`seed-candidates` → `main` to publish** (the app needs no update for
+content to appear). Candidates: prism-cathedral, orchid-glass,
+abyssal-bloom, solar-cascade, neon-monsoon, solar-temple, vhs-sunrise,
+obsidian-pulse, glass-mandala + themes deep-current, sunset-circuit.
+Evidence: `F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\feat003-seeds\`
+(KEEP-marked; canvas shots + exact shipped files). An aurora-mode seed was
+attempted and dropped (mode resists scripted tuning — washed out under
+the pumping demos across 3 attempts; candidate for a later hand-tuned
+round). Follow-up recorded: browser-dev tab needed a manual reload to see
+the new panel section (HMR edge, dev-only).
 
 `FEAT-004` **shipped in v2.69.0** (2026-08-04) — see its DONE entry; owner
 first-impressions recorded below (retest pending).
