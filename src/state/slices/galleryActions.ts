@@ -12,6 +12,13 @@ import type { GetFn, SetFn, SliceCtx } from "./ctx";
 
 export function galleryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
+    setShowGallery(v) {
+      set({ showGallery: v });
+      // Opening the dialog IS the explicit user action that loads the
+      // registry — but only the first time; a reopen shows what's there.
+      if (v && get().galleryStatus === "idle") void get().openGallery();
+    },
+
     async openGallery() {
       if (get().galleryStatus === "loading") return;
       // A refresh replaces the whole entry set — the old verified previews'

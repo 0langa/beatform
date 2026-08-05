@@ -64,6 +64,7 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         // and stops propagation before this handler sees it.
         s.setShowPanel(false);
         s.setShowLibrary(false);
+        s.setShowGallery(false);
         s.setShowTimeline(false);
         return;
       }

@@ -1346,6 +1346,49 @@ button.row-value:focus-visible {
   color: #f0a5a5;
 }
 
+/* The Gallery dialog (top-bar surface): a real room for a growing registry —
+   wide grid, filter chips, search. */
+.modal.gallery-dialog {
+  /* Override .modal's 380px base — this surface is a grid, not a form. */
+  width: min(1040px, 92vw);
+  max-width: min(1040px, 92vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+}
+
+.gallery-dialog-hint {
+  margin-top: 2px;
+}
+
+.gallery-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.gallery-search {
+  flex: 1;
+  min-width: 140px;
+  max-width: 260px;
+  margin-left: auto;
+}
+
+.gallery-dialog-body {
+  overflow-y: auto;
+  margin-top: 6px;
+  padding-right: 4px;
+  min-height: 120px;
+}
+
+.gallery-grid-wide {
+  grid-template-columns: repeat(auto-fill, minmax(225px, 1fr));
+  gap: 10px;
+}
+
 /* ---------- parameter groups (v2.53) ----------------------------------
    The knobs of one visual, laid out by their declared ParamSpec.group. Sized
    tighter than a top-level section on purpose: these are the SECOND level of

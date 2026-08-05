@@ -24,7 +24,7 @@ import {
 import type { UserPreset } from "../state/userPresets";
 import { ASPECTS, type Aspect, type ProjectDocument } from "../state/project";
 import { FACTORY_THEMES } from "../state/factoryThemes";
-import { GallerySection } from "./GallerySection";
+import { GalleryLink } from "./GalleryDialog";
 import type { ThemeMeta } from "../state/themes";
 import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
 import { MOD_SOURCES, POST_TARGET_PREFIX, type ModRoute, type ModSource } from "../state/modMatrix";
@@ -872,7 +872,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       title: "Templates",
       tab: "visual",
       search:
-        `templates theme complete looks colors sync post save export import bftheme ${FACTORY_THEMES.map((t) => t.meta.name).join(" ")}`.toLowerCase(),
+        `templates theme complete looks colors sync post save export import bftheme gallery community browse ${FACTORY_THEMES.map((t) => t.meta.name).join(" ")}`.toLowerCase(),
       body: (
         <>
           <p className="section-hint">
@@ -938,16 +938,9 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               </button>
             </div>
           )}
+          <GalleryLink />
         </>
       ),
-    },
-    {
-      id: "Gallery",
-      title: "Gallery",
-      tab: "visual",
-      search:
-        "gallery community browse download install looks themes presets share submit online registry",
-      body: <GallerySection />,
     },
     // ---------------- Sync ----------------
     {

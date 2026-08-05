@@ -264,6 +264,8 @@ interface SessionSlice {
   galleryBusy: string | null;
   /** entry ids installed this session (button turns into a checkmark). */
   galleryInstalled: Record<string, boolean>;
+  /** Gallery dialog visibility (top-bar surface). */
+  showGallery: boolean;
   /** Track metadata for {title}/{artist} overlay templates. */
   trackMeta: OverlayMeta;
   /** Cover art extracted from the loaded file's tags (session-only). */
@@ -423,6 +425,8 @@ interface Actions {
   importThemeText(contents: string): void;
   /** Save the current setup as a shareable .bftheme file. */
   exportCurrentTheme(meta: ThemeMeta): Promise<void>;
+  /** Show/hide the Gallery dialog; first open loads the registry. */
+  setShowGallery(v: boolean): void;
   /** Load (or refresh) the Gallery registry + verified previews. */
   openGallery(): Promise<void>;
   /** Download, verify, parse and install/apply one Gallery entry. */
@@ -1070,6 +1074,7 @@ export const useVizStore = create<VizState>((set, get) => {
     galleryPreviews: {},
     galleryBusy: null,
     galleryInstalled: {},
+    showGallery: false,
     trackMeta: { title: "", artist: "" },
     coverArt: null,
     coverPalette: null,

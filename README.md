@@ -40,6 +40,11 @@ Free and open source. Built to become a professional-grade tool for producers an
   live hint bar), all persisted per mode
 - **User looks**: save your own named looks per visual mode, share them as
   `.bfpreset` files (import/export)
+- **Gallery**: browse a public, curated collection of community looks and
+  themes right in the app (top-bar button) — every entry pinned to an
+  immutable version and checksum-verified before it is ever parsed; add a
+  look or apply a theme in one click. Submissions are reviewed on GitHub
+  ([beatform-app/gallery](https://github.com/beatform-app/gallery))
 - **Shadertoy import**: paste a single-pass Shadertoy shader (the Image tab)
   and it becomes a Beatform visual — translated to WGSL locally, audio on
   `iChannel0` in Shadertoy's own music-texture layout, track-clock time so

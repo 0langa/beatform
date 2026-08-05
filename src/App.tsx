@@ -28,6 +28,7 @@ import { useFocusTrap } from "./ui/useFocusTrap";
 import { useAppShortcuts, toggleFullscreen } from "./ui/useAppShortcuts";
 import { ExportDialog } from "./ui/ExportDialog";
 import { SettingsDialog } from "./ui/SettingsDialog";
+import { GalleryDialog } from "./ui/GalleryDialog";
 import { PerfOverlay } from "./ui/PerfOverlay";
 import { UpdatePrompt } from "./ui/UpdatePrompt";
 import { GuideDialog } from "./ui/GuideDialog";
@@ -37,6 +38,7 @@ import {
   IconExport,
   IconFolder,
   IconFullscreen,
+  IconGallery,
   IconGear,
   IconHelp,
   IconBroadcast,
@@ -107,6 +109,7 @@ export default function App() {
   const showHelp = useVizStore((s) => s.showHelp);
   const showGuide = useVizStore((s) => s.showGuide);
   const showSettings = useVizStore((s) => s.showSettings);
+  const showGallery = useVizStore((s) => s.showGallery);
   const showExport = useVizStore((s) => s.showExport);
   const error = useVizStore((s) => s.error);
   const notice = useVizStore((s) => s.notice);
@@ -852,6 +855,14 @@ export default function App() {
               </button>
             </div>
           </div>
+          <button
+            className="ghost-btn"
+            title="Browse community looks and themes"
+            onClick={() => store().setShowGallery(true)}
+          >
+            <IconGallery size={16} />
+            Gallery
+          </button>
         </div>
         <div className="top-right">
           <button
@@ -1255,6 +1266,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {showGallery && <GalleryDialog />}
 
       {updatePromptOpen && (
         <UpdatePrompt

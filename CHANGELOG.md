@@ -11,6 +11,24 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.72.0] - 2026-08-05
+
+### Added
+
+- **The Gallery is open — and it has its own front door.** A new Gallery
+  button in the top bar (next to Project) opens a proper browsing surface:
+  a wide grid of community looks and themes with type filters, search and
+  big previews. The first curated collection is live — eleven hand-tuned
+  seeds spanning kaleidoscopes, particle galaxies, tunnels, synthwave
+  sunsets and more. Same trust rules as before: every entry is reviewed,
+  pinned to an immutable version, and checksum-verified before Beatform
+  parses a single byte of it.
+
+### Changed
+
+- The Gallery moved out of the Visual settings panel into its own dialog;
+  the Templates section keeps a "Browse the Gallery…" shortcut.
+
 ## [2.71.0] - 2026-08-05
 
 ### Added

@@ -12,9 +12,12 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const registry =
-  (process.argv.find((a) => a.startsWith("--registry=")) ?? "").slice("--registry=".length) ||
-  "https://raw.githubusercontent.com/beatform-app/gallery/seed-candidates/index.json";
+// No --registry flag = the app's own default (the LIVE main registry) — the
+// exact path every installed build takes. A flag switches to a branch via
+// the DEV localStorage override.
+const registry = (process.argv.find((a) => a.startsWith("--registry=")) ?? "").slice(
+  "--registry=".length,
+);
 const outDir = path.join(root, "node_modules", ".cache", "gallery-e2e");
 mkdirSync(outDir, { recursive: true });
 const exe = path.join(root, "src-tauri", "target", "debug", "beatform.exe");
@@ -107,20 +110,36 @@ try {
   child.stdout.on("data", keep);
   child.stderr.on("data", keep);
 
-  const t = await page();
-  const cdp = new Cdp(t.webSocketDebuggerUrl);
-  await cdp.open();
-
-  await cdp.eval(`(async () => {
+  // Vite pushes one reload shortly after a cold boot (dep re-optimize /
+  // ws reconnect), which destroys the eval context mid-wait — attach,
+  // and on that specific failure re-attach once (the v2.68 lesson).
+  const attach = async () => {
+    const t = await page();
+    const c = new Cdp(t.webSocketDebuggerUrl);
+    await c.open();
+    return c;
+  };
+  let cdp = await attach();
+  const waitHooks = () =>
+    cdp.eval(`(async () => {
     const delay = ms => new Promise(r => setTimeout(r, ms));
     const deadline = Date.now() + 60000;
     while (!window.__store) {
       if (Date.now() > deadline) throw new Error("hooks unavailable");
       await delay(100);
     }
-    localStorage.setItem("viz.galleryRegistryOverride", ${JSON.stringify(registry)});
+    const override = ${JSON.stringify(registry)};
+    if (override) localStorage.setItem("viz.galleryRegistryOverride", override);
+    else localStorage.removeItem("viz.galleryRegistryOverride");
     return true;
   })()`);
+  try {
+    await waitHooks();
+  } catch {
+    await sleep(2500);
+    cdp = await attach();
+    await waitHooks();
+  }
 
   // 1. Load the registry through the real fetch + validation path.
   const loaded = await cdp.eval(`(async () => {
@@ -184,26 +203,37 @@ try {
     throw new Error(`theme apply failed: ${JSON.stringify(theme)}`);
   }
 
-  // 5. Visual proof: panel open on the Gallery section.
-  await cdp.eval(
-    `(() => {
+  // 5. The dialog surface: top-bar button state -> dialog, cards, filter,
+  // search — the UI the user actually touches.
+  const dom = await cdp.eval(`(async () => {
+    const delay = ms => new Promise(r => setTimeout(r, ms));
     const st = window.__store.getState();
-    st.setShowPanel(true);
     document.querySelector(".update-hero-close")?.click();
     if (window.__store.getState().recoveredDoc) st.dismissAutosave();
-    return true;
-  })()`,
-    false,
-  );
-  await sleep(800);
-  const dom = await cdp.eval(
-    `(() => { const cards = document.querySelectorAll(".gallery-card");
-              cards[0]?.scrollIntoView({ block: "start" });
-              return { cards: cards.length,
-                       imgs: document.querySelectorAll(".gallery-preview[src^='blob:']").length }; })()`,
-    false,
-  );
-  await sleep(500);
+    st.setShowGallery(true);
+    await delay(600);
+    const cards = () => document.querySelectorAll(".gallery-dialog .gallery-card").length;
+    const all = cards();
+    const chips = [...document.querySelectorAll(".gallery-toolbar .style-chip")];
+    chips.find(c => c.textContent === "Themes")?.click();
+    await delay(250);
+    const themes = cards();
+    chips.find(c => c.textContent === "All")?.click();
+    const inp = document.querySelector(".gallery-search");
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+    setter.call(inp, "prism");
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    await delay(250);
+    const searched = cards();
+    setter.call(inp, "");
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    await delay(200);
+    return { all, themes, searched,
+             imgs: document.querySelectorAll(".gallery-dialog .gallery-preview[src^='blob:']").length };
+  })()`);
+  if (dom.all < 11 || dom.themes !== 2 || dom.searched !== 1) {
+    throw new Error(`dialog surface failed: ${JSON.stringify(dom)}`);
+  }
   console.log("DOM:", JSON.stringify(dom));
   await cdp.shot("gallery-panel.png");
 
