@@ -59,13 +59,120 @@ Current product constraints remain:
 - Preview/export determinism and WYSIWYG remain hard contracts.
 - Windows is the currently shipped desktop platform.
 
-## Execution order
+## QUALITY CONSOLIDATION PROGRAM — active 2026-08-06, feature queue PAUSED
 
-Work top to bottom unless fresh evidence changes priority.
+Owner directive (2026-08-06, verbatim intent): stop pumping out new
+surfaces; bring the EXISTING feature surface to the bar first, because
+shallow foundations drag down every future addition. Triggers named by the
+owner: (1) the two seed themes are "glorified looks" — no modulation, no
+overlay layers, large parts of the app untouched — below the standing seed
+bar ("high effort and quality… impressive and visually stunning… so that
+users feel inclined to try creating and uploading their own"); (2) many
+modes lack the customization depth of the developed ones (Radial Burst,
+Tunnel), capping what looks/themes can even express; (3) naming drift
+(Templates vs Themes vs Styles vs Looks) with a stale in-app user guide
+completing the confusion; (4) fresh Gallery correctness bugs.
 
-| Order | ID       | Status      | Work                                   |
-| ----- | -------- | ----------- | -------------------------------------- |
-| 1     | FEAT-009 | CONSIDERING | True second-display performance window |
+**FEAT-009 and ALL new feature work PARKED until this program completes.**
+
+### Canonical vocabulary (decided 2026-08-06, applies everywhere from now on)
+
+- **Style** — built-in curated per-mode chip (factory, lives in code).
+- **Look** — shareable saved snapshot of ONE mode (params + sync,
+  `.bfpreset`, "My Looks").
+- **Theme** — complete setup (whole project document, `.bftheme`).
+  **The word "Template" is retired** in UI, guide, docs, code comments.
+- **Gallery** — the public curated collection of looks + themes.
+
+### Track A — Gallery correctness + naming (first; small; ships as one release)
+
+- [ ] A1 Install-state truth. Looks: "✓ Added" must track the installed
+      look's actual existence — record galleryId → userPresetId at install;
+      deleting the look in Visual settings reverts the button to
+      "+ Add look". Added state DISABLES the button (today it stays
+      clickable and stacks duplicates — owner repro). Themes: applying is
+      legitimately repeatable — show a transient "Applied ✓" then return
+      to "Apply theme"; no persistent Added state at all ("New Project"
+      made the lie obvious).
+- [ ] A2 Look-vs-theme explainer inside the Gallery dialog (one line each,
+      near the filters; type badge tooltips say it too).
+- [ ] A3 Deep links: the Themes-section shortcut opens the Gallery
+      pre-filtered to **Themes**; a matching shortcut in the styles/My
+      Looks row opens it pre-filtered to **Looks**.
+- [ ] A4 Naming sweep per the vocabulary above: "Templates" section
+      becomes "Themes", save-dialog filter names, toasts, hints, README,
+      docs/, CHANGELOG copy going forward.
+- [ ] A5 Gates + device e2e extended to cover A1 semantics (delete-look
+      revert, theme transient state, no dup-stacking).
+
+### Track B — Mode depth equalization (the core of the program)
+
+Bring every mode to the customization class of Radial Burst/Tunnel so
+each can carry a publish-worthy look. Aurora's resistance to seed tuning
+was the canary.
+
+- [ ] B0 Audit matrix (agent sweep, no code): per mode — curated + advanced
+      param counts, param-group coverage (shape / color / motion / beat
+      response / texture), style count + spread, modulation-target
+      richness, hint quality, visual ceiling notes, gap list, effort class
+      (S/M/L). Output: ranked upgrade queue for owner sign-off.
+      Current param-count tiers (from the registry dump, curated params):
+      shallow — voice-orb 6, aurora 6, synthwave 6, spectrum-scape 6;
+      mid — metaballs 7, nebula 7, echo-trails 7, particle-flow 7,
+      oscilloscope 7, tunnel 8 (rich styles offset the count);
+      developed — spectrum-bars 9, led-matrix 9, bass-circle 10,
+      particles 11, radial-burst 12. Builder is its own world (out of
+      scope here).
+- [ ] B1..Bn Per-mode upgrade waves in the B0-ranked order (worktree
+      agents, one mode per agent — the proven v2.47/v2.68 pattern):
+      params + groups + styles + hints + GPU-matrix re-bless + device
+      screenshots per mode. Shallow tier first.
+
+### Track C — Seed set v2 (after B lands for the modes involved)
+
+- [ ] C1 Flagship themes (3–5), built as full productions: modulation
+      routes, overlay layers (text/logo), backgrounds, post chain, scene
+      timeline where it serves the piece — each one demonstrably touching
+      the surfaces the current two ignore. Replaces deep-current /
+      sunset-circuit (registry `replacedBy` or in-place update — IDs
+      stay, content re-pins).
+- [ ] C2 Look pass 2: deepen the nine live looks where B raises a mode's
+      ceiling (looks carry params + sync ONLY by design — full-capability
+      showcase is the themes' job; the explainer from A2 makes that
+      visible to users too).
+- [ ] C3 Aurora hand-tuned look (needs B first — the mode, not the tuner,
+      was the limit) + seeds for any mode whose upgrade unlocks one.
+- [ ] C4 Owner validation loop per batch — explicit approve/veto PER
+      ENTRY before anything merges to registry main. (Process fix: the
+      v1 seed merge rode on a thumbnails-look-fine reading; never again.)
+
+### Track D — Docs truth pass (after A naming lands)
+
+- [ ] D1 In-app user guide full rewrite against the current app: define
+      Style/Look/Theme/Gallery per the vocabulary, add a Gallery section,
+      correct every drifted term ("Styles — curated one-click looks" etc.),
+      sweep all 12 sections for staleness (guide predates lyrics, Gallery,
+      perf overlay, preview scale…).
+- [ ] D2 README + docs/ site + gallery-repo docs same sweep.
+- [ ] D3 Repo-wide string audit for "template"/naming residue (UI strings,
+      tooltips, aria-labels, comments).
+
+### Decision points for the owner
+
+1. **Live themes now**: tombstone deep-current + sunset-circuit
+   immediately (Gallery shows 9 looks until C1), or leave them until C1
+   replaces them? (Recommendation: pull them — they're the flagged
+   offenders and the userbase is small.)
+2. **B0 ranking**: after the audit matrix lands, priority order is yours
+   to reshuffle before waves start.
+3. **Release cadence during the program**: keep shipping each track as
+   its own 2.x release (recommendation), or batch tracks?
+
+### Parked (do not start)
+
+| ID       | Status | Work                                   |
+| -------- | ------ | -------------------------------------- |
+| FEAT-009 | PARKED | True second-display performance window |
 
 ### FEAT-003 — Gallery (public curated registry) — DONE, LIVE
 
