@@ -63,30 +63,46 @@ Current product constraints remain:
 
 Work top to bottom unless fresh evidence changes priority.
 
-| Order | ID       | Status       | Work                                       |
-| ----- | -------- | ------------ | ------------------------------------------ |
-| 1     | FEAT-003 | OWNER-REVIEW | Browser SHIPPED v2.71.0; seeds await owner |
-| 2     | FEAT-009 | CONSIDERING  | True second-display performance window     |
+| Order | ID       | Status      | Work                                   |
+| ----- | -------- | ----------- | -------------------------------------- |
+| 1     | FEAT-009 | CONSIDERING | True second-display performance window |
 
-`FEAT-003 app side` **shipped in v2.71.0** (2026-08-05) — in-app Gallery
-browser with the full verified-download path (allowlist + commit pin +
-exact size + SHA-256 before parse; 17 adversarial unit tests + device E2E
-against the live registry, `scripts/gallery-e2e.mjs`). **11 seed
-candidates** (9 looks + 2 themes, agent-generated per the owner's
-high-effort bar, iterated over 4 visual rounds via
-`scripts/gallery-seed-shots.mjs`) sit on the `seed-candidates` branch of
-beatform-app/gallery, index pinned to a795bac with all hashes validated.
-**OWNER ACTION: review the candidate screenshots + entries, then merge
-`seed-candidates` → `main` to publish** (the app needs no update for
-content to appear). Candidates: prism-cathedral, orchid-glass,
-abyssal-bloom, solar-cascade, neon-monsoon, solar-temple, vhs-sunrise,
-obsidian-pulse, glass-mandala + themes deep-current, sunset-circuit.
-Evidence: `F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\feat003-seeds\`
-(KEEP-marked; canvas shots + exact shipped files). An aurora-mode seed was
-attempted and dropped (mode resists scripted tuning — washed out under
-the pumping demos across 3 attempts; candidate for a later hand-tuned
-round). Follow-up recorded: browser-dev tab needed a manual reload to see
-the new panel section (HMR edge, dev-only).
+### FEAT-003 — Gallery (public curated registry) — DONE, LIVE
+
+**Status:** DONE — **fully live 2026-08-05** across three releases:
+
+- **v2.71.0** — verified-download core + first browser UI. Security path
+  (BACKLOG design honored line by line): fixed registry URL (only remote
+  host in CSP connect-src; img-src deliberately excludes it so previews
+  can only render as hash-verified blob: URLs), strict allowlist regex on
+  every URL at parse AND download time, exact-size before SHA-256 before
+  parse, installs through the drag-import validators, no network without
+  explicit user action, minAppVersion/schemaVersion gates show-but-disable.
+  17 adversarial unit tests.
+- **v2.72.0** — owner-directed surface promotion: top-bar **Gallery**
+  button (new IconGallery) opens a dedicated dialog (wide grid,
+  All/Looks/Themes filters, search, refresh; Esc/backdrop close);
+  Templates keeps a "Browse the Gallery…" shortcut. Gotcha: `.modal`'s
+  380px base width sits later in App.css and beat the plain class —
+  `.modal.gallery-dialog` compound selector.
+- **Registry LIVE on main** (beatform-app/gallery de3325b): 11 seeds
+  (9 looks + 2 themes), owner-approved from delivered screenshots, all
+  content commit-pinned to a795bac and hash-validated at the pin.
+  Candidates: prism-cathedral, orchid-glass, abyssal-bloom,
+  solar-cascade, neon-monsoon, solar-temple, vhs-sunrise, obsidian-pulse,
+  glass-mandala + themes deep-current, sunset-circuit.
+- **E2E** `scripts/gallery-e2e.mjs` drives the TRUE default path (live
+  main registry, no override) on the debug shell over the real CSP:
+  registry 11/11, previews 11/11 verified, look install → My Looks +
+  applied, theme apply, dialog surface (11 cards / filter 2 themes /
+  search 1 / 11 blob imgs) — green.
+- Evidence: `F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\feat003-seeds\`
+  (KEEP-marked). Aurora-mode seed dropped (resists scripted tuning; later
+  hand-tuned round). Design harness: `scripts/gallery-seed-shots.mjs`.
+- Open follow-ups (no dates): aurora seed round two; grow the registry
+  from community submissions (PR template + CI validator already
+  enforce the contract); shader-type entries need a new registry version
+  - stricter review bar (schema `type` enum is extensible).
 
 `FEAT-004` **shipped in v2.69.0** (2026-08-04) — see its DONE entry; owner
 first-impressions recorded below (retest pending).
