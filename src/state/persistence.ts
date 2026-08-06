@@ -49,6 +49,47 @@ function readJson<T>(key: string, fallback: T): T {
 }
 
 /**
+ * Quota-safe write chokepoint: every localStorage.setItem in the state layer
+ * goes through here. Multi-MB asset sessions leave the origin near quota,
+ * where ANY small synchronous write throws QuotaExceededError — from inside a
+ * store action, after set() but before the renderer re-sync that follows, so
+ * state and pixels diverge and nothing surfaces (the app's only global net is
+ * `unhandledrejection`, which never sees a synchronous throw). A failed write
+ * degrades to session-only: console.warn per key, plus ONE throttled
+ * user-facing notice so a full store is announced instead of silently eating
+ * every subsequent change. The clean-exit marker (markSessionDirty /
+ * markCleanExit) keeps its own silent try/catch — blocked storage at boot
+ * must not greet the user with an error toast over a crash-recovery hint.
+ */
+let notifyWriteFailure: ((message: string) => void) | null = null;
+let lastWriteFailureNoticeAt = -Infinity;
+const WRITE_FAILURE_NOTICE_MS = 30_000;
+
+/** Wire the user-facing surface for failed writes (the store's error toast).
+ * Injected by the store at module init — this layer cannot import the store
+ * without a cycle. */
+export function setWriteFailureNotifier(fn: (message: string) => void): void {
+  notifyWriteFailure = fn;
+}
+
+export function safeSetItem(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    console.warn(`[persistence] write failed for ${key}`, e);
+    const now = Date.now();
+    if (notifyWriteFailure && now - lastWriteFailureNoticeAt >= WRITE_FAILURE_NOTICE_MS) {
+      lastWriteFailureNoticeAt = now;
+      notifyWriteFailure(
+        "Storage full — latest change couldn't be cached; export or save your project",
+      );
+    }
+    return false;
+  }
+}
+
+/**
  * Trailing-debounced writes for the settings that change on a slider drag
  * (params/post/motion/sync/mods). setParam is wired straight to the slider, so
  * a drag would otherwise run JSON.stringify + a synchronous localStorage write
@@ -169,7 +210,7 @@ export function loadStoredPresetId(): string | null {
 }
 
 export function saveStoredPresetId(id: string): void {
-  localStorage.setItem(LS_PRESET, id);
+  safeSetItem(LS_PRESET, id);
 }
 
 export function loadStoredParams(): Record<string, ParamValues> {
@@ -179,7 +220,7 @@ export function loadStoredParams(): Record<string, ParamValues> {
 }
 
 export function saveStoredParams(params: Record<string, ParamValues>): void {
-  scheduleWrite(LS_PARAMS, () => localStorage.setItem(LS_PARAMS, JSON.stringify(params)));
+  scheduleWrite(LS_PARAMS, () => safeSetItem(LS_PARAMS, JSON.stringify(params)));
 }
 
 export function loadStoredSync(): Record<string, SyncSettings> {
@@ -187,7 +228,7 @@ export function loadStoredSync(): Record<string, SyncSettings> {
 }
 
 export function saveStoredSync(sync: Record<string, SyncSettings>): void {
-  scheduleWrite(LS_SYNC, () => localStorage.setItem(LS_SYNC, JSON.stringify(sync)));
+  scheduleWrite(LS_SYNC, () => safeSetItem(LS_SYNC, JSON.stringify(sync)));
 }
 
 export function loadStoredBg(): BgSettings {
@@ -197,7 +238,7 @@ export function loadStoredBg(): BgSettings {
 }
 
 export function saveStoredBg(bg: BgSettings): void {
-  localStorage.setItem(LS_BG, JSON.stringify(bg));
+  safeSetItem(LS_BG, JSON.stringify(bg));
 }
 
 /** Per-mode background overrides. Validated against the (already loaded)
@@ -210,7 +251,7 @@ export function loadStoredBgByPreset(
 }
 
 export function saveStoredBgByPreset(v: Record<string, BgSettings>): void {
-  scheduleWrite(LS_BG_BY_PRESET, () => localStorage.setItem(LS_BG_BY_PRESET, JSON.stringify(v)));
+  scheduleWrite(LS_BG_BY_PRESET, () => safeSetItem(LS_BG_BY_PRESET, JSON.stringify(v)));
 }
 
 /** Per-mode center-image overrides (presetId -> asset id). */
@@ -221,7 +262,7 @@ export function loadStoredCenterImages(
 }
 
 export function saveStoredCenterImages(v: Record<string, string>): void {
-  scheduleWrite(LS_CENTER_IMAGES, () => localStorage.setItem(LS_CENTER_IMAGES, JSON.stringify(v)));
+  scheduleWrite(LS_CENTER_IMAGES, () => safeSetItem(LS_CENTER_IMAGES, JSON.stringify(v)));
 }
 
 export function loadStoredVolume(): number {
@@ -255,13 +296,7 @@ export function saveStoredOverlay(
   // refreshOverlay() call would be skipped). Callers that persist REFERENCES
   // to these assets (the image background) must check the return value: a
   // reference saved against an asset that wasn't boots into a black bg.
-  try {
-    localStorage.setItem(LS_OVERLAY, JSON.stringify({ layers, assets }));
-    return true;
-  } catch (e) {
-    console.warn("[persist] overlay too large for localStorage; session-only", e);
-    return false;
-  }
+  return safeSetItem(LS_OVERLAY, JSON.stringify({ layers, assets }));
 }
 
 const LS_CUSTOM_PRESETS = "viz.customPresets.v1";
@@ -274,13 +309,7 @@ export function loadCustomPresets(): PresetDef[] {
 }
 
 export function saveCustomPresets(defs: PresetDef[]): boolean {
-  try {
-    localStorage.setItem(LS_CUSTOM_PRESETS, JSON.stringify(defs));
-    return true;
-  } catch (e) {
-    console.warn("[persist] custom presets too large for localStorage", e);
-    return false;
-  }
+  return safeSetItem(LS_CUSTOM_PRESETS, JSON.stringify(defs));
 }
 
 const LS_LYRIC_STYLE = "viz.lyricStyle.v1";
@@ -290,7 +319,7 @@ export function loadStoredLyricStyle(): LyricStyle {
 }
 
 export function saveStoredLyricStyle(style: LyricStyle): void {
-  localStorage.setItem(LS_LYRIC_STYLE, JSON.stringify(style));
+  safeSetItem(LS_LYRIC_STYLE, JSON.stringify(style));
 }
 
 const LS_AUDIOGRAM = "viz.audiogram.v1";
@@ -300,7 +329,7 @@ export function loadStoredAudiogram(): AudiogramSettings {
 }
 
 export function saveStoredAudiogram(a: AudiogramSettings): void {
-  localStorage.setItem(LS_AUDIOGRAM, JSON.stringify(a));
+  safeSetItem(LS_AUDIOGRAM, JSON.stringify(a));
 }
 
 const LS_EXPORT = "viz.exportSettings.v1";
@@ -351,11 +380,7 @@ export function loadStoredExportSettings(): Partial<ExportSettings> {
 }
 
 export function saveStoredExportSettings(s: ExportSettings): void {
-  try {
-    localStorage.setItem(LS_EXPORT, JSON.stringify(s));
-  } catch {
-    // Quota — settings stay session-only; nothing depends on this write.
-  }
+  safeSetItem(LS_EXPORT, JSON.stringify(s));
 }
 
 const LS_ASPECT = "viz.aspect.v1";
@@ -366,7 +391,7 @@ export function loadStoredPost(): PostSettings {
 }
 
 export function saveStoredPost(post: PostSettings): void {
-  scheduleWrite(LS_POST, () => localStorage.setItem(LS_POST, JSON.stringify(post)));
+  scheduleWrite(LS_POST, () => safeSetItem(LS_POST, JSON.stringify(post)));
 }
 const LS_MOTION = "viz.motion.v1";
 
@@ -375,7 +400,7 @@ export function loadStoredMotion(): MotionSettings {
 }
 
 export function saveStoredMotion(motion: MotionSettings): void {
-  scheduleWrite(LS_MOTION, () => localStorage.setItem(LS_MOTION, JSON.stringify(motion)));
+  scheduleWrite(LS_MOTION, () => safeSetItem(LS_MOTION, JSON.stringify(motion)));
 }
 const LS_MODS = "viz.mods.v1";
 const LS_BUILDER = "viz.builderStack.v1";
@@ -387,7 +412,7 @@ export function loadStoredBuilderStack(): BuilderStack {
 }
 
 export function saveStoredBuilderStack(stack: BuilderStack): void {
-  scheduleWrite(LS_BUILDER, () => localStorage.setItem(LS_BUILDER, JSON.stringify(stack)));
+  scheduleWrite(LS_BUILDER, () => safeSetItem(LS_BUILDER, JSON.stringify(stack)));
 }
 
 export function loadStoredTimeline(): Timeline {
@@ -395,7 +420,7 @@ export function loadStoredTimeline(): Timeline {
 }
 
 export function saveStoredTimeline(timeline: Timeline): void {
-  localStorage.setItem(LS_TIMELINE, JSON.stringify(timeline));
+  safeSetItem(LS_TIMELINE, JSON.stringify(timeline));
 }
 
 export function loadStoredMods(): Record<string, ModRoute[]> {
@@ -403,7 +428,7 @@ export function loadStoredMods(): Record<string, ModRoute[]> {
 }
 
 export function saveStoredMods(mods: Record<string, ModRoute[]>): void {
-  scheduleWrite(LS_MODS, () => localStorage.setItem(LS_MODS, JSON.stringify(mods)));
+  scheduleWrite(LS_MODS, () => safeSetItem(LS_MODS, JSON.stringify(mods)));
 }
 
 export function loadStoredAspect(): Aspect {
@@ -411,7 +436,19 @@ export function loadStoredAspect(): Aspect {
 }
 
 export function saveStoredAspect(aspect: Aspect): void {
-  localStorage.setItem(LS_ASPECT, aspect);
+  safeSetItem(LS_ASPECT, aspect);
+}
+
+/** Key predates the persistence layer (no .v1 suffix) — existing installs
+ * keep their setting. */
+const LS_SMOOTH_SPECTRUM = "viz.smoothSpectrum";
+
+export function loadStoredSmoothSpectrum(): boolean {
+  return localStorage.getItem(LS_SMOOTH_SPECTRUM) === "1";
+}
+
+export function saveStoredSmoothSpectrum(v: boolean): void {
+  safeSetItem(LS_SMOOTH_SPECTRUM, v ? "1" : "0");
 }
 
 const LS_MIDI = "viz.midiBindings.v1";
@@ -421,7 +458,7 @@ export function loadStoredMidiBindings(): MidiBinding[] {
 }
 
 export function saveStoredMidiBindings(bindings: MidiBinding[]): void {
-  localStorage.setItem(LS_MIDI, JSON.stringify(bindings));
+  safeSetItem(LS_MIDI, JSON.stringify(bindings));
 }
 
 export function loadStoredQuantize(): QuantizeMode {

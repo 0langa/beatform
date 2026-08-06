@@ -120,7 +120,10 @@ import {
   saveStoredQuantize,
   loadStoredMidiBindings,
   loadStoredExportSettings,
+  loadStoredSmoothSpectrum,
+  saveStoredSmoothSpectrum,
   markSessionDirty,
+  setWriteFailureNotifier,
 } from "./persistence";
 import { getPrefs, setPrefs } from "./prefs";
 import { defaultPresetOrder, orderedPresets, reconcilePresetOrder } from "./presetOrder";
@@ -1028,7 +1031,7 @@ export const useVizStore = create<VizState>((set, get) => {
     assets: initialOverlay.assets,
     aspect: loadStoredAspect(),
     modsByPreset: initialMods,
-    smoothSpectrum: localStorage.getItem("viz.smoothSpectrum") === "1",
+    smoothSpectrum: loadStoredSmoothSpectrum(),
     timeline: loadStoredTimeline(),
     builderStack: loadStoredBuilderStack(),
     post: loadStoredPost(),
@@ -1661,7 +1664,7 @@ export const useVizStore = create<VizState>((set, get) => {
     setSmoothSpectrum(v) {
       record("smooth");
       set({ smoothSpectrum: v });
-      localStorage.setItem("viz.smoothSpectrum", v ? "1" : "0");
+      saveStoredSmoothSpectrum(v);
       getRenderer()?.setSmoothSpectrum(v);
     },
 
@@ -2068,7 +2071,7 @@ export const useVizStore = create<VizState>((set, get) => {
       saveStoredAspect(doc.aspect);
       saveStoredMods(doc.modsByPreset);
       saveStoredTimeline(doc.timeline);
-      localStorage.setItem("viz.smoothSpectrum", doc.smoothSpectrum ? "1" : "0");
+      saveStoredSmoothSpectrum(doc.smoothSpectrum);
       getRenderer()?.setSmoothSpectrum(doc.smoothSpectrum);
       saveStoredPost(doc.post);
       getRenderer()?.setPost(doc.post);
@@ -2261,6 +2264,11 @@ export const useVizStore = create<VizState>((set, get) => {
     },
   };
 });
+
+// A failed localStorage write (quota) surfaces as the ordinary error toast —
+// throttled inside persistence so a full store announces itself once, not on
+// every keystroke. Wired here because persistence cannot import the store.
+setWriteFailureNotifier((message) => useVizStore.setState({ error: message }));
 
 /** True while an export is running — guards Escape-to-close and modal close. */
 export function isExporting(): boolean {
