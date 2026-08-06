@@ -1,5 +1,5 @@
 import type { ModRoute, ModSource } from "./modMatrix";
-import type { ParamSpec } from "../render/types";
+import { isModTarget, type ParamSpec } from "../render/types";
 import type { StemTrackKey } from "../audio/stems";
 
 /**
@@ -85,6 +85,10 @@ export function stemRoutesFor(
     let best: { key: string; score: number } | null = null;
     for (const p of params) {
       if (used.has(p.key)) continue;
+      // mod:"off" params are not modulation targets (RP-2) — without this
+      // the "stars" keyword happily wired hats to Aurora's on/off starfield
+      // TOGGLE, which is the strobing defect in one line.
+      if (!isModTarget(p)) continue;
       const score = scoreKey(p.key, role.keywords);
       if (score > 0 && (!best || score > best.score)) best = { key: p.key, score };
     }

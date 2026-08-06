@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_PALETTE_STD } from "../wgslLib";
 
 /**
  * Echo Trails — the first feedback preset. A fresh audio-driven source (a
@@ -354,6 +355,7 @@ export const echoTrails: PresetDef = {
       label: "Club mirror",
       group: "shape",
       control: "enum",
+      mod: "snap",
       options: [
         { value: 1, label: "Off" },
         { value: 2, label: "Mirrored" },
@@ -389,6 +391,7 @@ export const echoTrails: PresetDef = {
       label: "Ring shape",
       group: "shape",
       control: "enum",
+      mod: "snap",
       options: [
         { value: 0, label: "Round" },
         { value: 1, label: "1 lobe" },
@@ -699,7 +702,7 @@ fn preset(uv: vec2f) -> vec4f {
   // could only ever address a 6-bin window of the 96, all of it mid, so it
   // never once lit on a kick.
   let pk = mix((peakAt(0.0) + peakAt(1.0)) * 0.5, peakAt(specX), seamK);
-  let ringPal = cosPalette(ringT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  let ringPal = cosPalette(ringT, ${WGSL_PALETTE_STD});
   let ringHot = mix(ringPal, vec3f(1.0, 0.98, 0.95), pk * pk * 0.7);
   col += ringHot * band * (0.5 + spec) * P_inject() * deposit;
 
@@ -707,7 +710,7 @@ fn preset(uv: vec2f) -> vec4f {
   // white for a hot-flash look (bounded — see the note above; no push past
   // 1.0 here since this, too, feeds back into next frame's accumulator).
   let corePal = mix(
-    cosPalette(hueT + 0.11, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67)),
+    cosPalette(hueT + 0.11, ${WGSL_PALETTE_STD}),
     vec3f(1.0),
     0.55
   );

@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_PALETTE_STD } from "../wgslLib";
 
 /**
  * Particles: real, individually-identified particles — each one's size, hue,
@@ -304,6 +305,7 @@ export const particles: PresetDef = {
       label: "Fly mode",
       group: "motion",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -387,6 +389,7 @@ export const particles: PresetDef = {
       label: "Layers",
       group: "shape",
       control: "enum",
+      mod: "snap",
       options: [
         { value: 1, label: "1" },
         { value: 2, label: "2" },
@@ -483,6 +486,7 @@ export const particles: PresetDef = {
       label: "Club mirror",
       group: "shape",
       control: "enum",
+      mod: "snap",
       options: [
         { value: 1, label: "Off" },
         { value: 2, label: "Mirrored" },
@@ -585,7 +589,7 @@ fn preset(uv: vec2f) -> vec4f {
   // would go grey), plus a faint warped nebula breathing with bass -- ambient
   // wash only, safe to fill the frame.
   let hueT = 1.0 - P_hue() / 360.0;
-  let bgPal = cosPalette(hueT + 0.08, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  let bgPal = cosPalette(hueT + 0.08, ${WGSL_PALETTE_STD});
   var col = bgPal * P_bgLevel() * (1.0 + u.bass * 0.6);
   // A plain fbm, not warpFbm: this ambient wash is barely visible (x0.05), so
   // the domain-warp's extra two fbm evals per pixel (15 noise2 -> 5) were pure
@@ -735,7 +739,7 @@ fn preset(uv: vec2f) -> vec4f {
           // Band color: bass keeps the base hue, mids and treble step away from
           // it by Band color degrees each — a legible bass/mid/treble split.
           let hueOff = (h3 - 0.5) * P_hueVariance() + bandTint * P_bandColor();
-          let sPal = cosPalette(1.0 - (P_hue() + hueOff) / 360.0, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+          let sPal = cosPalette(1.0 - (P_hue() + hueOff) / 360.0, ${WGSL_PALETTE_STD});
           let lum = (core * 1.6 + halo) * fade * tw * (0.5 + band * 0.9) * beatPop;
           let hot = smoothstep(0.26, 0.06, Z) * P_hotCore() * (0.4 + h1);
           col += mix(sPal, vec3f(1.0), hot * 0.7) * lum * P_brightness();
@@ -896,7 +900,7 @@ fn preset(uv: vec2f) -> vec4f {
           // Band color: bass keeps the base hue, mids/treble step away by Band
           // color degrees each — the same legible split as fly mode.
           let hueOff = (h3 - 0.5) * P_hueVariance() + bandTint * P_bandColor();
-          let sPal = cosPalette(1.0 - (P_hue() + hueOff) / 360.0, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+          let sPal = cosPalette(1.0 - (P_hue() + hueOff) / 360.0, ${WGSL_PALETTE_STD});
           let lum = (core * 1.4 + bloom) * tw * depthV * (0.55 + band * 0.9) * beatPop;
           let hot = smoothstep(0.6, 1.4, depthV) * P_hotCore() * (0.4 + h1);
           col += mix(sPal, vec3f(1.0), hot * 0.7) * lum * P_brightness();

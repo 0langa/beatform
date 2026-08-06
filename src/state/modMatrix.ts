@@ -105,10 +105,20 @@ export function applyMods(
   for (const route of routes) {
     const spec = specs.get(route.param);
     if (!spec) continue; // route to a param this preset doesn't have — skip
+    // mod:"off" (RP-2): not a modulation target. The target lists no longer
+    // offer such params, and a route that still names one (an old document)
+    // is inert rather than a strobing toggle. Checked BEFORE the lazy clone
+    // so a document whose routes are all inert keeps the identity fast path.
+    if (spec.mod === "off") continue;
     if (!out) out = { ...base };
     const value = sourceValue(features, route.source, stems);
     const range = spec.max - spec.min;
-    const next = (out[route.param] ?? spec.default) + value * route.amount * range;
+    let next = (out[route.param] ?? spec.default) + value * route.amount * range;
+    // mod:"snap" (RP-2): counts and segment enums quantize to whole numbers,
+    // so a modulated Club mirror steps 3 -> 4 instead of rendering 3.7
+    // segments. Runs here, in the one apply chokepoint, so live and export
+    // resolve identical values by construction.
+    if (spec.mod === "snap") next = Math.round(next);
     out[route.param] = Math.min(spec.max, Math.max(spec.min, next));
   }
   return out ?? base;

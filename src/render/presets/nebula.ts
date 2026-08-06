@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_PALETTE_PHASE } from "../wgslLib";
 
 /**
  * Domain-warped fbm nebula with optional kaleidoscope fold. A cosine palette
@@ -204,6 +205,11 @@ export const nebula: PresetDef = {
       max: 6,
       step: 0.1,
       default: 2.4,
+      // Display-side log taper (RP-14 proving case): scale is multiplicative
+      // — 0.8..2 (big billows, where the visual variety lives) is the same
+      // perceptual span as 2..5, but a linear track gave it a fifth of the
+      // travel. Position mapping only; stored values are untouched.
+      taper: "log",
       hint: "Cloud size — low = big billows, high = fine detail",
     },
     {
@@ -231,6 +237,7 @@ export const nebula: PresetDef = {
       // styles (Slow Drift, Lo-fi Haze). Collapsing them to one option would
       // make those styles select nothing and print "Custom (1)".
       control: "enum",
+      mod: "snap",
       options: [
         { value: 0, label: "None" },
         { value: 1, label: "1 segment" },
@@ -523,12 +530,12 @@ fn preset(uv: vec2f) -> vec4f {
   let palT = fract(v * (P_hueRange() / 360.0) + P_hue() / 360.0
            + (P_midHueShift() / 360.0) * u.mid * 0.5);
   let chroma = mix(0.06, 0.5, P_saturation());
-  let pal = cosPalette(palT, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  let pal = cosPalette(palT, vec3f(0.5), vec3f(chroma), vec3f(1.0), ${WGSL_PALETTE_PHASE});
 
   // Genuinely dark field: near-black but hued, not grey, so filaments have
   // real darkness to glow against instead of sitting on a lit haze.
   let bgT = fract(P_hue() / 360.0 + 0.5);
-  let bg = cosPalette(bgT, vec3f(0.03), vec3f(0.025), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  let bg = cosPalette(bgT, vec3f(0.03), vec3f(0.025), vec3f(1.0), ${WGSL_PALETTE_PHASE});
 
   // Density-driven brightness: audio multiplies the GAIN on the filaments
   // rather than lifting the whole frame, so gaps stay dark even when bass
@@ -550,7 +557,7 @@ fn preset(uv: vec2f) -> vec4f {
     let backD = clamp((backRaw - 0.42) / 0.32, 0.0, 1.0);
     let backT = fract(pow(backD, 1.4) * (P_hueRange() / 360.0) + P_hue() / 360.0 + 0.12
              + (P_midHueShift() / 360.0) * u.mid * 0.3);
-    let backPal = cosPalette(backT, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+    let backPal = cosPalette(backT, vec3f(0.5), vec3f(chroma), vec3f(1.0), ${WGSL_PALETTE_PHASE});
     col += backPal * pow(backD, 2.2) * P_depth() * (0.22 + energyGain * 0.5);
   }
 

@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
  * Log-spectrum bars with glow, peak caps, beat-driven background pulse and
@@ -243,6 +244,7 @@ export const spectrumBars: PresetDef = {
       label: "Mirror",
       group: "shape",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -254,6 +256,7 @@ export const spectrumBars: PresetDef = {
       label: "Peak caps",
       group: "shape",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -364,14 +367,7 @@ export const spectrumBars: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
-fn colorScale(value: f32, control: f32) -> f32 {
-  if (control <= 1.0) { return value * control; }
-  return min(value * control, 1.0);
-}
-
-fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
-  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
-}
+${WGSL_COLOR_CONTROLS}
 
 fn preset(uvIn: vec2f) -> vec4f {
   // Beat zoom: scale around center (Motion→Pulse master scales it)

@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
  * Circular spectrum: bars radiate outward from a calm breathing core, with
@@ -229,6 +230,7 @@ export const radialBurst: PresetDef = {
       label: "Symmetry",
       group: "shape",
       control: "enum",
+      mod: "snap",
       options: [
         { value: 1, label: "1×" },
         { value: 2, label: "2×" },
@@ -281,6 +283,7 @@ export const radialBurst: PresetDef = {
       label: "Peak arcs",
       group: "shape",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -292,6 +295,7 @@ export const radialBurst: PresetDef = {
       label: "Cover art",
       group: "image",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -303,6 +307,7 @@ export const radialBurst: PresetDef = {
       label: "Match cover colors",
       group: "image",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -426,6 +431,7 @@ export const radialBurst: PresetDef = {
       label: "Detail ring",
       group: "shape",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -477,6 +483,7 @@ export const radialBurst: PresetDef = {
       label: "Image fit",
       group: "image",
       control: "enum",
+      mod: "off",
       options: [
         {
           value: 0,
@@ -544,14 +551,7 @@ export const radialBurst: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
-fn colorScale(value: f32, control: f32) -> f32 {
-  if (control <= 1.0) { return value * control; }
-  return min(value * control, 1.0);
-}
-
-fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
-  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
-}
+${WGSL_COLOR_CONTROLS}
 
 fn preset(uv: vec2f) -> vec4f {
   let p = centered(uv);

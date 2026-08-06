@@ -216,6 +216,7 @@ export const oscilloscope: PresetDef = {
       label: "Fill",
       group: "shape",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -227,6 +228,7 @@ export const oscilloscope: PresetDef = {
       label: "Mirror",
       group: "shape",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -390,6 +392,7 @@ export const oscilloscope: PresetDef = {
       label: "Kaleidoscope",
       group: "shape",
       control: "enum",
+      mod: "off",
       options: [
         { value: 1, label: "Off" },
         { value: 2, label: "Mirrored" },

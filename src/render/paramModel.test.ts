@@ -6,6 +6,7 @@ import {
   defaultParams,
   FALLBACK_GROUP,
   groupParams,
+  isModTarget,
   paramSearchText,
   presetGroups,
   type ParamSpec,
@@ -172,6 +173,78 @@ describe("control types", () => {
       }
     });
   }
+});
+
+describe("mod metadata (RP-2 / RP-14)", () => {
+  for (const preset of ALL) {
+    it(`${preset.id}: every toggle opts out of modulation`, () => {
+      // Modulating an on/off can only strobe it, and snapping does not make
+      // that meaningful — a NEW toggle shipped without mod:"off" recreates
+      // audit defect RP-2, so the rule is enforced registry-wide.
+      for (const spec of allParams(preset)) {
+        if (spec.control !== "toggle") continue;
+        expect(spec.mod, `${preset.id}/${spec.key}: toggle without mod:"off"`).toBe("off");
+      }
+    });
+
+    it(`${preset.id}: every enum declares snap or off — never smooth`, () => {
+      // A fractional enum value is a shader-defined accident (3.7 mirror
+      // segments). Ordered counts take "snap"; binary/mode choices take "off".
+      for (const spec of allParams(preset)) {
+        if (spec.control !== "enum") continue;
+        expect(
+          spec.mod === "snap" || spec.mod === "off",
+          `${preset.id}/${spec.key}: enum with continuous modulation`,
+        ).toBe(true);
+      }
+    });
+
+    it(`${preset.id}: snapped enums cover every integer in range`, () => {
+      // mod:"snap" quantizes applied modulation to whole numbers, so every
+      // integer between min and max must BE an option — otherwise a snapped
+      // route can park the param on a value the dropdown calls "Custom".
+      for (const spec of allParams(preset)) {
+        if (spec.control !== "enum" || spec.mod !== "snap") continue;
+        const values = new Set(spec.options.map((o) => o.value));
+        for (let v = Math.ceil(spec.min); v <= Math.floor(spec.max); v++) {
+          expect(values.has(v), `${preset.id}/${spec.key}: snapped ${v} is not an option`).toBe(
+            true,
+          );
+        }
+      }
+    });
+  }
+
+  it('isModTarget excludes exactly the mod:"off" params', () => {
+    expect(isModTarget(num("a"))).toBe(true);
+    expect(isModTarget(num("a", { mod: "smooth" }))).toBe(true);
+    expect(isModTarget(num("a", { mod: "snap" }))).toBe(true);
+    expect(isModTarget(num("a", { mod: "off" }))).toBe(false);
+  });
+
+  it("the registry actually exercises all three states (fixture sanity)", () => {
+    const specs = ALL.flatMap((p) => allParams(p));
+    expect(specs.some((s) => s.mod === "off")).toBe(true);
+    expect(specs.some((s) => s.mod === "snap")).toBe(true);
+    expect(specs.some((s) => s.mod === undefined)).toBe(true);
+  });
+});
+
+describe("taper metadata (RP-14)", () => {
+  it('taper:"log" only appears on ranges a log can describe (min > 0)', () => {
+    for (const preset of ALL) {
+      for (const spec of allParams(preset)) {
+        if (spec.taper !== "log") continue;
+        expect(spec.min, `${preset.id}/${spec.key}: log taper needs min > 0`).toBeGreaterThan(0);
+        expect(spec.max).toBeGreaterThan(spec.min);
+      }
+    }
+  });
+
+  it("nebula's scale carries the wave-0 proving taper", () => {
+    const nebula = ALL.find((p) => p.id === "nebula")!;
+    expect(nebula.params.find((p) => p.key === "scale")?.taper).toBe("log");
+  });
 });
 
 describe("paramSearchText", () => {

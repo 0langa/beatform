@@ -90,6 +90,58 @@ describe("modulation matrix", () => {
   });
 });
 
+describe("param mod metadata on the apply path (RP-2 / RP-14)", () => {
+  // Real tagged params, so these tests break if the tagging regresses:
+  // nebula/kaleido is a segment-count enum (mod:"snap", 0..12 step 1),
+  // spectrum-bars/mirror is a pure toggle (mod:"off").
+  const nebula = presets.find((p) => p.id === "nebula")!;
+  const bars = presets.find((p) => p.id === "spectrum-bars")!;
+
+  it("fixture sanity: the offenders carry the metadata this suite exercises", () => {
+    expect(nebula.params.find((p) => p.key === "kaleido")?.mod).toBe("snap");
+    expect(bars.params.find((p) => p.key === "mirror")?.mod).toBe("off");
+  });
+
+  it("snap: applied modulation lands on whole numbers, not 3.7 segments", () => {
+    const base = { ...defaultParams(nebula), kaleido: 2 };
+    const routes = [{ id: "r", source: "bass" as const, param: "kaleido", amount: 0.3 }];
+    // 2 + 0.55 * 0.3 * 12 = 3.98 -> 4. Unsnapped this was the fractional-enum
+    // defect: the shader lerped between fold counts and strobed.
+    const out = applyMods(nebula, base, routes, features({ bass: 0.55 }));
+    expect(out.kaleido).toBe(4);
+    // And every intermediate feature level still yields an integer.
+    for (let v = 0; v <= 1; v += 0.07) {
+      const stepped = applyMods(nebula, base, routes, features({ bass: v }));
+      expect(Number.isInteger(stepped.kaleido), `feature ${v}`).toBe(true);
+    }
+  });
+
+  it("snap: rounding happens before the clamp, so the top of the range is reachable and held", () => {
+    const base = { ...defaultParams(nebula), kaleido: 11 };
+    const routes = [{ id: "r", source: "bass" as const, param: "kaleido", amount: 1 }];
+    const out = applyMods(nebula, base, routes, features({ bass: 0.9 }));
+    expect(out.kaleido).toBe(12); // 11 + 10.8 -> 21.8 -> round -> clamp 12
+  });
+
+  it('off: a route to a mod:"off" param is inert — the strobing toggle cannot come back', () => {
+    // A document saved before the metadata existed may still carry such a
+    // route; it must do nothing rather than strobe, and a route list that is
+    // ENTIRELY inert keeps the identity fast path (no per-frame clone).
+    const barsBase = defaultParams(bars);
+    const routes = [{ id: "r", source: "kick" as const, param: "mirror", amount: 1 }];
+    expect(applyMods(bars, barsBase, routes, features({ kick: 1 }))).toBe(barsBase);
+    // Mixed lists still apply the live routes and only the live routes.
+    const mixed = [
+      { id: "a", source: "kick" as const, param: "mirror", amount: 1 },
+      { id: "b", source: "kick" as const, param: "hue", amount: 1 },
+    ];
+    const hueSpec = bars.params.find((p) => p.key === "hue")!;
+    const out = applyMods(bars, { ...barsBase, mirror: 0 }, mixed, features({ kick: 1 }));
+    expect(out.hue).toBe(hueSpec.max); // live route applied and clamped
+    expect(out.mirror).toBe(0); // off route did nothing
+  });
+});
+
 describe("post-processing modulation targets", () => {
   const post = { ...DEFAULT_POST };
 

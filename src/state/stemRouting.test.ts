@@ -58,4 +58,19 @@ describe("stemRoutesFor", () => {
       expect(role.amount).toBeLessThanOrEqual(1);
     }
   });
+
+  it('never targets a mod:"off" param, even on an exact keyword hit (RP-2)', () => {
+    // The live defect this pins: Aurora's "stars" is an on/off TOGGLE, and
+    // "stars" is an exact keyword of the hat role — the auto-router happily
+    // wired hats to it, strobing the starfield. mod:"off" params are not
+    // modulation targets anywhere, including here.
+    n = 0;
+    const params: ParamSpec[] = [
+      { ...spec("stars"), control: "toggle", min: 0, max: 1, step: 1, default: 1, mod: "off" },
+      spec("detail"), // the hat role's next-best keyword
+    ];
+    const routes = stemRoutesFor("stem1", params, id);
+    expect(routes.find((r) => r.source === "stem1:hat")?.param).toBe("detail");
+    expect(routes.some((r) => r.param === "stars")).toBe(false);
+  });
 });

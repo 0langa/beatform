@@ -150,6 +150,46 @@ function UnstableHost({ props }: { props: ParamsPanelProps }) {
   );
 }
 
+describe("modulation & MIDI target lists (RP-2 / RP-14)", () => {
+  it('mod:"off" params are absent from the route-target picker', () => {
+    // spectrum-bars: "mirror"/"peaks" are pure toggles (mod:"off"); "hue" is a
+    // regular target. A route must exist for the picker to render at all.
+    const preset = presets.find((p) => p.id === "spectrum-bars")!;
+    expect(preset.params.find((p) => p.key === "mirror")?.mod).toBe("off"); // fixture sanity
+    const props = {
+      ...makeProps(preset),
+      mods: [{ id: "r1", source: "kick" as const, param: "hue", amount: 0.5 }],
+    };
+    render(<ParamsPanel {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    const select = screen.getByTitle("Which knob it moves") as HTMLSelectElement;
+    const values = [...select.querySelectorAll("option")].map((o) => o.getAttribute("value"));
+    expect(values).toContain("hue");
+    expect(values).not.toContain("mirror");
+    expect(values).not.toContain("peaks");
+    expect(values).toContain("post:chromatic"); // post targets unaffected
+  });
+
+  it("a legacy route to an off param keeps a visible, inert option instead of being rewritten", () => {
+    const preset = presets.find((p) => p.id === "spectrum-bars")!;
+    const props = {
+      ...makeProps(preset),
+      mods: [{ id: "r1", source: "kick" as const, param: "mirror", amount: 1 }],
+    };
+    render(<ParamsPanel {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    const select = screen.getByTitle("Which knob it moves") as HTMLSelectElement;
+    // The select still SHOWS the route's real target — merely opening the
+    // panel must not snap it onto the first modulatable param.
+    expect(select.value).toBe("mirror");
+    expect(
+      [...select.querySelectorAll("option")].some(
+        (o) => o.getAttribute("value") === "mirror" && /not modulatable/.test(o.textContent ?? ""),
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("ParamsPanel memo (H13 stable-props contract, UI-2)", () => {
   it("does not reconcile when the parent re-renders with stable prop identities", () => {
     const { preset, reads } = probedPreset();

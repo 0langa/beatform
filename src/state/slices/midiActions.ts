@@ -51,9 +51,15 @@ export function midiActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       if (!action) return;
       if (action.type === "param") {
         // A binding can outlive a mode switch — only drive a param the active
-        // preset actually has, and clamp to its range.
+        // preset actually has, and clamp to its range. The param's `mod`
+        // metadata applies here exactly as on the mod-matrix path (RP-2):
+        // "off" params are not CC targets (a stale binding is inert), "snap"
+        // params take whole numbers so a fader can't park an enum on 3.7.
         const spec = allParams(presetById(s.presetId)).find((p) => p.key === action.key);
-        if (spec) get().setParam(action.key, Math.min(spec.max, Math.max(spec.min, action.value)));
+        if (spec && spec.mod !== "off") {
+          const value = spec.mod === "snap" ? Math.round(action.value) : action.value;
+          get().setParam(action.key, Math.min(spec.max, Math.max(spec.min, value)));
+        }
       } else {
         get().queuePreset(action.id); // inherits the beat-quantize takeover
       }
