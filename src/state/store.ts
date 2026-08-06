@@ -149,7 +149,7 @@ import { lyricsGenActions } from "./slices/lyricsGenActions";
 import { midiActions } from "./slices/midiActions";
 import { overlayActions } from "./slices/overlayActions";
 import { galleryActions } from "./slices/galleryActions";
-import type { GalleryEntry } from "./gallery";
+import type { GalleryEntry, GalleryEntryType } from "./gallery";
 import { projectIOActions } from "./slices/projectIOActions";
 import { stemsModsActions } from "./slices/stemsModsActions";
 
@@ -265,8 +265,17 @@ interface SessionSlice {
   galleryPreviews: Record<string, string>;
   /** entry id currently downloading/installing, else null. */
   galleryBusy: string | null;
-  /** entry ids installed this session (button turns into a checkmark). */
-  galleryInstalled: Record<string, boolean>;
+  /** Look entry id -> the user-preset id its install created (A1). "✓ Added"
+   * holds only while that preset still EXISTS in My Looks — the dialog
+   * re-checks against userPresets, so deleting the look reverts the card to
+   * "+ Add look" instead of trusting a stale record. Themes never enter. */
+  galleryInstalled: Record<string, string>;
+  /** Theme entry id that just applied — transient (~2.5 s) "Applied ✓"
+   * feedback (A1). Applying a theme is legitimately repeatable, so themes get
+   * no persistent installed state at all. */
+  galleryApplied: string | null;
+  /** Filter the Gallery dialog opens pre-armed to (A3 deep links). */
+  galleryOpenFilter: "all" | GalleryEntryType;
   /** Gallery dialog visibility (top-bar surface). */
   showGallery: boolean;
   /** Track metadata for {title}/{artist} overlay templates. */
@@ -301,6 +310,10 @@ interface SessionSlice {
   /** Batch render: setup + in-flight run. Null until the panel is opened. */
   batch: BatchRun | null;
   batchStatus: "idle" | "running" | "done";
+  /** Batch refusal messages, rendered INSIDE the batch panel (SS-3) — they
+   * used to land in exportError, which only ExportDialog shows, so a blocked
+   * Start looked like a dead click. */
+  batchError: string | null;
   /** Files still being tag-scanned by addBatchTracks (0 = not scanning). The
    * scan takes seconds per file and the panel must not look dead meanwhile. */
   batchScanning: number;
@@ -428,8 +441,10 @@ interface Actions {
   importThemeText(contents: string): void;
   /** Save the current setup as a shareable .bftheme file. */
   exportCurrentTheme(meta: ThemeMeta): Promise<void>;
-  /** Show/hide the Gallery dialog; first open loads the registry. */
-  setShowGallery(v: boolean): void;
+  /** Show/hide the Gallery dialog; first open loads the registry. An
+   * explicit `filter` opens it pre-filtered (A3 deep links); a plain open
+   * starts at All. */
+  setShowGallery(v: boolean, filter?: GalleryEntryType): void;
   /** Load (or refresh) the Gallery registry + verified previews. */
   openGallery(): Promise<void>;
   /** Download, verify, parse and install/apply one Gallery entry. */
@@ -1077,6 +1092,8 @@ export const useVizStore = create<VizState>((set, get) => {
     galleryPreviews: {},
     galleryBusy: null,
     galleryInstalled: {},
+    galleryApplied: null,
+    galleryOpenFilter: "all" as const,
     showGallery: false,
     trackMeta: { title: "", artist: "" },
     coverArt: null,
@@ -1115,6 +1132,7 @@ export const useVizStore = create<VizState>((set, get) => {
     })(),
     batch: null,
     batchStatus: "idle" as const,
+    batchError: null,
     batchScanning: 0,
     codecSupport: null,
     showLibrary: false,

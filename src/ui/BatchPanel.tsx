@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { BatchRun, BatchTrack } from "../state/batch";
 import { runStats } from "../state/batch";
+import { EXPORT_RUNNING_REASON } from "../state/slices/batchActions";
 import type { OverlayLayer } from "../render/overlay";
 import { useFocusTrap } from "./useFocusTrap";
 
@@ -28,6 +29,12 @@ export interface BatchPanelProps {
    * front, before the output folder was even chosen.
    */
   simplifiedRenderer: boolean;
+  /** Batch refusal messages (SS-3) — they used to go to exportError, which
+   * only ExportDialog renders, so a refused Start looked like a dead click. */
+  batchError: string | null;
+  /** True while a SINGLE export is running: Start disables with the same
+   * sentence the store guard would answer with (F2 — one shared reason). */
+  exporting: boolean;
   onAddTracks(files: File[]): void;
   onRemoveTrack(id: string): void;
   onRetitle(id: string, title: string): void;
@@ -68,11 +75,16 @@ function fmtEta(ms: number | null, now: number): string {
 // reference-stable (see the useCallback block there) or memo does nothing.
 export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
   const { run, status, overlayLayers, aspect, formatLabel, simplifiedRenderer } = props;
-  // Not a pre-flight WARNING (those advise and let you proceed) — this one is
-  // a hard block, so it disables Start rather than sitting above it.
+  // Not a pre-flight WARNING (those advise and let you proceed) — these are
+  // hard blocks, so they disable Start rather than sitting above it. The
+  // running-export reason is the exact sentence startBatch would refuse with;
+  // status !== "running" because a running BATCH mirrors itself into
+  // `exporting` (see batchActions.onJobUpdate) and must not self-block.
   const blocked = simplifiedRenderer
     ? "Batch render needs hardware rendering (WebGPU), which isn't available on this system — every job would fail after decoding its track"
-    : null;
+    : props.exporting && status !== "running"
+      ? EXPORT_RUNNING_REASON
+      : null;
   const fileInput = useRef<HTMLInputElement>(null);
   const tracks = run?.tracks ?? [];
   const running = status === "running";
@@ -235,6 +247,13 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
         )}
 
         {blocked && <div className="toast-inline error">{blocked}</div>}
+
+        {/* Refusals from startBatch/retryFailedBatch (SS-3) — shown where the
+            click happened. Skipped when `blocked` already states the same
+            condition, so the panel never nags twice in a row. */}
+        {props.batchError && props.batchError !== blocked && (
+          <div className="toast-inline error">{props.batchError}</div>
+        )}
 
         {warnings.map((w) => (
           <p className="section-hint" key={w}>

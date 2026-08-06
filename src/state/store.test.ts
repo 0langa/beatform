@@ -251,7 +251,12 @@ describe("stepPreset honours beat-quantize like the number-key path (L11)", () =
 describe("export and batch refuse to start on the simplified renderer (F2)", () => {
   afterEach(async () => {
     const { useVizStore } = await import("./store");
-    useVizStore.setState({ simplifiedRenderer: false, exportError: null, batch: null });
+    useVizStore.setState({
+      simplifiedRenderer: false,
+      exportError: null,
+      batchError: null,
+      batch: null,
+    });
   });
 
   it("runExport sets the reason and does no work at all", async () => {
@@ -283,7 +288,7 @@ describe("export and batch refuse to start on the simplified renderer (F2)", () 
     };
     useVizStore.setState({
       simplifiedRenderer: true,
-      exportError: null,
+      batchError: null,
       batchStatus: "idle",
       batch: {
         // Never read: startBatch returns long before runBatch touches it.
@@ -298,7 +303,10 @@ describe("export and batch refuse to start on the simplified renderer (F2)", () 
 
     await useVizStore.getState().startBatch();
 
-    expect(useVizStore.getState().exportError).toBe(SIMPLIFIED_EXPORT_REASON);
+    // The reason lands in batchError — the surface the batch panel renders
+    // (SS-3) — never in exportError, which only ExportDialog shows.
+    expect(useVizStore.getState().batchError).toBe(SIMPLIFIED_EXPORT_REASON);
+    expect(useVizStore.getState().exportError).toBeNull();
     // Nothing was consumed: the tracks the user queued are still queued, so
     // this reads as "not yet", not "your list is gone".
     expect(useVizStore.getState().batchStatus).toBe("idle");
@@ -314,7 +322,7 @@ describe("export and batch refuse to start on the simplified renderer (F2)", () 
     // pre-existing desktop-only guard instead of the WebGPU one.
     useVizStore.setState({
       simplifiedRenderer: false,
-      exportError: null,
+      batchError: null,
       batchStatus: "idle",
       batch: {
         // Never read: startBatch returns long before runBatch touches it.
@@ -338,7 +346,7 @@ describe("export and batch refuse to start on the simplified renderer (F2)", () 
 
     await useVizStore.getState().startBatch();
 
-    expect(useVizStore.getState().exportError).toBe(
+    expect(useVizStore.getState().batchError).toBe(
       "Batch render needs the desktop app (it writes files to a folder)",
     );
   });

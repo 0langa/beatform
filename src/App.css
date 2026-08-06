@@ -1346,6 +1346,12 @@ button.row-value:focus-visible {
   color: #f0a5a5;
 }
 
+/* A2: the one-line look-vs-theme explainer sits tight under the filter row
+   it annotates, not a full hint-gap below it. */
+.gallery-explainer {
+  margin-top: 5px;
+}
+
 /* The Gallery dialog (top-bar surface): a real room for a growing registry —
    wide grid, filter chips, search. */
 .modal.gallery-dialog {
@@ -2519,11 +2525,31 @@ kbd {
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* UI-3: in a chip cluster the ✕ (delete forever) and ↗ (export) sit 2 px
+   apart at 9 px glyph size — a Fitts trap on the destructive one. Padding
+   grows each to a ≥20px hit target; the glyph itself stays the same size. */
+.user-chip-wrap .chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 4px 5px;
+}
+
 .save-look-row {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-top: 2px;
+}
+
+/* The My Looks row carries three actions since the Gallery deep link joined
+   it (A3) — wrap to a second line at narrow panel widths instead of
+   squeezing every label into a multi-line button. */
+.user-presets .save-look-row {
+  flex-wrap: wrap;
+  row-gap: 2px;
 }
 
 .look-name-input {

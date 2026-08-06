@@ -171,7 +171,9 @@ try {
     throw new Error(`previews incomplete: ${JSON.stringify(previews)}`);
   }
 
-  // 3. Install a LOOK: verified download -> parseUserPreset -> My Looks + applied.
+  // 3. Install a LOOK: verified download -> parseUserPreset -> My Looks +
+  // applied. A1: galleryInstalled now maps entry id -> the created user
+  // preset's id ("Added" is only real while that preset exists).
   const look = await cdp.eval(`(async () => {
     const before = window.__store.getState().userPresets.length;
     await window.__store.getState().installGalleryEntry("prism-cathedral");
@@ -179,28 +181,60 @@ try {
     return { before, after: st.userPresets.length,
              first: st.userPresets[0]?.name ?? null,
              presetId: st.presetId, error: st.error,
-             installed: st.galleryInstalled["prism-cathedral" ] === true };
+             mapsToNewest: st.galleryInstalled["prism-cathedral"] === st.userPresets[0]?.id };
   })()`);
   console.log("LOOK-INSTALL:", JSON.stringify(look));
   if (
     look.after !== look.before + 1 ||
     look.first !== "Prism Cathedral" ||
     look.presetId !== "echo-trails" ||
-    !look.installed
+    !look.mapsToNewest
   ) {
     throw new Error(`look install failed: ${JSON.stringify(look)}`);
   }
 
+  // 3b. A second install while Added must be a NO-OP (A1 — the dup-stacking
+  // bug: the clickable "✓ Added" button used to add another copy per click).
+  const dup = await cdp.eval(`(async () => {
+    const before = window.__store.getState().userPresets.length;
+    await window.__store.getState().installGalleryEntry("prism-cathedral");
+    return { before, after: window.__store.getState().userPresets.length };
+  })()`);
+  console.log("LOOK-DUP:", JSON.stringify(dup));
+  if (dup.after !== dup.before) {
+    throw new Error(`duplicate install stacked a copy: ${JSON.stringify(dup)}`);
+  }
+
   // 4. Apply a THEME: verified download -> parseTheme -> document applied.
+  // A1: themes get NO persistent installed state — only the transient
+  // "Applied ✓" (galleryApplied), which clears itself after ~2.5 s.
   const theme = await cdp.eval(`(async () => {
     await window.__store.getState().installGalleryEntry("deep-current");
     const st = window.__store.getState();
     return { presetId: st.presetId, smooth: st.smoothSpectrum, error: st.error,
-             installed: st.galleryInstalled["deep-current"] === true };
+             applied: st.galleryApplied,
+             persistent: st.galleryInstalled["deep-current"] ?? null };
   })()`);
   console.log("THEME-APPLY:", JSON.stringify(theme));
-  if (theme.presetId !== "nebula" || !theme.installed) {
+  if (
+    theme.presetId !== "nebula" ||
+    theme.applied !== "deep-current" ||
+    theme.persistent !== null
+  ) {
     throw new Error(`theme apply failed: ${JSON.stringify(theme)}`);
+  }
+  const transient = await cdp.eval(`(async () => {
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+    const deadline = Date.now() + 8000;
+    while (window.__store.getState().galleryApplied !== null) {
+      if (Date.now() > deadline) break;
+      await delay(200);
+    }
+    return { applied: window.__store.getState().galleryApplied };
+  })()`);
+  console.log("THEME-TRANSIENT:", JSON.stringify(transient));
+  if (transient.applied !== null) {
+    throw new Error(`transient Applied state never cleared: ${JSON.stringify(transient)}`);
   }
 
   // 5. The dialog surface: top-bar button state -> dialog, cards, filter,
@@ -236,6 +270,66 @@ try {
   }
   console.log("DOM:", JSON.stringify(dom));
   await cdp.shot("gallery-panel.png");
+
+  // 6. A1 in the DOM: the installed look reads "✓ Added" and is DISABLED;
+  // deleting that look through the store flips the same card back to a live
+  // "+ Add look" (the dialog re-checks userPresets, not the stale record).
+  const revert = await cdp.eval(`(async () => {
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+    const inp = document.querySelector(".gallery-search");
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+    setter.call(inp, "prism");
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    await delay(250);
+    const btn = () => document.querySelector(".gallery-dialog .gallery-install-btn");
+    const beforeTxt = btn()?.textContent ?? null;
+    const beforeDisabled = !!btn()?.disabled;
+    const st = window.__store.getState();
+    st.deleteUserPreset(st.galleryInstalled["prism-cathedral"]);
+    await delay(250);
+    const afterTxt = btn()?.textContent ?? null;
+    const afterDisabled = !!btn()?.disabled;
+    setter.call(inp, "");
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    await delay(200);
+    return { beforeTxt, beforeDisabled, afterTxt, afterDisabled };
+  })()`);
+  console.log("LOOK-REVERT:", JSON.stringify(revert));
+  if (
+    revert.beforeTxt !== "✓ Added" ||
+    !revert.beforeDisabled ||
+    revert.afterTxt !== "+ Add look" ||
+    revert.afterDisabled
+  ) {
+    throw new Error(`added-state revert failed: ${JSON.stringify(revert)}`);
+  }
+
+  // 7. A3 deep links: reopening via setShowGallery(true, "theme") lands
+  // pre-filtered on Themes; a plain open resets the filter to All.
+  const deeplink = await cdp.eval(`(async () => {
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+    const st = window.__store.getState();
+    // Real close-then-reopen: back-to-back set calls batch into one React
+    // render and the dialog would never remount (its filter state is read
+    // once, on mount) — the delay makes the unmount actually happen.
+    st.setShowGallery(false);
+    await delay(100);
+    st.setShowGallery(true, "theme");
+    await delay(300);
+    const filtered = document.querySelectorAll(".gallery-dialog .gallery-card").length;
+    const active = document.querySelector(".gallery-toolbar .style-chip.active")?.textContent;
+    st.setShowGallery(false);
+    await delay(100);
+    st.setShowGallery(true);
+    await delay(300);
+    const plain = document.querySelectorAll(".gallery-dialog .gallery-card").length;
+    st.setShowGallery(false);
+    return { filtered, active, plain };
+  })()`);
+  console.log("DEEPLINK:", JSON.stringify(deeplink));
+  if (deeplink.filtered !== 2 || deeplink.active !== "Themes" || deeplink.plain < 11) {
+    throw new Error(`deep-link filter failed: ${JSON.stringify(deeplink)}`);
+  }
 
   console.log("GALLERY-E2E OK");
 } finally {
