@@ -15,8 +15,9 @@ import type {
  * runtime, GPU blocklist).
  *
  * It draws exactly ONE look, an approximation of spectrum-bars, and reads
- * exactly six parameter keys (hue, hueSpread, saturation, lightness, barGap,
- * peaks) — plus led-matrix's hue family (hueShift/hueLow/hueHigh), which
+ * exactly the parameter keys in FALLBACK_PARAM_KEYS (the six originals plus
+ * the structural depth-wave axes: stereoSplit, capShape, reflect, sway) —
+ * plus led-matrix's hue family (hueShift/hueLow/hueHigh), which
  * names its hues differently and used to fall through to the default blue
  * (see fallbackHue below). Everything else
  * the UI can express — the other modes, Motion masters, Builder Studio, custom
@@ -45,6 +46,10 @@ export const FALLBACK_PARAM_KEYS = [
   "lightness",
   "barGap",
   "peaks",
+  "stereoSplit",
+  "capShape",
+  "reflect",
+  "sway",
 ] as const;
 
 /** led-matrix's hue vocabulary, read by {@link fallbackHue}. Pinned against
@@ -235,7 +240,7 @@ export class Canvas2DRenderer implements Renderer {
 
   render(
     f: AudioFeatures,
-    _time: number,
+    time: number,
     params: ParamValues,
     _transition?: TransitionState,
     options?: RenderOptions,
@@ -314,18 +319,69 @@ export class Canvas2DRenderer implements Renderer {
       if (this.overlay) ctx.drawImage(this.overlay, 0, 0, W, H);
       return;
     }
+    // Depth-wave axes (spectrum-bars Track B): the fallback honours the
+    // STRUCTURAL half of the new params — stereo pair split, the reflection
+    // floor, dot peak caps and the sway lean — because each maps 1:1 onto the
+    // rects it already draws. Rounded crowns (capShape 1) and the advanced
+    // trim/fade knobs are NOT honoured: per-bar arcs are not cheap on the old
+    // runtimes this renderer exists for, and the fallback has never read
+    // advanced-tier knobs (barHeight, glow, ...). Neutral at the defaults:
+    // every guard below stays off and the draw calls are exactly the old ones.
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const reflect = clamp01(params.reflect ?? 0);
+    const split = clamp01(params.stereoSplit ?? 0) * clamp01(f.width);
+    const dotCaps = (params.capShape ?? 0) > 1.5;
+    const swayAmt = clamp01(params.sway ?? 0);
+    const base = reflect * 0.24 * H;
+    const floorY = H - base;
+    // Track time only (determinism law) — the same clock the shader leans on.
+    const swayK = Math.sin(time * 0.6) * swayAmt * 0.06 * W;
+    if (swayK !== 0) {
+      ctx.save();
+      // Shear anchored at the bottom edge — the shader's uv.x += s * (1 - uv.y).
+      ctx.transform(1, 0, -swayK / H, 1, swayK, 0);
+    }
+    const sep = Math.min(split * 0.35, 0.5 - gap / 2 - 0.03);
     for (let i = 0; i < n; i++) {
       const v = f.bins[i];
       const h = v * H * 0.92;
       const barHue = hue + (i / n) * hueSpread;
+      const bodyX = i * bw + (bw * gap) / 2;
+      const bodyW = bw * (1 - gap);
+      const postW = (0.5 - sep) * bw - (bw * gap) / 2;
+      const rightX = i * bw + (0.5 + sep) * bw;
       ctx.fillStyle = color(barHue, 85, 45 + f.beatIntensity * 8);
-      ctx.fillRect(i * bw + (bw * gap) / 2, H - h, bw * (1 - gap), h);
+      if (sep > 0) {
+        ctx.fillRect(bodyX, floorY - h, postW, h);
+        ctx.fillRect(rightX, floorY - h, postW, h);
+      } else {
+        ctx.fillRect(bodyX, floorY - h, bodyW, h);
+      }
+      if (reflect > 0 && h > 0) {
+        // Mirror pool: a constant-alpha ghost (the shader fades with depth; a
+        // per-pixel fade would need a gradient per bar, which this renderer
+        // deliberately skips).
+        ctx.globalAlpha = reflect * 0.3;
+        if (sep > 0) {
+          ctx.fillRect(bodyX, floorY, postW, Math.min(h, base));
+          ctx.fillRect(rightX, floorY, postW, Math.min(h, base));
+        } else {
+          ctx.fillRect(bodyX, floorY, bodyW, Math.min(h, base));
+        }
+        ctx.globalAlpha = 1;
+      }
       if ((params.peaks ?? 1) > 0.5) {
         const pk = f.peaks[i] * H * 0.92;
         ctx.fillStyle = color(barHue, 30, 90);
-        ctx.fillRect(i * bw + (bw * gap) / 2, H - pk - 2, bw * (1 - gap), 2);
+        if (dotCaps) {
+          // LED pip: a short centered dash instead of the full-width hairline.
+          ctx.fillRect(i * bw + bw * 0.5 - bodyW * 0.25, floorY - pk - 3, bodyW * 0.5, 3);
+        } else {
+          ctx.fillRect(bodyX, floorY - pk - 2, bodyW, 2);
+        }
       }
     }
+    if (swayK !== 0) ctx.restore();
 
     if (this.overlay) ctx.drawImage(this.overlay, 0, 0, W, H);
   }
