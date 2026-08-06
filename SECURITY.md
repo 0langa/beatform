@@ -2,8 +2,10 @@
 
 Beatform is a free, open-source desktop app (Tauri 2 + Rust + WebGPU). There
 is no cloud service, account system, or telemetry — the attack surface that
-matters is the desktop app itself: the Rust shell, the bundled ffmpeg
-sidecar, and anything reachable from a compromised renderer.
+matters is the desktop app itself: the Rust shell, the bundled sidecars
+(ffmpeg and the lyrics sidecar), the content the app can be asked to
+download (updates, Gallery looks/themes, lyrics AI models), and anything
+reachable from a compromised renderer.
 
 ## Supported versions
 
@@ -27,9 +29,10 @@ a private channel.
 
 Please include, where relevant:
 
-- The app version (Help modal) and OS/build.
+- The app version (press H — the shortcuts overlay shows it) and OS/build.
 - Whether the issue requires a malicious project file (`.bfproj`,
-  `.bfpreset`, `.bftheme`), a malicious media file, or local access.
+  `.bfpreset`, `.bftheme`, `.bfbuilder`, `.bfshader`), a malicious media
+  file, a malicious Gallery entry, or local access.
 - Steps to reproduce, or a minimal repro file/track.
 
 ## What counts as a security issue here
@@ -37,19 +40,64 @@ Please include, where relevant:
 Given the app's shape, the reports most worth flagging privately are things
 like:
 
-- A `.bfproj` / `.bfpreset` / `.bftheme` / `.bfshader` file that, when
-  opened, can read/write/execute outside the app's intended scope.
+- A `.bfproj` / `.bfpreset` / `.bftheme` / `.bfbuilder` / `.bfshader` file
+  that, when opened, can read/write/execute outside the app's intended
+  scope.
 - A path or filename (batch output, export destination, library scan) that
   escapes the intended directory, follows an unexpected symlink, or reaches
   a UNC/network path unintentionally.
 - Anything in `src-tauri/` that widens what a compromised or malicious
   renderer could do to the filesystem or OS.
-- A supply-chain concern in the bundled ffmpeg sidecar or a dependency.
+- A way past the Gallery's verified-download chain (`src/state/gallery.ts`):
+  every content/preview URL in the registry must match a strict allowlist
+  (host + `beatform-app/gallery` + 40-hex commit pin + folder + slug +
+  extension), downloads are size-capped and SHA-256-checked against the
+  registry digest **before** the bytes are parsed, and installing reuses the
+  exact validators the drag-import paths use. A hostile registry entry that
+  reaches another origin, gets an unverified byte to a parser, or gains
+  anything a hand-imported file couldn't, is a security issue.
+- A way to make the app accept a tampered lyrics AI model: the models
+  (MDX-Net vocal isolation, whisper.cpp, wav2vec2 alignment) are downloaded
+  with their sizes and SHA-256 digests pinned in the binary
+  (`src-tauri/src/lyrics.rs`) and verified before the file gains its final
+  name — see THIRD_PARTY_LICENSES.md for their provenance. Likewise
+  anything that lets a malicious audio file or model file escalate through
+  the lyrics sidecar process.
+- A supply-chain concern in the bundled ffmpeg or lyrics sidecars, the
+  pinned model set, or a dependency.
 
 General crashes, visual bugs, and sync/export correctness issues are
 regular bugs — please file those as normal
 [issues](https://github.com/0langa/beatform/issues/new), not security
 reports.
+
+## Network behavior
+
+No telemetry, no analytics, nothing in the background. Every request the
+app makes is user-facing and goes to GitHub. The full inventory, verified
+against v2.72.1:
+
+| Purpose                             | Host                                                                                                | Process               | When                                            |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------- |
+| Update check (`latest.json`)        | `github.com` (this repo's release assets)                                                           | Rust (updater plugin) | at startup and on a manual "Check for updates"  |
+| Installer download                  | `github.com` (this repo's release assets, minisign-verified)                                        | Rust (updater plugin) | only after you accept an offered update         |
+| Release notes for the update dialog | `raw.githubusercontent.com` (this repo's `CHANGELOG.md`, pinned to the offered tag)                 | Webview               | when an update is offered                       |
+| Gallery registry, content, previews | `raw.githubusercontent.com` (`beatform-app/gallery` — commit-pinned, SHA-256-verified before parse) | Webview               | only while you browse or install in the Gallery |
+| Lyrics AI-model downloads           | `github.com` (`beatform-app/models` release — SHA-256-pinned in the binary, Range-resumable)        | Rust                  | only when you ask to download a model           |
+
+The webview's CSP backs this split up. The only remote host the renderer is
+allowed to contact is `raw.githubusercontent.com`; the `github.com` traffic
+(updater, model downloads) happens in the Rust process, outside the webview
+entirely. The CSP as shipped (`src-tauri/tauri.conf.json`):
+
+```
+default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' data: blob: ipc: http://ipc.localhost https://raw.githubusercontent.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'none'
+```
+
+Note that `img-src` deliberately does **not** include the raw host: Gallery
+previews render only from verified bytes via `blob:` URLs, never straight
+off the network. If a release changes `connect-src`, `gallery.ts`, or
+`lyrics.rs`, this table gets re-verified as part of that release.
 
 ## Update integrity (auto-updater, v2.39.0+)
 
@@ -63,12 +111,11 @@ reports.
   releases page — it ships with a freshly pinned key. **If the key is
   compromised**, it is rotated the same way and affected release assets are
   removed.
-- The app makes exactly two kinds of network request, both user-facing and
-  both to GitHub: the updater fetches `latest.json` and the installer from
-  `github.com` release assets, and the update dialog fetches `CHANGELOG.md`
-  from `raw.githubusercontent.com` to show the release notes for the versions
-  between yours and the offered one. Both hosts are the only entries in the
-  webview's CSP `connect-src` allowlist. No telemetry rides along.
+- The only network the update path generates is what the
+  [Network behavior](#network-behavior) table lists: the `latest.json`
+  check, the installer download, and the `CHANGELOG.md` fetch that shows
+  the release notes for the versions between yours and the offered one. No
+  telemetry rides along.
 - Installers are not Authenticode-signed (no code-signing certificate), so
   SmartScreen may warn on first manual install; `SHA256SUMS.txt` on each
   release is the manual verification path.

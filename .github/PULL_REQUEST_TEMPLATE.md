@@ -6,7 +6,9 @@
 
 - [ ] `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`
       all pass locally
-- [ ] `(cd src-tauri && cargo test --lib)` passes, if `src-tauri/` changed
+- [ ] `(cd src-tauri && cargo test --workspace)` passes, if `src-tauri/`
+      changed (always `--workspace` — bare cargo silently skips the
+      lyrics-sidecar member)
 - [ ] No `Math.random`, `Date.now`, `performance.now`, or other wall-clock
       value reaches a rendered pixel (the determinism law — see
       CONTRIBUTING.md)

@@ -35,7 +35,7 @@ Device/E2E gates (need hardware, run before release when the area changed):
 - `npm run test:gpu` — WebGPU pixel-hash matrix over all visual modes. Shader changes alter hashes: verify visually, then re-bless with `npm run test:gpu:update` and justify in the commit.
 - `npm run test:loopback:built`, `npm run test:shadertoy:built`, `npm run test:lyrics` — built-app smokes (loopback capture, Shadertoy import, lyrics pipeline).
 
-Flaky: `src/audio/dspCharacterization.test.ts` is thermal-sensitive — rerun before believing a failure.
+`src/audio/dspCharacterization.test.ts` is no longer flaky: its only failure mode was vitest's 5 s default timeout under thermal load, root-fixed with explicit 30 s describe budgets — a failure there is real; reruns are not the protocol.
 
 ## Architecture
 
