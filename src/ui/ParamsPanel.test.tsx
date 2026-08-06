@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { useState } from "react";
+import { StrictMode, useState, useSyncExternalStore } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { getPrefs, subscribePrefs } from "../state/prefs";
 import { ParamsPanel, type ParamsPanelProps } from "./ParamsPanel";
 import { presets } from "../render/presets";
 import type { PresetDef } from "../render/types";
@@ -217,5 +218,40 @@ describe("ParamsPanel memo (H13 stable-props contract, UI-2)", () => {
     // have caught the App.tsx inline-arrow regression, and will catch the
     // next one if a future prop skips the useCallback block.
     expect(reads()).toBeGreaterThan(afterMount);
+  });
+});
+
+describe("no external-store writes during render", () => {
+  /** Stand-in for App: subscribed to prefs exactly like App.tsx's
+   * useSyncExternalStore(subscribePrefs, getPrefs). A setPrefs call executed
+   * while ParamsPanel is rendering schedules an update on this component
+   * mid-render — React dev logs "Cannot update a component…". StrictMode is
+   * what re-runs useState updaters in the render phase, so it is required
+   * for the repro. */
+  function PrefsMirror() {
+    const p = useSyncExternalStore(subscribePrefs, getPrefs);
+    return <span data-testid="prefs-mirror">{p.collapsedSections.length}</span>;
+  }
+
+  it("section collapse persists prefs without a render-phase update (StrictMode)", () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.map(String).join(" "));
+    });
+    try {
+      render(
+        <StrictMode>
+          <PrefsMirror />
+          <ParamsPanel {...makeProps(presets[0])} />
+        </StrictMode>,
+      );
+      const toggles = document.querySelectorAll(".section-toggle");
+      expect(toggles.length).toBeGreaterThan(0);
+      fireEvent.click(toggles[0]);
+      fireEvent.click(toggles[0]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(errors.filter((e) => e.includes("Cannot update a component"))).toEqual([]);
   });
 });

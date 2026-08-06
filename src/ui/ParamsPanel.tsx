@@ -491,11 +491,18 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
    * stable `id`, groups a GROUP_KEY-prefixed one — same persisted list, no
    * chance of a group named "Post" closing the Post section. */
   const toggleCollapsed = (key: string, open: boolean) => {
-    setCollapsed((prev) => {
-      const next = open ? prev.filter((t) => t !== key) : [...prev, key];
-      setPrefs({ collapsedSections: next });
-      return next;
-    });
+    // Plain value + setPrefs OUTSIDE the setState updater: React re-runs
+    // updaters in the render phase (StrictMode always does), and a setPrefs
+    // there notifies App's useSyncExternalStore mid-render — the "Cannot
+    // update a component (App)" dev warning. Computing from the current
+    // snapshot is safe: toggles arrive one click at a time.
+    const next = open
+      ? collapsed.filter((t) => t !== key)
+      : collapsed.includes(key)
+        ? collapsed
+        : [...collapsed, key];
+    setCollapsed(next);
+    setPrefs({ collapsedSections: next });
   };
   const toggleGroup = (groupId: string, open: boolean) =>
     toggleCollapsed(GROUP_KEY + groupId, open);
