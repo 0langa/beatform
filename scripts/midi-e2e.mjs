@@ -14,17 +14,14 @@
 //   node scripts/midi-e2e.mjs
 // Prereqs: Vite dev on 127.0.0.1:1420; loopMIDI running with a port whose
 // name contains "loopMIDI Beatform".
-import { spawn, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
+import { spawnApp, attachWithRecovery, killTree, TAURI_WARMUP } from "./lib/app.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const exe = path.join(root, "src-tauri", "target", "debug", "beatform.exe");
 const PORT_NAME = "loopMIDI Beatform";
-const port = 9700 + (process.pid % 80);
-let child;
-let log = "";
 
 function send(messages) {
   const out = execFileSync(
@@ -45,99 +42,16 @@ function send(messages) {
   if (!out.startsWith("SENT")) throw new Error(`sender failed: ${out}`);
 }
 
-async function page() {
-  const deadline = Date.now() + 240_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode != null) throw new Error(`app exited ${child.exitCode}\n${log}`);
-    try {
-      const pages = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json());
-      const m = pages.find(
-        (p) => p.type === "page" && p.webSocketDebuggerUrl && /localhost|127\.0\.0\.1/.test(p.url),
-      );
-      if (m) return m;
-    } catch {
-      /* not ready */
-    }
-    await sleep(500);
-  }
-  throw new Error(`timed out waiting for WebView2\n${log}`);
-}
-
-class Cdp {
-  constructor(url) {
-    this.id = 0;
-    this.pending = new Map();
-    this.ws = new globalThis.WebSocket(url);
-  }
-  async open() {
-    await new Promise((res, rej) => {
-      this.ws.addEventListener("open", res, { once: true });
-      this.ws.addEventListener("error", rej, { once: true });
-    });
-    this.ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data);
-      const p = this.pending.get(m.id);
-      if (!p) return;
-      this.pending.delete(m.id);
-      if (m.error) p.reject(new Error(m.error.message));
-      else p.resolve(m.result);
-    });
-    await this.send("Runtime.enable");
-  }
-  send(method, params = {}) {
-    return new Promise((resolve, reject) => {
-      const id = ++this.id;
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-  async eval(expression, awaitPromise = true) {
-    const r = await this.send("Runtime.evaluate", {
-      expression,
-      awaitPromise,
-      returnByValue: true,
-    });
-    if (r.exceptionDetails) {
-      const ex = r.exceptionDetails.exception;
-      throw new Error(
-        ex?.description ?? (ex?.value != null ? JSON.stringify(ex.value) : null) ?? "eval failed",
-      );
-    }
-    return r.result.value;
-  }
-}
-
+let app;
 try {
-  const existingArgs = process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS ?? "";
-  child = spawn(exe, [], {
-    cwd: root,
-    windowsHide: true,
-    env: {
-      ...process.env,
-      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:
-        `${existingArgs} --remote-debugging-port=${port}`.trim(),
-    },
-    stdio: ["ignore", "pipe", "pipe"],
+  app = spawnApp({
+    root,
+    portBase: 9380, // see the map in lib/app.mjs
+    profileName: "wv2-midi-profile",
   });
-  const keep = (c) => (log = (log + c.toString()).slice(-20_000));
-  child.stdout.on("data", keep);
-  child.stderr.on("data", keep);
-
-  const attach = async () => {
-    const t = await page();
-    const c = new Cdp(t.webSocketDebuggerUrl);
-    await c.open();
-    return c;
-  };
-  let cdp = await attach();
   // Cold Vite dep cache reloads the page on the first dynamic @tauri-apps
   // import ("new dependencies optimized") — absorb it before the real run.
-  try {
-    await cdp.eval(`import("@tauri-apps/api/core").then(() => true)`);
-  } catch {
-    await sleep(2000);
-    cdp = await attach();
-  }
+  const cdp = await attachWithRecovery(app, (c) => c.eval(TAURI_WARMUP), { retrySleepMs: 2000 });
 
   // 1+2: enable MIDI (permission + access + discovery), install a change
   // counter for the duplicate checks, park on the particles preset (its
@@ -187,7 +101,10 @@ try {
       return Promise.race([req, timeout]);
     })()`);
     console.log("RAW:", JSON.stringify(raw));
-    const lines = log.split(/\r?\n/).filter((l) => l.includes("[midi-permission]"));
+    const lines = app
+      .log()
+      .split(/\r?\n/)
+      .filter((l) => l.includes("[midi-permission]"));
     console.log("RUST:", lines.length ? lines.join(" | ") : "(no handler output)");
     throw new Error("enableMidi failed — permission/access blocked in WebView2");
   }
@@ -279,14 +196,5 @@ try {
 
   console.log("MIDI-E2E OK: permission+discovery+ccLearn+ccApply+noteApply+reconnect all pass");
 } finally {
-  child?.kill();
-  try {
-    execFileSync("powershell", [
-      "-NoProfile",
-      "-Command",
-      "Get-Process -Name beatform -ErrorAction SilentlyContinue | Stop-Process -Force",
-    ]);
-  } catch {
-    /* gone */
-  }
+  killTree(app);
 }

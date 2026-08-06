@@ -5,11 +5,10 @@
 //
 //   node scripts/gallery-e2e.mjs [--registry=<raw index.json url>]
 // Prereq: Vite dev on 127.0.0.1:1420.
-import { spawn, execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { setTimeout as sleep } from "node:timers/promises";
+import { spawnApp, attachWithRecovery, waitHooks, killTree } from "./lib/app.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // No --registry flag = the app's own default (the LIVE main registry) — the
@@ -20,126 +19,30 @@ const registry = (process.argv.find((a) => a.startsWith("--registry=")) ?? "").s
 );
 const outDir = path.join(root, "node_modules", ".cache", "gallery-e2e");
 mkdirSync(outDir, { recursive: true });
-const exe = path.join(root, "src-tauri", "target", "debug", "beatform.exe");
-const port = 9600 + (process.pid % 80);
-let child;
-let log = "";
 
-async function page() {
-  const deadline = Date.now() + 240_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode != null) throw new Error(`app exited ${child.exitCode}\n${log}`);
-    try {
-      const pages = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json());
-      const m = pages.find(
-        (p) => p.type === "page" && p.webSocketDebuggerUrl && /localhost|127\.0\.0\.1/.test(p.url),
-      );
-      if (m) return m;
-    } catch {
-      /* not ready */
-    }
-    await sleep(500);
-  }
-  throw new Error(`timed out waiting for WebView2\n${log}`);
-}
-
-class Cdp {
-  constructor(url) {
-    this.id = 0;
-    this.pending = new Map();
-    this.ws = new globalThis.WebSocket(url);
-  }
-  async open() {
-    await new Promise((res, rej) => {
-      this.ws.addEventListener("open", res, { once: true });
-      this.ws.addEventListener("error", rej, { once: true });
-    });
-    this.ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data);
-      const p = this.pending.get(m.id);
-      if (!p) return;
-      this.pending.delete(m.id);
-      if (m.error) p.reject(new Error(m.error.message));
-      else p.resolve(m.result);
-    });
-    await this.send("Runtime.enable");
-    await this.send("Page.enable");
-  }
-  send(method, params = {}) {
-    return new Promise((resolve, reject) => {
-      const id = ++this.id;
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-  async eval(expression, awaitPromise = true) {
-    const r = await this.send("Runtime.evaluate", {
-      expression,
-      awaitPromise,
-      returnByValue: true,
-    });
-    if (r.exceptionDetails) {
-      const ex = r.exceptionDetails.exception;
-      throw new Error(
-        ex?.description ?? (ex?.value != null ? JSON.stringify(ex.value) : null) ?? "eval failed",
-      );
-    }
-    return r.result.value;
-  }
-  async shot(name) {
-    const r = await this.send("Page.captureScreenshot", { format: "png" });
-    writeFileSync(path.join(outDir, name), Buffer.from(r.data, "base64"));
-    console.log("SHOT", path.join(outDir, name));
-  }
-}
-
+let app;
 try {
-  const existingArgs = process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS ?? "";
-  child = spawn(exe, [], {
-    cwd: root,
-    windowsHide: true,
-    env: {
-      ...process.env,
-      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:
-        `${existingArgs} --remote-debugging-port=${port}`.trim(),
-      WEBVIEW2_USER_DATA_FOLDER: path.join(outDir, "wv2-profile"),
-    },
-    stdio: ["ignore", "pipe", "pipe"],
+  app = spawnApp({
+    root,
+    portBase: 9600, // see the map in lib/app.mjs
+    profileDir: path.join(outDir, "wv2-profile"),
   });
-  const keep = (c) => (log = (log + c.toString()).slice(-20_000));
-  child.stdout.on("data", keep);
-  child.stderr.on("data", keep);
 
   // Vite pushes one reload shortly after a cold boot (dep re-optimize /
   // ws reconnect), which destroys the eval context mid-wait — attach,
   // and on that specific failure re-attach once (the v2.68 lesson).
-  const attach = async () => {
-    const t = await page();
-    const c = new Cdp(t.webSocketDebuggerUrl);
-    await c.open();
-    return c;
-  };
-  let cdp = await attach();
-  const waitHooks = () =>
-    cdp.eval(`(async () => {
-    const delay = ms => new Promise(r => setTimeout(r, ms));
-    const deadline = Date.now() + 60000;
-    while (!window.__store) {
-      if (Date.now() > deadline) throw new Error("hooks unavailable");
-      await delay(100);
-    }
-    const override = ${JSON.stringify(registry)};
-    if (override) localStorage.setItem("viz.galleryRegistryOverride", override);
-    else localStorage.removeItem("viz.galleryRegistryOverride");
-    return true;
-  })()`);
-  try {
-    await waitHooks();
-  } catch {
-    await sleep(2500);
-    cdp = await attach();
-    await waitHooks();
-  }
+  const cdp = await attachWithRecovery(app, async (c) => {
+    await waitHooks(c, ["__store"]);
+    await c.eval(
+      `(() => {
+        const override = ${JSON.stringify(registry)};
+        if (override) localStorage.setItem("viz.galleryRegistryOverride", override);
+        else localStorage.removeItem("viz.galleryRegistryOverride");
+        return true;
+      })()`,
+      false,
+    );
+  });
 
   // 1. Load the registry through the real fetch + validation path.
   const loaded = await cdp.eval(`(async () => {
@@ -269,7 +172,8 @@ try {
     throw new Error(`dialog surface failed: ${JSON.stringify(dom)}`);
   }
   console.log("DOM:", JSON.stringify(dom));
-  await cdp.shot("gallery-panel.png");
+  await cdp.shot(path.join(outDir, "gallery-panel.png"));
+  console.log("SHOT", path.join(outDir, "gallery-panel.png"));
 
   // 6. A1 in the DOM: the installed look reads "✓ Added" and is DISABLED;
   // deleting that look through the store flips the same card back to a live
@@ -333,11 +237,5 @@ try {
 
   console.log("GALLERY-E2E OK");
 } finally {
-  if (child?.pid) {
-    try {
-      execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-    } catch {
-      /* gone */
-    }
-  }
+  killTree(app);
 }

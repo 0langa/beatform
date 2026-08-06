@@ -7,11 +7,12 @@
 //
 //   node scripts/gallery-seed-shots.mjs --out=<dir> [--only=id1,id2]
 // Prereq: Vite dev on 127.0.0.1:1420 (the debug exe loads it).
-import { spawn, execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
+import { spawnApp, attachWithRecovery, waitHooks, killTree } from "./lib/app.mjs";
+import { makeDemoLoader, seekAndPlay } from "./lib/demo.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = (process.argv.find((a) => a.startsWith("--out=")) ?? "").slice("--out=".length);
@@ -21,8 +22,6 @@ const only = (process.argv.find((a) => a.startsWith("--only=")) ?? "")
   .split(",")
   .filter(Boolean);
 mkdirSync(outDir, { recursive: true });
-const exe = path.join(root, "src-tauri", "target", "debug", "beatform.exe");
-const port = 9700 + (process.pid % 80);
 
 /**
  * Candidates. `params` are COMPLETE tuned maps (factory-style base merged
@@ -327,106 +326,9 @@ const THEMES = [
   },
 ];
 
-let child;
-let log = "";
-
-async function page() {
-  const deadline = Date.now() + 240_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode != null) throw new Error(`app exited ${child.exitCode}\n${log}`);
-    try {
-      const pages = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json());
-      const m = pages.find(
-        (p) => p.type === "page" && p.webSocketDebuggerUrl && /localhost|127\.0\.0\.1/.test(p.url),
-      );
-      if (m) return m;
-    } catch {
-      /* not ready */
-    }
-    await sleep(500);
-  }
-  throw new Error(`timed out waiting for WebView2\n${log}`);
-}
-
-class Cdp {
-  constructor(url) {
-    this.id = 0;
-    this.pending = new Map();
-    this.ws = new globalThis.WebSocket(url);
-  }
-  async open() {
-    await new Promise((res, rej) => {
-      this.ws.addEventListener("open", res, { once: true });
-      this.ws.addEventListener("error", rej, { once: true });
-    });
-    this.ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data);
-      const p = this.pending.get(m.id);
-      if (!p) return;
-      this.pending.delete(m.id);
-      if (m.error) p.reject(new Error(m.error.message));
-      else p.resolve(m.result);
-    });
-    await this.send("Runtime.enable");
-    await this.send("Page.enable");
-  }
-  send(method, params = {}) {
-    return new Promise((resolve, reject) => {
-      const id = ++this.id;
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-  async eval(expression, awaitPromise = true) {
-    const r = await this.send("Runtime.evaluate", {
-      expression,
-      awaitPromise,
-      returnByValue: true,
-    });
-    if (r.exceptionDetails) {
-      const ex = r.exceptionDetails.exception;
-      throw new Error(
-        ex?.description ?? (ex?.value != null ? JSON.stringify(ex.value) : null) ?? "eval failed",
-      );
-    }
-    return r.result.value;
-  }
-  /** Screenshot clipped to the live canvas (the visual, no chrome). */
-  async shotCanvas(name) {
-    // The stale debug exe sees the freshly published release and pops the
-    // update prompt over everything (with a backdrop blur) — dismiss any
-    // instance right before framing the shot.
-    await this.eval(
-      `(() => {
-        document.querySelector(".update-hero-close")?.click();
-        const st = window.__store.getState();
-        if (st.recoveredDoc) st.dismissAutosave();
-        window.__store.setState({ chromeIdle: true });
-        return true;
-      })()`,
-      false,
-    );
-    await sleep(400);
-    const rect = await this.eval(
-      `(() => { const c = document.querySelector("canvas"); const r = c.getBoundingClientRect();
-         return { x: r.x, y: r.y, width: r.width, height: r.height, dpr: window.devicePixelRatio }; })()`,
-      false,
-    );
-    const r = await this.send("Page.captureScreenshot", {
-      format: "png",
-      clip: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 },
-    });
-    const f = path.join(outDir, name);
-    writeFileSync(f, Buffer.from(r.data, "base64"));
-    console.log("SHOT", f);
-  }
-}
-
 function applyExpr(candidate) {
   return `(async () => {
     const s = window.__store.getState();
-    window.__engine.seek?.(2);
-    if (!window.__engine.state.playing) s.play?.();
     s.switchPreset(${JSON.stringify(candidate.mode)});
     const params = ${JSON.stringify(candidate.params)};
     for (const [k, v] of Object.entries(params)) s.setParam(k, v);
@@ -434,73 +336,44 @@ function applyExpr(candidate) {
   })()`;
 }
 
+let app;
 try {
-  const existingArgs = process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS ?? "";
-  child = spawn(exe, [], {
-    cwd: root,
-    windowsHide: true,
-    env: {
-      ...process.env,
-      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:
-        `${existingArgs} --remote-debugging-port=${port}`.trim(),
-      // ISOLATED browser profile: debug + installed Beatform share a WebView2
-      // user-data folder, and a second process JOINS the existing browser —
-      // silently dropping the debugging port AND entangling this harness with
-      // an app the owner may have open. A private folder guarantees our own
-      // browser, our own port, and a kill that cannot touch anything else.
-      WEBVIEW2_USER_DATA_FOLDER:
-        process.env.WV2_PROFILE_DIR ??
-        path.join(root, "node_modules", ".cache", "wv2-seed-profile"),
-    },
-    stdio: ["ignore", "pipe", "pipe"],
+  app = spawnApp({
+    root,
+    portBase: 9700, // see the map in lib/app.mjs
+    // ISOLATED browser profile: debug + installed Beatform share a WebView2
+    // user-data folder, and a second process JOINS the existing browser —
+    // silently dropping the debugging port AND entangling this harness with
+    // an app the owner may have open. A private folder guarantees our own
+    // browser, our own port, and a kill that cannot touch anything else.
+    profileName: "wv2-seed-profile",
   });
-  const keep = (c) => (log = (log + c.toString()).slice(-20_000));
-  child.stdout.on("data", keep);
-  child.stderr.on("data", keep);
-
-  const t = await page();
-  const cdp = new Cdp(t.webSocketDebuggerUrl);
-  await cdp.open();
-
-  await cdp.eval(`(async () => {
-    const delay = ms => new Promise(r => setTimeout(r, ms));
-    const deadline = Date.now() + 60000;
-    while (!window.__store || !window.__engine || !window.__gallerySerialize) {
-      if (Date.now() > deadline) throw new Error("hooks unavailable");
-      await delay(100);
-    }
-    return true;
-  })()`);
-
-  let currentDemo = null;
-  const ensureDemo = async (demo) => {
-    if (currentDemo === demo) return;
-    await cdp.eval(`window.__store.getState().loadDemo(${JSON.stringify(demo)})`);
-    await cdp.eval(`(async () => {
-      const delay = ms => new Promise(r => setTimeout(r, ms));
-      const deadline = Date.now() + 30000;
-      while (!(window.__engine.state.duration > 0)) {
-        if (Date.now() > deadline) throw new Error("demo did not load");
-        await delay(200);
-      }
-      window.__store.getState().play?.();
-      return window.__engine.state.duration;
-    })()`);
-    currentDemo = demo;
-  };
-
   const run = [...LOOKS, ...THEMES].filter((c) => only.length === 0 || only.includes(c.id));
+
+  // First demo load rides inside the recovery probe: on a cold Vite dep
+  // cache its dynamic imports trigger the one-off "new dependencies
+  // optimized" page reload, which destroys the awaited eval — the retry
+  // re-attaches and re-loads (wave-shots lesson).
+  let ensureDemo;
+  const cdp = await attachWithRecovery(app, async (c) => {
+    await waitHooks(c, ["__store", "__engine", "__gallerySerialize"]);
+    ensureDemo = makeDemoLoader(c);
+    if (run[0]) await ensureDemo(run[0].demo);
+  });
   for (const c of run) {
     const isTheme = "fromLook" in c;
     const src = isTheme ? LOOKS.find((l) => l.id === c.fromLook) : c;
     await ensureDemo(c.demo);
+    await seekAndPlay(cdp);
     const preset = await cdp.eval(applyExpr(src));
     if (preset !== src.mode) throw new Error(`${c.id}: preset is ${preset}, wanted ${src.mode}`);
     if (isTheme) {
       await cdp.eval(`window.__store.getState().setSmoothSpectrum?.(true)`);
     }
     await sleep((c.settle ?? 5) * 1000);
-    await cdp.shotCanvas(`${c.id}.png`);
+    const shotFile = path.join(outDir, `${c.id}.png`);
+    await cdp.shotCanvas(shotFile, { settleMs: 400 });
+    console.log("SHOT", shotFile);
     const file = await cdp.eval(
       `window.__gallerySerialize(${JSON.stringify(isTheme ? "theme" : "look")}, ${JSON.stringify({
         name: c.name,
@@ -520,11 +393,5 @@ try {
 } finally {
   // Kill OUR process tree only — never a name-wide sweep, which would take
   // down an installed Beatform the owner has open.
-  if (child?.pid) {
-    try {
-      execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-    } catch {
-      /* gone */
-    }
-  }
+  killTree(app);
 }

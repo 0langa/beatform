@@ -645,63 +645,52 @@ These are valid ideas but not active work:
 
 ## Standard gates
 
-Use gates proportional to the changed layer. Release-ready work runs the full
-set.
+**Canonical definition: `GATES.md`** — this section quotes it; if they ever
+disagree, GATES.md wins. Use gates proportional to the changed layer;
+release-ready work runs the full set.
 
-### Web application
+### Web application (GATES.md §1)
 
-```powershell
+```
 npm run typecheck
 npm run lint
 npm run format:check
-npm test -- --maxWorkers=2
+npm test
 npm run build
 ```
 
-### Rust/Tauri
+### Rust/Tauri (GATES.md §2 — ALWAYS --workspace/--all)
 
-```powershell
-cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --workspace
+```
+cargo fmt --all -- --check                              # from src-tauri/
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 ```
 
-### Rendering/audio specialist gates
+### Device gates (GATES.md §3 — mandatory per touched area)
 
-```powershell
+```
 npm run test:gpu
+node scripts/gallery-e2e.mjs
 npm run test:loopback:built
 npm run test:loopback:built:30
+npm run test:shadertoy:built
+npm run test:lyrics
 ```
 
-Run GPU pixel matrix when shader, renderer, color, presentation, or export
-pixels can change. Run built loopback gates when native audio capture, timing,
-packaging, or Tauri integration can change.
+GATES.md §3 says when each is mandatory and carries the GPU-matrix
+re-bless protocol.
 
-### Version/release agreement
+### Version/release agreement (GATES.md §4)
 
-```powershell
+```
 node scripts/bump-version.mjs --verify
 ```
 
-Before a release:
-
-- Working tree clean.
-- Full gates green.
-- Manual delta acceptance recorded.
-- `CHANGELOG.md` current.
-- Five version-bearing files agree.
-- Tag points to intended commit.
-- GitHub release workflow succeeds.
-- Published artifact names, hashes, manifest, updater signature, and download
-  URLs are independently checked.
-- The GitHub release workflow leaves a DRAFT — publish it
-  (`gh release edit vX.Y.Z --draft=false --title "Beatform vX.Y.Z" --latest`)
-  and confirm the live latest endpoint serves the new version before calling
-  the release done.
-- Installed artifact is smoke-tested; source/dev server alone is insufficient.
-- After the installed app updates, the HKCU uninstall entry's
-  `DisplayVersion` matches the new binary (ALIGN-002 regression check).
+The full release checklist (clean tree, gates green, CHANGELOG current,
+five files agree, workflow green, SHA256SUMS match, signed manifest, live
+latest.json, installed smoke, ALIGN-002 DisplayVersion) lives in
+GATES.md §4 and is automated by `node scripts/release.mjs`.
 
 Large builds, caches, and regenerated artifacts must follow host
 `agent-devstorage` routing policy. Source files stay in the repository.

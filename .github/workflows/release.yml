@@ -37,15 +37,21 @@ jobs:
       - run: node scripts/fetch-onnxruntime.mjs
       - run: node scripts/build-lyrics-sidecar.mjs
 
-      # The SAME gate set as ci.yml. Running a smaller one here is how two
-      # releases shipped off a main that was failing `format:check` — a red
-      # main was invisible at release time because the release path enforced a
-      # different contract. If a gate is worth blocking a PR, it is worth
-      # blocking a release.
+      # The SAME gate set as ci.yml (canonical definition: GATES.md §5).
+      # Running a smaller one here is how two releases shipped off a main
+      # that was failing `format:check` — a red main was invisible at
+      # release time because the release path enforced a different contract.
+      # If a gate is worth blocking a PR, it is worth blocking a release.
+      # (npm run build is covered below: tauri build runs it as
+      # beforeBuildCommand.)
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
       - run: npm test
+      - run: cargo fmt --all -- --check
+        working-directory: src-tauri
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+        working-directory: src-tauri
       - run: cargo test --workspace --lib --bins
         working-directory: src-tauri
 
