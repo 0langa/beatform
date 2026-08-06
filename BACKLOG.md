@@ -235,7 +235,9 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
   skyline; led-matrix Waterfall spectrogram + canvas2d hue fix; 14 new +
   6 reworked styles; defaults pixel-identical on device except
   led-matrix's declared feedback-path LSB class; matrix re-blessed
-  137→151 with strip evidence at devstorage depth-batch1-strips) → **Batch 2** (spectrum-bars,
+  137→151 with strip evidence at devstorage depth-batch1-strips;
+  shipped v2.74.0 2026-08-07 — GitHub tag-webhook outage bypassed via new
+  release.yml workflow_dispatch escape hatch) → **Batch 2** (spectrum-bars,
   bass-circle, particles, nebula) → **Batch 3** (echo-trails, metaballs,
   oscilloscope-fragment, tunnel) → **Renderer block** (spectrum-scape,
   particle-flow, oscilloscope-XY) → **Builder bridge**. One release per
