@@ -215,6 +215,24 @@ NO style anywhere). NEW defect from B0: led-matrix canvas2d fallback
 loses hue entirely to a `hueShift` key mismatch (+ builder2 canvas2d =
 all-default bars) — added to the severity-2 pool.
 
+**Owner decisions locked 2026-08-06 (click-round):** queue = B0 order
+as ranked · renderer-ABI waves INCLUDED after the fragment waves ·
+Builder bridge stays #16 (last) · **full license for new drawn elements**
+per the matrix sketches (defaults stay pixel-identical) · **styles:
+follow the sketches freely, including reworking weak existing styles
+(their look may change)** · re-bless authority: agent-side — device
+before/after shot strips per mode, owner veto post-hoc · cadence: one
+2.x release per 3-4-mode batch · AX-1: "Kicks" gets REAL kick semantics
+(default reactivity becomes punchier; not a silent fall-through).
+
+Execution plan: **Wave 0** = F5 WGSL consolidation + RP-14 schema
+additions (display `taper`, `mod` metadata) + AX-1 → then **Batch 1**
+(voice-orb, aurora, synthwave, led-matrix) → **Batch 2** (spectrum-bars,
+bass-circle, particles, nebula) → **Batch 3** (echo-trails, metaballs,
+oscilloscope-fragment, tunnel) → **Renderer block** (spectrum-scape,
+particle-flow, oscilloscope-XY) → **Builder bridge**. One release per
+batch.
+
 - [ ] B1..Bn Per-mode upgrade waves in the B0-ranked order (worktree
       agents, one mode per agent — the proven v2.47/v2.68 pattern):
       params + groups + styles + hints + GPU-matrix re-bless + device
