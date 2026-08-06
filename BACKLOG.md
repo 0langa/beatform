@@ -38,19 +38,19 @@ Listing a feature here does **not** approve implementation. Respect its status:
 
 Time-sensitive values below were checked on 2026-08-06:
 
-| Fact                    | Verified state                                                                                                                                                                                                             |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository              | `0langa/beatform`                                                                                                                                                                                                          |
-| Branch                  | Clean `main`, aligned with `origin/main`                                                                                                                                                                                   |
-| Source version          | `2.72.0` in all five version-bearing files                                                                                                                                                                                 |
-| HEAD / latest tag       | `a6f511c` (docs commits after release) / `v2.72.0` on release commit `1fcf60e`                                                                                                                                             |
-| Latest public release   | `v2.72.0`, published 2026-08-05 (Gallery top-bar surface; registry live with 11 seeds); setup-exe SHA-256 `1ce9bb83…` matches `SHA256SUMS.txt`, updater manifest signed, live latest endpoint serves `2.72.0`              |
-| Open GitHub issues      | 0                                                                                                                                                                                                                          |
-| Open pull requests      | 5 — all Dependabot (#11 npm minor/patch group; #12 rustls patch; #13 windows-core 0.62; #14 sha2 0.11; #15 webview2-com 0.39). #13/#15 track wry's pins (see `Cargo.toml` comment) — review before merging, not auto-merge |
-| Installed desktop app   | `2.72.0` (binary `ProductVersion` verified 2026-08-06) — auto-update chain 2.67→2.72 worked                                                                                                                                |
-| Uninstall registry      | **STILL `2.39.0`** (HKCU DisplayVersion, checked 2026-08-06) — survived five successful updates; the ALIGN-002 "writes one-behind" theory is DISPROVEN. ALIGN-002 REOPENED; tracked in Track E                             |
-| Running desktop app     | Not checked during this reconciliation                                                                                                                                                                                     |
-| Explicit source markers | Re-verified 2026-08-06: no `TODO`, `FIXME`, `XXX`, or `HACK` markers in `src`, `src-tauri`, or `scripts`                                                                                                                   |
+| Fact                    | Verified state                                                                                                                                                                                                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository              | `0langa/beatform`                                                                                                                                                                                                                                                           |
+| Branch                  | Clean `main`, aligned with `origin/main`                                                                                                                                                                                                                                    |
+| Source version          | `2.72.0` in all five version-bearing files                                                                                                                                                                                                                                  |
+| HEAD / latest tag       | `a6f511c` (docs commits after release) / `v2.72.0` on release commit `1fcf60e`                                                                                                                                                                                              |
+| Latest public release   | `v2.72.0`, published 2026-08-05 (Gallery top-bar surface; registry live with 11 seeds); setup-exe SHA-256 `1ce9bb83…` matches `SHA256SUMS.txt`, updater manifest signed, live latest endpoint serves `2.72.0`                                                               |
+| Open GitHub issues      | 0                                                                                                                                                                                                                                                                           |
+| Open pull requests      | 5 — all Dependabot (#11 npm minor/patch group; #12 rustls patch; #13 windows-core 0.62; #14 sha2 0.11; #15 webview2-com 0.39). #13/#15 track wry's pins (see `Cargo.toml` comment) — review before merging, not auto-merge                                                  |
+| Installed desktop app   | `2.72.0` (binary `ProductVersion` verified 2026-08-06) — auto-update chain 2.67→2.72 worked                                                                                                                                                                                 |
+| Uninstall registry      | `2.72.1`, matching the binary (verified 2026-08-06) — self-healing since v2.72.1: the app repairs `DisplayVersion` on every boot. The genuine updater path was caught skipping the write LIVE (2.72.0→2.72.1) and the heal corrected it on first launch. ALIGN-002 RESOLVED |
+| Running desktop app     | Not checked during this reconciliation                                                                                                                                                                                                                                      |
+| Explicit source markers | Re-verified 2026-08-06: no `TODO`, `FIXME`, `XXX`, or `HACK` markers in `src`, `src-tauri`, or `scripts`                                                                                                                                                                    |
 
 Current product constraints remain:
 
@@ -185,33 +185,33 @@ was the canary.
       F5 WGSL consolidation + param-schema taper/mod-metadata first:
 
       | #   | Mode                    | Effort            | Why here                                              |
-          | --- | ----------------------- | ----------------- | ----------------------------------------------------- |
-          | 1   | voice-orb               | S                 | Depth already built; pure curation — proves the template |
-          | 2   | aurora                  | M                 | The canary; unblocks C3's hand-tuned look             |
-          | 3   | synthwave               | M                 | Road/sun/skyline = genre-defining absences            |
-          | 4   | led-matrix              | S                 | Waterfall scroll = spectrogram-lite archetype         |
-          | 5   | spectrum-bars           | S                 | Default mode; stereo split rides unread `width` lane  |
-          | 6   | bass-circle             | S                 | Cover-art core lifts from radial-burst                |
-          | 7   | particles               | S                 | Color tier + snare shooting stars                     |
-          | 8   | nebula                  | S                 | Kills RP-6 sat-drift; palette phase; star parallax    |
-          | 9   | echo-trails             | M                 | Source-shape enum multiplies identity                 |
-          | 10  | metaballs               | M                 | Lava smear + per-band blob weighting                  |
-          | 11  | oscilloscope (fragment) | M                 | Multi-trace band split; XY lane → renderer block      |
-          | 12  | tunnel                  | S–M               | Already deep; wall materials = safe filler            |
-          | 13  | spectrum-scape          | L (renderer wave) | ABI growth; biggest ceiling raise                     |
-          | 14  | particle-flow           | M–L (renderer)    | PU struct growth; trails = separate LARGE call        |
-          | 15  | oscilloscope XY lane    | M (renderer)      | Lands while ABI is open                               |
-          | 16  | builder2 RP-20 bridge   | M–L               | Biggest unlock, own project; pull earlier if C1 needs |
-          | —   | radial-burst            | —                 | Leave alone — it IS the bar                           |
+              | --- | ----------------------- | ----------------- | ----------------------------------------------------- |
+              | 1   | voice-orb               | S                 | Depth already built; pure curation — proves the template |
+              | 2   | aurora                  | M                 | The canary; unblocks C3's hand-tuned look             |
+              | 3   | synthwave               | M                 | Road/sun/skyline = genre-defining absences            |
+              | 4   | led-matrix              | S                 | Waterfall scroll = spectrogram-lite archetype         |
+              | 5   | spectrum-bars           | S                 | Default mode; stereo split rides unread `width` lane  |
+              | 6   | bass-circle             | S                 | Cover-art core lifts from radial-burst                |
+              | 7   | particles               | S                 | Color tier + snare shooting stars                     |
+              | 8   | nebula                  | S                 | Kills RP-6 sat-drift; palette phase; star parallax    |
+              | 9   | echo-trails             | M                 | Source-shape enum multiplies identity                 |
+              | 10  | metaballs               | M                 | Lava smear + per-band blob weighting                  |
+              | 11  | oscilloscope (fragment) | M                 | Multi-trace band split; XY lane → renderer block      |
+              | 12  | tunnel                  | S–M               | Already deep; wall materials = safe filler            |
+              | 13  | spectrum-scape          | L (renderer wave) | ABI growth; biggest ceiling raise                     |
+              | 14  | particle-flow           | M–L (renderer)    | PU struct growth; trails = separate LARGE call        |
+              | 15  | oscilloscope XY lane    | M (renderer)      | Lands while ABI is open                               |
+              | 16  | builder2 RP-20 bridge   | M–L               | Biggest unlock, own project; pull earlier if C1 needs |
+              | —   | radial-burst            | —                 | Leave alone — it IS the bar                           |
 
-          B0 surprises worth reading in the matrix: hint coverage is 359/359
-          (wave hint-work = touch-ups only); curated-tier GROUP holes don't
-          follow param counts (metaballs has zero beat-response in main;
-          led-matrix hides motion+beat in advanced); styles under-exercise
-          enums (`coverFit` set by NO style anywhere). NEW defect from B0:
-          led-matrix canvas2d fallback loses hue entirely to a `hueShift`
-          key mismatch (+ builder2 canvas2d = all-default bars) — added to
-          the severity-2 pool.
+              B0 surprises worth reading in the matrix: hint coverage is 359/359
+              (wave hint-work = touch-ups only); curated-tier GROUP holes don't
+              follow param counts (metaballs has zero beat-response in main;
+              led-matrix hides motion+beat in advanced); styles under-exercise
+              enums (`coverFit` set by NO style anywhere). NEW defect from B0:
+              led-matrix canvas2d fallback loses hue entirely to a `hueShift`
+              key mismatch (+ builder2 canvas2d = all-default bars) — added to
+              the severity-2 pool.
 
 - [ ] B1..Bn Per-mode upgrade waves in the B0-ranked order (worktree
       agents, one mode per agent — the proven v2.47/v2.68 pattern):
@@ -256,18 +256,23 @@ was the canary.
       platform → render), each wave gated + released.
 - [ ] E3 Register the RP-4 determinism question as its own
       investigate-and-close item (measure, fix or document).
-- [x] E4 ALIGN-002 — **healed + verified 2026-08-06.** Diagnosis: the
-      tauri-cli 2.11.4 NSIS template writes `DisplayVersion`
-      UNCONDITIONALLY in `Section Install` (checked against the actual
-      template source), and running the released 2.72.0 setup with the
-      updater's exact invocation (`/P /UPDATE`) on the owner machine
-      rewrote the key `2.39.0 → 2.72.0`. Current pipeline is correct;
-      the stuck value was debt from an older installer generation
-      (root cause of the ORIGINAL non-writes unprovable — those
-      installers are gone). Residual probe: after the next real in-app
-      update, the release ritual's registry check expects the EXACT new
-      version (the "one-behind is fine" note is retired). If it reads
-      stale again → escalate to a VM update-chain reproduction.
+- [x] E4 ALIGN-002 — **DONE, shipped v2.72.1 (2026-08-06), proven on the
+      live path.** Two-stage diagnosis: (1) the tauri-cli 2.11.4 NSIS
+      template writes `DisplayVersion` UNCONDITIONALLY, and running the
+      released setup by hand with the updater's arguments (`/P /UPDATE`)
+      DID rewrite the key (`2.39.0 → 2.72.0`); (2) BUT the genuine
+      in-app update (ShellExecuteW from the running app) was then caught
+      skipping the write in real time — the driven 2.72.0→2.72.1
+      auto-update left binary=`2.72.1` / registry=`2.72.0`. A concurrent
+      session's interim "current pipeline is correct" conclusion is
+      thereby superseded. Fix: boot-time self-heal
+      (`src-tauri/src/uninstall_entry.rs`; winreg already in tree; debug
+      builds skip; missing key never created; real-registry round-trip
+      test). Proof: registry read `2.72.1` seconds after the updated
+      app's first launch. Ritual registry check now expects the EXACT
+      version after every update (one-behind note retired) — with the
+      heal, any future installer skip is invisible by the time anyone
+      looks.
 
 ### Track F — Test & release infrastructure (NEW, from the audit)
 
@@ -335,13 +340,13 @@ the shipped build. Full record: ARCHIVE at the bottom of this file.
 
 ### ALIGN-002 — Windows uninstall registry stuck at 2.39.0
 
-**Status:** CLOSED 2026-08-06 (was reopened same day) — key was stuck at
-`2.39.0` through five updates; running the released 2.72.0 setup with
-the updater's exact invocation (`/P /UPDATE`) rewrote it to `2.72.0`,
-and the current NSIS template provably writes unconditionally. Healed;
-ritual registry check now expects the EXACT version after every future
-update (one-behind note retired). Full detail: Track E → E4. Original
-record: ARCHIVE at the bottom of this file.
+**Status:** RESOLVED 2026-08-06 — **shipped in v2.72.1.** Key sat at
+`2.39.0` through five updates; a manual updater-style install wrote it,
+but the genuine in-app update path was then caught skipping the write
+live (2.72.0→2.72.1). The app now self-heals its uninstall entry on
+every boot; proven on-device seconds after the updated app's first
+launch. Full detail: Track E → E4. Original record: ARCHIVE at the
+bottom of this file.
 
 ### DOC-001 — Public metadata and planning truth
 
