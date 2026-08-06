@@ -11,6 +11,42 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.74.0] - 2026-08-06
+
+### Added
+
+- **Four visual modes got dramatically deeper.** First wave of the
+  mode-depth program:
+  - **Voice Orb** — up to three satellite orbs that each breathe with
+    their own slice of the voice, plus new ring styles (line, dots,
+    beads). New styles: Roundtable, Sonar, Pearls; Frost is now the
+    eight-fold snowflake its name promised.
+  - **Aurora** — a controllable palette family (ember, gold, violet
+    auroras are finally reachable), up to five curtains, an optional
+    mountain horizon and a moon. New styles: Ember, Moonrise, Ridgeline,
+    Molten; four older styles sharpened.
+  - **Synthwave** — a perspective road with beat-locked lane dashes, the
+    classic banded sun as a controllable family, and a city skyline
+    with treble-glimmer windows. New styles: Outrun, Neon Metropolis,
+    Poster Sun, City Limits; Midnight Drive finally has its road.
+  - **LED Matrix** — a real-time **spectrogram waterfall** display mode
+    (scrolls with the track, both directions), with the motion and beat
+    controls promoted out of Advanced. New styles: Spectrogram,
+    Code Rain, Prism Roll.
+  All defaults look exactly as before — new territory is opt-in via
+  parameters and the new styles.
+- Sliders for wide ranges now travel logarithmically where it helps
+  (fine control where the action is), and modulation/MIDI now snap
+  whole-number settings cleanly instead of strobing through fractions.
+
+### Fixed
+
+- **The default sync mode "Kicks" now actually follows the kick drum.**
+  It used to quietly behave like "Energy"; motion on default settings is
+  now punchier and honest to its name.
+- LED Matrix's compatibility fallback (systems without WebGPU) lost its
+  colors to a naming mismatch — fixed.
+
 ## [2.73.0] - 2026-08-06
 
 ### Fixed
@@ -1937,7 +1973,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.73.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.74.0...HEAD
+[2.74.0]: https://github.com/0langa/beatform/compare/v2.73.0...v2.74.0
 [2.73.0]: https://github.com/0langa/beatform/compare/v2.72.1...v2.73.0
 [2.72.1]: https://github.com/0langa/beatform/compare/v2.72.0...v2.72.1
 [2.72.0]: https://github.com/0langa/beatform/compare/v2.71.0...v2.72.0
