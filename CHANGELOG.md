@@ -11,7 +11,40 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
-## [2.74.0] - 2026-08-06
+## [2.75.0] - 2026-08-07
+
+### Added
+
+- **Four more modes got dramatically deeper.** Second wave of the
+  mode-depth program:
+  - **Spectrum Bars** — a real stereo mode (the bars split into a
+    left/right pair driven by the actual stereo field), bar cap shapes
+    (rounded, dot caps), a reflection floor, a gentle sway, and
+    low/high frequency trim. New styles: Stereo Field, Night Stage,
+    Hi-Fi (amber VFD hardware look), Undertow.
+  - **Bass Circle** — a segmented VU-style ring option, bokeh particles
+    that pop on the beat, and an authored core for tracks without cover
+    art (gradient or a live waveform ring). Ring spin is now a
+    first-class control. New styles: Meter, Fireflies, Pulse Core,
+    Polaroid.
+  - **Particles** — snare hits now launch shooting stars, an optional
+    constellation mode links nearby particles into a living star chart,
+    and the mode joins the standard color controls (saturation and
+    lightness). New styles: Meteor Shower, Constellation, Warp Prism;
+    Rave gained meteors.
+  - **Kaleido Nebula** — true two-color nebulae (teal core / magenta
+    rim class of looks), a parallax starfield behind the clouds, and a
+    directional wind the clouds stream along. New styles: Emission
+    Nebula, Star Nursery, Stellar Wind, Pinwheel Galaxy; the whole deck
+    re-tuned.
+    All defaults look exactly as before — new territory is opt-in via
+    parameters and the new styles.
+
+### Changed
+
+- Kaleido Nebula's saturation control now uses the same 0–2 scale as
+  every other mode (it was a nonstandard 0–1 scale). Existing projects
+  and looks are migrated automatically and render identically.
 
 ### Added
 
