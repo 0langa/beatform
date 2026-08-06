@@ -5212,29 +5212,35 @@ exports[`shader golden baseline > tunnel-rings: param ABI (key + default, in ord
 exports[`shader golden baseline > voice-orb: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
 fn P_size() -> f32 { return params[1u]; }
-fn P_response() -> f32 { return params[2u]; }
-fn P_wobble() -> f32 { return params[3u]; }
-fn P_ring() -> f32 { return params[4u]; }
-fn P_sparkle() -> f32 { return params[5u]; }
-fn P_rmsBlend() -> f32 { return params[6u]; }
-fn P_voiceFocus() -> f32 { return params[7u]; }
-fn P_growth() -> f32 { return params[8u]; }
-fn P_idleBreath() -> f32 { return params[9u]; }
-fn P_wobScale() -> f32 { return params[10u]; }
-fn P_mode1() -> f32 { return params[11u]; }
-fn P_mode2() -> f32 { return params[12u]; }
-fn P_mode3() -> f32 { return params[13u]; }
-fn P_coreGlow() -> f32 { return params[14u]; }
-fn P_texture() -> f32 { return params[15u]; }
-fn P_breathGlow() -> f32 { return params[16u]; }
-fn P_rimGlow() -> f32 { return params[17u]; }
-fn P_ringDist() -> f32 { return params[18u]; }
-fn P_ringWave() -> f32 { return params[19u]; }
-fn P_sparkleScale() -> f32 { return params[20u]; }
-fn P_bgLevel() -> f32 { return params[21u]; }
-fn P_vignette() -> f32 { return params[22u]; }
-fn P_flare() -> f32 { return params[23u]; }
-fn P_mirror() -> f32 { return params[24u]; }
+fn P_satellites() -> f32 { return params[2u]; }
+fn P_ring() -> f32 { return params[3u]; }
+fn P_ringStyle() -> f32 { return params[4u]; }
+fn P_mirror() -> f32 { return params[5u]; }
+fn P_texture() -> f32 { return params[6u]; }
+fn P_response() -> f32 { return params[7u]; }
+fn P_voiceFocus() -> f32 { return params[8u]; }
+fn P_wobble() -> f32 { return params[9u]; }
+fn P_sparkle() -> f32 { return params[10u]; }
+fn P_flare() -> f32 { return params[11u]; }
+fn P_rmsBlend() -> f32 { return params[12u]; }
+fn P_growth() -> f32 { return params[13u]; }
+fn P_idleBreath() -> f32 { return params[14u]; }
+fn P_wobScale() -> f32 { return params[15u]; }
+fn P_mode1() -> f32 { return params[16u]; }
+fn P_mode2() -> f32 { return params[17u]; }
+fn P_mode3() -> f32 { return params[18u]; }
+fn P_coreGlow() -> f32 { return params[19u]; }
+fn P_breathGlow() -> f32 { return params[20u]; }
+fn P_rimGlow() -> f32 { return params[21u]; }
+fn P_ringDist() -> f32 { return params[22u]; }
+fn P_ringWave() -> f32 { return params[23u]; }
+fn P_ringCount() -> f32 { return params[24u]; }
+fn P_satSize() -> f32 { return params[25u]; }
+fn P_satDist() -> f32 { return params[26u]; }
+fn P_satOrbit() -> f32 { return params[27u]; }
+fn P_sparkleScale() -> f32 { return params[28u]; }
+fn P_bgLevel() -> f32 { return params[29u]; }
+fn P_vignette() -> f32 { return params[30u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   var p = centered(uv);
@@ -5337,8 +5343,78 @@ fn preset(uv: vec2f) -> vec4f {
     let dRing = abs(r - ringR);
     let ringT = fract(baseT + 0.07 + wv * 0.05);
     let ringPal = cosPalette(ringT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
-    col += ringPal * smoothstep(0.004, 0.0008, dRing) * (0.35 + level * 0.5);
-    col += ringPal * exp(-dRing * 120.0) * 0.18;
+    if (P_ringStyle() < 0.5) {
+      // Line — the classic continuous waveform ring, expressions untouched
+      // from before Ring style existed, so the default look cannot drift.
+      col += ringPal * smoothstep(0.004, 0.0008, dRing) * (0.35 + level * 0.5);
+      col += ringPal * exp(-dRing * 120.0) * 0.18;
+    } else {
+      // Dots / beads: the same waveform radius, sampled at N fixed angular
+      // stations instead of drawn as a continuous line. round() guards the
+      // comb against a fractional count — mod:"snap" keeps modulated values
+      // whole, but a partial station at the wrap seam must stay impossible
+      // by construction. At integer counts the +-PI wrap is seamless: both
+      // representations of the seam station sample waveAt(0).
+      let beads = P_ringStyle() > 1.5;
+      let n = max(round(select(P_ringCount(), P_ringCount() / 3.0, beads)), 3.0);
+      let seg = TAU / n;
+      let ai = floor(a / seg + 0.5) * seg;
+      let wvi = waveAt(fract(ai / TAU + 0.5));
+      let stR = softLimit(radius * P_ringDist() + wvi * P_ringWave() * (0.35 + level * 1.2),
+                          frameCircle());
+      // Planar distance to the station point: radial offset + arc offset.
+      let dDot = sqrt((r - stR) * (r - stR) + (a - ai) * (a - ai) * r * r);
+      // Station size scales with the arc spacing so neighbours never merge;
+      // beads are fewer and fatter than dots.
+      let dotR = stR * seg * select(0.26, 0.36, beads);
+      let stT = fract(baseT + 0.07 + wvi * 0.05);
+      let stPal = cosPalette(stT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+      // Each station swells on its own waveform sample, so syllables visibly
+      // travel around the ring instead of brightening it uniformly.
+      let swell = 0.8 + abs(wvi) * 1.5 + level * 0.3;
+      col += stPal * smoothstep(dotR, dotR * 0.35, dDot) * (0.4 + level * 0.5) * swell;
+      col += stPal * exp(-dDot * 90.0) * 0.14;
+      if (beads) {
+        // Beads read as pearls on a thread: a specular white centre plus the
+        // faint line they hang from.
+        col += vec3f(1.0, 0.99, 0.96) * smoothstep(dotR * 0.45, 0.0, dDot) * 0.5 * swell;
+        col += ringPal * exp(-dRing * 120.0) * 0.09;
+      }
+    }
+  }
+
+  // Satellite orbs: companion voices around the main orb. Each satellite
+  // tracks its own slice of the speech band (low / mid / high formants), so
+  // in a two- or three-person recording different orbs visibly light up as
+  // different voices speak. Drawn in folded space, so the club mirror
+  // multiplies them into the same mandala as everything else. Off by default.
+  if (P_satellites() > 0.5) {
+    for (var i = 0; i < 3; i++) {
+      let fi = f32(i);
+      if (fi < P_satellites() - 0.5) {
+        // Non-overlapping two-bin formant slices per satellite (0.30..0.60).
+        let band = (binAt(0.30 + fi * 0.12) + binAt(0.36 + fi * 0.12)) * 0.5;
+        // Slow deterministic orbit off track time (never wall clock), with
+        // staggered speeds so the trio never freezes into one constellation.
+        let aSat = u.time * P_satOrbit() * (0.5 + fi * 0.23) + fi * (TAU / 3.0) + 0.7;
+        // Frame safety, same law as the orb and ring: the satellite's EDGE
+        // (centre + own radius) compresses against the frame circle. The hard
+        // cap on sr keeps a companion a companion at any Size x swell combo.
+        let sr = min(radius * P_satSize() * (0.7 + band * 1.4 + level * 0.3),
+                     frameCircle() * 0.22);
+        let orbitR = softLimit(radius * P_satDist(), frameCircle() * 0.97 - sr);
+        let c = vec2f(cos(aSat), sin(aSat)) * orbitR;
+        let d = length(p - c);
+        let satT = fract(baseT + 0.05 + fi * 0.07);
+        let satPal = cosPalette(satT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+        // A miniature of the orb's own grammar: soft body that brightens as
+        // its band speaks, a rim halo sharing the Rim glow knob, and a share
+        // of the breath glow so a silent panel still reads alive.
+        let satInside = smoothstep(sr, sr * 0.55, d);
+        col += satPal * satInside * (0.22 + band * 1.0 + level * 0.18 + breathG * 0.5);
+        col += satPal * exp(-max(d - sr, 0.0) * 30.0) * (0.1 + band * 0.45) * (0.4 + P_rimGlow());
+      }
+    }
   }
 
   // Breath glow: during silence the orb body and its outer halo swell in
@@ -5370,28 +5446,48 @@ exports[`shader golden baseline > voice-orb: param ABI (key + default, in order)
     "key": "size",
   },
   {
-    "default": 0.6,
-    "key": "response",
-  },
-  {
-    "default": 0.5,
-    "key": "wobble",
+    "default": 0,
+    "key": "satellites",
   },
   {
     "default": 1,
     "key": "ring",
   },
   {
-    "default": 0.5,
-    "key": "sparkle",
+    "default": 0,
+    "key": "ringStyle",
   },
   {
-    "default": 0.3,
-    "key": "rmsBlend",
+    "default": 1,
+    "key": "mirror",
+  },
+  {
+    "default": 0,
+    "key": "texture",
+  },
+  {
+    "default": 0.6,
+    "key": "response",
   },
   {
     "default": 0.5,
     "key": "voiceFocus",
+  },
+  {
+    "default": 0.5,
+    "key": "wobble",
+  },
+  {
+    "default": 0.5,
+    "key": "sparkle",
+  },
+  {
+    "default": 0.5,
+    "key": "flare",
+  },
+  {
+    "default": 0.3,
+    "key": "rmsBlend",
   },
   {
     "default": 0.85,
@@ -5422,10 +5518,6 @@ exports[`shader golden baseline > voice-orb: param ABI (key + default, in order)
     "key": "coreGlow",
   },
   {
-    "default": 0,
-    "key": "texture",
-  },
-  {
     "default": 0.14,
     "key": "breathGlow",
   },
@@ -5442,6 +5534,22 @@ exports[`shader golden baseline > voice-orb: param ABI (key + default, in order)
     "key": "ringWave",
   },
   {
+    "default": 36,
+    "key": "ringCount",
+  },
+  {
+    "default": 0.28,
+    "key": "satSize",
+  },
+  {
+    "default": 1.75,
+    "key": "satDist",
+  },
+  {
+    "default": 0.2,
+    "key": "satOrbit",
+  },
+  {
     "default": 34,
     "key": "sparkleScale",
   },
@@ -5452,14 +5560,6 @@ exports[`shader golden baseline > voice-orb: param ABI (key + default, in order)
   {
     "default": 0.45,
     "key": "vignette",
-  },
-  {
-    "default": 0.5,
-    "key": "flare",
-  },
-  {
-    "default": 1,
-    "key": "mirror",
   },
 ]
 `;
