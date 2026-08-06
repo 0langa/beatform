@@ -4,20 +4,26 @@ import { WGSL_PALETTE_PHASE } from "../wgslLib";
 /**
  * Aurora — layered curtains of light that waver on an fbm flow, brightened by
  * the spectrum and the selected sync source, with vertical ray texture and an
- * optional starfield. Colour comes from a saturated cosine palette instead of
- * a drifting hsl hue, back curtains sit dimmer/softer for a cheap depth cue,
- * beat response is staggered per curtain, and curtain peaks blow out to a hot
- * white core. Green-to-violet northern-lights look over a genuinely dark sky.
+ * optional starfield, moon and landscape silhouette. Colour comes from a
+ * PARAMETERIZED cosine palette family (depth wave): warmth tilts the basis
+ * toward ember/gold or ice/violet, span narrows the ramp down to a single
+ * tone family — at the defaults both reduce bit-exactly to the classic
+ * green-to-violet basis that used to be hardcoded, so legacy projects render
+ * unchanged. Back curtains sit dimmer/softer for a cheap depth cue, beat
+ * response is staggered per curtain, and curtain peaks blow out to a hot
+ * white core. Up to five curtains over a genuinely dark sky.
  */
 export const aurora: PresetDef = {
   id: "aurora",
   name: "Aurora",
   description:
-    "Northern-lights curtains that ripple and glow with the music — slow, ambient, and hypnotic. Reacts to the chosen sync source.",
+    "Northern-lights curtains that ripple and glow with the music — classic green to ember, gold or violet, with an optional moon and mountain silhouette. Reacts to the chosen sync source.",
   styles: [
     // Boreal — the defaults — three drifting curtains.
     { id: "boreal", name: "Boreal", values: {} },
     // Ice Mirror — horizon reflection on: the sky repeated in ice below it.
+    // Depth-wave rework: palette warmth pulled cold so the ice reads arctic
+    // blue-green instead of the same family as every other chip.
     {
       id: "iceMirror",
       name: "Ice Mirror",
@@ -25,6 +31,7 @@ export const aurora: PresetDef = {
         hue: 158,
         hueStep: 40,
         hueSpread: 90,
+        palWarm: -0.4,
         reflect: 1,
         horizon: 0.62,
         reflectFade: 2.5,
@@ -41,13 +48,17 @@ export const aurora: PresetDef = {
         beatPulse: 0.35,
       },
     },
-    // Solar Storm — brightest and fastest — full spectrum sculpting, hard beat pulse.
+    // Solar Storm — brightest and fastest — full spectrum sculpting, hard beat
+    // pulse. Depth-wave rework: the full five-curtain stack, warmed a notch —
+    // a genuine storm filling the sky rather than three sheets at max volume.
     {
       id: "solarStorm",
       name: "Solar Storm",
       values: {
         hue: 92,
         hueStep: 75,
+        palWarm: 0.2,
+        layers: 5,
         bright: 1.05,
         react: 1.2,
         flow: 2.6,
@@ -86,7 +97,9 @@ export const aurora: PresetDef = {
         drift: 0.1,
       },
     },
-    // Cathedral — left/right mirrored and thick — a symmetric arch over a bright sky glow.
+    // Cathedral — left/right mirrored and thick — a symmetric arch over a
+    // bright sky glow. Depth-wave rework: a moon on the fold line (offset 0
+    // renders a single disc under Symmetric) crowning the arch.
     {
       id: "cathedral",
       name: "Cathedral",
@@ -108,9 +121,14 @@ export const aurora: PresetDef = {
         baseY: 0.46,
         specAmt: 1.9,
         bassSwell: 0.55,
+        moon: 0.05,
+        moonX: 0,
+        moonGlow: 0.56,
       },
     },
     // Cosmic — stars and sky glow dominate; the curtains sit low and dim.
+    // Depth-wave rework: a small distant moon and a tighter palette span so
+    // the sky reads as one deep nebular family instead of the stock rainbow.
     {
       id: "cosmic",
       name: "Cosmic",
@@ -118,6 +136,7 @@ export const aurora: PresetDef = {
         hue: 100,
         hueStep: 70,
         hueSpread: 40,
+        palSpan: 0.6,
         stars: 1,
         bright: 0.7,
         thick: 0.08,
@@ -133,6 +152,9 @@ export const aurora: PresetDef = {
         specAmt: 1,
         bassSwell: 0.35,
         drift: 0.1,
+        moon: 0.035,
+        moonX: -0.44,
+        moonGlow: 0.6,
       },
     },
     // Veil — one curtain at max thickness and waviness — a single sheet filling the frame.
@@ -156,6 +178,112 @@ export const aurora: PresetDef = {
         beatPulse: 0.7,
         bgGlow: 0.2,
         drift: 0.5,
+      },
+    },
+    // Ember — NEW (depth wave) — the rare all-red aurora: a near-mono ember
+    // family over low rolling hills, four curtains breathing on the bass.
+    {
+      id: "ember",
+      name: "Ember",
+      values: {
+        hue: 8,
+        palWarm: 0.8,
+        palSpan: 0.3,
+        hueStep: 20,
+        hueSpread: 45,
+        sat: 0.9,
+        bright: 0.95,
+        layers: 4,
+        thick: 0.15,
+        wave: 1.3,
+        flow: 0.7,
+        drift: 0.15,
+        baseY: 0.44,
+        ground: 0.16,
+        groundRough: 0.3,
+        stars: 1,
+        bgGlow: 0.44,
+        react: 0.9,
+        bassSwell: 0.7,
+        beatPulse: 0.5,
+      },
+    },
+    // Moonrise — NEW (depth wave) — violet night: two thin quiet curtains
+    // hanging low, the sky given over to a big haloed moon and stars.
+    {
+      id: "moonrise",
+      name: "Moonrise",
+      values: {
+        hue: 276,
+        palWarm: -0.3,
+        palSpan: 0.45,
+        hueStep: 30,
+        hueSpread: 50,
+        sat: 0.7,
+        bright: 0.8,
+        layers: 2,
+        thick: 0.07,
+        wave: 0.8,
+        flow: 0.45,
+        drift: 0.1,
+        baseY: 0.55,
+        moon: 0.09,
+        moonX: 0.42,
+        moonGlow: 0.8,
+        stars: 1,
+        bgGlow: 0.36,
+        react: 0.6,
+        beatPulse: 0.2,
+        specAmt: 1.1,
+        bassSwell: 0.3,
+      },
+    },
+    // Ridgeline — NEW (depth wave) — winter night over mountains: the horizon
+    // scene the mode never had — jagged silhouette, small moon, classic green.
+    {
+      id: "ridgeline",
+      name: "Ridgeline",
+      values: {
+        ground: 0.3,
+        groundRough: 0.84,
+        stars: 1,
+        baseY: 0.36,
+        thick: 0.1,
+        wave: 1.15,
+        flow: 0.8,
+        drift: 0.1,
+        bgGlow: 0.4,
+        hueSpread: 80,
+        beatPulse: 0.3,
+        bassSwell: 0.55,
+        moon: 0.045,
+        moonX: -0.5,
+        moonGlow: 0.44,
+      },
+    },
+    // Molten — NEW (depth wave) — near-mono gold at the full five-curtain
+    // stack, thick and slow — the sky as slowly folding molten metal.
+    {
+      id: "molten",
+      name: "Molten",
+      values: {
+        hue: 42,
+        palWarm: 0.6,
+        palSpan: 0.15,
+        sat: 0.94,
+        bright: 0.9,
+        layers: 5,
+        thick: 0.2,
+        wave: 1.7,
+        flow: 0.5,
+        drift: 0.3,
+        baseY: 0.42,
+        bgGlow: 0.54,
+        react: 1,
+        beatPulse: 0.8,
+        bassSwell: 0.9,
+        specAmt: 1.3,
+        rays: 0.74,
       },
     },
   ],
@@ -221,8 +349,19 @@ export const aurora: PresetDef = {
       default: 0.5,
       hint: "Where the curtains hang on screen",
     },
-  ],
-  advanced: [
+    // ---- Depth wave: promoted from advanced (wave, layers, beatPulse) and
+    // new territory (palWarm, moon, ground) — the curated tier now carries
+    // shape, color, motion, beat response, glow AND the scene elements.
+    {
+      key: "wave",
+      label: "Waviness",
+      group: "shape",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      default: 1,
+      hint: "How much the curtains undulate",
+    },
     {
       key: "layers",
       label: "Curtains",
@@ -233,13 +372,57 @@ export const aurora: PresetDef = {
         { value: 1, label: "1" },
         { value: 2, label: "2" },
         { value: 3, label: "3" },
+        { value: 4, label: "4" },
+        { value: 5, label: "5" },
       ],
       min: 1,
-      max: 3,
+      max: 5,
       step: 1,
       default: 3,
       hint: "Number of stacked curtains",
     },
+    {
+      key: "beatPulse",
+      label: "Beat pulse",
+      group: "reaction",
+      min: 0,
+      max: 1.5,
+      step: 0.05,
+      default: 0.4,
+      hint: "Flash/expand on each detected beat of the sync source, staggered per curtain",
+    },
+    {
+      key: "palWarm",
+      label: "Palette warmth",
+      group: "color",
+      min: -1,
+      max: 1,
+      step: 0.02,
+      default: 0,
+      hint: "Tilt the whole palette warm (ember, gold) or cold (ice, violet) — 0 is the classic balance",
+    },
+    {
+      key: "moon",
+      label: "Moon",
+      group: "backdrop",
+      min: 0,
+      max: 0.2,
+      step: 0.005,
+      default: 0,
+      hint: "Moon behind the curtains — size of the disc, 0 is off",
+    },
+    {
+      key: "ground",
+      label: "Landscape",
+      group: "backdrop",
+      min: 0,
+      max: 0.4,
+      step: 0.01,
+      default: 0,
+      hint: "Dark landscape silhouette along the bottom of the frame — 0 is off",
+    },
+  ],
+  advanced: [
     {
       key: "specAmt",
       label: "Spectrum shape",
@@ -294,31 +477,12 @@ export const aurora: PresetDef = {
       key: "reflectFade",
       label: "Reflection fade",
       group: "shape",
+      taper: "log",
       min: 1,
       max: 12,
       step: 0.5,
       default: 4,
       hint: "How quickly the reflection dims with distance below the horizon",
-    },
-    {
-      key: "beatPulse",
-      label: "Beat pulse",
-      group: "reaction",
-      min: 0,
-      max: 1.5,
-      step: 0.05,
-      default: 0.4,
-      hint: "Flash/expand on each detected beat of the sync source, staggered per curtain",
-    },
-    {
-      key: "wave",
-      label: "Waviness",
-      group: "shape",
-      min: 0,
-      max: 2,
-      step: 0.05,
-      default: 1,
-      hint: "How much the curtains undulate",
     },
     {
       key: "hueStep",
@@ -339,6 +503,16 @@ export const aurora: PresetDef = {
       step: 5,
       default: 60,
       hint: "Color drift across the width",
+    },
+    {
+      key: "palSpan",
+      label: "Palette span",
+      group: "color",
+      min: 0,
+      max: 1.5,
+      step: 0.05,
+      default: 1,
+      hint: "How many tones the palette sweeps — 1 is the classic full ramp, low values lock the sky to one color family",
     },
     {
       key: "rays",
@@ -398,6 +572,46 @@ export const aurora: PresetDef = {
       default: 1,
       hint: "Fold the curtains and stars left/right into a symmetric aurora — 1 is off",
     },
+    {
+      key: "groundRough",
+      label: "Ruggedness",
+      group: "backdrop",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.5,
+      hint: "Character of the silhouette — low is rolling hills, high is a jagged ridge (needs Landscape above 0)",
+    },
+    {
+      key: "moonX",
+      label: "Moon offset",
+      group: "backdrop",
+      min: -0.8,
+      max: 0.8,
+      step: 0.02,
+      default: 0.34,
+      hint: "Slide the moon across the sky — 0 is centered, negative moves it left",
+    },
+    {
+      key: "moonY",
+      label: "Moon height",
+      group: "backdrop",
+      min: 0.3,
+      max: 0.95,
+      step: 0.01,
+      default: 0.78,
+      hint: "How high the moon hangs in the sky",
+    },
+    {
+      key: "moonGlow",
+      label: "Moon halo",
+      group: "backdrop",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.35,
+      hint: "Halo of light around the moon (needs a Moon size above 0)",
+    },
   ],
   wgsl: /* wgsl */ `
 // Bounded, continuous noise clock (seconds of TRACK time in, noise coordinate
@@ -417,6 +631,38 @@ fn noiseClock(rate: f32) -> f32 {
   return 240.0 * (1.0 - abs(2.0 * ph - 1.0));
 }
 
+// The aurora's ONE palette family, parameterized (depth wave). It used to be
+// the same hardcoded basis pasted at all three call sites — half-grey centre,
+// equal per-channel chroma, frequency 1, standard phase — which is why every
+// shipped style rendered the same green-violet family: hue only ROTATES the
+// ramp, it cannot change its internal structure.
+//
+// Two family axes, both bit-neutral at their defaults:
+//  - Warmth tilts the per-channel AMPLITUDE (R up / B down or the reverse).
+//    At 0 the tilt vector is exactly (1,1,1) — multiply-by-one is exact in
+//    IEEE, so the legacy amplitudes come out bit-identical.
+//  - Span fans the per-channel PHASE about the ramp's mid-phase (0.335, the
+//    midpoint of the standard phase extremes): 1 leaves the standard thirds
+//    untouched (the correction term multiplies by exactly 0), 0 collapses all
+//    channels in phase — a single-tone family, which is what warmth then
+//    colours (ember, gold, violet). A uniform phase SHIFT is deliberately not
+//    a param: at frequency 1 it is algebraically identical to a Hue rotation,
+//    and the panel already has a hue wheel.
+//
+// Neither axis touches t or the frequency, so the fract() wrap in every
+// caller's t stays invisible (cos is 1-periodic in t) — no seam at any
+// setting. Warmth can push an amplitude past the base, which would swing the
+// cool channel negative — and negative HDR light explodes through the ACES
+// tonemap — so the result floors at 0. Identity for every pre-family setting:
+// all three call sites keep chroma <= base, where the palette is never
+// negative.
+fn familyPal(t: f32, base: f32, chroma: f32) -> vec3f {
+  let warm = P_palWarm();
+  let famB = chroma * vec3f(1.0 + warm * 0.7, 1.0 - abs(warm) * 0.2, 1.0 - warm * 0.7);
+  let famD = ${WGSL_PALETTE_PHASE} + (${WGSL_PALETTE_PHASE} - vec3f(0.335)) * (P_palSpan() - 1.0);
+  return max(cosPalette(t, vec3f(base), famB, vec3f(1.0), famD), vec3f(0.0));
+}
+
 // One stack of aurora curtains sampled at horizontal position x and vertical
 // position y. Split out of preset() so the horizon reflection below can
 // re-evaluate the exact same field at a mirrored y — a real reflection, not a
@@ -429,7 +675,11 @@ fn noiseClock(rate: f32) -> f32 {
 fn auroraCurtains(x: f32, specX: f32, y: f32, drive: f32) -> vec3f {
   var acc = vec3f(0.0);
   let layers = i32(P_layers());
-  for (var i = 0; i < 3; i++) {
+  // Up to FIVE curtains (depth wave; was capped at 3). The depth-stagger
+  // machinery below — fog, parallax, stack compression, beat stagger — is
+  // already written against the live layer count, so the deeper stack costs
+  // nothing new; at the default of 3 the executed iterations are identical.
+  for (var i = 0; i < 5; i++) {
     if (i >= layers) { break; }
     let fi = f32(i);
 
@@ -495,7 +745,7 @@ fn auroraCurtains(x: f32, specX: f32, y: f32, drive: f32) -> vec3f {
     let palT = fract(P_hue() / 360.0 + fi * (P_hueStep() / 360.0)
              + (x - 0.5) * (P_hueSpread() / 360.0) + spec * 0.12);
     let chroma = mix(0.08, 0.5, P_sat());
-    let pal = cosPalette(palT, vec3f(0.5), vec3f(chroma), vec3f(1.0), ${WGSL_PALETTE_PHASE});
+    let pal = familyPal(palT, 0.5, chroma);
 
     // Loudness is logarithmic: compress react through pow(.,0.6) before it
     // drives brightness (doc guidance) so 3 stacked curtains overlapping
@@ -560,7 +810,7 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Deep night sky: near-black but hued, not grey, so the curtains have
   // real darkness to glow against instead of sitting on flat mid-grey fog.
-  let skyPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.025), vec3f(0.02), vec3f(1.0), ${WGSL_PALETTE_PHASE});
+  let skyPal = familyPal(fract(P_hue() / 360.0 + 0.5), 0.025, 0.02);
   var col = skyPal;
 
   // Optional starfield behind everything (small round points, twinkling).
@@ -583,6 +833,35 @@ fn preset(uv: vec2f) -> vec4f {
   // Sync-reactive envelope + beat pulse: switching the sync source (bass /
   // treble / kicks / ...) visibly changes the drive here.
   let drive = clamp(u.drive, 0.0, 1.5);
+
+  // Optional moon (depth wave): an opaque disc with a soft halo, in front of
+  // the stars and behind the curtains. Size 0 = absent — the default, so
+  // existing projects are untouched. Drawn in the FOLDED coordinate like the
+  // stars, so Symmetric keeps the whole scene one mirrored composition (an
+  // offset of 0 centres the disc exactly on the fold line — one moon, whole).
+  if (P_moon() > 0.001) {
+    let mp = vec2f((x - 0.5) * u.aspect - P_moonX(), y - (1.0 - P_moonY()));
+    let md = length(mp);
+    let mr = P_moon();
+    // Static maria shading, seeded by constants — never time: the moon does
+    // not churn. Scale rides 1/size so the face keeps its character as the
+    // disc grows.
+    let maria = 0.86 + 0.14 * fbm(mp * (11.0 / max(mr, 0.01)) + vec2f(37.1, 19.7));
+    // The disc follows the palette family's warmth: an ember sky gets a
+    // golden moon, an arctic one stays bone-white.
+    let mwarm = P_palWarm();
+    let moonCol = vec3f(0.94 + mwarm * 0.05, 0.94, 0.97 - mwarm * 0.12);
+    let disc = smoothstep(mr, mr * 0.93, md);
+    col = mix(col, moonCol * maria, disc);
+    // Halo: a tight bloom hugging the limb plus a wide atmospheric glow,
+    // breathing gently with the sync source — damped ON the disc itself so
+    // the face never washes out.
+    let limb = exp(-max(md - mr, 0.0) * 30.0);
+    let halo = exp(-max(md - mr, 0.0) * 6.0);
+    col += moonCol * (limb * 0.5 + halo * 0.22) * P_moonGlow() * (0.75 + drive * 0.25)
+         * (1.0 - disc * 0.85);
+  }
+
   col += auroraCurtains(x, specX, y, drive);
 
   // Horizon reflection: below the horizon line the curtains are mirrored and
@@ -595,8 +874,32 @@ fn preset(uv: vec2f) -> vec4f {
   }
 
   // Soft sky glow rising from the horizon, lifted by the sync source.
-  let glowPal = cosPalette(fract(P_hue() / 360.0 + P_hueStep() / 360.0), vec3f(0.5), vec3f(mix(0.08, 0.4, P_sat())), vec3f(1.0), ${WGSL_PALETTE_PHASE});
+  let glowPal = familyPal(fract(P_hue() / 360.0 + P_hueStep() / 360.0), 0.5, mix(0.08, 0.4, P_sat()));
   col += glowPal * smoothstep(0.0, 0.55, y) * P_bgGlow() * (0.3 + drive * 0.6) * 0.35;
+
+  // Optional landscape silhouette (depth wave): a dark fbm ridge rising from
+  // the bottom edge — the ground this sky never had. Height 0 = absent, the
+  // default. Seeded by constants, never time: land does not ripple. Uses the
+  // folded x, so Symmetric mirrors the terrain with the rest of the scene.
+  // Drawn LAST before tonemap: it is the foreground, so it occludes curtains,
+  // reflection and sky glow alike.
+  if (P_ground() > 0.001) {
+    let coarse = fbm(vec2f(x * 2.4 + 17.3, 5.9));
+    let fine = fbm(vec2f(x * 9.5 + 43.7, 11.2));
+    // Ruggedness swaps rolling hills for a jagged ridge: it blends the fine
+    // octave in AND lets it cut deeper into the coarse profile.
+    let relief = mix(coarse, coarse * 0.62 + fine * 0.55, P_groundRough());
+    let ridgeY = 1.0 - P_ground() * (0.3 + relief * 0.7);
+    let land = smoothstep(ridgeY - 0.0025, ridgeY + 0.0025, y);
+    // Near-black but hued (the sky palette again), never flat #000 — and a
+    // whisper of the aurora's own glow spills onto the slopes.
+    let landCol = skyPal * 1.6 + glowPal * 0.02 * (0.4 + drive * 0.6);
+    col = mix(col, landCol, land * 0.97);
+    // Thin cold rim where the ridge meets the sky — backlit by the aurora,
+    // which is what sells the silhouette as terrain instead of a paper cutout.
+    let rimD = abs(y - ridgeY);
+    col += glowPal * smoothstep(0.006, 0.0, rimD) * (0.10 + drive * 0.14) * P_ground() * 2.5;
+  }
 
   col = tonemap(col * 1.1);
   col += grain(uv, 0.012);
