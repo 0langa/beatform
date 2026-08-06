@@ -179,6 +179,40 @@ was the canary.
       developed — spectrum-bars 9, led-matrix 9, bass-circle 10,
       particles 11, radial-burst 12. Builder is its own world (out of
       scope here).
+- [x] B0 **DONE 2026-08-06** — full matrix at
+      `F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\quality-audit-2026-08\b0-mode-depth-matrix.md`.
+      Recommended queue (OWNER RESHUFFLES BEFORE WAVES START); wave 0 =
+      F5 WGSL consolidation + param-schema taper/mod-metadata first:
+
+      | #   | Mode                    | Effort            | Why here                                              |
+          | --- | ----------------------- | ----------------- | ----------------------------------------------------- |
+          | 1   | voice-orb               | S                 | Depth already built; pure curation — proves the template |
+          | 2   | aurora                  | M                 | The canary; unblocks C3's hand-tuned look             |
+          | 3   | synthwave               | M                 | Road/sun/skyline = genre-defining absences            |
+          | 4   | led-matrix              | S                 | Waterfall scroll = spectrogram-lite archetype         |
+          | 5   | spectrum-bars           | S                 | Default mode; stereo split rides unread `width` lane  |
+          | 6   | bass-circle             | S                 | Cover-art core lifts from radial-burst                |
+          | 7   | particles               | S                 | Color tier + snare shooting stars                     |
+          | 8   | nebula                  | S                 | Kills RP-6 sat-drift; palette phase; star parallax    |
+          | 9   | echo-trails             | M                 | Source-shape enum multiplies identity                 |
+          | 10  | metaballs               | M                 | Lava smear + per-band blob weighting                  |
+          | 11  | oscilloscope (fragment) | M                 | Multi-trace band split; XY lane → renderer block      |
+          | 12  | tunnel                  | S–M               | Already deep; wall materials = safe filler            |
+          | 13  | spectrum-scape          | L (renderer wave) | ABI growth; biggest ceiling raise                     |
+          | 14  | particle-flow           | M–L (renderer)    | PU struct growth; trails = separate LARGE call        |
+          | 15  | oscilloscope XY lane    | M (renderer)      | Lands while ABI is open                               |
+          | 16  | builder2 RP-20 bridge   | M–L               | Biggest unlock, own project; pull earlier if C1 needs |
+          | —   | radial-burst            | —                 | Leave alone — it IS the bar                           |
+
+          B0 surprises worth reading in the matrix: hint coverage is 359/359
+          (wave hint-work = touch-ups only); curated-tier GROUP holes don't
+          follow param counts (metaballs has zero beat-response in main;
+          led-matrix hides motion+beat in advanced); styles under-exercise
+          enums (`coverFit` set by NO style anywhere). NEW defect from B0:
+          led-matrix canvas2d fallback loses hue entirely to a `hueShift`
+          key mismatch (+ builder2 canvas2d = all-default bars) — added to
+          the severity-2 pool.
+
 - [ ] B1..Bn Per-mode upgrade waves in the B0-ranked order (worktree
       agents, one mode per agent — the proven v2.47/v2.68 pattern):
       params + groups + styles + hints + GPU-matrix re-bless + device
