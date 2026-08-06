@@ -11,6 +11,16 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.72.1] - 2026-08-06
+
+### Fixed
+
+- **Windows now shows the right version in Apps & features.** The
+  uninstall entry's version number could go stale across updates (some
+  installs still said 2.39.0). Beatform now checks its own entry on
+  every start and repairs it if it disagrees with the app that's
+  actually running.
+
 ## [2.72.0] - 2026-08-05
 
 ### Added

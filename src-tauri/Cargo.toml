@@ -6,7 +6,7 @@ members = ["lyrics-sidecar"]
 
 [package]
 name = "beatform"
-version = "2.72.0"
+version = "2.72.1"
 description = "Local-first music visualizer — realtime preview and deterministic offline export from one engine."
 authors = ["0langa"]
 edition = "2021"
@@ -54,3 +54,7 @@ sha2 = "0.10"
 # Versions track what wry/tauri already pull in — no new tree entries.
 webview2-com = "0.38"
 windows-core = "0.61"
+# Uninstall-entry self-heal (uninstall_entry.rs): DisplayVersion went
+# stale across five auto-updates (ALIGN-002). Version tracks the tree's
+# existing winreg — no new tree entries.
+winreg = "0.55"

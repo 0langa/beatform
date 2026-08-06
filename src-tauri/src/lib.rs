@@ -6,6 +6,8 @@ mod midi_permission;
 mod perfstats;
 mod prores;
 mod shadertoy;
+#[cfg(windows)]
+mod uninstall_entry;
 
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::tag::Accessor;
@@ -127,6 +129,14 @@ pub fn run() {
     // never granted it, so nothing was exposed — but a plugin that is present
     // and unused is one `opener:default` away from being exposed by accident.
     tauri::Builder::default()
+        .setup(|_app| {
+            // Repair the Windows uninstall entry's DisplayVersion (ALIGN-002:
+            // it survived five updates stuck at 2.39.0). Best-effort, sync,
+            // sub-millisecond; must never affect startup.
+            #[cfg(windows)]
+            uninstall_entry::heal();
+            Ok(())
+        })
         .on_page_load(|_webview, _payload| {
             // Web MIDI: without this, Chromium's permission gate silently
             // denies requestMIDIAccess inside WebView2 (VERIFY-003 finding).
