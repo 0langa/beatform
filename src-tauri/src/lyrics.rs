@@ -23,7 +23,7 @@ use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 use tauri::Manager;
 
@@ -540,6 +540,19 @@ pub fn lyrics_gpu_probe(
     Ok(dml)
 }
 
+/// Kill + bounded reap. TerminateProcess is near-instant in practice; the
+/// bound exists so no caller (shutdown included) can hang on the wait.
+fn kill_and_reap(mut child: Child) {
+    let _ = child.kill();
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while std::time::Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) | Err(_) => break,
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+        }
+    }
+}
+
 /// Kill a running sidecar (bounded reap) and clear the job slot. Used by
 /// cancel's force path and by app shutdown (lib.rs window-destroyed hook).
 pub fn kill_running_job(state: &LyricsState) {
@@ -547,24 +560,48 @@ pub fn kill_running_job(state: &LyricsState) {
         drop(stdin.take());
     }
     if let Ok(mut guard) = state.job.lock() {
-        if let Some(mut child) = guard.take() {
-            let _ = child.kill();
-            let deadline = std::time::Instant::now() + Duration::from_secs(10);
-            while std::time::Instant::now() < deadline {
-                match child.try_wait() {
-                    Ok(Some(_)) | Err(_) => break,
-                    Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-                }
-            }
+        if let Some(child) = guard.take() {
+            kill_and_reap(child);
         }
     }
 }
 
+/// The delayed half of a graceful cancel: kill ONLY if the slot still holds
+/// the pid the cancel targeted. By the time the grace expires the job may
+/// have exited and a new one claimed the slot — killing by slot alone would
+/// murder the newcomer, so the pid is the identity check.
+fn kill_job_if_pid(state: &LyricsState, pid: u32) {
+    if let Ok(mut guard) = state.job.lock() {
+        if guard.as_ref().map(|c| c.id()) != Some(pid) {
+            return;
+        }
+        if let Some(child) = guard.take() {
+            kill_and_reap(child);
+        }
+        // job then job_stdin — the documented lock order.
+        if let Ok(mut stdin) = state.job_stdin.lock() {
+            drop(stdin.take());
+        }
+    }
+}
+
+/// How long a graceful cancel waits before the kill fallback fires. The ack
+/// is device-measured ~1 s between chunks; this is comfortably past any
+/// healthy ack (and the sidecar's own cleanup), short enough that a user who
+/// cancelled a wedged job isn't left watching a zombie.
+const CANCEL_KILL_GRACE: Duration = Duration::from_secs(10);
+
 /// Graceful cancel: one "cancel" line down the sidecar's stdin (it acks
 /// within a chunk — device-measured ~1 s) with a delayed bounded kill as the
-/// backstop for a wedged process. Idempotent; Ok when nothing is running.
+/// backstop for a wedged process: the flag is only polled between chunks, so
+/// a sidecar stuck inside a blocking read or driver call never acks, and
+/// without the fallback it stayed wedged until app exit. Idempotent; Ok when
+/// nothing is running.
 #[tauri::command]
-pub fn lyrics_generate_cancel(state: tauri::State<'_, LyricsState>) -> Result<(), String> {
+pub fn lyrics_generate_cancel(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LyricsState>,
+) -> Result<(), String> {
     let wrote = {
         let mut guard = state.job_stdin.lock().map_err(|_| "state poisoned")?;
         match guard.as_mut() {
@@ -579,6 +616,18 @@ pub fn lyrics_generate_cancel(state: tauri::State<'_, LyricsState>) -> Result<()
         // No stdin to speak to (already closing, or spawn raced) — hard kill.
         kill_running_job(&state);
         return Ok(());
+    }
+    // The write only proved delivery, not that anyone will act on it. Arm
+    // the bounded kill against exactly this child (see kill_job_if_pid).
+    let pid = {
+        let guard = state.job.lock().map_err(|_| "state poisoned")?;
+        guard.as_ref().map(|c| c.id())
+    };
+    if let Some(pid) = pid {
+        std::thread::spawn(move || {
+            std::thread::sleep(CANCEL_KILL_GRACE);
+            kill_job_if_pid(&app.state::<LyricsState>(), pid);
+        });
     }
     Ok(())
 }
@@ -630,6 +679,21 @@ fn supervise(
         let _ = on_event.send(line);
     }
     outcome
+}
+
+/// Claim the exclusive job slot. The returned guard MUST stay held until the
+/// spawned child is stored into it (prores_begin's hold-across-spawn
+/// discipline): checking in one lock scope and storing in another let two
+/// racing invokes both pass the check, and the second store overwrote the
+/// first Child handle — minutes of running inference left with no kill
+/// handle, unreachable by cancel and by the app-close hook, its stdin
+/// clobbered along with it.
+fn claim_job_slot(state: &LyricsState) -> Result<MutexGuard<'_, Option<Child>>, String> {
+    let guard = state.job.lock().map_err(|_| "state poisoned")?;
+    if guard.is_some() {
+        return Err("Lyrics generation is already running".into());
+    }
+    Ok(guard)
 }
 
 /// Generate lyrics for the staged track. Long-running (`async` = tauri's
@@ -705,13 +769,17 @@ pub fn lyrics_generate(
         let _ = std::fs::remove_file(p);
     };
 
-    {
-        let guard = state.job.lock().map_err(|_| "state poisoned")?;
-        if guard.is_some() {
+    // Held from here until the child is stored — see claim_job_slot. The
+    // work under the lock (path resolution, temp reservation, spawn) is
+    // milliseconds; a concurrent invoke blocks briefly and then gets the
+    // clean "already running" refusal instead of a slot to clobber.
+    let mut job_guard = match claim_job_slot(&state) {
+        Ok(g) => g,
+        Err(e) => {
             cleanup_staged(&staged);
-            return Err("Lyrics generation is already running".into());
+            return Err(e);
         }
-    }
+    };
 
     let exe = match sidecar_exe(&app) {
         Ok(p) => p,
@@ -787,8 +855,10 @@ pub fn lyrics_generate(
         }
     };
     let stdout = child.stdout.take().expect("stdout piped");
+    // job held, then job_stdin — the documented lock order.
     *state.job_stdin.lock().map_err(|_| "state poisoned")? = child.stdin.take();
-    *state.job.lock().map_err(|_| "state poisoned")? = Some(child);
+    *job_guard = Some(child);
+    drop(job_guard);
 
     // Blocking supervision (this command runs on the blocking pool). The job
     // stays in state the whole time so cancel/app-close always reach it.
@@ -914,13 +984,16 @@ pub fn lyrics_align_line(
         let _ = std::fs::remove_file(p);
     };
 
-    {
-        let guard = state.job.lock().map_err(|_| "state poisoned")?;
-        if guard.is_some() {
+    // Held until the child is stored — the same race as lyrics_generate:
+    // generate-vs-align-line is exactly the concurrent pair that could both
+    // pass a scoped check and orphan whichever child spawned first.
+    let mut job_guard = match claim_job_slot(&state) {
+        Ok(g) => g,
+        Err(e) => {
             cleanup_staged(&staged);
-            return Err("Lyrics generation is already running".into());
+            return Err(e);
         }
-    }
+    };
 
     let spawn_inputs = (|| -> Result<(PathBuf, PathBuf, PathBuf), String> {
         Ok((
@@ -977,8 +1050,10 @@ pub fn lyrics_align_line(
         }
     };
     let stdout = child.stdout.take().expect("stdout piped");
+    // job held, then job_stdin — the documented lock order.
     *state.job_stdin.lock().map_err(|_| "state poisoned")? = child.stdin.take();
-    *state.job.lock().map_err(|_| "state poisoned")? = Some(child);
+    *job_guard = Some(child);
+    drop(job_guard);
 
     // Supervise to EOF: capture the one terminal event. Seconds-long job, no
     // progress channel — the UI shows a per-line spinner.
@@ -1171,6 +1246,90 @@ mod tests {
         assert_eq!(
             MODELS_BASE_URL,
             "https://github.com/beatform-app/models/releases/download/v1/"
+        );
+    }
+
+    /// A child that will not exit on its own — a stand-in for a running
+    /// sidecar (same trick as the prores tests).
+    fn spawn_wedged() -> Child {
+        let mut cmd = if cfg!(windows) {
+            let mut c = Command::new("ping");
+            c.args(["-n", "60", "127.0.0.1"]);
+            c
+        } else {
+            let mut c = Command::new("sleep");
+            c.arg("60");
+            c
+        };
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn test child")
+    }
+
+    #[test]
+    fn the_job_slot_claim_is_exclusive_across_the_whole_spawn() {
+        // The old scoped check-then-drop let two racing invokes both pass;
+        // the second store overwrote the first Child handle, orphaning a
+        // running inference beyond cancel and the app-close hook. The claim
+        // must stay exclusive from check to store.
+        use std::sync::Arc;
+        let state = Arc::new(LyricsState::default());
+        let mut guard = claim_job_slot(&state).expect("a free slot must claim");
+        let racer_state = Arc::clone(&state);
+        let racer = std::thread::spawn(move || {
+            // Blocks until the first claim stores and releases, then must be
+            // REFUSED — never handed the slot a second time.
+            claim_job_slot(&racer_state).map(|mut g| g.take().map(|c| c.id()))
+        });
+        // Let the racer reach the lock while the spawn is "in progress".
+        std::thread::sleep(Duration::from_millis(50));
+        *guard = Some(spawn_wedged());
+        drop(guard);
+
+        let raced = racer.join().unwrap();
+        assert!(
+            raced.is_err(),
+            "second claim must report already-running, got {raced:?}"
+        );
+        // The first child kept its kill handle; the normal teardown reaches it.
+        kill_running_job(&state);
+        assert!(state.job.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn a_claimed_slot_refuses_until_the_job_is_reaped() {
+        let state = LyricsState::default();
+        *state.job.lock().unwrap() = Some(spawn_wedged());
+        assert!(claim_job_slot(&state).is_err(), "busy slot must refuse");
+        kill_running_job(&state);
+        assert!(
+            claim_job_slot(&state).is_ok(),
+            "a reaped slot must claim again"
+        );
+    }
+
+    #[test]
+    fn the_delayed_cancel_kill_reaches_only_the_job_it_targeted() {
+        // A graceful cancel arms a bounded kill fallback. By the time it
+        // fires, the cancelled job may have exited and a NEW job claimed the
+        // slot — the pid pin keeps the fallback from murdering the newcomer.
+        let state = LyricsState::default();
+        let child = spawn_wedged();
+        let pid = child.id();
+        *state.job.lock().unwrap() = Some(child);
+
+        kill_job_if_pid(&state, pid.wrapping_add(1));
+        assert!(
+            state.job.lock().unwrap().is_some(),
+            "a mismatched pid means the targeted job is gone — leave the slot alone"
+        );
+
+        kill_job_if_pid(&state, pid);
+        assert!(
+            state.job.lock().unwrap().is_none(),
+            "the targeted job must be killed and cleared"
         );
     }
 }

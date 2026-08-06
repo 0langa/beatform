@@ -198,8 +198,10 @@ fn parse_args(argv: &[String]) -> Result<Mode, String> {
 }
 
 /// Shared cancel state: the stdin watcher flips the flag and kills whatever
-/// child is currently registered (whisper); the chunked MDX loop polls the
-/// flag between chunks.
+/// child is currently registered (the decode ffmpeg, then whisper); the
+/// chunked MDX loop polls the flag between chunks. Registration is what
+/// makes cancel reach a child wedged in a blocking pipe read — the flag
+/// alone is only ever polled between chunks.
 struct Canceller {
     flag: AtomicBool,
     child: Mutex<Option<std::process::Child>>,
@@ -310,8 +312,10 @@ fn run_align_line(args: AlignLineArgs) {
     });
     spawn_cancel_watcher(Arc::clone(&cancel));
 
-    let slice = match audio::decode(&args.ffmpeg, &args.input) {
+    let slice = match audio::decode(&args.ffmpeg, &args.input, &cancel) {
         Ok(m) => m,
+        // A cancel kill surfaces as a decode error; report the cancel.
+        Err(_) if cancel.cancelled() => cancelled_exit(),
         Err(e) => fail(&e),
     };
     let duration = slice.duration_sec();
@@ -394,8 +398,10 @@ fn run(args: Args) {
         rtf: None,
     });
     let t0 = Instant::now();
-    let mix = match audio::decode(&args.ffmpeg, &args.input) {
+    let mix = match audio::decode(&args.ffmpeg, &args.input, &cancel) {
         Ok(m) => m,
+        // A cancel kill surfaces as a decode error; report the cancel.
+        Err(_) if cancel.cancelled() => cancelled_exit(),
         Err(e) => fail(&e),
     };
     let duration = mix.duration_sec();
