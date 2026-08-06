@@ -237,8 +237,13 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
   led-matrix's declared feedback-path LSB class; matrix re-blessed
   137→151 with strip evidence at devstorage depth-batch1-strips;
   shipped v2.74.0 2026-08-07 — GitHub tag-webhook outage bypassed via new
-  release.yml workflow_dispatch escape hatch) → **Batch 2** (spectrum-bars,
-  bass-circle, particles, nebula) → **Batch 3** (echo-trails, metaballs,
+  release.yml workflow_dispatch escape hatch) → **Batch 2 DONE, shipped
+  v2.75.0 2026-08-07** (spectrum-bars stereo/caps/reflection/trim;
+  bass-circle segments/beat-bokeh/authored-core + spin promoted;
+  particles color-tier/snare-meteors/constellation; nebula v14 saturation
+  migration + duo-palette/stars/wind; 15 new + 7 reworked styles; matrix
+  151→168, all four @defaults device-identical, 7 changed hashes all
+  declared; strips at devstorage depth-batch2-strips) → **Batch 3** (echo-trails, metaballs,
   oscilloscope-fragment, tunnel) → **Renderer block** (spectrum-scape,
   particle-flow, oscilloscope-XY) → **Builder bridge**. One release per
   batch.
