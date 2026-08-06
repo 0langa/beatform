@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveActiveFrame, type FrameResolveInput } from "./frameResolve";
 import type { Timeline } from "./timeline";
 import { presets } from "../render/presets";
+import { BG_IMAGE, BG_PRESET, BG_VIDEO, type BgSettings } from "../render/types";
 
 const A = presets[0].id;
 const B = presets[1].id;
@@ -104,5 +105,76 @@ describe("resolveActiveFrame", () => {
     const snapshot = { ...input.baseParams };
     resolveActiveFrame(input, 1);
     expect(input.baseParams).toEqual(snapshot);
+  });
+});
+
+/**
+ * AX-6: a scene bg can name an image/video ASSET, but both render loops load
+ * only the BASE background's asset (store bakes effBg(); buildExportOptions
+ * resolves doc.assets for the base bg only). Live and export used to degrade
+ * that corner DIFFERENTLY — stale/base texture live, empty texture or
+ * video→preset in the export. resolveActiveFrame is the one function both
+ * loops share, so pinning the degrade here IS the live/export parity proof:
+ * the same input object produces the same bg on both paths by construction.
+ */
+describe("resolveActiveFrame scene backgrounds that name assets (AX-6)", () => {
+  const sceneBg = (bg: BgSettings): Timeline => ({
+    enabled: true,
+    scenes: [{ id: "s", name: "S", presetId: B, start: 0, bg }],
+    lanes: [],
+  });
+  const imageBg: BgSettings = {
+    mode: BG_IMAGE,
+    color: [0.5, 0, 0],
+    image: { assetId: "as-scene", dim: 0.3, blur: 2 },
+  };
+  const videoBg: BgSettings = {
+    mode: BG_VIDEO,
+    color: [0, 0.5, 0],
+    video: { assetId: "as-scene", dim: 0.4, blur: 0 },
+  };
+
+  it("an image-asset scene bg over a non-image base degrades to the preset bg", () => {
+    // Base runs the preset bg: no image was baked anywhere, so image mode
+    // would sample a texture neither loop uploaded. Both must agree on the
+    // fallback.
+    const rf = resolveActiveFrame(baseInput(sceneBg(imageBg)), 1);
+    expect(rf.bg.mode).toBe(BG_PRESET);
+    // Everything else survives — only the unhonorable mode is stripped.
+    expect(rf.bg.color).toEqual(imageBg.color);
+    expect(rf.bg.image).toEqual(imageBg.image);
+  });
+
+  it("a video-asset scene bg over a non-video base degrades to the preset bg", () => {
+    const rf = resolveActiveFrame(baseInput(sceneBg(videoBg)), 1);
+    expect(rf.bg.mode).toBe(BG_PRESET);
+    expect(rf.bg.video).toEqual(videoBg.video);
+  });
+
+  it("an image scene bg over an image base passes through (the baked base asset renders)", () => {
+    // Same mode = the base's baked texture is in the slot on both paths, and
+    // the scene's framing rides rf.bg — today's working behavior, unchanged.
+    const baseBg: BgSettings = {
+      mode: BG_IMAGE,
+      color: [0, 0, 0],
+      image: { assetId: "as-base", dim: 0, blur: 0 },
+    };
+    const rf = resolveActiveFrame(baseInput(sceneBg(imageBg), { baseBg }), 1);
+    expect(rf.bg).toEqual(imageBg);
+  });
+
+  it("a video scene bg over a video base passes through", () => {
+    const baseBg: BgSettings = {
+      mode: BG_VIDEO,
+      color: [0, 0, 0],
+      video: { assetId: "as-base", dim: 0, blur: 0 },
+    };
+    const rf = resolveActiveFrame(baseInput(sceneBg(videoBg), { baseBg }), 1);
+    expect(rf.bg).toEqual(videoBg);
+  });
+
+  it("non-asset scene bgs (solid/transparent) are untouched", () => {
+    const solid: BgSettings = { mode: 1, color: [1, 0, 0] };
+    expect(resolveActiveFrame(baseInput(sceneBg(solid)), 1).bg).toEqual(solid);
   });
 });

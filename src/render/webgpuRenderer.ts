@@ -1591,7 +1591,14 @@ export class WebGPURenderer implements Renderer {
   // targets and a static blend pass (the render graph's first citizen).
   private transitionPreset: PresetDef | null = null;
   private transitionPipeline: GPURenderPipeline | null = null;
-  private transitionPipelineFor: string | null = null;
+  /** Def OBJECT the compiled transition pipeline was built from — identity,
+   * not id, for the same reason the main pipelineCache is keyed by object
+   * (see setPreset): an edited custom preset keeps its id but arrives as a
+   * NEW def, and matching on id here kept serving the pipeline compiled from
+   * the OLD WGSL while render() packed transitionParamsData in the new def's
+   * ABI order — wrong shader and wrong param mapping for the rest of the
+   * fade (RP-1). Built-ins are module singletons, so A→B→A still caches. */
+  private transitionPipelineFor: PresetDef | null = null;
   private transitionParamsBuf: GPUBuffer;
   private transitionBindGroup: GPUBindGroup | null = null;
   private transitionParamsData = new Float32Array(MAX_PARAMS);
@@ -2021,7 +2028,7 @@ export class WebGPURenderer implements Renderer {
       this.transitionPipelineFor = null;
       return;
     }
-    if (this.transitionPipelineFor === preset.id) return; // cached
+    if (this.transitionPipelineFor === preset) return; // cached (same def object)
     const module = this.device.createShaderModule({
       code: assemblePresetModule(preset),
     });
@@ -2031,7 +2038,7 @@ export class WebGPURenderer implements Renderer {
       fragment: { module, entryPoint: "fs_main", targets: [{ format: SCENE_FORMAT }] },
       primitive: { topology: "triangle-list" },
     });
-    this.transitionPipelineFor = preset.id;
+    this.transitionPipelineFor = preset;
     this.transitionBindGroup = null;
   }
 

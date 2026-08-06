@@ -282,6 +282,85 @@ describe("per-mode overrides (schema v11) resolve at the export chokepoint", () 
     expect(o.coverArt).toBe("data:cover");
   });
 
+  it("LIVE PARITY (AX-6): a timeline scene's image-asset bg resolves identically for both paths", () => {
+    // The scene names its OWN asset while the base bg is not in image mode.
+    // buildExportOptions resolves bytes for the BASE bg only (no bgImage
+    // here), and the live loop bakes only effBg() — so neither path has a
+    // texture for the scene's asset. resolveActiveFrame (shared by both
+    // loops) must therefore degrade the scene bg to the preset background on
+    // BOTH sides, instead of live showing a stale/base texture while the
+    // export rendered image mode against a never-uploaded one.
+    const sceneAsset = { id: "as-s", name: "s.png", dataUrl: "data:image/png;base64,BB==" };
+    const d = doc({
+      assets: { "as-s": sceneAsset },
+      bg: { mode: 0, color: [0, 0, 0] },
+      timeline: {
+        enabled: true,
+        scenes: [
+          {
+            id: "sc1",
+            name: "S",
+            presetId: "bass-circle",
+            start: 2,
+            bg: {
+              mode: BG_IMAGE,
+              color: [0.1, 0, 0],
+              image: { assetId: "as-s", dim: 0.2, blur: 1 },
+            },
+          },
+        ],
+        lanes: [],
+      },
+    });
+    const exported = buildExportOptions(d, FMT, track, undefined, {});
+    // The export job carries no bytes for the scene's asset — only the base
+    // bg is resolved (that is the premise this degrade exists for).
+    expect(exported.bgImage).toBeUndefined();
+
+    // Export loop's frameInput (exportCore builds exactly these fields from
+    // the job) and the live loop's (store.getFrameInput) — same document,
+    // same shared resolver.
+    const exportInput = {
+      timeline: exported.timeline!,
+      basePresetId: exported.presetId,
+      baseParams: {},
+      baseMods: [],
+      baseBg: exported.bg,
+      paramsByPreset: exported.paramsByPreset ?? {},
+      modsByPreset: exported.modsByPreset ?? {},
+    };
+    const liveInput = {
+      timeline: d.timeline,
+      basePresetId: d.presetId,
+      baseParams: {},
+      baseMods: [],
+      baseBg: d.bgByPreset[d.presetId] ?? d.bg,
+      paramsByPreset: d.paramsByPreset,
+      modsByPreset: d.modsByPreset,
+    };
+    const exportRf = resolveActiveFrame(exportInput, 3);
+    const liveRf = resolveActiveFrame(liveInput, 3);
+    // Inside the scene, both paths degrade the unhonorable image mode to the
+    // preset background — and resolve the SAME background object shape.
+    expect(exportRf.bg.mode).toBe(0);
+    expect(liveRf.bg).toEqual(exportRf.bg);
+
+    // Control: when the BASE bg runs the same asset-backed mode, the scene bg
+    // is honored on both paths (the base's baked texture is what renders).
+    const dSame = doc({
+      assets: { "as-s": sceneAsset },
+      bg: { mode: BG_IMAGE, color: [0, 0, 0], image: { assetId: "as-s", dim: 0, blur: 0 } },
+      timeline: d.timeline,
+    });
+    const exportedSame = buildExportOptions(dSame, FMT, track, undefined, {});
+    expect(exportedSame.bgImage).toBeDefined(); // base asset's bytes travel
+    const sameRf = resolveActiveFrame(
+      { ...exportInput, timeline: exportedSame.timeline!, baseBg: exportedSame.bg },
+      3,
+    );
+    expect(sameRf.bg.mode).toBe(BG_IMAGE);
+  });
+
   it("LIVE PARITY (BG1): frameResolve with the store's effective baseBg yields the export's bg", () => {
     // The live loop feeds resolveActiveFrame baseBg = bgByPreset[presetId] ?? bg
     // (store.getFrameInput) and re-applies rf.bg every frame. This pins that
