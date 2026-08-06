@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
  * Bass Circle — the circular "bass visualizer" look (à la trap-nation edits): a
@@ -266,6 +267,7 @@ export const bassCircle: PresetDef = {
       label: "Cover art",
       group: "image",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -277,6 +279,7 @@ export const bassCircle: PresetDef = {
       label: "Match cover colors",
       group: "image",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -290,6 +293,7 @@ export const bassCircle: PresetDef = {
       label: "Symmetry",
       group: "shape",
       control: "enum",
+      mod: "snap",
       options: [
         { value: 1, label: "1×" },
         { value: 2, label: "2×" },
@@ -432,6 +436,7 @@ export const bassCircle: PresetDef = {
       label: "Image fit",
       group: "image",
       control: "enum",
+      mod: "off",
       options: [
         {
           value: 0,
@@ -489,14 +494,7 @@ export const bassCircle: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
-fn colorScale(value: f32, control: f32) -> f32 {
-  if (control <= 1.0) { return value * control; }
-  return min(value * control, 1.0);
-}
-
-fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
-  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
-}
+${WGSL_COLOR_CONTROLS}
 
 fn preset(uv: vec2f) -> vec4f {
   let c = centered(uv);

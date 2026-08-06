@@ -165,4 +165,37 @@ describe("ParamRow control dispatch", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.queryByRole("switch")).toBeNull();
   });
+
+  it('runs a taper:"log" spec in position space and emits snapped raw values', () => {
+    // Nebula's Scale, the wave-0 proving case. The INPUT runs 0..1 (position);
+    // what leaves the row is a raw value on the refined 0.01 grid — documents
+    // and looks never see positions.
+    const onChange = vi.fn();
+    const spec: ParamSpec = {
+      key: "scale",
+      label: "Scale",
+      group: "shape",
+      min: 0.8,
+      max: 6,
+      step: 0.1,
+      default: 2.4,
+      taper: "log",
+    };
+    render(<ParamRow spec={spec} value={2.4} onChange={onChange} onHint={noop} />);
+    const input = screen.getByRole("slider") as HTMLInputElement;
+    expect(input.min).toBe("0");
+    expect(input.max).toBe("1");
+    expect(input.step).toBe("any");
+    // The stored value renders at its LOG position: ln(3)/ln(7.5) ≈ 0.545,
+    // not the linear (2.4-0.8)/5.2 ≈ 0.31 — that repositioning is the taper.
+    expect(Number(input.value)).toBeCloseTo(Math.log(2.4 / 0.8) / Math.log(6 / 0.8), 6);
+    // Mid-track lands on the geometric middle of the range, snapped to 0.01.
+    fireEvent.change(input, { target: { value: "0.5" } });
+    expect(onChange).toHaveBeenCalledWith(2.19);
+    // Track ends still reach the exact edges.
+    fireEvent.change(input, { target: { value: "0" } });
+    expect(onChange).toHaveBeenLastCalledWith(0.8);
+    fireEvent.change(input, { target: { value: "1" } });
+    expect(onChange).toHaveBeenLastCalledWith(6);
+  });
 });

@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_PALETTE_PHASE } from "../wgslLib";
 
 /**
  * A real tube you fly down, not a zoomed disc. The wall is unwrapped with the
@@ -486,6 +487,7 @@ export const tunnelRings: PresetDef = {
       label: "Club mirror",
       group: "shape",
       control: "enum",
+      mod: "snap",
       options: [
         { value: 1, label: "Off" },
         { value: 2, label: "Mirrored" },
@@ -700,7 +702,7 @@ fn preset(uv: vec2f) -> vec4f {
   // colours instead of a drifting hue (a drifting hue is how this went muddy).
   let t = fract(travel * 0.05 + P_hue() / 360.0);
   let spread = max(P_hueSpread() / 360.0, 0.08);
-  var pal = cosPalette(t, vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, vec3f(0.0, 0.33, 0.67));
+  var pal = cosPalette(t, vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, ${WGSL_PALETTE_PHASE});
 
   // Color fade. cosPalette's frequency vector is "spread" -- non-integer over
   // its whole range -- so cosPalette(1-) != cosPalette(0+) and the fract wrap
@@ -726,7 +728,7 @@ fn preset(uv: vec2f) -> vec4f {
     let m = smoothstep(-hw, hw, uw);
     let mw = 0.5 - abs(m - 0.5);
     let palIn = cosPalette(t - select(-1.0, 1.0, t >= 0.5),
-                           vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, vec3f(0.0, 0.33, 0.67));
+                           vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, ${WGSL_PALETTE_PHASE});
     pal = mix(pal, palIn, mw);
   }
 

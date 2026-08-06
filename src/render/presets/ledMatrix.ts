@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
  * Retro LED spectrum matrix: quantized cells lighting bottom-up per column,
@@ -178,6 +179,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "cols",
       label: "Columns",
+      mod: "snap",
       group: "shape",
       min: 16,
       max: 96,
@@ -188,6 +190,7 @@ export const ledMatrix: PresetDef = {
     {
       key: "rows",
       label: "Rows",
+      mod: "snap",
       group: "shape",
       min: 8,
       max: 48,
@@ -251,6 +254,7 @@ export const ledMatrix: PresetDef = {
       label: "Rounded",
       group: "shape",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -262,6 +266,7 @@ export const ledMatrix: PresetDef = {
       label: "Peak dots",
       group: "shape",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -444,14 +449,7 @@ export const ledMatrix: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
-fn colorScale(value: f32, control: f32) -> f32 {
-  if (control <= 1.0) { return value * control; }
-  return min(value * control, 1.0);
-}
-
-fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
-  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
-}
+${WGSL_COLOR_CONTROLS}
 
 fn presetRgb(rgb: vec3f) -> vec3f {
   let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));

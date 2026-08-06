@@ -3,6 +3,7 @@ import { BUILDER_MAX_LAYERS } from "./builder2";
 import { getPrefs } from "../state/prefs";
 import { FEEDBACK_DT } from "./fixedFeedback";
 import { allParams, BG_VIDEO, DEFAULT_MOTION, DEFAULT_POST, paramOr } from "./types";
+import { WGSL_HSL2RGB, wgslAcesTonemap } from "./wgslLib";
 import type {
   BgSettings,
   Mesh3DSpec,
@@ -134,10 +135,7 @@ fn fs_blur_h(in: VSOut) -> @location(0) vec4f { return blur(in, vec2f(1.0, 0.0))
 fn fs_blur_v(in: VSOut) -> @location(0) vec4f { return blur(in, vec2f(0.0, 1.0)); }
 
 // ACES filmic approximation (Narkowicz).
-fn aces(x: vec3f) -> vec3f {
-  let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
-  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
-}
+${wgslAcesTonemap("aces")}
 fn hash(uv: vec2f) -> f32 {
   return fract(sin(dot(uv, vec2f(12.9898, 78.233))) * 43758.5453);
 }
@@ -405,19 +403,7 @@ fn waveAt(x: f32) -> f32 {
   return mix(waveform[i], waveform[min(i + 1u, u.waveCount - 1u)], fr);
 }
 
-fn hsl2rgb(h: f32, s: f32, l: f32) -> vec3f {
-  let c = (1.0 - abs(2.0 * l - 1.0)) * s;
-  let hp = fract(h / 360.0) * 6.0;
-  let x = c * (1.0 - abs(hp % 2.0 - 1.0));
-  var rgb = vec3f(0.0);
-  if (hp < 1.0) { rgb = vec3f(c, x, 0.0); }
-  else if (hp < 2.0) { rgb = vec3f(x, c, 0.0); }
-  else if (hp < 3.0) { rgb = vec3f(0.0, c, x); }
-  else if (hp < 4.0) { rgb = vec3f(0.0, x, c); }
-  else if (hp < 5.0) { rgb = vec3f(x, 0.0, c); }
-  else { rgb = vec3f(c, 0.0, x); }
-  return rgb + vec3f(l - c * 0.5);
-}
+${WGSL_HSL2RGB}
 
 /** Tempo-locked pulse: 1.0 exactly on every beat-grid beat, exponentially
  * decaying toward 0 before the next (sharp ~4 = soft swell, ~8 = punchy).
@@ -503,10 +489,7 @@ fn warpFbm(p: vec2f, warp: f32) -> f32 {
  * push highlights way past 1.0 for a genuine hot core instead of flat-topping
  * into a colour-shifted clipped mess. Feed it linear HDR, get displayable.
  */
-fn tonemap(x: vec3f) -> vec3f {
-  let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
-  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
-}
+${wgslAcesTonemap("tonemap")}
 
 /** Ordered-ish dither. Dark gradients band badly on 8-bit; +-1/255 of noise
  * costs nothing and removes the stair-stepping that screams "cheap". */
@@ -907,19 +890,7 @@ const PARTICLE_DRAW_WGSL =
   /* wgsl */ `
 @group(0) @binding(1) var<storage, read> parts: array<Particle>;
 
-fn hsl2rgb(h: f32, s: f32, l: f32) -> vec3f {
-  let c = (1.0 - abs(2.0 * l - 1.0)) * s;
-  let hp = fract(h / 360.0) * 6.0;
-  let x = c * (1.0 - abs(hp % 2.0 - 1.0));
-  var rgb = vec3f(0.0);
-  if (hp < 1.0) { rgb = vec3f(c, x, 0.0); }
-  else if (hp < 2.0) { rgb = vec3f(x, c, 0.0); }
-  else if (hp < 3.0) { rgb = vec3f(0.0, c, x); }
-  else if (hp < 4.0) { rgb = vec3f(0.0, x, c); }
-  else if (hp < 5.0) { rgb = vec3f(x, 0.0, c); }
-  else { rgb = vec3f(c, 0.0, x); }
-  return rgb + vec3f(l - c * 0.5);
-}
+${WGSL_HSL2RGB}
 
 struct VOut {
   @builtin(position) pos: vec4f,
@@ -1024,19 +995,7 @@ struct M3U {
 @group(0) @binding(0) var<uniform> m: M3U;
 @group(0) @binding(1) var<storage, read> bins: array<f32>;
 
-fn hsl2rgb(h: f32, s: f32, l: f32) -> vec3f {
-  let c = (1.0 - abs(2.0 * l - 1.0)) * s;
-  let hp = fract(h / 360.0) * 6.0;
-  let x = c * (1.0 - abs(hp % 2.0 - 1.0));
-  var rgb = vec3f(0.0);
-  if (hp < 1.0) { rgb = vec3f(c, x, 0.0); }
-  else if (hp < 2.0) { rgb = vec3f(x, c, 0.0); }
-  else if (hp < 3.0) { rgb = vec3f(0.0, c, x); }
-  else if (hp < 4.0) { rgb = vec3f(0.0, x, c); }
-  else if (hp < 5.0) { rgb = vec3f(x, 0.0, c); }
-  else { rgb = vec3f(c, 0.0, x); }
-  return rgb + vec3f(l - c * 0.5);
-}
+${WGSL_HSL2RGB}
 
 struct VOut {
   @builtin(position) pos: vec4f,
@@ -1050,10 +1009,7 @@ struct VOut {
   @location(4) heightNorm: f32,
 }
 
-fn m3_tonemap(x: vec3f) -> vec3f {
-  let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
-  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
-}
+${wgslAcesTonemap("m3_tonemap")}
 
 @vertex
 fn vs_mesh(

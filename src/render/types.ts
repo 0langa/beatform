@@ -39,6 +39,31 @@ interface ParamSpecBase {
    * authoring order already reads as intent for everything else.
    */
   order?: number;
+  /**
+   * DISPLAY-side slider taper. "log" maps thumb position to value
+   * logarithmically, so a wide multiplicative range (Hz edges, zoom/scale
+   * factors) spends equal track on equal RATIOS instead of cramming all the
+   * visual variety into the first fifth. Position mapping only: the stored
+   * value, the ABI, serialization, modulation and MIDI all stay raw — a
+   * saved document renders identically with or without the taper. Requires
+   * min > 0 (log of a non-positive edge is meaningless; the slider falls
+   * back to linear rather than break).
+   */
+  taper?: "log";
+  /**
+   * How modulation and MIDI may drive this param (audit RP-2):
+   *  - "smooth" (default, same as absent): continuous values, the behaviour
+   *    every param always had.
+   *  - "snap": applied modulation/CC values quantize to whole numbers —
+   *    for counts and segment enums, where 3.7 segments is a shader-defined
+   *    accident rather than a look.
+   *  - "off": not a modulation/MIDI target at all. Excluded from target
+   *    lists, and routes/bindings that still name it (old documents) are
+   *    inert — for pure on/off toggles, where "modulating" can only strobe.
+   * Consumed by the mod-matrix apply chokepoint (live + export identically),
+   * the MIDI CC apply path, and every target-list builder.
+   */
+  mod?: "smooth" | "snap" | "off";
 }
 
 /** One choice of an `enum` param. `value` is the number actually stored. */
@@ -338,6 +363,16 @@ export function groupParams(preset: PresetDef, specs: ParamSpec[]): ParamGroupVi
 export function paramSearchText(spec: ParamSpec): string {
   const options = spec.control === "enum" ? spec.options.map((o) => o.label).join(" ") : "";
   return `${spec.label} ${spec.hint ?? ""} ${spec.key} ${options}`.toLowerCase();
+}
+
+/**
+ * True when a param may be offered as a modulation/MIDI target. The ONE
+ * definition every target-list builder (mod-route select, MIDI learn list,
+ * stem auto-router) and both apply paths share, so "off" cannot mean
+ * different things on different surfaces.
+ */
+export function isModTarget(spec: ParamSpec): boolean {
+  return spec.mod !== "off";
 }
 
 /**

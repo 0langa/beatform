@@ -778,7 +778,9 @@ export class FeaturePipeline {
       case "hats":
         return this.hatRange;
       default:
-        return this.bassRange; // energy/bass/kick pulse on the low end
+        // energy/bass pulse on the low end. Kick mode never reaches this
+        // map — its pulse rides the dedicated kick detector (see updateSync).
+        return this.bassRange;
     }
   }
 
@@ -817,6 +819,15 @@ export class FeaturePipeline {
         raw = f.hat;
         break;
       case "kick":
+        // AX-1: REAL kick semantics (owner decision 2026-08-06). "Kicks"
+        // shipped for years reading f.energy — a slow whole-mix RMS envelope —
+        // so the DEFAULT sync mode was a silent alias of Energy and the kick
+        // detector it advertised never fed drive at all. The drive now follows
+        // the kick band itself (40–120 Hz, the same bins the kick onset
+        // detector watches), so motion pumps with the kick drum's punch
+        // instead of gliding with overall loudness.
+        raw = bandMean(mag, this.kickRange);
+        break;
       case "energy":
       default:
         raw = f.energy;
@@ -830,6 +841,20 @@ export class FeaturePipeline {
     const release = 1 - Math.exp(-dt * (10 - relK * 8.5));
     this.driveValue += (raw - this.driveValue) * (raw > this.driveValue ? attack : release);
     f.drive = this.driveValue;
+
+    // AX-1: in Kicks mode the pulse IS the kick detector's envelope — the
+    // dedicated kickRange onset detector (tighter refractory, its own adaptive
+    // threshold) already computed f.kick this frame, and duplicating it with
+    // the generic band-onset below would give the mode a second, disagreeing
+    // notion of "a kick landed". Deterministic and WYSIWYG by construction:
+    // f.kick steps on the same fixed analysis clock in the live and offline
+    // pipelines. The generic detector's state stays untouched here; setSync
+    // resets it on every mode change, so leaving Kicks starts the other
+    // modes' detector clean exactly as before.
+    if (mode === "kick") {
+      f.driveBeat = f.kick;
+      return;
+    }
 
     // Onset pulse over the selected band. The FIRING decision steps on the
     // fixed analysis clock; the envelope decays on the render clock so it stays

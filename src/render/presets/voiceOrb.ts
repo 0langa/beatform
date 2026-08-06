@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_PALETTE_STD } from "../wgslLib";
 
 /**
  * Voice mode: built for voiceovers/narration, not music. A central orb
@@ -229,6 +230,7 @@ export const voiceOrb: PresetDef = {
       label: "Wave ring",
       group: "shape",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -432,6 +434,7 @@ export const voiceOrb: PresetDef = {
       label: "Club mirror",
       group: "shape",
       control: "enum",
+      mod: "snap",
       options: [
         { value: 1, label: "Off" },
         { value: 2, label: "Mirrored" },
@@ -512,7 +515,7 @@ fn preset(uv: vec2f) -> vec4f {
   // lands at t=0, but t increasing walks red->magenta->blue->cyan->green->
   // yellow->red) — "1.0 - hue/360" un-reverses it so Hue keeps its label.
   let baseT = 1.0 - P_hue() / 360.0;
-  let pal = cosPalette(baseT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  let pal = cosPalette(baseT, ${WGSL_PALETTE_STD});
 
   // Background: quiet radial wash that warms slightly with speech
   var col = mix(pal, vec3f(1.0), 0.15) * (P_bgLevel() + level * 0.02) * (1.0 - r * 0.75);
@@ -554,7 +557,7 @@ fn preset(uv: vec2f) -> vec4f {
                           frameCircle());
     let dRing = abs(r - ringR);
     let ringT = fract(baseT + 0.07 + wv * 0.05);
-    let ringPal = cosPalette(ringT, vec3f(0.5), vec3f(0.5), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+    let ringPal = cosPalette(ringT, ${WGSL_PALETTE_STD});
     col += ringPal * smoothstep(0.004, 0.0008, dRing) * (0.35 + level * 0.5);
     col += ringPal * exp(-dRing * 120.0) * 0.18;
   }

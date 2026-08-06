@@ -36,6 +36,7 @@ import type { AudiogramSettings } from "../state/audiogram";
 import {
   allParams,
   groupParams,
+  isModTarget,
   paramSearchText,
   POST_MOD_TARGETS,
   presetMasters,
@@ -85,7 +86,7 @@ const SYNC_OPTIONS: Array<{ mode: SyncMode; label: string; hint: string }> = [
   {
     mode: "kick",
     label: "Kicks",
-    hint: "Follow the drums: pulses fire on kick/snare hits, motion glides with loudness",
+    hint: "Follow the kick drum: pulses fire on kick hits, motion pumps with the kick band's punch",
   },
   {
     mode: "energy",
@@ -559,6 +560,13 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
    * search blob and by the Modulation/MIDI target dropdowns. */
   const paramGroupViews = groupParams(props.preset, allParams(props.preset));
   const presetGroupText = paramGroupViews.map((g) => g.group.label).join(" ");
+  // What modulation and MIDI may drive: mod:"off" params (pure toggles and
+  // mode-choice enums, RP-2) are not targets, so neither picker offers them.
+  const modTargetGroupViews = groupParams(
+    props.preset,
+    allParams(props.preset).filter(isModTarget),
+  );
+  const firstModTarget = modTargetGroupViews[0]?.params[0]?.key ?? "";
 
   /** The centre-image picker belongs with the Image knobs it affects. */
   const centerImageExtras: ParamGroupExtra[] = props.preset.params.some((p) => p.key === "cover")
@@ -1278,7 +1286,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 {/* Grouped by the SAME ParamSpec.group the panel lays out, so
                     a 35-knob visual reads as eight short lists instead of one
                     unsearchable run of options. */}
-                {paramGroupViews.map(({ group, params }) => (
+                {modTargetGroupViews.map(({ group, params }) => (
                   <optgroup key={group.id} label={group.label}>
                     {params.map((p) => (
                       <option key={p.key} value={p.key}>
@@ -1287,6 +1295,16 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     ))}
                   </optgroup>
                 ))}
+                {/* A route saved before a param went mod:"off" (or whose param
+                    this preset lacks) still needs a visible, selected option —
+                    silently snapping the select to the first entry would
+                    rewrite the route on the next unrelated edit. Such routes
+                    are inert in applyMods. */}
+                {r.param.length > 0 &&
+                  !r.param.startsWith(POST_TARGET_PREFIX) &&
+                  !modTargetGroupViews.some(({ params }) =>
+                    params.some((p) => p.key === r.param),
+                  ) && <option value={r.param}>{`${r.param} (not modulatable)`}</option>}
                 {/* Post targets are namespaced ("post:chromatic") so they can
                     live in the same route list as preset params — animating
                     the post chain was a direct user request. */}
@@ -1320,7 +1338,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             <button
               className="text-btn"
               title="Add a feature-to-knob route"
-              onClick={() => props.onAddMod("kick", props.preset.params[0]?.key ?? "")}
+              onClick={() => props.onAddMod("kick", firstModTarget)}
             >
               + Route
             </button>
@@ -1861,11 +1879,11 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 <div className="save-look-row">
                   <select
                     className="select"
-                    value={midiParam || props.preset.params[0]?.key || ""}
+                    value={midiParam || firstModTarget}
                     title="Which setting a knob/fader should control"
                     onChange={(e) => setMidiParam(e.target.value)}
                   >
-                    {paramGroupViews.map(({ group, params }) => (
+                    {modTargetGroupViews.map(({ group, params }) => (
                       <optgroup key={group.id} label={group.label}>
                         {params.map((p) => (
                           <option key={p.key} value={p.key}>
@@ -1883,9 +1901,9 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                         props.onMidiLearn(null);
                         return;
                       }
-                      const key = midiParam || props.preset.params[0]?.key;
+                      const key = midiParam || firstModTarget;
                       const spec = allParams(props.preset).find((p) => p.key === key);
-                      if (spec)
+                      if (spec && isModTarget(spec))
                         props.onMidiLearn({ kind: "cc", param: key, min: spec.min, max: spec.max });
                     }}
                   >

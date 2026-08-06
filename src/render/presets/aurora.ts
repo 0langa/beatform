@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_PALETTE_PHASE } from "../wgslLib";
 
 /**
  * Aurora — layered curtains of light that waver on an fbm flow, brightened by
@@ -227,6 +228,7 @@ export const aurora: PresetDef = {
       label: "Curtains",
       group: "shape",
       control: "enum",
+      mod: "snap",
       options: [
         { value: 1, label: "1" },
         { value: 2, label: "2" },
@@ -363,6 +365,7 @@ export const aurora: PresetDef = {
       label: "Stars",
       group: "backdrop",
       control: "toggle",
+      mod: "off",
       min: 0,
       max: 1,
       step: 1,
@@ -384,6 +387,7 @@ export const aurora: PresetDef = {
       label: "Symmetric",
       group: "shape",
       control: "enum",
+      mod: "off",
       options: [
         { value: 1, label: "Off" },
         { value: 2, label: "Mirrored" },
@@ -491,7 +495,7 @@ fn auroraCurtains(x: f32, specX: f32, y: f32, drive: f32) -> vec3f {
     let palT = fract(P_hue() / 360.0 + fi * (P_hueStep() / 360.0)
              + (x - 0.5) * (P_hueSpread() / 360.0) + spec * 0.12);
     let chroma = mix(0.08, 0.5, P_sat());
-    let pal = cosPalette(palT, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+    let pal = cosPalette(palT, vec3f(0.5), vec3f(chroma), vec3f(1.0), ${WGSL_PALETTE_PHASE});
 
     // Loudness is logarithmic: compress react through pow(.,0.6) before it
     // drives brightness (doc guidance) so 3 stacked curtains overlapping
@@ -556,7 +560,7 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Deep night sky: near-black but hued, not grey, so the curtains have
   // real darkness to glow against instead of sitting on flat mid-grey fog.
-  let skyPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.025), vec3f(0.02), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  let skyPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.025), vec3f(0.02), vec3f(1.0), ${WGSL_PALETTE_PHASE});
   var col = skyPal;
 
   // Optional starfield behind everything (small round points, twinkling).
@@ -591,7 +595,7 @@ fn preset(uv: vec2f) -> vec4f {
   }
 
   // Soft sky glow rising from the horizon, lifted by the sync source.
-  let glowPal = cosPalette(fract(P_hue() / 360.0 + P_hueStep() / 360.0), vec3f(0.5), vec3f(mix(0.08, 0.4, P_sat())), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  let glowPal = cosPalette(fract(P_hue() / 360.0 + P_hueStep() / 360.0), vec3f(0.5), vec3f(mix(0.08, 0.4, P_sat())), vec3f(1.0), ${WGSL_PALETTE_PHASE});
   col += glowPal * smoothstep(0.0, 0.55, y) * P_bgGlow() * (0.3 + drive * 0.6) * 0.35;
 
   col = tonemap(col * 1.1);

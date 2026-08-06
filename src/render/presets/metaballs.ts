@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_PALETTE_PHASE } from "../wgslLib";
 
 /**
  * Lava-lamp metaballs: blobs orbit slowly and merge; each blob's size tracks
@@ -181,6 +182,7 @@ export const metaballs: PresetDef = {
       label: "Blobs",
       group: "shape",
       control: "enum",
+      mod: "snap",
       options: [
         { value: 2, label: "2" },
         { value: 3, label: "3" },
@@ -372,6 +374,7 @@ export const metaballs: PresetDef = {
       label: "Club mirror",
       group: "shape",
       control: "enum",
+      mod: "snap",
       options: [
         { value: 1, label: "Off" },
         { value: 2, label: "Mirrored" },
@@ -538,7 +541,7 @@ fn preset(uv: vec2f) -> vec4f {
   // Cosine palette keyed by the same contribution-weighted blend that used
   // to drive an hsl hue — stays saturated instead of drifting toward mud.
   let paletteT = fract(P_hue() / 360.0 + (hueAcc / max(field, 1e-4)) / 360.0);
-  let pal = cosPalette(paletteT, vec3f(0.5), vec3f(0.42), vec3f(1.0, 1.0, 1.0), vec3f(0.0, 0.33, 0.67));
+  let pal = cosPalette(paletteT, vec3f(0.5), vec3f(0.42), vec3f(1.0, 1.0, 1.0), ${WGSL_PALETTE_PHASE});
 
   // Surface + rim. The surface window is widened to at least ~1.5 pixels of
   // field change (fwidth(field) = per-pixel field delta): the fixed
@@ -556,7 +559,7 @@ fn preset(uv: vec2f) -> vec4f {
   // behind the blobs reads as atmosphere instead of a flat vector fill.
   let r = length(p);
   let bgN = fbm(p * 1.1 + u.time * 0.025);
-  let bgPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.04), vec3f(0.03), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  let bgPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.04), vec3f(0.03), vec3f(1.0), ${WGSL_PALETTE_PHASE});
   var col = bgPal * mix(0.7, 1.3, bgN) * (1.0 - r * 0.7) + vec3f(P_bgLevel());
 
   // Blob body with inner gradient

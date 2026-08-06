@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Slider, decimalsOf, snapToStep, useDoubleTap } from "./Slider";
+import { Slider, decimalsOf, snapToStep, taperStep, useDoubleTap } from "./Slider";
 import { Switch } from "./Switch";
 import type { AngleParamSpec, EnumParamSpec, ParamSpec } from "../render/types";
 
@@ -143,8 +143,14 @@ export function SliderField(props: {
   disabled?: boolean;
   /** Extra class on the range input — the hue row repaints its track with it. */
   trackClass?: string;
+  /** Display-side log taper (ParamSpec.taper) — forwarded to the slider, and
+   * typed entry snaps onto the same refined grid dragging produces. */
+  taper?: "log";
 }) {
   const { min, max, step, value, disabled } = props;
+  // The one value grid this row can produce, by any input method. A log
+  // taper refines the declared step (see taperStep); everything else keeps it.
+  const gridStep = props.taper === "log" ? taperStep(min, max, step) : step;
   const scale = unitScale(props.format);
   /** `null` = not editing; any string = the in-progress text. */
   const [draft, setDraft] = useState<string | null>(null);
@@ -175,7 +181,7 @@ export function SliderField(props: {
     // Opening must not change anything, and a double-click's first press has
     // already dragged the thumb to the pointer — put that back.
     if (from !== value) props.onChange(from);
-    setDraft(editText(from, min, step, scale));
+    setDraft(editText(from, min, gridStep, scale));
   };
 
   const commit = (text: string) => {
@@ -184,7 +190,7 @@ export function SliderField(props: {
     const typed = parseFloat(text.trim().replace(",", "."));
     // Empty or non-numeric keeps the previous value — never write NaN.
     if (!Number.isFinite(typed)) return;
-    const next = snapToStep(typed / scale, min, max, step);
+    const next = snapToStep(typed / scale, min, max, gridStep);
     // Same setter the drag path uses, so a typed value and a dragged one are
     // indistinguishable downstream.
     if (next !== value) props.onChange(next);
@@ -201,6 +207,7 @@ export function SliderField(props: {
         value={value}
         disabled={disabled}
         className={props.trackClass}
+        taper={props.taper}
         onChange={props.onChange}
         onEditRequest={open}
       />
@@ -265,7 +272,7 @@ export function SliderField(props: {
             open(value);
           }}
         >
-          {formatValue(props.format, value, step)}
+          {formatValue(props.format, value, gridStep)}
         </button>
       )}
     </>
@@ -507,6 +514,7 @@ export function ParamRow(props: {
             onChange={props.onChange}
             format={p.control === "hue" ? DEGREES : undefined}
             trackClass={p.control === "hue" ? "hue" : undefined}
+            taper={p.taper}
           />
         </label>
       );

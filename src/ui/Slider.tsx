@@ -49,6 +49,49 @@ export function snapToStep(v: number, min: number, max: number, step: number): n
   return Number(snapped.toFixed(Math.max(decimalsOf(step), decimalsOf(min))));
 }
 
+// ---- Log taper (ParamSpec.taper === "log") --------------------------------
+// A native range input is linear in POSITION. For multiplicative ranges
+// (frequency edges, zoom/scale factors) that linearity is the defect: on
+// nebula's 0.8..6 Scale the whole "big billows" half of the visual range
+// (0.8..2) occupies the first fifth of the track. These helpers run the
+// input in a normalized 0..1 position domain and map position <-> value
+// exponentially, so equal drag distance means equal RATIO. Values stay raw
+// everywhere else — documents, mods, MIDI and the ABI never see positions.
+
+/** Value -> normalized position 0..1 for a log-tapered range. min must be > 0. */
+export function logPos(v: number, min: number, max: number): number {
+  if (!(min > 0) || !(max > min)) return 0;
+  const c = Math.min(max, Math.max(min, v));
+  return Math.log(c / min) / Math.log(max / min);
+}
+
+/** Normalized position 0..1 -> value (unsnapped) for a log-tapered range. */
+export function logVal(t: number, min: number, max: number): number {
+  if (!(min > 0) || !(max > min)) return min;
+  const c = Math.min(1, Math.max(0, t));
+  return min * Math.exp(c * Math.log(max / min));
+}
+
+/**
+ * Effective value grid for a log-tapered slider.
+ *
+ * The declared `step` was chosen for a LINEAR track. Near a log slider's low
+ * end one keyboard notch (the UA moves `step="any"` inputs by 1% of the
+ * position range) covers far less value than that step, so snapping to the
+ * declared grid would round every press back to where it started — dead
+ * arrow keys across the bottom of the range. Refine the grid by powers of
+ * ten until the coarsest keyboard notch (at min, where log resolution is
+ * finest) always reaches the next value. Ranges whose declared step is
+ * already reachable keep it unchanged.
+ */
+export function taperStep(min: number, max: number, step: number): number {
+  if (!(min > 0) || !(max > min) || !(step > 0)) return step;
+  const worstNotch = min * Math.log(max / min) * 0.01;
+  let s = step;
+  while (s > worstNotch && s > 1e-9) s /= 10;
+  return s;
+}
+
 /**
  * Double-tap detection for touch. Browsers only synthesize `dblclick` from a
  * double-tap when they are sure the gesture is not a zoom, and never on a
@@ -84,6 +127,9 @@ export function Slider(props: {
   disabled?: boolean;
   title?: string;
   className?: string;
+  /** "log" runs the track in position space (see logPos/logVal). Values in
+   * and out of this component stay raw; only the thumb mapping changes. */
+  taper?: "log";
   /**
    * The user asked to type an exact value (double-click / double-tap on the
    * track). The argument is the value the slider held BEFORE the gesture
@@ -93,7 +139,11 @@ export function Slider(props: {
    */
   onEditRequest?: (valueBeforeGesture: number) => void;
 }) {
-  const pct = ((props.value - props.min) / (props.max - props.min)) * 100;
+  const { min, max, step } = props;
+  // A taper on a range that cannot take one (min <= 0) falls back to linear
+  // instead of rendering log(0) NaNs.
+  const log = props.taper === "log" && min > 0 && max > min;
+  const pct = log ? logPos(props.value, min, max) * 100 : ((props.value - min) / (max - min)) * 100;
   const beforeGesture = useRef(props.value);
   const lastDown = useRef(Number.NEGATIVE_INFINITY);
   const requestEdit = () => props.onEditRequest?.(beforeGesture.current);
@@ -102,10 +152,14 @@ export function Slider(props: {
     <input
       type="range"
       className={`slider ${props.className ?? ""}`}
-      min={props.min}
-      max={props.max}
-      step={props.step}
-      value={props.value}
+      // Log taper: the input runs over normalized POSITION 0..1. step="any"
+      // keeps dragging pixel-continuous and leaves keyboard arrows on the
+      // UA's 1%-of-range notch; emitted values snap onto the taperStep grid,
+      // so what leaves this component is always a clean raw value.
+      min={log ? 0 : min}
+      max={log ? 1 : max}
+      step={log ? "any" : step}
+      value={log ? logPos(props.value, min, max) : props.value}
       disabled={props.disabled}
       title={props.title}
       style={{ "--pct": `${Math.max(0, Math.min(100, pct))}%` } as React.CSSProperties}
@@ -117,7 +171,18 @@ export function Slider(props: {
       }}
       onPointerUp={onPointerUp}
       onDoubleClick={requestEdit}
-      onChange={(e) => props.onChange(Number(e.target.value))}
+      onChange={(e) =>
+        props.onChange(
+          log
+            ? snapToStep(
+                logVal(Number(e.target.value), min, max),
+                min,
+                max,
+                taperStep(min, max, step),
+              )
+            : Number(e.target.value),
+        )
+      }
     />
   );
 }

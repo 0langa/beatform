@@ -251,6 +251,106 @@ describe("FeaturePipeline", () => {
   });
 });
 
+describe("Kicks sync mode — real kick semantics (AX-1)", () => {
+  /** A quiet-but-audible waveform so rms/energy have something to read. */
+  function toneWave(): Float32Array {
+    const w = new Float32Array(FFT_BINS);
+    for (let i = 0; i < FFT_BINS; i++) w[i] = 0.4 * Math.sin(i * 0.1);
+    return w;
+  }
+
+  it("drive follows the kick band, not overall loudness — both directions", () => {
+    // Direction 1: loud treble + audible waveform, kick band silent. The old
+    // fall-through read f.energy (whole-mix rms envelope) and pumped; the
+    // kick band has nothing, so real kick drive must stay flat.
+    const kicks = makePipeline();
+    kicks.setSync({ mode: "kick", smooth: 0.5 });
+    const energy = makePipeline();
+    energy.setSync({ mode: "energy", smooth: 0.5 });
+    const trebleDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    fillBand(trebleDb, 5000, 15000, MAX_DB);
+    let kicksF = kicks.features;
+    let energyF = energy.features;
+    for (let i = 0; i < 120; i++) {
+      kicksF = kicks.update(makeInput({ magDb: trebleDb, waveform: toneWave(), time: i * DT }));
+      energyF = energy.update(makeInput({ magDb: trebleDb, waveform: toneWave(), time: i * DT }));
+    }
+    expect(energyF.drive).toBeGreaterThan(0.1); // energy mode: loudness pumps
+    expect(kicksF.drive).toBeLessThan(0.01); // kick mode: no kick, no pump
+
+    // Direction 2: kick-band content, silent waveform. Energy (rms-driven)
+    // reads nothing; the kick band is lit, so kick drive pumps hard.
+    const kicks2 = makePipeline();
+    kicks2.setSync({ mode: "kick", smooth: 0.5 });
+    const energy2 = makePipeline();
+    energy2.setSync({ mode: "energy", smooth: 0.5 });
+    const kickDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    fillBand(kickDb, 45, 110, MAX_DB);
+    let k2 = kicks2.features;
+    let e2 = energy2.features;
+    for (let i = 0; i < 120; i++) {
+      k2 = kicks2.update(makeInput({ magDb: kickDb, time: i * DT }));
+      e2 = energy2.update(makeInput({ magDb: kickDb, time: i * DT }));
+    }
+    expect(k2.drive).toBeGreaterThan(0.5);
+    expect(e2.drive).toBeLessThan(0.01);
+  });
+
+  it("the pulse IS the kick detector's envelope, frame for frame", () => {
+    const p = makePipeline();
+    p.setSync({ mode: "kick", smooth: 0.5 });
+    for (let i = 0; i < 120; i++) {
+      const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+      if (i === 40 || i === 80) fillBand(magDb, 45, 110, MAX_DB);
+      const f = p.update(makeInput({ magDb, time: i * DT }));
+      expect(f.driveBeat).toBe(f.kick);
+      if (i === 40 || i === 80) expect(f.driveBeat).toBe(1); // fires on the hit
+    }
+  });
+
+  it("other modes keep the generic band-onset detector", () => {
+    // Hats mode on hat content: the generic sync detector (over hatRange)
+    // still fires even though the KICK detector sees nothing — the AX-1
+    // rewire touched the kick branch only.
+    const p = makePipeline();
+    p.setSync({ mode: "hats", smooth: 0.5 });
+    let fired = false;
+    for (let i = 0; i < 120; i++) {
+      const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+      if (i === 60) fillBand(magDb, 6000, 12000, MAX_DB);
+      const f = p.update(makeInput({ magDb, time: i * DT }));
+      if (i === 60) {
+        fired = f.driveBeat === 1;
+        expect(f.kick).toBeLessThan(0.1); // not the kick detector's doing
+      }
+    }
+    expect(fired).toBe(true);
+  });
+
+  it("switching modes still resets the sync state cleanly", () => {
+    // Kicks mode leaves the generic detector's flux history untouched;
+    // setSync's mode-change reset is what guarantees the next mode starts
+    // clean. Settle in kick mode, switch to bass, and confirm the generic
+    // pulse fires from fresh state rather than misbehaving on stale history.
+    const p = makePipeline();
+    p.setSync({ mode: "kick", smooth: 0.5 });
+    for (let i = 0; i < 60; i++) {
+      const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+      if (i % 30 === 0) fillBand(magDb, 45, 110, MAX_DB);
+      p.update(makeInput({ magDb, time: i * DT }));
+    }
+    p.setSync({ mode: "bass", smooth: 0.5 });
+    let fired = false;
+    for (let i = 60; i < 150; i++) {
+      const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+      if (i === 120) fillBand(magDb, 40, 140, MAX_DB);
+      const f = p.update(makeInput({ magDb, time: i * DT }));
+      if (f.driveBeat === 1) fired = true;
+    }
+    expect(fired).toBe(true);
+  });
+});
+
 describe("low-frequency band resolution", () => {
   /**
    * One FFT bin spans 11.7 Hz at 4096/48k, so the geometric bands below
