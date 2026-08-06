@@ -20,6 +20,17 @@ import { WGSL_PALETTE_STD } from "../wgslLib";
  *     flying THROUGH the particles rather than zooming a flat image. Each
  *     shell's grid is rotated by its own angle so the naturally-sparse
  *     vanishing point doesn't stack into a hard dark cross at screen centre.
+ *
+ * Depth work (Track B): three opt-in layers on top of the drift/fly ambience —
+ *   - RP-6 colour tier: whole-visual Saturation/Lightness scalers, graded once
+ *     over the finished tonemapped frame (presetRgb), structurally identity at
+ *     their 1/1 defaults.
+ *   - Snare shooting stars: per-EVENT meteors on a hashed track-time slot grid,
+ *     lit by the snare/transient lane (see the shootingStars fn).
+ *   - Constellation links: near-neighbour threads on the layer-0 drift grid
+ *     (see the cstPoint fn), fill/clump-aware so lines join only real dots.
+ * All three are exactly neutral at factory defaults: the 0-default gates skip
+ * their blocks whole, and the colour tier's neutral path returns its input.
  */
 export const particles: PresetDef = {
   // Renamed from the legacy internal id "starfield" (the display name has been
@@ -173,7 +184,8 @@ export const particles: PresetDef = {
         bgLevel: 0.01,
       },
     },
-    // Rave — every reaction knob up — scatter, size pulse, band colour, beat pops.
+    // Rave — every reaction knob up — scatter, size pulse, band colour, beat
+    // pops, snare meteors.
     {
       id: "rave",
       name: "Rave",
@@ -197,6 +209,7 @@ export const particles: PresetDef = {
         beatFlash: 0.32,
         bgLevel: 0.04,
         vignette: 0.3,
+        shootingStars: 0.55,
       },
     },
     // Bokeh — five huge out-of-focus discs on one layer: shallow depth of field.
@@ -226,6 +239,97 @@ export const particles: PresetDef = {
         vignette: 0.55,
       },
     },
+    // Meteor Shower — a near-still night sky where every snare streaks meteors
+    // across the field: the event layer IS the look.
+    {
+      id: "meteorShower",
+      name: "Meteor Shower",
+      values: {
+        shootingStars: 0.85,
+        hue: 215,
+        hueVariance: 30,
+        density: 10,
+        size: 0.09,
+        speed: 0.1,
+        direction: 55,
+        beatDance: 0.1,
+        sizePulse: 0.4,
+        streak: 0.1,
+        hotCore: 0.7,
+        clump: 0.6,
+        fill: 0.5,
+        wander: 0.3,
+        wanderSpeed: 0.2,
+        twinkle: 0.56,
+        glow: 0.3,
+        brightness: 0.85,
+        sizeVar: 0.9,
+        beatFlash: 0.04,
+        bgLevel: 0.015,
+        vignette: 0.45,
+      },
+    },
+    // Constellation — a linked star chart: clustered magnitudes threaded
+    // together by near-neighbour lines, breathing with the drive.
+    {
+      id: "constellation",
+      name: "Constellation",
+      values: {
+        constellation: 0.75,
+        hue: 195,
+        hueVariance: 45,
+        density: 9,
+        size: 0.14,
+        speed: 0.05,
+        beatDance: 0.08,
+        sizePulse: 0.35,
+        streak: 0.04,
+        hotCore: 0.5,
+        clump: 0.66,
+        fill: 0.62,
+        layers: 2,
+        parallax: 0.3,
+        wander: 0.24,
+        wanderSpeed: 0.15,
+        twinkle: 0.66,
+        glow: 0.28,
+        brightness: 0.9,
+        sizeVar: 1.2,
+        beatFlash: 0.02,
+        bgLevel: 0.01,
+        vignette: 0.45,
+      },
+    },
+    // Warp Prism — fly mode INSIDE the club mirror (the deck's first fly +
+    // mirror pairing), surging hard on the sync drive (first style to move
+    // energyDrive off its default).
+    {
+      id: "warpPrism",
+      name: "Warp Prism",
+      values: {
+        fly: 1,
+        mirror: 8,
+        energyDrive: 1.6,
+        speed: 1.15,
+        density: 18,
+        size: 0.09,
+        beatDance: 0.6,
+        sizePulse: 0.6,
+        streak: 1.4,
+        hotCore: 0.9,
+        clump: 0.3,
+        parallax: 0.84,
+        glow: 0.5,
+        brightness: 1.1,
+        twinkle: 0.16,
+        hue: 160,
+        hueVariance: 80,
+        bandColor: 45,
+        beatPop: 0.8,
+        sizeVar: 0.55,
+        vignette: 0.5,
+      },
+    },
   ],
   params: [
     {
@@ -238,6 +342,28 @@ export const particles: PresetDef = {
       step: 1,
       default: 210,
       hint: "Base particle color",
+    },
+    // RP-6 colour tier — spec shape and hints are the roster contract, shared
+    // verbatim with spectrum-bars (the color-tier reference preset).
+    {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
     },
     {
       key: "density",
@@ -341,6 +467,26 @@ export const particles: PresetDef = {
       step: 0.02,
       default: 0.6,
       hint: "The brightest few particles flare past pure color into a near-white core",
+    },
+    {
+      key: "shootingStars",
+      label: "Shooting stars",
+      group: "reaction",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "Snare hits launch shooting stars — meteors on paths hashed from the track clock, so every hit streaks the same in preview and export",
+    },
+    {
+      key: "constellation",
+      label: "Constellation",
+      group: "shape",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "Threads of light link each particle to its nearest neighbors — higher reaches further and holds more of the lattice together (drift mode)",
     },
   ],
   advanced: [
@@ -549,6 +695,141 @@ fn danceTarget(seed: vec2f, i: f32) -> vec2f {
   let a = hash21(seed + i * 19.19 + 3.7) * TAU;
   let r = 0.4 + 0.6 * hash21(seed + i * 7.31 + 11.3);
   return vec2f(cos(a), sin(a)) * r;
+}
+
+// RP-6 whole-visual colour tier, RGB form. This preset's colour is additive
+// cosPalette accumulation with no single authored-HSL chokepoint, so the
+// scaler grades the finished frame the way led-matrix's own presetRgb grades
+// its authored tints. Neutral-BY-CONSTRUCTION at the defaults: saturation 1.0
+// matches NEITHER strict branch guard so rgb passes through untouched, and
+// lightness 1.0 is an exact IEEE multiply-by-one — factory output stays
+// bit-identical without leaning on mix() rounding behaviour at t = 1.
+fn presetRgb(rgb: vec3f) -> vec3f {
+  let saturation = P_saturation();
+  var adjusted = rgb;
+  if (saturation < 1.0) {
+    let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+    adjusted = mix(gray, rgb, saturation);
+  } else if (saturation > 1.0) {
+    let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+    adjusted = rgb + (rgb - gray) * (saturation - 1.0);
+  }
+  let lightness = P_lightness();
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
+// ---- Snare shooting stars -------------------------------------------------
+// Per-EVENT meteors, not a field behaviour: the snare/transient lane decides
+// WHEN they show, a hashed track-time slot grid decides WHAT shows. Five
+// detuned lanes each carve track time into fixed slots; a slot hashes its own
+// birth moment, start point, heading, span and width from (lane, slot index)
+// alone — pure functions of track time with zero accumulated state, so any
+// frame (live preview, an export frame, a scrub landing mid-flight) resolves
+// the identical meteor. Birth sits in the first third of its slot and the
+// flight always ends inside the same slot, so a meteor can never cross a slot
+// boundary and get re-seeded mid-air (particles.test.ts sweeps the bound).
+// The gate is what makes them EVENTS: lanes run dark until a hit lights the
+// in-flight set — the freshest meteor flares brightest, the older ones read
+// as the shower's stragglers.
+fn shootingStars(p: vec2f, gate: f32) -> vec3f {
+  var acc = vec3f(0.0);
+  // Density knob: the fraction of slot events that actually fire.
+  let duty = 0.3 + 0.7 * P_shootingStars();
+  // Meteors fall AGAINST the drift direction (default Direction 90 = field
+  // drifts up, meteors fall down) with a hashed +/-26 degree spread each.
+  let mAngBase = radians(P_direction()) + TAU * 0.5;
+  for (var li = 0; li < 5; li = li + 1) {
+    let lane = f32(li);
+    // Golden-ratio detuned periods keep lanes permanently out of sync, so
+    // consecutive snare hits catch different lanes mid-flight and every hit
+    // fires a fresh hashed trajectory.
+    let period = 0.85 + 0.4 * fract(lane * 0.6180339887 + 0.23);
+    let slot = floor(u.time / period);
+    let seed = vec2f(lane * 13.71 + 1.7, slot);
+    if (hash21(seed + 31.7) > duty) { continue; }
+    // Birth in the first 0.05..0.33 of the slot; life at most 0.65 of it —
+    // the worst case ends at 0.98 of the slot, contained by construction.
+    let birth = (slot + 0.05 + 0.28 * hash21(seed)) * period;
+    let life = period * (0.4 + 0.25 * hash21(seed + 7.3));
+    let prog = (u.time - birth) / life;
+    if (prog <= 0.0 || prog >= 1.0) { continue; }
+    // Attack over the first 6% of the flight, then a tapering burn-out; the
+    // gate rides on top so only hits make lanes visible at all.
+    let env = smoothstep(0.0, 0.06, prog) * pow(1.0 - prog, 1.6) * gate;
+    if (env < 1e-3) { continue; }
+    let h2 = hash21(seed + 5.13);
+    let h3 = hash21(seed + 9.71);
+    let h4 = hash21(seed + 17.39);
+    let h5 = hash21(seed + 23.97);
+    let start = vec2f((h2 - 0.5) * u.aspect * 1.15, (h3 - 0.5) * 1.15);
+    let mAng = mAngBase + (h4 - 0.5) * 0.9;
+    let mDir = vec2f(cos(mAng), -sin(mAng));
+    let head = start + mDir * (prog * (0.5 + 0.55 * h5));
+    // The tail ramps in over the first fifth of the flight so a fresh meteor
+    // grows its streak instead of popping in at full length.
+    let tailLen = (0.1 + 0.2 * h5) * smoothstep(0.0, 0.2, prog);
+    let ab = mDir * tailLen;
+    let toP = p - (head - ab);
+    let hSeg = clamp(dot(toP, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+    let dSeg = length(toP - ab * hSeg);
+    let w = 0.006 + 0.004 * h5;
+    // Crisp streak brightening toward the head, plus a hot head bloom.
+    let core = smoothstep(w * 3.5, w * 0.4, dSeg) * (0.3 + 0.7 * hSeg * hSeg);
+    let headD = p - head;
+    let halo = exp(-dot(headD, headD) * 260.0) * (0.55 + P_glow() * 0.7);
+    let hueOff = (h3 - 0.5) * P_hueVariance();
+    let mPal = cosPalette(1.0 - (P_hue() + hueOff) / 360.0, ${WGSL_PALETTE_STD});
+    // Meteors flare toward white like the field's own hot cores.
+    acc += mix(mPal, vec3f(1.0), 0.3 + 0.4 * P_hotCore()) * (core * 1.1 + halo) * env;
+  }
+  return acc;
+}
+
+// ---- Constellation linking ------------------------------------------------
+// The LAYER-0 drift particle of one cell, in that layer's own q-space: position
+// and existence resolved by the EXACT same hashes, wander, clump and beat-
+// dance rules as the drawn dot (particles.test.ts pins the shared
+// expressions), so a link lands ON its star, never beside it. Two deliberate
+// differences, both serving the 3x3 coverage budget the link pass shares
+// with the dot loops:
+//  - the offset is hard-clamped to +/-0.4 cells. Identity across the whole
+//    default range (|wander| + |dance| stays under 0.4 until Wander pushes
+//    past ~0.85), so links stick exactly to their dots; at extreme Wander +
+//    Beat dance the line end compresses toward the cell while the dot
+//    overshoots — a soft tether, instead of link segments escaping the
+//    enumeration window and CLIPPING along invisible straight cell borders.
+//    With the clamp an endpoint sits within 0.9 cells of its cell corner, and
+//    the 0.05-cell line half-width keeps every drawn pixel inside 1 cell of
+//    the endpoint cells — which the 3x3 anchor window covers exactly.
+//  - z carries existence (1 = a particle lives here), because a link may only
+//    join two REAL dots — fill/clump holes stay holes.
+fn cstPoint(cell: vec2f, wt: f32, gCur: vec2f, bPrev: f32, bIdx: f32, bFr: f32,
+            danceAmp: f32, pGeo: f32) -> vec3f {
+  let h1 = hash21(cell);
+  let fillPMax = clamp(P_fill() * (1.0 + 0.7 * P_clump()), 0.0, 1.0);
+  if (h1 > fillPMax) { return vec3f(0.0); }
+  if (P_clump() > 1e-3) {
+    let clumpN = noise2(cell * 0.1);
+    let fillP = clamp(mix(P_fill(), P_fill() * (1.7 - 1.4 * clumpN), P_clump()), 0.0, 1.0);
+    if (h1 > fillP) { return vec3f(0.0); }
+  }
+  let h2 = hash21(cell + 41.3);
+  let h3 = hash21(cell + 77.7);
+  let fph = h2 * TAU;
+  let drift = vec2f(sin(wt * (0.8 + 0.5 * h2) + fph), cos(wt * (0.7 + 0.5 * h3) + fph * 1.3)) * 0.34;
+  let wob = (drift + gCur) * P_wander();
+  var dance = vec2f(0.0);
+  if (u.bpm >= 1.0) {
+    if (danceAmp > 1e-5) {
+      dance = mix(danceTarget(cell, bPrev), danceTarget(cell, bIdx), bFr) * danceAmp;
+    }
+  } else {
+    let scatDir = normalize(vec2f(h2 - 0.5, h3 - 0.5) + 1e-4);
+    dance = scatDir * softLimit(u.driveBeat * P_beatDance() * 0.35 * pGeo, 0.45);
+  }
+  let off = clamp(wob + dance, vec2f(-0.4), vec2f(0.4));
+  return vec3f(cell + vec2f(0.5) + off, 1.0);
 }
 
 fn preset(uv: vec2f) -> vec4f {
@@ -907,10 +1188,89 @@ fn preset(uv: vec2f) -> vec4f {
         }
       }
     }
+
+    // ---- Constellation links: near-neighbour threads on the layer-0 grid ---
+    // Opt-in (default 0 = the block never runs). Anchored to the SAME cell
+    // grid the sim already walks: a 4x4 window of layer-0 particles is
+    // resolved once (16 cstPoint evaluations — each east/south link endpoint
+    // is shared by two anchors, cheaper than 9 anchors x 3 fresh points),
+    // then every anchor cell links toward its east and south neighbours only.
+    // Bounded by construction: at most 18 segment tests per pixel, never an
+    // O(n^2) pair search.
+    let cst = P_constellation();
+    if (cst > 1e-3) {
+      // Layer 0's own q-space, term for term (par = 1 there), so base0/q0 are
+      // bit-identical to the dot loop's and links land exactly on dots.
+      let scl0 = P_density() * 0.5;
+      let flow0 = dir * baseSpd * 0.06;
+      let q0 = p * scl0 - flow0 * u.time - dir * push;
+      let base0 = floor(q0);
+      var pts: array<vec3f, 16>;
+      for (var iy = 0; iy < 4; iy = iy + 1) {
+        for (var ix = 0; ix < 4; ix = ix + 1) {
+          pts[iy * 4 + ix] = cstPoint(base0 + vec2f(f32(ix) - 1.0, f32(iy) - 1.0),
+                                      wt, gCur, bPrev, bIdx, bFr, danceAmp, pGeo);
+        }
+      }
+      // The knob buys reach AND presence together: short links appear first,
+      // a maxed knob holds most of the lattice threaded.
+      let maxLen = 0.55 + 1.2 * cst;
+      var linkAcc = 0.0;
+      for (var iy = 0; iy < 3; iy = iy + 1) {
+        for (var ix = 0; ix < 3; ix = ix + 1) {
+          let A = pts[iy * 4 + ix];
+          if (A.z < 0.5) { continue; }
+          for (var k = 0; k < 2; k = k + 1) {
+            // k = 0: south neighbour; k = 1: east neighbour.
+            let B = pts[select(iy * 4 + ix + 1, (iy + 1) * 4 + ix, k == 0)];
+            if (B.z < 0.5) { continue; }
+            let ab = B.xy - A.xy;
+            let len = length(ab);
+            // Fade to nothing well before the coverage bound, so an over-long
+            // link melts away instead of ever clipping.
+            let op = smoothstep(maxLen, maxLen * 0.5, len);
+            if (op < 1e-3) { continue; }
+            let toQ = q0 - A.xy;
+            let hSeg = clamp(dot(toQ, ab) / max(len * len, 1e-5), 0.0, 1.0);
+            let dq = length(toQ - ab * hSeg);
+            // Thin, crisp thread (widths in CELL units — re-prove the
+            // coverage note on cstPoint before touching the 0.05).
+            let line = smoothstep(0.05, 0.016, dq);
+            // Brightest where it meets its stars, dimmest mid-span: light
+            // strung BETWEEN dots, not a wireframe drawn over them.
+            let endW = 0.55 + 0.9 * abs(hSeg - 0.5);
+            linkAcc += line * op * endW;
+          }
+        }
+      }
+      if (linkAcc > 0.0) {
+        let lPal = cosPalette(1.0 - P_hue() / 360.0, ${WGSL_PALETTE_STD});
+        // Threads breathe with the sync drive and pop with the same
+        // grid-locked beat brightness as the dots they join.
+        col += lPal * linkAcc * cst * (0.4 + 0.35 * u.drive) * beatPop * P_brightness() * 0.6;
+      }
+    }
+  }
+
+  // ---- Snare shooting stars: an event overlay over either mode -------------
+  // Default 0 = the block never runs (bit-identical factory output). Drawn in
+  // the kaleido-folded frame, so Club mirror folds the meteor shower with the
+  // field. pGeo ties the burst into the Pulse master exactly like every other
+  // beat-driven term; the driveBeat floor keeps the lane alive on material
+  // where the snare classifier stays quiet.
+  let met = P_shootingStars();
+  if (met > 1e-3) {
+    let mGate = softLimit(max(u.snare, u.driveBeat * 0.35) * 1.2 * pGeo, 1.0);
+    if (mGate > 1e-3) {
+      col += shootingStars(p, mGate) * P_brightness();
+    }
   }
 
   col *= vignette(uv, P_vignette());
-  col = tonemap(col * 1.2);
+  // RP-6 colour tier grades the finished frame AFTER tonemap: the range there
+  // is 0..1, so Lightness above 1 clips at white monotonically instead of
+  // fighting the ACES shoulder. Identity at the 1/1 defaults.
+  col = presetRgb(tonemap(col * 1.2));
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
