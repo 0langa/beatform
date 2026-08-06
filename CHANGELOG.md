@@ -33,8 +33,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
     (scrolls with the track, both directions), with the motion and beat
     controls promoted out of Advanced. New styles: Spectrogram,
     Code Rain, Prism Roll.
-  All defaults look exactly as before — new territory is opt-in via
-  parameters and the new styles.
+    All defaults look exactly as before — new territory is opt-in via
+    parameters and the new styles.
 - Sliders for wide ranges now travel logarithmically where it helps
   (fine control where the action is), and modulation/MIDI now snap
   whole-number settings cleanly instead of strobing through fractions.
