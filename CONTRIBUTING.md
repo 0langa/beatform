@@ -8,9 +8,16 @@ contribution goes straight to users.
 
 ```
 npm install
-node scripts/fetch-ffmpeg.mjs   # one-time: ProRes sidecar (~110 MB, not in git)
-npm run dev                     # browser dev at localhost:1420 — fastest loop
-npm run tauri dev               # full desktop shell (library/loopback/ProRes need this)
+npm run dev                            # browser dev at localhost:1420 — fastest loop, needs no sidecars
+
+# Desktop shell: all four sidecar steps below are one-time and REQUIRED
+# first — the lyrics sidecar is a tauri bundle resource, so until
+# build-lyrics-sidecar has run, no cargo command works at all.
+node scripts/fetch-ffmpeg.mjs          # ffmpeg sidecar (~110 MB, not in git)
+node scripts/fetch-whisper.mjs         # whisper.cpp runtime (lyrics)
+node scripts/fetch-onnxruntime.mjs     # onnxruntime + DirectML (lyrics)
+node scripts/build-lyrics-sidecar.mjs  # build the lyrics sidecar exe
+npm run tauri dev                      # full desktop shell (library/loopback/ProRes/lyrics need this)
 ```
 
 Gates that must pass before a PR (CI runs all of them):
@@ -20,8 +27,14 @@ npm run typecheck
 npm run lint
 npm run format:check
 npm test                        # vitest — DSP, schemas, golden traces
-(cd src-tauri && cargo test --lib)
+(cd src-tauri && cargo test --workspace)
+(cd src-tauri && cargo clippy --workspace --all-targets -- -D warnings)
+(cd src-tauri && cargo fmt --check)
 ```
+
+Always `--workspace` on the cargo commands: `src-tauri` is a non-virtual
+workspace root, so bare `cargo test` / `cargo clippy` silently skip the
+lyrics-sidecar member — a green run that never compiled its tests.
 
 ## The two laws
 

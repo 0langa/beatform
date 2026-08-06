@@ -67,6 +67,48 @@ export default tseslint.config(
           message:
             "Build a proper input UI — raw prompt hits the dialog-plugin ACL in installed builds.",
         },
+        {
+          object: "globalThis",
+          property: "confirm",
+          message:
+            "Use askConfirm() from state/platform — raw confirm hits the dialog-plugin ACL in installed builds.",
+        },
+        {
+          object: "globalThis",
+          property: "alert",
+          message:
+            "Use flashNotice/store error state — raw alert hits the dialog-plugin ACL in installed builds.",
+        },
+        {
+          object: "globalThis",
+          property: "prompt",
+          message:
+            "Build a proper input UI — raw prompt hits the dialog-plugin ACL in installed builds.",
+        },
+      ],
+      // Same ban, second spelling. A BARE `confirm("…")` (no `window.`
+      // prefix — the more common way to write it) resolves to the identical
+      // ACL-blocked plugin command but sailed straight past the property
+      // rule above; that hole shipped the v2.64.0 "not allowed by ACL"
+      // failure class. The sanctioned browser fallback in state/platform is
+      // spelled `window.confirm`, so it needs no exception here.
+      "no-restricted-globals": [
+        "error",
+        {
+          name: "confirm",
+          message:
+            "Use askConfirm() from state/platform — raw confirm hits the dialog-plugin ACL in installed builds.",
+        },
+        {
+          name: "alert",
+          message:
+            "Use flashNotice/store error state — raw alert hits the dialog-plugin ACL in installed builds.",
+        },
+        {
+          name: "prompt",
+          message:
+            "Build a proper input UI — raw prompt hits the dialog-plugin ACL in installed builds.",
+        },
       ],
     },
   },

@@ -34,6 +34,18 @@ import { DEFAULT_SYNC } from "./types";
  * `featurePipeline.test.ts`) are deliberately not duplicated here: the main
  * beat detector's dt scaling, DISPLAY_GAMMA, the bass band's upper edge, and
  * the attack/release asymmetry.
+ *
+ * TIMEOUTS: every describe that drives real `OfflineAnalyzer` passes carries
+ * an explicit `{ timeout: 30_000 }` (the same remedy store.test.ts applies to
+ * its async initApp tests). Nothing in this file asserts timing — every test
+ * is deterministic math — so its only load-sensitive failure mode was
+ * vitest's 5 s per-test DEFAULT timeout: a single `it` can run five
+ * multi-second FFT passes at up to 192 kHz, which crossed 5 s under thermal
+ * throttle. That default, not the DSP, is what earned this file its old
+ * "thermal-sensitive — rerun before believing" reputation. With the budgets
+ * explicit, the root cause is gone: a failure here is a logic failure, never
+ * a rerun instruction. (The two FeaturePipeline-only describes at the bottom
+ * construct no analyzers and keep the default.)
  */
 
 // ---------------------------------------------------------------- generators
@@ -315,7 +327,7 @@ function spectrumSimilarity(a: Trace, b: Trace): number {
 
 // -------------------------------------------------------------------- specs
 
-describe("characterization: determinism", () => {
+describe("characterization: determinism", { timeout: 30_000 }, () => {
   it("two runs over the same buffer produce byte-identical traces", () => {
     const a = run(kickTrain(48000), 60);
     const b = run(kickTrain(48000), 60);
@@ -331,7 +343,7 @@ describe("characterization: determinism", () => {
   });
 });
 
-describe("characterization: silence and DC", () => {
+describe("characterization: silence and DC", { timeout: 30_000 }, () => {
   it("silence produces no onsets of any class", () => {
     const t = run(silence(48000), 60);
     expect(t.beatFrames).toEqual([]);
@@ -378,7 +390,7 @@ describe("characterization: silence and DC", () => {
   });
 });
 
-describe("characterization: onset timing across frame rate", () => {
+describe("characterization: onset timing across frame rate", { timeout: 30_000 }, () => {
   // Kicks land at t = 0, 0.5, 1.0, 1.5.
   const expected = [0, 0.5, 1.0, 1.5];
 
@@ -438,7 +450,7 @@ describe("characterization: onset timing across frame rate", () => {
   });
 });
 
-describe("characterization: sample-rate variance", () => {
+describe("characterization: sample-rate variance", { timeout: 30_000 }, () => {
   /**
    * PINS A KNOWN DEFECT — the largest one this suite found.
    *
@@ -492,7 +504,7 @@ describe("characterization: sample-rate variance", () => {
   });
 });
 
-describe("characterization: spectrum stability across frame rate", () => {
+describe("characterization: spectrum stability across frame rate", { timeout: 30_000 }, () => {
   /**
    * These used to assert the spectra were merely SIMILAR, and pinned that they
    * were not identical. They now assert identity, because the analyser runs at
@@ -535,7 +547,7 @@ describe("characterization: spectrum stability across frame rate", () => {
   });
 });
 
-describe("characterization: detectors are frame-rate independent", () => {
+describe("characterization: detectors are frame-rate independent", { timeout: 30_000 }, () => {
   /**
    * The assertion this whole suite existed to make, and the one it could not
    * make until it had dense material to make it on.
@@ -572,7 +584,7 @@ describe("characterization: detectors are frame-rate independent", () => {
   });
 });
 
-describe("characterization: band ordering on shaped material", () => {
+describe("characterization: band ordering on shaped material", { timeout: 30_000 }, () => {
   it("a sustained 808 puts bass above mid and treble", () => {
     const m = run(sub808(48000), 60).mean;
     expect(m.bass).toBeGreaterThan(m.mid);
@@ -601,7 +613,7 @@ describe("characterization: band ordering on shaped material", () => {
   });
 });
 
-describe("characterization: waveform length is independent of the FFT", () => {
+describe("characterization: waveform length is independent of the FFT", { timeout: 30_000 }, () => {
   /**
    * The renderer downsamples `f.waveform` to a fixed 512 points by CHUNK MEAN,
    * with the chunk width taken as `length / 512`. So the waveform's length is
