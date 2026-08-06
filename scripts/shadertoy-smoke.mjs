@@ -8,62 +8,25 @@
 //   npm run test:shadertoy:built     (requires: npm run dev running is NOT
 //                                     needed — the debug exe serves devUrl,
 //                                     but Vite must be up, same as loopback)
+//
+// Boot stays LOCAL (built-app smoke family); page-poll + CDP client come
+// from scripts/lib (P-14-lite).
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
+import { Cdp } from "./lib/cdp.mjs";
+import { debugExe, harnessPort, waitForPage, killTree } from "./lib/app.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const port = 9800 + (process.pid % 80);
-const endpoint = `http://127.0.0.1:${port}`;
-let log = "";
-let child;
-let ws;
-
-const exe = path.join(root, "src-tauri", "target", "debug", "beatform.exe");
-
-async function page() {
-  const deadline = Date.now() + 240_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode != null) throw new Error(`Tauri dev exited ${child.exitCode}\n${log}`);
-    try {
-      const pages = await fetch(`${endpoint}/json/list`).then((r) => r.json());
-      const match = pages.find(
-        (p) => p.type === "page" && p.webSocketDebuggerUrl && /localhost|127\.0\.0\.1/.test(p.url),
-      );
-      if (match) return match;
-    } catch {
-      // Runtime not ready.
-    }
-    await sleep(500);
-  }
-  throw new Error(`Timed out waiting for WebView2\n${log}`);
-}
+const port = harnessPort(9800); // see the map in lib/app.mjs
+let app;
+let cdp;
 
 async function evaluate(url) {
-  ws = new globalThis.WebSocket(url);
-  await new Promise((resolve, reject) => {
-    ws.addEventListener("open", resolve, { once: true });
-    ws.addEventListener("error", reject, { once: true });
-  });
-  let id = 0;
-  const pending = new Map();
-  ws.addEventListener("message", (event) => {
-    const message = JSON.parse(event.data);
-    const p = pending.get(message.id);
-    if (!p) return;
-    pending.delete(message.id);
-    if (message.error) p.reject(new Error(message.error.message));
-    else p.resolve(message.result);
-  });
-  const send = (method, params = {}) =>
-    new Promise((resolve, reject) => {
-      const request = ++id;
-      pending.set(request, { resolve, reject });
-      ws.send(JSON.stringify({ id: request, method, params }));
-    });
-  await send("Runtime.enable");
-  return send("Runtime.evaluate", {
+  cdp = new Cdp(url);
+  await cdp.open();
+  return cdp.send("Runtime.evaluate", {
     expression: `(async () => {
       const delay = ms => new Promise(r => setTimeout(r, ms));
       const deadline = Date.now() + 60000;
@@ -184,7 +147,8 @@ async function evaluate(url) {
 
 try {
   const existingArgs = process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS ?? "";
-  child = spawn(exe, [], {
+  let log = "";
+  const child = spawn(debugExe(root), [], {
     cwd: root,
     windowsHide: true,
     env: {
@@ -197,18 +161,19 @@ try {
   const keep = (chunk) => (log = (log + chunk.toString()).slice(-20_000));
   child.stdout.on("data", keep);
   child.stderr.on("data", keep);
+  app = { child, port, log: () => log };
 
   // Attach can race the page's first load (visible under machine load, e.g.
   // a soak run in parallel) — same transient set loopback-smoke retries.
   let evaluated;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const target = await page();
+      const target = await waitForPage(app);
       evaluated = await evaluate(target.webSocketDebuggerUrl);
       break;
     } catch (error) {
-      ws?.close();
-      ws = null;
+      cdp?.close();
+      cdp = null;
       if (
         attempt === 3 ||
         !/context was destroyed|cannot find default execution context|websocket/i.test(
@@ -233,6 +198,6 @@ try {
       `deterministic across two export runs.`,
   );
 } finally {
-  ws?.close();
-  child?.kill();
+  cdp?.close();
+  killTree(app);
 }

@@ -32,6 +32,11 @@
 // Prereqs: Vite dev on 127.0.0.1:1420; debug build of the app (fetch scripts
 // + build-lyrics-sidecar run); spike model cache on devstorage.
 // Env: BEATFORM_EXE overrides the app path (e.g. a CARGO_TARGET_DIR build).
+//
+// Boot stays LOCAL (built-app smoke family — media server, model prep,
+// BEATFORM_EXE override); page-poll + CDP client come from scripts/lib
+// (P-14-lite). The lib Cdp carries this harness's socket-death handling:
+// a dying app must REJECT every in-flight eval.
 import { spawn, spawnSync } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
 import {
@@ -47,6 +52,8 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
+import { Cdp } from "./lib/cdp.mjs";
+import { debugExe, harnessPort, waitForPage, killTree } from "./lib/app.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = new Set(process.argv.slice(2).filter((a) => !a.startsWith("--out=")));
@@ -57,16 +64,15 @@ const outDir =
   "F:/agent-devstorage/shared-cache/audio-visualizer/artifacts/feat004-p3-e2e";
 mkdirSync(outDir, { recursive: true });
 
-const exe =
-  process.env.BEATFORM_EXE ?? path.join(root, "src-tauri", "target", "debug", "beatform.exe");
+const exe = process.env.BEATFORM_EXE ?? debugExe(root);
 const CACHE = "F:/agent-devstorage/shared-cache/audio-visualizer/cache/feat004-models";
 const CORPUS = "F:/agent-devstorage/shared-cache/audio-visualizer/artifacts/feat004-spike/corpus";
 const MADNESS = "F:/agent-devstorage/claude-cache/beatform/bf-test/media/Muse - Madness.flac";
 const E2E_MODELS = path.join(CACHE, "e2e-app-models");
-const port = 9700 + (process.pid % 80);
+const port = harnessPort(10060); // see the map in lib/app.mjs
+let app;
 let child;
 let mediaServer;
-let log = "";
 
 function fatal(msg) {
   console.error(`FAIL: ${msg}`);
@@ -356,79 +362,9 @@ function startMediaServer() {
   });
 }
 
-// --- CDP plumbing (midi-e2e pattern) ---------------------------------------
+// --- CDP plumbing: lib Cdp + lib page-poll, fatal-wrapped -------------------
 async function page() {
-  const deadline = Date.now() + 240_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode != null) fatal(`app exited ${child.exitCode}\n${log}`);
-    try {
-      const pages = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json());
-      const m = pages.find(
-        (p) => p.type === "page" && p.webSocketDebuggerUrl && /localhost|127\.0\.0\.1/.test(p.url),
-      );
-      if (m) return m;
-    } catch {
-      /* not ready */
-    }
-    await sleep(500);
-  }
-  fatal(`timed out waiting for WebView2\n${log}`);
-}
-
-class Cdp {
-  constructor(url) {
-    this.id = 0;
-    this.pending = new Map();
-    this.ws = new globalThis.WebSocket(url);
-  }
-  async open() {
-    await new Promise((res, rej) => {
-      this.ws.addEventListener("open", res, { once: true });
-      this.ws.addEventListener("error", rej, { once: true });
-    });
-    this.ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data);
-      const p = this.pending.get(m.id);
-      if (!p) return;
-      this.pending.delete(m.id);
-      if (m.error) p.reject(new Error(m.error.message));
-      else p.resolve(m.result);
-    });
-    // A dying app (crash, OOM) closes the socket; every in-flight eval must
-    // REJECT, or a poll loop waits forever on a corpse — the failure mode of
-    // this harness's first run.
-    const failAll = (why) => () => {
-      for (const p of this.pending.values()) p.reject(new Error(why));
-      this.pending.clear();
-    };
-    this.ws.addEventListener("close", failAll("CDP socket closed — app gone?"), { once: true });
-    this.ws.addEventListener("error", failAll("CDP socket error"), { once: true });
-    await this.send("Runtime.enable");
-  }
-  send(method, params = {}) {
-    return new Promise((resolve, reject) => {
-      const id = ++this.id;
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-  async eval(expression, awaitPromise = true) {
-    const r = await this.send("Runtime.evaluate", {
-      expression,
-      awaitPromise,
-      returnByValue: true,
-    });
-    if (r.exceptionDetails) {
-      const ex = r.exceptionDetails.exception;
-      throw new Error(
-        ex?.description ??
-          (ex?.value != null ? JSON.stringify(ex.value) : null) ??
-          r.exceptionDetails.text ??
-          "eval failed",
-      );
-    }
-    return r.result.value;
-  }
+  return waitForPage(app).catch((e) => fatal(String(e?.message ?? e)));
 }
 
 /** Store snapshot the polls read — one shape for every leg. */
@@ -453,10 +389,10 @@ async function pollUntil(cdp, pred, timeoutMs, label) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     if (child.exitCode != null) {
-      fatal(`${label}: app exited ${child.exitCode} mid-poll\n${log}`);
+      fatal(`${label}: app exited ${child.exitCode} mid-poll\n${app.log()}`);
     }
     const snap = await cdp.eval(SNAPSHOT, false).catch((e) => {
-      fatal(`${label}: ${e.message}\n${log}`);
+      fatal(`${label}: ${e.message}\n${app.log()}`);
     });
     if (pred(snap)) return snap;
     if (snap.error) fatal(`${label}: store error surfaced: ${snap.error}`);
@@ -535,6 +471,7 @@ try {
   const mediaPort = await startMediaServer();
 
   const existingArgs = process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS ?? "";
+  let log = "";
   child = spawn(exe, [], {
     cwd: root,
     windowsHide: true,
@@ -548,6 +485,7 @@ try {
   const keep = (c) => (log = (log + c.toString()).slice(-20_000));
   child.stdout.on("data", keep);
   child.stderr.on("data", keep);
+  app = { child, port, log: () => log };
 
   const attach = async () => {
     const t = await page();
@@ -800,15 +738,9 @@ try {
       " all pass",
   );
 } finally {
-  child?.kill();
+  // PID-tree only: /T covers the sidecar + whisper children the app itself
+  // spawned; direct sidecar/whisper runs above are spawnSync (already done).
+  // Never a name-wide sweep — it would hit an installed Beatform.
+  killTree(app);
   mediaServer?.close();
-  try {
-    spawnSync("powershell", [
-      "-NoProfile",
-      "-Command",
-      "Get-Process -Name beatform,lyrics-sidecar,whisper-cli -ErrorAction SilentlyContinue | Stop-Process -Force",
-    ]);
-  } catch {
-    /* gone */
-  }
 }

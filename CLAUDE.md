@@ -17,23 +17,33 @@ npm run dev            # browser dev at localhost:1420 (fastest iteration)
 npm run tauri dev      # full desktop shell
 npm run tauri build    # installer (needs all sidecars fetched/built)
 
-npm test               # vitest run (all web tests)
 npx vitest run src/state/project.test.ts        # single file
 npx vitest run -t "pattern"                      # single test by name
-npm run lint           # eslint .
-npm run typecheck      # tsc --noEmit
-npm run format:check   # prettier
-
-cd src-tauri
-cargo test --workspace           # Rust tests — ALWAYS --workspace (bare cargo silently skips the lyrics-sidecar member)
-cargo clippy --workspace --all-targets -- -D warnings
-cargo fmt --check
 ```
 
-Device/E2E gates (need hardware, run before release when the area changed):
+Quality gates are canonically defined in **`GATES.md`** — if anything below disagrees with it, GATES.md wins. Quoting it:
+
+```
+npm run typecheck
+npm run lint
+npm run format:check
+npm test
+npm run build
+```
+
+```
+cargo fmt --all -- --check                              # from src-tauri/
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+ALWAYS `--workspace`/`--all` on cargo commands — bare cargo silently skips the lyrics-sidecar member (fmt included).
+
+Device/E2E gates (need hardware; GATES.md §3 says when each is mandatory, and carries the `test:gpu` re-bless protocol):
 
 - `npm run test:gpu` — WebGPU pixel-hash matrix over all visual modes. Shader changes alter hashes: verify visually, then re-bless with `npm run test:gpu:update` and justify in the commit.
 - `npm run test:loopback:built`, `npm run test:shadertoy:built`, `npm run test:lyrics` — built-app smokes (loopback capture, Shadertoy import, lyrics pipeline).
+- `node scripts/gallery-e2e.mjs` — gallery/store-install surfaces.
 
 `src/audio/dspCharacterization.test.ts` is no longer flaky: its only failure mode was vitest's 5 s default timeout under thermal load, root-fixed with explicit 30 s describe budgets — a failure there is real; reruns are not the protocol.
 
@@ -53,5 +63,5 @@ Device/E2E gates (need hardware, run before release when the area changed):
 - `BACKLOG.md` is the canonical work ledger — read it before starting feature work, update it when finishing. `CHANGELOG.md` is **user-facing UI** (the update dialog imports it): entries must read as release notes, and editing it while the dev server runs reloads the app.
 - Never use `window.confirm`/`alert` — blocked by the Tauri dialog-plugin ACL. Use `askConfirm()` (`src/state/platform.ts`); an eslint rule enforces this.
 - Web MIDI: never extract `navigator.requestMIDIAccess` into a local (Illegal invocation, silently swallowed); WebView2 permission is granted in `src-tauri/src/midi_permission.rs`, installed from `on_page_load` (windows don't exist yet in `setup`).
-- Release ritual: `node scripts/bump-version.mjs X.Y.Z` (updates 5 files) → `npm i --package-lock-only` → CHANGELOG entry → commit → tag `vX.Y.Z` → push → CI builds installers → publish the DRAFT release (`gh release edit vX.Y.Z --draft=false --latest`) → verify SHA256SUMS + updater manifest signature + live latest.json.
+- Release ritual: `node scripts/release.mjs X.Y.Z --title "..."` — one resumable command (bump → changelog scaffold → commit+tag+push → CI watch → publish → verify). The full checklist it automates is GATES.md §4; `gh` on this machine needs the env PAT stripped (the script does it — equivalent of `env -u GITHUB_TOKEN`).
 - v3.0.0 is a quality bar, not a milestone — keep shipping 2.x; never propose cutting 3.0.

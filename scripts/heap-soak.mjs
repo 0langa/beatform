@@ -17,8 +17,7 @@
 //
 // Output: <out>/heap-soak-<minutes>min-<n>.csv  (elapsedSec, jsHeapMB,
 // workingSetMB, processes) plus a summary line on stdout.
-import { spawn, execFileSync } from "node:child_process";
-import { createServer as createHttpServer } from "node:http";
+import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
   createReadStream,
@@ -27,9 +26,11 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
+import { spawnApp, attach, waitHooks, killTree } from "./lib/app.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const minutes = Number(
@@ -40,11 +41,6 @@ const minutes = Number(
 const outDir = (process.argv.find((a) => a.startsWith("--out=")) ?? "").slice("--out=".length);
 if (!outDir) throw new Error("--out=<dir> is required (devstorage artifacts dir)");
 mkdirSync(outDir, { recursive: true });
-const port = 9700 + (process.pid % 80);
-const endpoint = `http://127.0.0.1:${port}`;
-const exe = path.join(root, "src-tauri", "target", "debug", "beatform.exe");
-let child;
-let log = "";
 
 // --- synthetic long track: quiet 120bpm click+bass loop, mono 22.05k s16 ---
 // (deterministic, compresses the decode cost realistically; ~<300 MB decoded
@@ -75,28 +71,10 @@ function ensureWav(seconds) {
   return wav;
 }
 
-async function page() {
-  const deadline = Date.now() + 240_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode != null) throw new Error(`app exited ${child.exitCode}\n${log}`);
-    try {
-      const pages = await fetch(`${endpoint}/json/list`).then((r) => r.json());
-      const match = pages.find(
-        (p) => p.type === "page" && p.webSocketDebuggerUrl && /localhost|127\.0\.0\.1/.test(p.url),
-      );
-      if (match) return match;
-    } catch {
-      /* not ready */
-    }
-    await sleep(500);
-  }
-  throw new Error(`timed out waiting for WebView2\n${log}`);
-}
-
 // Only THIS app's processes: beatform.exe itself plus the msedgewebview2
 // children whose command line carries Beatform's user-data folder. Summing or
 // deprioritizing every WebView2 on the machine would hit the user's OTHER
-// apps — off limits.
+// apps — off limits. (Measurement plumbing, not boot plumbing — stays local.)
 const PS_OURS =
   "$ids = @(Get-Process -Name beatform -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id); " +
   "$ids += @(Get-CimInstance Win32_Process -Filter 'Name=\"msedgewebview2.exe\"' -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match '[Bb]eatform' } | Select-Object -ExpandProperty ProcessId); " +
@@ -137,47 +115,7 @@ function deprioritize() {
   }
 }
 
-class Cdp {
-  constructor(url) {
-    this.id = 0;
-    this.pending = new Map();
-    this.ws = new globalThis.WebSocket(url);
-  }
-  async open() {
-    await new Promise((res, rej) => {
-      this.ws.addEventListener("open", res, { once: true });
-      this.ws.addEventListener("error", rej, { once: true });
-    });
-    this.ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data);
-      const p = this.pending.get(m.id);
-      if (!p) return;
-      this.pending.delete(m.id);
-      if (m.error) p.reject(new Error(m.error.message));
-      else p.resolve(m.result);
-    });
-    await this.send("Runtime.enable");
-  }
-  send(method, params = {}) {
-    return new Promise((resolve, reject) => {
-      const id = ++this.id;
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-  async eval(expression, awaitPromise = true) {
-    const r = await this.send("Runtime.evaluate", {
-      expression,
-      awaitPromise,
-      returnByValue: true,
-    });
-    if (r.exceptionDetails) {
-      throw new Error(r.exceptionDetails.exception?.description ?? "eval failed");
-    }
-    return r.result.value;
-  }
-}
-
+let app;
 let wavServer;
 try {
   const seconds = Math.round(minutes * 60);
@@ -213,34 +151,17 @@ try {
     wavServer.on("error", reject);
   });
 
-  const existingArgs = process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS ?? "";
-  child = spawn(exe, [], {
-    cwd: root,
-    windowsHide: true,
-    env: {
-      ...process.env,
-      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:
-        `${existingArgs} --remote-debugging-port=${port}`.trim(),
-    },
-    stdio: ["ignore", "pipe", "pipe"],
+  app = spawnApp({
+    root,
+    portBase: 9060, // see the map in lib/app.mjs
+    profileName: "wv2-heap-soak-profile",
   });
-  const keep = (c) => (log = (log + c.toString()).slice(-20_000));
-  child.stdout.on("data", keep);
-  child.stderr.on("data", keep);
-
-  const target = await page();
-  const cdp = new Cdp(target.webSocketDebuggerUrl);
-  await cdp.open();
+  const cdp = await attach(app);
   deprioritize();
 
   // Wait for hooks, load the synthetic track from a file URL.
+  await waitHooks(cdp, ["__store", "__engine", "__loadFile"]);
   await cdp.eval(`(async () => {
-    const delay = ms => new Promise(r => setTimeout(r, ms));
-    const deadline = Date.now() + 60000;
-    while (!window.__store || !window.__engine || !window.__loadFile) {
-      if (Date.now() > deadline) throw new Error("hooks unavailable");
-      await delay(100);
-    }
     await window.__loadFile(${JSON.stringify(`http://127.0.0.1:${wavPort}/${path.basename(wav)}`)}, "soak.wav");
     window.__store.getState().pause?.();
     return true;
@@ -299,16 +220,7 @@ try {
     if (Date.now() > hardStop) throw new Error("soak hard-stop: export did not finish");
   }
 } finally {
-  // The CDP socket dies with the app process below.
-  child?.kill();
+  // The CDP socket dies with the app's own process tree.
+  killTree(app);
   wavServer?.close?.();
-  try {
-    execFileSync("powershell", [
-      "-NoProfile",
-      "-Command",
-      "Get-Process -Name beatform -ErrorAction SilentlyContinue | Stop-Process -Force",
-    ]);
-  } catch {
-    /* already gone */
-  }
 }

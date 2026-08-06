@@ -1,5 +1,7 @@
 name: CI
 
+# Gate set implemented here is DEFINED in GATES.md (§1, §2, §5) — change
+# gates there first, then here and in release.yml in the same commit.
 on:
   push:
     branches: [main]

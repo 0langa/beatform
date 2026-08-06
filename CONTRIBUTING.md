@@ -20,21 +20,28 @@ node scripts/build-lyrics-sidecar.mjs  # build the lyrics sidecar exe
 npm run tauri dev                      # full desktop shell (library/loopback/ProRes/lyrics need this)
 ```
 
-Gates that must pass before a PR (CI runs all of them):
+Gates that must pass before a PR (CI runs all of them; the canonical
+definition lives in **`GATES.md`** — if this list ever disagrees, GATES.md
+wins). Quoting it:
 
 ```
 npm run typecheck
 npm run lint
 npm run format:check
-npm test                        # vitest — DSP, schemas, golden traces
-(cd src-tauri && cargo test --workspace)
-(cd src-tauri && cargo clippy --workspace --all-targets -- -D warnings)
-(cd src-tauri && cargo fmt --check)
+npm test
+npm run build
 ```
 
-Always `--workspace` on the cargo commands: `src-tauri` is a non-virtual
-workspace root, so bare `cargo test` / `cargo clippy` silently skip the
-lyrics-sidecar member — a green run that never compiled its tests.
+```
+cargo fmt --all -- --check                              # from src-tauri/
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+Always `--workspace` (spelled `--all` for fmt) on the cargo commands:
+`src-tauri` is a non-virtual workspace root, so bare `cargo test` /
+`cargo clippy` / `cargo fmt` silently skip the lyrics-sidecar member — a
+green run that never compiled its tests.
 
 ## The two laws
 
