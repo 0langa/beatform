@@ -59,7 +59,7 @@ export function serializeTheme(
 function validMeta(v: unknown): ThemeMeta {
   const m = (typeof v === "object" && v !== null ? v : {}) as Partial<ThemeMeta>;
   if (typeof m.name !== "string" || m.name.trim().length === 0) {
-    throw new ThemeParseError("Template has no name");
+    throw new ThemeParseError("Theme has no name");
   }
   const str = (x: unknown): string | undefined =>
     typeof x === "string" && x.trim().length > 0 ? x : undefined;
@@ -94,28 +94,28 @@ export function parseTheme(json: string): { meta: ThemeMeta; document: ProjectDo
     throw new ThemeParseError("Not a valid JSON file");
   }
   if (typeof raw !== "object" || raw === null) {
-    throw new ThemeParseError("Not a template file");
+    throw new ThemeParseError("Not a theme file");
   }
   const file = raw as Partial<ThemeFile>;
   if (file.kind !== "bftheme") {
-    throw new ThemeParseError("Not a .bftheme template file");
+    throw new ThemeParseError("Not a .bftheme file");
   }
   if (typeof file.schemaVersion !== "number" || file.schemaVersion < 1) {
     throw new ThemeParseError("Missing schema version");
   }
   if (file.schemaVersion > THEME_VERSION) {
     throw new ThemeParseError(
-      "Template was saved by a newer app version; update the app to import it",
+      "Theme was saved by a newer app version; update the app to import it",
     );
   }
   if (
     typeof file.projectSchemaVersion === "number" &&
     file.projectSchemaVersion > PROJECT_VERSION
   ) {
-    throw new ThemeParseError("Template uses a newer document format; update the app to import it");
+    throw new ThemeParseError("Theme uses a newer document format; update the app to import it");
   }
   if (typeof file.document !== "object" || file.document === null) {
-    throw new ThemeParseError("Template has no document");
+    throw new ThemeParseError("Theme has no document");
   }
   return { meta: validMeta(file.meta), document: validateDocument(file.document) };
 }

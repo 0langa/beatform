@@ -1,6 +1,7 @@
 import { sanitizeSync, type SyncSettings } from "../audio/types";
 import type { ParamValues } from "../render/types";
 import { canonicalPresetId, presets } from "../render/presets";
+import { safeSetItem } from "./persistence";
 
 /**
  * User presets ("my looks"): a named snapshot of one visual mode's params
@@ -45,7 +46,7 @@ export function loadUserPresets(): UserPreset[] {
 }
 
 export function saveUserPresets(list: UserPreset[]): void {
-  localStorage.setItem(LS_KEY, JSON.stringify(list));
+  safeSetItem(LS_KEY, JSON.stringify(list));
 }
 
 export function newUserPresetId(): string {

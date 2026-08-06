@@ -20,7 +20,7 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // ONE history entry: Ctrl+Z restores the entire previous setup.
       ctx.record("theme");
       get().applyDocument(document);
-      ctx.flashNotice(`Template "${name}" applied`);
+      ctx.flashNotice(`Theme "${name}" applied`);
     },
 
     importThemeText(contents) {
@@ -32,8 +32,8 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         set({
           error:
             e instanceof ThemeParseError
-              ? `Could not import template: ${e.message}`
-              : `Could not import template: ${(e as Error).message}`,
+              ? `Could not import theme: ${e.message}`
+              : `Could not import theme: ${(e as Error).message}`,
         });
       }
     },
@@ -43,11 +43,11 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         const path = await saveTextFile(
           `${safeName(meta.name)}.bftheme`,
           serializeTheme(ctx.docOf(get()), meta, APP_VERSION),
-          [{ name: "Beatform template", extensions: ["bftheme"] }],
+          [{ name: "Beatform theme", extensions: ["bftheme"] }],
         );
-        if (path) ctx.flashNotice(`Template "${meta.name}" saved — share the file anywhere`);
+        if (path) ctx.flashNotice(`Theme "${meta.name}" saved — share the file anywhere`);
       } catch (e) {
-        set({ error: `Could not save template: ${(e as Error).message}` });
+        set({ error: `Could not save theme: ${(e as Error).message}` });
       }
     },
 

@@ -34,6 +34,7 @@ import {
 import { getEngine } from "../services";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
+import { shared } from "./shared";
 
 /** Free-space margin beyond the download itself before we ask instead of
  * just doing it — models land on the app-data volume (usually C:). */
@@ -134,6 +135,13 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         set({ error: "Load a track first — lyrics are generated from the loaded audio" });
         return;
       }
+      // Lyrics are per-track exactly like stems: `buf` is THIS track's audio,
+      // and the sidecar runs for minutes — a track loaded meanwhile must not
+      // receive the old track's lines (loadFile clears lyrics on purpose;
+      // landing these after that clear would re-fill it under the new track's
+      // name). Same guard as addStem: capture the generation with the buffer,
+      // compare before applying.
+      const gen = shared.trackLoadGen;
       if (s.lyrics && s.lyrics.length > 0) {
         // Generated lines land through the SAME store slot as imported ones;
         // never silently replace a file the user imported by hand.
@@ -217,6 +225,10 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
             },
           });
           lrc = await attempt(false);
+        }
+        if (gen !== shared.trackLoadGen) {
+          ctx.flashNotice("Track changed — generated lyrics discarded");
+          return;
         }
         const trackName = engine.state.trackName ?? "track";
         get().loadLyricsText(`${trackName.replace(/\.[^.]+$/, "")} (generated).lrc`, lrc);

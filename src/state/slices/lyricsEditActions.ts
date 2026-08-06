@@ -212,6 +212,11 @@ export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         return;
       }
       set({ lyricsRealign: { index: i } });
+      // Words are aligned against THIS track's audio (`buf` above). If a new
+      // track lands mid-run, the text check below could still pass — same
+      // text at the same index in freshly loaded lyrics — with timings that
+      // describe the old audio. Same guard as generateLyrics/addStem.
+      const gen = shared.trackLoadGen;
       try {
         const pcm = pcmFromAudioBuffer(buf);
         const s0 = Math.max(0, Math.floor(sliceStart * pcm.sampleRate));
@@ -229,6 +234,7 @@ export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           line.text,
           true, // sidecar auto-detects; its CPU fallback is internal
         );
+        if (gen !== shared.trackLoadGen) return;
         const now = get().lyrics;
         // The lines may have been edited while the sidecar ran; only apply
         // to the same line with the same text (applyRealignedWords also
