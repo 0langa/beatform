@@ -10,6 +10,7 @@ import {
   DEFAULT_POST,
 } from "../render/types";
 import { canonicalPresetId, knownPresetId, presets } from "../render/presets";
+import { NEBULA_SAT_AUTHORED } from "../render/presets/nebula";
 import { registerCustomPreset, validCustomPreset } from "../render/presets/custom";
 import type { PresetDef } from "../render/types";
 import { validLyricStyle, type LyricStyle } from "./lyrics";
@@ -88,9 +89,34 @@ import { validTimeline, type Timeline } from "./timeline";
  *        (validPresetId falls back to the default mode; validTimeline drops
  *        the scene). Per-preset map keys are merely preserved-unknown there,
  *        so they don't force the bump.
+ *
+ * v14 (=) the Kaleido Nebula advanced `saturation` changed SEMANTICS (RP-6):
+ *        raw 0..1 palette mix (default 0.75) -> the roster colour-tier
+ *        shape, a 0..2 whole-visual scaler with neutral 1. The shader
+ *        anchors the scaler on the old default (satT = value * 0.75), so
+ *        parseProject remaps every pre-v14 stored value by the exact inverse
+ *        (v / 0.75) at each site a document persists one — paramsByPreset,
+ *        nebula scene overrides, and nebula `saturation` mod-route amounts
+ *        (those scale by the param's RANGE, which doubled while the shader
+ *        slope shrank 0.75x, so amounts divide by 1.5) — and every old file
+ *        renders identically. CONDITIONAL like v12/v13: only a document that
+ *        actually CARRIES one of those values is stamped v14 — an older
+ *        reader would render them oversaturated (they sit past its 0..1
+ *        range) or over-modulated, a misread; a document without them is
+ *        portable both ways, because absent-means-default holds on both
+ *        sides and the two defaults render identically by construction.
+ *        Version-GATED in parseProject, unlike the v13 rename pre-pass
+ *        inside validateDocument: value semantics are invisible to
+ *        inspection (the same 1.0 is a v13 ceiling and a v14 neutral), so
+ *        only a reader that knows the file's schema can apply it. Recorded
+ *        honestly: sibling stores that validate WITHOUT their version
+ *        reaching this module — the localStorage last-session cache,
+ *        .bfpreset looks, and .bftheme documents (parseTheme holds a
+ *        projectSchemaVersion but does not thread it into validation) —
+ *        cannot ride this migration without plumbing of their own.
  */
 
-export const PROJECT_VERSION = 13;
+export const PROJECT_VERSION = 14;
 export const PROJECT_EXTENSION = "bfproj";
 
 /** Frame aspect: "free" fills the window; fixed ratios letterbox the stage. */
@@ -141,15 +167,23 @@ export interface ProjectFile {
 }
 
 export function serializeProject(document: ProjectDocument, appVersion: string): string {
-  // Write the OLDEST schema that can represent the document (see the v12/v13
-  // history notes): a shadertoy def forces v12; an ACTIVE reference to the
-  // renamed "particles" id (presetId or a scene) forces v13.
+  // Write the OLDEST schema that can represent the document (see the
+  // v12/v13/v14 history notes): a shadertoy def forces v12; an ACTIVE
+  // reference to the renamed "particles" id (presetId or a scene) forces
+  // v13; a stored nebula `saturation` value at any of its three sites
+  // forces v14 (an older reader would render exactly those wrong).
+  const needsV14 =
+    document.paramsByPreset.nebula?.saturation !== undefined ||
+    document.timeline.scenes.some(
+      (s) => s.presetId === "nebula" && s.params?.saturation !== undefined,
+    ) ||
+    (document.modsByPreset.nebula ?? []).some((r) => r.param === "saturation");
   const needsV13 =
     document.presetId === "particles" ||
     document.timeline.scenes.some((s) => s.presetId === "particles");
   const needsV12 = document.customDefs.some((d) => d.shadertoy);
   const file: ProjectFile = {
-    schemaVersion: needsV13 ? PROJECT_VERSION : needsV12 ? 12 : 11,
+    schemaVersion: needsV14 ? PROJECT_VERSION : needsV13 ? 13 : needsV12 ? 12 : 11,
     kind: "bfproj",
     appVersion,
     savedAt: new Date().toISOString(),
@@ -188,7 +222,10 @@ export function parseProject(json: string): ProjectDocument {
   if (typeof doc !== "object" || doc === null) {
     throw new ProjectParseError("Project has no document");
   }
-  return validateDocument(doc);
+  // v14 pre-pass, version-GATED here rather than inside validateDocument:
+  // the nebula saturation change is pure value semantics, so only the
+  // file's schema number can say whether a stored value needs remapping.
+  return validateDocument(file.schemaVersion < 14 ? migrateNebulaSaturationV14(doc) : doc);
 }
 
 /**
@@ -230,6 +267,86 @@ export function migrateTimelinePresetIds(v: unknown): unknown {
     return canon === scene.presetId ? s : { ...scene, presetId: canon };
   });
   return { ...t, scenes };
+}
+
+/** Loose object guard for the untrusted shapes the migrations walk. */
+function isRec(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * v14 pre-pass (RP-6): remap the Kaleido Nebula `saturation` values a
+ * pre-v14 file stores. The old param entered the shader raw
+ * (satT = value, 0..1, default 0.75); the new one is the colour-tier scaler
+ * the shader folds onto the old authored point (satT = value * 0.75, 0..2,
+ * neutral 1). Equal rendering therefore means oldValue = newValue * 0.75 —
+ * so stored values map by the exact inverse, v / NEBULA_SAT_AUTHORED: the
+ * old floor 0 stays 0, the old default 0.75 lands exactly on the new
+ * default 1, and the old ceiling 1 lands on 4/3, inside the new range.
+ * Deliberately NOT clamped: an out-of-range value in a hand-edited file
+ * rendered out of range before and keeps rendering identically after.
+ *
+ * Three sites, all keyed to the nebula mode explicitly (never the bare
+ * param name — sibling modes own a `saturation` of their own that always
+ * had scaler semantics):
+ *  - paramsByPreset.nebula.saturation — the headline;
+ *  - timeline scene overrides on scenes whose presetId is "nebula";
+ *  - modsByPreset.nebula routes targeting "saturation": a route's amount
+ *    scales by the param's RANGE (applyMods adds value*amount*(max-min)),
+ *    and the range doubled (1 -> 2) while the shader slope per param unit
+ *    shrank to 0.75x — net 1.5x deeper modulation — so amounts divide by
+ *    2 * NEBULA_SAT_AUTHORED = 1.5 to keep the depth users tuned. (The one
+ *    unavoidable edge: a route that used to pin the old ceiling now has
+ *    headroom up to the new 2, so pushes past the old clamp go brighter
+ *    instead of flat — inherent to extending the range at all.)
+ *
+ * Automation lanes are deliberately NOT touched: a lane targets a bare
+ * param key across whatever mode is active per scene, so the same
+ * "saturation" lane can drive nebula in one scene and a colour-tier mode in
+ * the next — no per-mode remap is well-defined there. That cross-mode
+ * ambiguity predates this migration.
+ *
+ * Runs ONLY for files whose schemaVersion < 14 — the CALLER gates it,
+ * unlike the version-independent rename pre-pass below, because a value
+ * carries no evidence of its own semantics.
+ */
+export function migrateNebulaSaturationV14(
+  doc: Partial<ProjectDocument>,
+): Partial<ProjectDocument> {
+  const out: Partial<ProjectDocument> = { ...doc };
+
+  const maps: unknown = doc.paramsByPreset;
+  if (isRec(maps) && isRec(maps.nebula) && typeof maps.nebula.saturation === "number") {
+    const migrated: unknown = {
+      ...maps,
+      nebula: { ...maps.nebula, saturation: maps.nebula.saturation / NEBULA_SAT_AUTHORED },
+    };
+    out.paramsByPreset = migrated as typeof doc.paramsByPreset;
+  }
+
+  const t: unknown = doc.timeline;
+  if (isRec(t) && Array.isArray(t.scenes)) {
+    const scenes = (t.scenes as unknown[]).map((s) => {
+      if (!isRec(s) || s.presetId !== "nebula") return s;
+      const p = s.params;
+      if (!isRec(p) || typeof p.saturation !== "number") return s;
+      return { ...s, params: { ...p, saturation: p.saturation / NEBULA_SAT_AUTHORED } };
+    });
+    const migrated: unknown = { ...t, scenes };
+    out.timeline = migrated as typeof doc.timeline;
+  }
+
+  const mods: unknown = doc.modsByPreset;
+  if (isRec(mods) && Array.isArray(mods.nebula)) {
+    const routes = (mods.nebula as unknown[]).map((r) => {
+      if (!isRec(r) || r.param !== "saturation" || typeof r.amount !== "number") return r;
+      return { ...r, amount: r.amount / (2 * NEBULA_SAT_AUTHORED) };
+    });
+    const migrated: unknown = { ...mods, nebula: routes };
+    out.modsByPreset = migrated as typeof doc.modsByPreset;
+  }
+
+  return out;
 }
 
 /**

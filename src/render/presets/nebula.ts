@@ -2,21 +2,44 @@ import type { PresetDef } from "../types";
 import { WGSL_PALETTE_PHASE } from "../wgslLib";
 
 /**
+ * The authored palette-mix point the RP-6 saturation scaler anchors to. The
+ * shader computes satT = P_saturation() * NEBULA_SAT_AUTHORED, so the neutral
+ * scaler value 1 reproduces the pre-v14 default (0.75) bit-exactly, and the
+ * schema-v14 migration (state/project.ts) divides stored pre-v14 values by
+ * this same constant. One constant, two consumers, imported — never restated.
+ */
+export const NEBULA_SAT_AUTHORED = 0.75;
+
+/**
  * Domain-warped fbm nebula with optional kaleidoscope fold. A cosine palette
  * keyed off filament density stays saturated (no drifting hsl hue), the
  * field is genuinely dark between filaments, and density peaks blow out to
  * a hot white core. Bass drives brightness, mids shift the palette phase,
  * treble adds sparkle grain; beats launch a ripple ring from the center.
+ *
+ * Depth wave (B0 batch 2): a second palette anchor (`duo`/`hue2`) splits the
+ * cloud into a core family and a rim family (emission-nebula looks a single
+ * ramp cannot reach), a parallax star field sits behind the clouds (`stars`),
+ * and a directional wind streams the churn along a compass dial
+ * (`windStrength`/`windAngle`). All three are absent at their defaults —
+ * gated branches, not multiplies-by-zero — and the RP-6 `saturation` remap
+ * (0..1 authored -> 0..2 whole-visual scaler, neutral 1) folds onto the old
+ * default so the factory frame is bit-identical.
  */
 export const nebula: PresetDef = {
   id: "nebula",
   name: "Kaleido Nebula",
   description:
     "Flowing cosmic filaments in a kaleidoscope — bass lights them up, beats send a ripple wave.",
+  // RP-6 note on every `saturation` below: values were re-authored from the
+  // old 0..1 scale onto the new 0..2 scaler as oldValue / 0.75, then snapped
+  // to the 0.02 step grid (styles must sit on the grid — presetStyles.test).
+  // Solar's 0.9 lands exactly (1.2); the rest sit within a third of a step
+  // of the exact remap, a sub-quantization chroma shift (< 0.0023).
   styles: [
     // Magenta Storm — the defaults — folded filaments with beat ripples.
     { id: "magenta", name: "Magenta Storm", values: {} },
-    // Stained Glass — 8-fold, max saturation and contrast: hard-edged coloured panes.
+    // Stained Glass — 8-fold, max-era saturation and contrast: hard-edged coloured panes.
     {
       id: "stainedGlass",
       name: "Stained Glass",
@@ -24,7 +47,7 @@ export const nebula: PresetDef = {
         kaleido: 8,
         contrast: 0.88,
         hueRange: 240,
-        saturation: 1,
+        saturation: 1.34,
         scale: 1.9,
         warp: 3.2,
         depth: 0.6,
@@ -37,7 +60,10 @@ export const nebula: PresetDef = {
         vignette: 0.4,
       },
     },
-    // Ink in Water — editorial. Unfolded, low contrast, near-grey, deep back layer — ink in water.
+    // Ink in Water — editorial. Unfolded, low contrast, near-grey, deep back
+    // layer. Depth-wave rework: a gentle downward wind so the ink SETTLES —
+    // the sinking motion the name always promised and the isotropic churn
+    // could not deliver.
     {
       id: "ink",
       name: "Ink in Water",
@@ -47,8 +73,10 @@ export const nebula: PresetDef = {
         scale: 1.8,
         warp: 2.2,
         flow: 0.05,
+        windStrength: 0.3,
+        windAngle: 180,
         contrast: 0.42,
-        saturation: 0.08,
+        saturation: 0.1,
         hueRange: 40,
         midHueShift: 20,
         depth: 0.9,
@@ -76,7 +104,7 @@ export const nebula: PresetDef = {
         sparkle: 0.95,
         sparkleScale: 22,
         sparkleSharp: 30,
-        saturation: 0.5,
+        saturation: 0.66,
         depth: 0.3,
         spin: 0.2,
         hotCore: 1,
@@ -106,7 +134,7 @@ export const nebula: PresetDef = {
         driveGlow: 0.2,
         hotCore: 0.75,
         spin: 1.8,
-        saturation: 0.9,
+        saturation: 1.2,
         depth: 0.5,
         vignette: 0.3,
       },
@@ -129,7 +157,7 @@ export const nebula: PresetDef = {
         sparkle: 0.4,
         sparkleScale: 14,
         hotCore: 0.6,
-        saturation: 0.8,
+        saturation: 1.06,
         beatRipple: 0.35,
         rippleWidth: 24,
         brightFloor: 0.26,
@@ -146,7 +174,7 @@ export const nebula: PresetDef = {
         hueRange: 300,
         midHueShift: 150,
         contrast: 0.28,
-        saturation: 0.94,
+        saturation: 1.26,
         scale: 1.6,
         warp: 2.9,
         flow: 0.2,
@@ -158,7 +186,9 @@ export const nebula: PresetDef = {
         vignette: 0.5,
       },
     },
-    // Deep Space — brightness floor near zero: rare bright filaments on real black.
+    // Deep Space — brightness floor near zero: rare bright filaments on real
+    // black. Depth-wave rework: the black now holds an actual star field —
+    // the one thing "deep space" was always missing.
     {
       id: "deepSpace",
       name: "Deep Space",
@@ -172,7 +202,8 @@ export const nebula: PresetDef = {
         brightFloor: 0.06,
         bassBright: 0.5,
         driveGlow: 0.16,
-        saturation: 0.68,
+        saturation: 0.9,
+        stars: 0.6,
         depth: 0.4,
         sparkle: 0.7,
         sparkleScale: 26,
@@ -182,6 +213,117 @@ export const nebula: PresetDef = {
         beatRipple: 0.3,
         rippleWidth: 30,
         vignette: 0.6,
+      },
+    },
+    // Emission Nebula — NEW (depth wave) — the two-tone flagship: magenta rim
+    // over teal filament cores (the Hubble-palette class of looks), unfolded,
+    // deep back layer and a modest star field behind the gaps. Anchors read
+    // off the cosine ramp, not the HSL wheel: 50 sits on magenta-pink, 170 on
+    // teal (the ramp runs red-magenta-blue-teal-green-gold across a turn).
+    {
+      id: "emission",
+      name: "Emission Nebula",
+      values: {
+        hue: 50,
+        hue2: 170,
+        duo: 0.9,
+        kaleido: 0,
+        scale: 2,
+        warp: 3.4,
+        contrast: 0.62,
+        depth: 0.84,
+        stars: 0.5,
+        brightFloor: 0.3,
+        bassBright: 0.56,
+        sparkle: 0.25,
+        hotCore: 0.9,
+        flow: 0.09,
+        hueRange: 70,
+        saturation: 1.2,
+        vignette: 0.45,
+      },
+    },
+    // Star Nursery — NEW (depth wave) — the starfield look: big slow dust
+    // billows in warm tones over a dense field, proto-star peaks blowing out.
+    {
+      id: "nursery",
+      name: "Star Nursery",
+      values: {
+        hue: 20,
+        hueRange: 60,
+        kaleido: 0,
+        scale: 1.4,
+        warp: 2.4,
+        contrast: 0.7,
+        brightFloor: 0.14,
+        depth: 0.9,
+        stars: 1,
+        flow: 0.05,
+        saturation: 0.8,
+        sparkle: 0.2,
+        hotCore: 1.2,
+        bassBright: 0.5,
+        beatRipple: 0.25,
+        vignette: 0.55,
+      },
+    },
+    // Stellar Wind — NEW (depth wave) — the windswept look: ember plasma
+    // streaming hard to the right, filaments stretched by full wind over a
+    // fast churn. 305 anchors amber-gold on the cosine ramp.
+    {
+      id: "stellarWind",
+      name: "Stellar Wind",
+      values: {
+        hue: 305,
+        hueRange: 80,
+        kaleido: 0,
+        windStrength: 1,
+        windAngle: 90,
+        flow: 0.3,
+        scale: 3,
+        warp: 3.6,
+        contrast: 0.6,
+        saturation: 1.1,
+        sparkle: 0.6,
+        sparkleScale: 18,
+        bassBright: 0.6,
+        driveGlow: 0.2,
+        hotCore: 0.8,
+        depth: 0.36,
+        beatRipple: 0.45,
+        rippleWarp: 0.12,
+        vignette: 0.3,
+      },
+    },
+    // Pinwheel Galaxy — NEW (depth wave) — every new axis at once, folded:
+    // a 5-fold with wind streaming through the wedges (spiral-arm pull),
+    // blue arms over a golden two-tone core (120 = blue, 305 = gold on the
+    // cosine ramp), stars filling the gaps.
+    {
+      id: "pinwheel",
+      name: "Pinwheel Galaxy",
+      values: {
+        hue: 120,
+        hue2: 305,
+        duo: 0.55,
+        kaleido: 5,
+        windStrength: 0.85,
+        windAngle: 90,
+        flow: 0.22,
+        spin: 0.4,
+        scale: 2.8,
+        warp: 3,
+        hueRange: 90,
+        midHueShift: 40,
+        saturation: 1.1,
+        stars: 0.7,
+        contrast: 0.6,
+        brightFloor: 0.24,
+        depth: 0.5,
+        hotCore: 0.9,
+        sparkle: 0.45,
+        beatRipple: 0.5,
+        vignette: 0.4,
       },
     },
   ],
@@ -289,6 +431,50 @@ export const nebula: PresetDef = {
       default: 0.6,
       hint: "A distortion ring expands from center on every beat",
     },
+    // ---- Depth wave: the new axes' strength knobs sit in the curated tier
+    // (aurora's moon/ground precedent); windAngle, the aiming companion,
+    // stays in advanced. All default to "absent".
+    {
+      key: "duo",
+      label: "Two-tone",
+      group: "color",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "Blend the dense filament cores toward the second hue — 0 keeps the whole cloud on one ramp",
+    },
+    {
+      key: "hue2",
+      label: "Second hue",
+      group: "color",
+      control: "hue",
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 300,
+      hint: "Core color once Two-tone is up — the thin rim keeps the base hue",
+    },
+    {
+      key: "windStrength",
+      label: "Wind",
+      group: "motion",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "Streams the clouds along the wind angle — 0 is the natural churn",
+    },
+    {
+      key: "stars",
+      label: "Stars",
+      group: "backdrop",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "Distant star field behind the clouds, drifting slower than they do — treble makes it glint",
+    },
   ],
   advanced: [
     {
@@ -373,14 +559,22 @@ export const nebula: PresetDef = {
       hint: "How much bass lights the filaments",
     },
     {
+      // RP-6 (schema v14): this key used to be a raw 0..1 palette mix with
+      // default 0.75. It is now the roster colour-tier shape — a whole-visual
+      // scaler, 0..2 with neutral 1 — like the four full-colour-controls
+      // modes. The shader folds the scaler onto the old authored point
+      // (satT = value * 0.75), so neutral 1 computes the exact pre-change
+      // default and the migration in state/project.ts maps every stored
+      // pre-v14 value by the inverse (v / 0.75). Key is permanent; only the
+      // range/default/semantics moved, with the migration carrying old files.
       key: "saturation",
       label: "Saturation",
       group: "color",
       min: 0,
-      max: 1,
+      max: 2,
       step: 0.02,
-      default: 0.75,
-      hint: "Color intensity — 0 = grayscale",
+      default: 1,
+      hint: "Whole-cloud color intensity — 1 as designed, 0 near-gray, above 1 turns electric",
     },
     {
       key: "sparkleScale",
@@ -462,8 +656,38 @@ export const nebula: PresetDef = {
       default: 0.7,
       hint: "How hard bright filament peaks blow out to white",
     },
+    {
+      key: "windAngle",
+      label: "Wind angle",
+      group: "motion",
+      control: "angle",
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 0,
+      hint: "Compass direction the wind blows toward — up-screen at 0, clockwise from there (needs Wind above 0)",
+    },
   ],
   wgsl: /* wgsl */ `
+// Two-colour palette family (depth wave). A second cosine ramp anchored at
+// Second hue takes over the DENSE filament cores while the thin rim keeps the
+// base hue — the teal-core/magenta-rim class of emission-nebula looks a
+// single ramp cannot reach (hue only ROTATES the ramp; it cannot split it).
+// The caller passes its already-computed palette coordinate, so the density
+// keying and the mid-driven phase push behave identically in both families,
+// and the second anchor is a plain phase shift of that coordinate — exactly
+// what P_hue() itself is. The core/rim split rides the SAME renormalized
+// density the contrast shaping uses, so the colour boundary sits where the
+// eye already reads "filament" vs "gap". Gated: at the default mix of 0 the
+// branch returns the caller's colour untouched — no blend arithmetic runs at
+// all — so every existing project renders bit-identically.
+fn duoPal(palIn: vec3f, t: f32, density: f32, chroma: f32) -> vec3f {
+  if (P_duo() < 0.001) { return palIn; }
+  let t2 = fract(t + (P_hue2() - P_hue()) / 360.0);
+  let pal2 = cosPalette(t2, vec3f(0.5), vec3f(chroma), vec3f(1.0), ${WGSL_PALETTE_PHASE});
+  return mix(palIn, pal2, P_duo() * smoothstep(0.25, 0.8, density));
+}
+
 fn preset(uv: vec2f) -> vec4f {
   var p = centered(uv);
 
@@ -492,7 +716,25 @@ fn preset(uv: vec2f) -> vec4f {
 
   let q = p * P_scale();
   let tFlow = u.time * P_flow();
-  let flowOff = vec2f(tFlow, -tFlow * 0.7);
+  var flowOff = vec2f(tFlow, -tFlow * 0.7);
+
+  // Directional wind (depth wave): a monotonic streaming term ON TOP of the
+  // isotropic churn, aimed by a compass dial (0 = up-screen, 90 = right —
+  // clockwise, in this y-down uv space). SUBTRACTED from the sample offset:
+  // fbm features appear where q + flowOff meets them, so pulling the window
+  // backwards streams the visible clouds toward the dial. Strength 0 — the
+  // default — never takes the branch, so the drift math reduces to exactly
+  // the shipped churn. Like aurora's Drift, the term is deliberately NOT
+  // folded into a bounded clock — a directional slide must never reverse —
+  // and at 0.15 units/s max it stays inside the f32 envelope the mode's own
+  // (equally unfolded) churn clock already rides. The depth layer and the
+  // star sheets read this same flowOff scaled down, so wind moves the whole
+  // scene with its parallax intact instead of sliding one sheet under the
+  // others.
+  if (P_windStrength() > 0.001) {
+    let wa = (P_windAngle() - 90.0) * TAU / 360.0;
+    flowOff -= vec2f(cos(wa), sin(wa)) * (u.time * P_windStrength() * 0.15);
+  }
 
   // Domain-warped fbm (IQ): fbm of a position displaced by fbm turns smooth
   // blobby noise into filament structure — the actual "fog" -> "nebula"
@@ -529,8 +771,21 @@ fn preset(uv: vec2f) -> vec4f {
   // at every step.
   let palT = fract(v * (P_hueRange() / 360.0) + P_hue() / 360.0
            + (P_midHueShift() / 360.0) * u.mid * 0.5);
-  let chroma = mix(0.06, 0.5, P_saturation());
-  let pal = cosPalette(palT, vec3f(0.5), vec3f(chroma), vec3f(1.0), ${WGSL_PALETTE_PHASE});
+  // RP-6: \`saturation\` is the roster colour-tier scaler now — 0..2, neutral
+  // 1 — not the raw 0..1 palette mix it shipped as. The shipped mix() formula
+  // stays and the scaler folds onto the OLD authored point (0.75, the
+  // previous default): at neutral the multiply is 1.0 * 0.75 = 0.75 exactly
+  // (IEEE), so mix() receives bit-identical arguments and the default frame
+  // cannot move. Stored pre-v14 values migrate by the inverse, v / 0.75
+  // (schema v14 in state/project.ts, which imports NEBULA_SAT_AUTHORED so
+  // the two constants cannot drift). Past the old ceiling (scaler > 4/3) the
+  // same mix extrapolates chroma beyond 0.5 into deliberately clipped,
+  // electric territory — the "2" end of the contract, reached only on
+  // purpose.
+  let chroma = mix(0.06, 0.5, P_saturation() * ${NEBULA_SAT_AUTHORED});
+  let pal = duoPal(
+    cosPalette(palT, vec3f(0.5), vec3f(chroma), vec3f(1.0), ${WGSL_PALETTE_PHASE}),
+    palT, density, chroma);
 
   // Genuinely dark field: near-black but hued, not grey, so filaments have
   // real darkness to glow against instead of sitting on a lit haze.
@@ -547,6 +802,43 @@ fn preset(uv: vec2f) -> vec4f {
   // still fall to the dark field.
   var col = bg + pal * vSoft * (0.35 + energyGain * 0.5) + pal * v * (0.5 + energyGain * 1.6);
 
+  // Star parallax layer (depth wave): a deterministic star field BEHIND the
+  // clouds. Two sheets on hashed grid cells — position, phase and brightness
+  // all derive from the cell index, never re-rolled per frame — drift with
+  // the SAME flow offset the clouds ride but at a small fraction of their
+  // screen rate, so the differential motion reads as genuine depth (and wind
+  // carries the sheets with the scene). Dense filaments occlude the stars —
+  // the see-through term — which is the other half of the cue: stars live in
+  // the GAPS. Density 0, the default, never executes the block, so existing
+  // projects are untouched.
+  if (P_stars() > 0.001) {
+    let seeThru = 1.0 - smoothstep(0.08, 0.6, density) * 0.92;
+    var starAcc = 0.0;
+    for (var si = 0; si < 2; si++) {
+      let fs = f32(si);
+      // Sheet 0: coarse grid, faster parallax (near); sheet 1: finer grid,
+      // slower (far) — the two sheets separate at ~3x in screen rate, both
+      // far below the clouds' own drift.
+      let sheetScale = 38.0 + fs * 26.0;
+      let gp = p * sheetScale + flowOff * ((0.5 - fs * 0.25) * 3.0) + vec2f(fs * 17.0, -fs * 9.0);
+      let cell = floor(gp);
+      let h = hash21(cell + fs * 0.618);
+      let thr = 1.0 - 0.045 * P_stars();
+      if (h > thr) {
+        let sp = vec2f(hash21(cell + 0.37), hash21(cell + 0.71)) * 0.6 + vec2f(0.2);
+        let star = smoothstep(0.16, 0.0, length(gp - cell - sp));
+        // Twinkle from track time + the cell's own hash; a star fades in
+        // from zero as the density threshold crosses its hash, so modulating
+        // Stars breathes the field instead of popping it.
+        let tw = 0.6 + 0.4 * sin(u.time * (0.8 + h * 5.0) + h * 40.0);
+        starAcc += star * ((h - thr) / 0.045) * tw * (0.55 + fs * 0.45);
+      }
+    }
+    // Cool-white tint; treble adds a gentle crackle over a steady baseline
+    // (the aurora starfield convention), so silence still shows a living sky.
+    col += vec3f(0.75, 0.85, 1.0) * starAcc * seeThru * (0.6 + u.treble * 0.5);
+  }
+
   // Depth: a second, larger-scale cloud layer drifting slower and offset,
   // sitting dim behind the main filaments so the nebula reads as a volume
   // with a front and a back rather than a single flat sheet. pow(.,2.2)
@@ -557,7 +849,11 @@ fn preset(uv: vec2f) -> vec4f {
     let backD = clamp((backRaw - 0.42) / 0.32, 0.0, 1.0);
     let backT = fract(pow(backD, 1.4) * (P_hueRange() / 360.0) + P_hue() / 360.0 + 0.12
              + (P_midHueShift() / 360.0) * u.mid * 0.3);
-    let backPal = cosPalette(backT, vec3f(0.5), vec3f(chroma), vec3f(1.0), ${WGSL_PALETTE_PHASE});
+    // The back layer routes through the same two-tone family (keyed on its
+    // OWN density) so a split cloud stays split in depth, not just up front.
+    let backPal = duoPal(
+      cosPalette(backT, vec3f(0.5), vec3f(chroma), vec3f(1.0), ${WGSL_PALETTE_PHASE}),
+      backT, backD, chroma);
     col += backPal * pow(backD, 2.2) * P_depth() * (0.22 + energyGain * 0.5);
   }
 

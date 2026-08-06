@@ -2052,23 +2052,47 @@ fn P_kaleido() -> f32 { return params[3u]; }
 fn P_contrast() -> f32 { return params[4u]; }
 fn P_sparkle() -> f32 { return params[5u]; }
 fn P_beatRipple() -> f32 { return params[6u]; }
-fn P_warp() -> f32 { return params[7u]; }
-fn P_angle() -> f32 { return params[8u]; }
-fn P_spin() -> f32 { return params[9u]; }
-fn P_depth() -> f32 { return params[10u]; }
-fn P_hueRange() -> f32 { return params[11u]; }
-fn P_midHueShift() -> f32 { return params[12u]; }
-fn P_brightFloor() -> f32 { return params[13u]; }
-fn P_bassBright() -> f32 { return params[14u]; }
-fn P_saturation() -> f32 { return params[15u]; }
-fn P_sparkleScale() -> f32 { return params[16u]; }
-fn P_sparkleSharp() -> f32 { return params[17u]; }
-fn P_rippleWidth() -> f32 { return params[18u]; }
-fn P_rippleWarp() -> f32 { return params[19u]; }
-fn P_beatBloom() -> f32 { return params[20u]; }
-fn P_driveGlow() -> f32 { return params[21u]; }
-fn P_vignette() -> f32 { return params[22u]; }
-fn P_hotCore() -> f32 { return params[23u]; }
+fn P_duo() -> f32 { return params[7u]; }
+fn P_hue2() -> f32 { return params[8u]; }
+fn P_windStrength() -> f32 { return params[9u]; }
+fn P_stars() -> f32 { return params[10u]; }
+fn P_warp() -> f32 { return params[11u]; }
+fn P_angle() -> f32 { return params[12u]; }
+fn P_spin() -> f32 { return params[13u]; }
+fn P_depth() -> f32 { return params[14u]; }
+fn P_hueRange() -> f32 { return params[15u]; }
+fn P_midHueShift() -> f32 { return params[16u]; }
+fn P_brightFloor() -> f32 { return params[17u]; }
+fn P_bassBright() -> f32 { return params[18u]; }
+fn P_saturation() -> f32 { return params[19u]; }
+fn P_sparkleScale() -> f32 { return params[20u]; }
+fn P_sparkleSharp() -> f32 { return params[21u]; }
+fn P_rippleWidth() -> f32 { return params[22u]; }
+fn P_rippleWarp() -> f32 { return params[23u]; }
+fn P_beatBloom() -> f32 { return params[24u]; }
+fn P_driveGlow() -> f32 { return params[25u]; }
+fn P_vignette() -> f32 { return params[26u]; }
+fn P_hotCore() -> f32 { return params[27u]; }
+fn P_windAngle() -> f32 { return params[28u]; }
+
+// Two-colour palette family (depth wave). A second cosine ramp anchored at
+// Second hue takes over the DENSE filament cores while the thin rim keeps the
+// base hue — the teal-core/magenta-rim class of emission-nebula looks a
+// single ramp cannot reach (hue only ROTATES the ramp; it cannot split it).
+// The caller passes its already-computed palette coordinate, so the density
+// keying and the mid-driven phase push behave identically in both families,
+// and the second anchor is a plain phase shift of that coordinate — exactly
+// what P_hue() itself is. The core/rim split rides the SAME renormalized
+// density the contrast shaping uses, so the colour boundary sits where the
+// eye already reads "filament" vs "gap". Gated: at the default mix of 0 the
+// branch returns the caller's colour untouched — no blend arithmetic runs at
+// all — so every existing project renders bit-identically.
+fn duoPal(palIn: vec3f, t: f32, density: f32, chroma: f32) -> vec3f {
+  if (P_duo() < 0.001) { return palIn; }
+  let t2 = fract(t + (P_hue2() - P_hue()) / 360.0);
+  let pal2 = cosPalette(t2, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  return mix(palIn, pal2, P_duo() * smoothstep(0.25, 0.8, density));
+}
 
 fn preset(uv: vec2f) -> vec4f {
   var p = centered(uv);
@@ -2098,7 +2122,25 @@ fn preset(uv: vec2f) -> vec4f {
 
   let q = p * P_scale();
   let tFlow = u.time * P_flow();
-  let flowOff = vec2f(tFlow, -tFlow * 0.7);
+  var flowOff = vec2f(tFlow, -tFlow * 0.7);
+
+  // Directional wind (depth wave): a monotonic streaming term ON TOP of the
+  // isotropic churn, aimed by a compass dial (0 = up-screen, 90 = right —
+  // clockwise, in this y-down uv space). SUBTRACTED from the sample offset:
+  // fbm features appear where q + flowOff meets them, so pulling the window
+  // backwards streams the visible clouds toward the dial. Strength 0 — the
+  // default — never takes the branch, so the drift math reduces to exactly
+  // the shipped churn. Like aurora's Drift, the term is deliberately NOT
+  // folded into a bounded clock — a directional slide must never reverse —
+  // and at 0.15 units/s max it stays inside the f32 envelope the mode's own
+  // (equally unfolded) churn clock already rides. The depth layer and the
+  // star sheets read this same flowOff scaled down, so wind moves the whole
+  // scene with its parallax intact instead of sliding one sheet under the
+  // others.
+  if (P_windStrength() > 0.001) {
+    let wa = (P_windAngle() - 90.0) * TAU / 360.0;
+    flowOff -= vec2f(cos(wa), sin(wa)) * (u.time * P_windStrength() * 0.15);
+  }
 
   // Domain-warped fbm (IQ): fbm of a position displaced by fbm turns smooth
   // blobby noise into filament structure — the actual "fog" -> "nebula"
@@ -2135,8 +2177,21 @@ fn preset(uv: vec2f) -> vec4f {
   // at every step.
   let palT = fract(v * (P_hueRange() / 360.0) + P_hue() / 360.0
            + (P_midHueShift() / 360.0) * u.mid * 0.5);
-  let chroma = mix(0.06, 0.5, P_saturation());
-  let pal = cosPalette(palT, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  // RP-6: \`saturation\` is the roster colour-tier scaler now — 0..2, neutral
+  // 1 — not the raw 0..1 palette mix it shipped as. The shipped mix() formula
+  // stays and the scaler folds onto the OLD authored point (0.75, the
+  // previous default): at neutral the multiply is 1.0 * 0.75 = 0.75 exactly
+  // (IEEE), so mix() receives bit-identical arguments and the default frame
+  // cannot move. Stored pre-v14 values migrate by the inverse, v / 0.75
+  // (schema v14 in state/project.ts, which imports NEBULA_SAT_AUTHORED so
+  // the two constants cannot drift). Past the old ceiling (scaler > 4/3) the
+  // same mix extrapolates chroma beyond 0.5 into deliberately clipped,
+  // electric territory — the "2" end of the contract, reached only on
+  // purpose.
+  let chroma = mix(0.06, 0.5, P_saturation() * 0.75);
+  let pal = duoPal(
+    cosPalette(palT, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67)),
+    palT, density, chroma);
 
   // Genuinely dark field: near-black but hued, not grey, so filaments have
   // real darkness to glow against instead of sitting on a lit haze.
@@ -2153,6 +2208,43 @@ fn preset(uv: vec2f) -> vec4f {
   // still fall to the dark field.
   var col = bg + pal * vSoft * (0.35 + energyGain * 0.5) + pal * v * (0.5 + energyGain * 1.6);
 
+  // Star parallax layer (depth wave): a deterministic star field BEHIND the
+  // clouds. Two sheets on hashed grid cells — position, phase and brightness
+  // all derive from the cell index, never re-rolled per frame — drift with
+  // the SAME flow offset the clouds ride but at a small fraction of their
+  // screen rate, so the differential motion reads as genuine depth (and wind
+  // carries the sheets with the scene). Dense filaments occlude the stars —
+  // the see-through term — which is the other half of the cue: stars live in
+  // the GAPS. Density 0, the default, never executes the block, so existing
+  // projects are untouched.
+  if (P_stars() > 0.001) {
+    let seeThru = 1.0 - smoothstep(0.08, 0.6, density) * 0.92;
+    var starAcc = 0.0;
+    for (var si = 0; si < 2; si++) {
+      let fs = f32(si);
+      // Sheet 0: coarse grid, faster parallax (near); sheet 1: finer grid,
+      // slower (far) — the two sheets separate at ~3x in screen rate, both
+      // far below the clouds' own drift.
+      let sheetScale = 38.0 + fs * 26.0;
+      let gp = p * sheetScale + flowOff * ((0.5 - fs * 0.25) * 3.0) + vec2f(fs * 17.0, -fs * 9.0);
+      let cell = floor(gp);
+      let h = hash21(cell + fs * 0.618);
+      let thr = 1.0 - 0.045 * P_stars();
+      if (h > thr) {
+        let sp = vec2f(hash21(cell + 0.37), hash21(cell + 0.71)) * 0.6 + vec2f(0.2);
+        let star = smoothstep(0.16, 0.0, length(gp - cell - sp));
+        // Twinkle from track time + the cell's own hash; a star fades in
+        // from zero as the density threshold crosses its hash, so modulating
+        // Stars breathes the field instead of popping it.
+        let tw = 0.6 + 0.4 * sin(u.time * (0.8 + h * 5.0) + h * 40.0);
+        starAcc += star * ((h - thr) / 0.045) * tw * (0.55 + fs * 0.45);
+      }
+    }
+    // Cool-white tint; treble adds a gentle crackle over a steady baseline
+    // (the aurora starfield convention), so silence still shows a living sky.
+    col += vec3f(0.75, 0.85, 1.0) * starAcc * seeThru * (0.6 + u.treble * 0.5);
+  }
+
   // Depth: a second, larger-scale cloud layer drifting slower and offset,
   // sitting dim behind the main filaments so the nebula reads as a volume
   // with a front and a back rather than a single flat sheet. pow(.,2.2)
@@ -2163,7 +2255,11 @@ fn preset(uv: vec2f) -> vec4f {
     let backD = clamp((backRaw - 0.42) / 0.32, 0.0, 1.0);
     let backT = fract(pow(backD, 1.4) * (P_hueRange() / 360.0) + P_hue() / 360.0 + 0.12
              + (P_midHueShift() / 360.0) * u.mid * 0.3);
-    let backPal = cosPalette(backT, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+    // The back layer routes through the same two-tone family (keyed on its
+    // OWN density) so a split cloud stays split in depth, not just up front.
+    let backPal = duoPal(
+      cosPalette(backT, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67)),
+      backT, backD, chroma);
     col += backPal * pow(backD, 2.2) * P_depth() * (0.22 + energyGain * 0.5);
   }
 
@@ -2235,6 +2331,22 @@ exports[`shader golden baseline > nebula: param ABI (key + default, in order) is
     "key": "beatRipple",
   },
   {
+    "default": 0,
+    "key": "duo",
+  },
+  {
+    "default": 300,
+    "key": "hue2",
+  },
+  {
+    "default": 0,
+    "key": "windStrength",
+  },
+  {
+    "default": 0,
+    "key": "stars",
+  },
+  {
     "default": 1.8,
     "key": "warp",
   },
@@ -2267,7 +2379,7 @@ exports[`shader golden baseline > nebula: param ABI (key + default, in order) is
     "key": "bassBright",
   },
   {
-    "default": 0.75,
+    "default": 1,
     "key": "saturation",
   },
   {
@@ -2301,6 +2413,10 @@ exports[`shader golden baseline > nebula: param ABI (key + default, in order) is
   {
     "default": 0.7,
     "key": "hotCore",
+  },
+  {
+    "default": 0,
+    "key": "windAngle",
   },
 ]
 `;
