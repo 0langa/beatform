@@ -222,10 +222,18 @@ was the canary.
       platform → render), each wave gated + released.
 - [ ] E3 Register the RP-4 determinism question as its own
       investigate-and-close item (measure, fix or document).
-- [ ] E4 ALIGN-002 reopened (2026-08-06): uninstall-registry
-      `DisplayVersion` NEVER updates (stuck at `2.39.0` through five
-      updates, binary at `2.72.0`) — diagnose the NSIS updater's
-      registry write path and fix so Windows Settings shows the truth.
+- [x] E4 ALIGN-002 — **healed + verified 2026-08-06.** Diagnosis: the
+      tauri-cli 2.11.4 NSIS template writes `DisplayVersion`
+      UNCONDITIONALLY in `Section Install` (checked against the actual
+      template source), and running the released 2.72.0 setup with the
+      updater's exact invocation (`/P /UPDATE`) on the owner machine
+      rewrote the key `2.39.0 → 2.72.0`. Current pipeline is correct;
+      the stuck value was debt from an older installer generation
+      (root cause of the ORIGINAL non-writes unprovable — those
+      installers are gone). Residual probe: after the next real in-app
+      update, the release ritual's registry check expects the EXACT new
+      version (the "one-behind is fine" note is retired). If it reads
+      stale again → escalate to a VM update-chain reproduction.
 
 ### Track F — Test & release infrastructure (NEW, from the audit)
 
@@ -293,12 +301,12 @@ the shipped build. Full record: ARCHIVE at the bottom of this file.
 
 ### ALIGN-002 — Windows uninstall registry stuck at 2.39.0
 
-**Status:** REOPENED 2026-08-06 — the "writes one-behind" theory is
-DISPROVEN: HKCU `DisplayVersion` still reads `2.39.0` after five
-successful auto-updates (binary verified at `2.72.0` the same day). The
-NSIS updater apparently never rewrites the uninstall entry on update.
-Windows Settings shows users a wrong version — likely what the owner
-just noticed. Tracked in Track E (E1 shortlist addendum). Original
+**Status:** CLOSED 2026-08-06 (was reopened same day) — key was stuck at
+`2.39.0` through five updates; running the released 2.72.0 setup with
+the updater's exact invocation (`/P /UPDATE`) rewrote it to `2.72.0`,
+and the current NSIS template provably writes unconditionally. Healed;
+ritual registry check now expects the EXACT version after every future
+update (one-behind note retired). Full detail: Track E → E4. Original
 record: ARCHIVE at the bottom of this file.
 
 ### DOC-001 — Public metadata and planning truth
