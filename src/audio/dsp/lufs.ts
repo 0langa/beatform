@@ -145,8 +145,19 @@ export class LoudnessMeter {
  * Integrated loudness (LUFS) of a whole track per BS.1770-4 gating:
  * 400 ms blocks with 75% overlap, absolute gate at -70 LUFS, then relative
  * gate 10 LU below the absolute-gated mean.
+ *
+ * `heartbeat` (optional) is invoked every 10 s of AUDIO processed — a pure
+ * liveness observer for callers measuring very long tracks in one synchronous
+ * call (the export worker's silence watchdog would otherwise read a legitimate
+ * 2 h measurement as a dead worker, AX-3). It fires on a fixed sample grid and
+ * touches nothing: filter state, block boundaries and the returned value are
+ * bit-identical with or without it.
  */
-export function integratedLufs(channels: Float32Array[], sampleRate: number): number {
+export function integratedLufs(
+  channels: Float32Array[],
+  sampleRate: number,
+  heartbeat?: () => void,
+): number {
   const length = channels[0]?.length ?? 0;
   if (length === 0) return LUFS_FLOOR;
   const [shelfC, hpC] = kWeighting(sampleRate);
@@ -154,6 +165,8 @@ export function integratedLufs(channels: Float32Array[], sampleRate: number): nu
 
   const block = Math.round(sampleRate * 0.4);
   const hop = Math.round(sampleRate * 0.1);
+  const heartbeatEvery = sampleRate * 10;
+  let nextBeat = heartbeatEvery;
   // One block-long ring of channel-summed squared K-weighted samples. Filtering
   // streams sample-by-sample rather than materialising a weighted copy of each
   // channel: a 2 h stereo track would be ~2.8 GB of intermediate buffers, which
@@ -161,6 +174,10 @@ export function integratedLufs(channels: Float32Array[], sampleRate: number): nu
   const ring = new Float64Array(block);
   const blockPowers: number[] = [];
   for (let i = 0; i < length; i++) {
+    if (heartbeat && i >= nextBeat) {
+      heartbeat();
+      nextBeat += heartbeatEvery;
+    }
     let z = 0;
     for (let ch = 0; ch < channels.length; ch++) {
       const [shelf, hp] = filters[ch];

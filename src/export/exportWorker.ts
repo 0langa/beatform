@@ -13,6 +13,7 @@ import { runExportJob, type ExportJob } from "./exportCore";
  *  in:  { type: "frameAck" }                — png mode: main thread wrote a frame
  *  in:  { type: "rawFrameAck" }             — deep mode: main thread wrote a raw frame
  *  in:  { type: "chunkAck" }                — stream mode: main thread wrote a chunk
+ *  out: { type: "heartbeat" }               — setup-phase liveness ping (AX-3)
  *  out: { type: "progress", done, total }
  *  out: { type: "chunk", data, position }   — stream mode file chunks
  *  out: { type: "frame", data, index }      — png mode: one encoded PNG/frame
@@ -76,6 +77,12 @@ self.onmessage = (e: MessageEvent<InMessage>) => {
     return;
   }
   if (msg.type === "start") {
+    // The main-thread watchdog counts ANY message as liveness. Post one the
+    // moment the job arrives — before setup (loudness measurement, analyzer
+    // mixdowns, asset decodes) goes message-silent for what can be tens of
+    // seconds on a long track — then relay the core's per-stage pings via
+    // onHeartbeat below (AX-3).
+    self.postMessage({ type: "heartbeat" });
     void run(msg.job);
   }
 };
@@ -86,6 +93,12 @@ async function run(job: ExportJob): Promise<void> {
       signal: controller.signal,
       onProgress: (done, total) => {
         self.postMessage({ type: "progress", done, total });
+      },
+      // Setup-phase liveness (AX-3): the core pings between setup stages and
+      // from inside the chunked loudness measurement; each becomes a tiny
+      // message so the watchdog never mistakes a long setup for a dead worker.
+      onHeartbeat: () => {
+        self.postMessage({ type: "heartbeat" });
       },
       onChunk: (data, position) => {
         // Copy out of the muxer's internal chunk buffer before transferring

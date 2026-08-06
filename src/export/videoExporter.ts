@@ -472,6 +472,15 @@ async function runInline(
  * runs because nothing ever causes the promise to settle. Generous on
  * purpose: `progress` alone fires every 10 frames (exportCore.ts), and a
  * slow 4K/ProRes frame is still nowhere near this on any real machine.
+ *
+ * The silent SETUP phase is covered too (AX-3): before the first progress
+ * message the worker performs the whole-track loudness measurement, two
+ * analyzer mixdowns and asset decodes — legitimately message-free for longer
+ * than this window on a long track, which used to get a healthy export killed
+ * here and re-run inline on the main thread. The worker now posts `heartbeat`
+ * messages on job receipt, between setup stages, and from inside the chunked
+ * loudness loop, so setup silence never accumulates a full window while a
+ * genuinely dead worker still goes silent and trips it.
  */
 const WORKER_WATCHDOG_MS = 30_000;
 
@@ -534,6 +543,7 @@ function runInWorker(
     };
     worker.onmessage = (
       e: MessageEvent<
+        | { type: "heartbeat" }
         | { type: "progress"; done: number; total: number }
         | { type: "chunk"; data: Uint8Array; position: number }
         | { type: "frame"; data: Uint8Array; index: number }
@@ -545,6 +555,12 @@ function runInWorker(
       lastMessageAt = Date.now();
       const msg = e.data;
       switch (msg.type) {
+        case "heartbeat":
+          // Setup-phase liveness ping (AX-3). `lastMessageAt` above already
+          // reset the silence watchdog — deliberately NOT `wroteAnything`:
+          // a worker that only ever heartbeat must still be safe to retry
+          // inline. Nothing to forward.
+          break;
         case "progress":
           o.onProgress?.(msg.done, msg.total);
           break;

@@ -143,6 +143,7 @@ describe("exportVideo abort handling", () => {
  */
 describe("exportVideo worker-death handling", () => {
   type FakeMessage =
+    | { type: "heartbeat" }
     | { type: "progress"; done: number; total: number }
     | { type: "chunk"; data: Uint8Array; position: number }
     | { type: "frame"; data: Uint8Array; index: number }
@@ -226,6 +227,37 @@ describe("exportVideo worker-death handling", () => {
     expect(settled).toBe(true);
     await expect(promise).rejects.toThrow(/stopped responding/);
     expect(instance.terminate).toHaveBeenCalled();
+  });
+
+  it("setup-phase heartbeats keep a slow-setup worker alive past the watchdog (AX-3)", async () => {
+    // Long-track setup (whole-track loudness measure, analyzer mixdowns,
+    // asset decodes) sends no progress/chunk/frame for well over the 30 s
+    // window. The worker now pings `heartbeat` through that phase; each ping
+    // must reset the silence watchdog WITHOUT counting as a write (a worker
+    // that only ever heartbeat is still safe to fall back inline).
+    realWorker = (globalThis as { Worker?: typeof Worker }).Worker;
+    (globalThis as { Worker: unknown }).Worker = FakeWorker;
+    vi.useFakeTimers();
+
+    const promise = exportVideo(fakeAudioBuffer(), { ...baseOptions });
+    let failure: Error | null = null;
+    void promise.catch((e: Error) => (failure = e));
+    await vi.advanceTimersByTimeAsync(0);
+    const instance = FakeWorker.instances[0];
+    expect(instance).toBeDefined();
+
+    // 150 s of "setup": nothing but heartbeats, each inside the 30 s window.
+    for (let i = 0; i < 10; i++) {
+      instance.onmessage?.({ data: { type: "heartbeat" } });
+      await vi.advanceTimersByTimeAsync(15_000);
+    }
+    expect(failure).toBeNull(); // never killed while heartbeats flow
+
+    // Setup ends; the job completes normally.
+    instance.onmessage?.({
+      data: { type: "done", result: { bytes: 4, seconds: 1, audioCodec: "aac" } },
+    });
+    await expect(promise).resolves.toMatchObject({ bytes: 4 });
   });
 
   it("rejects on onmessageerror instead of hanging", async () => {

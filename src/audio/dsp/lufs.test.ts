@@ -81,4 +81,16 @@ describe("BS.1770 loudness", () => {
     const b = integratedLufs([sine(440, 2, 0.6)], SR);
     expect(a).toBe(b);
   });
+
+  it("heartbeat fires every 10 s of audio and cannot change the measurement (AX-3)", () => {
+    // The callback exists so the export worker is not message-silent for a
+    // whole-track measurement (its watchdog reads silence as a dead worker).
+    // It must be a pure observer: bit-identical result with or without it.
+    const tone = sine(440, 25, 0.6);
+    const plain = integratedLufs([tone], SR);
+    let beats = 0;
+    const observed = integratedLufs([tone], SR, () => beats++);
+    expect(observed).toBe(plain);
+    expect(beats).toBe(2); // 25 s of audio -> pings at 10 s and 20 s
+  });
 });

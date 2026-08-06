@@ -211,6 +211,18 @@ export interface ExportCoreResult {
 
 export interface ExportCoreHooks {
   onProgress?: (framesDone: number, framesTotal: number) => void;
+  /**
+   * Setup-phase liveness pings (AX-3). Everything before the first onProgress
+   * — codec probes, renderer creation, asset decodes, the whole-track
+   * loudness measurement, the analyzer mixdowns — can run for tens of seconds
+   * on a long track without a single message leaving the worker, and the
+   * exporter's silence watchdog read that as a dead worker and re-ran the job
+   * inline on the main thread. The worker maps these to `heartbeat` posts so
+   * the watchdog can tell "busy setting up" from "dead"; the inline path
+   * leaves it unset. Carries no data, never reaches the UI, and (like every
+   * hook here) has zero effect on rendered output.
+   */
+  onHeartbeat?: () => void;
   /** "stream" mode: sequential-position file chunks (fragmented MP4). */
   /** Stream-mode sink. MAY return a promise; the core awaits it, so a writer
    * that reports completion applies real backpressure to the encoders instead
@@ -487,6 +499,10 @@ export async function runExportJob(
     await output.start();
   }
 
+  // Setup heartbeats (AX-3): one after each stage that can be slow, so the
+  // worker is never message-silent for longer than a single stage.
+  hooks.onHeartbeat?.();
+
   const canvas = new OffscreenCanvas(job.width, job.height);
   // Loop mode holds the first K frames to blend into the last K (see below)
   const headFrames: ImageBitmap[] = [];
@@ -585,6 +601,9 @@ export async function runExportJob(
         videoBg = null;
       }
     }
+    // Renderer + cover/background assets are in — the decodes above are the
+    // slowest async stages of setup (a video bg can be a ~200 MB asset).
+    hooks.onHeartbeat?.();
     renderer.resize(job.width, job.height, 1);
 
     // Loop mode: crossfade the tail into the head. Denominator is N+1 so the
@@ -613,7 +632,16 @@ export async function runExportJob(
     let normGainDb = 0;
     let normInputLufs = 0;
     if (audioSource && job.loudness) {
-      normInputLufs = integratedLufs(pcm.channels.slice(0, channels), sampleRate);
+      // The single longest synchronous setup stage — a 2 h track is two
+      // biquads over ~700 M samples, tens of seconds on a slow CPU. The
+      // heartbeat fires every 10 s of audio measured, so the worker is never
+      // silent for the whole measurement (AX-3). Liveness only: the callback
+      // observes and cannot change the measured value.
+      normInputLufs = integratedLufs(
+        pcm.channels.slice(0, channels),
+        sampleRate,
+        hooks.onHeartbeat,
+      );
       normGainDb = normalizationGainDb(normInputLufs, job.loudness.targetLufs);
       limiter = new TruePeakLimiter(
         sampleRate,
@@ -703,14 +731,39 @@ export async function runExportJob(
       modsByPreset: job.modsByPreset ?? {},
     };
     const analyzer = new OfflineAnalyzer(pcm, job.fps, 96, job.sync, job.beatGrid ?? null);
+    // Analyzer construction mixes the whole track down to mono and primes the
+    // pipeline — seconds each on a long track, silently (AX-3).
+    hooks.onHeartbeat?.();
     // Feedback state has its own canonical 60 Hz analysis walk. Output fps is
     // presentation cadence only: 24/30 fps exports consume multiple state
     // ticks before a frame, while 90/120/144 fps insert presentation-only
     // frames between ticks. Separate analyser is required because a low-fps
     // frame latches multiple onset ticks into one feature object; replaying
     // that aggregate for history would stamp hits at wrong times.
-    const feedbackAnalyzer = new OfflineAnalyzer(pcm, 60, 96, job.sync, job.beatGrid ?? null);
-    const feedbackClock = new FixedFeedbackClock();
+    //
+    // Gated on whether feedback can render at all (AX-2): the walk's only
+    // consumer is the advance-only render below, which fires solely for
+    // presets that call feedbackSample() — yet the analyzer (a second
+    // full-track mono mixdown, ~1.4 GB on a 2 h track) and its 60 Hz DSP walk
+    // used to run unconditionally, doubling every export's analysis cost. The
+    // presets a job can ever render are the base preset plus the timeline
+    // scenes' presets (resolveActiveFrame draws from nothing else, and
+    // prevScene is always one of the scenes), so scanning those with the same
+    // presetUsesFeedback + presetById the walk itself uses is exact. When
+    // none uses feedback, skipping analyzer, clock and walk is
+    // output-identical by construction: the walk's setPreset/setBackground/
+    // video-frame uploads are all re-issued at frame time below, and its
+    // render call never ran.
+    const anyPresetUsesFeedback =
+      presetUsesFeedback(presetById(frameInput.basePresetId)) ||
+      (frameInput.timeline.enabled &&
+        frameInput.timeline.scenes.some((s) => presetUsesFeedback(presetById(s.presetId))));
+    const feedbackAnalyzer = anyPresetUsesFeedback
+      ? new OfflineAnalyzer(pcm, 60, 96, job.sync, job.beatGrid ?? null)
+      : null;
+    const feedbackClock = anyPresetUsesFeedback ? new FixedFeedbackClock() : null;
+    // Setup is complete; the frame loop's own progress messages take over.
+    hooks.onHeartbeat?.();
     const total = analyzer.frameCount;
     // Loop mode: keep the first K rendered frames; blend them into the last K
     const xfadeFrames = job.loopCrossfadeSec
@@ -726,38 +779,41 @@ export async function runExportJob(
       const t = n / job.fps;
       // Advance texture-feedback state independently from output cadence.
       // These calls never touch swapchain/post/encoder; renderer returns
-      // immediately for presets that do not use feedback.
-      for (const tickTime of feedbackClock.drainThrough(t)) {
-        const tickFeatures = feedbackAnalyzer.nextFrameFeatures();
-        const tickFrame = resolveActiveFrame(frameInput, tickTime);
-        const tickPreset = presetById(tickFrame.presetId);
-        if (tickFrame.presetId !== currentPresetId) {
-          renderer.setPreset(tickPreset);
-          currentPresetId = tickFrame.presetId;
-        }
-        const tickVideoFailed = tickFrame.bg.mode === BG_VIDEO && !videoBg;
-        renderer.setBackground(
-          (bgImageFailed && tickFrame.bg.mode === BG_IMAGE) || tickVideoFailed
-            ? { ...tickFrame.bg, mode: 0 }
-            : tickFrame.bg,
-        );
-        if (videoBg && tickFrame.bg.mode === BG_VIDEO) {
-          const vi = videoBgFrameIndex(
-            videoBg.frames.length,
-            videoBg.fps,
-            tickTime + (job.bgVideo?.timeOffset ?? 0),
+      // immediately for presets that do not use feedback. Skipped entirely
+      // when no preset in the job uses feedback (AX-2, gate above).
+      if (feedbackAnalyzer && feedbackClock) {
+        for (const tickTime of feedbackClock.drainThrough(t)) {
+          const tickFeatures = feedbackAnalyzer.nextFrameFeatures();
+          const tickFrame = resolveActiveFrame(frameInput, tickTime);
+          const tickPreset = presetById(tickFrame.presetId);
+          if (tickFrame.presetId !== currentPresetId) {
+            renderer.setPreset(tickPreset);
+            currentPresetId = tickFrame.presetId;
+          }
+          const tickVideoFailed = tickFrame.bg.mode === BG_VIDEO && !videoBg;
+          renderer.setBackground(
+            (bgImageFailed && tickFrame.bg.mode === BG_IMAGE) || tickVideoFailed
+              ? { ...tickFrame.bg, mode: 0 }
+              : tickFrame.bg,
           );
-          renderer.updateBackgroundVideoFrame(videoBg.frames[vi]);
-        }
-        if (presetUsesFeedback(tickPreset)) {
-          const tickStems = job.stems ? stemValuesAt(job.stems, tickTime) : undefined;
-          renderer.render(
-            tickFeatures,
-            tickTime,
-            applyMods(tickPreset, tickFrame.params, tickFrame.mods, tickFeatures, tickStems),
-            undefined,
-            { feedback: "advance-only" },
-          );
+          if (videoBg && tickFrame.bg.mode === BG_VIDEO) {
+            const vi = videoBgFrameIndex(
+              videoBg.frames.length,
+              videoBg.fps,
+              tickTime + (job.bgVideo?.timeOffset ?? 0),
+            );
+            renderer.updateBackgroundVideoFrame(videoBg.frames[vi]);
+          }
+          if (presetUsesFeedback(tickPreset)) {
+            const tickStems = job.stems ? stemValuesAt(job.stems, tickTime) : undefined;
+            renderer.render(
+              tickFeatures,
+              tickTime,
+              applyMods(tickPreset, tickFrame.params, tickFrame.mods, tickFeatures, tickStems),
+              undefined,
+              { feedback: "advance-only" },
+            );
+          }
         }
       }
 
