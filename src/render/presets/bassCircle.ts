@@ -10,6 +10,12 @@ import { WGSL_COLOR_CONTROLS } from "../wgslLib";
  * Fragment v1: particles are an ambient hash-grid bokeh field (each wanders +
  * twinkles independently). Obeys the global Motion masters (Rotation drives the
  * ring spin, Pulse the beat pump).
+ *
+ * Depth wave (Track B batch 2): three opt-in features — a segmented ring
+ * (stepped spectrum cells with notch gaps), beat-linked bokeh size, and an
+ * authored core fill (gradient / waveform ring) for tracks without cover
+ * art — plus Ring spin promoted to the curated tier. Every feature gate
+ * defaults to the pre-wave path, so factory defaults render bit-identically.
  */
 export const bassCircle: PresetDef = {
   id: "bass-circle",
@@ -179,6 +185,100 @@ export const bassCircle: PresetDef = {
         vignette: 0.4,
       },
     },
+    // Meter — the notched-segment ring: 16 stepped cells per sweep, chunky
+    // gaps, VU green — reads as an instrument, pumping hard on the grid.
+    {
+      id: "meter",
+      name: "Meter",
+      values: {
+        hue: 130,
+        hueSpread: 40,
+        segments: 16,
+        segGap: 0.3,
+        radius: 0.16,
+        barLen: 0.26,
+        gap: 0.03,
+        barGlow: 0.3,
+        rimBright: 0.9,
+        particles: 0.4,
+        partDensity: 10,
+        partFill: 0.3,
+        pump: 0.22,
+        beatPump: 0.2,
+        vignette: 0.4,
+      },
+    },
+    // Fireflies — the beat-linked bokeh look: few big amber discs drifting
+    // slowly, swelling and flaring on every beat; the ring is a quiet hairline.
+    {
+      id: "fireflies",
+      name: "Fireflies",
+      values: {
+        hue: 55,
+        hueSpread: 25,
+        particles: 1.3,
+        partDensity: 4.5,
+        partFill: 0.35,
+        partFloat: 0.3,
+        partBeat: 0.85,
+        beatBurst: 1.4,
+        radius: 0.14,
+        barLen: 0.1,
+        barGlow: 0.2,
+        rimBright: 0.6,
+        pump: 0.12,
+        beatPump: 0.1,
+        vignette: 0.5,
+      },
+    },
+    // Pulse Core — the authored no-art core: cover off, a live waveform ring
+    // over the gradient disc — the monitor look for tracks without artwork.
+    {
+      id: "pulseCore",
+      name: "Pulse Core",
+      values: {
+        hue: 195,
+        hueSpread: 20,
+        cover: 0,
+        coreFill: 2,
+        radius: 0.26,
+        barLen: 0.18,
+        rimBright: 1,
+        particles: 0.5,
+        partDensity: 9,
+        partFill: 0.35,
+        pump: 0.14,
+        beatPump: 0.12,
+        vignette: 0.45,
+      },
+    },
+    // Polaroid — the whole cover, letterboxed (Fit) over a gradient core:
+    // editorial, near-still, the first style anywhere to exercise coverFit.
+    {
+      id: "polaroid",
+      name: "Polaroid",
+      values: {
+        hue: 210,
+        hueSpread: 0,
+        symmetry: 1,
+        spin: 0.04,
+        radius: 0.3,
+        barLen: 0.08,
+        gap: 0.015,
+        barGlow: 0.16,
+        rimBright: 0.55,
+        particles: 0.35,
+        partDensity: 5.5,
+        partFill: 0.3,
+        pump: 0.08,
+        beatPump: 0.06,
+        coreFill: 1,
+        coverMix: 1,
+        coverBright: 1,
+        coverFit: 1,
+        vignette: 0.55,
+      },
+    },
   ],
   params: [
     {
@@ -243,6 +343,17 @@ export const bassCircle: PresetDef = {
       hint: "Outward reach of the radial spectrum bars (kept inside the frame)",
     },
     {
+      key: "segments",
+      label: "Segments",
+      group: "shape",
+      mod: "snap",
+      min: 0,
+      max: 32,
+      step: 1,
+      default: 0,
+      hint: "Chop the ring into stepped segment cells, each holding one spectrum value — 0 = the classic continuous bars",
+    },
+    {
       key: "particles",
       label: "Particles",
       group: "shape",
@@ -251,6 +362,16 @@ export const bassCircle: PresetDef = {
       step: 0.05,
       default: 1,
       hint: "Brightness of the floating background bokeh particles",
+    },
+    {
+      key: "spin",
+      label: "Ring spin",
+      group: "motion",
+      min: -1,
+      max: 1,
+      step: 0.02,
+      default: 0,
+      hint: "Constant rotation of the bar ring (scaled by Motion→Rotation); 0 = stationary — use Ring angle to aim it",
     },
     {
       key: "rimBright",
@@ -272,7 +393,24 @@ export const bassCircle: PresetDef = {
       max: 1,
       step: 1,
       default: 1,
-      hint: "Show the track's embedded cover art inside the circle (falls back to a plain fill)",
+      hint: "Show the track's embedded cover art inside the circle (falls back to the Core fill below)",
+    },
+    {
+      key: "coreFill",
+      label: "Core fill",
+      group: "image",
+      control: "enum",
+      mod: "off",
+      options: [
+        { value: 0, label: "Classic", hint: "The plain dark fill" },
+        { value: 1, label: "Gradient", hint: "Soft radial wash that breathes with loudness" },
+        { value: 2, label: "Waveform", hint: "A live waveform ring over the gradient" },
+      ],
+      min: 0,
+      max: 2,
+      step: 1,
+      default: 0,
+      hint: "What the circle holds when cover art is off or the track has none — cover art still wins when shown",
     },
     {
       key: "coverHue",
@@ -322,16 +460,6 @@ export const bassCircle: PresetDef = {
       hint: "Static orientation of the bar ring — aim it anywhere; works even with Motion→Rotation at 0",
     },
     {
-      key: "spin",
-      label: "Ring spin",
-      group: "motion",
-      min: -1,
-      max: 1,
-      step: 0.02,
-      default: 0,
-      hint: "Constant rotation of the bar ring (scaled by Motion→Rotation); 0 = stationary — use Ring angle to aim it",
-    },
-    {
       key: "hueSpread",
       label: "Hue spread",
       group: "color",
@@ -360,6 +488,16 @@ export const bassCircle: PresetDef = {
       step: 0.005,
       default: 0.02,
       hint: "Space between the circle and the bars",
+    },
+    {
+      key: "segGap",
+      label: "Notch gap",
+      group: "shape",
+      min: 0.05,
+      max: 0.5,
+      step: 0.01,
+      default: 0.22,
+      hint: "Dark notch between ring segments, as a share of each cell — visible once Segments is above 0",
     },
     {
       key: "barGlow",
@@ -410,6 +548,16 @@ export const bassCircle: PresetDef = {
       step: 0.05,
       default: 0.7,
       hint: "How hard beats brighten the particles",
+    },
+    {
+      key: "partBeat",
+      label: "Particle beat pump",
+      group: "reaction",
+      min: 0,
+      max: 1,
+      step: 0.05,
+      default: 0,
+      hint: "Bokeh discs swell on each beat of the sync source (Motion→Pulse also scales this) — 0 = drift only",
     },
     {
       key: "coverMix",
@@ -539,7 +687,15 @@ fn preset(uv: vec2f) -> vec4f {
                           cos(u.time * P_partFloat() * (0.6 + h3) + ph * 1.4)) * 0.38;
           let pos = vec2f(f32(dx), f32(dy)) + 0.5 + wob;
           let d = length(fq - pos);
-          let sz = (0.06 + h1 * 0.12) * (1.0 - fl * 0.2);
+          var sz = (0.06 + h1 * 0.12) * (1.0 - fl * 0.2);
+          // Beat-linked bokeh (opt-in): each disc swells on the sync source's
+          // beat, staggered per particle by its own hash (h2) so the field
+          // pops organically instead of zooming as one; the core AND the halo
+          // both read sz, so one mutation swells the whole disc. Guarded so
+          // the 0 default leaves the size expression above untouched.
+          if (P_partBeat() > 0.001) {
+            sz *= 1.0 + beatP * P_partBeat() * (0.4 + 0.6 * h2) * u.pulse;
+          }
           // sin() is remapped to 0..1 BEFORE the 0.4 + 0.6 * mix. A bare
           // 0.4 + 0.6 * sin() spans -0.2..1.0, so for ~23% of every particle's
           // twinkle cycle the multiplier is NEGATIVE and the particle
@@ -562,8 +718,29 @@ fn preset(uv: vec2f) -> vec4f {
   // motion) — the time-driven spin term still is.
   let seg = fract((a + P_angle() * (TAU / 360.0)) / TAU * sym
                   + u.time * P_spin() * 0.05 * u.spin + 0.5);
-  let xs = abs(seg * 2.0 - 1.0);
-  let v = binAt(xs);
+  var xs = abs(seg * 2.0 - 1.0);
+  // Segmented ring (opt-in): quantize the mirrored spectrum coordinate into
+  // Segments stepped cells — each cell holds ONE spectrum value and one
+  // colour, with a dark notch between cells (Notch gap sets the share, on a
+  // soft edge so the cuts don't shimmer). round() because crossfades lerp
+  // param values, so mid-transition the count is fractional. The else branch
+  // is the continuous ring's exact pre-wave expression, so Segments 0 (the
+  // default) renders bit-identically.
+  var v = 0.0;
+  if (P_segments() > 0.5) {
+    let n = clamp(round(P_segments()), 1.0, 32.0);
+    let cell = min(floor(xs * n), n - 1.0);
+    let fc = xs * n - cell;
+    xs = (cell + 0.5) / n;
+    let gapHalf = P_segGap() * 0.5;
+    let notch = smoothstep(gapHalf, gapHalf + 0.05, fc)
+              * smoothstep(gapHalf, gapHalf + 0.05, 1.0 - fc);
+    // Notch through the VALUE: v = 0 collapses bar length AND tip glow to
+    // nothing, so no downstream expression needs a second mask.
+    v = binAt(xs) * notch;
+  } else {
+    v = binAt(xs);
+  }
   let barInner = circleR + P_gap();
   // Bar tips compress toward the frame border along their own angle (soft
   // frame limit, v2.44) — on a wide frame the side bars reach further than
@@ -580,6 +757,26 @@ fn preset(uv: vec2f) -> vec4f {
   // --- Centre circle: cover art (or a cool dark fill) + a bright glowing rim ---
   let inner = smoothstep(circleR, circleR - 0.02, r);
   var fill = presetColor(P_hue(), 0.5, 0.04 + u.drive * 0.07);
+  // Authored core (opt-in): what the disc holds when cover art is off or the
+  // track has none. Gradient is a soft radial wash that breathes with
+  // loudness; Waveform adds a mirrored live waveform ring on top. Cover art
+  // still wins exactly as before — the block below overrides by Cover blend.
+  // Guarded so Core fill 0 (the default) keeps the flat fill above untouched.
+  if (P_coreFill() > 0.5) {
+    let g = clamp(r / max(circleR, 1e-3), 0.0, 1.0);
+    fill = mix(presetColor(P_hue() + 35.0, 0.7, 0.1 + u.drive * 0.12 + beatP * 0.05),
+               presetColor(P_hue() - 20.0, 0.8, 0.03), g * g);
+    if (P_coreFill() > 1.5) {
+      // abs() folds the trace left-right so the waveform's wrap seam never
+      // shows; the fixed 0.55 +- 0.12 band keeps it well inside the rim, and
+      // the disc mask (inner, below) clips whatever the fold leaves outside.
+      let wx = abs(fract(a / TAU + 0.5) * 2.0 - 1.0);
+      let wr = circleR * (0.55 + waveAt(wx) * 0.12);
+      fill += presetColor(P_hue() + 45.0, 0.6, 0.55)
+            * smoothstep(0.01, 0.0, abs(r - wr))
+            * (0.45 + u.drive * 0.55 + beatP * 0.35);
+    }
+  }
   if (P_cover() > 0.5 && hasCover()) {
     // Map the disc to the image (0..1), so the art fills the circle. No flip on
     // y: uv already arrives top-down from the vertex stage, so centered()'s y

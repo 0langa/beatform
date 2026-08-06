@@ -458,28 +458,32 @@ fn P_lightness() -> f32 { return params[2u]; }
 fn P_radius() -> f32 { return params[3u]; }
 fn P_pump() -> f32 { return params[4u]; }
 fn P_barLen() -> f32 { return params[5u]; }
-fn P_particles() -> f32 { return params[6u]; }
-fn P_rimBright() -> f32 { return params[7u]; }
-fn P_cover() -> f32 { return params[8u]; }
-fn P_coverHue() -> f32 { return params[9u]; }
-fn P_symmetry() -> f32 { return params[10u]; }
-fn P_angle() -> f32 { return params[11u]; }
-fn P_spin() -> f32 { return params[12u]; }
-fn P_hueSpread() -> f32 { return params[13u]; }
-fn P_beatPump() -> f32 { return params[14u]; }
-fn P_gap() -> f32 { return params[15u]; }
-fn P_barGlow() -> f32 { return params[16u]; }
-fn P_partDensity() -> f32 { return params[17u]; }
-fn P_partFill() -> f32 { return params[18u]; }
-fn P_partFloat() -> f32 { return params[19u]; }
-fn P_beatBurst() -> f32 { return params[20u]; }
-fn P_coverMix() -> f32 { return params[21u]; }
-fn P_coverBright() -> f32 { return params[22u]; }
-fn P_coverFit() -> f32 { return params[23u]; }
-fn P_coverZoom() -> f32 { return params[24u]; }
-fn P_coverX() -> f32 { return params[25u]; }
-fn P_coverY() -> f32 { return params[26u]; }
-fn P_vignette() -> f32 { return params[27u]; }
+fn P_segments() -> f32 { return params[6u]; }
+fn P_particles() -> f32 { return params[7u]; }
+fn P_spin() -> f32 { return params[8u]; }
+fn P_rimBright() -> f32 { return params[9u]; }
+fn P_cover() -> f32 { return params[10u]; }
+fn P_coreFill() -> f32 { return params[11u]; }
+fn P_coverHue() -> f32 { return params[12u]; }
+fn P_symmetry() -> f32 { return params[13u]; }
+fn P_angle() -> f32 { return params[14u]; }
+fn P_hueSpread() -> f32 { return params[15u]; }
+fn P_beatPump() -> f32 { return params[16u]; }
+fn P_gap() -> f32 { return params[17u]; }
+fn P_segGap() -> f32 { return params[18u]; }
+fn P_barGlow() -> f32 { return params[19u]; }
+fn P_partDensity() -> f32 { return params[20u]; }
+fn P_partFill() -> f32 { return params[21u]; }
+fn P_partFloat() -> f32 { return params[22u]; }
+fn P_beatBurst() -> f32 { return params[23u]; }
+fn P_partBeat() -> f32 { return params[24u]; }
+fn P_coverMix() -> f32 { return params[25u]; }
+fn P_coverBright() -> f32 { return params[26u]; }
+fn P_coverFit() -> f32 { return params[27u]; }
+fn P_coverZoom() -> f32 { return params[28u]; }
+fn P_coverX() -> f32 { return params[29u]; }
+fn P_coverY() -> f32 { return params[30u]; }
+fn P_vignette() -> f32 { return params[31u]; }
 
 fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -533,7 +537,15 @@ fn preset(uv: vec2f) -> vec4f {
                           cos(u.time * P_partFloat() * (0.6 + h3) + ph * 1.4)) * 0.38;
           let pos = vec2f(f32(dx), f32(dy)) + 0.5 + wob;
           let d = length(fq - pos);
-          let sz = (0.06 + h1 * 0.12) * (1.0 - fl * 0.2);
+          var sz = (0.06 + h1 * 0.12) * (1.0 - fl * 0.2);
+          // Beat-linked bokeh (opt-in): each disc swells on the sync source's
+          // beat, staggered per particle by its own hash (h2) so the field
+          // pops organically instead of zooming as one; the core AND the halo
+          // both read sz, so one mutation swells the whole disc. Guarded so
+          // the 0 default leaves the size expression above untouched.
+          if (P_partBeat() > 0.001) {
+            sz *= 1.0 + beatP * P_partBeat() * (0.4 + 0.6 * h2) * u.pulse;
+          }
           // sin() is remapped to 0..1 BEFORE the 0.4 + 0.6 * mix. A bare
           // 0.4 + 0.6 * sin() spans -0.2..1.0, so for ~23% of every particle's
           // twinkle cycle the multiplier is NEGATIVE and the particle
@@ -556,8 +568,29 @@ fn preset(uv: vec2f) -> vec4f {
   // motion) — the time-driven spin term still is.
   let seg = fract((a + P_angle() * (TAU / 360.0)) / TAU * sym
                   + u.time * P_spin() * 0.05 * u.spin + 0.5);
-  let xs = abs(seg * 2.0 - 1.0);
-  let v = binAt(xs);
+  var xs = abs(seg * 2.0 - 1.0);
+  // Segmented ring (opt-in): quantize the mirrored spectrum coordinate into
+  // Segments stepped cells — each cell holds ONE spectrum value and one
+  // colour, with a dark notch between cells (Notch gap sets the share, on a
+  // soft edge so the cuts don't shimmer). round() because crossfades lerp
+  // param values, so mid-transition the count is fractional. The else branch
+  // is the continuous ring's exact pre-wave expression, so Segments 0 (the
+  // default) renders bit-identically.
+  var v = 0.0;
+  if (P_segments() > 0.5) {
+    let n = clamp(round(P_segments()), 1.0, 32.0);
+    let cell = min(floor(xs * n), n - 1.0);
+    let fc = xs * n - cell;
+    xs = (cell + 0.5) / n;
+    let gapHalf = P_segGap() * 0.5;
+    let notch = smoothstep(gapHalf, gapHalf + 0.05, fc)
+              * smoothstep(gapHalf, gapHalf + 0.05, 1.0 - fc);
+    // Notch through the VALUE: v = 0 collapses bar length AND tip glow to
+    // nothing, so no downstream expression needs a second mask.
+    v = binAt(xs) * notch;
+  } else {
+    v = binAt(xs);
+  }
   let barInner = circleR + P_gap();
   // Bar tips compress toward the frame border along their own angle (soft
   // frame limit, v2.44) — on a wide frame the side bars reach further than
@@ -574,6 +607,26 @@ fn preset(uv: vec2f) -> vec4f {
   // --- Centre circle: cover art (or a cool dark fill) + a bright glowing rim ---
   let inner = smoothstep(circleR, circleR - 0.02, r);
   var fill = presetColor(P_hue(), 0.5, 0.04 + u.drive * 0.07);
+  // Authored core (opt-in): what the disc holds when cover art is off or the
+  // track has none. Gradient is a soft radial wash that breathes with
+  // loudness; Waveform adds a mirrored live waveform ring on top. Cover art
+  // still wins exactly as before — the block below overrides by Cover blend.
+  // Guarded so Core fill 0 (the default) keeps the flat fill above untouched.
+  if (P_coreFill() > 0.5) {
+    let g = clamp(r / max(circleR, 1e-3), 0.0, 1.0);
+    fill = mix(presetColor(P_hue() + 35.0, 0.7, 0.1 + u.drive * 0.12 + beatP * 0.05),
+               presetColor(P_hue() - 20.0, 0.8, 0.03), g * g);
+    if (P_coreFill() > 1.5) {
+      // abs() folds the trace left-right so the waveform's wrap seam never
+      // shows; the fixed 0.55 +- 0.12 band keeps it well inside the rim, and
+      // the disc mask (inner, below) clips whatever the fold leaves outside.
+      let wx = abs(fract(a / TAU + 0.5) * 2.0 - 1.0);
+      let wr = circleR * (0.55 + waveAt(wx) * 0.12);
+      fill += presetColor(P_hue() + 45.0, 0.6, 0.55)
+            * smoothstep(0.01, 0.0, abs(r - wr))
+            * (0.45 + u.drive * 0.55 + beatP * 0.35);
+    }
+  }
   if (P_cover() > 0.5 && hasCover()) {
     // Map the disc to the image (0..1), so the art fills the circle. No flip on
     // y: uv already arrives top-down from the vertex stage, so centered()'s y
@@ -631,8 +684,16 @@ exports[`shader golden baseline > bass-circle: param ABI (key + default, in orde
     "key": "barLen",
   },
   {
+    "default": 0,
+    "key": "segments",
+  },
+  {
     "default": 1,
     "key": "particles",
+  },
+  {
+    "default": 0,
+    "key": "spin",
   },
   {
     "default": 0.8,
@@ -641,6 +702,10 @@ exports[`shader golden baseline > bass-circle: param ABI (key + default, in orde
   {
     "default": 1,
     "key": "cover",
+  },
+  {
+    "default": 0,
+    "key": "coreFill",
   },
   {
     "default": 0,
@@ -655,10 +720,6 @@ exports[`shader golden baseline > bass-circle: param ABI (key + default, in orde
     "key": "angle",
   },
   {
-    "default": 0,
-    "key": "spin",
-  },
-  {
     "default": 60,
     "key": "hueSpread",
   },
@@ -669,6 +730,10 @@ exports[`shader golden baseline > bass-circle: param ABI (key + default, in orde
   {
     "default": 0.02,
     "key": "gap",
+  },
+  {
+    "default": 0.22,
+    "key": "segGap",
   },
   {
     "default": 0.5,
@@ -689,6 +754,10 @@ exports[`shader golden baseline > bass-circle: param ABI (key + default, in orde
   {
     "default": 0.7,
     "key": "beatBurst",
+  },
+  {
+    "default": 0,
+    "key": "partBeat",
   },
   {
     "default": 0.9,
