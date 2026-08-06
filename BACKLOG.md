@@ -1,6 +1,6 @@
 # Beatform Backlog and Alignment Ledger
 
-Last reconciled: **2026-08-04** (post v2.69.0 — FEAT-004 local automatic lyrics complete)
+Last reconciled: **2026-08-06** (post v2.72.0 — Gallery live; quality consolidation program + full audit register active)
 
 This is Beatform's canonical current-work ledger. It records what is complete,
 what still needs evidence, what is ready to execute, and what remains only a
@@ -36,20 +36,21 @@ Listing a feature here does **not** approve implementation. Respect its status:
 
 ## Reconciled baseline
 
-Time-sensitive values below were checked on 2026-08-04:
+Time-sensitive values below were checked on 2026-08-06:
 
 | Fact                    | Verified state                                                                                                                                                                                                             |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Repository              | `0langa/beatform`                                                                                                                                                                                                          |
 | Branch                  | Clean `main`, aligned with `origin/main`                                                                                                                                                                                   |
-| Source version          | `2.69.0` in all five version-bearing files                                                                                                                                                                                 |
-| HEAD / tag              | `8dac157` / `v2.69.0`                                                                                                                                                                                                      |
-| Latest public release   | `v2.69.0`, published 2026-08-04 (59.8 MB setup — lyrics sidecar + whisper + onnxruntime now bundled); setup-exe SHA-256 matches `SHA256SUMS.txt`, updater manifest signature present, live latest endpoint serves `2.69.0` |
+| Source version          | `2.72.0` in all five version-bearing files                                                                                                                                                                                 |
+| HEAD / latest tag       | `a6f511c` (docs commits after release) / `v2.72.0` on release commit `1fcf60e`                                                                                                                                             |
+| Latest public release   | `v2.72.0`, published 2026-08-05 (Gallery top-bar surface; registry live with 11 seeds); setup-exe SHA-256 `1ce9bb83…` matches `SHA256SUMS.txt`, updater manifest signed, live latest endpoint serves `2.72.0`              |
 | Open GitHub issues      | 0                                                                                                                                                                                                                          |
-| Open pull requests      | 0                                                                                                                                                                                                                          |
-| Installed desktop app   | `2.67.0` (binary verified 2026-08-04) — v2.69.0 update pending; post-update, run the ritual's registry check (expect `2.69.0`)                                                                                             |
-| Running desktop app     | None during audit                                                                                                                                                                                                          |
-| Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers found in `src`, `src-tauri`, or `scripts`                                                                                                                                     |
+| Open pull requests      | 5 — all Dependabot (#11 npm minor/patch group; #12 rustls patch; #13 windows-core 0.62; #14 sha2 0.11; #15 webview2-com 0.39). #13/#15 track wry's pins (see `Cargo.toml` comment) — review before merging, not auto-merge |
+| Installed desktop app   | `2.72.0` (binary `ProductVersion` verified 2026-08-06) — auto-update chain 2.67→2.72 worked                                                                                                                                |
+| Uninstall registry      | **STILL `2.39.0`** (HKCU DisplayVersion, checked 2026-08-06) — survived five successful updates; the ALIGN-002 "writes one-behind" theory is DISPROVEN. ALIGN-002 REOPENED; tracked in Track E                             |
+| Running desktop app     | Not checked during this reconciliation                                                                                                                                                                                     |
+| Explicit source markers | Re-verified 2026-08-06: no `TODO`, `FIXME`, `XXX`, or `HACK` markers in `src`, `src-tauri`, or `scripts`                                                                                                                   |
 
 Current product constraints remain:
 
@@ -221,6 +222,10 @@ was the canary.
       platform → render), each wave gated + released.
 - [ ] E3 Register the RP-4 determinism question as its own
       investigate-and-close item (measure, fix or document).
+- [ ] E4 ALIGN-002 reopened (2026-08-06): uninstall-registry
+      `DisplayVersion` NEVER updates (stuck at `2.39.0` through five
+      updates, binary at `2.72.0`) — diagnose the NSIS updater's
+      registry write path and fix so Windows Settings shows the truth.
 
 ### Track F — Test & release infrastructure (NEW, from the audit)
 
@@ -288,9 +293,13 @@ the shipped build. Full record: ARCHIVE at the bottom of this file.
 
 ### ALIGN-002 — Windows uninstall registry stuck at 2.39.0
 
-**Status:** RESOLVED 2026-08-02 — registry writes one-behind by updater
-design; verification folded into the release ritual. Full record: ARCHIVE
-at the bottom of this file.
+**Status:** REOPENED 2026-08-06 — the "writes one-behind" theory is
+DISPROVEN: HKCU `DisplayVersion` still reads `2.39.0` after five
+successful auto-updates (binary verified at `2.72.0` the same day). The
+NSIS updater apparently never rewrites the uninstall entry on update.
+Windows Settings shows users a wrong version — likely what the owner
+just noticed. Tracked in Track E (E1 shortlist addendum). Original
+record: ARCHIVE at the bottom of this file.
 
 ### DOC-001 — Public metadata and planning truth
 
