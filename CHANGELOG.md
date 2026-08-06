@@ -11,6 +11,51 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.73.0] - 2026-08-06
+
+### Fixed
+
+- **Closing Beatform mid-export no longer leaves a broken video behind.**
+  The export's encoder is shut down cleanly, the half-written file is
+  removed instead of being finalized to look complete, and staged
+  temporary audio is swept up.
+- **Generated lyrics can no longer attach to the wrong track.** If you
+  load a different track while lyrics are still generating, the result
+  is discarded with an honest notice instead of silently landing on the
+  new track.
+- **Escape while typing no longer closes everything.** Esc in a search
+  box or name field now just leaves the field; a second press closes
+  surfaces as before.
+- **Deleting a saved look now asks first** — and the delete button is
+  easier to hit.
+- **Batch render problems now show up in the batch panel** instead of a
+  dialog that wasn't open, and Start says why it's unavailable while a
+  single export runs.
+- **The Gallery's "Added" badge now tells the truth.** It stays only
+  while the look actually exists in My Looks (deleting the look brings
+  "+ Add look" back), repeated clicks can no longer stack duplicate
+  copies, and applying a theme shows a brief "Applied ✓" instead of a
+  permanent claim.
+- **Full storage is now said out loud.** When Windows refuses to cache a
+  change (disk/quota full), Beatform keeps working and tells you once —
+  instead of silently losing the cached copy.
+- **Very long exports with loudness normalization no longer risk a false
+  "worker stalled" restart** during their measurement phase.
+- **Exports got leaner:** analysis that only feedback-style visuals need
+  is now skipped for everything else — same pixels, less memory and CPU.
+- **Editing an imported shader mid-crossfade** no longer briefly renders
+  the old shader with the new settings.
+- Tightened the app's internal Web MIDI permission check on Windows.
+
+### Changed
+
+- **"Templates" are now called "Themes" everywhere** — same files, same
+  chips, one name (matching the Gallery). The Themes section links
+  straight into the Gallery's theme shelf, and My Looks links to the
+  look shelf.
+- The Gallery explains the difference right in the dialog: Looks restyle
+  the current visual mode · Themes replace your whole setup.
+
 ## [2.72.1] - 2026-08-06
 
 ### Fixed
@@ -1892,7 +1937,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.72.1...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.73.0...HEAD
+[2.73.0]: https://github.com/0langa/beatform/compare/v2.72.1...v2.73.0
 [2.72.1]: https://github.com/0langa/beatform/compare/v2.72.0...v2.72.1
 [2.72.0]: https://github.com/0langa/beatform/compare/v2.71.0...v2.72.0
 [2.71.0]: https://github.com/0langa/beatform/compare/v2.70.0...v2.71.0

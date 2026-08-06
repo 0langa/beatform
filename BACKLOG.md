@@ -140,9 +140,9 @@ regress these.
   **The word "Template" is retired** in UI, guide, docs, code comments.
 - **Gallery** — the public curated collection of looks + themes.
 
-### Track A — Gallery correctness + naming (first; small; ships as one release)
+### Track A — Gallery correctness + naming — DONE, shipped v2.73.0 (2026-08-06)
 
-- [ ] A1 Install-state truth. Looks: "✓ Added" must track the installed
+- [x] A1 Install-state truth. Looks: "✓ Added" must track the installed
       look's actual existence — record galleryId → userPresetId at install;
       deleting the look in Visual settings reverts the button to
       "+ Add look". Added state DISABLES the button (today it stays
@@ -150,15 +150,15 @@ regress these.
       legitimately repeatable — show a transient "Applied ✓" then return
       to "Apply theme"; no persistent Added state at all ("New Project"
       made the lie obvious).
-- [ ] A2 Look-vs-theme explainer inside the Gallery dialog (one line each,
+- [x] A2 Look-vs-theme explainer inside the Gallery dialog (one line each,
       near the filters; type badge tooltips say it too).
-- [ ] A3 Deep links: the Themes-section shortcut opens the Gallery
+- [x] A3 Deep links: the Themes-section shortcut opens the Gallery
       pre-filtered to **Themes**; a matching shortcut in the styles/My
       Looks row opens it pre-filtered to **Looks**.
-- [ ] A4 Naming sweep per the vocabulary above: "Templates" section
+- [x] A4 Naming sweep per the vocabulary above: "Templates" section
       becomes "Themes", save-dialog filter names, toasts, hints, README,
       docs/, CHANGELOG copy going forward.
-- [ ] A5 Gates + device e2e extended to cover A1 semantics (delete-look
+- [x] A5 Gates + device e2e extended to cover A1 semantics (delete-look
       revert, theme transient state, no dup-stacking).
 
 ### Track B — Mode depth equalization (the core of the program)
@@ -181,37 +181,39 @@ was the canary.
       scope here).
 - [x] B0 **DONE 2026-08-06** — full matrix at
       `F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\quality-audit-2026-08\b0-mode-depth-matrix.md`.
-      Recommended queue (OWNER RESHUFFLES BEFORE WAVES START); wave 0 =
-      F5 WGSL consolidation + param-schema taper/mod-metadata first:
+      Recommended queue in the table below (OWNER RESHUFFLES BEFORE WAVES
+      START); wave 0 = F5 WGSL consolidation + param-schema
+      taper/mod-metadata first.
 
-      | #   | Mode                    | Effort            | Why here                                              |
-              | --- | ----------------------- | ----------------- | ----------------------------------------------------- |
-              | 1   | voice-orb               | S                 | Depth already built; pure curation — proves the template |
-              | 2   | aurora                  | M                 | The canary; unblocks C3's hand-tuned look             |
-              | 3   | synthwave               | M                 | Road/sun/skyline = genre-defining absences            |
-              | 4   | led-matrix              | S                 | Waterfall scroll = spectrogram-lite archetype         |
-              | 5   | spectrum-bars           | S                 | Default mode; stereo split rides unread `width` lane  |
-              | 6   | bass-circle             | S                 | Cover-art core lifts from radial-burst                |
-              | 7   | particles               | S                 | Color tier + snare shooting stars                     |
-              | 8   | nebula                  | S                 | Kills RP-6 sat-drift; palette phase; star parallax    |
-              | 9   | echo-trails             | M                 | Source-shape enum multiplies identity                 |
-              | 10  | metaballs               | M                 | Lava smear + per-band blob weighting                  |
-              | 11  | oscilloscope (fragment) | M                 | Multi-trace band split; XY lane → renderer block      |
-              | 12  | tunnel                  | S–M               | Already deep; wall materials = safe filler            |
-              | 13  | spectrum-scape          | L (renderer wave) | ABI growth; biggest ceiling raise                     |
-              | 14  | particle-flow           | M–L (renderer)    | PU struct growth; trails = separate LARGE call        |
-              | 15  | oscilloscope XY lane    | M (renderer)      | Lands while ABI is open                               |
-              | 16  | builder2 RP-20 bridge   | M–L               | Biggest unlock, own project; pull earlier if C1 needs |
-              | —   | radial-burst            | —                 | Leave alone — it IS the bar                           |
+#### B0 recommended queue
 
-              B0 surprises worth reading in the matrix: hint coverage is 359/359
-              (wave hint-work = touch-ups only); curated-tier GROUP holes don't
-              follow param counts (metaballs has zero beat-response in main;
-              led-matrix hides motion+beat in advanced); styles under-exercise
-              enums (`coverFit` set by NO style anywhere). NEW defect from B0:
-              led-matrix canvas2d fallback loses hue entirely to a `hueShift`
-              key mismatch (+ builder2 canvas2d = all-default bars) — added to
-              the severity-2 pool.
+| #   | Mode                    | Effort            | Why here                                                 |
+| --- | ----------------------- | ----------------- | -------------------------------------------------------- |
+| 1   | voice-orb               | S                 | Depth already built; pure curation — proves the template |
+| 2   | aurora                  | M                 | The canary; unblocks C3's hand-tuned look                |
+| 3   | synthwave               | M                 | Road/sun/skyline = genre-defining absences               |
+| 4   | led-matrix              | S                 | Waterfall scroll = spectrogram-lite archetype            |
+| 5   | spectrum-bars           | S                 | Default mode; stereo split rides unread `width` lane     |
+| 6   | bass-circle             | S                 | Cover-art core lifts from radial-burst                   |
+| 7   | particles               | S                 | Color tier + snare shooting stars                        |
+| 8   | nebula                  | S                 | Kills RP-6 sat-drift; palette phase; star parallax       |
+| 9   | echo-trails             | M                 | Source-shape enum multiplies identity                    |
+| 10  | metaballs               | M                 | Lava smear + per-band blob weighting                     |
+| 11  | oscilloscope (fragment) | M                 | Multi-trace band split; XY lane → renderer block         |
+| 12  | tunnel                  | S–M               | Already deep; wall materials = safe filler               |
+| 13  | spectrum-scape          | L (renderer wave) | ABI growth; biggest ceiling raise                        |
+| 14  | particle-flow           | M–L (renderer)    | PU struct growth; trails = separate LARGE call           |
+| 15  | oscilloscope XY lane    | M (renderer)      | Lands while ABI is open                                  |
+| 16  | builder2 RP-20 bridge   | M–L               | Biggest unlock, own project; pull earlier if C1 needs    |
+| —   | radial-burst            | —                 | Leave alone — it IS the bar                              |
+
+B0 surprises worth reading in the matrix: hint coverage is 359/359 (wave
+hint-work = touch-ups only); curated-tier GROUP holes don't follow param
+counts (metaballs has zero beat-response in main; led-matrix hides
+motion+beat in advanced); styles under-exercise enums (`coverFit` set by
+NO style anywhere). NEW defect from B0: led-matrix canvas2d fallback
+loses hue entirely to a `hueShift` key mismatch (+ builder2 canvas2d =
+all-default bars) — added to the severity-2 pool.
 
 - [ ] B1..Bn Per-mode upgrade waves in the B0-ranked order (worktree
       agents, one mode per agent — the proven v2.47/v2.68 pattern):
@@ -249,9 +251,14 @@ was the canary.
 
 ### Track E — Hardening burn-down (NEW, from the audit register)
 
-- [ ] E1 Severity-1 shortlist above, roughly in table order (AX-1 sync
-      semantics needs a small design call: give "Kicks" the kick
-      detector it advertises + migrate existing docs' expectations).
+- [x] E1 **largely DONE — hardening wave shipped v2.73.0 (2026-08-06):**
+      fixed PL-1/2/3/4, SS-1/2/3, UI-1/2/3 (+UI-5 focus trap), AX-2/3/6,
+      RP-1, DS-1/3 (SECURITY/CONTRIBUTING), DS-15 (gallery CI
+      byte-verification, gallery repo), DS-18 (changelog links), TQ-1/2/6.
+      ALIGN-002/E4 shipped v2.72.1 by the concurrent session. REMAINING
+      from the shortlist: **AX-1** (needs the owner's design call on
+      "Kicks" semantics), **RP-4** (→ E3), **DS-5/7/12** (README/guide/
+      pages staleness → Track D scope), **TQ-3** (fixed), **SS-2** (fixed).
 - [ ] E2 Severity-2 waves per domain (state → UI → audio/export →
       platform → render), each wave gated + released.
 - [ ] E3 Register the RP-4 determinism question as its own
@@ -280,17 +287,17 @@ was the canary.
       BACKLOG, ci.yml, release.yml (today: three contradicting
       definitions; release.yml omits clippy/fmt); `--workspace`
       everywhere.
-- [ ] F2 Root-fix the "thermal-flaky" DSP test (timeout config, remedy
-      already exists in store.test.ts pattern) — retire
-      rerun-before-believing.
+- [x] F2 DONE v2.73.0 — timeouts root-fix landed; rerun-before-believing
+      retired (CLAUDE.md updated).
 - [ ] F3 Consolidate the 13 device harnesses onto one `scripts/lib/`
       (CDP client ×12 copies today) + scenario registry + JSON evidence
       envelopes (design sketch in tests-quality.md TQ-25).
 - [ ] F4 Close the invariant-coverage holes: overlay-compose chokepoint
-      direct tests, exportCore determinism test, MIDI illegal-invocation
-      regression stub, `no-restricted-globals` for bare confirm/alert,
-      GPU matrix param-extreme + post/motion variants, parser fuzzing
-      (fast-check + one cargo-fuzz target on the GLSL translator).
+      direct tests, exportCore determinism test, GPU matrix
+      param-extreme + post/motion variants, parser fuzzing (fast-check +
+      one cargo-fuzz target on the GLSL translator). DONE in v2.73.0:
+      MIDI illegal-invocation regression stub (mutation-checked),
+      `no-restricted-globals` for bare confirm/alert/prompt.
 - [ ] F5 WGSL shared-helper consolidation (ACES ×3, hsl2rgb ×3, palette
       basis ×17 — RP-12/23) as a ZERO-pixel-change PR gated by the GPU
       matrix, BEFORE Track B waves.
