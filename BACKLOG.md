@@ -225,15 +225,18 @@ before/after shot strips per mode, owner veto post-hoc · cadence: one
 2.x release per 3-4-mode batch · AX-1: "Kicks" gets REAL kick semantics
 (default reactivity becomes punchier; not a silent fall-through).
 
-Execution plan: **Wave 0** = F5 WGSL consolidation + RP-14 schema
-additions (display `taper`, `mod` metadata) + AX-1 → then **Batch 1**
-(voice-orb, aurora, synthwave, led-matrix) → **Batch 2** (spectrum-bars,
-bass-circle, particles, nebula) → **Batch 3** (echo-trails, metaballs,
-oscilloscope-fragment, tunnel) → **Renderer block** (spectrum-scape,
-particle-flow, oscilloscope-XY) → **Builder bridge**. One release per
-batch.
+Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
+— 29 params mod:"off", 15 mod:"snap", nebula scale log-taper proving case —
 
-- [ ] B1..Bn Per-mode upgrade waves in the B0-ranked order (worktree
+- AX-1 real kick semantics, one deliberate trace re-bless; device matrix
+  zero movement) → then **Batch 1**
+  (voice-orb, aurora, synthwave, led-matrix) → **Batch 2** (spectrum-bars,
+  bass-circle, particles, nebula) → **Batch 3** (echo-trails, metaballs,
+  oscilloscope-fragment, tunnel) → **Renderer block** (spectrum-scape,
+  particle-flow, oscilloscope-XY) → **Builder bridge**. One release per
+  batch.
+
+* [ ] B1..Bn Per-mode upgrade waves in the B0-ranked order (worktree
       agents, one mode per agent — the proven v2.47/v2.68 pattern):
       params + groups + styles + hints + GPU-matrix re-bless + device
       screenshots per mode. Shallow tier first.
@@ -301,24 +304,29 @@ batch.
 
 ### Track F — Test & release infrastructure (NEW, from the audit)
 
-- [ ] F1 One checked-in release-gate manifest quoted by CLAUDE.md,
-      BACKLOG, ci.yml, release.yml (today: three contradicting
-      definitions; release.yml omits clippy/fmt); `--workspace`
-      everywhere.
+- [x] F1 DONE 2026-08-06 — `GATES.md` is the single manifest; CLAUDE.md/
+      CONTRIBUTING/this file quote it; release.yml gained the missing
+      clippy+fmt (its "same gates" claim was false); `cargo fmt --all`
+      everywhere (bare fmt skipped the sidecar). Plus `scripts/release.mjs`:
+      resumable 8-step one-command release (P-13).
 - [x] F2 DONE v2.73.0 — timeouts root-fix landed; rerun-before-believing
       retired (CLAUDE.md updated).
-- [ ] F3 Consolidate the 13 device harnesses onto one `scripts/lib/`
-      (CDP client ×12 copies today) + scenario registry + JSON evidence
-      envelopes (design sketch in tests-quality.md TQ-25).
+- [x] F3 LITE DONE 2026-08-06 (P-14-lite) — `scripts/lib/` (cdp/app/demo)
+      now backs 9 fully-ported + 4 partially-ported harnesses with unique
+      port bases, isolated WV2 profiles, PID-tree-only kills, socket-death
+      rejection; two harnesses re-proven on device post-port. Full
+      scenario-registry framework deliberately deferred.
 - [ ] F4 Close the invariant-coverage holes: overlay-compose chokepoint
       direct tests, exportCore determinism test, GPU matrix
       param-extreme + post/motion variants, parser fuzzing (fast-check +
       one cargo-fuzz target on the GLSL translator). DONE in v2.73.0:
       MIDI illegal-invocation regression stub (mutation-checked),
       `no-restricted-globals` for bare confirm/alert/prompt.
-- [ ] F5 WGSL shared-helper consolidation (ACES ×3, hsl2rgb ×3, palette
-      basis ×17 — RP-12/23) as a ZERO-pixel-change PR gated by the GPU
-      matrix, BEFORE Track B waves.
+- [x] F5 DONE 2026-08-06 (wave 0) — `src/render/wgslLib.ts`; ACES/hsl2rgb/
+      color-controls/palette sites consolidated byte-identically
+      (shaderGolden zero snapshot updates; device GPU matrix 137 cases
+      zero movement). Kaleido-fold rescales deliberately left private
+      (genuinely different domains).
 
 ### Approved program extension (owner: "Approve as ranked", 2026-08-06)
 
