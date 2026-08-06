@@ -7,22 +7,30 @@ fn P_react() -> f32 { return params[2u]; }
 fn P_flow() -> f32 { return params[3u]; }
 fn P_thick() -> f32 { return params[4u]; }
 fn P_baseY() -> f32 { return params[5u]; }
-fn P_layers() -> f32 { return params[6u]; }
-fn P_specAmt() -> f32 { return params[7u]; }
-fn P_bassSwell() -> f32 { return params[8u]; }
-fn P_drift() -> f32 { return params[9u]; }
-fn P_reflect() -> f32 { return params[10u]; }
-fn P_horizon() -> f32 { return params[11u]; }
-fn P_reflectFade() -> f32 { return params[12u]; }
-fn P_beatPulse() -> f32 { return params[13u]; }
-fn P_wave() -> f32 { return params[14u]; }
-fn P_hueStep() -> f32 { return params[15u]; }
-fn P_hueSpread() -> f32 { return params[16u]; }
-fn P_rays() -> f32 { return params[17u]; }
-fn P_sat() -> f32 { return params[18u]; }
-fn P_stars() -> f32 { return params[19u]; }
-fn P_bgGlow() -> f32 { return params[20u]; }
-fn P_mirror() -> f32 { return params[21u]; }
+fn P_wave() -> f32 { return params[6u]; }
+fn P_layers() -> f32 { return params[7u]; }
+fn P_beatPulse() -> f32 { return params[8u]; }
+fn P_palWarm() -> f32 { return params[9u]; }
+fn P_moon() -> f32 { return params[10u]; }
+fn P_ground() -> f32 { return params[11u]; }
+fn P_specAmt() -> f32 { return params[12u]; }
+fn P_bassSwell() -> f32 { return params[13u]; }
+fn P_drift() -> f32 { return params[14u]; }
+fn P_reflect() -> f32 { return params[15u]; }
+fn P_horizon() -> f32 { return params[16u]; }
+fn P_reflectFade() -> f32 { return params[17u]; }
+fn P_hueStep() -> f32 { return params[18u]; }
+fn P_hueSpread() -> f32 { return params[19u]; }
+fn P_palSpan() -> f32 { return params[20u]; }
+fn P_rays() -> f32 { return params[21u]; }
+fn P_sat() -> f32 { return params[22u]; }
+fn P_stars() -> f32 { return params[23u]; }
+fn P_bgGlow() -> f32 { return params[24u]; }
+fn P_mirror() -> f32 { return params[25u]; }
+fn P_groundRough() -> f32 { return params[26u]; }
+fn P_moonX() -> f32 { return params[27u]; }
+fn P_moonY() -> f32 { return params[28u]; }
+fn P_moonGlow() -> f32 { return params[29u]; }
 
 // Bounded, continuous noise clock (seconds of TRACK time in, noise coordinate
 // out). u.time grows without bound and fbm's top octave multiplies its input by
@@ -41,6 +49,38 @@ fn noiseClock(rate: f32) -> f32 {
   return 240.0 * (1.0 - abs(2.0 * ph - 1.0));
 }
 
+// The aurora's ONE palette family, parameterized (depth wave). It used to be
+// the same hardcoded basis pasted at all three call sites — half-grey centre,
+// equal per-channel chroma, frequency 1, standard phase — which is why every
+// shipped style rendered the same green-violet family: hue only ROTATES the
+// ramp, it cannot change its internal structure.
+//
+// Two family axes, both bit-neutral at their defaults:
+//  - Warmth tilts the per-channel AMPLITUDE (R up / B down or the reverse).
+//    At 0 the tilt vector is exactly (1,1,1) — multiply-by-one is exact in
+//    IEEE, so the legacy amplitudes come out bit-identical.
+//  - Span fans the per-channel PHASE about the ramp's mid-phase (0.335, the
+//    midpoint of the standard phase extremes): 1 leaves the standard thirds
+//    untouched (the correction term multiplies by exactly 0), 0 collapses all
+//    channels in phase — a single-tone family, which is what warmth then
+//    colours (ember, gold, violet). A uniform phase SHIFT is deliberately not
+//    a param: at frequency 1 it is algebraically identical to a Hue rotation,
+//    and the panel already has a hue wheel.
+//
+// Neither axis touches t or the frequency, so the fract() wrap in every
+// caller's t stays invisible (cos is 1-periodic in t) — no seam at any
+// setting. Warmth can push an amplitude past the base, which would swing the
+// cool channel negative — and negative HDR light explodes through the ACES
+// tonemap — so the result floors at 0. Identity for every pre-family setting:
+// all three call sites keep chroma <= base, where the palette is never
+// negative.
+fn familyPal(t: f32, base: f32, chroma: f32) -> vec3f {
+  let warm = P_palWarm();
+  let famB = chroma * vec3f(1.0 + warm * 0.7, 1.0 - abs(warm) * 0.2, 1.0 - warm * 0.7);
+  let famD = vec3f(0.0, 0.33, 0.67) + (vec3f(0.0, 0.33, 0.67) - vec3f(0.335)) * (P_palSpan() - 1.0);
+  return max(cosPalette(t, vec3f(base), famB, vec3f(1.0), famD), vec3f(0.0));
+}
+
 // One stack of aurora curtains sampled at horizontal position x and vertical
 // position y. Split out of preset() so the horizon reflection below can
 // re-evaluate the exact same field at a mirrored y — a real reflection, not a
@@ -53,7 +93,11 @@ fn noiseClock(rate: f32) -> f32 {
 fn auroraCurtains(x: f32, specX: f32, y: f32, drive: f32) -> vec3f {
   var acc = vec3f(0.0);
   let layers = i32(P_layers());
-  for (var i = 0; i < 3; i++) {
+  // Up to FIVE curtains (depth wave; was capped at 3). The depth-stagger
+  // machinery below — fog, parallax, stack compression, beat stagger — is
+  // already written against the live layer count, so the deeper stack costs
+  // nothing new; at the default of 3 the executed iterations are identical.
+  for (var i = 0; i < 5; i++) {
     if (i >= layers) { break; }
     let fi = f32(i);
 
@@ -119,7 +163,7 @@ fn auroraCurtains(x: f32, specX: f32, y: f32, drive: f32) -> vec3f {
     let palT = fract(P_hue() / 360.0 + fi * (P_hueStep() / 360.0)
              + (x - 0.5) * (P_hueSpread() / 360.0) + spec * 0.12);
     let chroma = mix(0.08, 0.5, P_sat());
-    let pal = cosPalette(palT, vec3f(0.5), vec3f(chroma), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+    let pal = familyPal(palT, 0.5, chroma);
 
     // Loudness is logarithmic: compress react through pow(.,0.6) before it
     // drives brightness (doc guidance) so 3 stacked curtains overlapping
@@ -184,7 +228,7 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Deep night sky: near-black but hued, not grey, so the curtains have
   // real darkness to glow against instead of sitting on flat mid-grey fog.
-  let skyPal = cosPalette(fract(P_hue() / 360.0 + 0.5), vec3f(0.025), vec3f(0.02), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  let skyPal = familyPal(fract(P_hue() / 360.0 + 0.5), 0.025, 0.02);
   var col = skyPal;
 
   // Optional starfield behind everything (small round points, twinkling).
@@ -207,6 +251,35 @@ fn preset(uv: vec2f) -> vec4f {
   // Sync-reactive envelope + beat pulse: switching the sync source (bass /
   // treble / kicks / ...) visibly changes the drive here.
   let drive = clamp(u.drive, 0.0, 1.5);
+
+  // Optional moon (depth wave): an opaque disc with a soft halo, in front of
+  // the stars and behind the curtains. Size 0 = absent — the default, so
+  // existing projects are untouched. Drawn in the FOLDED coordinate like the
+  // stars, so Symmetric keeps the whole scene one mirrored composition (an
+  // offset of 0 centres the disc exactly on the fold line — one moon, whole).
+  if (P_moon() > 0.001) {
+    let mp = vec2f((x - 0.5) * u.aspect - P_moonX(), y - (1.0 - P_moonY()));
+    let md = length(mp);
+    let mr = P_moon();
+    // Static maria shading, seeded by constants — never time: the moon does
+    // not churn. Scale rides 1/size so the face keeps its character as the
+    // disc grows.
+    let maria = 0.86 + 0.14 * fbm(mp * (11.0 / max(mr, 0.01)) + vec2f(37.1, 19.7));
+    // The disc follows the palette family's warmth: an ember sky gets a
+    // golden moon, an arctic one stays bone-white.
+    let mwarm = P_palWarm();
+    let moonCol = vec3f(0.94 + mwarm * 0.05, 0.94, 0.97 - mwarm * 0.12);
+    let disc = smoothstep(mr, mr * 0.93, md);
+    col = mix(col, moonCol * maria, disc);
+    // Halo: a tight bloom hugging the limb plus a wide atmospheric glow,
+    // breathing gently with the sync source — damped ON the disc itself so
+    // the face never washes out.
+    let limb = exp(-max(md - mr, 0.0) * 30.0);
+    let halo = exp(-max(md - mr, 0.0) * 6.0);
+    col += moonCol * (limb * 0.5 + halo * 0.22) * P_moonGlow() * (0.75 + drive * 0.25)
+         * (1.0 - disc * 0.85);
+  }
+
   col += auroraCurtains(x, specX, y, drive);
 
   // Horizon reflection: below the horizon line the curtains are mirrored and
@@ -219,8 +292,32 @@ fn preset(uv: vec2f) -> vec4f {
   }
 
   // Soft sky glow rising from the horizon, lifted by the sync source.
-  let glowPal = cosPalette(fract(P_hue() / 360.0 + P_hueStep() / 360.0), vec3f(0.5), vec3f(mix(0.08, 0.4, P_sat())), vec3f(1.0), vec3f(0.0, 0.33, 0.67));
+  let glowPal = familyPal(fract(P_hue() / 360.0 + P_hueStep() / 360.0), 0.5, mix(0.08, 0.4, P_sat()));
   col += glowPal * smoothstep(0.0, 0.55, y) * P_bgGlow() * (0.3 + drive * 0.6) * 0.35;
+
+  // Optional landscape silhouette (depth wave): a dark fbm ridge rising from
+  // the bottom edge — the ground this sky never had. Height 0 = absent, the
+  // default. Seeded by constants, never time: land does not ripple. Uses the
+  // folded x, so Symmetric mirrors the terrain with the rest of the scene.
+  // Drawn LAST before tonemap: it is the foreground, so it occludes curtains,
+  // reflection and sky glow alike.
+  if (P_ground() > 0.001) {
+    let coarse = fbm(vec2f(x * 2.4 + 17.3, 5.9));
+    let fine = fbm(vec2f(x * 9.5 + 43.7, 11.2));
+    // Ruggedness swaps rolling hills for a jagged ridge: it blends the fine
+    // octave in AND lets it cut deeper into the coarse profile.
+    let relief = mix(coarse, coarse * 0.62 + fine * 0.55, P_groundRough());
+    let ridgeY = 1.0 - P_ground() * (0.3 + relief * 0.7);
+    let land = smoothstep(ridgeY - 0.0025, ridgeY + 0.0025, y);
+    // Near-black but hued (the sky palette again), never flat #000 — and a
+    // whisper of the aurora's own glow spills onto the slopes.
+    let landCol = skyPal * 1.6 + glowPal * 0.02 * (0.4 + drive * 0.6);
+    col = mix(col, landCol, land * 0.97);
+    // Thin cold rim where the ridge meets the sky — backlit by the aurora,
+    // which is what sells the silhouette as terrain instead of a paper cutout.
+    let rimD = abs(y - ridgeY);
+    col += glowPal * smoothstep(0.006, 0.0, rimD) * (0.10 + drive * 0.14) * P_ground() * 2.5;
+  }
 
   col = tonemap(col * 1.1);
   col += grain(uv, 0.012);
@@ -256,8 +353,28 @@ exports[`shader golden baseline > aurora: param ABI (key + default, in order) is
     "key": "baseY",
   },
   {
+    "default": 1,
+    "key": "wave",
+  },
+  {
     "default": 3,
     "key": "layers",
+  },
+  {
+    "default": 0.4,
+    "key": "beatPulse",
+  },
+  {
+    "default": 0,
+    "key": "palWarm",
+  },
+  {
+    "default": 0,
+    "key": "moon",
+  },
+  {
+    "default": 0,
+    "key": "ground",
   },
   {
     "default": 1.6,
@@ -284,20 +401,16 @@ exports[`shader golden baseline > aurora: param ABI (key + default, in order) is
     "key": "reflectFade",
   },
   {
-    "default": 0.4,
-    "key": "beatPulse",
-  },
-  {
-    "default": 1,
-    "key": "wave",
-  },
-  {
     "default": 55,
     "key": "hueStep",
   },
   {
     "default": 60,
     "key": "hueSpread",
+  },
+  {
+    "default": 1,
+    "key": "palSpan",
   },
   {
     "default": 0.6,
@@ -318,6 +431,22 @@ exports[`shader golden baseline > aurora: param ABI (key + default, in order) is
   {
     "default": 1,
     "key": "mirror",
+  },
+  {
+    "default": 0.5,
+    "key": "groundRough",
+  },
+  {
+    "default": 0.34,
+    "key": "moonX",
+  },
+  {
+    "default": 0.78,
+    "key": "moonY",
+  },
+  {
+    "default": 0.35,
+    "key": "moonGlow",
   },
 ]
 `;
