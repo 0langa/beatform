@@ -575,6 +575,153 @@ describe("schema v13 (preset id rename: starfield -> particles)", () => {
   });
 });
 
+describe("schema v14 (nebula saturation semantics: authored 0..1 -> scaler 0..2)", () => {
+  /** A v11 file exactly as a pre-RP-6 app wrote it: old-semantics nebula
+   * saturation at every site a document can persist one, next to sibling
+   * data that must NOT be touched (the colour-tier modes always had scaler
+   * semantics; other params and other routes are innocent bystanders). */
+  const legacyFile = (nebulaParams: Record<string, number>) => ({
+    schemaVersion: 11,
+    kind: "bfproj",
+    appVersion: "2.73.0",
+    savedAt: "2026-08-01T00:00:00.000Z",
+    document: {
+      presetId: "nebula",
+      paramsByPreset: {
+        nebula: nebulaParams,
+        "spectrum-bars": { saturation: 1.7 },
+      },
+      modsByPreset: {
+        nebula: [
+          { id: "m1", source: "bass", param: "saturation", amount: 0.75 },
+          { id: "m2", source: "kick", param: "hue", amount: 0.3 },
+        ],
+        "spectrum-bars": [{ id: "m3", source: "bass", param: "saturation", amount: 0.9 }],
+      },
+      timeline: {
+        enabled: true,
+        scenes: [
+          {
+            id: "s1",
+            name: "Neb",
+            presetId: "nebula",
+            start: 10,
+            params: { saturation: 0.5, flow: 0.2 },
+          },
+          {
+            id: "s2",
+            name: "Bars",
+            presetId: "spectrum-bars",
+            start: 60,
+            params: { saturation: 1.5 },
+          },
+        ],
+        lanes: [],
+      },
+    },
+  });
+
+  it("remaps stored values by the exact inverse of the shader change (boundaries)", () => {
+    // The shader used to consume the raw value (satT = v) and now consumes
+    // satT = v * 0.75, so identical rendering means new = old / 0.75: the
+    // old floor 0 stays 0, the OLD DEFAULT 0.75 lands exactly on the NEW
+    // DEFAULT 1 (so a file that pinned the default keeps rendering the
+    // default), and the old ceiling 1 lands on 4/3 — inside the new 0..2.
+    for (const [oldV, newV] of [
+      [0, 0],
+      [0.75, 1],
+      [1, 4 / 3],
+    ] as const) {
+      const parsed = parseProject(JSON.stringify(legacyFile({ saturation: oldV })));
+      expect(parsed.paramsByPreset.nebula.saturation).toBe(newV);
+    }
+  });
+
+  it("leaves sibling modes, sibling params and non-saturation routes alone", () => {
+    const parsed = parseProject(JSON.stringify(legacyFile({ saturation: 1, hue: 200 })));
+    // Colour-tier saturation always was a 0..2 scaler — not remapped.
+    expect(parsed.paramsByPreset["spectrum-bars"].saturation).toBe(1.7);
+    // Other nebula params pass through untouched.
+    expect(parsed.paramsByPreset.nebula.hue).toBe(200);
+    // A nebula route to a DIFFERENT param keeps its amount...
+    expect(parsed.modsByPreset.nebula.find((r) => r.param === "hue")?.amount).toBe(0.3);
+    // ...and a saturation route on a sibling mode keeps its amount.
+    expect(parsed.modsByPreset["spectrum-bars"][0].amount).toBe(0.9);
+  });
+
+  it("remaps nebula scene overrides but not other modes' scenes", () => {
+    const parsed = parseProject(JSON.stringify(legacyFile({ saturation: 1 })));
+    const neb = parsed.timeline.scenes.find((s) => s.id === "s1")!;
+    const bars = parsed.timeline.scenes.find((s) => s.id === "s2")!;
+    expect(neb.params?.saturation).toBe(2 / 3); // 0.5 / 0.75
+    expect(neb.params?.flow).toBe(0.2); // sibling key untouched
+    expect(bars.params?.saturation).toBe(1.5); // sibling mode untouched
+  });
+
+  it("rescales nebula saturation route amounts by the range-times-slope growth (1.5)", () => {
+    // applyMods adds value * amount * (max - min): the range doubled while
+    // the shader slope per param unit shrank to 0.75x, so an unchanged
+    // amount would modulate 1.5x deeper. 0.75 / 1.5 = 0.5 exactly.
+    const parsed = parseProject(JSON.stringify(legacyFile({ saturation: 1 })));
+    expect(parsed.modsByPreset.nebula.find((r) => r.id === "m1")?.amount).toBe(0.5);
+  });
+
+  it("a document whose nebula params lack saturation is untouched — defaults align by construction", () => {
+    // Absent means "render the default" on both sides of the migration, and
+    // the new default's satT (1 * 0.75) is bit-equal to the old default's
+    // (0.75) — so absence must stay absence, and such a file must keep
+    // writing the pre-v14 schema (it is portable in both directions).
+    const parsed = parseProject(JSON.stringify(legacyFile({ hue: 200 })));
+    expect(parsed.paramsByPreset.nebula.saturation).toBeUndefined();
+    expect(parsed.paramsByPreset.nebula.hue).toBe(200);
+  });
+
+  it("round-trips: the migrated document is stamped v14 and re-parses unchanged (idempotence)", () => {
+    const parsed = parseProject(JSON.stringify(legacyFile({ saturation: 1 })));
+    const file = JSON.parse(serializeProject(parsed, "2.74.0"));
+    // The stored 4/3 (and the rescaled route) are exactly what an older
+    // reader would misread as oversaturated, so the conditional bump fires.
+    expect(file.schemaVersion).toBe(14);
+    // A v14 file is NOT remapped again: 4/3 stays 4/3, 0.5 stays 0.5.
+    const reparsed = parseProject(JSON.stringify(file));
+    expect(reparsed).toEqual(parsed);
+    expect(reparsed.paramsByPreset.nebula.saturation).toBe(4 / 3);
+    expect(reparsed.modsByPreset.nebula.find((r) => r.id === "m1")?.amount).toBe(0.5);
+  });
+
+  it("stamps v14 only for documents that actually carry a nebula saturation value", () => {
+    // Params carrier.
+    const params = validateDocument({
+      presetId: "nebula",
+      paramsByPreset: { nebula: { saturation: 1.2 } },
+    });
+    expect(JSON.parse(serializeProject(params, "x")).schemaVersion).toBe(14);
+    // Scene-override carrier.
+    const scene = validateDocument({
+      presetId: "spectrum-bars",
+      timeline: {
+        enabled: true,
+        scenes: [{ id: "s", name: "N", presetId: "nebula", start: 0, params: { saturation: 1.2 } }],
+        lanes: [],
+      },
+    });
+    expect(JSON.parse(serializeProject(scene, "x")).schemaVersion).toBe(14);
+    // Route carrier.
+    const route = validateDocument({
+      presetId: "nebula",
+      modsByPreset: { nebula: [{ id: "m", source: "bass", param: "saturation", amount: 0.4 }] },
+    });
+    expect(JSON.parse(serializeProject(route, "x")).schemaVersion).toBe(14);
+    // Mere nebula usage without a stored saturation value is portable — no
+    // bump (mirrors the v13 "params under the new id" rule).
+    const clean = validateDocument({
+      presetId: "nebula",
+      paramsByPreset: { nebula: { hue: 200 } },
+    });
+    expect(JSON.parse(serializeProject(clean, "x")).schemaVersion).toBe(11);
+  });
+});
+
 /**
  * Background framing (BgFit) — added WITHOUT a schema bump, so the neutral
  * defaults have to be exactly the cover crop the shader used to hardcode.
