@@ -14,12 +14,38 @@ import type { PresetDef } from "../types";
  * and the mountain ridge catches a thin backlit rim. No mirror/kaleido here
  * — the composition is a single asymmetric horizon + off-center sun, and
  * folding it would break that on purpose-built geometry.
+ *
+ * Depth wave (Track B, audit RP-24.14): the genre's missing composition
+ * elements, all fragment-local and all ABSENT at the defaults so the stock
+ * look is pixel-identical to the pre-wave build:
+ *  - The road: a perspective strip converging on the grid's own vanishing
+ *    point, with neon edge rails and dashed lane markers. It rides the SAME
+ *    `scroll` variable as the grid — beat-locked when the grid is, free
+ *    otherwise — so preview and export cannot diverge (determinism law).
+ *    Off at the default width 0; the whole block is gated.
+ *  - Sun banding family: the hardcoded scanline constants became params.
+ *    Band count/thickness/shift default to exactly the old 28 / 0.5 / 0
+ *    (the widening term stays count x 2.5 = the old 70), and Sun warmth
+ *    scales the old +45 degree gradient offset (default 1 = +45).
+ *  - City skyline: flat-roofed towers silhouetted at the horizon, seeded per
+ *    column from hash21 (pure function of uv — deterministic), with lit
+ *    windows that flicker with the treble via the existing u.treble feature
+ *    lane. Absent at the default height 0; the block is gated.
+ *
+ * Canvas2D fallback: there is no per-mode branch there — the fallback draws
+ * its single generic bars look and reads only hue/hueSpread/saturation/
+ * lightness/barGap/peaks, so every road/skyline/banding param is ignored
+ * exactly like the mode's other non-`hue` params (the F1 banner says so).
+ *
+ * Star twinkle still multiplies raw u.time (audit RP-21): migrating it to a
+ * shared noiseClock changes default pixels, so it is deliberately NOT part
+ * of this wave — it belongs to a batched hash-input re-bless.
  */
 export const synthwave: PresetDef = {
   id: "synthwave",
   name: "Synthwave",
   description:
-    "Retro neon grid racing toward a scanline sun over mountains and stars — grid and horizon pulse with the sync source.",
+    "Retro neon grid racing toward a banded sun — optional road, city skyline, mountains and stars. Grid, sun and horizon pulse with the sync source.",
   styles: [
     // Sunset — the defaults — sun, grid and mountains.
     { id: "sunset", name: "Sunset", values: {} },
@@ -44,7 +70,8 @@ export const synthwave: PresetDef = {
         vignette: 0.35,
       },
     },
-    // Midnight Drive — horizon high in frame, mostly floor, deep fog, sun nearly set.
+    // Midnight Drive — mostly floor, deep fog, sun nearly set — and since the
+    // depth wave, an actual road to drive: dim rails vanishing into the haze.
     {
       id: "midnight",
       name: "Midnight Drive",
@@ -64,6 +91,8 @@ export const synthwave: PresetDef = {
         react: 0.6,
         beatPulse: 0.3,
         vignette: 0.55,
+        roadW: 0.5,
+        roadGlow: 0.75,
       },
     },
     // Big Sun — sky-heavy: lowest horizon, biggest sun, rays, coarse grid, no stars.
@@ -178,6 +207,115 @@ export const synthwave: PresetDef = {
         vignette: 0.35,
       },
     },
+    // Outrun — the arcade night-drive: wide road, two dashed dividers, hard
+    // rails, cyan grid under a magenta sky at speed.
+    {
+      id: "outrun",
+      name: "Outrun",
+      values: {
+        hue: 305,
+        gridHue: 190,
+        roadW: 0.62,
+        roadLanes: 2,
+        roadGlow: 1.45,
+        speed: 2,
+        gridScale: 1.1,
+        gridGlow: 1.2,
+        sunR: 0.26,
+        sunY: 0.18,
+        scan: 0.72,
+        scanCount: 24,
+        mountains: 0.2,
+        starDensity: 0.5,
+        fog: 0.75,
+        horizonY: 0.46,
+        react: 1.1,
+        beatPulse: 0.8,
+        vignette: 0.4,
+      },
+    },
+    // Neon Metropolis — the city horizon: packed towers with windows working
+    // the treble, hills gone, a big sun rising behind the skyline.
+    {
+      id: "metropolis",
+      name: "Neon Metropolis",
+      values: {
+        hue: 282,
+        gridHue: 322,
+        skyline: 0.75,
+        skyDensity: 0.7,
+        windows: 0.8,
+        mountains: 0,
+        sunR: 0.34,
+        sunY: 0.2,
+        sunX: 0.22,
+        scan: 0.5,
+        sunWarm: 0.8,
+        speed: 0.85,
+        gridScale: 0.8,
+        gridGlow: 1.05,
+        fog: 1.1,
+        starDensity: 0.44,
+        react: 0.9,
+        beatPulse: 0.55,
+        vignette: 0.45,
+      },
+    },
+    // Poster Sun — the record-sleeve classic: a huge warm sun cut by a few
+    // thick bands, one dashed road running straight at it, no stars.
+    {
+      id: "poster",
+      name: "Poster Sun",
+      values: {
+        hue: 12,
+        gridHue: 268,
+        sunR: 0.4,
+        sunY: 0.34,
+        scan: 0.96,
+        scanCount: 13,
+        scanWidth: 0.62,
+        sunWarm: 1.6,
+        sunRays: 0.2,
+        roadW: 0.4,
+        roadGlow: 1.1,
+        mountains: 0.5,
+        speed: 0.65,
+        stars: 0,
+        fog: 0.6,
+        horizonY: 0.55,
+        react: 0.6,
+        beatPulse: 0.3,
+        vignette: 0.35,
+      },
+    },
+    // City Limits — driving into town: four lanes of road running at a
+    // low-slung skyline under a thin blue dusk.
+    {
+      id: "cityLimits",
+      name: "City Limits",
+      values: {
+        hue: 215,
+        gridHue: 165,
+        roadW: 0.5,
+        roadLanes: 3,
+        roadGlow: 1.2,
+        skyline: 0.55,
+        skyDensity: 0.55,
+        windows: 0.6,
+        mountains: 0.12,
+        sunR: 0.22,
+        sunY: 0.16,
+        scan: 0.4,
+        scanCount: 34,
+        speed: 1.35,
+        gridScale: 0.9,
+        fog: 1,
+        starDensity: 0.36,
+        react: 1,
+        beatPulse: 0.65,
+        vignette: 0.5,
+      },
+    },
   ],
   params: [
     {
@@ -200,7 +338,7 @@ export const synthwave: PresetDef = {
       max: 360,
       step: 1,
       default: 300,
-      hint: "Color of the neon floor grid",
+      hint: "Color of the neon floor grid (the road's rails ride it too)",
     },
     {
       key: "speed",
@@ -223,6 +361,16 @@ export const synthwave: PresetDef = {
       hint: "How much the sync source (Sync panel) pumps the grid + horizon",
     },
     {
+      key: "beatPulse",
+      label: "Beat pulse",
+      group: "reaction",
+      min: 0,
+      max: 1.5,
+      step: 0.05,
+      default: 0.5,
+      hint: "Grid + horizon flash on each beat of the sync source",
+    },
+    {
       key: "sunR",
       label: "Sun size",
       group: "shape",
@@ -233,26 +381,24 @@ export const synthwave: PresetDef = {
       hint: "Radius of the sun",
     },
     {
-      key: "gridGlow",
-      label: "Grid glow",
-      group: "glow",
+      key: "roadW",
+      label: "Road",
+      group: "shape",
       min: 0,
-      max: 2,
-      step: 0.05,
-      default: 1,
-      hint: "Base brightness of the grid",
+      max: 1,
+      step: 0.02,
+      default: 0,
+      hint: "Perspective road racing down the grid to the vanishing point — 0 is no road at all",
     },
-  ],
-  advanced: [
     {
-      key: "beatPulse",
-      label: "Beat pulse",
-      group: "reaction",
+      key: "skyline",
+      label: "Skyline",
+      group: "shape",
       min: 0,
-      max: 1.5,
-      step: 0.05,
-      default: 0.5,
-      hint: "Grid + horizon flash on each beat of the sync source",
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "City towers silhouetted on the horizon — sets their height; 0 clears the view",
     },
     {
       key: "mountains",
@@ -265,36 +411,36 @@ export const synthwave: PresetDef = {
       hint: "Silhouetted rolling mountains on the horizon (rise with the bass), rim-lit along the ridge",
     },
     {
-      key: "stars",
-      label: "Stars",
-      group: "backdrop",
-      control: "toggle",
-      mod: "off",
+      key: "gridGlow",
+      label: "Grid glow",
+      group: "glow",
       min: 0,
-      max: 1,
-      step: 1,
+      max: 2,
+      step: 0.05,
       default: 1,
-      hint: "Starfield in the sky",
+      hint: "Base brightness of the grid",
     },
     {
-      key: "starDensity",
-      label: "Star density",
-      group: "backdrop",
-      min: 0,
-      max: 1,
-      step: 0.02,
-      default: 0.3,
-      hint: "How many stars fill the sky (needs Stars on)",
-    },
-    {
-      key: "sunRays",
-      label: "Sun rays",
+      key: "scan",
+      label: "Sun bands",
       group: "glow",
       min: 0,
       max: 1,
       step: 0.02,
-      default: 0,
-      hint: "Rotating rays radiating from the sun",
+      default: 0.6,
+      hint: "Strength of the dark bands sliced across the sun (the hot core still glows through)",
+    },
+  ],
+  advanced: [
+    {
+      key: "sunWarm",
+      label: "Sun warmth",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      default: 1,
+      hint: "How far the top of the sun leans warmer than its base hue — 0 is a flat one-color disc",
     },
     {
       key: "sunY",
@@ -317,9 +463,100 @@ export const synthwave: PresetDef = {
       hint: "Horizontal position of the sun — 0 is centered, negative moves it left",
     },
     {
+      key: "scanCount",
+      label: "Band count",
+      group: "glow",
+      taper: "log",
+      mod: "snap",
+      min: 8,
+      max: 56,
+      step: 1,
+      default: 28,
+      hint: "How many bands slice the sun — fewer reads as a bigger, bolder poster sun",
+    },
+    {
+      key: "scanWidth",
+      label: "Band thickness",
+      group: "glow",
+      min: 0.1,
+      max: 0.9,
+      step: 0.01,
+      default: 0.5,
+      hint: "How much of each slice the dark band covers",
+    },
+    {
+      key: "scanPhase",
+      label: "Band shift",
+      group: "glow",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "Slides the band pattern up or down the sun — automate it to make the bands crawl",
+    },
+    {
+      key: "sunRays",
+      label: "Sun rays",
+      group: "glow",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0,
+      hint: "Rotating rays radiating from the sun",
+    },
+    {
+      key: "roadLanes",
+      label: "Lane markers",
+      group: "shape",
+      control: "enum",
+      mod: "snap",
+      options: [
+        { value: 0, label: "None", hint: "Bare road between the rails" },
+        { value: 1, label: "Center dash", hint: "One dashed divider down the middle" },
+        { value: 2, label: "Two dashes", hint: "Three lanes of road" },
+        { value: 3, label: "Three dashes", hint: "Four lanes of road" },
+      ],
+      min: 0,
+      max: 3,
+      step: 1,
+      default: 1,
+      hint: "Dashed lane dividers on the road — they cross exactly on the beat whenever the grid does (needs a Road)",
+    },
+    {
+      key: "roadGlow",
+      label: "Road glow",
+      group: "glow",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      default: 1,
+      hint: "Brightness of the road's neon edge rails and lane dashes (needs a Road)",
+    },
+    {
+      key: "skyDensity",
+      label: "Building density",
+      group: "shape",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.5,
+      hint: "How tightly the towers pack the horizon — low is sparse outskirts, high is downtown (needs a Skyline)",
+    },
+    {
+      key: "windows",
+      label: "Window lights",
+      group: "glow",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.35,
+      hint: "Lit windows across the towers, flickering with the treble (needs a Skyline)",
+    },
+    {
       key: "gridScale",
       label: "Grid density",
       group: "shape",
+      taper: "log",
       min: 0.2,
       max: 2,
       step: 0.05,
@@ -337,14 +574,26 @@ export const synthwave: PresetDef = {
       hint: "Where the horizon line sits — lower raises it for more grid floor, higher drops it for more sky",
     },
     {
-      key: "scan",
-      label: "Sun scanlines",
+      key: "stars",
+      label: "Stars",
+      group: "backdrop",
+      control: "toggle",
+      mod: "off",
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 1,
+      hint: "Starfield in the sky",
+    },
+    {
+      key: "starDensity",
+      label: "Star density",
       group: "backdrop",
       min: 0,
       max: 1,
       step: 0.02,
-      default: 0.6,
-      hint: "Strength of the horizontal bands across the sun (the hot core still glows through)",
+      default: 0.3,
+      hint: "How many stars fill the sky (needs Stars on)",
     },
     {
       key: "gridLock",
@@ -401,7 +650,7 @@ fn preset(uv: vec2f) -> vec4f {
     var scroll = u.time * P_speed() * 2.0;
     if (P_gridLock() > 0.5 && u.bpm > 0.5) {
       // Integer lines-per-beat keeps the scroll continuous across the bar wrap;
-      // ×2 before rounding makes each 0.5 of the Speed slider a distinct rate
+      // x2 before rounding makes each 0.5 of the Speed slider a distinct rate
       // (1..6 lines/beat) instead of round() collapsing the lower half to 1.
       scroll = beatRamp() * max(1.0, round(P_speed() * 2.0));
     }
@@ -431,6 +680,46 @@ fn preset(uv: vec2f) -> vec4f {
     let fogAmt = (1.0 - exp(-persp * 0.22)) * clamp(P_fog(), 0.0, 1.5);
     let fogCol = mix(hsl2rgb(P_gridHue(), 0.5, 0.045), hsl2rgb(P_hue(), 0.55, 0.045), 0.5);
     gridCol = mix(gridCol, fogCol * (grid * 0.7 + 0.3) * fade, clamp(fogAmt, 0.0, 1.0));
+
+    // --- Road (optional; the block is GATED so the default width 0 renders
+    // pixel-identically to the road-less build). World-space x is cx * persp
+    // — the same mapping the grid's own verticals use — so the road's edges
+    // converge on the grid's exact vanishing point. Lane dashes reuse the
+    // grid's scroll variable untouched: beat-locked dashes when the grid
+    // is beat-locked, free-running when it isn't, identical in preview and
+    // export by construction. Dash frequency is dens * 0.5: 4 beats always
+    // advance an integer number of dash cycles, so the pattern stays
+    // continuous across the bar wrap exactly like the grid rows.
+    if (P_roadW() > 0.004) {
+      let halfW = P_roadW() * 0.3;
+      let wx = cx * persp;
+      let road = smoothstep(halfW, halfW * 0.92, abs(wx));
+      // Asphalt: knock the grid down inside the road so it reads as tarmac
+      // laid over the wireframe world (a trace of grid ghosts through).
+      gridCol *= 1.0 - road * 0.82;
+      // Neon edge rails where road meets grid: a crisp world-space line plus
+      // a soft halo, both foreshortening naturally with perspective.
+      let edgeD = abs(abs(wx) - halfW);
+      let edgeW = 0.012 + fy * 0.02;
+      let edgeGlow = P_roadGlow() * (0.55 + drive * P_react() * 0.5 + u.bass * 0.25) * pulse;
+      var roadCol = hsl2rgb(P_gridHue(), 0.95, 0.62) * smoothstep(edgeW, 0.0, edgeD);
+      roadCol += hsl2rgb(P_gridHue(), 0.8, 0.5) * exp(-edgeD * 60.0) * 0.3;
+      // Lane markers: up to three dashed dividers spaced evenly across the
+      // road, scrolling at the grid's own rate.
+      let lanes = P_roadLanes();
+      if (lanes > 0.5) {
+        let dash = step(0.5, fract((persp - scroll) * dens * 0.5));
+        for (var i = 0; i < 3; i++) {
+          if (f32(i) > lanes - 0.5) { break; }
+          let fi = f32(i) + 1.0;
+          let laneD = abs(wx - (-halfW + 2.0 * halfW * fi / (lanes + 1.0)));
+          roadCol += vec3f(1.0, 0.95, 0.75) * smoothstep(edgeW * 0.8, 0.0, laneD) * dash * 0.8;
+        }
+      }
+      // The road sits in the same atmosphere as the grid: fog dims it toward
+      // the vanishing point, fade lifts it off the horizon line.
+      col += roadCol * fade * edgeGlow * mix(1.0, 0.25, clamp(fogAmt, 0.0, 1.0));
+    }
     col += gridCol;
   } else {
     // --- Sky.
@@ -452,9 +741,14 @@ fn preset(uv: vec2f) -> vec4f {
     let sd = length(sunCtr);
     let sunBody = smoothstep(P_sunR(), P_sunR() - 0.008, sd);
     let scanPos = horizon - uv.y;
-    let scanGap = P_scan() * step(0.5, fract(scanPos * (28.0 + scanPos * 70.0)));
+    // Banding family (depth wave): the pre-wave constants became params with
+    // defaults that reproduce them EXACTLY — count 28 (widening term stays
+    // count x 2.5 = the old 70), gap duty 1 - 0.5, shift + 0. The device
+    // pixel matrix holds this to bit-identity at the defaults.
+    let scanGap = P_scan() * step(1.0 - P_scanWidth(),
+      fract(scanPos * (P_scanCount() + scanPos * (P_scanCount() * 2.5)) + P_scanPhase()));
     let sunGrad = mix(
-      hsl2rgb(P_hue() + 45.0, 0.95, 0.62),
+      hsl2rgb(P_hue() + 45.0 * P_sunWarm(), 0.95, 0.62),
       hsl2rgb(P_hue(), 0.95, 0.55),
       clamp((uv.y - (sunCy - P_sunR())) / (2.0 * P_sunR()), 0.0, 1.0),
     );
@@ -493,13 +787,52 @@ fn preset(uv: vec2f) -> vec4f {
              * (0.5 + 0.5 * sin(u.time * 2.0 + h * 40.0)) * smoothstep(horizon, 0.0, uv.y);
       }
     }
-    // Mountains are a dark silhouette over the sky.
-    col += mix(sky, sky * 0.1, mtn);
+    // --- City skyline (optional; GATED so the default height 0 renders
+    // pixel-identically to the skyline-less build). Flat-roofed towers on a
+    // per-column hash — a pure function of uv, so preview and export agree
+    // by construction. Buildings stand in FRONT of sun, stars and mountains
+    // (they darken whatever the sky composed behind them), the genre image.
+    var city = 0.0;
+    var winGlow = vec3f(0.0);
+    if (P_skyline() > 0.004) {
+      // Column width in aspect-corrected units: density packs the towers.
+      let colW = mix(0.17, 0.05, clamp(P_skyDensity(), 0.0, 1.0));
+      let bx = (uv.x * u.aspect) / colW;
+      let cell = floor(bx);
+      let h1 = hash21(vec2f(cell, 3.7));
+      // Some columns sit out entirely: sparse outskirts at low density,
+      // near-solid downtown at high.
+      let present = step(mix(0.35, 0.06, clamp(P_skyDensity(), 0.0, 1.0)), h1);
+      let th = (0.25 + h1 * 0.75) * P_skyline() * 0.2;
+      let towerTop = horizon - th;
+      // Inset the walls so adjacent towers read as separate buildings.
+      let inset = smoothstep(0.03, 0.1, fract(bx)) * smoothstep(0.97, 0.9, fract(bx));
+      city = smoothstep(towerTop - 0.003, towerTop, uv.y) * inset * present;
+      // Lit windows: a seeded grid inside each tower, flickering with the
+      // treble through the existing feature lane (glimmer rides TRACK time).
+      if (P_windows() > 0.004) {
+        let wp = vec2f(fract(bx) * 4.0, (horizon - uv.y) * 110.0);
+        let wcell = floor(wp);
+        let wh = hash21(wcell * 0.37 + vec2f(cell * 13.7, cell * 7.1));
+        let lit = step(0.62, wh);
+        let wdot = smoothstep(0.5, 0.18, abs(fract(wp.x) - 0.5))
+                 * smoothstep(0.5, 0.25, abs(fract(wp.y) - 0.5));
+        let glimmer = 0.6 + 0.4 * sin(u.time * 3.0 + wh * 43.0);
+        winGlow = vec3f(1.0, 0.83, 0.55) * lit * wdot * city * P_windows()
+                * glimmer * (0.45 + u.treble * 0.95);
+      }
+    }
+    // Mountains are a dark silhouette over the sky; the city is a darker one
+    // over both (city = 0.0 leaves this arithmetic exactly neutral).
+    var skyOut = mix(sky, sky * 0.1, mtn);
+    skyOut = mix(skyOut, skyOut * 0.05, city);
+    col += skyOut + winGlow;
     // Rim light: a thin warm highlight along the ridge, as if backlit by the
-    // sun behind it — sells the silhouette as a shape instead of a flat cutout.
+    // sun behind it — sells the silhouette as a shape instead of a flat
+    // cutout. Towers standing in front of the ridge mask it.
     let ridgeDist = abs(uv.y - ridgeTop);
     col += hsl2rgb(P_hue() + 20.0, 0.85, 0.6) * smoothstep(0.007, 0.0, ridgeDist)
-         * (0.5 + drive * 0.4) * P_mountains();
+         * (0.5 + drive * 0.4) * P_mountains() * (1.0 - city);
   }
   // Horizon bloom: a tight crisp line plus a wider soft halo, pumped by the
   // sync source — two exp() reaches read as an actual light source instead

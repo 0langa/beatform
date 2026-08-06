@@ -4685,21 +4685,31 @@ exports[`shader golden baseline > synthwave: accessors + body are stable 1`] = `
 fn P_gridHue() -> f32 { return params[1u]; }
 fn P_speed() -> f32 { return params[2u]; }
 fn P_react() -> f32 { return params[3u]; }
-fn P_sunR() -> f32 { return params[4u]; }
-fn P_gridGlow() -> f32 { return params[5u]; }
-fn P_beatPulse() -> f32 { return params[6u]; }
-fn P_mountains() -> f32 { return params[7u]; }
-fn P_stars() -> f32 { return params[8u]; }
-fn P_starDensity() -> f32 { return params[9u]; }
-fn P_sunRays() -> f32 { return params[10u]; }
-fn P_sunY() -> f32 { return params[11u]; }
-fn P_sunX() -> f32 { return params[12u]; }
-fn P_gridScale() -> f32 { return params[13u]; }
-fn P_horizonY() -> f32 { return params[14u]; }
-fn P_scan() -> f32 { return params[15u]; }
-fn P_gridLock() -> f32 { return params[16u]; }
-fn P_fog() -> f32 { return params[17u]; }
-fn P_vignette() -> f32 { return params[18u]; }
+fn P_beatPulse() -> f32 { return params[4u]; }
+fn P_sunR() -> f32 { return params[5u]; }
+fn P_roadW() -> f32 { return params[6u]; }
+fn P_skyline() -> f32 { return params[7u]; }
+fn P_mountains() -> f32 { return params[8u]; }
+fn P_gridGlow() -> f32 { return params[9u]; }
+fn P_scan() -> f32 { return params[10u]; }
+fn P_sunWarm() -> f32 { return params[11u]; }
+fn P_sunY() -> f32 { return params[12u]; }
+fn P_sunX() -> f32 { return params[13u]; }
+fn P_scanCount() -> f32 { return params[14u]; }
+fn P_scanWidth() -> f32 { return params[15u]; }
+fn P_scanPhase() -> f32 { return params[16u]; }
+fn P_sunRays() -> f32 { return params[17u]; }
+fn P_roadLanes() -> f32 { return params[18u]; }
+fn P_roadGlow() -> f32 { return params[19u]; }
+fn P_skyDensity() -> f32 { return params[20u]; }
+fn P_windows() -> f32 { return params[21u]; }
+fn P_gridScale() -> f32 { return params[22u]; }
+fn P_horizonY() -> f32 { return params[23u]; }
+fn P_stars() -> f32 { return params[24u]; }
+fn P_starDensity() -> f32 { return params[25u]; }
+fn P_gridLock() -> f32 { return params[26u]; }
+fn P_fog() -> f32 { return params[27u]; }
+fn P_vignette() -> f32 { return params[28u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   var col = vec3f(0.0);
@@ -4722,7 +4732,7 @@ fn preset(uv: vec2f) -> vec4f {
     var scroll = u.time * P_speed() * 2.0;
     if (P_gridLock() > 0.5 && u.bpm > 0.5) {
       // Integer lines-per-beat keeps the scroll continuous across the bar wrap;
-      // ×2 before rounding makes each 0.5 of the Speed slider a distinct rate
+      // x2 before rounding makes each 0.5 of the Speed slider a distinct rate
       // (1..6 lines/beat) instead of round() collapsing the lower half to 1.
       scroll = beatRamp() * max(1.0, round(P_speed() * 2.0));
     }
@@ -4752,6 +4762,46 @@ fn preset(uv: vec2f) -> vec4f {
     let fogAmt = (1.0 - exp(-persp * 0.22)) * clamp(P_fog(), 0.0, 1.5);
     let fogCol = mix(hsl2rgb(P_gridHue(), 0.5, 0.045), hsl2rgb(P_hue(), 0.55, 0.045), 0.5);
     gridCol = mix(gridCol, fogCol * (grid * 0.7 + 0.3) * fade, clamp(fogAmt, 0.0, 1.0));
+
+    // --- Road (optional; the block is GATED so the default width 0 renders
+    // pixel-identically to the road-less build). World-space x is cx * persp
+    // — the same mapping the grid's own verticals use — so the road's edges
+    // converge on the grid's exact vanishing point. Lane dashes reuse the
+    // grid's scroll variable untouched: beat-locked dashes when the grid
+    // is beat-locked, free-running when it isn't, identical in preview and
+    // export by construction. Dash frequency is dens * 0.5: 4 beats always
+    // advance an integer number of dash cycles, so the pattern stays
+    // continuous across the bar wrap exactly like the grid rows.
+    if (P_roadW() > 0.004) {
+      let halfW = P_roadW() * 0.3;
+      let wx = cx * persp;
+      let road = smoothstep(halfW, halfW * 0.92, abs(wx));
+      // Asphalt: knock the grid down inside the road so it reads as tarmac
+      // laid over the wireframe world (a trace of grid ghosts through).
+      gridCol *= 1.0 - road * 0.82;
+      // Neon edge rails where road meets grid: a crisp world-space line plus
+      // a soft halo, both foreshortening naturally with perspective.
+      let edgeD = abs(abs(wx) - halfW);
+      let edgeW = 0.012 + fy * 0.02;
+      let edgeGlow = P_roadGlow() * (0.55 + drive * P_react() * 0.5 + u.bass * 0.25) * pulse;
+      var roadCol = hsl2rgb(P_gridHue(), 0.95, 0.62) * smoothstep(edgeW, 0.0, edgeD);
+      roadCol += hsl2rgb(P_gridHue(), 0.8, 0.5) * exp(-edgeD * 60.0) * 0.3;
+      // Lane markers: up to three dashed dividers spaced evenly across the
+      // road, scrolling at the grid's own rate.
+      let lanes = P_roadLanes();
+      if (lanes > 0.5) {
+        let dash = step(0.5, fract((persp - scroll) * dens * 0.5));
+        for (var i = 0; i < 3; i++) {
+          if (f32(i) > lanes - 0.5) { break; }
+          let fi = f32(i) + 1.0;
+          let laneD = abs(wx - (-halfW + 2.0 * halfW * fi / (lanes + 1.0)));
+          roadCol += vec3f(1.0, 0.95, 0.75) * smoothstep(edgeW * 0.8, 0.0, laneD) * dash * 0.8;
+        }
+      }
+      // The road sits in the same atmosphere as the grid: fog dims it toward
+      // the vanishing point, fade lifts it off the horizon line.
+      col += roadCol * fade * edgeGlow * mix(1.0, 0.25, clamp(fogAmt, 0.0, 1.0));
+    }
     col += gridCol;
   } else {
     // --- Sky.
@@ -4773,9 +4823,14 @@ fn preset(uv: vec2f) -> vec4f {
     let sd = length(sunCtr);
     let sunBody = smoothstep(P_sunR(), P_sunR() - 0.008, sd);
     let scanPos = horizon - uv.y;
-    let scanGap = P_scan() * step(0.5, fract(scanPos * (28.0 + scanPos * 70.0)));
+    // Banding family (depth wave): the pre-wave constants became params with
+    // defaults that reproduce them EXACTLY — count 28 (widening term stays
+    // count x 2.5 = the old 70), gap duty 1 - 0.5, shift + 0. The device
+    // pixel matrix holds this to bit-identity at the defaults.
+    let scanGap = P_scan() * step(1.0 - P_scanWidth(),
+      fract(scanPos * (P_scanCount() + scanPos * (P_scanCount() * 2.5)) + P_scanPhase()));
     let sunGrad = mix(
-      hsl2rgb(P_hue() + 45.0, 0.95, 0.62),
+      hsl2rgb(P_hue() + 45.0 * P_sunWarm(), 0.95, 0.62),
       hsl2rgb(P_hue(), 0.95, 0.55),
       clamp((uv.y - (sunCy - P_sunR())) / (2.0 * P_sunR()), 0.0, 1.0),
     );
@@ -4814,13 +4869,52 @@ fn preset(uv: vec2f) -> vec4f {
              * (0.5 + 0.5 * sin(u.time * 2.0 + h * 40.0)) * smoothstep(horizon, 0.0, uv.y);
       }
     }
-    // Mountains are a dark silhouette over the sky.
-    col += mix(sky, sky * 0.1, mtn);
+    // --- City skyline (optional; GATED so the default height 0 renders
+    // pixel-identically to the skyline-less build). Flat-roofed towers on a
+    // per-column hash — a pure function of uv, so preview and export agree
+    // by construction. Buildings stand in FRONT of sun, stars and mountains
+    // (they darken whatever the sky composed behind them), the genre image.
+    var city = 0.0;
+    var winGlow = vec3f(0.0);
+    if (P_skyline() > 0.004) {
+      // Column width in aspect-corrected units: density packs the towers.
+      let colW = mix(0.17, 0.05, clamp(P_skyDensity(), 0.0, 1.0));
+      let bx = (uv.x * u.aspect) / colW;
+      let cell = floor(bx);
+      let h1 = hash21(vec2f(cell, 3.7));
+      // Some columns sit out entirely: sparse outskirts at low density,
+      // near-solid downtown at high.
+      let present = step(mix(0.35, 0.06, clamp(P_skyDensity(), 0.0, 1.0)), h1);
+      let th = (0.25 + h1 * 0.75) * P_skyline() * 0.2;
+      let towerTop = horizon - th;
+      // Inset the walls so adjacent towers read as separate buildings.
+      let inset = smoothstep(0.03, 0.1, fract(bx)) * smoothstep(0.97, 0.9, fract(bx));
+      city = smoothstep(towerTop - 0.003, towerTop, uv.y) * inset * present;
+      // Lit windows: a seeded grid inside each tower, flickering with the
+      // treble through the existing feature lane (glimmer rides TRACK time).
+      if (P_windows() > 0.004) {
+        let wp = vec2f(fract(bx) * 4.0, (horizon - uv.y) * 110.0);
+        let wcell = floor(wp);
+        let wh = hash21(wcell * 0.37 + vec2f(cell * 13.7, cell * 7.1));
+        let lit = step(0.62, wh);
+        let wdot = smoothstep(0.5, 0.18, abs(fract(wp.x) - 0.5))
+                 * smoothstep(0.5, 0.25, abs(fract(wp.y) - 0.5));
+        let glimmer = 0.6 + 0.4 * sin(u.time * 3.0 + wh * 43.0);
+        winGlow = vec3f(1.0, 0.83, 0.55) * lit * wdot * city * P_windows()
+                * glimmer * (0.45 + u.treble * 0.95);
+      }
+    }
+    // Mountains are a dark silhouette over the sky; the city is a darker one
+    // over both (city = 0.0 leaves this arithmetic exactly neutral).
+    var skyOut = mix(sky, sky * 0.1, mtn);
+    skyOut = mix(skyOut, skyOut * 0.05, city);
+    col += skyOut + winGlow;
     // Rim light: a thin warm highlight along the ridge, as if backlit by the
-    // sun behind it — sells the silhouette as a shape instead of a flat cutout.
+    // sun behind it — sells the silhouette as a shape instead of a flat
+    // cutout. Towers standing in front of the ridge mask it.
     let ridgeDist = abs(uv.y - ridgeTop);
     col += hsl2rgb(P_hue() + 20.0, 0.85, 0.6) * smoothstep(0.007, 0.0, ridgeDist)
-         * (0.5 + drive * 0.4) * P_mountains();
+         * (0.5 + drive * 0.4) * P_mountains() * (1.0 - city);
   }
   // Horizon bloom: a tight crisp line plus a wider soft halo, pumped by the
   // sync source — two exp() reaches read as an actual light source instead
@@ -4857,16 +4951,20 @@ exports[`shader golden baseline > synthwave: param ABI (key + default, in order)
     "key": "react",
   },
   {
+    "default": 0.5,
+    "key": "beatPulse",
+  },
+  {
     "default": 0.28,
     "key": "sunR",
   },
   {
-    "default": 1,
-    "key": "gridGlow",
+    "default": 0,
+    "key": "roadW",
   },
   {
-    "default": 0.5,
-    "key": "beatPulse",
+    "default": 0,
+    "key": "skyline",
   },
   {
     "default": 0.35,
@@ -4874,15 +4972,15 @@ exports[`shader golden baseline > synthwave: param ABI (key + default, in order)
   },
   {
     "default": 1,
-    "key": "stars",
+    "key": "gridGlow",
   },
   {
-    "default": 0.3,
-    "key": "starDensity",
+    "default": 0.6,
+    "key": "scan",
   },
   {
-    "default": 0,
-    "key": "sunRays",
+    "default": 1,
+    "key": "sunWarm",
   },
   {
     "default": 0.3,
@@ -4893,6 +4991,38 @@ exports[`shader golden baseline > synthwave: param ABI (key + default, in order)
     "key": "sunX",
   },
   {
+    "default": 28,
+    "key": "scanCount",
+  },
+  {
+    "default": 0.5,
+    "key": "scanWidth",
+  },
+  {
+    "default": 0,
+    "key": "scanPhase",
+  },
+  {
+    "default": 0,
+    "key": "sunRays",
+  },
+  {
+    "default": 1,
+    "key": "roadLanes",
+  },
+  {
+    "default": 1,
+    "key": "roadGlow",
+  },
+  {
+    "default": 0.5,
+    "key": "skyDensity",
+  },
+  {
+    "default": 0.35,
+    "key": "windows",
+  },
+  {
     "default": 0.7,
     "key": "gridScale",
   },
@@ -4901,8 +5031,12 @@ exports[`shader golden baseline > synthwave: param ABI (key + default, in order)
     "key": "horizonY",
   },
   {
-    "default": 0.6,
-    "key": "scan",
+    "default": 1,
+    "key": "stars",
+  },
+  {
+    "default": 0.3,
+    "key": "starDensity",
   },
   {
     "default": 1,
