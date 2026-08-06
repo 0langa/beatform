@@ -24,12 +24,24 @@ use windows_core::PWSTR;
 
 /// Origins the app itself is served from — dev (Vite) and production
 /// (Tauri's localhost protocol). Anything else keeps the deny default.
+const OWN_ORIGINS: &[&str] = &[
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+];
+
+/// Exact-origin gate, not a prefix test: `starts_with` alone also accepted
+/// `http://localhost:1420.evil.com` and `http://localhost:14205`. An origin
+/// only ends where the URI's path/query/fragment begins (or the string
+/// ends), so require exactly one of those after the match — any other byte
+/// means a longer host or port, i.e. a different origin.
 fn own_origin(uri: &str) -> bool {
-    uri.starts_with("http://localhost:1420")
-        || uri.starts_with("http://127.0.0.1:1420")
-        || uri.starts_with("tauri://localhost")
-        || uri.starts_with("http://tauri.localhost")
-        || uri.starts_with("https://tauri.localhost")
+    OWN_ORIGINS.iter().any(|origin| {
+        uri.strip_prefix(origin)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['/', '?', '#']))
+    })
 }
 
 /// Install the handler on a webview. Called from `on_page_load` (the
@@ -97,8 +109,28 @@ mod tests {
         assert!(own_origin("tauri://localhost/"));
         assert!(own_origin("http://tauri.localhost/"));
         assert!(own_origin("https://tauri.localhost/"));
+        // Origin boundaries that are still the app's own origin.
+        assert!(own_origin("http://localhost:1420"));
+        assert!(own_origin("http://localhost:1420?query"));
+        assert!(own_origin("tauri://localhost#fragment"));
         assert!(!own_origin("https://example.com/"));
         assert!(!own_origin("http://localhost:9999/"));
         assert!(!own_origin("https://localhost:1420.evil.com/"));
+    }
+
+    #[test]
+    fn own_origin_is_not_a_prefix_match() {
+        // The old starts_with gate passed all of these: same bytes up front,
+        // different origin. The https `.evil.com` case above failed only on
+        // scheme, which masked the http hole.
+        assert!(!own_origin("http://localhost:1420.evil.com/"));
+        assert!(!own_origin("http://localhost:14205/"));
+        assert!(!own_origin("http://127.0.0.1:14205/"));
+        assert!(!own_origin("http://tauri.localhost.evil.com/"));
+        assert!(!own_origin("https://tauri.localhost.evil.com/"));
+        assert!(!own_origin("tauri://localhost.evil.com/"));
+        // Userinfo trick: the allowlisted text ends at `@`, so the real host
+        // is evil.com.
+        assert!(!own_origin("http://localhost:1420@evil.com/"));
     }
 }

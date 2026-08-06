@@ -161,14 +161,18 @@ pub fn run() {
         .manage(prores::ProresState::default())
         .manage(perfstats::PerfState::default())
         .manage(lyrics::LyricsState::default())
-        // The lyrics sidecar is a long-running child (minutes of model
-        // inference): closing the app must not orphan it. Window destruction
-        // is the reliable shutdown signal here (RunEvent::Exit never fires
-        // for the plain `.run(ctx)` shape this app uses).
+        // The sidecars are long-running children (minutes of model inference;
+        // minutes of GIF paletteuse): closing the app must not orphan them.
+        // The export ffmpeg is worse than a leak — orphaned, it reads stdin
+        // EOF as end-of-stream and finalizes a truncated file at the user's
+        // chosen path, so it must die AND its partial output must go. Window
+        // destruction is the reliable shutdown signal here (RunEvent::Exit
+        // never fires for the plain `.run(ctx)` shape this app uses).
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 use tauri::Manager;
                 lyrics::kill_running_job(&window.state::<lyrics::LyricsState>());
+                prores::kill_running_job(&window.state::<prores::ProresState>());
             }
         })
         .invoke_handler(tauri::generate_handler![

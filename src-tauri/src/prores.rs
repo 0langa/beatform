@@ -847,6 +847,34 @@ pub fn prores_abort(state: tauri::State<'_, ProresState>) -> Result<(), String> 
     Ok(())
 }
 
+/// Kill a running export and discard its output — app shutdown (lib.rs
+/// window-destroyed hook, same signal that kills the lyrics sidecar).
+///
+/// An orphaned ffmpeg outlives this process: when the app dies it sees
+/// stdin EOF, treats the frame stream as complete, and FINALIZES a
+/// truncated file at the user's chosen path (a GIF paletteuse pass keeps
+/// running for minutes after the window is gone) — a valid-looking corrupt
+/// export where the user expected either a finished file or nothing. Same
+/// kill order as prores_abort — kill before reclaiming the pipe, so a
+/// blocked frame write is broken loose rather than waited out — plus
+/// dropping any staged-but-unconsumed audio: shutdown is the last chance to
+/// clean %TEMP% (create_temp_new names are per-pid/per-seq, so no later run
+/// ever reclaims them).
+pub fn kill_running_job(state: &ProresState) {
+    if let Ok(mut guard) = state.job.lock() {
+        if let Some(mut job) = guard.take() {
+            let _ = job.child.kill();
+            let _ = wait_bounded(&mut job.child, REAP_TIMEOUT);
+            if let Ok(mut s) = state.stdin.lock() {
+                drop(s.take());
+            }
+            let _ = std::fs::remove_file(&job.out_path);
+            cleanup(&job);
+        }
+    }
+    drop_stale_audio(state);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1259,6 +1287,62 @@ mod tests {
             await_finalize(&bad, Duration::from_secs(30)).unwrap(),
             Finalize::Failed(_)
         ));
+    }
+
+    #[test]
+    fn app_shutdown_kills_the_export_and_leaves_no_valid_looking_file() {
+        // The window-Destroyed hook used to kill only the lyrics sidecar. A
+        // running export ffmpeg survived the app, saw stdin EOF, and
+        // finalized a truncated file at the user's chosen path, while the
+        // mezzanine WAV stranded in %TEMP% forever. Shutdown must end the
+        // child AND make the half-export end up absent, never valid-looking.
+        let state = ProresState::default();
+        let (f, wav_path) = create_temp_new("test-shutdown-audio.wav").unwrap();
+        drop(f);
+        let (f, log_path) = create_temp_new("test-shutdown-ffmpeg.log").unwrap();
+        drop(f);
+        let (f, out_path) = create_temp_new("test-shutdown-out.mov").unwrap();
+        drop(f);
+        // A sealed-but-unconsumed WAV from a next export the user never
+        // started must be swept too.
+        let (f, staged_path) = create_temp_new("test-shutdown-staged.wav").unwrap();
+        drop(f);
+        *state.pending_wav.lock().unwrap() = Some(staged_path.clone());
+
+        let mut child = spawn_wedged();
+        *state.stdin.lock().unwrap() = child.stdin.take();
+        *state.job.lock().unwrap() = Some(ProresJob {
+            child,
+            wav_path: Some(wav_path.clone()),
+            log_path: log_path.clone(),
+            out_path: out_path.clone(),
+        });
+
+        kill_running_job(&state);
+
+        assert!(state.job.lock().unwrap().is_none(), "job slot cleared");
+        assert!(state.stdin.lock().unwrap().is_none(), "frame pipe released");
+        assert!(
+            !out_path.exists(),
+            "no truncated output may remain at the user's chosen path"
+        );
+        assert!(!wav_path.exists(), "mezzanine WAV cleaned from %TEMP%");
+        assert!(!log_path.exists(), "stderr log cleaned from %TEMP%");
+        assert!(!staged_path.exists(), "staged audio cleaned from %TEMP%");
+    }
+
+    #[test]
+    fn shutdown_with_no_job_still_sweeps_staged_audio() {
+        // Close-the-app between prores_audio_end and prores_begin: no child
+        // to kill, but the staged WAV is on disk and this is its last exit.
+        let state = ProresState::default();
+        let (f, staged_path) = create_temp_new("test-shutdown-idle.wav").unwrap();
+        drop(f);
+        *state.pending_wav.lock().unwrap() = Some(staged_path.clone());
+
+        kill_running_job(&state);
+
+        assert!(!staged_path.exists());
     }
 
     #[test]

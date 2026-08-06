@@ -3,7 +3,7 @@
 //! optional `--dump-stem` debug artifact. ffmpeg is the app's already-bundled
 //! pinned sidecar — args are built HERE, never passed through.
 
-use std::io::Read;
+use std::io::{BufRead, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -44,7 +44,15 @@ pub fn decode_args(input: &str) -> Vec<String> {
 }
 
 /// Decode any audio file ffmpeg reads into 44.1 kHz stereo f32.
-pub fn decode(ffmpeg: &Path, input: &Path) -> Result<Stereo, String> {
+///
+/// stderr is drained on its own thread WHILE stdout is read to EOF. Reading
+/// the pipes sequentially deadlocked on damaged/warning-spewing inputs:
+/// once the unread stderr pipe buffer fills, ffmpeg's stderr write blocks,
+/// it stops producing stdout, and `read_to_end` waits forever. The child is
+/// registered with the canceller for the whole read so a "cancel" line can
+/// kill it — the kill breaks the stdout pipe, which is exactly what
+/// unblocks the read (prores.rs uses the same escape hatch).
+pub fn decode(ffmpeg: &Path, input: &Path, cancel: &crate::Canceller) -> Result<Stereo, String> {
     let mut cmd = Command::new(ffmpeg);
     cmd.args(decode_args(&input.to_string_lossy()))
         .stdin(Stdio::null())
@@ -58,25 +66,81 @@ pub fn decode(ffmpeg: &Path, input: &Path) -> Result<Stereo, String> {
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("ffmpeg spawn failed: {e}"))?;
-    let mut raw = Vec::new();
-    child
-        .stdout
-        .take()
-        .expect("stdout piped")
-        .read_to_end(&mut raw)
-        .map_err(|e| format!("ffmpeg read failed: {e}"))?;
-    let mut err = String::new();
-    if let Some(mut stderr) = child.stderr.take() {
-        let _ = stderr.read_to_string(&mut err);
+    let mut stdout = child.stdout.take().expect("stdout piped");
+    let stderr = child.stderr.take().expect("stderr piped");
+    let tail_reader = std::thread::spawn(move || stderr_tail(std::io::BufReader::new(stderr), 4));
+
+    let kill_registered = || {
+        if let Some(mut c) = cancel.child.lock().expect("cancel mutex").take() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    };
+    *cancel.child.lock().expect("cancel mutex") = Some(child);
+    if cancel.cancelled() {
+        // A cancel between spawn and registration found the slot empty and
+        // killed nothing — close that gap ourselves. (The message never
+        // surfaces: callers check the flag before reporting the error.)
+        kill_registered();
+        let _ = tail_reader.join();
+        return Err("cancelled".into());
     }
-    let status = child
-        .wait()
-        .map_err(|e| format!("ffmpeg wait failed: {e}"))?;
+
+    let mut raw = Vec::new();
+    if let Err(e) = stdout.read_to_end(&mut raw) {
+        kill_registered();
+        let _ = tail_reader.join();
+        return Err(format!("ffmpeg read failed: {e}"));
+    }
+    // EOF: ffmpeg finished, or the cancel kill broke the pipe. Reap through
+    // the canceller slot so a cancel arriving during the wait still finds a
+    // killable child.
+    let status = loop {
+        {
+            let mut guard = cancel.child.lock().expect("cancel mutex");
+            let Some(running) = guard.as_mut() else {
+                let _ = tail_reader.join();
+                return Err("ffmpeg decode interrupted".into());
+            };
+            match running.try_wait() {
+                Ok(Some(status)) => {
+                    guard.take();
+                    break status;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    guard.take();
+                    let _ = tail_reader.join();
+                    return Err(format!("ffmpeg wait failed: {e}"));
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    let tail = tail_reader.join().unwrap_or_default();
     if !status.success() {
-        let tail: String = err.lines().rev().take(4).collect::<Vec<_>>().join(" | ");
         return Err(format!("ffmpeg decode failed: {tail}"));
     }
     Ok(deinterleave_f32le(&raw))
+}
+
+/// Last `keep` non-empty lines of a stream, oldest first — the tail
+/// surfaced in decode failures. Bounded so draining a pathological stderr
+/// costs a fixed amount of memory no matter how much ffmpeg writes.
+fn stderr_tail<R: BufRead>(reader: R, keep: usize) -> String {
+    let mut tail: Vec<String> = Vec::new();
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        tail.push(line.to_string());
+        if tail.len() > keep {
+            tail.remove(0);
+        }
+    }
+    tail.join(" | ")
 }
 
 /// Little-endian f32 interleaved LR bytes -> planar stereo. A trailing
@@ -166,6 +230,19 @@ mod tests {
         let s = deinterleave_f32le(&raw);
         assert_eq!(s.left, vec![0.5, 1.0]);
         assert_eq!(s.right, vec![-0.25, 0.0]);
+    }
+
+    #[test]
+    fn stderr_tail_is_bounded_and_keeps_the_last_lines() {
+        // The drain exists to defeat a warning-spewing input; the tail it
+        // keeps must stay bounded and end-weighted (the error is at the end).
+        let noisy = (1..=100).map(|i| format!("warn {i}\n")).collect::<String>();
+        assert_eq!(
+            stderr_tail(std::io::Cursor::new(noisy), 4),
+            "warn 97 | warn 98 | warn 99 | warn 100"
+        );
+        assert_eq!(stderr_tail(std::io::Cursor::new("one\n\n\n"), 4), "one");
+        assert_eq!(stderr_tail(std::io::Cursor::new(""), 4), "");
     }
 
     #[test]
