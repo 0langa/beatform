@@ -272,6 +272,372 @@ was the canary.
 
 ### FEAT-003 — Gallery (public curated registry) — DONE, LIVE
 
+**Status:** DONE — fully live 2026-08-05. v2.71.0 shipped the verified-
+download core (allowlist + commit pin + exact size + SHA-256 before parse);
+v2.72.0 gave it the top-bar dialog surface; 11 owner-approved seeds live on
+registry `main` (content pinned a795bac). Open follow-ups live in the
+program tracks (A gallery correctness, C seed v2). Full record: ARCHIVE at
+the bottom of this file.
+
+## Immediate stabilization and maintenance
+
+### ALIGN-001 — Current installed-release acceptance
+
+**Status:** DONE 2026-08-01 — installed-release acceptance smoke passed on
+the shipped build. Full record: ARCHIVE at the bottom of this file.
+
+### ALIGN-002 — Windows uninstall registry stuck at 2.39.0
+
+**Status:** RESOLVED 2026-08-02 — registry writes one-behind by updater
+design; verification folded into the release ritual. Full record: ARCHIVE
+at the bottom of this file.
+
+### DOC-001 — Public metadata and planning truth
+
+**Status:** DONE 2026-07-30 — public metadata corrected, ledger became a
+committed repo file. Full record: ARCHIVE at the bottom of this file.
+
+## Strategic feature candidates
+
+### FEAT-001 — Shadertoy/GLSL import compatibility
+
+**Status:** SHIPPED v2.64.0 (2026-08-02); sampler-param follow-up in
+v2.65.0. Shadertoy import is a live feature (Rust/naga transpiler,
+`.bfshader` files, attribution kept). Full record incl. both spike
+datasets and corpus pass rates: ARCHIVE at the bottom of this file.
+
+### FEAT-003 — Community preset index
+
+**Status:** SUPERSEDED — this was the original planning entry; every owner
+decision locked 2026-08-04 (org, repo, licenses, moderation, seed bar) is
+preserved in the ARCHIVE copy and realized by the DONE entry above.
+
+### FEAT-004 owner first-impressions (2026-08-04, overloaded-PC session — retest pending)
+
+Recorded from the owner's first hands-on with v2.69.0 (PC concurrently
+running three AI sessions — numbers not representative, owner retests on a
+clean boot):
+
+- **Progress stall at stage boundary:** "Finding vocal lines — 100%" sat
+  > 5 min before whisper-medium visibly started. Stage pct reaches 100 before
+  > the next stage emits its first progress (medium's first-token latency is
+  > the worst case). Polish: stage-transition display ("starting
+  > transcription…"), never a stale 100%.
+- **Estimate source question:** owner asked if ETA is hardware-detected —
+  it is a sustained-RTF table measured on the reference machine, split only
+  by the DML probe. Refinement (already recorded): persist measured RTF from
+  completed runs into later estimates.
+- **Quality read:** word/line DETECTION "rock solid"; TIMINGS "pretty
+  unreliable right now" — tuning target for the next lyrics round, editor
+  covers the gap meanwhile. Small tier ~5 min under heavy load.
+- Debug shell feels slower than installed build (expected: dev overhead +
+  load; sidecar is release-profile either way).
+- MIDI learn untested (no hardware; owner may access equipment on the
+  weekend).
+
+### EXT-RENAME — file extensions `.av*` → `.bf*`
+
+**Status:** DONE — shipped v2.70.0 (2026-08-05). No backwards compat;
+JSON `kind` discriminators renamed too; gallery repo updated in the same
+push. Full record: ARCHIVE at the bottom of this file.
+
+### FEAT-003 original design notes (kept)
+
+Original design requirements — all satisfied by the shipped Gallery (the
+security model was implemented as specified, verified by tests + device
+E2E). Full record: ARCHIVE at the bottom of this file.
+
+### FEAT-004 — Best-possible local automatic lyrics
+
+**Status:** DONE — shipped v2.69.0 (2026-08-04): fully local vocal
+isolation → whisper transcription → word-level forced alignment, model
+manager with verified resumable downloads, correction editor with
+per-line re-align. Owner first-impressions section above stays ACTIVE
+(clean-boot retest pending). Recorded follow-ups: stage-transition
+progress display, measured-RTF estimate refinement, whisper Vulkan
+benchmark, language picker. Full record (4 phases, all device evidence):
+ARCHIVE at the bottom of this file.
+
+### FEAT-005 — Genuine 10-bit HEVC/AV1 export
+
+**Status:** DONE — shipped v2.67.0 (2026-08-03): true 10-bit AV1
+(16-bit float tap BEFORE the 8-bit swapchain, rgba64le pipe into
+SVT-AV1; 752 distinct decoded levels proven vs the 256 ceiling). Open
+follow-up recorded: ProRes deep-color pipe. Full record: ARCHIVE at the
+bottom of this file.
+
+### FEAT-009 — True second-display performance window
+
+**Status:** CONSIDERING  
+**Existing foundation:** Stage mode, blackout, HUD, beat-quantized switching,
+and Web MIDI are shipped.
+
+Required design:
+
+- Create and own a second Tauri webview window.
+- Select target monitor and fullscreen mode.
+- Synchronize renderer state, audio features, transport, and frame timing
+  without duplicating incompatible control state.
+- Keep operator UI on primary display and clean output on performance display.
+- Define window loss/reconnect, monitor hotplug, focus, escape, and shutdown
+  behavior.
+- Preserve single-window Stage mode as fallback.
+- Add manual dual-monitor and mixed-DPI acceptance matrix.
+
+Acceptance gate:
+
+- Clean, frame-stable output on a second physical display.
+- No duplicated audio playback or analysis drift.
+- Predictable window lifecycle and monitor recovery.
+- Export path remains unaffected.
+
+## Verification and evidence gaps
+
+### VERIFY-001 — Long-export renderer memory characterization
+
+**Status:** CLOSED 2026-08-03 — no leak: 2×85 min soak, flat JS heap
+plateau; working-set growth is reclaimable cache. Full record: ARCHIVE at
+the bottom of this file.
+
+### VERIFY-002 — ProRes 4444 NLE interoperability
+
+**Status:** GATED  
+**Gate:** DaVinci Resolve or another target NLE must be installed.
+
+Existing evidence:
+
+- ProRes 4444 alpha export decodes back successfully.
+- Alpha round-trip is covered outside an NLE.
+
+Remaining check:
+
+- Import representative alpha export into target NLE.
+- Place above contrasting footage.
+- Check alpha edges, premultiplication, color, duration, frame rate, and seek.
+- Re-export or render a short composite and inspect.
+
+This does not block current releases. Close when target software is available.
+
+### VERIFY-003 — Web MIDI browser-to-adapter transport
+
+**Status:** DONE 2026-08-04 — the transport was double-dead on every
+shipped build (unbound `requestMIDIAccess` + WebView2 permission denial);
+both fixed and E2E-proven against loopMIDI. NOTE: audit defect PL-4
+(origin prefix match in `midi_permission.rs`) touches this area — tracked
+in the audit register. Full record: ARCHIVE at the bottom of this file.
+
+## Behavior decisions and known limitations
+
+### VIS-001 — Aurora mirrored hue spread
+
+**Status:** DECISION  
+**Owner choice required before changing shipped visuals.**
+
+Current behavior:
+
+- Mirrored Aurora folds `x` into approximately `[0.5, 1]`.
+- Palette hue spread also uses folded `x`, producing about half the nominal
+  range and a one-sided offset.
+- Spectrum indexing uses separately rescaled `specX` and is already corrected.
+
+Decision:
+
+- **Preserve:** treat current palette behavior as part of shipped mirrored
+  styles.
+- **Change:** rescale palette coordinate in mirrored mode, knowingly altering
+  existing Cathedral and other mirrored looks.
+
+If changed:
+
+- Add golden coverage for mirrored and unmirrored styles.
+- Review every factory Aurora style.
+- Document intentional visual migration in changelog.
+
+No action until owner chooses or a user-facing defect provides new evidence.
+
+### DSP-001 — DC-offset waveform and trigger behavior
+
+**Status:** KNOWN LIMITATION  
+**Priority:** Low; no current user report.
+
+Current behavior:
+
+- FFT magnitudes use the DC-blocked analysis path.
+- `f.waveform` remains the raw input window in real-time and offline sources.
+- Rising-zero-crossing trigger therefore operates on raw waveform data.
+
+Impact:
+
+- Strong DC-offset audio can draw an off-center oscilloscope.
+- Rising-zero-crossing trigger can fail or lose phase stability.
+
+Trigger for work:
+
+- Reproducible real-world file/device report, or a planned waveform-quality
+  release.
+
+Potential solution must preserve:
+
+- Preview/export equality.
+- Existing waveform amplitude meaning.
+- Trigger determinism.
+- Tests for positive/negative DC offset and silence.
+
+### DSP-002 — Short analyzer history after seek
+
+**Status:** KNOWN LIMITATION
+
+`AnalyserNode` can retain about 85 ms of pre-seek samples, so several preview
+frames may straddle old and new positions. Feature-pipeline priming prevents a
+false detector pulse. Removing the residual would require a different audio tap
+or analyzer lifecycle and is not justified by current evidence.
+
+Do not “fix” by adding ad hoc smoothing/reset behavior. Reopen only with a
+visible seek artifact and a deterministic reproduction.
+
+## Deliberately deferred / someday
+
+These are valid ideas but not active work:
+
+| Item                                          | Status     | Re-entry gate                                                                              |
+| --------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------ |
+| macOS/Linux installers, signing, notarization | SOMEDAY    | Sustained demand plus hardware and release-maintenance capacity                            |
+| Spout/NDI native output                       | GATED      | User demand, Windows capture hardware/software, native-library plan, end-to-end validation |
+| More factory modes/styles/themes              | SOMEDAY    | Specific quality concept; never add filler for count                                       |
+| Community seeding/outreach                    | GATED      | Owner action; agents must never post or represent owner without explicit approval          |
+| `v3.0.0`                                      | DECISION   | Owner conviction that product merits milestone; no checklist auto-trigger                  |
+| Full multi-resolution FFT/CQT default         | NOT QUEUED | Fresh measured deficiency not solved by shipped opt-in display FFT                         |
+| Separate stem-separation feature              | FOLDED     | Part of FEAT-004 automatic-lyrics pipeline                                                 |
+
+## Cleared work — do not reopen without evidence
+
+| Area                               | Verified shipped state                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DEP-001 jsdom 30                   | Merged 2026-07-30 (#9, `d24f714`). Node floor satisfied (local 24.18, CI 24); full web gate green on merge-with-main: typecheck, lint, format, 984/984 tests, build                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| DEP-002 base64 0.23                | Merged 2026-07-30 (#10). Encode-only call site (`loopback.rs`, `STANDARD` engine — semantics unchanged in 0.23); cargo fmt/clippy/test green; built loopback gates green at 60 fps (depth 80.7 ms, visible 100%) and 30 fps (depth 90 ms, visible 100%, 0 underruns)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Video background blur              | Preview/export WYSIWYG path shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Lyric animation                    | Plain, slide, pop, wipe/karaoke behavior shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Web MIDI controls                  | Mapping/state feature shipped; only transport evidence gap remains                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Stage performance                  | Stage mode, blackout, HUD, and beat-quantized switching shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| A-B looping                        | Shipped in `v2.63.0`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Audio fixed-clock contract         | Sample-rate handling, deterministic reset/seek, and fixed-clock analysis shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Loopback capture                   | Native loopback path and deterministic smoke gate shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Analyzer presentation              | Analyzer modes, color modes, and opt-in display-spectrum path shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| FEAT-002                           | Shipped in `v2.63.0`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| FEAT-006                           | Shipped in `v2.62.0`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| FEAT-007 / FEAT-008                | Shipped in `v2.61.0` / `v2.62.0`; old bass-bin interpolation note is superseded                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Audio DSP plan phases              | v2.58–v2.60 work complete; only limitations above remain                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Physical non-US keyboard           | Owner-reported physical pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| FEAT-001 Shadertoy import          | **Shipped v2.64.0, 2026-08-01.** Full import feature: Rust/naga transpiler with GLSL-line diagnostics, dedicated compat pipeline (overlays/bg/post apply), Shadertoy-layout audio texture, track-clock uniforms (preview === export), attribution, conditional v2/v12 schemas. Gates: 10 Rust tests, 1003/1003 web, GPU matrix 136 cases zero raw hash changes, loopback green, new e2e gate `test:shadertoy:built` bit-identical across two export runs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Owner-feedback round → v2.66.0     | Shipped 2026-08-03 from the owner's play-session findings: dropdown/route-row UI fixes; Pulse composed across 0–200% in Tunnel/Metaballs/Particles (softLimit knees + eased envelopes, identity at shipped ranges); Particles reworked (beat-walk glides TO new spots — no rubber-band; cell-coverage bounds fix the mid-screen cutoff; ~10× overdraw cut); Tunnel speed ceiling 2× + Curve waterslide travel + Waterslide style; display-spectrum latency fixed (asymmetric display window + centroid-aligned export — bars land within 1 analysis tick of the transient, live visual latency 341→43 ms and 171→21 ms, detectors byte-identical). Evidence: 1010/1010 tests, golden re-bless scoped to the 3 modules, GPU matrix 137 cases (delta confined + Waterslide case), device sweep at pulse 200% (0 GPU errors, no flood, curved-tunnel export bit-deterministic), release verified end-to-end                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| v2.68.1 perf-display patch         | Shipped 2026-08-04, owner-reported same day: the overlay's FPS counted its own rAF ticks (fire at display Hz regardless — the frame cap skips presents INSIDE ticks), so cap 30 on a 120 Hz panel read 120 while monitor-Hz changes tracked instantly (the tick-counting signature). services.ts now counts PRESENTED frames (`getPresentedFrames`, incremented beside the render call, skipped on cap-skip ticks); the overlay's rAF is only a sampling clock. Live-verified: cap 30 → "FPS 30.0 / 33.3 ms", uncapped → "FPS 120.0 / 8.3 ms". Row label "Frame" → "Frame time". New `__presentedFrames` dev hook; regression test (4:1 present-skip must read the capped rate). Gotcha recorded: probing a Vite dev module via direct `import("/src/...")` gets a SEPARATE instance from the app graph — probe through devHooks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Owner-feedback round 2 → v2.68.0   | Shipped 2026-08-04 from the owner's second play session (4 worktree agents + central integration): **Tunnel Color fade** slider (the hard color-switch ring was a real discontinuity — cosPalette's non-integer frequency across the `fract` wrap; new param crossfades one period apart, default 0 bit-identical, matrix-proven); **Particles seams/Direction fixed** (drift-mode enumerated cells and drawn positions lived in different frames — `q`-space vs `p`-space — so past ~1.5 cells of accumulated flow (~2:19 at default speed) particles clipped along straight cell lines and a Direction change shredded the frame; distance now computed in q-space, the field genuinely translates; device-verified clean at t=2:42 and at Direction 360°); **Particles iGPU perf pass** (clump-noise/danceTarget gates exact at 0, softLimit hoists, post-cull reordering); **internal rename starfield→particles** (conditional schema v13; migrations across projects/autosave/localStorage caches/preset order/looks; canonicalPresetId in index.ts); **Metaballs merge polish** (gradient-confidence gate kills saddle creases, hot keyed off per-ball max not the summed field, fwidth screen-space edge AA — naga-validated); **performance overlay** (pure-DOM, default off, corner/size/color/per-stat config, new Rust `perf_stats` via sysinfo 0.39; GPU% honestly "—"); **Preview resolution** Native/75%/50% (live canvas backing store only; device-verified 1920→960→1920). Evidence: 1057/1057 tests + 55 Rust, GPU matrix delta exactly the 17 intended rows (9 particles + 8 metaballs; tunnel byte-identical), `scripts/v268-visual-check.mjs` screenshots against the owner's bug screenshots, overlay live with real numbers (FPS 60.0, frame 16.7 ms, webgpu 1920×1170) |
+| ALIGN-001 v2.63.0 acceptance       | DONE 2026-08-01: installed-binary version + nine-check UI smoke green, export artifact hash-verified — recorded in `TESTING.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Original hardware acceptance batch | Green in `TESTING.md`; v2.63.0 delta closed by ALIGN-001 above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| CI ffmpeg sidecar pin              | Re-pinned 2026-08-01 after upstream pruned the mid-month autobuild (CI 404 on `rust` job). Now n8.1.2-34 from BtbN's July month-end tag; only month-end tags are retained permanently — rule documented in `scripts/fetch-ffmpeg.mjs`. New hash pinned, fetch verified end-to-end locally, Rust suite green with the new sidecar                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+
+## Standard gates
+
+Use gates proportional to the changed layer. Release-ready work runs the full
+set.
+
+### Web application
+
+```powershell
+npm run typecheck
+npm run lint
+npm run format:check
+npm test -- --maxWorkers=2
+npm run build
+```
+
+### Rust/Tauri
+
+```powershell
+cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml --workspace
+```
+
+### Rendering/audio specialist gates
+
+```powershell
+npm run test:gpu
+npm run test:loopback:built
+npm run test:loopback:built:30
+```
+
+Run GPU pixel matrix when shader, renderer, color, presentation, or export
+pixels can change. Run built loopback gates when native audio capture, timing,
+packaging, or Tauri integration can change.
+
+### Version/release agreement
+
+```powershell
+node scripts/bump-version.mjs --verify
+```
+
+Before a release:
+
+- Working tree clean.
+- Full gates green.
+- Manual delta acceptance recorded.
+- `CHANGELOG.md` current.
+- Five version-bearing files agree.
+- Tag points to intended commit.
+- GitHub release workflow succeeds.
+- Published artifact names, hashes, manifest, updater signature, and download
+  URLs are independently checked.
+- The GitHub release workflow leaves a DRAFT — publish it
+  (`gh release edit vX.Y.Z --draft=false --title "Beatform vX.Y.Z" --latest`)
+  and confirm the live latest endpoint serves the new version before calling
+  the release done.
+- Installed artifact is smoke-tested; source/dev server alone is insufficient.
+- After the installed app updates, the HKCU uninstall entry's
+  `DisplayVersion` matches the new binary (ALIGN-002 regression check).
+
+Large builds, caches, and regenerated artifacts must follow host
+`agent-devstorage` routing policy. Source files stay in the repository.
+
+## Definition of “backlog cleared”
+
+Backlog is cleared when:
+
+- ALIGN-001, DEP-001, DEP-002, and DOC-001 are complete.
+- Open GitHub issues are zero or each maps to an active ledger item.
+- Open pull requests are zero or each has an explicit decision and owner.
+- Every strategic candidate is approved, rejected, or deliberately deferred
+  with evidence; “considering” is not silently treated as implementation work.
+- Verification gaps are closed or remain explicitly gated with named trigger.
+- Known limitations are documented and have no contradicting user reports.
+- README, GitHub metadata, changelog, tests, release, and installed-app evidence
+  agree on current product state.
+
+This does not mean every “someday” feature is built. It means no unresolved work
+is hidden, ambiguous, duplicated, or accidentally treated as complete.
+
+## Ledger update protocol
+
+When changing this file:
+
+1. Keep stable IDs.
+2. Update status and evidence in the same commit as implementation when
+   practical.
+3. Add exact acceptance evidence; do not write “tested” without naming gate.
+4. Move shipped work to **Cleared work**.
+5. Convert failures into focused items with reproduction and ownership.
+6. Remove duplicates rather than maintaining parallel queues.
+7. Recheck time-sensitive baseline values instead of copying this snapshot.
+
+## ARCHIVE — full records of completed work
+
+Relocated verbatim on 2026-08-06 so the active half of the ledger reads
+without scrolling through finished work. Stubs remain at each entry's
+original position. Nothing was edited in the move; these records remain
+authoritative for evidence, gotchas and scope of the completed items.
+
+### FEAT-003 — Gallery (public curated registry) — DONE, LIVE
+
 **Status:** DONE — **fully live 2026-08-05** across three releases:
 
 - **v2.71.0** — verified-download core + first browser UI. Security path
@@ -333,8 +699,6 @@ remaining item is a strategic candidate or research task.
 
 `VERIFY-002`, `VIS-001`, and `DSP-001` remain gated or decision-bound. They do
 not block work above.
-
-## Immediate stabilization and maintenance
 
 ### ALIGN-001 — Current installed-release acceptance
 
@@ -443,8 +807,6 @@ Acceptance gate:
 - Public metadata, README, this ledger, and current code agree.
 - Historical documents are labeled or referenced so agents cannot reasonably
   mistake them for the live queue.
-
-## Strategic feature candidates
 
 ### FEAT-001 — Shadertoy/GLSL import compatibility
 
@@ -593,29 +955,6 @@ redistribution rights exist.
 - ~~GATE before public launch: EXT-RENAME below~~ **CLEARED 2026-08-05**
   (`.av*` → `.bf*` shipped in v2.70.0; FEAT-004 gate cleared with v2.69.0).
   Remaining before public launch: seed presets + in-app Gallery browser.
-
-### FEAT-004 owner first-impressions (2026-08-04, overloaded-PC session — retest pending)
-
-Recorded from the owner's first hands-on with v2.69.0 (PC concurrently
-running three AI sessions — numbers not representative, owner retests on a
-clean boot):
-
-- **Progress stall at stage boundary:** "Finding vocal lines — 100%" sat
-  > 5 min before whisper-medium visibly started. Stage pct reaches 100 before
-  > the next stage emits its first progress (medium's first-token latency is
-  > the worst case). Polish: stage-transition display ("starting
-  > transcription…"), never a stale 100%.
-- **Estimate source question:** owner asked if ETA is hardware-detected —
-  it is a sustained-RTF table measured on the reference machine, split only
-  by the DML probe. Refinement (already recorded): persist measured RTF from
-  completed runs into later estimates.
-- **Quality read:** word/line DETECTION "rock solid"; TIMINGS "pretty
-  unreliable right now" — tuning target for the next lyrics round, editor
-  covers the gap meanwhile. Small tier ~5 min under heavy load.
-- Debug shell feels slower than installed build (expected: dev overhead +
-  load; sidecar is release-profile either way).
-- MIDI learn untested (no hardware; owner may access equipment on the
-  weekend).
 
 ### EXT-RENAME — file extensions `.av*` → `.bf*`
 
@@ -945,33 +1284,6 @@ Acceptance gate:
 
 </details>
 
-### FEAT-009 — True second-display performance window
-
-**Status:** CONSIDERING  
-**Existing foundation:** Stage mode, blackout, HUD, beat-quantized switching,
-and Web MIDI are shipped.
-
-Required design:
-
-- Create and own a second Tauri webview window.
-- Select target monitor and fullscreen mode.
-- Synchronize renderer state, audio features, transport, and frame timing
-  without duplicating incompatible control state.
-- Keep operator UI on primary display and clean output on performance display.
-- Define window loss/reconnect, monitor hotplug, focus, escape, and shutdown
-  behavior.
-- Preserve single-window Stage mode as fallback.
-- Add manual dual-monitor and mixed-DPI acceptance matrix.
-
-Acceptance gate:
-
-- Clean, frame-stable output on a second physical display.
-- No duplicated audio playback or analysis drift.
-- Predictable window lifecycle and monitor recovery.
-- Export path remains unaffected.
-
-## Verification and evidence gaps
-
 ### VERIFY-001 — Long-export renderer memory characterization
 
 **Status:** DONE 2026-08-03 — no leak; both acceptance criteria met.
@@ -1038,25 +1350,6 @@ Acceptance gate:
 - Post-finalize resources return to an explained baseline.
 - Any confirmed leak gets its own focused work item and regression test.
 
-### VERIFY-002 — ProRes 4444 NLE interoperability
-
-**Status:** GATED  
-**Gate:** DaVinci Resolve or another target NLE must be installed.
-
-Existing evidence:
-
-- ProRes 4444 alpha export decodes back successfully.
-- Alpha round-trip is covered outside an NLE.
-
-Remaining check:
-
-- Import representative alpha export into target NLE.
-- Place above contrasting footage.
-- Check alpha edges, premultiplication, color, duration, frame rate, and seek.
-- Re-export or render a short composite and inspect.
-
-This does not block current releases. Close when target software is available.
-
 ### VERIFY-003 — Web MIDI browser-to-adapter transport
 
 **Status:** DONE 2026-08-04 — and it found the feature dead on the shipped
@@ -1108,206 +1401,3 @@ Acceptance gate:
 
 - At least one real browser MIDI transport path passes end to end.
 - No stuck subscriptions or duplicate messages after reconnect.
-
-## Behavior decisions and known limitations
-
-### VIS-001 — Aurora mirrored hue spread
-
-**Status:** DECISION  
-**Owner choice required before changing shipped visuals.**
-
-Current behavior:
-
-- Mirrored Aurora folds `x` into approximately `[0.5, 1]`.
-- Palette hue spread also uses folded `x`, producing about half the nominal
-  range and a one-sided offset.
-- Spectrum indexing uses separately rescaled `specX` and is already corrected.
-
-Decision:
-
-- **Preserve:** treat current palette behavior as part of shipped mirrored
-  styles.
-- **Change:** rescale palette coordinate in mirrored mode, knowingly altering
-  existing Cathedral and other mirrored looks.
-
-If changed:
-
-- Add golden coverage for mirrored and unmirrored styles.
-- Review every factory Aurora style.
-- Document intentional visual migration in changelog.
-
-No action until owner chooses or a user-facing defect provides new evidence.
-
-### DSP-001 — DC-offset waveform and trigger behavior
-
-**Status:** KNOWN LIMITATION  
-**Priority:** Low; no current user report.
-
-Current behavior:
-
-- FFT magnitudes use the DC-blocked analysis path.
-- `f.waveform` remains the raw input window in real-time and offline sources.
-- Rising-zero-crossing trigger therefore operates on raw waveform data.
-
-Impact:
-
-- Strong DC-offset audio can draw an off-center oscilloscope.
-- Rising-zero-crossing trigger can fail or lose phase stability.
-
-Trigger for work:
-
-- Reproducible real-world file/device report, or a planned waveform-quality
-  release.
-
-Potential solution must preserve:
-
-- Preview/export equality.
-- Existing waveform amplitude meaning.
-- Trigger determinism.
-- Tests for positive/negative DC offset and silence.
-
-### DSP-002 — Short analyzer history after seek
-
-**Status:** KNOWN LIMITATION
-
-`AnalyserNode` can retain about 85 ms of pre-seek samples, so several preview
-frames may straddle old and new positions. Feature-pipeline priming prevents a
-false detector pulse. Removing the residual would require a different audio tap
-or analyzer lifecycle and is not justified by current evidence.
-
-Do not “fix” by adding ad hoc smoothing/reset behavior. Reopen only with a
-visible seek artifact and a deterministic reproduction.
-
-## Deliberately deferred / someday
-
-These are valid ideas but not active work:
-
-| Item                                          | Status     | Re-entry gate                                                                              |
-| --------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------ |
-| macOS/Linux installers, signing, notarization | SOMEDAY    | Sustained demand plus hardware and release-maintenance capacity                            |
-| Spout/NDI native output                       | GATED      | User demand, Windows capture hardware/software, native-library plan, end-to-end validation |
-| More factory modes/styles/themes              | SOMEDAY    | Specific quality concept; never add filler for count                                       |
-| Community seeding/outreach                    | GATED      | Owner action; agents must never post or represent owner without explicit approval          |
-| `v3.0.0`                                      | DECISION   | Owner conviction that product merits milestone; no checklist auto-trigger                  |
-| Full multi-resolution FFT/CQT default         | NOT QUEUED | Fresh measured deficiency not solved by shipped opt-in display FFT                         |
-| Separate stem-separation feature              | FOLDED     | Part of FEAT-004 automatic-lyrics pipeline                                                 |
-
-## Cleared work — do not reopen without evidence
-
-| Area                               | Verified shipped state                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DEP-001 jsdom 30                   | Merged 2026-07-30 (#9, `d24f714`). Node floor satisfied (local 24.18, CI 24); full web gate green on merge-with-main: typecheck, lint, format, 984/984 tests, build                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| DEP-002 base64 0.23                | Merged 2026-07-30 (#10). Encode-only call site (`loopback.rs`, `STANDARD` engine — semantics unchanged in 0.23); cargo fmt/clippy/test green; built loopback gates green at 60 fps (depth 80.7 ms, visible 100%) and 30 fps (depth 90 ms, visible 100%, 0 underruns)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Video background blur              | Preview/export WYSIWYG path shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Lyric animation                    | Plain, slide, pop, wipe/karaoke behavior shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Web MIDI controls                  | Mapping/state feature shipped; only transport evidence gap remains                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Stage performance                  | Stage mode, blackout, HUD, and beat-quantized switching shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| A-B looping                        | Shipped in `v2.63.0`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Audio fixed-clock contract         | Sample-rate handling, deterministic reset/seek, and fixed-clock analysis shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Loopback capture                   | Native loopback path and deterministic smoke gate shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Analyzer presentation              | Analyzer modes, color modes, and opt-in display-spectrum path shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| FEAT-002                           | Shipped in `v2.63.0`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| FEAT-006                           | Shipped in `v2.62.0`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| FEAT-007 / FEAT-008                | Shipped in `v2.61.0` / `v2.62.0`; old bass-bin interpolation note is superseded                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Audio DSP plan phases              | v2.58–v2.60 work complete; only limitations above remain                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Physical non-US keyboard           | Owner-reported physical pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| FEAT-001 Shadertoy import          | **Shipped v2.64.0, 2026-08-01.** Full import feature: Rust/naga transpiler with GLSL-line diagnostics, dedicated compat pipeline (overlays/bg/post apply), Shadertoy-layout audio texture, track-clock uniforms (preview === export), attribution, conditional v2/v12 schemas. Gates: 10 Rust tests, 1003/1003 web, GPU matrix 136 cases zero raw hash changes, loopback green, new e2e gate `test:shadertoy:built` bit-identical across two export runs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Owner-feedback round → v2.66.0     | Shipped 2026-08-03 from the owner's play-session findings: dropdown/route-row UI fixes; Pulse composed across 0–200% in Tunnel/Metaballs/Particles (softLimit knees + eased envelopes, identity at shipped ranges); Particles reworked (beat-walk glides TO new spots — no rubber-band; cell-coverage bounds fix the mid-screen cutoff; ~10× overdraw cut); Tunnel speed ceiling 2× + Curve waterslide travel + Waterslide style; display-spectrum latency fixed (asymmetric display window + centroid-aligned export — bars land within 1 analysis tick of the transient, live visual latency 341→43 ms and 171→21 ms, detectors byte-identical). Evidence: 1010/1010 tests, golden re-bless scoped to the 3 modules, GPU matrix 137 cases (delta confined + Waterslide case), device sweep at pulse 200% (0 GPU errors, no flood, curved-tunnel export bit-deterministic), release verified end-to-end                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| v2.68.1 perf-display patch         | Shipped 2026-08-04, owner-reported same day: the overlay's FPS counted its own rAF ticks (fire at display Hz regardless — the frame cap skips presents INSIDE ticks), so cap 30 on a 120 Hz panel read 120 while monitor-Hz changes tracked instantly (the tick-counting signature). services.ts now counts PRESENTED frames (`getPresentedFrames`, incremented beside the render call, skipped on cap-skip ticks); the overlay's rAF is only a sampling clock. Live-verified: cap 30 → "FPS 30.0 / 33.3 ms", uncapped → "FPS 120.0 / 8.3 ms". Row label "Frame" → "Frame time". New `__presentedFrames` dev hook; regression test (4:1 present-skip must read the capped rate). Gotcha recorded: probing a Vite dev module via direct `import("/src/...")` gets a SEPARATE instance from the app graph — probe through devHooks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Owner-feedback round 2 → v2.68.0   | Shipped 2026-08-04 from the owner's second play session (4 worktree agents + central integration): **Tunnel Color fade** slider (the hard color-switch ring was a real discontinuity — cosPalette's non-integer frequency across the `fract` wrap; new param crossfades one period apart, default 0 bit-identical, matrix-proven); **Particles seams/Direction fixed** (drift-mode enumerated cells and drawn positions lived in different frames — `q`-space vs `p`-space — so past ~1.5 cells of accumulated flow (~2:19 at default speed) particles clipped along straight cell lines and a Direction change shredded the frame; distance now computed in q-space, the field genuinely translates; device-verified clean at t=2:42 and at Direction 360°); **Particles iGPU perf pass** (clump-noise/danceTarget gates exact at 0, softLimit hoists, post-cull reordering); **internal rename starfield→particles** (conditional schema v13; migrations across projects/autosave/localStorage caches/preset order/looks; canonicalPresetId in index.ts); **Metaballs merge polish** (gradient-confidence gate kills saddle creases, hot keyed off per-ball max not the summed field, fwidth screen-space edge AA — naga-validated); **performance overlay** (pure-DOM, default off, corner/size/color/per-stat config, new Rust `perf_stats` via sysinfo 0.39; GPU% honestly "—"); **Preview resolution** Native/75%/50% (live canvas backing store only; device-verified 1920→960→1920). Evidence: 1057/1057 tests + 55 Rust, GPU matrix delta exactly the 17 intended rows (9 particles + 8 metaballs; tunnel byte-identical), `scripts/v268-visual-check.mjs` screenshots against the owner's bug screenshots, overlay live with real numbers (FPS 60.0, frame 16.7 ms, webgpu 1920×1170) |
-| ALIGN-001 v2.63.0 acceptance       | DONE 2026-08-01: installed-binary version + nine-check UI smoke green, export artifact hash-verified — recorded in `TESTING.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Original hardware acceptance batch | Green in `TESTING.md`; v2.63.0 delta closed by ALIGN-001 above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| CI ffmpeg sidecar pin              | Re-pinned 2026-08-01 after upstream pruned the mid-month autobuild (CI 404 on `rust` job). Now n8.1.2-34 from BtbN's July month-end tag; only month-end tags are retained permanently — rule documented in `scripts/fetch-ffmpeg.mjs`. New hash pinned, fetch verified end-to-end locally, Rust suite green with the new sidecar                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-
-## Standard gates
-
-Use gates proportional to the changed layer. Release-ready work runs the full
-set.
-
-### Web application
-
-```powershell
-npm run typecheck
-npm run lint
-npm run format:check
-npm test -- --maxWorkers=2
-npm run build
-```
-
-### Rust/Tauri
-
-```powershell
-cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --workspace
-```
-
-### Rendering/audio specialist gates
-
-```powershell
-npm run test:gpu
-npm run test:loopback:built
-npm run test:loopback:built:30
-```
-
-Run GPU pixel matrix when shader, renderer, color, presentation, or export
-pixels can change. Run built loopback gates when native audio capture, timing,
-packaging, or Tauri integration can change.
-
-### Version/release agreement
-
-```powershell
-node scripts/bump-version.mjs --verify
-```
-
-Before a release:
-
-- Working tree clean.
-- Full gates green.
-- Manual delta acceptance recorded.
-- `CHANGELOG.md` current.
-- Five version-bearing files agree.
-- Tag points to intended commit.
-- GitHub release workflow succeeds.
-- Published artifact names, hashes, manifest, updater signature, and download
-  URLs are independently checked.
-- The GitHub release workflow leaves a DRAFT — publish it
-  (`gh release edit vX.Y.Z --draft=false --title "Beatform vX.Y.Z" --latest`)
-  and confirm the live latest endpoint serves the new version before calling
-  the release done.
-- Installed artifact is smoke-tested; source/dev server alone is insufficient.
-- After the installed app updates, the HKCU uninstall entry's
-  `DisplayVersion` matches the new binary (ALIGN-002 regression check).
-
-Large builds, caches, and regenerated artifacts must follow host
-`agent-devstorage` routing policy. Source files stay in the repository.
-
-## Definition of “backlog cleared”
-
-Backlog is cleared when:
-
-- ALIGN-001, DEP-001, DEP-002, and DOC-001 are complete.
-- Open GitHub issues are zero or each maps to an active ledger item.
-- Open pull requests are zero or each has an explicit decision and owner.
-- Every strategic candidate is approved, rejected, or deliberately deferred
-  with evidence; “considering” is not silently treated as implementation work.
-- Verification gaps are closed or remain explicitly gated with named trigger.
-- Known limitations are documented and have no contradicting user reports.
-- README, GitHub metadata, changelog, tests, release, and installed-app evidence
-  agree on current product state.
-
-This does not mean every “someday” feature is built. It means no unresolved work
-is hidden, ambiguous, duplicated, or accidentally treated as complete.
-
-## Ledger update protocol
-
-When changing this file:
-
-1. Keep stable IDs.
-2. Update status and evidence in the same commit as implementation when
-   practical.
-3. Add exact acceptance evidence; do not write “tested” without naming gate.
-4. Move shipped work to **Cleared work**.
-5. Convert failures into focused items with reproduction and ownership.
-6. Remove duplicates rather than maintaining parallel queues.
-7. Recheck time-sensitive baseline values instead of copying this snapshot.
