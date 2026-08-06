@@ -1892,7 +1892,19 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.63.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.72.1...HEAD
+[2.72.1]: https://github.com/0langa/beatform/compare/v2.72.0...v2.72.1
+[2.72.0]: https://github.com/0langa/beatform/compare/v2.71.0...v2.72.0
+[2.71.0]: https://github.com/0langa/beatform/compare/v2.70.0...v2.71.0
+[2.70.0]: https://github.com/0langa/beatform/compare/v2.69.0...v2.70.0
+[2.69.0]: https://github.com/0langa/beatform/compare/v2.68.1...v2.69.0
+[2.68.1]: https://github.com/0langa/beatform/compare/v2.68.0...v2.68.1
+[2.68.0]: https://github.com/0langa/beatform/compare/v2.67.0...v2.68.0
+[2.67.0]: https://github.com/0langa/beatform/compare/v2.66.0...v2.67.0
+[2.66.0]: https://github.com/0langa/beatform/compare/v2.65.0...v2.66.0
+[2.65.0]: https://github.com/0langa/beatform/compare/v2.64.1...v2.65.0
+[2.64.1]: https://github.com/0langa/beatform/compare/v2.64.0...v2.64.1
+[2.64.0]: https://github.com/0langa/beatform/compare/v2.63.0...v2.64.0
 [2.63.0]: https://github.com/0langa/beatform/compare/v2.62.0...v2.63.0
 [2.62.0]: https://github.com/0langa/beatform/compare/v2.61.0...v2.62.0
 [2.61.0]: https://github.com/0langa/beatform/compare/v2.60.1...v2.61.0
