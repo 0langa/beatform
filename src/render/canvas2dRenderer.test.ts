@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { Canvas2DRenderer } from "./canvas2dRenderer";
-import { BG_IMAGE, BG_PRESET, BG_SOLID, BG_VIDEO } from "./types";
+import {
+  Canvas2DRenderer,
+  FALLBACK_PARAM_KEYS,
+  fallbackHue,
+  LED_MATRIX_HUE_KEYS,
+} from "./canvas2dRenderer";
+import { ledMatrix } from "./presets/ledMatrix";
+import { spectrumBars } from "./presets/spectrumBars";
+import { allParams, BG_IMAGE, BG_PRESET, BG_SOLID, BG_VIDEO, paramOr } from "./types";
 import type { BgFit } from "./types";
 import type { AudioFeatures } from "../audio/types";
 
@@ -215,5 +222,67 @@ describe("Canvas2DRenderer background framing (F9)", () => {
     renderer.setBackground({ mode: BG_SOLID, color: [0, 0, 0] });
     renderer.render(SILENCE, 0, {});
     expect(fills[0]).toBe("rgb(0 0 0)");
+  });
+});
+
+/**
+ * Audit B0: the fallback bars read `hue`/`hueSpread`, but led-matrix names
+ * its hue family `hueShift`/`hueLow`/`hueHigh` — so the one GPU mode with
+ * full colour controls lost its hue entirely on the fallback and drew
+ * default-blue bars. fallbackHue() maps the wall's low->high gradient onto
+ * the bars' left->right sweep, with defaults resolved from the preset's own
+ * spec (paramOr — never a re-hardcoded literal, audit RP-9).
+ */
+describe("Canvas2DRenderer led-matrix hue mapping (B0)", () => {
+  it("resolves led-matrix defaults to the wall's green->red sweep, from the spec", () => {
+    const { hue, hueSpread } = fallbackHue(ledMatrix, {});
+    // Derived from the schema, so a deliberate default retune moves this
+    // test's expectation with it instead of pinning stale literals.
+    const low = paramOr(ledMatrix, {}, "hueLow");
+    const high = paramOr(ledMatrix, {}, "hueHigh");
+    expect(hue).toBe(low);
+    expect(hueSpread).toBe(high - low);
+    // And the shipped defaults ARE the classic green->red wall.
+    expect(hue).toBe(120);
+    expect(hueSpread).toBe(-120);
+  });
+
+  it("honours hueShift and the low/high gradient the user dialed", () => {
+    expect(fallbackHue(ledMatrix, { hueShift: 90 })).toEqual({ hue: 210, hueSpread: -120 });
+    expect(fallbackHue(ledMatrix, { hueLow: 200, hueHigh: 320 })).toEqual({
+      hue: 200,
+      hueSpread: 120,
+    });
+  });
+
+  it("leaves every other preset on the generic hue/hueSpread read", () => {
+    expect(fallbackHue(null, { hue: 30, hueSpread: 10 })).toEqual({ hue: 30, hueSpread: 10 });
+    expect(fallbackHue(spectrumBars, {})).toEqual({ hue: 210, hueSpread: 80 });
+  });
+
+  it("paints led-matrix bars in the mode's palette once the preset is set", () => {
+    const { renderer, fills } = harness(400, 400);
+    renderer.setBackground({ mode: BG_SOLID, color: [0, 0, 0] });
+    renderer.setPreset(ledMatrix);
+    renderer.render(SILENCE, 0, {});
+    // First bar (bin 0) paints at the gradient's low end — green, not the
+    // default-blue 210 the missing key used to fall through to.
+    expect(fills).toContain("hsl(120 85% 45%)");
+    expect(fills).not.toContain("hsl(210 85% 45%)");
+  });
+
+  it("pins the fallback's param-key coverage against the schemas it mirrors", () => {
+    // The generic read is spectrum-bars vocabulary — the mode this renderer
+    // approximates. A key rename there would orphan the fallback silently.
+    const barsKeys = new Set(allParams(spectrumBars).map((p) => p.key));
+    for (const key of FALLBACK_PARAM_KEYS) {
+      expect(barsKeys.has(key), `spectrum-bars lost fallback key "${key}"`).toBe(true);
+    }
+    // The led-matrix branch reads its hue family plus the shared generic
+    // keys that mode also carries (saturation/lightness/peaks).
+    const ledKeys = new Set(allParams(ledMatrix).map((p) => p.key));
+    for (const key of [...LED_MATRIX_HUE_KEYS, "saturation", "lightness", "peaks"]) {
+      expect(ledKeys.has(key), `led-matrix lost fallback key "${key}"`).toBe(true);
+    }
   });
 });

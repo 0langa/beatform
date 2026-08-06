@@ -1272,32 +1272,35 @@ exports[`shader golden baseline > echo-trails: param ABI (key + default, in orde
 `;
 
 exports[`shader golden baseline > led-matrix: accessors + body are stable 1`] = `
-"fn P_cols() -> f32 { return params[0u]; }
-fn P_rows() -> f32 { return params[1u]; }
-fn P_gap() -> f32 { return params[2u]; }
-fn P_hueShift() -> f32 { return params[3u]; }
-fn P_saturation() -> f32 { return params[4u]; }
-fn P_lightness() -> f32 { return params[5u]; }
-fn P_dim() -> f32 { return params[6u]; }
-fn P_rounded() -> f32 { return params[7u]; }
-fn P_peaks() -> f32 { return params[8u]; }
-fn P_hueLow() -> f32 { return params[9u]; }
-fn P_hueHigh() -> f32 { return params[10u]; }
-fn P_spectrumColor() -> f32 { return params[11u]; }
-fn P_gradStart() -> f32 { return params[12u]; }
-fn P_gradEnd() -> f32 { return params[13u]; }
-fn P_litLevel() -> f32 { return params[14u]; }
-fn P_hotBoost() -> f32 { return params[15u]; }
-fn P_beatBoost() -> f32 { return params[16u]; }
-fn P_ghost() -> f32 { return params[17u]; }
-fn P_bassGlow() -> f32 { return params[18u]; }
-fn P_beatFlash() -> f32 { return params[19u]; }
-fn P_peakBright() -> f32 { return params[20u]; }
-fn P_bloom() -> f32 { return params[21u]; }
-fn P_scanline() -> f32 { return params[22u]; }
-fn P_flicker() -> f32 { return params[23u]; }
-fn P_panelVariance() -> f32 { return params[24u]; }
-fn P_vignette() -> f32 { return params[25u]; }
+"fn P_display() -> f32 { return params[0u]; }
+fn P_cols() -> f32 { return params[1u]; }
+fn P_rows() -> f32 { return params[2u]; }
+fn P_gap() -> f32 { return params[3u]; }
+fn P_rounded() -> f32 { return params[4u]; }
+fn P_hueShift() -> f32 { return params[5u]; }
+fn P_saturation() -> f32 { return params[6u]; }
+fn P_lightness() -> f32 { return params[7u]; }
+fn P_ghost() -> f32 { return params[8u]; }
+fn P_scrollSpeed() -> f32 { return params[9u]; }
+fn P_beatBoost() -> f32 { return params[10u]; }
+fn P_dim() -> f32 { return params[11u]; }
+fn P_hueLow() -> f32 { return params[12u]; }
+fn P_hueHigh() -> f32 { return params[13u]; }
+fn P_spectrumColor() -> f32 { return params[14u]; }
+fn P_gradStart() -> f32 { return params[15u]; }
+fn P_gradEnd() -> f32 { return params[16u]; }
+fn P_litLevel() -> f32 { return params[17u]; }
+fn P_hotBoost() -> f32 { return params[18u]; }
+fn P_bassGlow() -> f32 { return params[19u]; }
+fn P_beatFlash() -> f32 { return params[20u]; }
+fn P_peaks() -> f32 { return params[21u]; }
+fn P_peakBright() -> f32 { return params[22u]; }
+fn P_bloom() -> f32 { return params[23u]; }
+fn P_histFade() -> f32 { return params[24u]; }
+fn P_scanline() -> f32 { return params[25u]; }
+fn P_flicker() -> f32 { return params[26u]; }
+fn P_panelVariance() -> f32 { return params[27u]; }
+fn P_vignette() -> f32 { return params[28u]; }
 
 fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -1366,15 +1369,9 @@ fn preset(uv: vec2f) -> vec4f {
 
   let beatP = max(u.driveBeat, gridPulse(9.0));
 
-  // Cell colour: low hue -> high hue as cells climb (default classic green ->
-  // red), optionally cross-faded toward a per-COLUMN frequency palette (bass at
-  // the red end, treble toward violet) for the full RGB video-wall look. Plus a
-  // faint per-LED colour-temperature jitter so the wall doesn't read as one
-  // flat sheet of colour.
-  let gradHue = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), frac));
+  // Per-COLUMN frequency palette (bass at the red end, treble toward violet)
+  // — shared by both displays and by the peak dot.
   let freqHue = (cx + 0.5) / cols * 300.0;
-  let cellHue = mix(gradHue, freqHue, P_spectrumColor())
-              + P_hueShift() + jHue * 6.0 * pv;
 
   let mask = ledCell(vec2f(lx, ly), P_gap(), P_rounded());
   let glow = ledGlow(vec2f(lx, ly));
@@ -1393,45 +1390,126 @@ fn preset(uv: vec2f) -> vec4f {
   // Panel backlight breathes with the bass — the wall reads the music even
   // between columns, without touching the LED look itself.
   col += presetColor(P_hueLow() + P_hueShift(), 0.8, 0.3) * u.bass * P_bassGlow();
-  // Unlit LEDs faintly visible
-  col += presetColor(cellHue, 0.5, 0.04) * mask * P_dim() * (1.0 - lit);
 
-  // Phosphor ghost trail: cells ABOVE the live top but BELOW the recent peak
-  // glow and fade with distance from the top, so a falling column leaves a
-  // decaying wake instead of snapping to black. Deterministic — it reads the
-  // peak-hold buffer, no per-frame state.
-  let pkLevel = pk * rows;
-  let ghostLit = step(cy + 0.5, pkLevel) * (1.0 - lit);
-  let ghostFade = exp(-max((cy + 0.5) - level, 0.0) * 0.6);
-  col += presetColor(cellHue, 0.85, P_litLevel() * 0.55) * mask * ghostLit * ghostFade * P_ghost();
-  col += presetColor(cellHue, 0.7, 0.5) * glow * ghostLit * ghostFade * P_ghost() * P_bloom() * 0.5;
+  // Raw-output alpha is this cell's DATA value for the waterfall's history
+  // (the composite pass derives its own alpha and never reads this). Bars
+  // write the live column value too, so flipping the Display mid-track
+  // bootstraps the record with "now" instead of garbage.
+  var dataA = v;
 
-  // Lit LEDs: flat mask body, brighter near the column's current top, plus
-  // beat boost — then a soft bloom that bleeds past the mask into the gap,
-  // which is what makes a dot read as EMITTING rather than printed.
-  let hot = P_litLevel() + P_hotBoost() * smoothstep(level - 2.0, level, cy + 0.5)
-          + beatP * P_beatBoost();
-  let litBright = hot * mix(1.0, panelFalloff * (0.82 + jBright * 0.36), pv);
-  var ledCol = presetColor(cellHue, 0.9 - jSat * 0.15 * pv, litBright) * mask * lit;
-  ledCol += presetColor(cellHue, 0.75, 0.62) * glow * lit * P_bloom() * (0.4 + v * 0.6)
-          * (0.6 + jBright * 0.5 * pv);
-  // Hot-core desaturation on the brightest cells (top of a loud column) so
-  // they read as genuinely emitting instead of merely "very saturated green".
-  let veryHot = smoothstep(0.8, 1.1, hot) * lit;
-  ledCol = mix(ledCol, presetRgb(vec3f(1.0, 0.98, 0.92)), veryHot * 0.55 * mask);
-  ledCol *= 1.0 + veryHot * 0.6;
-  col += ledCol;
+  if (P_display() < 0.5) {
+    // ===== Bars: the classic live-spectrum wall (the default). This branch
+    // keeps the pre-waterfall expressions unchanged, term for term. =====
 
-  // Peak-hold dot (toggleable) — takes the column gradient's color at its
-  // own height, so it follows the palette instead of staying the default red,
-  // plus the same soft bloom as the live cells.
-  let pkRow = floor(pk * rows);
-  if (cy == pkRow && pk > 0.02 && P_peaks() > 0.5) {
-    let pkFrac = (pkRow + 0.5) / rows;
-    let pkGrad = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), pkFrac));
-    let pkHue = mix(pkGrad, freqHue, P_spectrumColor()) + P_hueShift();
-    col += presetColor(pkHue, 0.55, P_peakBright()) * mask;
-    col += presetColor(pkHue, 0.4, 0.75) * glow * P_bloom() * 0.5;
+    // Cell colour: low hue -> high hue as cells climb (default classic green
+    // -> red), optionally cross-faded toward the per-column frequency palette
+    // for the full RGB video-wall look. Plus a faint per-LED colour-
+    // temperature jitter so the wall doesn't read as one flat sheet of colour.
+    let gradHue = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), frac));
+    let cellHue = mix(gradHue, freqHue, P_spectrumColor())
+                + P_hueShift() + jHue * 6.0 * pv;
+
+    // Unlit LEDs faintly visible
+    col += presetColor(cellHue, 0.5, 0.04) * mask * P_dim() * (1.0 - lit);
+
+    // Phosphor ghost trail: cells ABOVE the live top but BELOW the recent peak
+    // glow and fade with distance from the top, so a falling column leaves a
+    // decaying wake instead of snapping to black. Deterministic — it reads the
+    // peak-hold buffer, no per-frame state.
+    let pkLevel = pk * rows;
+    let ghostLit = step(cy + 0.5, pkLevel) * (1.0 - lit);
+    let ghostFade = exp(-max((cy + 0.5) - level, 0.0) * 0.6);
+    col += presetColor(cellHue, 0.85, P_litLevel() * 0.55) * mask * ghostLit * ghostFade * P_ghost();
+    col += presetColor(cellHue, 0.7, 0.5) * glow * ghostLit * ghostFade * P_ghost() * P_bloom() * 0.5;
+
+    // Lit LEDs: flat mask body, brighter near the column's current top, plus
+    // beat boost — then a soft bloom that bleeds past the mask into the gap,
+    // which is what makes a dot read as EMITTING rather than printed.
+    let hot = P_litLevel() + P_hotBoost() * smoothstep(level - 2.0, level, cy + 0.5)
+            + beatP * P_beatBoost();
+    let litBright = hot * mix(1.0, panelFalloff * (0.82 + jBright * 0.36), pv);
+    var ledCol = presetColor(cellHue, 0.9 - jSat * 0.15 * pv, litBright) * mask * lit;
+    ledCol += presetColor(cellHue, 0.75, 0.62) * glow * lit * P_bloom() * (0.4 + v * 0.6)
+            * (0.6 + jBright * 0.5 * pv);
+    // Hot-core desaturation on the brightest cells (top of a loud column) so
+    // they read as genuinely emitting instead of merely "very saturated green".
+    let veryHot = smoothstep(0.8, 1.1, hot) * lit;
+    ledCol = mix(ledCol, presetRgb(vec3f(1.0, 0.98, 0.92)), veryHot * 0.55 * mask);
+    ledCol *= 1.0 + veryHot * 0.6;
+    col += ledCol;
+
+    // Peak-hold dot (toggleable) — takes the column gradient's color at its
+    // own height, so it follows the palette instead of staying the default red,
+    // plus the same soft bloom as the live cells.
+    let pkRow = floor(pk * rows);
+    if (cy == pkRow && pk > 0.02 && P_peaks() > 0.5) {
+      let pkFrac = (pkRow + 0.5) / rows;
+      let pkGrad = mix(P_hueLow(), P_hueHigh(), smoothstep(P_gradStart(), P_gradEnd(), pkFrac));
+      let pkHue = mix(pkGrad, freqHue, P_spectrumColor()) + P_hueShift();
+      col += presetColor(pkHue, 0.55, P_peakBright()) * mask;
+      col += presetColor(pkHue, 0.4, 0.75) * glow * P_bloom() * 0.5;
+    }
+  } else {
+    // ===== Waterfall: the wall becomes a scrolling spectrogram. Each row is
+    // one time slice; new rows enter at the entry edge (bottom for Waterfall
+    // Up, top for Down) and history rides the texture-feedback path, advanced
+    // on the shared fixed 60 Hz TRACK-time clock (fixedFeedback.ts) — the
+    // same grid live and in export, and a paused track drains to dark exactly
+    // like hardware watching a stopped input.
+    //
+    // The scroll resolves from track time, never frame count: the row counter
+    // is floor(u.time * rate), and one state advance shifts history by
+    // exactly the rows that counter gained over this tick's u.dt (one fixed
+    // tick on advances, 0 on presentation-only frames — presentation never
+    // scrolls, it re-shows the last state; the stepped row-by-row crawl is
+    // the hardware look, not an accident). A seek that jumps the counter
+    // simply refills the wall with fresh rows.
+    //
+    // Row content is read back from the data channel (raw alpha), so history
+    // stays exact per-cell values instead of re-read pixels — cell centers
+    // resample cell centers, integer rows at a time, no generation loss.
+    let down = P_display() > 1.5;
+    let rate = P_scrollSpeed();
+    let shift = floor(u.time * rate) - floor((u.time - u.dt) * rate);
+    let rowFromEntry = select(cy, rows - 1.0 - cy, down);
+    var slice = v;
+    if (rowFromEntry >= max(shift, 1.0) - 0.5) {
+      // Older rows: this cell's slice sat "shift" rows nearer the entry edge
+      // when the previous state was captured. The entry row keeps the LIVE
+      // spectrum and is sampled-and-held into history by the next shift.
+      let srcFromEntry = rowFromEntry - shift;
+      let srcCy = select(srcFromEntry, rows - 1.0 - srcFromEntry, down);
+      slice = feedbackSample(vec2f((cx + 0.5) / cols, 1.0 - (srcCy + 0.5) / rows)).a;
+    }
+    dataA = slice;
+
+    // Loudness -> colour: the same low->high ramp the bars climb, driven by
+    // the slice's loudness instead of cell height — Gradient start/end double
+    // as the spectrogram's contrast knobs. The per-column frequency palette
+    // cross-fades in unchanged (loudness becomes pure brightness there).
+    let heat = smoothstep(P_gradStart(), P_gradEnd(), slice);
+    let cellHue = mix(mix(P_hueLow(), P_hueHigh(), heat), freqHue, P_spectrumColor())
+                + P_hueShift() + jHue * 6.0 * pv;
+    let lit2 = smoothstep(0.02, 0.1, slice);
+    // Older slices dim toward the exit edge — depth cue for the scroll.
+    let ageFade = 1.0 - P_histFade() * (rowFromEntry / max(rows - 1.0, 1.0));
+
+    // Quiet cells sit at the unlit floor, exactly like dark bar cells.
+    col += presetColor(cellHue, 0.5, 0.04) * mask * P_dim() * (1.0 - lit2);
+
+    // Lit cells: brightness follows the slice, the top-cell boost becomes a
+    // loudest-slice boost, and the whole record still pumps with the beat.
+    let hot = P_litLevel() * (0.4 + 0.6 * heat) + P_hotBoost() * smoothstep(0.78, 1.0, slice)
+            + beatP * P_beatBoost();
+    let litBright = hot * mix(1.0, panelFalloff * (0.82 + jBright * 0.36), pv) * ageFade;
+    var ledCol = presetColor(cellHue, 0.9 - jSat * 0.15 * pv, litBright) * mask * lit2;
+    ledCol += presetColor(cellHue, 0.75, 0.62) * glow * lit2 * P_bloom() * (0.25 + slice * 0.75)
+            * (0.6 + jBright * 0.5 * pv) * ageFade;
+    // Hot-core desaturation on genuinely loud slices, same trick as the bars.
+    let veryHot = smoothstep(0.85, 1.05, slice) * lit2;
+    ledCol = mix(ledCol, presetRgb(vec3f(1.0, 0.98, 0.92)), veryHot * 0.55 * mask);
+    ledCol *= 1.0 + veryHot * 0.6;
+    col += ledCol;
   }
 
   // Beat border flash: the wall's outer frame pulses on the tempo grid — a
@@ -1453,13 +1531,17 @@ fn preset(uv: vec2f) -> vec4f {
   col *= 1.0 - d * d * P_vignette();
   col = tonemap(col * 1.05);
   col += grain(uv, 0.01);
-  return vec4f(max(col, vec3f(0.0)), 1.0);
+  return vec4f(max(col, vec3f(0.0)), dataA);
 }
 "
 `;
 
 exports[`shader golden baseline > led-matrix: param ABI (key + default, in order) is stable 1`] = `
 [
+  {
+    "default": 0,
+    "key": "display",
+  },
   {
     "default": 48,
     "key": "cols",
@@ -1471,6 +1553,10 @@ exports[`shader golden baseline > led-matrix: param ABI (key + default, in order
   {
     "default": 0.18,
     "key": "gap",
+  },
+  {
+    "default": 1,
+    "key": "rounded",
   },
   {
     "default": 0,
@@ -1485,16 +1571,20 @@ exports[`shader golden baseline > led-matrix: param ABI (key + default, in order
     "key": "lightness",
   },
   {
+    "default": 0.12,
+    "key": "ghost",
+  },
+  {
+    "default": 12,
+    "key": "scrollSpeed",
+  },
+  {
+    "default": 0.08,
+    "key": "beatBoost",
+  },
+  {
     "default": 0.35,
     "key": "dim",
-  },
-  {
-    "default": 1,
-    "key": "rounded",
-  },
-  {
-    "default": 1,
-    "key": "peaks",
   },
   {
     "default": 120,
@@ -1525,14 +1615,6 @@ exports[`shader golden baseline > led-matrix: param ABI (key + default, in order
     "key": "hotBoost",
   },
   {
-    "default": 0.08,
-    "key": "beatBoost",
-  },
-  {
-    "default": 0.12,
-    "key": "ghost",
-  },
-  {
     "default": 0.1,
     "key": "bassGlow",
   },
@@ -1541,12 +1623,20 @@ exports[`shader golden baseline > led-matrix: param ABI (key + default, in order
     "key": "beatFlash",
   },
   {
+    "default": 1,
+    "key": "peaks",
+  },
+  {
     "default": 0.85,
     "key": "peakBright",
   },
   {
     "default": 0.8,
     "key": "bloom",
+  },
+  {
+    "default": 0.35,
+    "key": "histFade",
   },
   {
     "default": 0.12,

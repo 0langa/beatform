@@ -1,5 +1,5 @@
 import type { AudioFeatures } from "../audio/types";
-import { BG_IMAGE, BG_SOLID, BG_TRANSPARENT, BG_VIDEO } from "./types";
+import { BG_IMAGE, BG_SOLID, BG_TRANSPARENT, BG_VIDEO, paramOr } from "./types";
 import type {
   BgFit,
   BgSettings,
@@ -16,7 +16,9 @@ import type {
  *
  * It draws exactly ONE look, an approximation of spectrum-bars, and reads
  * exactly six parameter keys (hue, hueSpread, saturation, lightness, barGap,
- * peaks). Everything else
+ * peaks) — plus led-matrix's hue family (hueShift/hueLow/hueHigh), which
+ * names its hues differently and used to fall through to the default blue
+ * (see fallbackHue below). Everything else
  * the UI can express — the other modes, Motion masters, Builder Studio, custom
  * WGSL, scene transitions, post-processing, cover art — has no equivalent here
  * and the setters below are honest no-ops.
@@ -29,6 +31,49 @@ import type {
  * fit/zoom/offset arithmetic below, which mirrors fitUV() in webgpuRenderer.ts
  * rather than the hardcoded cover crop it replaced (audit F9).
  */
+
+/**
+ * The parameter keys the fallback bars read off whatever preset is active.
+ * Spectrum-bars vocabulary — it IS the mode being approximated — pinned
+ * against that schema by canvas2dRenderer.test.ts so a key rename there
+ * cannot silently orphan the fallback's reads.
+ */
+export const FALLBACK_PARAM_KEYS = [
+  "hue",
+  "hueSpread",
+  "saturation",
+  "lightness",
+  "barGap",
+  "peaks",
+] as const;
+
+/** led-matrix's hue vocabulary, read by {@link fallbackHue}. Pinned against
+ * the led-matrix schema by the same test. */
+export const LED_MATRIX_HUE_KEYS = ["hueShift", "hueLow", "hueHigh"] as const;
+
+/**
+ * Resolve the hue pair the fallback bars paint with.
+ *
+ * led-matrix names its hue keys hueShift/hueLow/hueHigh instead of
+ * hue/hueSpread, so the generic read found nothing and the fallback drew
+ * default-blue bars — the one GPU mode whose hue the fallback lost entirely
+ * (audit B0). Here its low->high gradient becomes the bars' left->right
+ * sweep, defaults resolved from the preset's own spec (paramOr, never a
+ * re-hardcoded literal — audit RP-9). Pure and exported for the node test.
+ */
+export function fallbackHue(
+  preset: PresetDef | null,
+  params: ParamValues,
+): { hue: number; hueSpread: number } {
+  if (preset?.id === "led-matrix") {
+    const shift = paramOr(preset, params, "hueShift");
+    const low = paramOr(preset, params, "hueLow") + shift;
+    const high = paramOr(preset, params, "hueHigh") + shift;
+    return { hue: low, hueSpread: high - low };
+  }
+  return { hue: params.hue ?? 210, hueSpread: params.hueSpread ?? 80 };
+}
+
 export class Canvas2DRenderer implements Renderer {
   readonly kind = "canvas2d" as const;
 
@@ -38,6 +83,7 @@ export class Canvas2DRenderer implements Renderer {
   private overlay: ImageBitmap | null = null;
   private bgImage: ImageBitmap | null = null;
   private smooth = false;
+  private preset: PresetDef | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -46,10 +92,12 @@ export class Canvas2DRenderer implements Renderer {
     this.ctx = ctx;
   }
 
-  setPreset(_preset: PresetDef): void {
+  setPreset(preset: PresetDef): void {
     // Single built-in look; params are read live in render(). The mode chips
     // stay clickable (switching is how you leave a broken-looking mode), but
-    // the banner tells the user every one of them draws these same bars.
+    // the banner tells the user every one of them draws these same bars. The
+    // def is kept only so fallbackHue() can map led-matrix's hue vocabulary.
+    this.preset = preset;
   }
 
   setBackground(bg: BgSettings): void {
@@ -199,8 +247,7 @@ export class Canvas2DRenderer implements Renderer {
     const { ctx } = this;
     const W = this.canvas.width;
     const H = this.canvas.height;
-    const hue = params.hue ?? 210;
-    const hueSpread = params.hueSpread ?? 80;
+    const { hue, hueSpread } = fallbackHue(this.preset, params);
     const saturation = Math.max(0, Math.min(2, params.saturation ?? 1));
     const lightness = Math.max(0, Math.min(2, params.lightness ?? 1));
     const gap = params.barGap ?? 0.22;

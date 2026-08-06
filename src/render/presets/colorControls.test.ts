@@ -37,7 +37,9 @@ describe("full preset color controls", () => {
   }
 
   it("LED Matrix also routes authored RGB tints through the controls", () => {
-    expect(ledMatrix.wgsl.match(/presetRgb\(/g)).toHaveLength(4);
+    // Definition + panel background + board grid + the two hot-core
+    // desaturation mixes (one per display branch: Bars and Waterfall).
+    expect(ledMatrix.wgsl.match(/presetRgb\(/g)).toHaveLength(5);
     expect(ledMatrix.wgsl).toContain("let gray = vec3f(dot(rgb");
   });
 });
