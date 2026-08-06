@@ -124,6 +124,8 @@ function batchProps(over: Partial<BatchPanelProps> = {}): BatchPanelProps {
     aspect: "16:9",
     formatLabel: "1080p",
     simplifiedRenderer: false,
+    batchError: null,
+    exporting: false,
     onAddTracks: vi.fn(),
     onRemoveTrack: vi.fn(),
     onRetitle: vi.fn(),
@@ -158,5 +160,58 @@ describe("BatchPanel blocks the run up front (F2)", () => {
     expect(isDisabled(start)).toBe(false);
     await userEvent.click(start);
     expect(onStart).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * SS-3: batch refusals used to land in exportError — rendered only inside
+ * ExportDialog, which is never open at that moment — and Start knew nothing
+ * about a running single export. The panel now shows batchError itself and
+ * disables Start with the same sentence the store guard refuses with.
+ */
+describe("BatchPanel surfaces its own refusals (SS-3)", () => {
+  it("renders batchError inside the panel", () => {
+    render(
+      <BatchPanel
+        {...batchProps({
+          batchError: "Batch render needs the desktop app (it writes files to a folder)",
+        })}
+      />,
+    );
+    expect(screen.getByText(/needs the desktop app/)).toBeTruthy();
+  });
+
+  it("disables Start while a single export runs, stating the shared reason", async () => {
+    const onStart = vi.fn();
+    render(<BatchPanel {...batchProps({ exporting: true, onStart })} />);
+    const start = screen.getByRole("button", { name: /Render 1 video/ });
+    expect(isDisabled(start)).toBe(true);
+    expect(start.getAttribute("title")).toBe(
+      "Finish (or cancel) the running export before starting a batch",
+    );
+    await userEvent.click(start);
+    expect(onStart).not.toHaveBeenCalled();
+    // Stated in the panel too — a tooltip alone is invisible on touch.
+    expect(screen.getAllByText(/running export before starting a batch/)).toHaveLength(1);
+    cleanup();
+
+    // …and only ONCE when batchError carries the very sentence the blocked
+    // banner already shows (guard fired; the prop still blocks).
+    render(
+      <BatchPanel
+        {...batchProps({
+          exporting: true,
+          batchError: "Finish (or cancel) the running export before starting a batch",
+        })}
+      />,
+    );
+    expect(screen.getAllByText(/running export before starting a batch/)).toHaveLength(1);
+  });
+
+  it("does not read a running batch's own exporting mirror as a block", () => {
+    // While the batch itself runs, batchActions mirrors progress into
+    // `exporting` — that must not disable/announce anything here.
+    render(<BatchPanel {...batchProps({ exporting: true, status: "running" })} />);
+    expect(screen.queryByText(/running export before starting a batch/)).toBeNull();
   });
 });

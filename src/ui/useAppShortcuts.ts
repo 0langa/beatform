@@ -53,6 +53,16 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
       // to sit behind the SELECT/native-control filters, so with focus on a
       // dropdown Esc was swallowed and Stage mode felt stuck (QWERTZ report).
       if (e.key === "Escape") {
+        // …except while TYPING (audit UI-1): Esc in a text field cancels the
+        // field, nothing more. The save-look form's own onKeyDown closes its
+        // mini-form and the same keypress used to bubble here and tear down
+        // the whole panel stack; panel/gallery search lost their query with
+        // the surface around them. Blur only — the next Esc (focus now off
+        // the field) runs the normal cascade below.
+        if (isTextEntry) {
+          el?.blur();
+          return;
+        }
         s.setShowHelp(false);
         s.setShowGuide(false);
         s.setShowSettings(false);

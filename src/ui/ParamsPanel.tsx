@@ -320,7 +320,7 @@ type ParamsTab = AppPrefs["paramsTab"];
 /** The five top-level tabs of the settings panel (v2.41). Each groups a set
  * of the former flat sections; the active tab persists via prefs. */
 const PARAMS_TABS: Array<{ id: ParamsTab; label: string; hint: string }> = [
-  { id: "visual", label: "Visual", hint: "The visual itself — looks, motion and full templates" },
+  { id: "visual", label: "Visual", hint: "The visual itself — looks, motion and full themes" },
   { id: "sync", label: "Sync", hint: "What the visual reacts to, and audio-to-knob modulation" },
   {
     id: "scene",
@@ -373,7 +373,7 @@ export interface ParamsPanelProps {
   onDeleteUserPreset: (id: string) => void;
   onExportUserPreset: (id: string) => void;
   onImportUserPreset: () => void;
-  /** Apply a factory template's full document. */
+  /** Apply a factory theme's full document. */
   onApplyTheme: (document: ProjectDocument, name: string) => void;
   /** Save the whole current setup as a shareable .bftheme file. */
   onExportTheme: (meta: ThemeMeta) => void;
@@ -604,7 +604,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       title: props.preset.name,
       tab: "visual",
       search:
-        `${props.preset.name} ${props.preset.description ?? ""} preset style look custom save import advanced essentials reset center image cover ${presetGroupText} ${presetParamText}`.toLowerCase(),
+        `${props.preset.name} ${props.preset.description ?? ""} preset style look custom save import gallery browse advanced essentials reset center image cover ${presetGroupText} ${presetParamText}`.toLowerCase(),
       headerExtra: (
         <button
           className="text-btn"
@@ -710,6 +710,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 >
                   Import…
                 </button>
+                <GalleryLink filter="look">Browse looks in the Gallery…</GalleryLink>
               </div>
             )}
           </div>
@@ -868,11 +869,14 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
         ]
       : []),
     {
+      // The id keeps the retired pre-vocabulary title (see SectionDef.id):
+      // collapse state persisted as "Templates" must keep applying to this
+      // section now that it reads THEMES.
       id: "Templates",
-      title: "Templates",
+      title: "Themes",
       tab: "visual",
       search:
-        `templates theme complete looks colors sync post save export import bftheme gallery community browse ${FACTORY_THEMES.map((t) => t.meta.name).join(" ")}`.toLowerCase(),
+        `themes theme templates complete looks colors sync post save export import bftheme gallery community browse ${FACTORY_THEMES.map((t) => t.meta.name).join(" ")}`.toLowerCase(),
       body: (
         <>
           <p className="section-hint">
@@ -908,7 +912,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               <input
                 className="look-name-input"
                 autoFocus
-                placeholder="Template name…"
+                placeholder="Theme name…"
                 value={themeName}
                 maxLength={80}
                 onChange={(e) => setThemeName(e.target.value)}
@@ -934,11 +938,13 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 title="Save EVERYTHING currently set up (visual, layers, timeline, post) as a shareable .bftheme file (CC0)"
                 onClick={() => setSavingTheme(true)}
               >
-                + Save as template…
+                + Save as theme…
               </button>
             </div>
           )}
-          <GalleryLink />
+          <div className="save-look-row">
+            <GalleryLink filter="theme">Browse themes in the Gallery…</GalleryLink>
+          </div>
         </>
       ),
     },

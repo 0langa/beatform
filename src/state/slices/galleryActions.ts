@@ -10,10 +10,16 @@ import { parseUserPreset, saveUserPresets, UserPresetParseError } from "../userP
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
 
+/** How long the theme card says "Applied ✓" before reverting (A1). */
+const APPLIED_FLASH_MS = 2500;
+let appliedTimer: ReturnType<typeof setTimeout> | undefined;
+
 export function galleryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
-    setShowGallery(v) {
-      set({ showGallery: v });
+    setShowGallery(v, filter) {
+      // A3: deep links open the dialog pre-filtered; a plain open starts at
+      // All (the dialog reads galleryOpenFilter once, on mount).
+      set(v ? { showGallery: true, galleryOpenFilter: filter ?? "all" } : { showGallery: false });
       // Opening the dialog IS the explicit user action that loads the
       // registry — but only the first time; a reopen shows what's there.
       if (v && get().galleryStatus === "idle") void get().openGallery();
@@ -63,6 +69,17 @@ export function galleryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     async installGalleryEntry(id) {
       const entry = get().galleryEntries.find((e) => e.id === id);
       if (!entry || get().galleryBusy !== null) return;
+      // A1: an installed look that still exists is DONE — the card's button is
+      // disabled, and this guard backs it so a stray double-activation can
+      // never stack a duplicate into My Looks (the owner-repro bug).
+      const installedId = get().galleryInstalled[id];
+      if (
+        entry.type === "look" &&
+        installedId !== undefined &&
+        get().userPresets.some((p) => p.id === installedId)
+      ) {
+        return;
+      }
       const gate = entryGate(entry);
       if (gate !== null) {
         set({ error: gate });
@@ -80,13 +97,23 @@ export function galleryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           set({ userPresets });
           saveUserPresets(userPresets);
           get().applyUserPreset(preset.id);
+          // Record WHICH user preset this install created: "✓ Added" is only
+          // honest while that preset survives, so the dialog checks the id
+          // against userPresets — deleting the look reverts the button (A1).
+          set({ galleryInstalled: { ...get().galleryInstalled, [id]: preset.id } });
           ctx.flashNotice(`"${entry.name}" by ${entry.author.name} added to My Looks`);
         } else {
           const { document } = parseTheme(text);
           get().applyTheme(document, entry.name);
+          // Transient confirmation only — a theme is re-appliable by design
+          // (New Project made a persistent "Added" an obvious lie).
+          set({ galleryApplied: id });
+          clearTimeout(appliedTimer);
+          appliedTimer = setTimeout(() => {
+            if (get().galleryApplied === id) set({ galleryApplied: null });
+          }, APPLIED_FLASH_MS);
           ctx.flashNotice(`"${entry.name}" by ${entry.author.name} applied`);
         }
-        set({ galleryInstalled: { ...get().galleryInstalled, [id]: true } });
       } catch (e) {
         const msg =
           e instanceof GalleryError ||

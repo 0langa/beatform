@@ -22,10 +22,17 @@ let batchAbort: AbortController | null = null;
 /** Claimed synchronously by startBatch, before the folder dialog awaits. */
 let batchStarting = false;
 
+/** One sentence for the single-export-running refusal (F2): the store guard
+ * below and the panel's disabled-Start tooltip must give the same reason. */
+export const EXPORT_RUNNING_REASON =
+  "Finish (or cancel) the running export before starting a batch";
+
 export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
     setShowBatch(open) {
-      set({ showBatch: open });
+      // A refusal message belongs to the attempt that earned it — reopening
+      // the panel starts clean instead of resurrecting a stale reason.
+      set({ showBatch: open, batchError: null });
     },
 
     async addBatchTracks(files) {
@@ -98,8 +105,10 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // Symmetric to runExport's batch check: two renders at once would fight
       // over the GPU and the shared progress/abort state (concurrency is 1 by
       // design — each export builds its own device + encoder session).
+      // Refusals land in batchError — the panel that owns the Start button —
+      // not exportError, which only ExportDialog renders (SS-3).
       if (get().exporting || shared.exportStarting) {
-        set({ exportError: "Finish (or cancel) the running export before starting a batch" });
+        set({ batchError: EXPORT_RUNNING_REASON });
         return;
       }
       // F2: worse here than for a single export — every job builds its own
@@ -107,11 +116,11 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // fail 20 times in a row, paying a full decode + analysis for each. Stop
       // before the folder dialog, same reason the Start button's tooltip gives.
       if (get().simplifiedRenderer) {
-        set({ exportError: SIMPLIFIED_EXPORT_REASON });
+        set({ batchError: SIMPLIFIED_EXPORT_REASON });
         return;
       }
       if (!isTauri()) {
-        set({ exportError: "Batch render needs the desktop app (it writes files to a folder)" });
+        set({ batchError: "Batch render needs the desktop app (it writes files to a folder)" });
         return;
       }
       // batchStatus does not become "running" until after the folder dialog, so
@@ -182,7 +191,7 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
 
       const ac = new AbortController();
       batchAbort = ac;
-      set({ batch: run, batchStatus: "running", exportError: null });
+      set({ batch: run, batchStatus: "running", batchError: null });
       try {
         await runBatch(run, {
           onJobStart: (_id, jobAc) => {
@@ -248,13 +257,13 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       if (!b || get().batchStatus === "running") return;
       // Same single-render rule as startBatch: never race a running export.
       if (get().exporting || shared.exportStarting) {
-        set({ exportError: "Finish (or cancel) the running export before retrying the batch" });
+        set({ batchError: "Finish (or cancel) the running export before retrying the batch" });
         return;
       }
       // Same gate as startBatch (F2): a retry is a run, and re-running N jobs
       // that can only fail is the exact behaviour that fix exists to remove.
       if (get().simplifiedRenderer) {
-        set({ exportError: SIMPLIFIED_EXPORT_REASON });
+        set({ batchError: SIMPLIFIED_EXPORT_REASON });
         return;
       }
       // Retry names must also avoid files OTHER runs left in this folder —
@@ -265,7 +274,7 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       if (!again.jobs.some((j) => j.status.k === "failed" || j.status.k === "queued")) return;
       const ac = new AbortController();
       batchAbort = ac;
-      set({ batch: again, batchStatus: "running", exportError: null });
+      set({ batch: again, batchStatus: "running", batchError: null });
       try {
         await runBatch(again, {
           onJobStart: (_id, jobAc) => {

@@ -248,7 +248,7 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
           />
           <button
             className="text-btn"
-            title="Start a fresh visual from the template"
+            title="Start a fresh visual from the starter shader"
             onClick={() => {
               setEditingId(null);
               setName("My Visual");

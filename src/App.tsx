@@ -134,6 +134,7 @@ export default function App() {
   const exporting = useVizStore((s) => s.exporting);
   const batch = useVizStore((s) => s.batch);
   const batchStatus = useVizStore((s) => s.batchStatus);
+  const batchError = useVizStore((s) => s.batchError);
   const batchScanning = useVizStore((s) => s.batchScanning);
   const showLibrary = useVizStore((s) => s.showLibrary);
   const library = useVizStore((s) => s.library);
@@ -158,6 +159,13 @@ export default function App() {
   const allPresets = useMemo(
     () => orderedPresets(presetOrder, customDefs),
     [presetOrder, customDefs],
+  );
+  // Memoized (audit UI-2): a bare `userPresets.filter(...)` in the JSX handed
+  // ParamsPanel a FRESH array identity every render, defeating its memo() at
+  // the 4 Hz playback tick exactly like an inline arrow prop would.
+  const userPresetsForMode = useMemo(
+    () => userPresets.filter((p) => p.presetId === presetId),
+    [userPresets, presetId],
   );
 
   const store = useVizStore.getState; // stable accessor for actions/handlers
@@ -251,6 +259,12 @@ export default function App() {
   // to a store action through the stable `store` accessor, so `[store]` is
   // the only real dependency — the one exception (toggleMute) is called
   // out where it happens.
+  //
+  // This contract already broke once, silently (audit UI-2): onBgPerMode /
+  // onPickCenterImage / onClearCenterImage were inline arrows and userPresets
+  // a fresh `.filter()` array, so ParamsPanel reconciled at every playback
+  // tick despite its memo. All four are hoisted now, and the memo mechanism
+  // is pinned by ParamsPanel.test.tsx — no new prop may be born in the JSX.
 
   // LibraryPanel
   const libraryPickFolder: LibraryPanelProps["onPickFolder"] = useCallback(
@@ -284,6 +298,21 @@ export default function App() {
     [store],
   );
   const setBg: ParamsPanelProps["onBg"] = useCallback((next) => store().setBg(next), [store]);
+  // These three arrived as inline arrows in the JSX (audit UI-2) — three fresh
+  // function identities per render, which alone defeated ParamsPanel's memo()
+  // and put the whole panel back on the 4 Hz playback re-render.
+  const setBgPerMode: ParamsPanelProps["onBgPerMode"] = useCallback(
+    (v) => store().setBgPerMode(v),
+    [store],
+  );
+  const pickCenterImage: ParamsPanelProps["onPickCenterImage"] = useCallback(
+    () => void store().pickCenterImage(),
+    [store],
+  );
+  const clearCenterImage: ParamsPanelProps["onClearCenterImage"] = useCallback(
+    () => store().clearCenterImage(),
+    [store],
+  );
   const pickBackgroundImage: ParamsPanelProps["onPickBackgroundImage"] = useCallback(
     () => void store().pickBackgroundImage(),
     [store],
@@ -319,7 +348,20 @@ export default function App() {
     [store],
   );
   const deleteUserPreset: ParamsPanelProps["onDeleteUserPreset"] = useCallback(
-    (id) => store().deleteUserPreset(id),
+    async (id) => {
+      // Destructive AND not undoable: user looks live outside the document
+      // history (unlike shader delete), so a misclick on the 9-px ✕ destroyed
+      // an evening of tuning silently (audit UI-3). Same confirm-or-undo
+      // policy as clearLyrics above.
+      const s = store();
+      const name = s.userPresets.find((p) => p.id === id)?.name;
+      if (name === undefined) return;
+      const ok = await askConfirm(
+        `Delete the look "${name}"? This can't be undone.`,
+        "Delete look",
+      );
+      if (ok) s.deleteUserPreset(id);
+    },
     [store],
   );
   const exportUserPreset: ParamsPanelProps["onExportUserPreset"] = useCallback(
@@ -689,13 +731,13 @@ export default function App() {
         store().setDragOver(false);
         const files = Array.from(e.dataTransfer.files);
         if (files.length === 0) return;
-        // Shaders and templates import by drag, from anywhere.
+        // Shaders and themes import by drag, from anywhere.
         const shader = files.find((f) => f.name.toLowerCase().endsWith(".bfshader"));
         if (shader) {
           void shader.text().then((t) => store().importCustomPresetText(t));
           return;
         }
-        // Templates import by drag, from anywhere (Explorer, a GitHub
+        // Themes import by drag, from anywhere (Explorer, a GitHub
         // download, Discord) — the whole ecosystem loop in one gesture.
         const theme = files.find((f) => f.name.toLowerCase().endsWith(".bftheme"));
         if (theme) {
@@ -1010,10 +1052,10 @@ export default function App() {
           bg={bg}
           onBg={setBg}
           bgPerMode={bgPerMode}
-          onBgPerMode={(v) => store().setBgPerMode(v)}
+          onBgPerMode={setBgPerMode}
           centerImageName={centerImageName}
-          onPickCenterImage={() => void store().pickCenterImage()}
-          onClearCenterImage={() => store().clearCenterImage()}
+          onPickCenterImage={pickCenterImage}
+          onClearCenterImage={clearCenterImage}
           onPickBackgroundImage={pickBackgroundImage}
           onUseAlbumArtBackground={applyAlbumArtBackground}
           onPickVideoBackground={pickVideoBackground}
@@ -1030,7 +1072,7 @@ export default function App() {
           lufs={lufs}
           bpm={beatGrid ? beatGrid.bpm : null}
           keyName={trackKey ? trackKey.name : null}
-          userPresets={userPresets.filter((p) => p.presetId === presetId)}
+          userPresets={userPresetsForMode}
           onApplyTheme={applyTheme}
           onExportTheme={exportTheme}
           onSaveUserPreset={saveUserPreset}
@@ -1283,6 +1325,8 @@ export default function App() {
           run={batch}
           status={batchStatus}
           scanning={batchScanning}
+          batchError={batchError}
+          exporting={!!exporting}
           overlayLayers={overlayLayers}
           aspect={aspect}
           formatLabel={RESOLUTIONS[exportSettings.resIdx].label}
