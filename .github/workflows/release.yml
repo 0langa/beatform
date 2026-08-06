@@ -3,17 +3,35 @@ name: Release installers
 # Every tagged release gets CI-built Windows installers. Idempotent by
 # design: assets that already exist on the release (e.g. hand-uploaded from
 # a local build) are left alone, so this can coexist with local releasing.
+#
+# workflow_dispatch is the webhook-outage escape hatch (2026-08-06: GitHub
+# throttled push webhooks and tag pushes stopped triggering runs). Dispatch
+# runs are API-created, so they fire even when push events are dropped:
+#   gh workflow run "Release installers" --ref main -f tag=v2.74.0
+# The tag must already exist; the whole job runs on that tag's tree.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build (e.g. v2.74.0)"
+        required: true
+        type: string
 
 jobs:
   windows:
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      # Tag-push runs take their tag from the ref; dispatch runs from the
+      # input (inputs is empty on push events, so || falls through).
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -68,7 +86,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_TAG#v}"
           mkdir -p dist-release
           cp "src-tauri/target/release/bundle/nsis/Beatform_${VERSION}_x64-setup.exe" \
              "dist-release/Beatform_${VERSION}_x64-setup.exe"
@@ -84,7 +102,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_TAG#v}"
           SIG_FILE="src-tauri/target/release/bundle/nsis/Beatform_${VERSION}_x64-setup.exe.sig"
           if [ ! -f "$SIG_FILE" ]; then
             echo "::error::updater signature missing — TAURI_SIGNING_PRIVATE_KEY secret not set?"
@@ -129,7 +147,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="$GITHUB_REF_NAME"
+          TAG="$RELEASE_TAG"
           if ! gh release view "$TAG" --json name >/dev/null 2>&1; then
             gh release create "$TAG" --draft --generate-notes --title "$TAG"
           fi
