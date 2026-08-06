@@ -75,6 +75,61 @@ completing the confusion; (4) fresh Gallery correctness bugs.
 
 **FEAT-009 and ALL new feature work PARKED until this program completes.**
 
+### Audit register — 2026-08-06 full-product audit
+
+Seven parallel domain audits (state/store, UI code, render/presets,
+audio/export, platform/infra, docs/strings, test infrastructure) plus an
+on-device UX walkthrough (60+ screenshots, every surface incl. deep
+scroll). Full evidence reports — every item with file:line — live at
+`F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\quality-audit-2026-08\`
+(`state-store.md`, `ui-code.md`, `render-presets.md`, `audio-export.md`,
+`platform-infra.md`, `docs-strings.md`, `tests-quality.md`, `ux-shots/`).
+Those reports are the canonical detail; this register is the distilled,
+tracked view. Headline claims were re-verified by hand before writing
+this (AX-1, PL-4, TQ-3, DS-18 — all reproduced). Opinion-class output
+went to `PROPOSALS.md`, not here.
+
+**Totals:** 84 confirmed defects · 55 drift groups · 49 future-proofing
+risks · ~85 proposals (in PROPOSALS.md). 273 items.
+
+#### Severity-1 shortlist (real user harm, fix first — Track E order)
+
+| ID    | Defect                                                                                                                                                 |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AX-1  | Default sync mode "Kicks" never reads the kick detector — `featurePipeline.ts:819-822` falls through to `f.energy`; UI hint promises what it can't do  |
+| PL-1  | Closing the app mid-export orphans ffmpeg, finalizes a TRUNCATED file at the user's path, leaks the staged WAV in %TEMP% forever                       |
+| SS-1  | Lyrics generated for track A silently attach to track B (with success toast) if a track loads during the run                                           |
+| PL-3  | Lyrics sidecar audio decode can two-pipe-deadlock; decode child unregistered with canceller — wedged generate unkillable until app exit                |
+| PL-2  | `lyrics_generate`/`align` check-then-set race orphans a running inference child with no kill handle                                                    |
+| UI-2  | ParamsPanel `memo` permanently defeated (3 inline arrows + fresh `.filter()` in App.tsx) — 2,033-line panel reconciles at the playback tick            |
+| UI-1  | Escape while typing in 5 inputs (panel search, look/theme name, gallery search, batch retitle) tears down the whole panel stack                        |
+| UI-3  | Saved-look delete: no confirm, NOT undoable, 9-px ✕ two px from Export — while lyrics clear confirms and shader delete is undoable                     |
+| SS-3  | Batch refusal errors render only inside ExportDialog (which isn't open); Batch Start silently dead-clicks during single export                         |
+| AX-3  | Export-worker watchdog has no setup-phase heartbeat — long track + loudness falsely killed at 30 s, silently re-rendered inline                        |
+| AX-2  | Every export builds a second full OfflineAnalyzer for texture feedback even when unused — doubles DSP, ~1.4 GB extra on a 2 h track                    |
+| AX-6  | Timeline-scene image/video backgrounds never asset-resolved — live and export degrade DIFFERENTLY (genuine preview≠export corner)                      |
+| RP-1  | Preset crossfade caches by id: an edited custom preset fades out rendering OLD WGSL with NEW param packing                                             |
+| RP-4  | thumbnails.ts documents a measured cross-renderer particle-sim coupling that shifted an export frame — open determinism question, previously untracked |
+| PL-4  | Web MIDI origin gate is a prefix match — `http://localhost:1420.evil.com` / `:14205` pass `own_origin` (`midi_permission.rs:27`)                       |
+| SS-2  | ~10 unguarded `localStorage.setItem` savers throw QuotaExceeded mid-action in the quota regime the app explicitly supports                             |
+| DS-1  | SECURITY.md factually wrong since v2.69/v2.71 (network-request inventory, CSP claim, threat-model omissions)                                           |
+| DS-3  | CONTRIBUTING.md setup yields a broken build (no sidecar steps) and mandates `cargo test --lib` (skips the workspace member) — same trap in PR template |
+| TQ-3  | BACKLOG's own "standard gates" (this file, lines ~1145) run cargo without `--workspace` — the exact silent-skip CLAUDE.md warns about                  |
+| DS-15 | Gallery submission docs promise CI byte-verification that provably never fires for real submissions (validator checks only `pin === HEAD`)             |
+
+Severity-2 and lower: tracked per report (SS-4..10, UI-4..12, RP-2..5,
+AX-4..12, PL-5..10, DS-2..23, TQ-1..12 etc.) — burn down by domain in
+Track E waves after the shortlist.
+
+#### Notable "genuinely excellent — do not churn" findings
+
+History's asset-sharing snapshots; project.ts conditional-version
+migrations; gallery.ts verification chain; exportCore's env-agnostic
+claim, backpressure chain and batch isolation (all verified true);
+App.css has ZERO dead selectors; kit.tsx; DSP mutation-tested
+characterization; the audit-tagged comment culture. Refactors must not
+regress these.
+
 ### Canonical vocabulary (decided 2026-08-06, applies everywhere from now on)
 
 - **Style** — built-in curated per-mode chip (factory, lives in code).
@@ -157,6 +212,37 @@ was the canary.
 - [ ] D3 Repo-wide string audit for "template"/naming residue (UI strings,
       tooltips, aria-labels, comments).
 
+### Track E — Hardening burn-down (NEW, from the audit register)
+
+- [ ] E1 Severity-1 shortlist above, roughly in table order (AX-1 sync
+      semantics needs a small design call: give "Kicks" the kick
+      detector it advertises + migrate existing docs' expectations).
+- [ ] E2 Severity-2 waves per domain (state → UI → audio/export →
+      platform → render), each wave gated + released.
+- [ ] E3 Register the RP-4 determinism question as its own
+      investigate-and-close item (measure, fix or document).
+
+### Track F — Test & release infrastructure (NEW, from the audit)
+
+- [ ] F1 One checked-in release-gate manifest quoted by CLAUDE.md,
+      BACKLOG, ci.yml, release.yml (today: three contradicting
+      definitions; release.yml omits clippy/fmt); `--workspace`
+      everywhere.
+- [ ] F2 Root-fix the "thermal-flaky" DSP test (timeout config, remedy
+      already exists in store.test.ts pattern) — retire
+      rerun-before-believing.
+- [ ] F3 Consolidate the 13 device harnesses onto one `scripts/lib/`
+      (CDP client ×12 copies today) + scenario registry + JSON evidence
+      envelopes (design sketch in tests-quality.md TQ-25).
+- [ ] F4 Close the invariant-coverage holes: overlay-compose chokepoint
+      direct tests, exportCore determinism test, MIDI illegal-invocation
+      regression stub, `no-restricted-globals` for bare confirm/alert,
+      GPU matrix param-extreme + post/motion variants, parser fuzzing
+      (fast-check + one cargo-fuzz target on the GLSL translator).
+- [ ] F5 WGSL shared-helper consolidation (ACES ×3, hsl2rgb ×3, palette
+      basis ×17 — RP-12/23) as a ZERO-pixel-change PR gated by the GPU
+      matrix, BEFORE Track B waves.
+
 ### Decision points for the owner
 
 1. **Live themes now**: tombstone deep-current + sunset-circuit
@@ -164,9 +250,19 @@ was the canary.
    replaces them? (Recommendation: pull them — they're the flagged
    offenders and the userbase is small.)
 2. **B0 ranking**: after the audit matrix lands, priority order is yours
-   to reshuffle before waves start.
+   to reshuffle before waves start. Note from the render audit:
+   spectrum-scape and particle-flow are ABI-bound (renderer work, not
+   preset-file work) and must be planned as renderer waves; Builder's
+   ParamSpec bridge (RP-20) is the single biggest depth unlock.
 3. **Release cadence during the program**: keep shipping each track as
    its own 2.x release (recommendation), or batch tracks?
+4. **Track order** (recommendation): E1 severity-1 shortlist → A
+   (gallery correctness + naming) → F1/F2 (gates + flake, tiny) → B0
+   audit matrix sign-off → F5 (WGSL consolidation) → B waves ∥ E2 →
+   D docs truth → C seed v2. Approve or reshuffle.
+5. **PROPOSALS.md verdict pass**: 10 product proposals (P-1 Inspector
+   dock … P-10 polish bundle) + the endorsed audit proposals appended
+   there await your approve/adjust/reject per item.
 
 ### Parked (do not start)
 
@@ -1142,8 +1238,8 @@ npm run build
 
 ```powershell
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml --workspace
 ```
 
 ### Rendering/audio specialist gates
