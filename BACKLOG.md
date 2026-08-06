@@ -320,6 +320,32 @@ batch.
       basis ×17 — RP-12/23) as a ZERO-pixel-change PR gated by the GPU
       matrix, BEFORE Track B waves.
 
+### Approved program extension (owner: "Approve as ranked", 2026-08-06)
+
+All PROPOSALS.md verdicts are in (see that file for per-item text).
+Execution sequence around the running Track B program:
+
+1. **Now, parallel to Track B** (scripts/infra, no collision):
+   P-13 gate manifest + `release.mjs` · P-14-lite shared harness module
+   (`scripts/lib/` — cdp/boot/evidence, kill the 12 copies).
+2. **Parallel to batches 2–3:** P-16/P-7 modulation engine v2 (curves,
+   lag, beat-locked LFOs — deterministic) + P-15 AudioFeatures extension
+   (beat index, sections, chroma, vocal presence) = the "reactivity
+   fuel" item feeding Track C.
+3. **Post-batch-3 refactor release:** P-12 store-direct migration (kills
+   props-drilling) + P-2 naming (Inspector / Preferences).
+4. **After Track B completes:** P-1 Inspector dock (staged: shell + rail
+   → per-section pages → Modulation showpiece page) with P-9 folded in.
+5. **Track C (seed v2):** with modulation v2 live; P-6 factory-themes-
+   into-Gallery lands here.
+6. **Track D (docs):** after P-1's rename settles; P-21 single-source
+   guides + submission tooling is D's engine.
+7. **Fillers, any release:** P-3 first-run, P-8 export-format honesty,
+   P-10 polish bundle. **Own release, after program:** P-11 boot-from-
+   autosave.
+8. **Post-program:** un-park FEAT-009 + P-4 together. Parked: P-19 list.
+   Rejected for now: P-20 (lyrics runtime on demand).
+
 ### Decision points for the owner
 
 1. **Live themes now**: tombstone deep-current + sunset-circuit
