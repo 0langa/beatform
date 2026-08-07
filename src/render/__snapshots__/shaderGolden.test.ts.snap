@@ -1893,21 +1893,25 @@ fn P_speed() -> f32 { return params[3u]; }
 fn P_glow() -> f32 { return params[4u]; }
 fn P_threshold() -> f32 { return params[5u]; }
 fn P_gloss() -> f32 { return params[6u]; }
-fn P_orbitX() -> f32 { return params[7u]; }
-fn P_orbitY() -> f32 { return params[8u]; }
-fn P_radiusFloor() -> f32 { return params[9u]; }
-fn P_energyGrow() -> f32 { return params[10u]; }
-fn P_radiusBand() -> f32 { return params[11u]; }
-fn P_beatSwell() -> f32 { return params[12u]; }
-fn P_rimStart() -> f32 { return params[13u]; }
-fn P_innerGrad() -> f32 { return params[14u]; }
-fn P_hueField() -> f32 { return params[15u]; }
-fn P_beatBright() -> f32 { return params[16u]; }
-fn P_bgLevel() -> f32 { return params[17u]; }
-fn P_vignette() -> f32 { return params[18u]; }
-fn P_mirror() -> f32 { return params[19u]; }
-fn P_lightAngle() -> f32 { return params[20u]; }
-fn P_squash() -> f32 { return params[21u]; }
+fn P_beatSwell() -> f32 { return params[7u]; }
+fn P_smear() -> f32 { return params[8u]; }
+fn P_orbitX() -> f32 { return params[9u]; }
+fn P_orbitY() -> f32 { return params[10u]; }
+fn P_radiusFloor() -> f32 { return params[11u]; }
+fn P_energyGrow() -> f32 { return params[12u]; }
+fn P_radiusBand() -> f32 { return params[13u]; }
+fn P_rimStart() -> f32 { return params[14u]; }
+fn P_innerGrad() -> f32 { return params[15u]; }
+fn P_hueField() -> f32 { return params[16u]; }
+fn P_beatBright() -> f32 { return params[17u]; }
+fn P_bgLevel() -> f32 { return params[18u]; }
+fn P_vignette() -> f32 { return params[19u]; }
+fn P_mirror() -> f32 { return params[20u]; }
+fn P_lightAngle() -> f32 { return params[21u]; }
+fn P_squash() -> f32 { return params[22u]; }
+fn P_bassWeight() -> f32 { return params[23u]; }
+fn P_eccentric() -> f32 { return params[24u]; }
+fn P_environment() -> f32 { return params[25u]; }
 
 fn preset(uv: vec2f) -> vec4f {
   var p = centered(uv);
@@ -1967,6 +1971,20 @@ fn preset(uv: vec2f) -> vec4f {
     var band = u.bass;
     if (i % 3 == 1) { band = u.mid; }
     if (i % 3 == 2) { band = u.treble; }
+    // Bass weight (depth batch 3): tilt the lamp toward the low end — the
+    // bass blobs' band term swells harder while mid/treble blobs calm down,
+    // so a bass-heavy track grows a bass-heavy lamp. Guarded: bandW stays
+    // exactly 1.0 at the 0 default and the multiply below is an IEEE identity
+    // (x * 1.0 == x), keeping every pre-wave document bit-for-bit. rad still
+    // passes through softLimit, so a maxed weight cannot push a blob past the
+    // same frame ceiling the calm path respects.
+    var bandW = 1.0;
+    if (P_bassWeight() > 0.0) {
+      var tilt = 1.35;
+      if (i % 3 == 1) { tilt = -0.45; }
+      if (i % 3 == 2) { tilt = -0.7; }
+      bandW = 1.0 + P_bassWeight() * tilt;
+    }
     let t = u.time * P_speed() * (0.5 + h * 0.6);
     // Frame-safety: the X amplitude was already written against the frame
     // (aspect * 0.8 keeps it inside the half-width), the Y amplitude was not —
@@ -2013,8 +2031,22 @@ fn preset(uv: vec2f) -> vec4f {
     // Soft frame limit (v2.44): a maxed Size approaches a frame-filling
     // blob smoothly instead of pinning every ball to one clipped radius.
     let rad = softLimit(P_size() * (P_radiusFloor() + u.drive * P_energyGrow()
-            + band * P_radiusBand() + swell), frameCircle() * 0.8);
-    let diff = pf - pos;
+            + band * P_radiusBand() * bandW + swell), frameCircle() * 0.8);
+    var diff = pf - pos;
+    // Eccentricity (depth batch 3): squash each blob's distance metric into
+    // an oval about its own hashed, FIXED axis — orientation is a pure
+    // function of the blob index, never of time, so export matches preview
+    // and the ovals hold still while they orbit. rot2 into the blob frame,
+    // area-preserving (x*s, y/s) squash, rot2 back: the field, the merge
+    // behaviour and the gloss gradient all see the same warped offset.
+    // Guarded: at the 0 default diff is the untouched pre-wave vector.
+    if (P_eccentric() > 0.0) {
+      let axis = hash11(fi + 31.0) * TAU;
+      let ecc = P_eccentric() * (0.35 + 0.65 * hash11(fi + 47.0));
+      let s = 1.0 + ecc * 0.9;
+      let el = rot2(axis) * diff;
+      diff = rot2(-axis) * vec2f(el.x * s, el.y / s);
+    }
     let d2 = dot(diff, diff);
     let contrib = rad * rad / (d2 + 1e-5);
     field += contrib;
@@ -2082,8 +2114,33 @@ fn preset(uv: vec2f) -> vec4f {
   let conf = smoothstep(0.25, 0.7, length(nrm) / max(gMag, 1e-6));
   let N = normalize(nrm + vec2f(1e-5, 0.0));
   let L = vec2f(cos(radians(P_lightAngle())), sin(radians(P_lightAngle())));
-  let sheen = pow(max(dot(N, L), 0.0), 6.0) * conf;
-  col += mix(pal, vec3f(1.0), 0.7) * sheen * surface * P_gloss() * (0.6 + u.drive * 0.5);
+  var sheen = pow(max(dot(N, L), 0.0), 6.0) * conf;
+  var sheenCol = mix(pal, vec3f(1.0), 0.7);
+  // Gloss environment (depth batch 3): what the sheen REFLECTS. 0 (Void, the
+  // default) is the pre-wave single hard key — both vars above initialize to
+  // exactly the old expressions and the branches below only run off-default,
+  // so the default path multiplies the identical chain. Screen-up is -N.y
+  // (uv.y grows downward and centered() keeps that sign).
+  let env = P_environment();
+  if (env > 1.5) {
+    // Horizon: a chrome ball outdoors. A sky sheet where the normal faces
+    // up-screen, a hard bright line where it grazes the horizon (each blob's
+    // equator), dark ground below by omission (light is only ever added),
+    // plus the key at reduced weight so Light angle still reads.
+    let sky = smoothstep(-0.2, 0.65, -N.y) * 0.5;
+    let horizonLine = pow(1.0 - abs(N.y), 8.0) * 0.4;
+    sheen = (sky + horizonLine) * conf + sheen * 0.45;
+    sheenCol = mix(pal, vec3f(1.0), 0.6);
+  } else if (env > 0.5) {
+    // Studio: softbox wrap — a broad low-power sheet from the key direction,
+    // a dim fill card from the far side, and the tight key on top. Peak sits
+    // near the void look's ceiling so Gloss reads on the same scale.
+    let sheet = pow(max(dot(N, L), 0.0), 2.0) * conf;
+    let fill = pow(max(dot(N, -L), 0.0), 3.0) * conf;
+    sheen = sheen * 0.6 + sheet * 0.45 + fill * 0.18;
+    sheenCol = mix(pal, vec3f(1.0), 0.85);
+  }
+  col += sheenCol * sheen * surface * P_gloss() * (0.6 + u.drive * 0.5);
 
   // Hot core: the field's own 1/d^2 falloff spikes to huge values only very
   // near a blob's point-mass centre. The band must therefore start WELL above
@@ -2105,7 +2162,28 @@ fn preset(uv: vec2f) -> vec4f {
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.05);
   col += grain(uv, 0.012);
-  return vec4f(max(col, vec3f(0.0)), 1.0);
+  // Lava smear (depth batch 3): the mode's texture-feedback opt-in. The
+  // previous RAW frame — this same function's last output, pre-composite, so
+  // no background/overlay ever accumulates — is folded in with max(), never
+  // add: a max accumulator is bounded by the brightest fresh frame by
+  // construction, so tonemap living inside the loop is safe (echo-trails must
+  // ban tonemap because it ADDS; here nothing compounds) and residue decays
+  // exponentially without ever brightening standing geometry. keep is
+  // dt-scaled the same way echo-trails' decay is: on fixed 60 Hz state ticks
+  // u.dt = 1/60 so keep applies exactly once per tick; on presentation-only
+  // frames u.dt = 0 so keep = 1 and held history is shown untouched — state
+  // advances only on the shared fixed clock (fixedFeedback.ts), the same
+  // grid live and in export. sqrt(smear) spends the knob's lower half on
+  // short tails: 0.25 is a few-frame wipe, 1.0 a multi-second goo memory.
+  // Sampling at the un-warped uv hits texel centers exactly (visTex matches
+  // the target size), so held residue never blurs generation to generation.
+  // Guarded: smear = 0 returns the exact pre-wave expression below.
+  var outCol = max(col, vec3f(0.0));
+  if (P_smear() > 0.0) {
+    let keep = pow(mix(0.62, 0.992, sqrt(P_smear())), u.dt * 60.0);
+    outCol = max(outCol, feedbackSample(uv).rgb * keep);
+  }
+  return vec4f(outCol, 1.0);
 }
 "
 `;
@@ -2141,6 +2219,14 @@ exports[`shader golden baseline > metaballs: param ABI (key + default, in order)
     "key": "gloss",
   },
   {
+    "default": 0.2,
+    "key": "beatSwell",
+  },
+  {
+    "default": 0,
+    "key": "smear",
+  },
+  {
     "default": 0.28,
     "key": "orbitX",
   },
@@ -2159,10 +2245,6 @@ exports[`shader golden baseline > metaballs: param ABI (key + default, in order)
   {
     "default": 0.45,
     "key": "radiusBand",
-  },
-  {
-    "default": 0.2,
-    "key": "beatSwell",
   },
   {
     "default": 0.55,
@@ -2199,6 +2281,18 @@ exports[`shader golden baseline > metaballs: param ABI (key + default, in order)
   {
     "default": 0.18,
     "key": "squash",
+  },
+  {
+    "default": 0,
+    "key": "bassWeight",
+  },
+  {
+    "default": 0,
+    "key": "eccentric",
+  },
+  {
+    "default": 0,
+    "key": "environment",
   },
 ]
 `;
