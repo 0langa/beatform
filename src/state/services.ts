@@ -3,7 +3,7 @@ import { RealtimeAnalyzer } from "../audio/realtimeSource";
 import { Canvas2DRenderer } from "../render/canvas2dRenderer";
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { BgSettings, ParamValues, PostSettings, PresetDef, Renderer } from "../render/types";
-import { applyMods, applyPostMods } from "./modMatrix";
+import { applyMods, applyPostMods, createModEvalState } from "./modMatrix";
 import { resolveActiveFrame, type FrameResolveInput } from "./frameResolve";
 import { presetById } from "../render/presets";
 import { BUILDER2_ID, currentBuilderStack, packBuilderFrame, sameF32 } from "../render/builder2";
@@ -284,6 +284,12 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     /** True while the renderer holds MODULATED post settings, so the loop
      * knows it still owes the renderer a reset once modulation stops. */
     let postModulated = false;
+    /** THIS loop's lag memory for mod routes with attack/release (P-16).
+     * Owned here, never shared with exports (which create a fresh one per
+     * run). The dt rules inside applyMods snap across seeks on their own;
+     * clearing alongside the analyzer's discontinuity reset below also drops
+     * memos of routes that no longer exist. */
+    const modEval = createModEvalState();
     /** Last builder frame pack uploaded by THIS loop (RP-20) — the dirty
      * check that keeps the per-frame storage-buffer write edit-rate, not
      * frame-rate, while nothing modulates. Cleared on renderer swap so a
@@ -321,6 +327,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         (lastTrackTime !== null && lastTrackTime - compensated > 0.25)
       ) {
         ana.reset("seek");
+        modEval.routes.clear();
       }
       lastLoopEpoch = loopEpoch;
       lastTrackTime = compensated;
@@ -408,7 +415,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       // the un-modulated settings back exactly once, or the last animated
       // frame's bloom/chromatic would stick.
       const basePost = hooks.getPost();
-      const livePost = applyPostMods(basePost, rf.mods, features, stemValues);
+      const livePost = applyPostMods(basePost, rf.mods, features, stemValues, modEval);
       if (livePost !== basePost) {
         renderer?.setPost(livePost);
         postModulated = true;
@@ -416,7 +423,14 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         renderer?.setPost(basePost);
         postModulated = false;
       }
-      const frameParams = applyMods(activePreset, rf.params, rf.mods, features, stemValues);
+      const frameParams = applyMods(
+        activePreset,
+        rf.params,
+        rf.mods,
+        features,
+        stemValues,
+        modEval,
+      );
       // Builder bridge chokepoint (RP-20, determinism law): modulation and
       // automation compose into the params RECORD above, but builder layer
       // values reach the GPU via the builderLayers storage buffer — overlay

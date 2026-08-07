@@ -35,7 +35,7 @@ import {
   type PostSettings,
   type PresetDef,
 } from "../render/types";
-import { applyMods, applyPostMods, type ModRoute } from "../state/modMatrix";
+import { applyMods, applyPostMods, createModEvalState, type ModRoute } from "../state/modMatrix";
 import type { Timeline } from "../state/timeline";
 import { resolveActiveFrame } from "../state/frameResolve";
 import { presetById } from "../render/presets";
@@ -734,6 +734,11 @@ export async function runExportJob(
     let fadeFromId: string | null = null;
     /** True while the renderer holds MODULATED post settings — see services.ts. */
     let postModulated = false;
+    /** FRESH lag memory for this export run (P-16): the frame walk below is
+     * strictly sequential from frame 0, so attack/release routes resolve the
+     * same smoothed values on every export of the same document —
+     * bit-identical files, independent of any live preview state. */
+    const modEval = createModEvalState();
     const frameInput = {
       timeline: job.timeline ?? { enabled: false as const, scenes: [], lanes: [] },
       basePresetId: job.presetId,
@@ -775,6 +780,11 @@ export async function runExportJob(
       ? new OfflineAnalyzer(pcm, 60, 96, job.sync, job.beatGrid ?? null)
       : null;
     const feedbackClock = anyPresetUsesFeedback ? new FixedFeedbackClock() : null;
+    // The 60 Hz feedback tick walk gets its OWN lag memory: it is a separate
+    // sequential walk (its own analyzer, its own cadence), and sharing state
+    // with the presented walk would make presented-frame smoothing depend on
+    // whether a feedback preset happens to be in the job.
+    const feedbackModEval = anyPresetUsesFeedback ? createModEvalState() : undefined;
     // Setup is complete; the frame loop's own progress messages take over.
     hooks.onHeartbeat?.();
     const total = analyzer.frameCount;
@@ -825,6 +835,7 @@ export async function runExportJob(
               tickFrame.mods,
               tickFeatures,
               tickStems,
+              feedbackModEval,
             );
             // Same chokepoint as the presented frames below — inert today
             // (no builder layer type samples feedback), correct the day one
@@ -897,7 +908,7 @@ export async function runExportJob(
       // nothing targets post, so an unmodulated export uploads nothing extra
       // and stays byte-identical to before this feature existed.
       if (job.post) {
-        const moddedPost = applyPostMods(job.post, rf.mods, features, stemValues);
+        const moddedPost = applyPostMods(job.post, rf.mods, features, stemValues, modEval);
         if (moddedPost !== job.post) renderer.setPost(moddedPost);
         else if (postModulated) renderer.setPost(job.post);
         postModulated = moddedPost !== job.post;
@@ -908,6 +919,7 @@ export async function runExportJob(
         rf.mods,
         features,
         stemValues,
+        modEval,
       );
       // Builder bridge chokepoint (RP-20, determinism law): the SAME
       // packBuilderFrame the live loop uses overlays modulated/automated

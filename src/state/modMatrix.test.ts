@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { applyMods, applyPostMods, postTargetKey, validModRoutes } from "./modMatrix";
+import {
+  applyMods,
+  applyPostMods,
+  createModEvalState,
+  LFO_SOURCES,
+  MOD_SOURCES,
+  postTargetKey,
+  sourceValue,
+  validModRoutes,
+  type ModSource,
+} from "./modMatrix";
 import { presets } from "../render/presets";
-import { DEFAULT_POST, defaultParams } from "../render/types";
+import { DEFAULT_POST, defaultParams, type ParamValues } from "../render/types";
 import type { AudioFeatures } from "../audio/types";
 
 const preset = presets[0];
@@ -244,5 +254,399 @@ describe("applyMods lazy clone", () => {
     expect(out).not.toBe(base);
     expect(base).toEqual(before);
     expect(out[spec.key]).toBeGreaterThan(before[spec.key]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Modulation engine v2 (P-16/P-7): curve, lag, LFO sources, validator.
+// ---------------------------------------------------------------------------
+
+/** Base with the target param parked at spec.min so mid-range expectations
+ * never collide with the clamp. */
+function minBase(): ParamValues {
+  return { ...defaultParams(preset), [spec.key]: spec.min };
+}
+const range = spec.max - spec.min;
+
+describe("mod v2: default neutrality (v2.78.0 bit-identity)", () => {
+  it("v1-shaped routes resolve bit-identical with and without an eval state", () => {
+    const routes = validModRoutes([
+      { id: "a", source: "kick", param: spec.key, amount: 0.37 },
+      { id: "b", source: "bass", param: "post:chromatic", amount: 0.4 },
+    ]);
+    const base = defaultParams(preset);
+    const f = features({ kick: 0.83, bass: 0.6, time: 12.5 });
+    const state = createModEvalState();
+    const plain = applyMods(preset, base, routes, f);
+    const stated = applyMods(preset, base, routes, f, undefined, state);
+    expect(stated).toEqual(plain);
+    expect(applyPostMods(DEFAULT_POST, routes, f, undefined, state)).toEqual(
+      applyPostMods(DEFAULT_POST, routes, f),
+    );
+    // Lag-free routes never touch the state — zero per-frame churn.
+    expect(state.routes.size).toBe(0);
+  });
+
+  it("identity fast path survives with an eval state passed", () => {
+    const base = defaultParams(preset);
+    const state = createModEvalState();
+    expect(applyMods(preset, base, [], features({ kick: 1 }), undefined, state)).toBe(base);
+    const postOnly = validModRoutes([
+      { id: "a", source: "bass", param: "post:chromatic", amount: 1 },
+    ]);
+    expect(applyMods(preset, base, postOnly, features({ bass: 1 }), undefined, state)).toBe(base);
+    const paramOnly = validModRoutes([{ id: "b", source: "bass", param: spec.key, amount: 1 }]);
+    expect(applyPostMods(DEFAULT_POST, paramOnly, features({ bass: 1 }), undefined, state)).toBe(
+      DEFAULT_POST,
+    );
+  });
+
+  it("a v1 route round-trips with EXACTLY its v1 keys — an old app sees nothing new", () => {
+    const [r] = validModRoutes([{ id: "a", source: "kick", param: "x", amount: 0.5 }]);
+    expect(Object.keys(r).sort()).toEqual(["amount", "id", "param", "source"]);
+  });
+
+  it("every dropdown source reads 0..1 — the curve stage may assume it", () => {
+    const maxed = features({
+      drive: 1,
+      driveBeat: 1,
+      rms: 1,
+      energy: 1,
+      bass: 1,
+      mid: 1,
+      treble: 1,
+      voice: 1,
+      kick: 1,
+      snare: 1,
+      hat: 1,
+      width: 1,
+      beatPhase: 0.99,
+      barPhase: 0.99,
+    });
+    const zeroed = features({});
+    for (const s of MOD_SOURCES) {
+      for (const f of [maxed, zeroed]) {
+        const v = sourceValue(f, s.id);
+        expect(v, s.id).toBeGreaterThanOrEqual(0);
+        expect(v, s.id).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+});
+
+describe("mod v2: per-route curve", () => {
+  it("exp squares the source value (0.5 → 0.25 of the range)", () => {
+    const routes = validModRoutes([
+      { id: "r", source: "bass", param: spec.key, amount: 1, curve: "exp" },
+    ]);
+    const out = applyMods(preset, minBase(), routes, features({ bass: 0.5 }));
+    expect(out[spec.key]).toBeCloseTo(spec.min + 0.25 * range, 10);
+  });
+
+  it("smooth applies smoothstep: v²(3−2v), so 0.25 → 0.15625", () => {
+    const routes = validModRoutes([
+      { id: "r", source: "bass", param: spec.key, amount: 1, curve: "smooth" },
+    ]);
+    const out = applyMods(preset, minBase(), routes, features({ bass: 0.25 }));
+    expect(out[spec.key]).toBeCloseTo(spec.min + 0.15625 * range, 10);
+    // Endpoints are fixed points on every curve.
+    expect(applyMods(preset, minBase(), routes, features({ bass: 1 }))[spec.key]).toBeCloseTo(
+      spec.min + range,
+      10,
+    );
+    expect(applyMods(preset, minBase(), routes, features({ bass: 0 }))[spec.key]).toBe(spec.min);
+  });
+
+  it("linear/absent passes the raw value through UNTOUCHED; shaped curves clamp to 0..1 first", () => {
+    // A stem envelope is the one source we can feed out-of-range to prove the
+    // contract: linear must not clamp (v1 behavior), curves must.
+    const stems = { "stem1:kick": 1.5 };
+    const linear = validModRoutes([
+      { id: "r", source: "stem1:kick", param: spec.key, amount: 0.5 },
+    ]);
+    expect(applyMods(preset, minBase(), linear, features({}), stems)[spec.key]).toBeCloseTo(
+      spec.min + 1.5 * 0.5 * range,
+      10,
+    );
+    const curved = validModRoutes([
+      { id: "r", source: "stem1:kick", param: spec.key, amount: 0.5, curve: "exp" },
+    ]);
+    expect(applyMods(preset, minBase(), curved, features({}), stems)[spec.key]).toBeCloseTo(
+      spec.min + 1 * 0.5 * range,
+      10,
+    );
+  });
+});
+
+describe("mod v2: per-route lag (attack/release EMA)", () => {
+  const lagged = () =>
+    validModRoutes([
+      { id: "r", source: "kick", param: spec.key, amount: 0.5, attack: 0.2, release: 0.5 },
+    ]);
+  const valueAt = (out: ParamValues) => (out[spec.key] - spec.min) / (0.5 * range);
+
+  it("follows alpha = 1 − exp(−dt/τ), attack up and release down", () => {
+    const state = createModEvalState();
+    const routes = lagged();
+    // First evaluation snaps to the (curved) target — here 0.
+    let out = applyMods(
+      preset,
+      minBase(),
+      routes,
+      features({ kick: 0, time: 0 }),
+      undefined,
+      state,
+    );
+    expect(out[spec.key]).toBe(spec.min);
+    // Rising: dt=0.1, τ=attack=0.2 → s = 1 − e^(−0.5)
+    const s1 = 1 - Math.exp(-0.1 / 0.2);
+    out = applyMods(preset, minBase(), routes, features({ kick: 1, time: 0.1 }), undefined, state);
+    expect(valueAt(out)).toBeCloseTo(s1, 10);
+    // Falling: dt=0.2, τ=release=0.5 → s = s1 · e^(−0.4)
+    const s2 = s1 * Math.exp(-0.2 / 0.5);
+    out = applyMods(preset, minBase(), routes, features({ kick: 0, time: 0.3 }), undefined, state);
+    expect(valueAt(out)).toBeCloseTo(s2, 10);
+  });
+
+  it("dt = 0 holds (paused preview), dt < 0 and dt > 1 s snap (seek/loop/track change)", () => {
+    const state = createModEvalState();
+    const routes = lagged();
+    applyMods(preset, minBase(), routes, features({ kick: 0, time: 0 }), undefined, state);
+    const rising = applyMods(
+      preset,
+      minBase(),
+      routes,
+      features({ kick: 1, time: 0.1 }),
+      undefined,
+      state,
+    );
+    // Same time again, source moved: the smoothed value holds.
+    const held = applyMods(
+      preset,
+      minBase(),
+      routes,
+      features({ kick: 0.2, time: 0.1 }),
+      undefined,
+      state,
+    );
+    expect(held[spec.key]).toBe(rising[spec.key]);
+    // Backwards: snap to the current target.
+    const back = applyMods(
+      preset,
+      minBase(),
+      routes,
+      features({ kick: 0.3, time: 0.05 }),
+      undefined,
+      state,
+    );
+    expect(valueAt(back)).toBeCloseTo(0.3, 10);
+    // Forward jump beyond 1 s: snap.
+    const jump = applyMods(
+      preset,
+      minBase(),
+      routes,
+      features({ kick: 0.8, time: 5 }),
+      undefined,
+      state,
+    );
+    expect(valueAt(jump)).toBeCloseTo(0.8, 10);
+  });
+
+  it("is frame-rate independent toward a held target (same total time, any step split)", () => {
+    const routes = validModRoutes([
+      { id: "r", source: "kick", param: spec.key, amount: 0.5, attack: 0.4 },
+    ]);
+    const run = (steps: number[]) => {
+      const state = createModEvalState();
+      applyMods(preset, minBase(), routes, features({ kick: 0, time: 0 }), undefined, state);
+      let t = 0;
+      let out = minBase();
+      for (const dt of steps) {
+        t += dt;
+        out = applyMods(
+          preset,
+          minBase(),
+          routes,
+          features({ kick: 1, time: t }),
+          undefined,
+          state,
+        );
+      }
+      return out[spec.key];
+    };
+    const fine = run(Array.from({ length: 10 }, () => 0.05));
+    const coarse = run([0.25, 0.25]);
+    expect(fine).toBeCloseTo(coarse, 10);
+  });
+
+  it("without a state (or with attack/release 0) lag routes evaluate instantly", () => {
+    const routes = lagged();
+    const out = applyMods(preset, minBase(), routes, features({ kick: 1, time: 7 }));
+    expect(valueAt(out)).toBeCloseTo(1, 10);
+    const zeroLag = validModRoutes([
+      { id: "r", source: "kick", param: spec.key, amount: 0.5, attack: 0, release: 0 },
+    ]);
+    const state = createModEvalState();
+    const out2 = applyMods(
+      preset,
+      minBase(),
+      zeroLag,
+      features({ kick: 1, time: 7 }),
+      undefined,
+      state,
+    );
+    expect(valueAt(out2)).toBeCloseTo(1, 10);
+    expect(state.routes.size).toBe(0);
+  });
+
+  it("two sequential walks with fresh states resolve identical frames (export-run determinism)", () => {
+    const routes = validModRoutes([
+      {
+        id: "lag",
+        source: "kick",
+        param: spec.key,
+        amount: 0.5,
+        curve: "exp",
+        attack: 0.05,
+        release: 0.3,
+      },
+      { id: "lfoPost", source: "lfo:sine:1", param: "post:bloom", amount: 0.6, release: 0.2 },
+    ]);
+    const walk = () => {
+      const state = createModEvalState();
+      const outs: number[] = [];
+      for (let n = 0; n < 90; n++) {
+        const f = features({ time: n / 30, kick: (n % 7) / 6, bpm: 128 });
+        outs.push(applyMods(preset, minBase(), routes, f, undefined, state)[spec.key]);
+        outs.push(applyPostMods(DEFAULT_POST, routes, f, undefined, state).bloom);
+      }
+      return outs;
+    };
+    expect(walk()).toEqual(walk()); // exact float equality, not closeTo
+  });
+});
+
+describe("mod v2: beat-locked LFO sources", () => {
+  it("phase math: sine/saw/square at documented points (bpm 120)", () => {
+    // time 0.25 s @120 BPM → beatPos 0.5 → phase 0.5 for R=1
+    const f = features({ time: 0.25, bpm: 120 });
+    expect(sourceValue(f, "lfo:sine:1")).toBeCloseTo(1, 10);
+    expect(sourceValue(f, "lfo:saw:1")).toBeCloseTo(0.5, 10);
+    expect(sourceValue(f, "lfo:square:1")).toBe(0); // high half is phase < 0.5
+    // Cycle start: sine begins AT 0, square begins high.
+    const f0 = features({ time: 0, bpm: 120 });
+    expect(sourceValue(f0, "lfo:sine:1")).toBeCloseTo(0, 10);
+    expect(sourceValue(f0, "lfo:saw:1")).toBe(0);
+    expect(sourceValue(f0, "lfo:square:1")).toBe(1);
+    // R=4: one cycle per 4 beats → 2 s @120 BPM lands back on phase 0.
+    expect(sourceValue(features({ time: 2, bpm: 120 }), "lfo:sine:4")).toBeCloseTo(0, 10);
+  });
+
+  it("bpm 0 falls back to the 120-BPM-equivalent clock (beatPos = time × 2)", () => {
+    const f = features({ time: 0.25, bpm: 0 });
+    expect(sourceValue(f, "lfo:sine:1")).toBeCloseTo(1, 10);
+  });
+
+  it("is a pure function of time — seek-stable, no history", () => {
+    const at = (time: number) => sourceValue(features({ time, bpm: 100 }), "lfo:sine:2");
+    const direct = at(137.31);
+    at(5);
+    at(999.9);
+    at(0);
+    expect(at(137.31)).toBe(direct);
+    // Output range: 0..1 for every wave/rate over a time sweep.
+    for (const s of LFO_SOURCES) {
+      for (let t = 0; t < 4; t += 0.13) {
+        const v = sourceValue(features({ time: t, bpm: 97 }), s.id);
+        expect(v, `${s.id} @ ${t}`).toBeGreaterThanOrEqual(0);
+        expect(v, `${s.id} @ ${t}`).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it("composes with curve like any source (saw 0.5 → exp → 0.25)", () => {
+    const routes = validModRoutes([
+      { id: "r", source: "lfo:saw:1", param: spec.key, amount: 1, curve: "exp" },
+    ]);
+    const out = applyMods(preset, minBase(), routes, features({ time: 0.5, bpm: 60 }));
+    expect(out[spec.key]).toBeCloseTo(spec.min + 0.25 * range, 10);
+  });
+});
+
+describe("mod v2: validator", () => {
+  it("accepts the whole LFO id family and rejects near-misses", () => {
+    const good = LFO_SOURCES.map((s, i) => ({
+      id: `g${i}`,
+      source: s.id,
+      param: "x",
+      amount: 0.2,
+    }));
+    expect(validModRoutes(good)).toHaveLength(LFO_SOURCES.length); // 3 waves × 6 rates
+    const bad = ["lfo:sine:3", "lfo:tri:1", "lfo:sine:.25", "lfo:sine", "LFO:sine:1", "lfo::1"].map(
+      (source, i) => ({ id: `b${i}`, source, param: "x", amount: 0.2 }),
+    );
+    expect(validModRoutes(bad)).toHaveLength(0);
+  });
+
+  it("keeps valid curves, strips garbage ones", () => {
+    const routes = validModRoutes([
+      { id: "a", source: "kick", param: "x", amount: 0.5, curve: "exp" },
+      { id: "b", source: "kick", param: "x", amount: 0.5, curve: "smooth" },
+      { id: "c", source: "kick", param: "x", amount: 0.5, curve: "linear" },
+      { id: "d", source: "kick", param: "x", amount: 0.5, curve: "cubic" },
+      { id: "e", source: "kick", param: "x", amount: 0.5, curve: 3 },
+      { id: "f", source: "kick", param: "x", amount: 0.5, curve: null },
+    ]);
+    expect(routes.map((r) => r.curve)).toEqual([
+      "exp",
+      "smooth",
+      "linear",
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect("curve" in routes[3]).toBe(false); // stripped, not set-to-undefined
+  });
+
+  it("clamps attack/release to 0..10 s and strips non-finite garbage", () => {
+    const routes = validModRoutes([
+      { id: "a", source: "kick", param: "x", amount: 0.5, attack: 0.3, release: 99 },
+      { id: "b", source: "kick", param: "x", amount: 0.5, attack: -5 },
+      { id: "c", source: "kick", param: "x", amount: 0.5, attack: NaN, release: Infinity },
+      { id: "d", source: "kick", param: "x", amount: 0.5, attack: "fast", release: {} },
+    ]);
+    expect(routes[0].attack).toBe(0.3);
+    expect(routes[0].release).toBe(10);
+    expect(routes[1].attack).toBe(0);
+    expect("attack" in routes[2]).toBe(false);
+    expect("release" in routes[2]).toBe(false);
+    expect("attack" in routes[3]).toBe(false);
+    expect("release" in routes[3]).toBe(false);
+  });
+
+  it("v2 fields survive a validation round-trip unchanged", () => {
+    const routes = validModRoutes([
+      {
+        id: "a",
+        source: "lfo:square:0.5" satisfies ModSource,
+        param: "post:bloom",
+        amount: -0.4,
+        curve: "smooth",
+        attack: 0.08,
+        release: 0.35,
+      },
+    ]);
+    expect(routes).toEqual([
+      {
+        id: "a",
+        source: "lfo:square:0.5",
+        param: "post:bloom",
+        amount: -0.4,
+        curve: "smooth",
+        attack: 0.08,
+        release: 0.35,
+      },
+    ]);
+    expect(validModRoutes(routes)).toEqual(routes);
   });
 });
