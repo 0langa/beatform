@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { tunnelRings } from "./tunnelRings";
+import { allParams, isModTarget } from "../types";
 import { SHADER_SOURCES } from "../webgpuRenderer";
 
 /** The prelude's own TAU, so nothing here can drift from the shader's. */
@@ -43,9 +44,17 @@ describe("tunnel color fade", () => {
     expect(tunnelRings.advanced?.some((p) => p.key === "colorFade")).toBe(false);
   });
 
-  it("no factory style sets it, so every shipped look renders the default path", () => {
+  it("slipstream is the one factory look on the fade path; every other style stays off it", () => {
+    // Pre-wave this asserted NO style set colorFade. The v2.76 deck closes
+    // the B0 finding ("the newest param, untouched by the deck") with
+    // exactly one look built on it — everything else still renders the
+    // guarded default path bit-identically.
     for (const style of tunnelRings.styles ?? []) {
-      expect(style.values, `style ${style.id}`).not.toHaveProperty("colorFade");
+      if (style.id === "slipstream") {
+        expect(style.values.colorFade).toBe(1);
+      } else {
+        expect(style.values, `style ${style.id}`).not.toHaveProperty("colorFade");
+      }
     }
   });
 
@@ -190,6 +199,292 @@ describe("tunnel color fade", () => {
     for (let i = 0; i <= 64; i++) {
       const t = i / 64;
       expect(Math.abs(tInOf(t) - t), `t ${t}`).toBeCloseTo(1, 12);
+    }
+  });
+});
+
+/**
+ * The v2.76 depth wave: wall materials, cover wall, beat junctions, the
+ * centerGlow promotion and the six-style deck extension.
+ *
+ * Neutrality doctrine (same as the wave's other modes): at factory defaults
+ * the frame must be bit-identical to pre-wave. Where a Node test can reach,
+ * that is proven on the shader's OWN text and lifted expressions — the
+ * default path keeps its exact initializers, every new block is guarded off
+ * at its 0 default, and the guards' locality is proven on the lifted math
+ * rather than restated in prose.
+ */
+describe("tunnel depth wave (v2.76)", () => {
+  const body = tunnelRings.wgsl;
+  const specs = new Map(allParams(tunnelRings).map((p) => [p.key, p]));
+
+  /** Pre-wave key -> default, frozen as data: a retune of ANY shipped knob is
+   * a pixel change on every saved document, and must be its own deliberate
+   * commit — never a depth-wave side effect. */
+  const PRE_WAVE_DEFAULTS: Record<string, number> = {
+    hue: 15,
+    hueSpread: 70,
+    colorFade: 0,
+    speed: 0.15,
+    rings: 7,
+    spokes: 12,
+    beatPulse: 0.7,
+    curve: 0,
+    cruiseFloor: 0.35,
+    curveScale: 1,
+    cruiseEnergy: 0.9,
+    beatSpeed: 0.08,
+    tileLevel: 0.1,
+    tileSpectrum: 0.25,
+    pulseWidth: 9,
+    tileSat: 0.75,
+    checker: 0.06,
+    groutWidth: 0.055,
+    groutLevel: 0.1,
+    fogNear: 0.012,
+    fogFar: 0.7,
+    centerGlow: 0.2,
+    vignette: 0.3,
+    mirror: 1,
+    twist: 0.8,
+    roundness: 0.6,
+    surfaceWarp: 1.2,
+    beatBright: 0.15,
+  };
+
+  it("every pre-wave param keeps its key and default", () => {
+    for (const [key, def] of Object.entries(PRE_WAVE_DEFAULTS)) {
+      expect(specs.get(key)?.default, key).toBe(def);
+    }
+  });
+
+  it("adds exactly the three wave params on top of the pre-wave set", () => {
+    expect(
+      allParams(tunnelRings)
+        .map((p) => p.key)
+        .sort(),
+    ).toEqual([...Object.keys(PRE_WAVE_DEFAULTS), "material", "coverWall", "junction"].sort());
+  });
+
+  it("the legacy nine styles head the deck, untouched by any wave param", () => {
+    const styles = tunnelRings.styles ?? [];
+    expect(styles.slice(0, 9).map((s) => s.id)).toEqual([
+      "ember",
+      "wireframe",
+      "corkscrew",
+      "cathedral",
+      "hyper",
+      "kaleidoTube",
+      "iceCave",
+      "waterslide",
+      "foundry",
+    ]);
+    for (const style of styles.slice(0, 9)) {
+      for (const key of ["material", "coverWall", "junction"]) {
+        expect(style.values, `${style.id} sets ${key}`).not.toHaveProperty(key);
+      }
+    }
+  });
+
+  it("material is a mode-choice enum: mod off, tiles default, values 0..3", () => {
+    const spec = tunnelRings.params.find((p) => p.key === "material");
+    expect(spec).toMatchObject({ group: "shape", control: "enum", mod: "off", default: 0 });
+    expect(spec?.control === "enum" ? spec.options.map((o) => o.value) : []).toEqual([0, 1, 2, 3]);
+  });
+
+  it("coverWall and junction are opt-in smooth mod targets in their lenses", () => {
+    for (const key of ["coverWall", "junction"] as const) {
+      const spec = specs.get(key);
+      expect(spec, key).toMatchObject({ min: 0, max: 1, step: 0.01, default: 0 });
+      // Smooth (absent mod): a route may breathe the mosaic or the stations.
+      expect(spec?.mod, key).toBeUndefined();
+      expect(spec !== undefined && isModTarget(spec), key).toBe(true);
+    }
+    expect(specs.get("coverWall")?.group).toBe("image");
+    expect(specs.get("junction")?.group).toBe("reaction");
+  });
+
+  it("centerGlow is promoted to the curated tier with an unchanged spec", () => {
+    const spec = tunnelRings.params.find((p) => p.key === "centerGlow");
+    expect(spec).toMatchObject({
+      label: "Center glow",
+      group: "glow",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.2,
+    });
+    expect(tunnelRings.advanced?.some((p) => p.key === "centerGlow")).toBe(false);
+  });
+
+  it("the curated tier covers every lens", () => {
+    const groups = new Set(tunnelRings.params.map((p) => p.group));
+    for (const lens of ["shape", "color", "motion", "reaction", "glow", "image"]) {
+      expect(groups, lens).toContain(lens);
+    }
+  });
+
+  // ---- Default-path neutrality, on the shader's own text -------------------
+
+  it("keeps the tile wall as the untaken-branch default path", () => {
+    // The shipped tile initializers, verbatim — now vars so materials can
+    // rewrite them WITHOUT touching the default expressions' text.
+    expect(body).toContain("var lit = P_tileLevel() * (0.55 + ringParity * P_checker() * ringVis)");
+    expect(body).toContain("var seam = max(ringLine * ringVis, fluteLine);");
+    expect(body).toContain("var seamLevel = P_groutLevel();");
+    // Materials only run above 0.5 — Tiles (0) takes no branch at all.
+    expect(body).toContain("let wallMat = P_material();");
+    expect(body).toContain("if (wallMat > 2.5) {");
+    // The seam composite reads the vars in the original arithmetic shape.
+    expect(body).toContain("col += pal * seam * seamLevel * (0.6 + v * 1.6);");
+    expect(body).toContain("col += vec3f(1.0, 0.98, 0.94) * seam * pk * pk * seamLevel * 1.4;");
+  });
+
+  it("guards cover wall and junctions off at their 0 defaults", () => {
+    expect(body).toContain("let cwall = P_coverWall();");
+    expect(body).toContain("if (cwall > 1e-4 && hasCover()) {");
+    expect(body).toContain("let jAmt = P_junction();");
+    expect(body).toContain("if (jAmt > 1e-4) {");
+  });
+
+  it("maps the cover onto the shared cell grid through the shared fit machinery", () => {
+    // Per-cell mosaic: the cell-local coordinates (flipped so the art reads
+    // right way up on the floor), cropped by the SAME fitUV the other cover
+    // modes use (no bespoke fitting math to drift)...
+    expect(body).toContain(
+      "fitUV(vec2f(1.0 - fluteD, 1.0 - ringD), coverAspect(), 1.0, 0.0, 1.0, vec2f(0.0))",
+    );
+    // ...and lit by the wall's own light + cylinder shade, never flat.
+    expect(body).toContain("art * (0.3 + lit * 1.4) * round");
+  });
+
+  // ---- Lifted-expression proofs -------------------------------------------
+
+  /** The colorFade suite's lift, rebuilt here with floor added: compile a
+   * chain of the shader's own `let <name> = <expr>;` lines into one fn. */
+  const WAVE_SHIM = `${WGSL_SHIM}
+    const floor = Math.floor, exp = Math.exp;`;
+  const lift = (names: string[], args: string[]) => {
+    const decls = names.map((n) => {
+      const src = new RegExp(`let ${n} = ([^;]*);`).exec(body)?.[1];
+      if (src === undefined) throw new Error(`${n} expression not found in the WGSL`);
+      return `const ${n} = ${src.replace(/\s+/g, " ")};`;
+    });
+    return new Function(
+      ...args,
+      `${WAVE_SHIM}
+       ${decls.join("\n       ")}
+       return ${names[names.length - 1]};`,
+    ) as (...a: number[]) => number;
+  };
+
+  it("junction stations are a pure function of travel with an exact mod-128 wrap", () => {
+    // Stations are features OF THE TUBE (travel-anchored, like the rings) —
+    // no event state — and the hashed index wraps into [0, 128) as exact
+    // integers, including the negative travels a parked camera can hold.
+    const jWOf = lift(["jF", "jI", "jW"], ["travel"]);
+    for (const travel of [0, 3.4, 426.9, 5000.1, -12.7, 12345.6]) {
+      const w = jWOf(travel);
+      expect(Number.isInteger(w), `travel ${travel}`).toBe(true);
+      const raw = Math.floor(travel * 0.3);
+      expect(w, `travel ${travel}`).toBe(((raw % 128) + 128) % 128);
+    }
+  });
+
+  const mouthOf = lift(["dAng", "mouthA", "mouthD", "mouth"], ["aTwist", "jAng", "jD"]);
+
+  it("the mouth is local: 1 dead centre, exactly 0 away from its station", () => {
+    // Dead centre of a station: full mouth.
+    expect(mouthOf(1.3, 1.3, 0.5)).toBe(1);
+    // Opposite wall: exactly 0 (the inverted smoothstep's flat end) — so
+    // junction 1 leaves every fragment outside a mouth bit-identical.
+    expect(mouthOf(1.3, 1.3 + Math.PI, 0.5)).toBe(0);
+    // Between stations in depth: exactly 0 even dead-ahead in angle.
+    expect(mouthOf(1.3, 1.3, 0.05)).toBe(0);
+    expect(mouthOf(1.3, 1.3, 0.95)).toBe(0);
+  });
+
+  it("the mouth's angular distance is continuous across the angle wrap", () => {
+    // A station parked just inside +pi: fragments on either side of the wrap
+    // must see the same mouth — the triangle fold, not a clamp.
+    const jAng = Math.PI - 0.05;
+    const eps = 1e-4;
+    const before = mouthOf(Math.PI - eps, jAng, 0.5);
+    const after = mouthOf(-Math.PI + eps, jAng, 0.5);
+    expect(before).toBeGreaterThan(0); // non-vacuous: the mouth spans the wrap
+    expect(Math.abs(before - after)).toBeLessThan(1e-2);
+  });
+
+  it("hex per-cell seeds wrap exactly — one tone per cell across the angle seam", () => {
+    // fract(rawIndex / spokes) differs across the wrap by f32 rounding (the
+    // two sides compute different bit patterns for the same physical cell);
+    // the integer mod the shader uses instead is EXACT on both sides.
+    const ixwOf = lift(["ixw"], ["ix", "spokeN"]);
+    for (const spokes of [4, 12, 24]) {
+      for (const ix of [-7, -1, 0, 3, 11, 23]) {
+        expect(ixwOf(ix, spokes), `ix ${ix} spokes ${spokes}`).toBe(ixwOf(ix + spokes, spokes));
+        expect(ixwOf(ix, spokes)).toBeGreaterThanOrEqual(0);
+        expect(ixwOf(ix, spokes)).toBeLessThan(spokes);
+      }
+    }
+    // Row index wraps mod 64 — mantissa hygiene for hour-long tracks (the
+    // same argument as grain()'s fract(u.time)).
+    const iywOf = lift(["iyw"], ["iy"]);
+    for (const iy of [-3, 0, 17, 63, 64, 6401]) {
+      expect(iywOf(iy), `iy ${iy}`).toBe(((iy % 64) + 64) % 64);
+    }
+  });
+
+  it("hexEdge is the honeycomb min(d, 1-d): 0.5 at a centre, 0 on every border", () => {
+    // Lift the helper's own return expression and run it against the lattice
+    // geometry the material builds (pitch (1, sqrt(3)), half-offset rows).
+    const src = /fn hexEdge\(p: vec2f\) -> f32 \{\s*let q = abs\(p\);\s*return ([^;]+);/.exec(
+      body,
+    )?.[1];
+    if (!src) throw new Error("hexEdge return expression not found in the WGSL");
+    const hexEdge = (px: number, py: number): number =>
+      (
+        new Function(
+          "q",
+          `const vec2f = (x, y) => ({ x, y });
+           const dot = (a, b) => a.x * b.x + a.y * b.y;
+           const max = Math.max;
+           return ${src.replace(/\s+/g, " ")};`,
+        ) as (q: { x: number; y: number }) => number
+      )({ x: Math.abs(px), y: Math.abs(py) });
+    expect(hexEdge(0, 0)).toBeCloseTo(0.5, 6);
+    // Midpoints toward all six neighbours lie exactly on the border: the row
+    // neighbours at (±1, 0) and the diagonal rows at (±0.5, ±sqrt(3)/2).
+    expect(hexEdge(0.5, 0)).toBeCloseTo(0, 6);
+    expect(hexEdge(0.25, 0.4330127)).toBeCloseTo(0, 6);
+    expect(hexEdge(-0.25, 0.4330127)).toBeCloseTo(0, 6);
+    // The hex corner pokes past the border midpoints' radius...
+    expect(hexEdge(0, 0.5)).toBeGreaterThan(0);
+    // ...and beyond a border is the neighbour's territory.
+    expect(hexEdge(0.6, 0)).toBeLessThan(0);
+  });
+
+  it("the six wave styles land after the legacy deck and exercise every new axis", () => {
+    const styles = tunnelRings.styles ?? [];
+    const byId = new Map(styles.map((s) => [s.id, s]));
+    expect(styles.map((s) => s.id).slice(9)).toEqual([
+      "honeycomb",
+      "vector",
+      "gullet",
+      "gallery",
+      "interchange",
+      "slipstream",
+    ]);
+    expect(byId.get("honeycomb")?.values.material).toBe(1);
+    expect(byId.get("vector")?.values.material).toBe(2);
+    expect(byId.get("gullet")?.values.material).toBe(3);
+    expect(byId.get("gallery")?.values.coverWall).toBe(1);
+    expect(byId.get("interchange")?.values.junction).toBe(1);
+    // Every material option is worn by some chip (0 by the defaults chip).
+    const spec = tunnelRings.params.find((p) => p.key === "material");
+    const used = new Set(styles.map((s) => s.values.material ?? 0));
+    for (const opt of spec?.control === "enum" ? spec.options : []) {
+      expect(used, `material ${opt.value} has no look`).toContain(opt.value);
     }
   });
 });
