@@ -1,4 +1,10 @@
-import { defaultBuilderStack, packBuilderParams } from "./builder2";
+import {
+  BUILDER_FACTORY_STACKS,
+  builderStackValues,
+  defaultBuilderStack,
+  packBuilderParams,
+  rebuildBuilder2,
+} from "./builder2";
 import { demoFeatures } from "./thumbnails";
 import { presets } from "./presets";
 import { DEFAULT_MOTION, DEFAULT_POST, defaultParams } from "./types";
@@ -137,6 +143,30 @@ export async function runGpuPixelMatrix(width = 192, height = 108): Promise<GpuP
         await renderer.gpuDone();
         cases.push({ id: variant.id, ...(await readPixels(canvas)) });
       }
+    }
+
+    // Builder factory stacks (RP-20): one case per stack. The presets[] loop
+    // above rendered builder2 through the BOOT def it captured (default
+    // stack), so structural stacks must mint their def via rebuildBuilder2
+    // and hand it to setPreset directly. The default stack/def is restored
+    // afterwards so nothing later — in this run or a re-run in the same
+    // process — sees a non-default Builder.
+    try {
+      for (const factory of BUILDER_FACTORY_STACKS) {
+        const def = rebuildBuilder2(factory.stack);
+        renderer.setPreset(def);
+        renderer.setBuilderParams(packBuilderParams(factory.stack));
+        const params = builderStackValues(factory.stack);
+        for (let frame = 0; frame <= 30; frame++) {
+          const t = frame / 60;
+          renderer.render(demoFeatures(t), t, params);
+        }
+        await renderer.gpuDone();
+        cases.push({ id: `builder2/stack/${factory.id}`, ...(await readPixels(canvas)) });
+      }
+    } finally {
+      rebuildBuilder2(defaultBuilderStack());
+      renderer.setBuilderParams(packBuilderParams(defaultBuilderStack()));
     }
   } finally {
     renderer.dispose();

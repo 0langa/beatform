@@ -1624,7 +1624,16 @@ export function presetUsesFeedback(preset: PresetDef): boolean {
  */
 function presetPrefix(preset: PresetDef): string {
   const accessors = allParams(preset)
-    .map((p, i) => `fn P_${p.key}() -> f32 { return params[${i}u]; }`)
+    // Builder's virtual per-layer params (RP-20) carry dotted keys
+    // ("l0.glow") that are not WGSL identifiers — and their values live in
+    // the builderLayers storage block (LP()/TP()), never in params[]. Skip
+    // them so builder2's assembled module stays byte-identical to the
+    // pre-bridge output (the golden test freezes this); every real preset
+    // key is a plain identifier and passes untouched. The index is kept from
+    // the UNFILTERED list because it is the params[] ABI slot.
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(p.key))
+    .map(({ p, i }) => `fn P_${p.key}() -> f32 { return params[${i}u]; }`)
     .join("\n");
   return HEADER + COMPOSITE_BODY + FS_MAIN + accessors + "\n";
 }

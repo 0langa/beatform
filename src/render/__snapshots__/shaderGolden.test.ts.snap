@@ -905,7 +905,110 @@ fn preset(uv: vec2f) -> vec4f {
 }"
 `;
 
-exports[`shader golden baseline > builder2: param ABI (key + default, in order) is stable 1`] = `[]`;
+exports[`shader golden baseline > builder2: param ABI (key + default, in order) is stable 1`] = `
+[
+  {
+    "default": 1,
+    "key": "l0.opacity",
+  },
+  {
+    "default": 210,
+    "key": "l0.hue",
+  },
+  {
+    "default": 90,
+    "key": "l0.hueSpread",
+  },
+  {
+    "default": 0.5,
+    "key": "l0.glow",
+  },
+  {
+    "default": 0.35,
+    "key": "l0.flash",
+  },
+  {
+    "default": 1,
+    "key": "l1.opacity",
+  },
+  {
+    "default": 210,
+    "key": "l1.hue",
+  },
+  {
+    "default": 90,
+    "key": "l1.hueSpread",
+  },
+  {
+    "default": 10,
+    "key": "l1.density",
+  },
+  {
+    "default": 0.6,
+    "key": "l1.speed",
+  },
+  {
+    "default": 0.4,
+    "key": "l1.streak",
+  },
+  {
+    "default": 1,
+    "key": "l2.opacity",
+  },
+  {
+    "default": 210,
+    "key": "l2.hue",
+  },
+  {
+    "default": 90,
+    "key": "l2.hueSpread",
+  },
+  {
+    "default": 0.5,
+    "key": "l2.height",
+  },
+  {
+    "default": 0.25,
+    "key": "l2.gap",
+  },
+  {
+    "default": 0.5,
+    "key": "l2.glow",
+  },
+  {
+    "default": 1,
+    "key": "l2.peaks",
+  },
+  {
+    "default": 1,
+    "key": "l3.opacity",
+  },
+  {
+    "default": 210,
+    "key": "l3.hue",
+  },
+  {
+    "default": 90,
+    "key": "l3.hueSpread",
+  },
+  {
+    "default": 0.05,
+    "key": "l3.start",
+  },
+  {
+    "default": 0.48,
+    "key": "l3.end",
+  },
+  {
+    "default": 0.5,
+    "key": "l3.sharp",
+  },
+  {
+    "default": 0.8,
+    "key": "l3.bright",
+  },
+]
+`;
 
 exports[`shader golden baseline > covers exactly the registered preset set 1`] = `
 [

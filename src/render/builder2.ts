@@ -1,4 +1,4 @@
-import type { ParamSpec, PresetDef } from "./types";
+import type { ParamGroupDef, ParamSpec, ParamValues, PresetDef } from "./types";
 
 /**
  * Builder Studio — the data-driven layer compositor (v2.42.0).
@@ -481,6 +481,210 @@ export function packBuilderParams(stack: BuilderStack): Float32Array {
   return data;
 }
 
+/* ---- Virtual per-layer params (RP-20, the Builder bridge) ----------------
+ *
+ * The compiled builder2 PresetDef carries a REAL `params` list generated from
+ * the stack's STRUCTURE, one spec per storage slot: `l<i>.opacity`,
+ * `l<i>.hue`, `l<i>.hueSpread`, `l<i>.<paramKey>` (i = layer index in stack
+ * order). That is what plugs the whole schema-driven feature stack —
+ * modulation routes, MIDI bindings, automation lanes, stem auto-routing,
+ * param search, saved looks — into Builder without a second editor: the
+ * enumeration caches in types.ts key on the def object, value edits reuse the
+ * def, structural edits mint a new one via the structure-key cache below.
+ *
+ * KEY FORMAT IS FOREVER: virtual keys persist in mod routes, MIDI bindings,
+ * automation lanes and saved looks. Addressing is BY INDEX on purpose —
+ * reordering the stack retargets an existing route to whatever layer now sits
+ * at that index (accepted; routes follow the slot, not the layer identity),
+ * and a key whose index/param no longer resolves is simply inert.
+ *
+ * The values themselves NEVER ride the 48-lane params storage buffer — they
+ * live in the builderLayers block exactly as before (packBuilderFrame overlays
+ * resolved virtual values onto the stack pack per frame). The renderer skips
+ * P_<key>() accessor generation for dotted keys, so the generated WGSL is
+ * byte-identical to the pre-bridge output.
+ */
+
+const VIRTUAL_KEY_RE = /^l(\d{1,2})\.(.+)$/;
+
+/** True for keys of the `l<i>.<field>` virtual-param shape. */
+export function isBuilderVirtualKey(key: string): boolean {
+  return VIRTUAL_KEY_RE.test(key);
+}
+
+/** Virtual ParamSpec list for a stack's structure. Defaults are the newLayer
+ * defaults (opacity 1, hue 210, hueSpread 90, type-param spec defaults) —
+ * value-independent, so defs cached by structure key stay correct. */
+export function builderVirtualParams(stack: BuilderStack): ParamSpec[] {
+  const out: ParamSpec[] = [];
+  stack.layers.slice(0, BUILDER_MAX_LAYERS).forEach((l, i) => {
+    const t = TYPE_BY_ID.get(l.type);
+    const typeLabel = t?.label ?? l.type;
+    const group = `l${i}`;
+    const label = (p: string) => `L${i + 1} ${typeLabel} · ${p}`;
+    out.push(
+      {
+        key: `l${i}.opacity`,
+        label: label("Opacity"),
+        group,
+        min: 0,
+        max: 1,
+        step: 0.01,
+        default: 1,
+        hint: "How strongly this layer contributes",
+      },
+      {
+        key: `l${i}.hue`,
+        label: label("Hue"),
+        group,
+        control: "hue",
+        min: 0,
+        max: 360,
+        step: 1,
+        default: 210,
+        hint: "Base color of this layer",
+      },
+      {
+        key: `l${i}.hueSpread`,
+        label: label("Hue spread"),
+        group,
+        min: 0,
+        max: 360,
+        step: 1,
+        default: 90,
+        hint: "How far the color fans out across the layer",
+      },
+    );
+    for (const p of (t?.params ?? []).slice(0, MAX_TYPE_PARAMS)) {
+      out.push({
+        key: `l${i}.${p.key}`,
+        label: label(p.label),
+        group,
+        min: p.min,
+        max: p.max,
+        step: p.step,
+        default: p.default,
+        ...(p.hint ? { hint: p.hint } : {}),
+        // Step-1 counts/toggles (bars peak caps, radial symmetry, particle
+        // density) quantize applied modulation to whole numbers (RP-2 law);
+        // everything else keeps the default smooth behaviour.
+        ...(p.step === 1 ? { mod: "snap" as const } : {}),
+      });
+    }
+  });
+  return out;
+}
+
+/** One panel/optgroup group per layer, ranked after every shared group so the
+ * lists read in stack order. */
+export function builderVirtualGroups(stack: BuilderStack): ParamGroupDef[] {
+  return stack.layers.slice(0, BUILDER_MAX_LAYERS).map((l, i) => ({
+    id: `l${i}`,
+    label: `Layer ${i + 1} · ${TYPE_BY_ID.get(l.type)?.label ?? l.type}`,
+    rank: 100 + i * 10,
+  }));
+}
+
+/** The stack's CURRENT values as a virtual-key record — the mirror the store
+ * writes into paramsByPreset["builder2"] so frameResolve's baseOf() (and
+ * everything downstream: mods, automation overlay, saved looks) resolves
+ * live stack values naturally. Opacity is the RAW slider value; mute stays a
+ * stack-only fact that packBuilderFrame applies at pack time. */
+export function builderStackValues(stack: BuilderStack): Record<string, number> {
+  const out: Record<string, number> = {};
+  stack.layers.slice(0, BUILDER_MAX_LAYERS).forEach((l, i) => {
+    out[`l${i}.opacity`] = l.opacity;
+    out[`l${i}.hue`] = l.hue;
+    out[`l${i}.hueSpread`] = l.hueSpread;
+    const t = TYPE_BY_ID.get(l.type);
+    for (const p of (t?.params ?? []).slice(0, MAX_TYPE_PARAMS)) {
+      out[`l${i}.${p.key}`] = l.params[p.key] ?? p.default;
+    }
+  });
+  return out;
+}
+
+/**
+ * Apply virtual-key values onto a stack (setParam/MIDI/looks route through
+ * this). Returns the patched stack (a new object only when something applied)
+ * plus how many keys resolved; keys that don't resolve on this structure —
+ * stale bindings, a look saved against a different stack — are skipped.
+ * Values clamp to the spec range, mirroring validBuilderStack's clamps.
+ */
+export function applyVirtualValues(
+  stack: BuilderStack,
+  values: ParamValues,
+): { stack: BuilderStack; applied: number } {
+  let layers: BuilderLayer[] | null = null;
+  let applied = 0;
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  for (const [key, value] of Object.entries(values)) {
+    if (!Number.isFinite(value)) continue;
+    const m = VIRTUAL_KEY_RE.exec(key);
+    if (!m) continue;
+    const i = Number(m[1]);
+    if (i >= BUILDER_MAX_LAYERS) continue;
+    const src = (layers ?? stack.layers)[i];
+    if (!src) continue;
+    const field = m[2];
+    let next: BuilderLayer | null = null;
+    if (field === "opacity") next = { ...src, opacity: clamp(value, 0, 1) };
+    else if (field === "hue") next = { ...src, hue: clamp(value, 0, 360) };
+    else if (field === "hueSpread") next = { ...src, hueSpread: clamp(value, 0, 360) };
+    else {
+      const spec = TYPE_BY_ID.get(src.type)?.params.find((p) => p.key === field);
+      if (spec) {
+        next = { ...src, params: { ...src.params, [field]: clamp(value, spec.min, spec.max) } };
+      }
+    }
+    if (!next) continue;
+    if (!layers) layers = stack.layers.slice();
+    layers[i] = next;
+    applied++;
+  }
+  return { stack: layers ? { layers } : stack, applied };
+}
+
+/**
+ * Per-frame resolve chokepoint (determinism law). Modulation and automation
+ * compose into the params RECORD, but builder values reach the GPU via the
+ * builderLayers storage buffer — this overlays the resolved virtual values
+ * onto the stack pack. BOTH render loops (services.ts live, exportCore.ts
+ * export) call exactly this function, which is what keeps preview === file.
+ *
+ * Neutrality: with a record that carries the stack's own values (the mirror,
+ * untouched by mods/automation) the result is byte-identical to
+ * packBuilderParams(stack) — proven by test.
+ */
+export function packBuilderFrame(stack: BuilderStack, resolved: ParamValues): Float32Array {
+  const data = packBuilderParams(stack);
+  stack.layers.slice(0, BUILDER_MAX_LAYERS).forEach((l, i) => {
+    const base = i * LAYER_SLOTS;
+    const opacity = resolved[`l${i}.opacity`];
+    // A muted layer stays muted: mute lives in the stack, not the record.
+    if (opacity !== undefined && l.enabled) data[base] = opacity;
+    const hue = resolved[`l${i}.hue`];
+    if (hue !== undefined) data[base + 1] = hue;
+    const hueSpread = resolved[`l${i}.hueSpread`];
+    if (hueSpread !== undefined) data[base + 2] = hueSpread;
+    const t = TYPE_BY_ID.get(l.type);
+    t?.params.forEach((p, n) => {
+      if (n >= MAX_TYPE_PARAMS) return;
+      const v = resolved[`l${i}.${p.key}`];
+      if (v !== undefined) data[base + SLOT_TYPE_PARAMS + n] = v;
+    });
+  });
+  return data;
+}
+
+/** Element-wise Float32Array equality — the dirty check both render loops use
+ * to upload the frame pack only when the bytes actually changed. */
+export function sameF32(a: Float32Array, b: Float32Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 /** Emit the blend line for one instance. `lcol` is the layer's full result
  * over colIn, so its own contribution is (lcol - colBefore) — blend modes
  * act on that contribution, which keeps "add"/"screen" meaningful for layers
@@ -549,7 +753,8 @@ export const BUILDER2_DEF_CACHE_MAX = 16;
 /** Structure key -> compiled def, least-recently-used FIRST (Map iterates in
  * insertion order, so the eviction candidate is always `keys().next()`). */
 const defCache = new Map<string, PresetDef>();
-let currentDef: PresetDef = makeDef(defaultBuilderStack());
+let currentStack: BuilderStack = defaultBuilderStack();
+let currentDef: PresetDef = makeDef(currentStack);
 
 function makeDef(stack: BuilderStack): PresetDef {
   const key = stackStructureKey(stack);
@@ -566,7 +771,12 @@ function makeDef(stack: BuilderStack): PresetDef {
     id: BUILDER2_ID,
     name: "Builder",
     description: "Layer-based compositor — stack, blend and tune elements freely",
-    params: [],
+    // The virtual bridge (RP-20): real specs + per-layer groups, generated
+    // from the same structure the WGSL is. Both are pure functions of the
+    // structure key, so caching the def caches them correctly; the types.ts
+    // WeakMap enumeration caches are correct BY CONSTRUCTION.
+    params: builderVirtualParams(stack),
+    groups: builderVirtualGroups(stack),
     wgsl: buildStackWgsl(stack),
   };
   defCache.set(key, def);
@@ -582,9 +792,193 @@ export function currentBuilder2Def(): PresetDef {
   return currentDef;
 }
 
+/** The stack rebuildBuilder2 last installed — what the live render loop packs
+ * the per-frame value overlay against (the export core carries its own copy).
+ * Kept here so services.ts needs no store dependency for it. */
+export function currentBuilderStack(): BuilderStack {
+  return currentStack;
+}
+
 /** Rebuild after a stack edit. Returns the def (new object only when the
  * structure changed). */
 export function rebuildBuilder2(stack: BuilderStack): PresetDef {
+  currentStack = stack;
   currentDef = makeDef(stack);
   return currentDef;
+}
+
+/* ---- Factory stacks (RP-20) ----------------------------------------------
+ *
+ * Builder's equivalent of a preset's factory styles — but STRUCTURAL (layers,
+ * blends, values), so they are whole stacks, not StyleDef value-bundles, and
+ * def.styles stays undefined on purpose (presetStyles.test.ts exempts
+ * builder2). The first entry ≙ the classic default stack, matching the styles
+ * convention that the first chip reads as active on a fresh Builder.
+ *
+ * IDS ARE FOREVER once shipped (chips are matched by value, but the ids leak
+ * into the GPU pixel-matrix baseline case names).
+ */
+
+/** A named factory stack. Apply via copyBuilderStack() so every application
+ * gets fresh layer ids. */
+export interface BuilderFactoryStack {
+  id: string;
+  name: string;
+  stack: BuilderStack;
+}
+
+function factoryLayer(
+  type: string,
+  over: Partial<Omit<BuilderLayer, "params" | "id" | "type">> & {
+    params?: Record<string, number>;
+  } = {},
+): BuilderLayer {
+  const base = newLayer(type);
+  return { ...base, ...over, params: { ...base.params, ...over.params } };
+}
+
+export const BUILDER_FACTORY_STACKS: BuilderFactoryStack[] = [
+  {
+    // ≙ defaultBuilderStack(): the classic Builder look, all defaults.
+    id: "classic",
+    name: "Classic",
+    stack: defaultBuilderStack(),
+  },
+  {
+    // Dark club floor: magenta wash, a four-way additive radial, hot rings.
+    id: "neon-club",
+    name: "Neon club",
+    stack: {
+      layers: [
+        factoryLayer("wash", { hue: 290, hueSpread: 60, params: { glow: 0.35, flash: 0.6 } }),
+        factoryLayer("radial", {
+          blend: "add",
+          hue: 320,
+          hueSpread: 140,
+          params: { inner: 0.22, len: 0.3, sym: 4 },
+        }),
+        factoryLayer("rings", {
+          blend: "add",
+          hue: 280,
+          hueSpread: 120,
+          params: { sharp: 0.7, bright: 1.1 },
+        }),
+        factoryLayer("vignette", { params: { amount: 0.8 } }),
+      ],
+    },
+  },
+  {
+    // Synthwave horizon: warm wash, a low sun orb, a glowing trace over it.
+    id: "sunset-drive",
+    name: "Sunset drive",
+    stack: {
+      layers: [
+        factoryLayer("wash", { hue: 20, hueSpread: 50, params: { glow: 0.7, flash: 0.25 } }),
+        factoryLayer("orb", {
+          hue: 10,
+          hueSpread: 40,
+          params: { size: 0.22, pump: 0.4, wobble: 0.2, beat: 0.5 },
+        }),
+        factoryLayer("waveline", {
+          blend: "screen",
+          hue: 35,
+          hueSpread: 60,
+          params: { y: 0.62, amp: 0.24, glow: 0.7 },
+        }),
+        factoryLayer("vignette", { params: { amount: 0.5 } }),
+      ],
+    },
+  },
+  {
+    // Cold drift: dense slow particles behind a breathing waveform circle.
+    id: "deep-space",
+    name: "Deep space",
+    stack: {
+      layers: [
+        factoryLayer("wash", { hue: 240, hueSpread: 80, params: { glow: 0.25, flash: 0.15 } }),
+        factoryLayer("stars", {
+          blend: "screen",
+          hue: 210,
+          hueSpread: 160,
+          params: { density: 18, speed: 0.25, streak: 0.2 },
+        }),
+        factoryLayer("wavecircle", {
+          blend: "add",
+          hue: 190,
+          hueSpread: 70,
+          params: { radius: 0.28, amp: 0.1 },
+        }),
+        factoryLayer("vignette", { params: { amount: 0.9 } }),
+      ],
+    },
+  },
+  {
+    // Gold eight-way mandala with screened tempo rings.
+    id: "cathedral",
+    name: "Cathedral",
+    stack: {
+      layers: [
+        factoryLayer("wash", { hue: 45, hueSpread: 30, params: { glow: 0.4, flash: 0.25 } }),
+        factoryLayer("radial", {
+          hue: 45,
+          hueSpread: 25,
+          params: { inner: 0.12, len: 0.35, sym: 8 },
+        }),
+        factoryLayer("rings", {
+          blend: "screen",
+          hue: 50,
+          hueSpread: 40,
+          params: { start: 0.1, end: 0.55, bright: 0.6 },
+        }),
+        factoryLayer("vignette", { params: { amount: 0.7 } }),
+      ],
+    },
+  },
+  {
+    // Green phosphor test bench: low bars flanked by two additive traces.
+    id: "phosphor",
+    name: "Phosphor",
+    stack: {
+      layers: [
+        factoryLayer("bars", {
+          hue: 130,
+          hueSpread: 40,
+          params: { height: 0.35, gap: 0.45, glow: 0.3 },
+        }),
+        factoryLayer("waveline", {
+          blend: "add",
+          hue: 130,
+          hueSpread: 30,
+          params: { y: 0.25, amp: 0.12, glow: 0.6 },
+        }),
+        factoryLayer("waveline", {
+          blend: "add",
+          hue: 160,
+          hueSpread: 30,
+          params: { y: 0.75, amp: 0.12, glow: 0.6 },
+        }),
+        factoryLayer("vignette", { params: { amount: 0.4 } }),
+      ],
+    },
+  },
+];
+
+/** Deep-copy a stack with FRESH layer ids — how a factory chip applies, so
+ * two applications never collide on instance ids. */
+export function copyBuilderStack(stack: BuilderStack): BuilderStack {
+  return { layers: stack.layers.map((l) => ({ ...l, id: newLayerId(), params: { ...l.params } })) };
+}
+
+/** Structure + values equal, ids ignored — the factory chips' active check. */
+export function sameStackValues(a: BuilderStack, b: BuilderStack): boolean {
+  if (a.layers.length !== b.layers.length) return false;
+  return a.layers.every((l, i) => {
+    const m = b.layers[i];
+    if (l.type !== m.type || l.blend !== m.blend || l.enabled !== m.enabled) return false;
+    if (l.opacity !== m.opacity || l.hue !== m.hue || l.hueSpread !== m.hueSpread) return false;
+    const t = TYPE_BY_ID.get(l.type);
+    return (t?.params ?? []).every(
+      (p) => (l.params[p.key] ?? p.default) === (m.params[p.key] ?? p.default),
+    );
+  });
 }

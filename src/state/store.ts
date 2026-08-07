@@ -129,7 +129,11 @@ import { getPrefs, setPrefs } from "./prefs";
 import { defaultPresetOrder, orderedPresets, reconcilePresetOrder } from "./presetOrder";
 import { decodeAudioLenient } from "../audio/decodeLenient";
 import {
+  applyVirtualValues,
   BUILDER2_ID,
+  builderStackValues,
+  defaultBuilderStack,
+  isBuilderVirtualKey,
   packBuilderParams,
   rebuildBuilder2,
   type BuilderStack,
@@ -659,6 +663,13 @@ const initialPresetId = (() => {
     : presets[0].id;
 })();
 const initialParams = loadStoredParams();
+// Builder bridge (RP-20): the stack is the single persisted truth for Builder
+// values. Regenerate the builder2 def for the STORED structure (presetById
+// resolves through it) and rewrite the virtual-param mirror from the stack,
+// so a stale persisted mirror can never win over the stack it shadows.
+const initialBuilderStack = loadStoredBuilderStack();
+rebuildBuilder2(initialBuilderStack);
+initialParams[BUILDER2_ID] = builderStackValues(initialBuilderStack);
 const initialSync = loadStoredSync();
 const initialOverlay = loadStoredOverlay();
 const initialMods = loadStoredMods();
@@ -1048,7 +1059,7 @@ export const useVizStore = create<VizState>((set, get) => {
     modsByPreset: initialMods,
     smoothSpectrum: loadStoredSmoothSpectrum(),
     timeline: loadStoredTimeline(),
-    builderStack: loadStoredBuilderStack(),
+    builderStack: initialBuilderStack,
     post: loadStoredPost(),
     motion: loadStoredMotion(),
 
@@ -1406,6 +1417,17 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     setParam(key, value) {
+      // Builder bridge (RP-20): while Builder is active, a virtual l<i>.* key
+      // routes through the STACK — the persisted truth — and takes the normal
+      // setBuilderStack path (history, persistence, mirror, pack, upload).
+      // MIDI CC applies land here too, so they ride for free. A virtual key
+      // that no longer resolves (stale binding after a structural edit) is
+      // inert rather than a junk mirror entry.
+      if (get().presetId === BUILDER2_ID && isBuilderVirtualKey(key)) {
+        const routed = applyVirtualValues(get().builderStack, { [key]: value });
+        if (routed.applied > 0) get().setBuilderStack(routed.stack);
+        return;
+      }
       record(`param:${key}`);
       const state = get();
       const activeParams = { ...state.activeParams, [key]: value };
@@ -1431,6 +1453,13 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     resetParams() {
+      // Builder bridge (RP-20): "reset" for Builder means the stack itself —
+      // back to the classic default layers. The mirror, history entry,
+      // persistence and GPU upload all follow via setBuilderStack.
+      if (get().presetId === BUILDER2_ID) {
+        get().setBuilderStack(defaultBuilderStack());
+        return;
+      }
       record("reset");
       const state = get();
       const paramsByPreset = { ...state.paramsByPreset };
@@ -1689,14 +1718,24 @@ export const useVizStore = create<VizState>((set, get) => {
     setBuilderStack(stack) {
       record("builder2");
       const builderStack = stack;
-      set({ builderStack });
-      saveStoredBuilderStack(builderStack);
       const def = rebuildBuilder2(builderStack);
+      // Mirror (RP-20): every stack change rewrites the virtual-param record
+      // (l<i>.* -> value) so frameResolve's baseOf(), mod routes, automation,
+      // MIDI labels and saved looks all read the CURRENT stack values. The
+      // stack stays the only persisted truth — the mirror is derived state
+      // that happens to ride paramsByPreset, and is regenerated from the
+      // stack on every load.
+      const mirror = builderStackValues(builderStack);
+      const paramsByPreset = { ...get().paramsByPreset, [BUILDER2_ID]: mirror };
+      const active = get().presetId === BUILDER2_ID;
+      set({ builderStack, paramsByPreset, ...(active ? { activeParams: mirror } : {}) });
+      saveStoredBuilderStack(builderStack);
+      saveStoredParams(paramsByPreset);
       getRenderer()?.setBuilderParams(packBuilderParams(builderStack));
       // Structural edits produce a NEW def object; installing it recompiles
       // (cached by structure). Value-only edits keep the object, so this is
       // a no-op for the pipeline and the buffer write above does the work.
-      if (get().presetId === BUILDER2_ID) getRenderer()?.setPreset(def);
+      if (active) getRenderer()?.setPreset(def);
     },
 
     setTimeline(timeline) {
@@ -2047,8 +2086,17 @@ export const useVizStore = create<VizState>((set, get) => {
           flashNotice(`Kept your newer ${kept.join(", ")} — this project embeds an older copy`);
         }
       }
+      // Builder bridge (RP-20): regenerate the builder2 def for the incoming
+      // stack BEFORE resolving the preset (presetById("builder2") reads the
+      // current def) and rewrite the virtual mirror from the stack — the
+      // stack always wins over whatever mirror the document carried.
+      rebuildBuilder2(doc.builderStack);
+      const paramsByPreset = {
+        ...doc.paramsByPreset,
+        [BUILDER2_ID]: builderStackValues(doc.builderStack),
+      };
       const preset = presetById(doc.presetId);
-      const activeParams = resolveParams(preset.id, doc.paramsByPreset);
+      const activeParams = resolveParams(preset.id, paramsByPreset);
       const sync = sanitizeSync(doc.syncByPreset[preset.id] ?? { ...DEFAULT_SYNC });
       set({
         customDefs,
@@ -2062,7 +2110,7 @@ export const useVizStore = create<VizState>((set, get) => {
           resIdx: reconciledResIdx(doc.aspect, get().exportSettings.resIdx),
         },
         presetId: preset.id,
-        paramsByPreset: doc.paramsByPreset,
+        paramsByPreset,
         syncByPreset: doc.syncByPreset,
         bg: doc.bg,
         bgByPreset: doc.bgByPreset,
@@ -2080,7 +2128,7 @@ export const useVizStore = create<VizState>((set, get) => {
         sync,
       });
       saveStoredPresetId(preset.id);
-      saveStoredParams(doc.paramsByPreset);
+      saveStoredParams(paramsByPreset);
       saveStoredSync(doc.syncByPreset);
       saveStoredBg(doc.bg);
       saveStoredBgByPreset(doc.bgByPreset);
@@ -2098,10 +2146,9 @@ export const useVizStore = create<VizState>((set, get) => {
       saveStoredLyricStyle(doc.lyricStyle);
       saveStoredAudiogram(doc.audiogram);
       saveStoredBuilderStack(doc.builderStack);
-      // Builder Studio: regenerate the def (identity changes only on
-      // structural difference) and re-upload the value block. setPreset
-      // below picks up the new def when builder2 is the active preset.
-      rebuildBuilder2(doc.builderStack);
+      // Builder Studio: the def was already regenerated above (before param
+      // resolution); re-upload the value block here. setPreset below picks up
+      // the new def when builder2 is the active preset.
       getRenderer()?.setBuilderParams(packBuilderParams(doc.builderStack));
       // Lyric style / audiogram feed the frame-keyed dynamic overlay — force
       // a recompose so undo/open shows the incoming style immediately.
@@ -2145,14 +2192,24 @@ export const useVizStore = create<VizState>((set, get) => {
       // history entries, so one Ctrl+Z stepped through half-applied states.
       asOneGesture("look", () => {
         if (preset.presetId !== get().presetId) get().switchPreset(preset.presetId);
-        const state = get();
-        const activeParams = {
-          ...defaultParams(presetById(state.presetId)),
-          ...preset.params,
-        };
-        const paramsByPreset = { ...state.paramsByPreset, [state.presetId]: activeParams };
-        set({ activeParams, paramsByPreset });
-        saveStoredParams(paramsByPreset);
+        if (preset.presetId === BUILDER2_ID) {
+          // Builder looks captured the virtual mirror (l<i>.* values). Route
+          // them back INTO the stack — the persisted truth — through the same
+          // virtual-key path setParam/MIDI use; keys that don't resolve on
+          // the current stack structure are dropped (a look carries values,
+          // not structure). setBuilderStack rewrites the mirror from the
+          // result, so activeParams follows.
+          get().setBuilderStack(applyVirtualValues(get().builderStack, preset.params).stack);
+        } else {
+          const state = get();
+          const activeParams = {
+            ...defaultParams(presetById(state.presetId)),
+            ...preset.params,
+          };
+          const paramsByPreset = { ...state.paramsByPreset, [state.presetId]: activeParams };
+          set({ activeParams, paramsByPreset });
+          saveStoredParams(paramsByPreset);
+        }
         if (preset.sync) get().setSync({ ...preset.sync });
       });
     },

@@ -11,6 +11,7 @@ import {
   type Scene,
   type Timeline,
 } from "../state/timeline";
+import { currentBuilder2Def, isBuilderVirtualKey } from "../render/builder2";
 import { Slider } from "./Slider";
 import { SliderField, type ValueUnit } from "./kit";
 import { Switch } from "./Switch";
@@ -219,6 +220,13 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
   const laneSpec = (lane: AutomationLane) => {
     const own = allParams(props.activePreset).find((p) => p.key === lane.param);
     if (own) return own;
+    // Builder virtual params (RP-20): resolve l<i>.* against the CURRENT
+    // builder2 def — props.presets carries the def captured at boot, whose
+    // structure (and therefore virtual list) may be stale.
+    if (isBuilderVirtualKey(lane.param)) {
+      const spec = allParams(currentBuilder2Def()).find((p) => p.key === lane.param);
+      if (spec) return spec;
+    }
     for (const p of props.presets) {
       const spec = allParams(p).find((s) => s.key === lane.param);
       if (spec) return spec;

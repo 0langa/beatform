@@ -1,4 +1,11 @@
-import { packBuilderParams, rebuildBuilder2, validBuilderStack } from "../render/builder2";
+import {
+  BUILDER2_ID,
+  packBuilderFrame,
+  packBuilderParams,
+  rebuildBuilder2,
+  sameF32,
+  validBuilderStack,
+} from "../render/builder2";
 import {
   AudioSample,
   AudioSampleSource,
@@ -564,7 +571,13 @@ export async function runExportJob(
     renderer.setSmoothSpectrum(job.smoothSpectrum === true);
     if (job.post) renderer.setPost(job.post);
     if (job.motion) renderer.setMotion(job.motion);
-    if (builderStack) renderer.setBuilderParams(packBuilderParams(builderStack));
+    // Builder bridge (RP-20): the initial upload doubles as the dirty-check
+    // baseline for the per-frame packBuilderFrame overlay below.
+    let lastBuilderPack: Float32Array | null = null;
+    if (builderStack) {
+      lastBuilderPack = packBuilderParams(builderStack);
+      renderer.setBuilderParams(lastBuilderPack);
+    }
     // Cover art for presets that sample it — decoded here so the export matches
     // the live view. A missing/broken cover just leaves hasCover() false.
     if (job.coverArt) {
@@ -806,13 +819,26 @@ export async function runExportJob(
           }
           if (presetUsesFeedback(tickPreset)) {
             const tickStems = job.stems ? stemValuesAt(job.stems, tickTime) : undefined;
-            renderer.render(
+            const tickParams = applyMods(
+              tickPreset,
+              tickFrame.params,
+              tickFrame.mods,
               tickFeatures,
-              tickTime,
-              applyMods(tickPreset, tickFrame.params, tickFrame.mods, tickFeatures, tickStems),
-              undefined,
-              { feedback: "advance-only" },
+              tickStems,
             );
+            // Same chokepoint as the presented frames below — inert today
+            // (no builder layer type samples feedback), correct the day one
+            // does.
+            if (builderStack && tickFrame.presetId === BUILDER2_ID) {
+              const packed = packBuilderFrame(builderStack, tickParams);
+              if (!lastBuilderPack || !sameF32(packed, lastBuilderPack)) {
+                renderer.setBuilderParams(packed);
+                lastBuilderPack = packed;
+              }
+            }
+            renderer.render(tickFeatures, tickTime, tickParams, undefined, {
+              feedback: "advance-only",
+            });
           }
         }
       }
@@ -876,13 +902,29 @@ export async function runExportJob(
         else if (postModulated) renderer.setPost(job.post);
         postModulated = moddedPost !== job.post;
       }
-      renderer.render(
+      const frameParams = applyMods(
+        presetById(rf.presetId),
+        rf.params,
+        rf.mods,
         features,
-        t,
-        applyMods(presetById(rf.presetId), rf.params, rf.mods, features, stemValues),
-        transition,
-        { feedback: isFeedbackTick(t) ? "present-history" : "present-only" },
+        stemValues,
       );
+      // Builder bridge chokepoint (RP-20, determinism law): the SAME
+      // packBuilderFrame the live loop uses overlays modulated/automated
+      // virtual values onto the stack pack — dirty-checked so an unmodulated
+      // export uploads exactly once (the setup upload above). Crossfades
+      // share one builderBuf, so a builder2↔builder2 fade with two stacks is
+      // unrepresentable; the active frame's pack wins (matches live).
+      if (builderStack && rf.presetId === BUILDER2_ID) {
+        const packed = packBuilderFrame(builderStack, frameParams);
+        if (!lastBuilderPack || !sameF32(packed, lastBuilderPack)) {
+          renderer.setBuilderParams(packed);
+          lastBuilderPack = packed;
+        }
+      }
+      renderer.render(features, t, frameParams, transition, {
+        feedback: isFeedbackTick(t) ? "present-history" : "present-only",
+      });
       // Ensure the GPU finished before snapshotting the canvas
       await renderer.gpuDone();
       // gpuDone() resolves on a lost device instead of rejecting, so without

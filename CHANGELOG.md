@@ -11,6 +11,34 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.78.0] - 2026-08-07
+
+### Added
+
+- **Builder joined the modulation era.** Every knob of every layer in your
+  Builder stack — opacity, hue, hue spread, and each layer's own controls —
+  is now a first-class target across the whole app:
+  - **Modulate it** — route kick, bass, hats, stems, anything, straight to
+    a single layer's knob. The route picker lists them grouped per layer
+    ("Layer 2 · Particles"), so a deep stack stays navigable.
+  - **Automate it** — draw timeline lanes on individual Builder layer
+    parameters, with real value ranges.
+  - **Map it** — MIDI-learn a hardware knob to one layer's glow, and stem
+    auto-routing now wires imported stems into Builder too.
+  - **Save it** — "Save look" now captures your Builder layer values, and
+    applying a saved Builder look sets the stack back the way you had it.
+    Exports resolve all of it exactly like the preview — same frames, same
+    file, as always.
+- **Factory stacks.** Builder now opens with six curated starting points,
+  one click each: Classic, Neon club, Sunset drive, Deep space, Cathedral,
+  and Phosphor — whole layer stacks (composition, blends, colors), not just
+  value tweaks. Your current stack is untouched until you pick one.
+
+### Changed
+
+- Nothing moves on its own: with no routes or lanes, every existing Builder
+  stack renders pixel-identically to 2.77.0.
+
 ## [2.77.0] - 2026-08-07
 
 ### Added

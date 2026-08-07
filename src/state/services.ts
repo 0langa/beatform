@@ -6,6 +6,7 @@ import type { BgSettings, ParamValues, PostSettings, PresetDef, Renderer } from 
 import { applyMods, applyPostMods } from "./modMatrix";
 import { resolveActiveFrame, type FrameResolveInput } from "./frameResolve";
 import { presetById } from "../render/presets";
+import { BUILDER2_ID, currentBuilderStack, packBuilderFrame, sameF32 } from "../render/builder2";
 import { getPrefs, subscribePrefs } from "./prefs";
 import type { PlaybackState, SyncSettings } from "../audio/types";
 
@@ -283,9 +284,15 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     /** True while the renderer holds MODULATED post settings, so the loop
      * knows it still owes the renderer a reset once modulation stops. */
     let postModulated = false;
+    /** Last builder frame pack uploaded by THIS loop (RP-20) — the dirty
+     * check that keeps the per-frame storage-buffer write edit-rate, not
+     * frame-rate, while nothing modulates. Cleared on renderer swap so a
+     * fresh device gets its first frame pack unconditionally. */
+    let lastBuilderPack: Float32Array | null = null;
     resyncRenderer = () => {
       currentPreset = null;
       fadeFromPreset = null;
+      lastBuilderPack = null;
     };
     const loop = (tMs: number) => {
       if (disposed) return;
@@ -409,19 +416,30 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         renderer?.setPost(basePost);
         postModulated = false;
       }
-      renderer?.render(
-        features,
-        trackTime,
-        applyMods(activePreset, rf.params, rf.mods, features, stemValues),
-        transition,
-        {
-          feedback: capSkipped
-            ? "advance-only"
-            : ana.feedbackTicked
-              ? "advance-and-present"
-              : "present-only",
-        },
-      );
+      const frameParams = applyMods(activePreset, rf.params, rf.mods, features, stemValues);
+      // Builder bridge chokepoint (RP-20, determinism law): modulation and
+      // automation compose into the params RECORD above, but builder layer
+      // values reach the GPU via the builderLayers storage buffer — overlay
+      // the resolved virtual values onto the stack pack and upload only when
+      // the bytes changed. The export loop calls the SAME packBuilderFrame,
+      // which is what keeps preview === file. Crossfades: builderBuf is one
+      // shared buffer for the main + transition bind groups, so a
+      // builder2↔builder2 fade with two different stacks is unrepresentable —
+      // the ACTIVE frame's pack wins (accepted limitation).
+      if (rf.presetId === BUILDER2_ID) {
+        const packed = packBuilderFrame(currentBuilderStack(), frameParams);
+        if (!lastBuilderPack || !sameF32(packed, lastBuilderPack)) {
+          renderer?.setBuilderParams(packed);
+          lastBuilderPack = packed;
+        }
+      }
+      renderer?.render(features, trackTime, frameParams, transition, {
+        feedback: capSkipped
+          ? "advance-only"
+          : ana.feedbackTicked
+            ? "advance-and-present"
+            : "present-only",
+      });
       if (renderer && !capSkipped) presentedFrames++;
       if (capSkipped) {
         // State advanced offscreen; keep presentation cadence and UI cadence

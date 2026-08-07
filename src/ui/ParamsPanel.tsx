@@ -60,7 +60,14 @@ import type { AppPrefs } from "../state/prefs";
 import { getPrefs, setPrefs } from "../state/prefs";
 import { LayersPanel } from "./LayersPanel";
 import { BuilderPanel } from "./BuilderPanel";
-import { BUILDER2_ID, BUILDER_LAYER_TYPES, type BuilderStack } from "../render/builder2";
+import {
+  BUILDER2_ID,
+  BUILDER_FACTORY_STACKS,
+  BUILDER_LAYER_TYPES,
+  copyBuilderStack,
+  sameStackValues,
+  type BuilderStack,
+} from "../render/builder2";
 import { IconClose } from "./Icons";
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -766,17 +773,23 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             </div>
           )}
 
-          <ParamGroups
-            preset={props.preset}
-            params={props.params}
-            onParam={props.onParam}
-            onHint={setHint}
-            showAdvanced={showAdvanced}
-            query={q}
-            collapsed={collapsed}
-            onToggleGroup={toggleGroup}
-            extras={centerImageExtras}
-          />
+          {/* Builder (RP-20): its virtual l<i>.* params exist for the
+              modulation/MIDI/automation target lists, NOT for a second knob
+              surface — BuilderPanel below stays the one editor, so the
+              generic grouped rows are suppressed here (locked UI decision). */}
+          {props.preset.id !== BUILDER2_ID && (
+            <ParamGroups
+              preset={props.preset}
+              params={props.params}
+              onParam={props.onParam}
+              onHint={setHint}
+              showAdvanced={showAdvanced}
+              query={q}
+              collapsed={collapsed}
+              onToggleGroup={toggleGroup}
+              extras={centerImageExtras}
+            />
+          )}
         </>
       ),
     },
@@ -787,7 +800,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             title: "Builder layers",
             tab: "visual" as const,
             search:
-              `builder layer stack compositor blend add screen opacity hue spread ${BUILDER_LAYER_TYPES.map((t) => t.label).join(" ")}`.toLowerCase(),
+              `builder layer stack compositor blend add screen opacity hue spread factory ${BUILDER_FACTORY_STACKS.map((f) => f.name).join(" ")} ${BUILDER_LAYER_TYPES.map((t) => t.label).join(" ")}`.toLowerCase(),
             standalone: true,
             body: props.simplifiedRenderer ? (
               // The whole stack compiles to WGSL, so there is nothing here the
@@ -801,13 +814,39 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 </p>
               </div>
             ) : (
-              <BuilderPanel
-                stack={props.builderStack}
-                onChange={props.onBuilderStack}
-                onExport={props.onBuilderExport}
-                onImport={props.onBuilderImport}
-                onHint={setHint}
-              />
+              <>
+                {/* Factory stacks (RP-20): whole curated stacks, structural —
+                    Builder's stand-in for the style chips every other visual
+                    has. Applied copies get fresh layer ids; active detection
+                    compares structure + values, ids ignored. */}
+                <div className="panel-section builder-factory-chips">
+                  <div className="style-chips">
+                    {BUILDER_FACTORY_STACKS.map((f) => {
+                      const active = sameStackValues(props.builderStack, f.stack);
+                      return (
+                        <button
+                          key={f.id}
+                          className={`style-chip ${active ? "active" : ""}`}
+                          title={`Apply the "${f.name}" layer stack`}
+                          onClick={() => props.onBuilderStack(copyBuilderStack(f.stack))}
+                        >
+                          {f.name}
+                        </button>
+                      );
+                    })}
+                    {!BUILDER_FACTORY_STACKS.some((f) =>
+                      sameStackValues(props.builderStack, f.stack),
+                    ) && <span className="style-custom">Custom</span>}
+                  </div>
+                </div>
+                <BuilderPanel
+                  stack={props.builderStack}
+                  onChange={props.onBuilderStack}
+                  onExport={props.onBuilderExport}
+                  onImport={props.onBuilderImport}
+                  onHint={setHint}
+                />
+              </>
             ),
           } satisfies SectionDef,
         ]
