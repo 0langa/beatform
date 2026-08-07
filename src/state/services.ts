@@ -111,6 +111,14 @@ export function getAnalyzer(): RealtimeAnalyzer {
   return analyzer;
 }
 
+/** The analyzer if services are up, else null. For feeds that ride a store
+ * subscription rather than a user action: a subscription can fire in a test
+ * (or before initServices in the browser build) where the throwing accessor
+ * would take the caller down with it. */
+export function peekAnalyzer(): RealtimeAnalyzer | null {
+  return analyzer;
+}
+
 export function getRenderer(): Renderer | null {
   return renderer;
 }

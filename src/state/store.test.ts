@@ -42,6 +42,7 @@ vi.mock("./services", () => ({
     dispose: vi.fn(),
   })),
   getAnalyzer: vi.fn(() => ({ setSync: vi.fn() })),
+  peekAnalyzer: vi.fn(() => null),
   getRenderer: vi.fn(() => null),
   setLiveRenderPaused: vi.fn(),
   remeasure: vi.fn(),

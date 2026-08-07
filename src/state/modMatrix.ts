@@ -62,6 +62,11 @@ export type ModSource =
   | "width"
   | "beatPhase"
   | "barPhase"
+  // P-15 fuel. Both are 0..1 like every other source: `vocal` is the
+  // lyric-derived sung-presence envelope (distinct from `voice`, the DSP
+  // band energy), `sectionPulse` fires on each detected section boundary.
+  | "vocal"
+  | "sectionPulse"
   // Stem sources: envelope timelines of imported sidecar tracks, sampled at
   // track time ("stem1:kick"). Valid ids are produced by src/audio/stems.ts.
   | `stem${1 | 2 | 3 | 4}:${"energy" | "bass" | "mid" | "treble" | "kick" | "snare" | "hat"}`
@@ -143,6 +148,8 @@ export const MOD_SOURCES: Array<{ id: ModSource; label: string }> = [
   { id: "mid", label: "Mids" },
   { id: "treble", label: "Treble" },
   { id: "voice", label: "Voice" },
+  { id: "vocal", label: "Vocals (lyrics)" },
+  { id: "sectionPulse", label: "Section change" },
   { id: "rms", label: "Loudness" },
   { id: "energy", label: "Energy" },
   { id: "width", label: "Stereo width" },
@@ -170,7 +177,12 @@ export function sourceValue(
     const p = LFO_PARSED.get(source);
     return p ? lfoValue(p.wave, p.rate, features) : 0;
   }
-  return features[source as keyof AudioFeatures & ModSource] as number;
+  // `?? 0`, not a bare cast: the P-15 fields are optional on AudioFeatures
+  // (hand-built frames in tests and older callers may omit them), and an
+  // undefined here would poison the route arithmetic into NaN for the rest
+  // of the frame. A missing feature reads as "no signal", like an unloaded
+  // stem does.
+  return (features[source as keyof AudioFeatures & ModSource] as number | undefined) ?? 0;
 }
 
 /**

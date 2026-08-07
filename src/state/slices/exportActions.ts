@@ -316,11 +316,14 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
               meta: get().trackMeta,
               coverArt: get().coverArt,
               beatGrid: get().beatGrid,
+              sections: get().sections,
               stems: get().stems,
               lyrics:
                 get().lyrics && get().lyricStyle.enabled
                   ? { lines: get().lyrics!, style: get().lyricStyle }
                   : undefined,
+              // Ungated on purpose — see TrackInput.vocalLines.
+              vocalLines: get().lyrics ?? undefined,
               audiogram: audiogramActive(get().audiogram)
                 ? { settings: get().audiogram, waveform: get().waveformOverview }
                 : undefined,

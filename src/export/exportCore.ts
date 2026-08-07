@@ -64,6 +64,7 @@ import {
   type OverlayFrameKey,
 } from "../render/dynamicOverlay";
 import type { LyricLine, LyricStyle } from "../state/lyrics";
+import type { VocalSpan } from "../audio/vocalPresence";
 import type { AudiogramSettings } from "../state/audiogram";
 
 /**
@@ -112,6 +113,15 @@ export interface ExportJob {
   overlay?: ImageBitmap;
   /** Beat grid (already shifted for segments) — visuals lock to it. */
   beatGrid?: BeatGrid;
+  /** Section boundaries in seconds (already shifted for segments) — resolve
+   * features.sectionIndex / sectionPulse, the preview path's setSections. */
+  sections?: number[];
+  /** Sung spans in seconds (already shifted for segments) driving
+   * features.vocal. Deliberately NOT derived from `lyrics` above: that field
+   * only travels when the lyric OVERLAY is enabled, and a modulation source
+   * must not switch off because the user stopped drawing the words — preview
+   * feeds the same spans ungated, so the two agree. */
+  vocalSpans?: VocalSpan[];
   /** Modulation routes for the preset — applied per frame like the live view. */
   mods?: ModRoute[];
   /** Spline-connected spectrum sampling toggle (matches the live view). */
@@ -748,7 +758,16 @@ export async function runExportJob(
       paramsByPreset: job.paramsByPreset ?? {},
       modsByPreset: job.modsByPreset ?? {},
     };
-    const analyzer = new OfflineAnalyzer(pcm, job.fps, 96, job.sync, job.beatGrid ?? null);
+    const vocalSpans = job.vocalSpans ?? null;
+    const analyzer = new OfflineAnalyzer(
+      pcm,
+      job.fps,
+      96,
+      job.sync,
+      job.beatGrid ?? null,
+      job.sections ?? null,
+      vocalSpans,
+    );
     // Analyzer construction mixes the whole track down to mono and primes the
     // pipeline — seconds each on a long track, silently (AX-3).
     hooks.onHeartbeat?.();
@@ -777,7 +796,15 @@ export async function runExportJob(
       (frameInput.timeline.enabled &&
         frameInput.timeline.scenes.some((s) => presetUsesFeedback(presetById(s.presetId))));
     const feedbackAnalyzer = anyPresetUsesFeedback
-      ? new OfflineAnalyzer(pcm, 60, 96, job.sync, job.beatGrid ?? null)
+      ? new OfflineAnalyzer(
+          pcm,
+          60,
+          96,
+          job.sync,
+          job.beatGrid ?? null,
+          job.sections ?? null,
+          vocalSpans,
+        )
       : null;
     const feedbackClock = anyPresetUsesFeedback ? new FixedFeedbackClock() : null;
     // The 60 Hz feedback tick walk gets its OWN lag memory: it is a separate

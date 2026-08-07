@@ -9,6 +9,7 @@ import {
   type LoudnessResult,
 } from "./exportCore";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
+import type { VocalSpan } from "../audio/vocalPresence";
 import type { VideoCodecId } from "./codecProbe";
 import { shiftStemAnalysis, type StemEntry } from "../audio/stems";
 import type { LyricLine, LyricStyle } from "../state/lyrics";
@@ -64,6 +65,10 @@ export interface ExportOptions {
   loopCrossfadeSec?: number;
   /** Beat grid in TRACK time; segment exports shift it automatically. */
   beatGrid?: BeatGrid;
+  /** Section boundaries in TRACK time; shifted for segments like the grid. */
+  sections?: number[];
+  /** Sung spans in TRACK time (vocal presence); shifted like the grid. */
+  vocalSpans?: VocalSpan[];
   /** Modulation routes for the active preset. */
   mods?: ModRoute[];
   /** Spline-connected spectrum sampling toggle. */
@@ -374,6 +379,17 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
       o.beatGrid && o.segment
         ? { ...o.beatGrid, beatTimes: o.beatGrid.beatTimes.map((t) => t - o.segment!.start) }
         : o.beatGrid,
+    // Section boundaries are TRACK times like the grid's beats: a segment
+    // export slices the audio to 0, so unshifted boundaries would fire
+    // sectionPulse at the wrong moments (or, for a late segment, never).
+    sections: o.sections && o.segment ? o.sections.map((t) => t - o.segment!.start) : o.sections,
+    vocalSpans:
+      o.vocalSpans && o.segment
+        ? o.vocalSpans.map((s) => ({
+            start: s.start - o.segment!.start,
+            end: s.end - o.segment!.start,
+          }))
+        : o.vocalSpans,
     mode: isPng ? "png" : o.streamToPath ? "stream" : "buffer",
     loudness: o.loudness,
   });

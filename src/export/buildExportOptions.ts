@@ -1,5 +1,6 @@
 import { DEFAULT_SYNC } from "../audio/types";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
+import { vocalSpansFromLyrics } from "../audio/vocalPresence";
 import { presetById } from "../render/presets";
 import {
   BG_IMAGE,
@@ -56,12 +57,20 @@ export interface TrackInput {
   /** Cover art as a data URL, for presets that sample it (e.g. Bass Circle). */
   coverArt: string | null;
   beatGrid: BeatGrid | null;
+  /** Detected section boundaries, seconds (track analysis, like the grid).
+   * Drives features.sectionIndex / sectionPulse in the export walk exactly as
+   * the live analyzer's setSections does in preview (P-15). */
+  sections?: number[];
   /** Imported stems (session-scoped, like the beat grid). Omitted by the
    * batch queue — stem routes then read 0 and are silently inert. */
   stems?: StemEntry[];
   /** Timed lyrics + style (session-scoped, like stems). Omitted by the
    * batch queue — batch tracks have no imported lyrics. */
   lyrics?: { lines: LyricLine[]; style: LyricStyle };
+  /** The timed lines REGARDLESS of whether the overlay draws them — the
+   * vocal-presence modulation source is about the singing, not the caption,
+   * so it must not switch off with the overlay toggle (P-15). */
+  vocalLines?: LyricLine[];
   /** Audiogram elements + waveform overview (session-scoped). */
   audiogram?: { settings: AudiogramSettings; waveform: Float32Array | null };
   /** User-authored WGSL presets the document may reference. */
@@ -163,6 +172,8 @@ export function buildExportOptions(
           }
         : undefined,
     beatGrid: track.beatGrid ?? undefined,
+    sections: track.sections,
+    vocalSpans: track.vocalLines ? vocalSpansFromLyrics(track.vocalLines) : undefined,
     stems: track.stems,
     lyrics: track.lyrics,
     audiogram: track.audiogram,

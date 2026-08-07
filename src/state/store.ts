@@ -27,7 +27,15 @@ import { defaultParams } from "../render/types";
 import { presetById, presets } from "../render/presets";
 import { extractCoverPalette, type CoverPalette } from "./coverPalette";
 import { APP_VERSION } from "../version";
-import { getAnalyzer, getEngine, getRenderer, initServices, remeasure } from "./services";
+import {
+  getAnalyzer,
+  getEngine,
+  getRenderer,
+  initServices,
+  peekAnalyzer,
+  remeasure,
+} from "./services";
+import { vocalSpansFromLyrics } from "../audio/vocalPresence";
 import { analyzeTrack } from "../audio/analysis/trackAnalysis";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { KeyEstimate } from "../audio/analysis/keyDetect";
@@ -1934,6 +1942,7 @@ export const useVizStore = create<VizState>((set, get) => {
           // mode and pulses over unrelated audio.
           analysisId++;
           getAnalyzer().setBeatGrid(null);
+          getAnalyzer().setSections(null);
           set({
             liveInputActive: true,
             beatGrid: null,
@@ -2261,11 +2270,16 @@ export const useVizStore = create<VizState>((set, get) => {
       const id = ++analysisId;
       set({ beatGrid: null, trackKey: null, sections: [], analyzing: true });
       getAnalyzer().setBeatGrid(null);
+      getAnalyzer().setSections(null);
       const { result } = analyzeTrack(buf);
       void result.then(({ grid, key, sections }) => {
         if (id !== analysisId) return; // a newer track superseded this job
         set({ beatGrid: grid, trackKey: key, sections, analyzing: false });
         getAnalyzer().setBeatGrid(grid);
+        // Sections travel with the grid, always: features.sectionIndex /
+        // sectionPulse resolve from these boundaries the same way the export
+        // path resolves them from the job's copy (P-15).
+        getAnalyzer().setSections(sections);
       });
     },
 
@@ -2346,6 +2360,29 @@ export const useVizStore = create<VizState>((set, get) => {
 // throttled inside persistence so a full store announces itself once, not on
 // every keystroke. Wired here because persistence cannot import the store.
 setWriteFailureNotifier((message) => useVizStore.setState({ error: message }));
+
+/**
+ * ONE chokepoint feeding the analyzer's lyric-derived vocal presence (P-15).
+ *
+ * `lyrics` is written from nine places — file import, clear, two track-load
+ * resets, the library loader, generation, and the correction editor's
+ * edit/undo/redo/realign ops. Calling setVocalSpans at each is a rule every
+ * future lyrics writer has to remember, and forgetting it is silent: the
+ * feature just reads 0 forever. A subscription is the same shape as the
+ * determinism-law chokepoints — one place, impossible to bypass.
+ *
+ * Identity comparison is exact by construction: every lyrics mutation builds
+ * a NEW array (the editor is snapshot-based), so an unchanged reference means
+ * unchanged lines. Spans are recomputed only on that change, never per frame.
+ */
+let lastLyrics: LyricLine[] | null = null;
+useVizStore.subscribe((s) => {
+  if (s.lyrics === lastLyrics) return;
+  lastLyrics = s.lyrics;
+  // peek, not get: this fires on state changes, including in tests and before
+  // initServices — a missing analyzer is "nothing to feed yet", not an error.
+  peekAnalyzer()?.setVocalSpans(s.lyrics ? vocalSpansFromLyrics(s.lyrics) : null);
+});
 
 /** True while an export is running — guards Escape-to-close and modal close. */
 export function isExporting(): boolean {
