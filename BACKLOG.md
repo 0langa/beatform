@@ -316,9 +316,10 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       fixed PL-1/2/3/4, SS-1/2/3, UI-1/2/3 (+UI-5 focus trap), AX-2/3/6,
       RP-1, DS-1/3 (SECURITY/CONTRIBUTING), DS-15 (gallery CI
       byte-verification, gallery repo), DS-18 (changelog links), TQ-1/2/6.
-      ALIGN-002/E4 shipped v2.72.1 by the concurrent session. REMAINING
-      from the shortlist: **AX-1** (needs the owner's design call on
-      "Kicks" semantics), **RP-4** (→ E3), **DS-5/7/12** (README/guide/
+      ALIGN-002/E4 shipped v2.72.1 by the concurrent session. AX-1 shipped
+      in v2.74.0 wave 0 (real kick semantics, one deliberate trace
+      re-bless) — the owner's design call came in the same round. REMAINING
+      from the shortlist: **RP-4** (→ E3), **DS-5/7/12** (README/guide/
       pages staleness → Track D scope), **TQ-3** (fixed), **SS-2** (fixed).
 - [ ] E2 Severity-2 waves per domain (state → UI → audio/export →
       platform → render), each wave gated + released.
@@ -376,10 +377,24 @@ Execution sequence around the running Track B program:
 1. **Now, parallel to Track B** (scripts/infra, no collision):
    P-13 gate manifest + `release.mjs` · P-14-lite shared harness module
    (`scripts/lib/` — cdp/boot/evidence, kill the 12 copies).
-2. **Parallel to batches 2–3:** P-16/P-7 modulation engine v2 (curves,
-   lag, beat-locked LFOs — deterministic) + P-15 AudioFeatures extension
-   (beat index, sections, chroma, vocal presence) = the "reactivity
-   fuel" item feeding Track C.
+2. ~~**Parallel to batches 2–3:** P-16/P-7 modulation engine v2 + P-15
+   AudioFeatures extension = the "reactivity fuel" item feeding Track C.~~
+   **DONE, shipped v2.79.0 2026-08-07** (ran after the B waves rather than
+   parallel to them — B never blocked on it, and C does). Engine: per-route
+   `curve` (linear/exp/smooth) + `attack`/`release` lag via caller-owned
+   `ModEvalState` (fresh per export run ⇒ bit-identical exports; live state
+   clears at the seek chokepoint), beat-locked `lfo:<wave>:<beats>` sources
+   (stateless, pure over the beat grid), six route recipes as chips. Fuel:
+   `beatIndex`/`barIndex`/`sectionIndex`/`sectionPulse`/`chroma`(12)/`vocal`
+   on AudioFeatures, all additive — golden traces re-blessed ZERO. `vocal`
+   and `sectionPulse` registered as mod sources; the rest is fuel for the
+   per-mode adoption a later wave owns. Wiring notes worth keeping: vocal
+   presence rides its OWN export field because the `lyrics` job field only
+   travels when the overlay is drawn (deriving from it would have zeroed the
+   source whenever the user hid the words while preview kept modulating);
+   sections + spans are segment-shifted like the beat grid; the live feed is
+   ONE store subscription, not a call at each of the nine `lyrics` writers.
+   GPU matrix 213 cases, zero movement.
 3. **Post-batch-3 refactor release:** P-12 store-direct migration (kills
    props-drilling) + P-2 naming (Inspector / Preferences).
 4. **After Track B completes:** P-1 Inspector dock (staged: shell + rail
