@@ -11,6 +11,41 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.79.0] - 2026-08-07
+
+### Added
+
+- **Modulation grew a sense of timing.** Routes are no longer a straight
+  line from sound to knob:
+  - **Shape** — pick how a route responds. _Linear_ is what you have today,
+    _Exponential_ keeps quiet passages calm and lets peaks hit hard, and
+    _Smooth_ eases in and out of both ends.
+  - **Attack and release** — give a route rise and fall time in seconds, so
+    a kick can punch instantly and let go over a quarter second instead of
+    snapping. Frame rate never changes the feel, and exports reproduce it
+    exactly.
+- **Beat-synced LFOs.** New modulation sources that sweep on their own,
+  locked to the track's tempo: sine, ramp and square, at a quarter beat up
+  to eight beats per cycle. They are pure math over the beat grid, so
+  scrubbing anywhere in the track shows exactly what the export will render.
+- **Route recipes.** Six one-click starting points in the Modulation
+  section — Kick punch, Bass swell, Beat sway, Bar sweep, Drop brightness
+  and Hat sparkle. Each drops in a shaped, timed route aimed at a parameter
+  the current visual actually has.
+- **Two new things to react to.**
+  - **Vocals** follows your loaded lyrics, rising as a line is sung and
+    falling in the gaps — musical phrasing rather than a loudness meter. It
+    works whether or not you are drawing the lyrics on screen.
+  - **Section change** fires a pulse each time the track moves into a new
+    section, for accents that land on the arrangement instead of the beat.
+- Visuals can also read the track's beat and bar count, section number and
+  a live chromagram — groundwork the next round of visual modes builds on.
+
+### Changed
+
+- Existing routes are untouched: without a shape, lag or new source, every
+  project modulates exactly as it did in 2.78.0.
+
 ## [2.78.0] - 2026-08-07
 
 ### Added
