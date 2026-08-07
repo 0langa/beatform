@@ -10,9 +10,25 @@ import { Profiler, type ReactNode } from "react";
  * reports work that never happened. React calls `onRender` only when the
  * subtree actually committed, so a `memo` bail-out, an unchanged selector
  * result, or a store write to a slice nobody subscribed to all produce
- * nothing. That makes one probe valid for both contracts: a props-based
- * component (does its `memo` hold?) and a zero-prop store-direct one (is its
- * selector granular enough?).
+ * nothing.
+ *
+ * SCOPE — read before reaching for this in a props test. It proves what it
+ * claims only when the update ORIGINATES INSIDE the probed subtree: a store
+ * write reaching a zero-prop store-direct component. It cannot prove a `memo`
+ * bail-out under a re-rendering parent, because React flags a Profiler for
+ * `onRender` whenever the Profiler element itself re-renders — and making the
+ * parent re-render is precisely what a memo test has to do. (Measured, React
+ * 19.2.8: two parent ticks commit three times whether the child's props are
+ * stable or not.) Any arrangement that spares the Profiler also makes the
+ * child element reference-equal, which bails out ABOVE the memo and proves
+ * nothing either.
+ *
+ * For a props-based panel, count body executions instead — a getter on a
+ * nested field the render body reads unconditionally, whose parent object
+ * `memo`'s shallow compare only touches by identity. TimelinePanel.test.tsx
+ * and PlayerBar.test.tsx do this, and still use the probe alongside it to
+ * prove the parent actually ticked, so "the body never ran" cannot be
+ * confused with "the harness never fired".
  *
  * StrictMode-safe: React 19 double-invokes render but commits once.
  *

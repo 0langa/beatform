@@ -103,6 +103,16 @@ describe("PerfOverlay", () => {
     expect(container.querySelector(".perf-overlay")).toBeNull();
   });
 
+  it("keeps the data-testid the device harnesses select it by", () => {
+    // scripts/perf-family-check.mjs and scripts/v268-visual-check.mjs find
+    // this overlay by data-testid. They used to use [role="status"], which
+    // the notice toast also carries — they resolved correctly only because
+    // the overlay happens to render first. Dropping the testid breaks both
+    // at runtime, on a device, with nothing in this suite to warn first.
+    const { container } = renderOverlay({});
+    expect(container.querySelector('[data-testid="perf-overlay"]')).not.toBeNull();
+  });
+
   it("never intercepts pointer input and anchors to the requested corner", () => {
     const { container } = renderOverlay({ corner: "bottom-right" });
     const el = container.querySelector<HTMLElement>(".perf-overlay");
