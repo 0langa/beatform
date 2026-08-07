@@ -15,7 +15,7 @@
   ·
   <a href="https://0langa.github.io/beatform/presets"><b>Add a visual mode</b></a>
   ·
-  <a href="https://0langa.github.io/beatform/templates"><b>Templates</b></a>
+  <a href="https://0langa.github.io/beatform/templates"><b>Themes</b></a>
 </p>
 
 Tauri 2 + React + TypeScript, WebGPU rendering (Canvas2D fallback), Rust core.
@@ -52,7 +52,7 @@ Free and open source. Built to become a professional-grade tool for producers an
   visual and its `.bfshader` exports
 - **Auto-updates**: the app checks GitHub Releases and installs new versions
   in one click (signature-verified; no telemetry — the check is a plain fetch
-  of a static file). **App settings** (Ctrl+,): autosave delay, live frame
+  of a static file). **Preferences** (Ctrl+,): autosave delay, live frame
   cap, GPU preference, update controls
 - **Project files**: save/open the whole setup (preset, params, sync,
   background, layers) as versioned `.bfproj` files — Ctrl+S / Ctrl+O,

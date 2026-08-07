@@ -17,9 +17,9 @@ GitHub is the only channel and everything is free forever.
    reads its tags, detects BPM + key, and locks grid-synced visuals to the
    real beats.
 3. **Pick a look.** Sixteen visual modes across the top; each ships 5–7
-   curated styles. Or open _Settings → Templates_ and click a factory pack —
-   Trap Nation Classic, Midnight Phonk, Lo-fi Haze, Outrun Nights, and more —
-   for a complete tuned setup in one click.
+   curated styles. Or open _Inspector ▸ Visual ▸ Themes_ and click a factory
+   theme — Cover Story, Hyperlane, Chrome Sunset, Ion Storm, and more — for a
+   complete tuned setup in one click.
 4. **Make it yours.** _Layers_ adds your title (auto-filled from tags), logo,
    or album art. _Sync_ chooses what drives the motion (kicks, bass, melody,
    voice…). _Post_ adds bloom, grain, vignette.
@@ -30,8 +30,8 @@ GitHub is the only channel and everything is free forever.
 
 ## More
 
-- **[User guide](guide)** — every panel, mode, and export option
-- **[Templates (.bftheme)](templates)** — share a complete look as one file
+- **[User guide](guide)** — every surface, mode, and export option
+- **[Themes (.bftheme)](templates)** — share a complete look as one file
 - **[Preset SDK](presets)** — add a visual mode with one WGSL file
 - **[Export design](EXPORT-DESIGN)** — indexed A/V timing and parity boundaries
 - **[Contributing](https://github.com/0langa/beatform/blob/main/CONTRIBUTING.md)**
