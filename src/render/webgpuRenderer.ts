@@ -1177,6 +1177,16 @@ fn colorScale(value: f32, control: f32) -> f32 {
   return min(value * control, 1.0);
 }
 
+// Environment desaturation: the ambient hemisphere and fog haze are authored
+// lighting colors outside the hsl2rgb path, so the whole-visual saturation
+// contract (0 = true grayscale) has to grade them explicitly. Clamped at the
+// neutral 1 — above it the environment stays authored rather than pushing
+// the atmosphere neon; at exactly 1 the mix is a bit-level identity.
+fn m3_desat(c: vec3f, control: f32) -> vec3f {
+  let luma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+  return mix(vec3f(luma), c, min(control, 1.0));
+}
+
 struct VOut {
   @builtin(position) pos: vec4f,
   @location(0) normal: vec3f,
@@ -1299,7 +1309,7 @@ fn fs_mesh(in: VOut) -> @location(0) vec4f {
   let key = max(dot(n, normalize(vec3f(0.4, 0.9, 0.3))), 0.0);
   let fill = max(dot(n, normalize(vec3f(-0.5, 0.35, -0.6))), 0.0) * m.fillLight;
   let sky = 0.5 + 0.5 * n.y;                       // 1 facing up, 0 facing down
-  let ambient = mix(vec3f(0.03, 0.04, 0.07), vec3f(0.10, 0.12, 0.18), sky) * m.ambientLight;
+  let ambient = m3_desat(mix(vec3f(0.03, 0.04, 0.07), vec3f(0.10, 0.12, 0.18), sky), m.saturation) * m.ambientLight;
   var col = in.shade * (ambient + (key * m.light + fill));
 
   // Hot tops: the tallest bars desaturate toward white and push past 1.0 so
@@ -1342,7 +1352,7 @@ fn fs_mesh(in: VOut) -> @location(0) vec4f {
   // Density is a param (default 0.045, the shipped literal) so the far edge
   // of a default-distance camera softens without swallowing the near bars.
   let fogAmt = 1.0 - exp(-in.fog * m.fogDensity);
-  let haze = vec3f(0.02, 0.03, 0.06);
+  let haze = m3_desat(vec3f(0.02, 0.03, 0.06), m.saturation);
   col = mix(col, haze, clamp(fogAmt, 0.0, 0.85));
 
   col = m3_tonemap(col * 1.1);
