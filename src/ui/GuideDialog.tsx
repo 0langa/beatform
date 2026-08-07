@@ -344,7 +344,7 @@ const SECTIONS: GuideSection[] = [
             cut. <K k="Esc" /> exits everything.
           </li>
           <li>
-            <strong>MIDI</strong> (Live tab): map a controller's knobs to any setting and pads to
+            <strong>MIDI</strong> (Live tab): map a controller's knobs to any parameter and pads to
             modes. <em>Learn CC</em>, move a knob, done — bindings are remembered. Notes obey the
             beat-quantize too.
           </li>
