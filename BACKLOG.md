@@ -252,9 +252,19 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
   persist promoted; tunnel hex/wireframe/organic materials + cover-wall
   mosaic + junctions + centerGlow promoted; 20 new styles; matrix
   168→188 with 160 identical and 8 changed all pre-declared; strips at
-  devstorage depth-batch3-strips) → **Renderer block** (spectrum-scape,
-  particle-flow, oscilloscope-XY) → **Builder bridge**. One release per
-  batch.
+  devstorage depth-batch3-strips) → **Renderer block DONE, shipped
+  v2.77.0 2026-08-07** (spectrum-scape M3U 112→192: beat-response/color
+  tier/layouts/bar shapes/light+fog, 13→27 params, first 3D deck 7→12
+  — integration added m3_desat env grading for the grayscale contract;
+  particle-flow PU 96→144: field families jet/vortex-street/orbital,
+  ring/line attractors, mid+treble routing, ribbon streaks, backdrop,
+  deck 7→14; oscilloscope-XY: planar-stereo binding 11 + waveformL/R
+  cut at ONE shared trigger, waveAt2/waveXY prelude, XY/Lissajous
+  display + xyRotate goniometer, 3 styles — strictly additive, waveAt
+  byte-identical; matrix 188→204→207 with ZERO existing-hash movement
+  across both re-blesses; strips at renderer-block-strips; XY proven on
+  real stereo tracks) → **Builder bridge** (last Track B item). One
+  release per batch.
 
 * [ ] B1..Bn Per-mode upgrade waves in the B0-ranked order (worktree
       agents, one mode per agent — the proven v2.47/v2.68 pattern):
