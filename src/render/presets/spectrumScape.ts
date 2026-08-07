@@ -2,8 +2,9 @@ import type { PresetDef } from "../types";
 
 /**
  * Spectrum Scape — a 3D pass. A depth-tested grid of instanced columns whose
- * heights follow the spectrum (radially, so frequency rings ripple outward),
- * lit by a directional light and viewed through an orbiting perspective camera.
+ * heights follow the spectrum — as concentric rings by default, or raster
+ * rows / spiral arms via the Layout enum — lit by a key/fill/ambient rig and
+ * viewed through an orbiting perspective camera.
  *
  * Rendered by the renderer's built-in 3D path (MESH3D_WGSL); the `wgsl`
  * fragment body below is an unused stub. The camera params (orbit/pitch/
@@ -11,14 +12,15 @@ import type { PresetDef } from "../types";
  * modulation. Bar heights come from the shared bins buffer — deterministic and
  * WYSIWYG like every other preset.
  *
- * NOTE (integrator): every param here maps 1:1 into the mesh3d uniform the
- * renderer builds in renderMesh3d() (hue, hueRange, heightScale, barWidth,
- * spacing, light, emissive + the camera keys camYaw/camSpin/camPitch/camDist/
- * fov/targetY). That set is the whole control surface the 3D shader reads —
- * adding a param key here would render a dead slider, so this upgrade stays on
- * curated styles, tuned defaults/ranges and clearer hints. The city already
- * reacts musically inside the shader: bar heights ride u.drive, tall tops glow
- * hotter on u.driveBeat (Motion→Pulse-gated), and the orbit speed is
+ * NOTE (integrator): every param here maps 1:1 into a lane of the mesh3d
+ * uniform (M3U) that renderMesh3d() packs by key via paramOr(). Adding a key
+ * HERE therefore also means adding an M3U struct field, a pack line, and a
+ * bump of MESH3D_UNIFORM_SIZE in webgpuRenderer.ts — a key without its lane
+ * is a dead slider (spectrumScape.test.ts pins the struct order against the
+ * spec so the two cannot drift silently). Reaction lives on both sides:
+ * heights ride drive (Loudness rise), the hot tops and the city glow carry
+ * their own drive/beat response params (Motion→Pulse-gated via the packed
+ * driveBeat lane), the band lanes feed Band response, and the orbit speed is
  * Motion→Rotation-gated.
  */
 export const spectrumScape: PresetDef = {
@@ -258,6 +260,143 @@ export const spectrumScape: PresetDef = {
         spacing: 0.9,
       },
     },
+    // Bass Terrain — the Rows layout as landscape: the grid reads the
+    // spectrum like a raster, so the bass rows are a mountain ridge on one
+    // side sweeping down to treble foothills. Band response makes each region
+    // pump with its own band — the ridge rolls with the kick while the
+    // foothills shimmer with the hats. Wide bars, tight spacing: terrain,
+    // not towers.
+    {
+      id: "terrain",
+      name: "Bass Terrain",
+      values: {
+        layout: 1,
+        hue: 95,
+        hueRange: 160,
+        heightScale: 7,
+        camPitch: 24,
+        camDist: 21,
+        camSpin: 5,
+        fov: 55,
+        targetY: 1.6,
+        bandGlow: 0.7,
+        barWidth: 0.6,
+        spacing: 0.55,
+        emissive: 0.3,
+        light: 1.2,
+      },
+    },
+    // Galaxy — the Spiral layout seen from high above with round columns:
+    // the fract-wrapped mapping draws the spectrum as Archimedean arms, and
+    // a heavy glow with almost no key light renders them as stars, not
+    // masonry. Band response keeps the arms alive between beats. The hue
+    // spread stops at 140: together with the height shift the arms sweep
+    // violet -> magenta -> amber without wrapping back onto green (a 230
+    // spread did, verified live — the tail ate the head, like Top Down's
+    // old 240).
+    {
+      id: "galaxy",
+      name: "Galaxy",
+      values: {
+        layout: 2,
+        barShape: 2,
+        hue: 265,
+        hueRange: 140,
+        heightScale: 4.5,
+        camPitch: 68,
+        camDist: 17,
+        camSpin: 7,
+        fov: 58,
+        targetY: 0.2,
+        emissive: 0.8,
+        light: 0.35,
+        barWidth: 0.46,
+        spacing: 0.7,
+        bandGlow: 0.5,
+        fogDensity: 0.03,
+      },
+    },
+    // Obsidian Spires — the Pyramid shape at street level: tall dark spikes
+    // under a hard key light, nearly no self-glow, and a big beat flash so
+    // only the peaks catch fire. The narrow hot ramp (0.3) snaps the tips to
+    // white instead of grading the whole spike.
+    //
+    // The palette is pinned tight, because Height 11 multiplies both hue
+    // terms (verified live — the first cut rendered a GREEN field from a red
+    // base): the drive-free height reaches ~7.7 here, so hue-by-height 3
+    // contributes up to ~23 degrees (24, the default, contributed ~185), and
+    // spread 35 puts the far corners at ~+48. Red core, orange field, golden
+    // tips — ember at every loudness, never chartreuse.
+    {
+      id: "spires",
+      name: "Obsidian Spires",
+      values: {
+        barShape: 1,
+        hue: 12,
+        hueRange: 35,
+        hueLift: 3,
+        heightScale: 11,
+        camPitch: 14,
+        camDist: 20,
+        camSpin: -4,
+        fov: 44,
+        targetY: 2.6,
+        emissive: 0.15,
+        light: 1.4,
+        hotBeat: 1.3,
+        hotWindow: 0.3,
+        barWidth: 0.66,
+        spacing: 0.75,
+      },
+    },
+    // Flashpoint — the beat-response deck lead: height is held nearly steady
+    // (low Loudness rise, low hot-top drive) so the BEAT carries the look —
+    // maxed Beat flash and Glow pulse detonate the city on every hit while a
+    // fast orbit keeps it moving between them.
+    {
+      id: "flashpoint",
+      name: "Flashpoint",
+      values: {
+        hue: 330,
+        hueRange: 40,
+        hueLift: 40,
+        heightScale: 7.5,
+        camPitch: 38,
+        camDist: 14,
+        camSpin: 20,
+        emissive: 0.7,
+        hotBeat: 1.8,
+        glowBeat: 1.6,
+        hotDrive: 0.3,
+        driveHeight: 0.45,
+      },
+    },
+    // Harbor Mist — the fog and rig params as the subject: a tall skyline
+    // seen low and far through dense haze, ambient pulled down and the fill
+    // pushed up so the shaded faces glow softly out of the mist instead of
+    // going black.
+    {
+      id: "harbor",
+      name: "Harbor Mist",
+      values: {
+        hue: 196,
+        hueRange: 55,
+        heightScale: 9,
+        camPitch: 10,
+        camDist: 26,
+        camSpin: 3,
+        fov: 40,
+        targetY: 3,
+        emissive: 0.2,
+        light: 1.3,
+        fillLight: 0.7,
+        ambientLight: 0.5,
+        fogDensity: 0.11,
+        lightness: 0.9,
+        barWidth: 0.5,
+        spacing: 0.5,
+      },
+    },
   ],
   params: [
     {
@@ -320,6 +459,92 @@ export const spectrumScape: PresetDef = {
       step: 0.05,
       default: 0.5,
       hint: "How much the bars self-illuminate — tall bars glow brightest; pair with Bloom",
+    },
+    {
+      key: "layout",
+      label: "Layout",
+      group: "shape",
+      control: "enum",
+      mod: "off",
+      min: 0,
+      max: 2,
+      step: 1,
+      default: 0,
+      options: [
+        {
+          value: 0,
+          label: "Rings",
+          hint: "Concentric frequency rings — bass at the center, treble at the rim",
+        },
+        {
+          value: 1,
+          label: "Rows",
+          hint: "The grid reads the spectrum row by row — a bass ridge sweeping to treble",
+        },
+        {
+          value: 2,
+          label: "Spiral",
+          hint: "The spectrum winds around the center in spiral arms",
+        },
+      ],
+      hint: "How the spectrum maps onto the grid — rings from the center, raster rows, or a spiral",
+    },
+    {
+      key: "barShape",
+      label: "Bar shape",
+      group: "shape",
+      control: "enum",
+      mod: "off",
+      min: 0,
+      max: 2,
+      step: 1,
+      default: 0,
+      options: [
+        { value: 0, label: "Box", hint: "Square columns — the classic city block" },
+        { value: 1, label: "Pyramid", hint: "Four-sided spikes rising to a point" },
+        { value: 2, label: "Round", hint: "Faceted round columns — softer highlights" },
+      ],
+      hint: "The solid each grid cell extrudes — box towers, pyramid spikes, or round columns",
+    },
+    {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
+    },
+    {
+      key: "hotBeat",
+      label: "Beat flash",
+      group: "reaction",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      default: 0.6,
+      hint: "Extra flare the white-hot tallest bars fire on every beat (Motion→Pulse scales it)",
+    },
+    {
+      key: "bandGlow",
+      label: "Band response",
+      group: "reaction",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      default: 0,
+      hint: "Bars brighten with their own region of the spectrum — bass bars pump, treble bars shimmer",
     },
   ],
   advanced: [
@@ -393,6 +618,87 @@ export const spectrumScape: PresetDef = {
       step: 0.1,
       default: 1,
       hint: "Height the camera aims at — raise it to look up the towers at street level",
+    },
+    {
+      key: "driveHeight",
+      label: "Loudness rise",
+      group: "reaction",
+      min: 0,
+      max: 1.5,
+      step: 0.05,
+      default: 0.7,
+      hint: "How much the sync source grows the whole skyline — 0 pins heights to the raw spectrum",
+    },
+    {
+      key: "hotDrive",
+      label: "Hot top drive",
+      group: "reaction",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      default: 0.6,
+      hint: "How much overall loudness brightens the white-hot cores on top of their base glow",
+    },
+    {
+      key: "glowBeat",
+      label: "Glow pulse",
+      group: "reaction",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      default: 0.5,
+      hint: "The whole city's glow pumps with the beat — 0 holds it steady",
+    },
+    {
+      key: "hotWindow",
+      label: "Hot top fade",
+      group: "glow",
+      taper: "log",
+      min: 0.1,
+      max: 1.5,
+      step: 0.05,
+      default: 0.45,
+      hint: "Width of the ramp from lit to white-hot — narrow snaps just the tips, wide grades gently",
+    },
+    {
+      key: "hueLift",
+      label: "Hue by height",
+      group: "color",
+      min: 0,
+      max: 60,
+      step: 1,
+      default: 24,
+      hint: "Degrees of hue shift the tallest bars pick up — 0 keeps the whole city on one ramp",
+    },
+    {
+      key: "fillLight",
+      label: "Fill light",
+      group: "glow",
+      min: 0,
+      max: 1,
+      step: 0.05,
+      default: 0.35,
+      hint: "The dimmer light opposite the key — lifts the shaded faces so the form stays readable",
+    },
+    {
+      key: "ambientLight",
+      label: "Ambient light",
+      group: "glow",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      default: 1,
+      hint: "The hemisphere sky bounce — cool from above, near-black from below",
+    },
+    {
+      key: "fogDensity",
+      label: "Fog",
+      group: "backdrop",
+      min: 0,
+      max: 0.2,
+      step: 0.005,
+      default: 0.045,
+      hint: "How quickly distance melts into the blue haze — 0 keeps the far edge crisp",
     },
   ],
   // Unused: 3D presets render via the built-in mesh path. Stub keeps the shared

@@ -975,8 +975,10 @@ fn fs_draw(in: VOut) -> @location(0) vec4f {
 }
 `;
 
-/** Mesh-3D uniform: mat4 viewProj (64) + 12 scalar lanes (48) = 112 bytes. */
-const MESH3D_UNIFORM_SIZE = 112;
+/** Mesh-3D uniform: mat4 viewProj (64) + 29 scalar lanes (116) = 180 bytes,
+ * padded to the struct's 16-byte alignment = 192. Exported for the test that
+ * cross-checks it against the M3U struct's own field list. */
+export const MESH3D_UNIFORM_SIZE = 192;
 
 /**
  * 3D pass: a depth-tested grid of instanced columns whose heights follow the
@@ -991,11 +993,27 @@ struct M3U {
   grid: f32, spacing: f32, barWidth: f32, heightScale: f32,
   hue: f32, hueRange: f32, light: f32, emissive: f32,
   binCount: f32, time: f32, drive: f32, driveBeat: f32,
+  binMap: f32, barShape: f32, saturation: f32, lightness: f32,
+  hueLift: f32, driveHeight: f32, hotDrive: f32, hotBeat: f32,
+  hotWindow: f32, glowBeat: f32, fillLight: f32, ambientLight: f32,
+  fogDensity: f32, bandGlow: f32, bass: f32, mid: f32,
+  treble: f32,
 }
 @group(0) @binding(0) var<uniform> m: M3U;
 @group(0) @binding(1) var<storage, read> bins: array<f32>;
 
 ${WGSL_HSL2RGB}
+
+// The roster colour-tier scaler — same body as the fragment presets'
+// WGSL_COLOR_CONTROLS (colorControls.test.ts pins that text; the mesh module
+// is its own compilation unit with no P_<key>() accessors, so the routing
+// contract for THIS copy is pinned by spectrumScape.test.ts instead). 1 is a
+// pixel-exact no-op: value * 1.0 is exact in IEEE, and the <= 1 branch
+// avoids the min() on the neutral path.
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
 
 struct VOut {
   @builtin(position) pos: vec4f,
@@ -1007,6 +1025,11 @@ struct VOut {
   // it, distant bars cut straight to black instead of receding.
   @location(3) fog: f32,
   @location(4) heightNorm: f32,
+  // Band response, premixed in the vertex stage: the band energy of this
+  // bar's own spectral region times the Band response param. Exactly 0 at
+  // the param's default of 0, making the fragment's (1 + band) multiply an
+  // exact no-op.
+  @location(5) band: f32,
 }
 
 ${wgslAcesTonemap("m3_tonemap")}
@@ -1023,11 +1046,24 @@ fn vs_mesh(
   let half = (m.grid - 1.0) * 0.5;
   let dx = col - half;
   let dz = row - half;
-  // Radial index into the spectrum -> concentric rings pulse with frequency.
-  let r = length(vec2f(dx, dz)) / max(m.grid * 0.5, 1.0);
-  let bi = u32(clamp(r, 0.0, 0.999) * m.binCount);
+  // Frequency position 0..1 of this column — the Layout enum picks the
+  // mapping (its lane is binMap: 'layout' is a WGSL reserved word). Rings
+  // (the default) is the original radial index: concentric rings pulse with
+  // frequency, and fr is the untouched radial expression so the default
+  // frame cannot move. Rows reads the grid like a raster (ii sweeps columns
+  // then rows), a bass ridge sweeping to treble. Spiral winds the spectrum
+  // around the centre; fract wraps it into Archimedean arms.
+  let rr = length(vec2f(dx, dz)) / max(m.grid * 0.5, 1.0);
+  var fr = rr;
+  if (m.binMap > 1.5) {
+    fr = fract(rr - atan2(dz, dx) * 0.15915494);
+  } else if (m.binMap > 0.5) {
+    fr = f32(ii) / max(m.grid * m.grid - 1.0, 1.0);
+  }
+  let bi = u32(clamp(fr, 0.0, 0.999) * m.binCount);
   // Overall height rides the selected sync source so the Sync panel matters.
-  let h = bins[bi] * m.heightScale * (0.7 + m.drive * 0.7) + 0.03;
+  // The drive gain is the Loudness rise param (default = the old 0.7).
+  let h = bins[bi] * m.heightScale * (0.7 + m.drive * m.driveHeight) + 0.03;
   // Axis-only scale + translate => axis-aligned normals pass through.
   let world = vec3f(
     inPos.x * m.barWidth + dx * m.spacing,
@@ -1049,10 +1085,35 @@ fn vs_mesh(
   let hLit = bins[bi] * m.heightScale * 0.7 + 0.03;
   var out: VOut;
   out.pos = m.viewProj * vec4f(world, 1.0);
+  // Box normals are axis-aligned, so the non-uniform (barWidth, h, barWidth)
+  // bar scale passes them through untouched — that branch is the shipped
+  // path, kept bit-exact. The pyramid's slanted faces DO shear under the
+  // scale, so the non-box shapes take the inverse-scale (inverse-transpose)
+  // route; the round column's normals are all horizontal or vertical, which
+  // that route preserves in direction. fs_mesh normalizes.
   out.normal = inNormal;
-  out.shade = hsl2rgb(m.hue + r * m.hueRange + hLit * 24.0, 0.9, 0.55);
+  if (m.barShape > 0.5) {
+    out.normal = inNormal / vec3f(m.barWidth, max(h, 0.001), m.barWidth);
+  }
+  // Hue rides the frequency position and the bar's own (drive-free) height;
+  // saturation/lightness route the authored 0.9/0.55 through the shared
+  // colour-tier scalers — pixel-exact at their neutral default of 1.
+  out.shade = hsl2rgb(
+    m.hue + fr * m.hueRange + hLit * m.hueLift,
+    colorScale(0.9, m.saturation),
+    colorScale(0.55, m.lightness),
+  );
   out.height = hLit;
   out.fog = out.pos.w;
+  // Per-region band response: which third of the spectrum this bar sits in
+  // picks its band, with linear crossovers between neighbours, and the Band
+  // response param scales the result.
+  let bandE = mix(
+    mix(m.bass, m.mid, clamp(fr * 3.0 - 0.5, 0.0, 1.0)),
+    m.treble,
+    clamp(fr * 3.0 - 1.5, 0.0, 1.0),
+  );
+  out.band = bandE * m.bandGlow;
   // 0 at the floor, 1 near the top of the tallest bar — drives the hot core.
   // 0.42 == the old 0.6 threshold folded through hLit's 0.7 gain, so a
   // drive-free frame keeps exactly the hot core it had before. The ceiling is
@@ -1070,11 +1131,13 @@ fn fs_mesh(in: VOut) -> @location(0) vec4f {
   // Key light + a dimmer fill from the opposite side, plus a hemisphere
   // ambient (cool from above, near-black from below). A single light over a
   // flat 0.25 ambient is what made the city read as flat plastic; giving the
-  // shaded faces some cool sky bounce gives every bar visible form.
+  // shaded faces some cool sky bounce gives every bar visible form. The rig
+  // SCALES are params (fill default 0.35, ambient default 1 — the shipped
+  // literals); the directions stay fixed, they are the mode's signature.
   let key = max(dot(n, normalize(vec3f(0.4, 0.9, 0.3))), 0.0);
-  let fill = max(dot(n, normalize(vec3f(-0.5, 0.35, -0.6))), 0.0) * 0.35;
+  let fill = max(dot(n, normalize(vec3f(-0.5, 0.35, -0.6))), 0.0) * m.fillLight;
   let sky = 0.5 + 0.5 * n.y;                       // 1 facing up, 0 facing down
-  let ambient = mix(vec3f(0.03, 0.04, 0.07), vec3f(0.10, 0.12, 0.18), sky);
+  let ambient = mix(vec3f(0.03, 0.04, 0.07), vec3f(0.10, 0.12, 0.18), sky) * m.ambientLight;
   var col = in.shade * (ambient + (key * m.light + fill));
 
   // Hot tops: the tallest bars desaturate toward white and push past 1.0 so
@@ -1085,10 +1148,13 @@ fn fs_mesh(in: VOut) -> @location(0) vec4f {
   // fired on the entire city at once and "the tallest bars glow hotter"
   // degenerated into "the whole city is white". Sliding the window up with
   // loudness keeps the hot core on the actual peaks. No-op at drive == 0.
+  // The ramp width (Hot top fade, default 0.45) and the drive/beat response
+  // scales (defaults 0.6/0.6 — the shipped literals) are params: the beat
+  // term is the mode's first real beat-response control.
   let hotLo = 0.55 + m.drive * 0.6;
-  let hot = smoothstep(hotLo, hotLo + 0.45, in.heightNorm);
+  let hot = smoothstep(hotLo, hotLo + m.hotWindow, in.heightNorm);
   col = mix(col, vec3f(1.0), hot * 0.6);
-  col += in.shade * hot * (0.6 + m.drive * 0.6 + m.driveBeat * 0.6);
+  col += in.shade * hot * (0.6 + m.drive * m.hotDrive + m.driveBeat * m.hotBeat);
 
   // Height emissive, normalised against the Height knob instead of scaling
   // with it. in.height is a WORLD height, so this term used to read
@@ -1100,13 +1166,20 @@ fn fs_mesh(in: VOut) -> @location(0) vec4f {
   // heightScale of 6) makes the term depend on the bar's SHAPE only, so Glow
   // means glow at any Height. Identical at heightScale == 6, which is the
   // default and therefore the out-of-box look.
+  // The beat term (Glow pulse, default 0.5 — the shipped literal) is the
+  // second beat-response param: the whole city's glow pumps with it.
   col += in.shade * clamp(in.height / m.heightScale, 0.0, 0.5) * 6.0 * m.emissive
-       * (0.7 + m.drive * 0.6 + m.driveBeat * 0.5);
+       * (0.7 + m.drive * 0.6 + m.driveBeat * m.glowBeat);
+
+  // Band response: the bar's own spectral region brightens it — bass bars
+  // pump with bass, treble bars shimmer with hats. in.band is 0 at the
+  // default, so this is an exact multiply by 1.
+  col *= 1.0 + in.band;
 
   // Distance fog: recede into a dark blue haze rather than a hard black cut.
-  // Density chosen so the far edge of a default-distance camera softens
-  // without swallowing the near bars.
-  let fogAmt = 1.0 - exp(-in.fog * 0.045);
+  // Density is a param (default 0.045, the shipped literal) so the far edge
+  // of a default-distance camera softens without swallowing the near bars.
+  let fogAmt = 1.0 - exp(-in.fog * m.fogDensity);
   let haze = vec3f(0.02, 0.03, 0.06);
   col = mix(col, haze, clamp(fogAmt, 0.0, 0.85));
 
@@ -1115,9 +1188,24 @@ fn fs_mesh(in: VOut) -> @location(0) vec4f {
 }
 `;
 
-/** 36-vertex unit column (x,z in -0.5..0.5, y in 0..1), pos + normal, for
- * instanced 3D bars. Culling is disabled so winding order doesn't matter. */
-function cubeColumnVerts(): Float32Array {
+/**
+ * Vertex ranges of the three bar shapes inside the shared mesh vertex buffer,
+ * indexed by spectrum-scape's barShape enum value: [firstVertex, vertexCount].
+ * Shape 0 (the box) MUST stay at offset 0 with the exact 36-vertex layout
+ * that always shipped — the default draw (36 verts from 0) is then
+ * byte-identical to the pre-shape renderer. Exported for the geometry test.
+ */
+export const MESH3D_BAR_SHAPES: ReadonlyArray<readonly [number, number]> = [
+  [0, 36], // box
+  [36, 18], // pyramid
+  [54, 84], // round (octagonal) column
+];
+
+/** Unit-column vertex buffer (x,z in -0.5..0.5, y in 0..1), pos + normal, for
+ * instanced 3D bars: the classic 36-vertex box first (byte-stable — see
+ * MESH3D_BAR_SHAPES), then the pyramid and round-column variants appended
+ * behind it. Culling is disabled so winding order doesn't matter. */
+export function cubeColumnVerts(): Float32Array {
   const faces: Array<{ n: [number, number, number]; q: Array<[number, number, number]> }> = [
     {
       n: [0, 1, 0],
@@ -1178,6 +1266,68 @@ function cubeColumnVerts(): Float32Array {
   for (const f of faces) {
     const [a, b, c, d] = f.q;
     for (const v of [a, b, c, a, c, d]) out.push(v[0], v[1], v[2], f.n[0], f.n[1], f.n[2]);
+  }
+
+  // Pyramid (shape 1): four slanted faces to an apex over the same footprint,
+  // plus the base. Flat per-face normals; the vertex stage inverse-scales
+  // them (slanted normals shear under the non-uniform bar scale — the box's
+  // axis-aligned normals never did, which is why the box path skips it).
+  type V3 = [number, number, number];
+  const norm = (v: V3): V3 => {
+    const l = Math.hypot(v[0], v[1], v[2]) || 1;
+    return [v[0] / l, v[1] / l, v[2] / l];
+  };
+  const cross = (a: V3, b: V3): V3 => [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+  const apex: V3 = [0, 1, 0];
+  const base: V3[] = [
+    [-0.5, 0, -0.5],
+    [0.5, 0, -0.5],
+    [0.5, 0, 0.5],
+    [-0.5, 0, 0.5],
+  ];
+  for (let i = 0; i < 4; i++) {
+    const a = base[i];
+    const b = base[(i + 1) % 4];
+    const e1: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const e2: V3 = [apex[0] - a[0], apex[1] - a[1], apex[2] - a[2]];
+    const n = norm(cross(e2, e1)); // outward + up
+    for (const v of [a, b, apex]) out.push(v[0], v[1], v[2], n[0], n[1], n[2]);
+  }
+  for (const v of [base[0], base[2], base[1], base[0], base[3], base[2]]) {
+    out.push(v[0], v[1], v[2], 0, -1, 0);
+  }
+
+  // Round column (shape 2): an octagonal prism inscribed in the box
+  // footprint. Every normal is horizontal (sides) or vertical (caps), both
+  // of which the non-uniform bar scale preserves in direction — the inverse
+  // scale the pyramid needs is a direction no-op here.
+  const oct: Array<[number, number]> = [];
+  for (let k = 0; k < 8; k++) {
+    const a = (k * Math.PI) / 4;
+    oct.push([Math.cos(a) * 0.5, Math.sin(a) * 0.5]);
+  }
+  for (let k = 0; k < 8; k++) {
+    const [x0, z0] = oct[k];
+    const [x1, z1] = oct[(k + 1) % 8];
+    const am = ((k + 0.5) * Math.PI) / 4;
+    const n: V3 = [Math.cos(am), 0, Math.sin(am)];
+    const qa: V3 = [x0, 0, z0];
+    const qb: V3 = [x0, 1, z0];
+    const qc: V3 = [x1, 1, z1];
+    const qd: V3 = [x1, 0, z1];
+    for (const v of [qa, qb, qc, qa, qc, qd]) out.push(v[0], v[1], v[2], n[0], n[1], n[2]);
+  }
+  for (const [y, ny] of [
+    [1, 1],
+    [0, -1],
+  ] as const) {
+    for (let k = 1; k < 7; k++) {
+      for (const [x, z] of [oct[0], oct[k], oct[k + 1]]) out.push(x, y, z, 0, ny, 0);
+    }
   }
   return new Float32Array(out);
 }
@@ -2564,6 +2714,25 @@ export class WebGPURenderer implements Renderer {
     F[25] = time;
     F[26] = f.drive;
     F[27] = f.driveBeat * this.motion.pulse; // beat pop obeys Pulse
+    F[28] = g("layout"); // the binMap lane — 'layout' is reserved in WGSL
+    F[29] = g("barShape");
+    F[30] = g("saturation");
+    F[31] = g("lightness");
+    F[32] = g("hueLift");
+    F[33] = g("driveHeight");
+    F[34] = g("hotDrive");
+    F[35] = g("hotBeat");
+    F[36] = g("hotWindow");
+    F[37] = g("glowBeat");
+    F[38] = g("fillLight");
+    F[39] = g("ambientLight");
+    F[40] = g("fogDensity");
+    F[41] = g("bandGlow");
+    // Band lanes for the per-region response — straight AudioFeatures reads,
+    // same determinism story as drive/driveBeat above.
+    F[42] = f.bass;
+    F[43] = f.mid;
+    F[44] = f.treble;
     this.device.queue.writeBuffer(this.mesh3dUniform, 0, this.mesh3dData);
 
     if (!this.mesh3dBind) {
@@ -2595,7 +2764,12 @@ export class WebGPURenderer implements Renderer {
     pass.setVertexBuffer(0, this.cubeBuf);
     pass.setBindGroup(0, this.mesh3dBind);
     const grid = this.mesh3dSpec!.grid;
-    pass.draw(36, grid * grid);
+    // Bar shape picks a vertex range out of the shared shape buffer. The box
+    // (0, the default) draws the exact 36-verts-from-0 range the pre-shape
+    // renderer drew; Math.round + the fallback keep a garbage stored value
+    // from indexing off the table.
+    const shape = MESH3D_BAR_SHAPES[Math.round(g("barShape"))] ?? MESH3D_BAR_SHAPES[0];
+    pass.draw(shape[1], grid * grid, shape[0]);
     pass.end();
   }
 
