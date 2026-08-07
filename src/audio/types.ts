@@ -10,6 +10,16 @@ export interface AudioFeatures {
   peaks: Float32Array;
   /** Time-domain waveform, -1..1 */
   waveform: Float32Array;
+  /**
+   * The stereo pair behind `waveform` (which stays the mono mixdown): the
+   * LEFT and RIGHT channel windows, -1..1, cut at the SAME zero-crossing
+   * trigger as `waveform` — one trigger indexes all three lanes, so plotting
+   * left against right preserves the inter-channel phase an XY/Lissajous
+   * display exists to show. Mono sources carry the mono window in both, so
+   * consumers degrade gracefully without a channel-count flag.
+   */
+  waveformL: Float32Array;
+  waveformR: Float32Array;
   /** Overall loudness 0..1 */
   rms: number;
   /** Slow loudness envelope (~1s), 0..1 — drives calm/idle motion */

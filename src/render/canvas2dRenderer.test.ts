@@ -73,6 +73,8 @@ const SILENCE: AudioFeatures = {
   bins: new Float32Array(4),
   peaks: new Float32Array(4),
   waveform: new Float32Array(4),
+  waveformL: new Float32Array(4),
+  waveformR: new Float32Array(4),
   rms: 0,
   energy: 0,
   voice: 0,

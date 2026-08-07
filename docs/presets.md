@@ -95,7 +95,13 @@ machine-check yours against the schema like `themes.test.ts` does.
 
 - `binAt(x)`, `peakAt(x)` — log-spaced spectrum / peak-hold at x∈0..1,
   honoring the global smooth-spectrum masters. Use these, not raw `bins[i]`.
-- `waveAt(x)` — phase-locked waveform, −1..1.
+- `waveAt(x)` — phase-locked waveform, −1..1 (the mono mixdown).
+- `waveAt2(x)` — the SECOND channel (right) of the same phase-locked window,
+  −1..1. Identical to `waveAt(x)` for mono sources, so it degrades safely.
+- `waveXY(t)` — the stereo pair at t∈0..1 as `vec2f(left, right)`: plot y
+  against x for an XY/Lissajous scope. All three lanes share ONE
+  zero-crossing trigger, so the inter-channel phase is real; mono sources
+  collapse to the x == y diagonal. (`u.waveCount` covers every lane.)
 - `gridPulse(sharp)` — **1.0 on every beat-grid beat**, exponential decay;
   falls back to `driveBeat` when the track has no grid. The tempo-lock
   pattern: `max(u.driveBeat, gridPulse(7.0))` — grid keeps time, real hits

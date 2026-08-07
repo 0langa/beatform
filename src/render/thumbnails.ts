@@ -114,12 +114,27 @@ export function demoFeatures(t: number): AudioFeatures {
     waveform[i] =
       0.45 * Math.sin(ph * Math.PI * 8 + t * 2) + 0.2 * Math.sin(ph * Math.PI * 34 + t * 5);
   }
+  // Stereo pair for the second waveform lane: a 3:2 frequency ratio with a
+  // quarter-turn phase offset — the classic closed Lissajous rose — plus a
+  // touch of the mono lane's shimmer so sweep-style consumers still read it
+  // as the same programme. Deterministic in t, like everything above; the
+  // mono lane stays byte-identical so no non-oscilloscope hash can move.
+  const waveformL = new Float32Array(2048);
+  const waveformR = new Float32Array(2048);
+  for (let i = 0; i < waveformL.length; i++) {
+    const ph = i / waveformL.length;
+    const shimmer = 0.08 * Math.sin(ph * Math.PI * 34 + t * 5);
+    waveformL[i] = 0.58 * Math.sin(ph * Math.PI * 6 + t * 0.7) + shimmer;
+    waveformR[i] = 0.58 * Math.sin(ph * Math.PI * 4 + t * 0.7 + Math.PI / 2) + shimmer;
+  }
   const beatPhase = (t * 2) % 1; // 120 BPM
   const pulse = Math.exp(-beatPhase * 6);
   return {
     bins,
     peaks,
     waveform,
+    waveformL,
+    waveformR,
     rms: 0.5,
     energy: 0.55,
     voice: 0.5,

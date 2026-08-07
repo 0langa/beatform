@@ -51,19 +51,35 @@ describe("oscilloscope phosphor persistence", () => {
   /**
    * Structural, and the thing a later edit is most likely to undo: the three
    * finishing steps must all sit ABOVE the feedback line. Any one of them below
-   * it re-enters the loop.
+   * it re-enters the loop. Since the XY wave there are TWO display paths, each
+   * owning one persistence union (sweep's in preset(), XY's in xyScope()) —
+   * the invariant holds per path, so it is asserted per function.
    */
-  it("posts the frame before unioning it with the trail", () => {
-    const feedbackAt = body.indexOf("feedbackSample(uv)");
-    expect(feedbackAt).toBeGreaterThan(0);
-    for (const step of ["P_vignette()", "tonemap(", "grain("]) {
-      const at = body.indexOf(step);
-      expect(at, `${step} must be applied before the persistence union`).toBeGreaterThan(0);
-      expect(at, `${step} must be applied before the persistence union`).toBeLessThan(feedbackAt);
+  it("posts the frame before unioning it with the trail — in both display paths", () => {
+    const fns = body.split(/(?=\nfn )/);
+    const withUnion = fns.filter((fn) => fn.includes("feedbackSample(uv)"));
+    expect(withUnion).toHaveLength(2);
+    for (const fn of withUnion) {
+      const feedbackAt = fn.indexOf("feedbackSample(uv)");
+      for (const step of ["P_vignette()", "tonemap(", "grain("]) {
+        const at = fn.indexOf(step);
+        expect(at, `${step} must be applied before the persistence union`).toBeGreaterThan(0);
+        expect(at, `${step} must be applied before the persistence union`).toBeLessThan(feedbackAt);
+      }
+      // ...and nothing may follow the union except the negative clamp.
+      const after = fn.slice(feedbackAt);
+      expect(after).not.toMatch(/tonemap\(|grain\(|P_vignette\(\)/);
     }
-    // ...and nothing may follow the union except the negative clamp.
-    const after = body.slice(feedbackAt);
-    expect(after).not.toMatch(/tonemap\(|grain\(|P_vignette\(\)/);
+  });
+
+  it("the XY union uses the sweep's exact decay law", () => {
+    // Two unions, one law: the XY face's decay must be the sweep expression
+    // verbatim (only the binding name differs), so every persistence
+    // guarantee proven below transfers to the XY path by textual identity.
+    const sweep = /let decay = ([^;]*);/.exec(body)?.[1]?.replace(/\s+/g, " ");
+    const xy = /let decayXY = ([^;]*);/.exec(body)?.[1]?.replace(/\s+/g, " ");
+    expect(sweep).toBeTruthy();
+    expect(xy).toBe(sweep);
   });
 
   /**
@@ -450,7 +466,9 @@ describe("beam modes: sampled fields behind a branch vector mode never enters", 
 
 describe("graticule faces: the default face is the shipped mesh, verbatim", () => {
   it("face 0 contains the pre-wave graticule lines, and runs first", () => {
-    const gate = wgsl.indexOf("if (P_graticule() < 0.5) {");
+    // Anchor inside preset(): the XY face carries its own square graticule
+    // (declared earlier in the module), and this test pins the SWEEP mesh.
+    const gate = wgsl.indexOf("if (P_graticule() < 0.5) {", wgsl.indexOf("fn preset("));
     expect(gate).toBeGreaterThan(0);
     const branch = wgsl.slice(gate, wgsl.indexOf("} else if", gate));
     // The exact shipped construction: `var grid = 0.0;` overwritten by `=`
@@ -652,5 +670,104 @@ describe("styles: the deck exercises every new axis", () => {
     const folded = resolved.filter((v) => v.kaleido === 2);
     expect(folded.length).toBeGreaterThanOrEqual(2);
     expect(new Set(folded.map((v) => v.renderMode)).size).toBeGreaterThanOrEqual(2);
+  });
+});
+
+/**
+ * XY / Lissajous display (renderer block W3) — the second waveform lane's
+ * payoff. The contract mirrors every wave before it: the new axis lands
+ * without moving a default pixel (the dispatch is a branch never entered at
+ * the factory settings, and the sweep body below it is textually untouched),
+ * the new face reuses the shared machinery (persistence law, beam-kit
+ * grammar, masters) rather than growing private variants, and the honest
+ * degenerate case — mono material draws the x == y diagonal — is stated in
+ * the param's own voice instead of being papered over.
+ */
+describe("XY / Lissajous display: the second waveform lane", () => {
+  const specs = new Map(allParams(oscilloscope).map((p) => [p.key, p]));
+
+  it("the dispatch is the first statement of preset(): Sweep never enters XY code", () => {
+    const presetAt = wgsl.indexOf("fn preset(uv: vec2f) -> vec4f {");
+    expect(presetAt).toBeGreaterThan(0);
+    // Between preset's opening brace and the sweep body's first statement
+    // (the kaleido fold) sits exactly the display dispatch.
+    const opening = wgsl.slice(presetAt, wgsl.indexOf("let kp =", presetAt));
+    expect(opening).toContain("if (P_display() > 0.5) { return xyScope(uv); }");
+    // At the default (Sweep, 0) the comparison is false and nothing between
+    // the brace and the shipped body executes — default neutrality.
+    expect(specs.get("display")!.default).toBe(0);
+  });
+
+  it("display is a mod-off enum, and its voice carries the mono truth", () => {
+    const spec = specs.get("display")!;
+    expect(spec.control).toBe("enum");
+    expect(spec.mod).toBe("off");
+    expect(spec.control === "enum" && spec.options.map((o) => o.value)).toEqual([0, 1]);
+    // The degenerate case is a documented behaviour, not a surprise: mono
+    // sources draw the diagonal, and the hint says so.
+    expect(spec.hint).toMatch(/mono/i);
+    expect(spec.hint).toMatch(/diagonal/i);
+  });
+
+  it("xyRotate is a smooth mod target the sweep face cannot read", () => {
+    const spec = specs.get("xyRotate")!;
+    expect(spec.mod, "xyRotate must stay a smooth mod target").toBeUndefined();
+    expect(spec.default).toBe(0);
+    // Every reference sits before fn preset( — i.e. inside the XY helpers —
+    // so the sweep path structurally cannot depend on it.
+    expect(wgsl.lastIndexOf("P_xyRotate()")).toBeLessThan(wgsl.indexOf("fn preset("));
+  });
+
+  it("the XY beam plots the true stereo pair and obeys the shared limiter", () => {
+    // waveXY — the real (left, right) pair from the renderer ABI, smoothed by
+    // the same box-blur family as the sweep trace. Not a reconstruction, and
+    // never the mono lane.
+    expect(wgsl).toContain(
+      "return waveXY(t) * 0.4 + (waveXY(t - spread) + waveXY(t + spread)) * 0.3;",
+    );
+    // The v2.44 law, per deflection axis: X and Y amplifiers limit
+    // independently through the SAME softLimit/traceClamp the sweep obeys.
+    expect(wgsl).toContain("sign(s.x) * softLimit(abs(s.x), P_traceClamp())");
+    expect(wgsl).toContain("sign(s.y) * softLimit(abs(s.y), P_traceClamp())");
+  });
+
+  it("XY rides the same masters: chord count on Detail, beat light on Pulse", () => {
+    expect(rhs("let nSeg =")).toBe("max(floor(120.0 * u.detail), 24.0)");
+    const xy = wgsl.slice(wgsl.indexOf("fn xyScope"), wgsl.indexOf("fn preset("));
+    // Every beat-driven brightness term in the XY face carries the Pulse
+    // master, like the sweep face's four.
+    expect(xy).toContain("(0.75 + beatP * 0.5 * u.pulse)");
+    expect(xy).toContain("(1.0 + beatP * 0.6 * u.pulse)");
+    expect(xy).toContain("1.0 + beatP * P_beatLift() * u.pulse");
+    expect(xy).toContain("1.0 + beatP * P_gridBeat() * u.pulse");
+  });
+
+  it("mirror stays the ghost trace in XY too (RP-7): an inverted-channel ghost", () => {
+    const xy = wgsl.slice(wgsl.indexOf("fn xyScope"), wgsl.indexOf("fn preset("));
+    // The ghost is the figure with its right channel inverted — a vertical
+    // flip in the beam frame — gated on the same P_mirror() toggle, dimmed
+    // by the same P_ghostDim(). The key keeps its meaning; no fold hides here.
+    expect(xy).toContain(
+      "if (P_mirror() > 0.5) { dgh = min(dgh, length(vec2f(fr.x, -fr.y) - cur)); }",
+    );
+    expect(xy).toContain("* P_ghostDim()");
+  });
+
+  it("the three XY styles are honest XY, and the legacy deck never sets display", () => {
+    const styles = oscilloscope.styles ?? [];
+    const xy = styles.filter((s) => (s.values as Record<string, number>).display === 1);
+    expect(xy.map((s) => s.id)).toEqual(["xyrose", "phase", "vectordraw"]);
+    for (const s of styles) {
+      if (!xy.includes(s)) {
+        expect(
+          (s.values as Record<string, number>).display,
+          `legacy style ${s.id} must not set display`,
+        ).toBeUndefined();
+      }
+    }
+    // The goniometer chip carries the convention it is named for.
+    expect((styles.find((s) => s.id === "phase")!.values as Record<string, number>).xyRotate).toBe(
+      45,
+    );
   });
 });

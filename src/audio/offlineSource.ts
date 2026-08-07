@@ -95,6 +95,13 @@ export class OfflineAnalyzer {
   private pipeline: FeaturePipeline;
   private magDb: Float32Array;
   private windowBuf: Float32Array;
+  /** Per-channel windows for the stereo waveform lanes. Cut with the exact
+   * same start/end arithmetic as `windowBuf` (the mono mixdown, which stays
+   * the FFT input), so live and offline resolve identical stereo windows for
+   * the same document. For mono PCM `left === right`, so the lanes degrade to
+   * the mono window — matching the realtime path, which omits the pair. */
+  private windowBufL: Float32Array;
+  private windowBufR: Float32Array;
   private fftSize: number;
   /** Optional long transform for drawn bins only. Detector FFT remains fft. */
   private displayFft: RealFFT | null = null;
@@ -156,6 +163,8 @@ export class OfflineAnalyzer {
     this.fft = new RealFFT(fftSize, true);
     this.magDb = new Float32Array(fftSize / 2);
     this.windowBuf = new Float32Array(fftSize);
+    this.windowBufL = new Float32Array(fftSize);
+    this.windowBufR = new Float32Array(fftSize);
     this.pipeline = new FeaturePipeline({
       sampleRate: pcm.sampleRate,
       fftBins: fftSize / 2,
@@ -259,14 +268,21 @@ export class OfflineAnalyzer {
       );
       const start = Math.max(0, end - this.fftSize);
       this.windowBuf.fill(0);
-      if (end > start)
+      this.windowBufL.fill(0);
+      this.windowBufR.fill(0);
+      if (end > start) {
         this.windowBuf.set(this.mono.subarray(start, end), this.fftSize - (end - start));
+        this.windowBufL.set(this.left.subarray(start, end), this.fftSize - (end - start));
+        this.windowBufR.set(this.right.subarray(start, end), this.fftSize - (end - start));
+      }
       this.fft.magnitudesDb(this.windowBuf, this.magDb);
       const displayMagDb = this.updateDisplaySpectrum(end, true);
       this.pipeline.update({
         magDb: this.magDb,
         ...(displayMagDb ? { displayMagDb } : {}),
         waveform: this.windowBuf,
+        waveformL: this.windowBufL,
+        waveformR: this.windowBufR,
         time: t,
         dt,
         // The whole point: warm the continuous state, fire nothing.
@@ -344,6 +360,13 @@ export class OfflineAnalyzer {
     const start = Math.max(0, end - this.fftSize);
     this.windowBuf.fill(0);
     this.windowBuf.set(this.mono.subarray(start, end), this.fftSize - (end - start));
+    // The stereo lanes ride the identical window arithmetic — same start/end,
+    // same right-align — so their samples are time-aligned with the mono lane
+    // the trigger is derived from. The FFT keeps reading the MONO buffer.
+    this.windowBufL.fill(0);
+    this.windowBufL.set(this.left.subarray(start, end), this.fftSize - (end - start));
+    this.windowBufR.fill(0);
+    this.windowBufR.set(this.right.subarray(start, end), this.fftSize - (end - start));
     this.fft.magnitudesDb(this.windowBuf, this.magDb);
     const displayMagDb = this.updateDisplaySpectrum(end, analysisTick);
     const prevUpdate = this.lastUpdateTime;
@@ -367,6 +390,8 @@ export class OfflineAnalyzer {
       magDb: this.magDb,
       ...(displayMagDb ? { displayMagDb } : {}),
       waveform: this.windowBuf,
+      waveformL: this.windowBufL,
+      waveformR: this.windowBufR,
       time: t,
       // Time since the PREVIOUS update call, not the frame interval. update()
       // no longer runs exactly once per frame — a 30 fps render calls it twice

@@ -12,6 +12,8 @@ function features(partial: Partial<AudioFeatures>): AudioFeatures {
     bins: new Float32Array(96),
     peaks: new Float32Array(96),
     waveform: new Float32Array(512),
+    waveformL: new Float32Array(512),
+    waveformR: new Float32Array(512),
     rms: 0,
     energy: 0,
     voice: 0,

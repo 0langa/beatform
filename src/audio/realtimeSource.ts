@@ -246,10 +246,23 @@ export class RealtimeAnalyzer {
       this.timeL.subarray(this.timeL.length - fresh),
       this.timeR.subarray(this.timeR.length - fresh),
     ]);
+    // Second waveform lane: the per-channel taps, but only when the SOURCE is
+    // genuinely stereo. The ChannelSplitter up-mixes a mono track discretely,
+    // feeding analyserR pure silence — while the offline path substitutes the
+    // mono signal (`right = ch[1] ?? ch[0]`). Passing the silent tap here
+    // would render a mono file's XY figure as a horizontal line live and a
+    // diagonal in its own export, a preview/export divergence. Omitting the
+    // pair makes the pipeline reuse the mono window for both lanes — the
+    // exact offline arithmetic. Live capture is always stereo (the loopback
+    // worklet declares outputChannelCount [2]); the gate omits too, so a
+    // gated frame's lanes are the same silence the mono lane carries.
+    const stereo =
+      !gated && (this.engine.liveInput || (this.engine.audioBuffer?.numberOfChannels ?? 0) > 1);
     return this.pipeline.update({
       magDb: this.magDb,
       ...(displayMagDb ? { displayMagDb } : {}),
       waveform: gated ? this.silence : this.timeData,
+      ...(stereo ? { waveformL: this.timeL, waveformR: this.timeR } : {}),
       time: trackTime,
       dt,
       analysisTick,

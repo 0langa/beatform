@@ -15,8 +15,7 @@ import type { PresetDef } from "../types";
  * Depth wave (Track B batch 3): the one-mono-trace / one-axis ceiling falls
  * without moving a default pixel. `traces` splits the beam into stacked
  * band-filtered lanes built fragment-locally from the single waveform lane
- * (see laneWave — the true second-channel/XY work is renderer ABI, scheduled
- * rank 15, deliberately out of reach here); `renderMode` swaps the beam's
+ * (see laneWave); `renderMode` swaps the beam's
  * distance field for sampled dot pips or sample-hold treads; `graticule`
  * swaps the measurement furniture; `persist` is promoted into the curated
  * tier so the motion lens has its knob. Beat-driven brightness now rides the
@@ -24,6 +23,19 @@ import type { PresetDef } from "../types";
  * two master handles. Every new axis reduces to an exact IEEE identity (or a
  * branch never entered) at the factory defaults — oscilloscope.test.ts
  * proves the reachable parts, the device pixel matrix holds the rest.
+ *
+ * XY / Lissajous (renderer block W3): the second waveform lane arrives, and
+ * with it the genre's poster shot. `display` steers the beam by the stereo
+ * pair — waveXY(): left drives X, right drives Y — instead of sweeping it by
+ * time: phase ellipses, Lissajous roses, and the oscilloscope-music tracks
+ * that literally draw with this convention. The path is marched as chords
+ * with an additive dwell term (light concentrates where the beam lingers,
+ * like a real CRT), each deflection axis obeys the v2.44 soft ceiling, the
+ * graticule grows a square goniometer face with phase diagonals, and
+ * `xyRotate` at 45 stands mono material upright (the mid/side convention).
+ * Sweep stays the default and is byte-identical: the dispatch at the top of
+ * preset() is a branch never entered at the factory settings. Mono sources
+ * honestly draw the x == y diagonal — the hint says so.
  */
 export const oscilloscope: PresetDef = {
   id: "oscilloscope",
@@ -281,6 +293,90 @@ export const oscilloscope: PresetDef = {
         beatLift: 0.2,
       },
     },
+    // Lissajous Rose — the second lane's poster shot: the beam steered by the
+    // stereo channels, long persistence, angle-driven colour. A stereo track
+    // draws its phase as closed figures; mono honestly draws the diagonal.
+    {
+      id: "xyrose",
+      name: "Lissajous Rose",
+      values: {
+        display: 1,
+        hue: 318,
+        hueWave: 62,
+        calm: 0.25,
+        gain: 1.35,
+        agFloor: 0.5,
+        agRange: 0.8,
+        glow: 0.85,
+        traceBright: 1.9,
+        coreWidth: 0.002,
+        persist: 0.6,
+        graticule: 1,
+        gridLevel: 0,
+        scanline: 0,
+        bgLevel: 0.008,
+        vignette: 0.8,
+        beatLift: 0.15,
+        fill: 0,
+        mirror: 0,
+      },
+    },
+    // Phase Scope — the goniometer bench: XY rotated 45 so mono material
+    // stands upright, the reticle face with its phase diagonals, green
+    // phosphor, working persistence. The lab instrument for stereo width.
+    {
+      id: "phase",
+      name: "Phase Scope",
+      values: {
+        display: 1,
+        xyRotate: 45,
+        hue: 130,
+        hueWave: 8,
+        calm: 0.4,
+        gain: 1.15,
+        agFloor: 0.5,
+        agRange: 1,
+        glow: 0.45,
+        traceBright: 1.35,
+        coreWidth: 0.003,
+        persist: 0.34,
+        graticule: 3,
+        gridLevel: 0.15,
+        gridBeat: 0.5,
+        bgLevel: 0.02,
+        vignette: 0.5,
+        beatLift: 0.06,
+        fill: 0,
+        mirror: 0,
+      },
+    },
+    // Vector Draw — for the tracks that draw pictures: raw path (no Calm, so
+    // the drawn image keeps its corners), hairline white-hot beam on bare
+    // phosphor, enough afterglow to hold a figure together between frames.
+    {
+      id: "vectordraw",
+      name: "Vector Draw",
+      values: {
+        display: 1,
+        hue: 150,
+        hueWave: 4,
+        calm: 0,
+        gain: 1.1,
+        agFloor: 0.6,
+        agRange: 0.9,
+        glow: 0.55,
+        traceBright: 2.1,
+        coreWidth: 0.0015,
+        persist: 0.44,
+        graticule: 1,
+        gridLevel: 0.02,
+        scanline: 0,
+        bgLevel: 0.008,
+        vignette: 0.7,
+        fill: 0,
+        mirror: 0,
+      },
+    },
   ],
   params: [
     {
@@ -427,6 +523,30 @@ export const oscilloscope: PresetDef = {
       step: 0.02,
       default: 0.4,
       hint: "CRT afterglow — how long the beam lingers and fades between frames",
+    },
+    {
+      key: "display",
+      label: "Display",
+      group: "shape",
+      control: "enum",
+      mod: "off",
+      options: [
+        {
+          value: 0,
+          label: "Sweep",
+          hint: "Time runs left to right — the classic scope trace",
+        },
+        {
+          value: 1,
+          label: "XY",
+          hint: "The left channel drives X, the right drives Y — phase ellipses and Lissajous figures; mono material draws the diagonal",
+        },
+      ],
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 0,
+      hint: "How the beam travels: swept by time, or steered by the stereo channels (XY) — the convention Lissajous figures and oscilloscope music are drawn in. Mono sources draw a diagonal line",
     },
   ],
   advanced: [
@@ -628,6 +748,16 @@ export const oscilloscope: PresetDef = {
       default: 1,
       hint: "Fold the trace left/right into a symmetric mirror image — 1 is off",
     },
+    {
+      key: "xyRotate",
+      label: "XY rotate",
+      group: "shape",
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 0,
+      hint: "Spin the XY figure about the centre — 45 stands mono material upright, the goniometer convention. The Sweep display ignores it",
+    },
   ],
   wgsl: /* wgsl */ `
 // Smoothed waveform sample: box blur over +/-4 taps scaled by calm
@@ -643,11 +773,13 @@ fn calmWave(x: f32, calm: f32) -> f32 {
 // has always been conditioned with: a wider blur is a lowpass on the sweep,
 // so band lanes are differences of blurs (a discretised difference-of-
 // Gaussians bank). This is the whole reason multi-trace can exist inside
-// this wave at all — the fragment receives ONE waveform lane, and the true
-// second/third channels (the XY-scope work) are a featurePipeline/ABI change
-// scheduled for the renderer block, deliberately out of reach here. What CAN
-// be done locally: split the one lane by frequency and let each band ride
-// its own energy uniform (u.bass/u.mid/u.treble), so the lanes move
+// this wave at all — the SWEEP face reads ONE waveform lane. (The true
+// second channel has since landed as renderer ABI — the XY display below
+// reads the real stereo pair via waveXY() — but the sweep bench keeps its
+// band-split character: lanes by REGISTER, not by channel, each riding its
+// own energy.) What the split does locally: divide the one lane by
+// frequency and let each band ride its own energy uniform
+// (u.bass/u.mid/u.treble), so the lanes move
 // independently even though they share a window.
 //   band 0 — the full-range shipped signal, untouched. The early return is
 //            the single-trace neutrality guarantee: no other line runs.
@@ -799,7 +931,161 @@ fn traceLayer(colIn: vec3f, fuv: vec2f, wx: f32, xs: f32, center: f32,
   return col;
 }
 
+// ---- XY / Lissajous display (the second waveform lane's payoff) -----------
+// One smoothed stereo path sample: the same box-blur family the sweep trace
+// is conditioned with (calmWave), applied to BOTH channels of the pair, so
+// Calm keeps one meaning across the two displays. Three taps rather than
+// five: the chord rendering below is itself a low-pass on the figure, and
+// this runs inside a per-fragment loop where every tap is three more
+// (uniform, cache-hot) buffer reads.
+fn xyPoint(t: f32, calm: f32) -> vec2f {
+  let spread = calm * 0.014;
+  return waveXY(t) * 0.4 + (waveXY(t - spread) + waveXY(t + spread)) * 0.3;
+}
+
+// A path sample as screen deflection: gain, then the v2.44 soft ceiling PER
+// AXIS — a real scope's X and Y amplifiers limit independently — so a hot
+// master compresses toward the frame instead of clipping through it. Units
+// are frame heights, like the sweep trace's amp.
+fn xyDeflect(t: f32, calm: f32, g: f32) -> vec2f {
+  let s = xyPoint(t, calm) * g * 0.44;
+  return vec2f(
+    sign(s.x) * softLimit(abs(s.x), P_traceClamp()),
+    sign(s.y) * softLimit(abs(s.y), P_traceClamp()),
+  );
+}
+
+// The XY face: the beam steered by the channels instead of swept by time —
+// left drives X, right drives Y, the oscilloscope-music convention (mono
+// material draws the x == y diagonal, honestly). The path is marched as
+// chords between successive stereo samples with an additive dwell term, so
+// light concentrates where the beam moves slowly and crossings genuinely
+// brighten — the two behaviours that make a real XY scope read as a beam
+// rather than a plotted line. Everything else is the sweep face's grammar:
+// auto-gain, the beam kit's constants, the furniture, the finish-then-union
+// order, the same persistence law.
+fn xyScope(uv: vec2f) -> vec4f {
+  // Furniture frame: centered, aspect-corrected, kaleido-folded like the
+  // sweep face. The graticule is screen furniture, so it does NOT rotate.
+  let gf = kaleido(centered(uv), P_kaleido());
+  // Beam frame: XY rotate spins the figure about the centre; 45 stands mono
+  // material upright — the goniometer (mid/side) convention.
+  let fr = rot2(P_xyRotate() * (TAU / 360.0)) * gf;
+
+  // Auto-gain and the tempo-locked pulse, exactly as the sweep face rides them.
+  let gxy = P_gain() / (P_agFloor() + u.drive * P_agRange());
+  let beatP = max(u.driveBeat, gridPulse(8.0));
+
+  // Background + scanlines: the same face the sweep display wears.
+  var col = hsl2rgb(P_hue() + 40.0, 0.4, P_bgLevel() + u.bass * 0.02);
+  col *= (1.0 - P_scanline()) + P_scanline() * (0.5 + 0.5 * sin(uv.y * 400.0));
+
+  // Graticule, XY voice: square divisions about the centre (a phase scope's
+  // face is square, not 10x8). Same four faces, same light: Grid level sets
+  // brightness and the beat flash rides the Pulse master.
+  let gv = gf * 8.0;
+  var mesh = 0.0;
+  if (P_graticule() < 0.5) {
+    let gl = abs(fract(gv) - 0.5);
+    mesh = smoothstep(0.05, 0.0, gl.x) + smoothstep(0.05, 0.0, gl.y);
+    mesh += (smoothstep(0.006, 0.0, abs(gf.x)) + smoothstep(0.006, 0.0, abs(gf.y))) * 1.6;
+  } else if (P_graticule() > 2.5) {
+    // Reticle: the mesh, the centre axes, and the two phase diagonals — the
+    // in-phase / anti-phase reference lines a goniometer face carries.
+    let gl = abs(fract(gv) - 0.5);
+    mesh = smoothstep(0.05, 0.0, gl.x) + smoothstep(0.05, 0.0, gl.y);
+    mesh += (smoothstep(0.006, 0.0, abs(gf.x)) + smoothstep(0.006, 0.0, abs(gf.y))) * 1.6;
+    mesh += (smoothstep(0.005, 0.0, abs(gf.x - gf.y) * 0.7071)
+          + smoothstep(0.005, 0.0, abs(gf.x + gf.y) * 0.7071)) * 0.9;
+  } else if (P_graticule() > 1.5) {
+    // Crosshair: the two centre axes with a tick at every division.
+    mesh = (smoothstep(0.006, 0.0, abs(gf.x)) + smoothstep(0.006, 0.0, abs(gf.y))) * 1.6;
+    mesh += smoothstep(0.05, 0.0, abs(fract(gv.x) - 0.5)) * smoothstep(0.02, 0.008, abs(gf.y));
+    mesh += smoothstep(0.05, 0.0, abs(fract(gv.y) - 0.5)) * smoothstep(0.02, 0.008, abs(gf.x));
+  }
+  col += hsl2rgb(P_hue(), 0.25, 0.32) * mesh * P_gridLevel() * (1.0 + beatP * P_gridBeat() * u.pulse);
+
+  // The path march. Chord count rides the Motion Detail master; the floor
+  // keeps a readable figure at Detail 0. Every path tap is at a
+  // fragment-independent t, so the storage reads are uniform (broadcast)
+  // loads — the per-fragment cost is the distance math alone.
+  let nSeg = max(floor(120.0 * u.detail), 24.0);
+  // Dots reuses the sweep's pip sizing; Sample-hold has no XY meaning and
+  // honestly reads as dots too.
+  let dots = P_renderMode() > 0.5;
+  let cwXY = P_coreWidth() * select(1.0, 2.6, dots);
+  // Glow widens the dwell halo, the same lever it is on the sweep beam.
+  let dwellK = 140.0 - P_glow() * 60.0;
+  var dmin = 1000.0;
+  var dgh = 1000.0;
+  var dwell = 0.0;
+  var prev = xyDeflect(0.0, P_calm(), gxy);
+  for (var i = 1.0; i <= nSeg; i += 1.0) {
+    let cur = xyDeflect(i / nSeg, P_calm(), gxy);
+    var dd = 0.0;
+    if (dots) {
+      dd = length(fr - cur);
+    } else {
+      let pa = fr - prev;
+      let ba = cur - prev;
+      let h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-7), 0.0, 1.0);
+      dd = length(pa - ba * h);
+    }
+    dmin = min(dmin, dd);
+    // Dwell: each chord leaves one parcel of light in its own exp() halo, so
+    // where the beam lingers (short, bunched chords) the parcels stack and
+    // the figure brightens — a real CRT's speed response.
+    dwell += exp(-dd * dwellK);
+    if (P_mirror() > 0.5) { dgh = min(dgh, length(vec2f(fr.x, -fr.y) - cur)); }
+    prev = cur;
+  }
+  // Normalised by chord count so Detail changes resolution, not brightness.
+  let energy = dwell * (26.0 / nSeg);
+
+  // The beam kit, XY voice: colour drifts with the angle about the centre —
+  // a bounded wobble around the user's hue, like the sweep's drift along x.
+  let hueXY = P_hue() + atan2(fr.y, fr.x) * (P_hueWave() * 0.16)
+            + sin(u.time * 0.11) * P_hueWave() * 0.35;
+  let coreXY = smoothstep(cwXY, cwXY * 0.23, dmin);
+  let hotXY = smoothstep(0.45, 0.95, coreXY) * (0.75 + beatP * 0.5 * u.pulse);
+  var beamXY = hsl2rgb(hueXY, 0.85, 0.62) * coreXY;
+  beamXY = mix(beamXY, vec3f(1.0), hotXY);
+  beamXY *= 1.0 + hotXY * 1.6;
+  col += beamXY * P_traceBright();
+
+  // Two-tier glow: the dwell energy IS the tight bloom (it already hugs the
+  // path); the wide soft halo reads off the nearest approach.
+  let glowWideXY = exp(-dmin * 22.0) * 0.45;
+  col += hsl2rgb(hueXY, 0.9, 0.55) * (energy * 0.6 + glowWideXY)
+       * (0.35 + P_glow() * 0.75) * (1.0 + beatP * 0.6 * u.pulse) * P_traceBright();
+
+  // Anti-phase ghost — this face's voice of the same ghost-trace toggle
+  // (RP-7: the mirror key means ghost trace here, never a fold): the figure
+  // with its right channel inverted, dim and hue-shifted.
+  if (P_mirror() > 0.5) {
+    col += hsl2rgb(hueXY + 30.0, 0.7, 0.5) * exp(-dgh * 160.0) * P_ghostDim();
+  }
+
+  // Gentle beat lift, then the finishing kit BEFORE the persistence union —
+  // the law the sweep face settled: a pixel is graded exactly once, in the
+  // frame it was fresh, and the loop that carries it afterwards stays the
+  // pure per-second decay.
+  col *= 1.0 + beatP * P_beatLift() * u.pulse;
+  let dv2 = distance(uv, vec2f(0.5));
+  col *= 1.0 - dv2 * dv2 * P_vignette();
+  col = tonemap(col * 1.1);
+  col += grain(uv, 0.012);
+  let decayXY = pow(clamp(P_persist(), 0.0001, 0.98), u.dt * 60.0);
+  col = max(col, feedbackSample(uv).rgb * decayXY);
+  return vec4f(max(col, vec3f(0.0)), 1.0);
+}
+
 fn preset(uv: vec2f) -> vec4f {
+  // Display dispatch. XY is a wholly separate face; everything below this
+  // line is the shipped sweep scope, textually untouched. display defaults
+  // to Sweep (0), so the branch is never entered at the factory settings —
+  // the single-trace neutrality guarantee extends to the whole wave.
+  if (P_display() > 0.5) { return xyScope(uv); }
   // Kaleidoscope fold — a SEPARATE knob from Mirror (the vertical ghost
   // trace below): this folds the whole screen left/right into a symmetric
   // "vector scope" look. Capped at 2 (bilateral only, not a full radial

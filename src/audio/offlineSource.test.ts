@@ -198,6 +198,50 @@ describe("OfflineAnalyzer", () => {
     expect(Math.abs(peakFrame - 60)).toBeLessThanOrEqual(1);
   });
 
+  it("cuts stereo waveform lanes from the same window and trigger as the mono lane", () => {
+    // Distinct channels: a sine left, its quadrature right. The mono mixdown
+    // is computed as (L + R) * 0.5 up front, and the three lanes are cut with
+    // the same start/end arithmetic and the same zero-crossing trigger — so
+    // waveform[i] must equal (waveformL[i] + waveformR[i]) * 0.5 EXACTLY (the
+    // halving multiply is exact in IEEE), for every sample of every frame.
+    const length = SAMPLE_RATE * DURATION;
+    const l = new Float32Array(length);
+    const r = new Float32Array(length);
+    for (let i = 0; i < length; i++) {
+      const ph = (2 * Math.PI * 220 * i) / SAMPLE_RATE;
+      l[i] = 0.5 * Math.sin(ph);
+      r[i] = 0.5 * Math.cos(ph);
+    }
+    const pcm: PcmData = {
+      sampleRate: SAMPLE_RATE,
+      duration: DURATION,
+      length,
+      channels: [l, r],
+    };
+    const a = new OfflineAnalyzer(pcm, FPS);
+    let sawStereo = false;
+    for (let n = 0; n < 30; n++) {
+      const f = a.nextFrameFeatures();
+      for (let i = 0; i < f.waveform.length; i += 61) {
+        expect(f.waveform[i]).toBe(Math.fround((f.waveformL[i] + f.waveformR[i]) * 0.5));
+      }
+      if (f.waveformL.some((v, i) => v !== f.waveformR[i])) sawStereo = true;
+    }
+    expect(sawStereo).toBe(true); // the pair genuinely carries two channels
+  });
+
+  it("mono PCM degrades the stereo lanes to exact copies of the mono lane", () => {
+    // right falls back to ch[0] (`ch[1] ?? ch[0]`), and a 1-channel mixdown
+    // IS ch[0] — so all three lanes are the same window, matching the
+    // realtime path, which omits the pair for mono sources.
+    const a = new OfflineAnalyzer(makeTestBuffer(), FPS);
+    for (let n = 0; n < 10; n++) {
+      const f = a.nextFrameFeatures();
+      expect(Array.from(f.waveformL)).toEqual(Array.from(f.waveform));
+      expect(Array.from(f.waveformR)).toEqual(Array.from(f.waveform));
+    }
+  });
+
   it("matches the golden feature trace (regression pin)", () => {
     const analyzer = new OfflineAnalyzer(makeTestBuffer(), FPS);
     const { beatFrames, trace } = collectTrace(analyzer);
