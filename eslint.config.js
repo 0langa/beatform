@@ -4,7 +4,9 @@ import reactHooks from "eslint-plugin-react-hooks";
 import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
-  { ignores: ["dist/", "src-tauri/target/", "src-tauri/gen/", "node_modules/"] },
+  // .claude/ holds agent worktrees (full repo copies); linting the parent repo
+  // must never descend into them or eslint dies on multiple tsconfig roots.
+  { ignores: ["dist/", "src-tauri/target/", "src-tauri/gen/", "node_modules/", ".claude/"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
