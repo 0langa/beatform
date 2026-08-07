@@ -134,6 +134,7 @@ import {
   setWriteFailureNotifier,
 } from "./persistence";
 import { getPrefs, setPrefs } from "./prefs";
+import { selectBgPerMode, selectEffectiveBg } from "./selectors";
 import { defaultPresetOrder, orderedPresets, reconcilePresetOrder } from "./presetOrder";
 import { decodeAudioLenient } from "../audio/decodeLenient";
 import {
@@ -891,11 +892,10 @@ export const useVizStore = create<VizState>((set, get) => {
   };
   /** The background that should actually render right now: the active
    * mode's override if one exists, else the global bg. EVERY renderer-apply
-   * and persistence-of-pixels path goes through this. */
-  const effBg = (): BgSettings => {
-    const s = get();
-    return s.bgByPreset[s.presetId] ?? s.bg;
-  };
+   * and persistence-of-pixels path goes through this. The rule itself lives
+   * in selectors.ts — the panel, the render loop and the export builder all
+   * resolve it with the same function (BG1). */
+  const effBg = (): BgSettings => selectEffectiveBg(get());
 
   /** Is an asset still referenced by anything other than the caller? Checked
    * before orphan-GC: overlay layers, the global bg, every per-mode bg
@@ -914,7 +914,7 @@ export const useVizStore = create<VizState>((set, get) => {
    * persist and hand the effective result to the renderer. */
   const commitBg = (next: BgSettings) => {
     const s = get();
-    if (s.bgByPreset[s.presetId]) {
+    if (selectBgPerMode(s)) {
       const bgByPreset = { ...s.bgByPreset, [s.presetId]: next };
       set({ bgByPreset });
       saveStoredBgByPreset(bgByPreset);
@@ -1223,9 +1223,11 @@ export const useVizStore = create<VizState>((set, get) => {
             // frame, so handing it the GLOBAL bg here silently overwrote the
             // per-mode override within ~16ms of every correct apply — the
             // override rendered in exports but was invisible live. Resolve
-            // for the BASE mode, exactly like buildExportOptions does; a
-            // timeline scene's own bg still wins inside frameResolve.
-            baseBg: s.bgByPreset[s.presetId] ?? s.bg,
+            // for the BASE mode with the SAME function buildExportOptions
+            // calls (that shared definition is what stops the two drifting
+            // again); a timeline scene's own bg still wins inside
+            // frameResolve.
+            baseBg: selectEffectiveBg(s),
             paramsByPreset: s.paramsByPreset,
             modsByPreset: s.modsByPreset,
           };
@@ -1283,7 +1285,7 @@ export const useVizStore = create<VizState>((set, get) => {
           lastQuantizeTick = t;
           // Video background: upload the frame for THIS track time (pure index
           // → deterministic, matches the export). A GPU renderer only.
-          if (videoBgFrames && (s.bgByPreset[s.presetId] ?? s.bg).mode === BG_VIDEO) {
+          if (videoBgFrames && selectEffectiveBg(s).mode === BG_VIDEO) {
             const r = getRenderer();
             if (r instanceof WebGPURenderer) {
               const i = videoBgFrameIndex(videoBgFrames.frames.length, videoBgFrames.fps, t);
@@ -1491,14 +1493,14 @@ export const useVizStore = create<VizState>((set, get) => {
 
     setBgPerMode(on) {
       const s = get();
-      const has = !!s.bgByPreset[s.presetId];
+      const has = selectBgPerMode(s);
       if (on === has) return;
       record("bg-mode");
       const bgByPreset = { ...s.bgByPreset };
       if (on) {
         // Start the override from what's on screen right now — flipping the
         // switch alone must not change a single pixel.
-        bgByPreset[s.presetId] = structuredClone(s.bgByPreset[s.presetId] ?? s.bg);
+        bgByPreset[s.presetId] = structuredClone(selectEffectiveBg(s));
       } else {
         delete bgByPreset[s.presetId];
       }
@@ -1931,7 +1933,7 @@ export const useVizStore = create<VizState>((set, get) => {
             engine.stopLiveInput();
             getAnalyzer().reset("source");
             set({
-              error: `System audio runs at ${info.sampleRate} Hz, the visualizer at ${engine.ctx.sampleRate} Hz — match them in Windows sound settings`,
+              error: `System audio runs at ${info.sampleRate} Hz, the visualizer at ${engine.ctx.sampleRate} Hz — match them in Windows Sound settings`,
             });
             return;
           }

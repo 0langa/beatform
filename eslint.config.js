@@ -112,6 +112,43 @@ export default tseslint.config(
             "Build a proper input UI — raw prompt hits the dialog-plugin ACL in installed builds.",
         },
       ],
+      // Allocating zustand selectors — a CRASH class, not a slow-render one.
+      // zustand v5 hands the selector straight to useSyncExternalStore with
+      // no equality function, so a selector that builds a fresh object or
+      // array returns a new reference on every store notification: React
+      // re-reads, sees a change, re-renders, re-reads... "Maximum update
+      // depth exceeded" ON MOUNT — a white screen. The `.filter()` shape is
+      // the worst of them: it emits no React warning at all before dying.
+      // Select one store-owned reference (or primitive) per hook and combine
+      // with useMemo; the shared derivations live in state/selectors.ts.
+      // An eslint-disable on any of these requires a written justification in
+      // the same comment.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            'CallExpression[callee.name="useVizStore"] ArrowFunctionExpression ObjectExpression',
+          message:
+            "zustand v5 selectors must not allocate: an object-returning selector is 'Maximum update depth exceeded' on mount, not a slow render. Select one field per hook and combine with useMemo.",
+        },
+        {
+          selector:
+            'CallExpression[callee.name="useVizStore"] ArrowFunctionExpression ArrayExpression',
+          message:
+            "zustand v5 selectors must not allocate (array literal). Select the array field itself and derive with useMemo.",
+        },
+        {
+          selector:
+            'CallExpression[callee.name="useVizStore"] ArrowFunctionExpression SpreadElement',
+          message: "zustand v5 selectors must not allocate (spread).",
+        },
+        {
+          selector:
+            'CallExpression[callee.name="useVizStore"] ArrowFunctionExpression CallExpression[callee.property.name=/^(filter|map|flatMap|slice|concat|sort|reverse|toSorted|toReversed|split)$/]',
+          message:
+            "zustand v5 selectors must not allocate: this returns a fresh array on every store notification and breaks getSnapshot caching. Use two selectors + useMemo (see ParamsPanel's looksForMode).",
+        },
+      ],
     },
   },
   prettier,

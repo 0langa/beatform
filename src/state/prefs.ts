@@ -326,8 +326,75 @@ export function subscribePrefs(listener: () => void): () => void {
   };
 }
 
+/** Content equality for the two list fields. Both are plain string arrays;
+ * `validPrefs` rebuilds them on every call, so identity is never a usable
+ * answer here. */
+function sameStringList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** Content equality for the one nested object field — same reason. */
+function sameOverlayStats(a: PerfOverlayStats, b: PerfOverlayStats): boolean {
+  return (
+    a.fps === b.fps &&
+    a.frameTime === b.frameTime &&
+    a.renderer === b.renderer &&
+    a.jsHeap === b.jsHeap &&
+    a.cpu === b.cpu &&
+    a.ram === b.ram &&
+    a.disk === b.disk &&
+    a.gpu === b.gpu
+  );
+}
+
+/**
+ * Field-wise comparison of two validated prefs blobs. Deliberately explicit
+ * rather than a JSON.stringify: it is the compiler's job to fail this
+ * function when a field is added, and a stringify would silently pass while
+ * ignoring the new one forever.
+ */
+function samePrefs(a: AppPrefs, b: AppPrefs): boolean {
+  return (
+    a.volume === b.volume &&
+    a.panelOpen === b.panelOpen &&
+    a.timelineOpen === b.timelineOpen &&
+    a.advancedOpen === b.advancedOpen &&
+    a.switchQuantize === b.switchQuantize &&
+    a.panelWidth === b.panelWidth &&
+    a.lastSaveDir === b.lastSaveDir &&
+    a.autosaveIntervalSec === b.autosaveIntervalSec &&
+    a.fpsCap === b.fpsCap &&
+    a.powerPreference === b.powerPreference &&
+    a.previewScale === b.previewScale &&
+    a.updateAutoCheck === b.updateAutoCheck &&
+    a.paramsTab === b.paramsTab &&
+    sameStringList(a.collapsedSections, b.collapsedSections) &&
+    sameStringList(a.presetOrder, b.presetOrder) &&
+    a.perfOverlay === b.perfOverlay &&
+    a.perfOverlayCorner === b.perfOverlayCorner &&
+    a.perfOverlaySize === b.perfOverlaySize &&
+    a.perfOverlayColor === b.perfOverlayColor &&
+    sameOverlayStats(a.perfOverlayStats, b.perfOverlayStats)
+  );
+}
+
+/**
+ * Write a patch. A patch that changes NOTHING returns the existing object
+ * without persisting or notifying.
+ *
+ * Without that guard every write was a change as far as subscribers were
+ * concerned: `validPrefs` allocates a fresh blob unconditionally, so
+ * `getPrefs()` returned a new reference and every `useSyncExternalStore`
+ * reader re-rendered. The cheapest example is the Escape cascade, which calls
+ * `setShowPanel(false)` unguarded — every Escape keypress with nothing open
+ * used to re-render App. Redundant writes come from drags that end where they
+ * started and from mirrors that re-apply the value they just read, and none of
+ * them should look like a change.
+ */
 export function setPrefs(patch: Partial<AppPrefs>): AppPrefs {
-  prefs = validPrefs({ ...prefs, ...patch });
+  const next = validPrefs({ ...prefs, ...patch });
+  if (samePrefs(prefs, next)) return prefs;
+  prefs = next;
   persist();
   for (const listener of listeners) listener();
   return prefs;

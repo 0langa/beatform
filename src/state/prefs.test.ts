@@ -156,3 +156,108 @@ describe("prefs: performance overlay", () => {
     expect(calls).toBe(1);
   });
 });
+
+/**
+ * A write that changes nothing must not look like a change.
+ *
+ * `validPrefs` allocates a fresh blob unconditionally, so before the guard
+ * every setPrefs produced a new `getPrefs()` reference and woke every
+ * useSyncExternalStore reader. Redundant writes are ordinary: the Escape
+ * cascade calls setShowPanel(false) unguarded (so every Escape with nothing
+ * open re-rendered App), a resize drag that ends where it started re-writes
+ * panelWidth, and the Preferences dialog mirrors back the value it just read.
+ */
+describe("prefs: no-op writes", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("does not fire listeners and keeps the same object for a no-op patch", async () => {
+    seed(undefined);
+    const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
+    const before = getPrefs();
+    let calls = 0;
+    subscribePrefs(() => {
+      calls++;
+    });
+    // Same value as the default.
+    expect(setPrefs({ panelOpen: false })).toBe(before);
+    // The whole blob, re-applied.
+    expect(setPrefs({ ...before })).toBe(before);
+    // The empty patch.
+    expect(setPrefs({})).toBe(before);
+    expect(calls).toBe(0);
+    expect(getPrefs()).toBe(before);
+  });
+
+  it("still fires for a real change, then goes quiet when it is re-applied", async () => {
+    seed(undefined);
+    const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
+    let calls = 0;
+    subscribePrefs(() => {
+      calls++;
+    });
+    setPrefs({ panelWidth: 331 });
+    expect(calls).toBe(1);
+    expect(getPrefs().panelWidth).toBe(331);
+    setPrefs({ panelWidth: 331 });
+    expect(calls).toBe(1);
+    setPrefs({ panelWidth: 332 });
+    expect(calls).toBe(2);
+  });
+
+  it("compares list fields by CONTENT, not identity", async () => {
+    // validPrefs rebuilds collapsedSections/presetOrder on every call, so an
+    // identity comparison would never see a no-op here.
+    seed(
+      JSON.stringify({ collapsedSections: ["Sync", "Post"], presetOrder: ["aurora", "nebula"] }),
+    );
+    const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
+    const before = getPrefs();
+    let calls = 0;
+    subscribePrefs(() => {
+      calls++;
+    });
+    // Fresh arrays, same contents.
+    expect(setPrefs({ collapsedSections: ["Sync", "Post"] })).toBe(before);
+    expect(setPrefs({ presetOrder: ["aurora", "nebula"] })).toBe(before);
+    expect(calls).toBe(0);
+    // Order matters, and so does length.
+    setPrefs({ presetOrder: ["nebula", "aurora"] });
+    expect(calls).toBe(1);
+    setPrefs({ collapsedSections: ["Sync"] });
+    expect(calls).toBe(2);
+    expect(getPrefs().collapsedSections).toEqual(["Sync"]);
+  });
+
+  it("compares the nested overlay-stats object by CONTENT, not identity", async () => {
+    seed(undefined);
+    const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
+    const before = getPrefs();
+    let calls = 0;
+    subscribePrefs(() => {
+      calls++;
+    });
+    expect(setPrefs({ perfOverlayStats: { ...before.perfOverlayStats } })).toBe(before);
+    expect(calls).toBe(0);
+    setPrefs({ perfOverlayStats: { ...before.perfOverlayStats, gpu: true } });
+    expect(calls).toBe(1);
+    expect(getPrefs().perfOverlayStats.gpu).toBe(true);
+  });
+
+  it("treats a patch that VALIDATES back to the current value as a no-op", async () => {
+    // The comparison runs on the VALIDATED result, so a value that clamps or
+    // normalises onto what is already stored announces nothing.
+    seed(JSON.stringify({ panelWidth: 440 }));
+    const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
+    const before = getPrefs();
+    let calls = 0;
+    subscribePrefs(() => {
+      calls++;
+    });
+    setPrefs({ panelWidth: 9000 }); // clamped back to the stored 440
+    setPrefs({ lastSaveDir: "" }); // empty string normalises to the stored null
+    expect(calls).toBe(0);
+    expect(getPrefs()).toBe(before);
+  });
+});
