@@ -11,6 +11,19 @@ import type { PresetDef } from "../types";
  * sweep, phosphor persistence via feedbackSample() so the beam leaves a
  * fading afterglow instead of snapping frame-to-frame, and an optional
  * kaleido fold for a symmetric "vector scope" look.
+ *
+ * Depth wave (Track B batch 3): the one-mono-trace / one-axis ceiling falls
+ * without moving a default pixel. `traces` splits the beam into stacked
+ * band-filtered lanes built fragment-locally from the single waveform lane
+ * (see laneWave — the true second-channel/XY work is renderer ABI, scheduled
+ * rank 15, deliberately out of reach here); `renderMode` swaps the beam's
+ * distance field for sampled dot pips or sample-hold treads; `graticule`
+ * swaps the measurement furniture; `persist` is promoted into the curated
+ * tier so the motion lens has its knob. Beat-driven brightness now rides the
+ * Motion Pulse master and sample density rides Detail — this mode's first
+ * two master handles. Every new axis reduces to an exact IEEE identity (or a
+ * branch never entered) at the factory defaults — oscilloscope.test.ts
+ * proves the reachable parts, the device pixel matrix holds the rest.
  */
 export const oscilloscope: PresetDef = {
   id: "oscilloscope",
@@ -158,6 +171,116 @@ export const oscilloscope: PresetDef = {
         traceClamp: 0.5,
       },
     },
+    // Analyzer Bench — the tri-trace lab bench: bass/mid/treble lanes stacked
+    // on graticule rows under the full reticle, each band riding its own
+    // energy. Low hue-wave so every lane holds its channel colour.
+    {
+      id: "bench",
+      name: "Analyzer Bench",
+      values: {
+        hue: 130,
+        traces: 3,
+        bandHue: 48,
+        bandDim: 0.8,
+        graticule: 3,
+        gridLevel: 0.16,
+        gridBeat: 0.5,
+        scanline: 0.05,
+        calm: 0.3,
+        gain: 1.05,
+        glow: 0.35,
+        traceBright: 1.35,
+        coreWidth: 0.002,
+        fill: 0,
+        mirror: 0,
+        persist: 0.28,
+        bgLevel: 0.02,
+        vignette: 0.45,
+        beatLift: 0.08,
+        hueWave: 10,
+      },
+    },
+    // Dot Sampler — the digital-scope dot display: discrete pips with medium
+    // afterglow trails, sighted through the crosshair face.
+    {
+      id: "sampler",
+      name: "Dot Sampler",
+      values: {
+        hue: 316,
+        renderMode: 1,
+        graticule: 2,
+        gridLevel: 0.12,
+        gridBeat: 0.9,
+        calm: 0.4,
+        glow: 0.75,
+        traceBright: 1.9,
+        coreWidth: 0.005,
+        fill: 0,
+        mirror: 0,
+        persist: 0.5,
+        scanline: 0,
+        bgLevel: 0.012,
+        vignette: 0.7,
+        beatLift: 0.18,
+        hueWave: 42,
+      },
+    },
+    // Logic Analyzer — two sample-hold channels, raw signal (no Calm), no
+    // graticule, crisp short afterglow: square treads and risers like a
+    // digital capture. Band hue 0 keeps both channels in one phosphor colour.
+    {
+      id: "logic",
+      name: "Logic Analyzer",
+      values: {
+        hue: 175,
+        traces: 2,
+        bandHue: 0,
+        bandDim: 0.9,
+        traceSpread: 0.24,
+        renderMode: 2,
+        graticule: 1,
+        calm: 0.05,
+        gain: 1.1,
+        glow: 0.2,
+        traceBright: 1.5,
+        coreWidth: 0.0025,
+        fill: 0,
+        mirror: 0,
+        persist: 0.12,
+        scanline: 0.12,
+        bgLevel: 0.016,
+        vignette: 0.4,
+        beatLift: 0.06,
+        hueWave: 0,
+        agFloor: 0.5,
+        agRange: 0.9,
+      },
+    },
+    // Fireflies — the kaleido fold's second life: dot pips folded into a
+    // symmetric figure at maximum persistence, so the swarm leaves drifting
+    // light trails. Same fold as Lissajous, a genuinely different instrument.
+    {
+      id: "fireflies",
+      name: "Fireflies",
+      values: {
+        hue: 95,
+        kaleido: 2,
+        renderMode: 1,
+        persist: 0.6,
+        calm: 0.5,
+        glow: 0.9,
+        traceBright: 2,
+        coreWidth: 0.004,
+        fill: 0,
+        mirror: 0,
+        gridLevel: 0.02,
+        scanline: 0,
+        bgLevel: 0.008,
+        vignette: 0.85,
+        hueWave: 55,
+        beatLift: 0.2,
+      },
+    },
   ],
   params: [
     {
@@ -235,6 +358,76 @@ export const oscilloscope: PresetDef = {
       default: 1,
       hint: "Faint upside-down ghost copy of the trace",
     },
+    {
+      key: "traces",
+      label: "Traces",
+      group: "shape",
+      control: "enum",
+      mod: "off",
+      options: [
+        { value: 1, label: "Single", hint: "One full-range beam — the classic scope" },
+        {
+          value: 2,
+          label: "Lows + highs",
+          hint: "Two lanes: the smoothed low end below, the detail it sheds above",
+        },
+        {
+          value: 3,
+          label: "Bass / mid / treble",
+          hint: "Three band lanes, each riding its own energy — the analyzer bench",
+        },
+      ],
+      min: 1,
+      max: 3,
+      step: 1,
+      default: 1,
+      hint: "Split the beam into stacked band-filtered channels — spacing, hue step and per-channel dim live in the expert tier",
+    },
+    {
+      key: "renderMode",
+      label: "Beam mode",
+      group: "shape",
+      control: "enum",
+      mod: "off",
+      options: [
+        { value: 0, label: "Vector", hint: "Continuous line — the classic CRT beam" },
+        {
+          value: 1,
+          label: "Dots",
+          hint: "Discrete sample pips, like a digital scope's dot display",
+        },
+        {
+          value: 2,
+          label: "Sample-hold",
+          hint: "Staircase treads with square risers — the logic-analyzer look",
+        },
+      ],
+      min: 0,
+      max: 2,
+      step: 1,
+      default: 0,
+      hint: "How the trace is drawn: solid beam, sampled dots, or held steps. Dot/step density rides the Motion Detail master",
+    },
+    {
+      key: "persist",
+      label: "Phosphor persist",
+      group: "motion",
+      min: 0,
+      // Ceiling lowered from 0.85 (v2.53.0). Persistence composites with
+      // max(), i.e. it UNIONS the recent sweeps; a trace on real music is a
+      // dense scribble, so once the trail lives long enough for the union to
+      // cover the whole excursion band the band goes flat white and the scope
+      // stops reading as a scope. Measured at 60 fps on five masters spanning
+      // -13.8 to -4.9 LUFS (and on the built-in groove demo): 0.60 keeps a
+      // legible trace on every one, 0.64 starts filling, 0.70+ is a solid
+      // slab at ANY other setting — that top third of the slider had no
+      // usable position on any material. The default (0.4) and every value
+      // still reachable render exactly as they did before.
+      max: 0.6,
+      step: 0.02,
+      default: 0.4,
+      hint: "CRT afterglow — how long the beam lingers and fades between frames",
+    },
   ],
   advanced: [
     {
@@ -255,7 +448,17 @@ export const oscilloscope: PresetDef = {
       max: 0.01,
       step: 0.0005,
       default: 0.0035,
-      hint: "Thickness of the bright center line",
+      hint: "Thickness of the bright center line (and the size of dot pips)",
+    },
+    {
+      key: "traceSpread",
+      label: "Trace spacing",
+      group: "shape",
+      min: 0,
+      max: 0.32,
+      step: 0.01,
+      default: 0.25,
+      hint: "How far apart the band lanes sit — 0 overlays them on one centre line. Single-trace mode ignores it",
     },
     {
       key: "agFloor",
@@ -288,6 +491,16 @@ export const oscilloscope: PresetDef = {
       hint: "Color shifts with the wave's height and drifts gently along the sweep",
     },
     {
+      key: "bandHue",
+      label: "Band hue shift",
+      group: "color",
+      min: 0,
+      max: 120,
+      step: 1,
+      default: 40,
+      hint: "Hue step between band traces — bass keeps your hue, mid and treble walk this far around the wheel",
+    },
+    {
       key: "ghostDim",
       label: "Mirror ghost",
       group: "glow",
@@ -306,6 +519,38 @@ export const oscilloscope: PresetDef = {
       step: 0.01,
       default: 0.16,
       hint: "Opacity of the under-trace fill",
+    },
+    {
+      key: "bandDim",
+      label: "Band dim",
+      group: "glow",
+      min: 0.25,
+      max: 1,
+      step: 0.05,
+      default: 0.85,
+      hint: "Brightness of each higher band lane relative to the one below — the bass channel is the master beam",
+    },
+    {
+      key: "graticule",
+      label: "Graticule",
+      group: "backdrop",
+      control: "enum",
+      mod: "off",
+      options: [
+        { value: 0, label: "Grid", hint: "The classic 10x8 division mesh" },
+        { value: 1, label: "None", hint: "Bare phosphor — no measurement furniture" },
+        { value: 2, label: "Crosshair", hint: "Just the two centre axes with division ticks" },
+        {
+          value: 3,
+          label: "Reticle",
+          hint: "Full mesh plus fine ticks and an edge frame — the lab instrument",
+        },
+      ],
+      min: 0,
+      max: 3,
+      step: 1,
+      default: 0,
+      hint: "Which measurement furniture the screen wears — Grid level sets how bright, and the beat flash still applies",
     },
     {
       key: "gridLevel",
@@ -368,26 +613,6 @@ export const oscilloscope: PresetDef = {
       hint: "Darkening toward the screen corners",
     },
     {
-      key: "persist",
-      label: "Phosphor persist",
-      group: "motion",
-      min: 0,
-      // Ceiling lowered from 0.85 (v2.53.0). Persistence composites with
-      // max(), i.e. it UNIONS the recent sweeps; a trace on real music is a
-      // dense scribble, so once the trail lives long enough for the union to
-      // cover the whole excursion band the band goes flat white and the scope
-      // stops reading as a scope. Measured at 60 fps on five masters spanning
-      // -13.8 to -4.9 LUFS (and on the built-in groove demo): 0.60 keeps a
-      // legible trace on every one, 0.64 starts filling, 0.70+ is a solid
-      // slab at ANY other setting — that top third of the slider had no
-      // usable position on any material. The default (0.4) and every value
-      // still reachable render exactly as they did before.
-      max: 0.6,
-      step: 0.02,
-      default: 0.4,
-      hint: "CRT afterglow — how long the beam lingers and fades between frames",
-    },
-    {
       key: "kaleido",
       label: "Kaleidoscope",
       group: "shape",
@@ -412,6 +637,166 @@ fn calmWave(x: f32, calm: f32) -> f32 {
   s += (waveAt(x - spread) + waveAt(x + spread)) * 0.22;
   s += (waveAt(x - spread * 2.0) + waveAt(x + spread * 2.0)) * 0.13;
   return s;
+}
+
+// Fragment-local band split, built from the SAME box-blur family the trace
+// has always been conditioned with: a wider blur is a lowpass on the sweep,
+// so band lanes are differences of blurs (a discretised difference-of-
+// Gaussians bank). This is the whole reason multi-trace can exist inside
+// this wave at all — the fragment receives ONE waveform lane, and the true
+// second/third channels (the XY-scope work) are a featurePipeline/ABI change
+// scheduled for the renderer block, deliberately out of reach here. What CAN
+// be done locally: split the one lane by frequency and let each band ride
+// its own energy uniform (u.bass/u.mid/u.treble), so the lanes move
+// independently even though they share a window.
+//   band 0 — the full-range shipped signal, untouched. The early return is
+//            the single-trace neutrality guarantee: no other line runs.
+//   band 1 — lows  (2-lane): everything below the treble shelf
+//   band 2 — highs (2-lane top, 3-lane treble): the detail the blur sheds
+//   band 3 — bass  (3-lane): the widest blur — kick and bassline only
+//   band 4 — mid   (3-lane): what sits between the bass and treble cuts
+// Blur offsets (+1.2 / +3.0 on top of Calm) were sized against the demo
+// groove's two components (4 and 17 cycles per window): the bass cut keeps
+// ~37% of the low component and ~0% of the high one; the treble residual
+// keeps ~70% of the high and sheds the low. Calm stays meaningful on every
+// lane — the cuts ride on top of it, so smoothing the scope smooths the
+// whole bench. The floors keep quiet bands drawing a live line; the energy
+// terms make each lane pump with its own register.
+fn laneWave(x: f32, band: f32) -> f32 {
+  let base = calmWave(x, P_calm());
+  if (band < 0.5) { return base; }
+  let mids = calmWave(x, P_calm() + 1.2);
+  if (band < 1.5) { return mids * (0.45 + u.bass * 0.7 + u.mid * 0.35); }
+  if (band < 2.5) { return (base - mids) * (0.9 + u.treble * 1.6); }
+  let lows = calmWave(x, P_calm() + 3.0);
+  if (band < 3.5) { return lows * (0.55 + u.bass * 1.5); }
+  return (mids - lows) * (1.0 + u.mid * 1.6);
+}
+
+// One scope channel: signal in, light out. The whole beam kit — coloured
+// core, white-hot centre, two-tier glow, mirror ghost, under-fill — for a
+// lane centred at \`center\`, height-scaled by \`hscale\`, band-filtered by
+// \`band\` (see laneWave) and dimmed by \`dim\`. \`colIn\` is threaded through BY
+// VALUE and returned: the adds inside land on the running frame colour in
+// exactly the order the pre-wave inline code applied them, so the
+// single-trace call (center 0.5, hscale 1.0, band 0.0, hueOff 0.0, dim 1.0)
+// is not merely equivalent but the same float-op sequence — IEEE addition
+// does not associate, so a "sum the lane, add it once" refactor would drift
+// by ulps and the pixel matrix hashes exact bytes. Every generalisation
+// reduces to an exact identity at those arguments: x*1.0, x+0.0, select's
+// false arm, branches not entered (proven in oscilloscope.test.ts).
+fn traceLayer(colIn: vec3f, fuv: vec2f, wx: f32, xs: f32, center: f32,
+              hscale: f32, band: f32, hueOff: f32, dim: f32,
+              gain: f32, beatP: f32) -> vec3f {
+  var col = colIn;
+  let w = laneWave(wx, band) * gain;
+  // Trace height comes from Gain (× the fixed display scale); Height limit is
+  // the SOFT ceiling (v2.44 law): loud peaks compress asymptotically toward it
+  // via softLimit instead of flat-topping against a hard clamp, so a maxed
+  // trace approaches the frame edge smoothly with no visible clipped plateau.
+  // Signed so both lobes limit symmetrically around the center line. The lane
+  // height scale multiplies AFTER the limiter, so a stacked lane is the full
+  // trace scaled into its lane — ceiling included — not a re-tuned one.
+  let raw = w * 0.34;
+  let amp = sign(raw) * softLimit(abs(raw), P_traceClamp()) * hscale;
+  let y = center + amp;
+
+  // Colour drifts gently along the sweep and with wave height — a bounded
+  // wobble around the user's hue rather than a full sweep, so it stays
+  // inside one saturated family instead of crossing HSL's muddy mid-tones.
+  let sweep = sin(fuv.x * 5.0 + u.time * 0.12) * 0.35
+            + sin(fuv.x * 1.7 - u.time * 0.05) * 0.65;
+  let traceHue = P_hue() + hueOff + w * P_hueWave() + sweep * P_hueWave() * 0.4;
+
+  // The beam's distance field. Vector mode: vertical distance to the
+  // continuous trace — the shipped scope. Dots and Sample-hold swap in a
+  // sampled field below; the core/hot/glow chain downstream is shared, so a
+  // beam mode changes WHERE the beam is, never what the beam is made of.
+  var d = abs(fuv.y - y);
+  // Ghost and fill follow the drawn profile (yP/ampP), so in the sampled
+  // modes the furniture tracks what is actually on screen.
+  var yP = y;
+  var ampP = amp;
+  // Dot pips read at ~2.6x the vector core width — a hairline dot is just
+  // noise. select's false arm hands the untouched accessor through, so the
+  // vector beam never sees the factor.
+  let cw = select(P_coreWidth(), P_coreWidth() * 2.6,
+                  P_renderMode() > 0.5 && P_renderMode() < 1.5);
+  if (P_renderMode() > 0.5) {
+    // Sampled display: quantize the sweep. Density rides the Motion Detail
+    // master (u.detail) — this mode's first Detail handle; the floor keeps a
+    // recognisable trace at Detail 0. Dots sample finer than treads: pips
+    // can sit shoulder to shoulder, treads need width to read as held.
+    let n = max(floor(select(96.0, 44.0, P_renderMode() > 1.5) * u.detail), 6.0);
+    let cell = floor(wx * n);
+    let hw = laneWave(clamp((cell + 0.5) / n, 0.0, 0.9999), band) * gain;
+    let hraw = hw * 0.34;
+    let hamp = sign(hraw) * softLimit(abs(hraw), P_traceClamp()) * hscale;
+    yP = center + hamp;
+    ampP = hamp;
+    if (P_renderMode() < 1.5) {
+      // Dots: round pips at this cell's sample and both neighbours, so the
+      // field is continuous across cell edges and halos overlap honestly.
+      // xs converts sweep-space dx into the same screen-height units d is
+      // measured in (aspect, plus the kaleido fold's 2x compression).
+      var dd = 1000.0;
+      for (var i = -1.0; i < 1.5; i += 1.0) {
+        let sx = (cell + i + 0.5) / n;
+        let sw = laneWave(clamp(sx, 0.0, 0.9999), band) * gain;
+        let sraw = sw * 0.34;
+        let sy = center + sign(sraw) * softLimit(abs(sraw), P_traceClamp()) * hscale;
+        dd = min(dd, length(vec2f((wx - sx) * xs, fuv.y - sy)));
+      }
+      d = dd;
+    } else {
+      // Sample-hold: a flat tread across this cell...
+      d = abs(fuv.y - yP);
+      // ...joined to the nearer neighbour by a vertical riser, so level
+      // changes read as square logic edges instead of torn gaps.
+      let side = select(-1.0, 1.0, fract(wx * n) > 0.5);
+      let bx = (cell + 0.5 + side * 0.5) / n;
+      let nw = laneWave(clamp((cell + side + 0.5) / n, 0.0, 0.9999), band) * gain;
+      let nraw = nw * 0.34;
+      let ny = center + sign(nraw) * softLimit(abs(nraw), P_traceClamp()) * hscale;
+      let dy = max(max(min(yP, ny) - fuv.y, fuv.y - max(yP, ny)), 0.0);
+      d = min(d, length(vec2f((wx - bx) * xs, dy)));
+    }
+  }
+
+  // Main trace: crisp coloured core, then a white-hot centre so the beam
+  // reads as EMITTING rather than merely being a coloured line. Beat-driven
+  // brightness rides the Motion Pulse master — an exact 1x at its default.
+  let core = smoothstep(cw, cw * 0.23, d);
+  let hot = smoothstep(0.45, 0.95, core) * (0.75 + beatP * 0.5 * u.pulse);
+  var beam = hsl2rgb(traceHue, 0.85, 0.62) * core;
+  beam = mix(beam, vec3f(1.0), hot);
+  beam *= 1.0 + hot * 1.6;
+  col += beam * P_traceBright() * dim;
+
+  // Two-tier glow: a tight bloom hugging the beam plus a much wider, softer
+  // halo — one exp() reads as an outline, two at different reach reads as an
+  // actual light source.
+  let glowTight = exp(-d * (170.0 - P_glow() * 90.0));
+  let glowWide = exp(-d * 22.0) * 0.45;
+  col += hsl2rgb(traceHue, 0.9, 0.55) * (glowTight * 0.6 + glowWide)
+       * (0.35 + P_glow() * 0.75) * (1.0 + beatP * 0.6 * u.pulse) * P_traceBright() * dim;
+
+  // Mirrored ghost trace (dimmer, hue-shifted) — the vertical-flip toggle;
+  // unrelated to the Kaleido fold. Mirrors about the LANE centre, and in the
+  // sampled beam modes about the drawn profile.
+  if (P_mirror() > 0.5) {
+    let ym = center - ampP;
+    let dm = abs(fuv.y - ym);
+    col += hsl2rgb(traceHue + 30.0, 0.7, 0.5) * exp(-dm * 160.0) * P_ghostDim() * dim;
+  }
+
+  // Soft fill from trace toward the lane's center line
+  if (P_fill() > 0.5) {
+    let between = step(min(yP, center), fuv.y) * step(fuv.y, max(yP, center));
+    let fade = 1.0 - abs(fuv.y - center) / max(abs(ampP), 0.001);
+    col += hsl2rgb(traceHue, 0.7, 0.4) * between * clamp(fade, 0.0, 1.0) * P_fillDim() * dim;
+  }
+  return col;
 }
 
 fn preset(uv: vec2f) -> vec4f {
@@ -486,67 +871,79 @@ fn preset(uv: vec2f) -> vec4f {
   // modulating brightness.
   col *= (1.0 - P_scanline()) + P_scanline() * (0.5 + 0.5 * sin(uv.y * 400.0));
 
-  // Graticule: real lab-scope convention is 10x8 divisions with the center
-  // row/column drawn brighter — not a flat even cross-hatch.
-  let dv = vec2f(fuv.x * 10.0, fuv.y * 8.0);
-  let gl = abs(fract(dv) - 0.5);
-  var grid = smoothstep(0.05, 0.0, gl.x) + smoothstep(0.05, 0.0, gl.y);
-  grid += smoothstep(0.006, 0.0, abs(fuv.x - 0.5)) * 1.6
-        + smoothstep(0.006, 0.0, abs(fuv.y - 0.5)) * 1.6;
-  col += hsl2rgb(P_hue(), 0.25, 0.32) * grid * P_gridLevel() * (1.0 + beatP * P_gridBeat());
+  // Graticule. Grid is the shipped default — real lab-scope convention, 10x8
+  // divisions with the center row/column drawn brighter, not a flat even
+  // cross-hatch. The other faces swap the furniture, never the light: every
+  // face keys off Grid level for brightness and pulses with the beat flash
+  // (which now rides the Motion Pulse master — exact 1x at its default).
+  var grid = 0.0;
+  if (P_graticule() < 0.5) {
+    let dv = vec2f(fuv.x * 10.0, fuv.y * 8.0);
+    let gl = abs(fract(dv) - 0.5);
+    grid = smoothstep(0.05, 0.0, gl.x) + smoothstep(0.05, 0.0, gl.y);
+    grid += smoothstep(0.006, 0.0, abs(fuv.x - 0.5)) * 1.6
+          + smoothstep(0.006, 0.0, abs(fuv.y - 0.5)) * 1.6;
+  } else if (P_graticule() > 2.5) {
+    // Full reticle: the mesh, the doubled centre axes, fine 5-per-division
+    // minor ticks along both axes, and a measurement frame at the edge.
+    let dv = vec2f(fuv.x * 10.0, fuv.y * 8.0);
+    let gl = abs(fract(dv) - 0.5);
+    grid = smoothstep(0.05, 0.0, gl.x) + smoothstep(0.05, 0.0, gl.y);
+    grid += smoothstep(0.006, 0.0, abs(fuv.x - 0.5)) * 1.6
+          + smoothstep(0.006, 0.0, abs(fuv.y - 0.5)) * 1.6;
+    grid += smoothstep(0.02, 0.0, abs(fract(fuv.x * 50.0) - 0.5))
+          * smoothstep(0.014, 0.005, abs(fuv.y - 0.5)) * 0.9;
+    grid += smoothstep(0.02, 0.0, abs(fract(fuv.y * 40.0) - 0.5))
+          * smoothstep(0.022, 0.008, abs(fuv.x - 0.5)) * 0.9;
+    let edge = min(min(fuv.x, 1.0 - fuv.x), min(fuv.y, 1.0 - fuv.y));
+    grid += smoothstep(0.004, 0.0, edge) * 1.2;
+  } else if (P_graticule() > 1.5) {
+    // Crosshair: just the two centre axes with a tick at every division —
+    // the measurement look with the mesh stripped away.
+    grid = (smoothstep(0.006, 0.0, abs(fuv.x - 0.5))
+          + smoothstep(0.006, 0.0, abs(fuv.y - 0.5))) * 1.6;
+    grid += smoothstep(0.05, 0.0, abs(fract(fuv.x * 10.0) - 0.5))
+          * smoothstep(0.02, 0.008, abs(fuv.y - 0.5));
+    grid += smoothstep(0.05, 0.0, abs(fract(fuv.y * 8.0) - 0.5))
+          * smoothstep(0.032, 0.013, abs(fuv.x - 0.5));
+  }
+  // Face 1 (None) is bare phosphor: grid stays 0.0 and the add below is an
+  // exact +0 at every pixel.
+  col += hsl2rgb(P_hue(), 0.25, 0.32) * grid * P_gridLevel() * (1.0 + beatP * P_gridBeat() * u.pulse);
 
-  let w = calmWave(wx, P_calm()) * gain;
-  // Trace height comes from Gain (× the fixed display scale); Height limit is
-  // the SOFT ceiling (v2.44 law): loud peaks compress asymptotically toward it
-  // via softLimit instead of flat-topping against a hard clamp, so a maxed
-  // trace approaches the frame edge smoothly with no visible clipped plateau.
-  // Signed so both lobes limit symmetrically around the center line.
-  let raw = w * 0.34;
-  let amp = sign(raw) * softLimit(abs(raw), P_traceClamp());
-  let y = 0.5 + amp;
+  // Sweep-space -> screen-height conversion for the sampled beam modes:
+  // aspect makes dot pips round, and the kaleido fold halves the screen run
+  // of one sweep unit.
+  let xs = select(1.0, 0.5, P_kaleido() >= 1.5) * u.aspect;
 
-  // Colour drifts gently along the sweep and with wave height — a bounded
-  // wobble around the user's hue rather than a full sweep, so it stays
-  // inside one saturated family instead of crossing HSL's muddy mid-tones.
-  let sweep = sin(fuv.x * 5.0 + u.time * 0.12) * 0.35
-            + sin(fuv.x * 1.7 - u.time * 0.05) * 0.65;
-  let traceHue = P_hue() + w * P_hueWave() + sweep * P_hueWave() * 0.4;
-
-  // Main trace: crisp coloured core, then a white-hot centre so the beam
-  // reads as EMITTING rather than merely being a coloured line.
-  let d = abs(fuv.y - y);
-  let core = smoothstep(P_coreWidth(), P_coreWidth() * 0.23, d);
-  let hot = smoothstep(0.45, 0.95, core) * (0.75 + beatP * 0.5);
-  var beam = hsl2rgb(traceHue, 0.85, 0.62) * core;
-  beam = mix(beam, vec3f(1.0), hot);
-  beam *= 1.0 + hot * 1.6;
-  col += beam * P_traceBright();
-
-  // Two-tier glow: a tight bloom hugging the beam plus a much wider, softer
-  // halo — one exp() reads as an outline, two at different reach reads as an
-  // actual light source.
-  let glowTight = exp(-d * (170.0 - P_glow() * 90.0));
-  let glowWide = exp(-d * 22.0) * 0.45;
-  col += hsl2rgb(traceHue, 0.9, 0.55) * (glowTight * 0.6 + glowWide)
-       * (0.35 + P_glow() * 0.75) * (1.0 + beatP * 0.6) * P_traceBright();
-
-  // Mirrored ghost trace (dimmer, hue-shifted) — the vertical-flip toggle;
-  // unrelated to the Kaleido fold above.
-  if (P_mirror() > 0.5) {
-    let ym = 0.5 - amp;
-    let dm = abs(fuv.y - ym);
-    col += hsl2rgb(traceHue + 30.0, 0.7, 0.5) * exp(-dm * 160.0) * P_ghostDim();
+  // The channel deck. Single is the shipped scope, drawn by the same call
+  // chain at exact-identity arguments. The stacked layouts put lane centres
+  // at 0.5 +/- spacing — the default 0.25 offsets each lane baseline exactly
+  // two graticule divisions from the centre row (the same phase the centre
+  // line itself holds against the mesh, whose painted lines sit at the
+  // half-division offsets), the way a bench scope parks channels whole
+  // divisions apart; spacing 0 overlays every lane on the centre line. Lanes
+  // draw at 0.55 height so stacked excursions stay in lane at typical
+  // levels and interleave softly (additive light) at extremes. Bass anchors
+  // the deck — bottom lane, the user's hue, full brightness; each higher
+  // band steps bandHue around the wheel and bandDim down in brightness.
+  if (P_traces() < 1.5) {
+    col = traceLayer(col, fuv, wx, xs, 0.5, 1.0, 0.0, 0.0, 1.0, gain, beatP);
+  } else if (P_traces() < 2.5) {
+    let sp = P_traceSpread();
+    col = traceLayer(col, fuv, wx, xs, 0.5 + sp, 0.55, 1.0, 0.0, 1.0, gain, beatP);
+    col = traceLayer(col, fuv, wx, xs, 0.5 - sp, 0.55, 2.0, P_bandHue(), P_bandDim(), gain, beatP);
+  } else {
+    let sp = P_traceSpread();
+    col = traceLayer(col, fuv, wx, xs, 0.5 + sp, 0.55, 3.0, 0.0, 1.0, gain, beatP);
+    col = traceLayer(col, fuv, wx, xs, 0.5, 0.55, 4.0, P_bandHue(), P_bandDim(), gain, beatP);
+    col = traceLayer(col, fuv, wx, xs, 0.5 - sp, 0.55, 2.0, P_bandHue() * 2.0,
+                     P_bandDim() * P_bandDim(), gain, beatP);
   }
 
-  // Soft fill from trace toward the center line
-  if (P_fill() > 0.5) {
-    let between = step(min(y, 0.5), fuv.y) * step(fuv.y, max(y, 0.5));
-    let fade = 1.0 - abs(fuv.y - 0.5) / max(abs(amp), 0.001);
-    col += hsl2rgb(traceHue, 0.7, 0.4) * between * clamp(fade, 0.0, 1.0) * P_fillDim();
-  }
-
-  // Gentle beat lift (no strobe)
-  col *= 1.0 + beatP * P_beatLift();
+  // Gentle beat lift (no strobe) — rides the Pulse master like every other
+  // beat-driven brightness term.
+  col *= 1.0 + beatP * P_beatLift() * u.pulse;
 
   // The finishing kit runs BEFORE the persistence union, not after it.
   //
