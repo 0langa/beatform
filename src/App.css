@@ -2787,6 +2787,13 @@ kbd {
   font-size: 11px;
 }
 
+/* Per-route shape row (curve / attack / release, P-16): indented under its
+ * route row and pulled up against it so the pair reads as one unit. */
+.mod-shape-row {
+  padding-left: 14px;
+  margin-top: -2px;
+}
+
 .seek-section-tick {
   position: absolute;
   top: -2px;

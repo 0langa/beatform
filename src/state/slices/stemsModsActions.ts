@@ -4,6 +4,7 @@ import { analyzeStem, MAX_STEMS, STEM_SLOTS } from "../../audio/stems";
 import { allParams } from "../../render/types";
 import { presetById } from "../../render/presets";
 import { newRouteId, type ModRoute, type ModSource } from "../modMatrix";
+import { MOD_ROUTE_RECIPES, recipeRoutes } from "../modRoutePresets";
 import { saveStoredMods } from "../persistence";
 import { getEngine } from "../services";
 import { stemRoutesFor } from "../stemRouting";
@@ -65,6 +66,22 @@ export function stemsModsActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       set({ activeMods, modsByPreset });
       saveStoredMods(modsByPreset);
       ctx.flashNotice(`Wired ${added.length} routes from the stem — tweak amounts in Modulation`);
+    },
+
+    applyModRouteRecipe(recipeId: string) {
+      const recipe = MOD_ROUTE_RECIPES.find((r) => r.id === recipeId);
+      if (!recipe) return;
+      const s = get();
+      const added = recipeRoutes(recipe, presetById(s.presetId), s.activeMods, newRouteId);
+      if (added.length === 0) {
+        ctx.flashNotice("Already routed — tweak the existing route's amount instead");
+        return;
+      }
+      ctx.record("mod-add");
+      const activeMods = [...s.activeMods, ...added];
+      const modsByPreset = { ...s.modsByPreset, [s.presetId]: activeMods };
+      set({ activeMods, modsByPreset });
+      saveStoredMods(modsByPreset);
     },
 
     addModRoute(source: ModSource, param: string) {

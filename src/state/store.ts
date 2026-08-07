@@ -595,6 +595,8 @@ interface Actions {
   addModRoute(source: ModSource, param: string): void;
   updateModRoute(id: string, patch: Partial<ModRoute>): void;
   removeModRoute(id: string): void;
+  /** Add a curated route recipe's routes to the active visual (P-7 chips). */
+  applyModRouteRecipe(id: string): void;
   /** Re-rasterize the overlay at the live canvas size (debounced). */
   refreshOverlay(): void;
   /** Run the offline analysis pass (beat grid) on the loaded track. */

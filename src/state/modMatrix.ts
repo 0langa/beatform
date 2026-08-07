@@ -11,6 +11,12 @@ import { POST_MOD_TARGETS, paramSpecMap, type ParamValues } from "../render/type
  * amount is -1..1 and scales against the target's spec range: +1 adds the
  * full range at feature=1, -0.5 subtracts half of it, etc. Results clamp to
  * the spec range.
+ *
+ * v2 (P-16): a route may additionally carry a response curve and an
+ * attack/release lag. All three fields are OPTIONAL AND ADDITIVE — a route
+ * without them resolves bit-identically to the v1 rule above, old documents
+ * load unchanged, and an old app's validator strips the unknown fields (the
+ * route degrades to linear/instant instead of breaking).
  */
 export interface ModRoute {
   id: string;
@@ -19,7 +25,27 @@ export interface ModRoute {
   param: string;
   /** -1..1 — fraction of the param's range added at feature value 1. */
   amount: number;
+  /**
+   * Response curve applied to the RAW 0..1 source value BEFORE amount
+   * (absent = "linear" = untouched, the v1 behavior). Exact math is forever —
+   * see shapedValue(): exp = v², smooth = smoothstep(v) = v²(3−2v), both over
+   * the input clamped to 0..1.
+   */
+  curve?: ModCurve;
+  /**
+   * Rise / fall lag in SECONDS (absent or 0 = instant = v1 behavior).
+   * Attack applies while the curved source is above the smoothed value,
+   * release while below — exponential smoothing with the frame-rate-
+   * independent form `alpha = 1 − exp(−dt/τ)`, dt = track-time delta.
+   * Needs a caller-owned ModEvalState to take effect; without one the route
+   * evaluates instantly (pure fallback). Validator clamps to 0..10 s.
+   */
+  attack?: number;
+  release?: number;
 }
+
+/** Per-route source shaping. "linear" behaves exactly like an absent curve. */
+export type ModCurve = "linear" | "exp" | "smooth";
 
 export type ModSource =
   | "drive"
@@ -38,10 +64,74 @@ export type ModSource =
   | "barPhase"
   // Stem sources: envelope timelines of imported sidecar tracks, sampled at
   // track time ("stem1:kick"). Valid ids are produced by src/audio/stems.ts.
-  | `stem${1 | 2 | 3 | 4}:${"energy" | "bass" | "mid" | "treble" | "kick" | "snare" | "hat"}`;
+  | `stem${1 | 2 | 3 | 4}:${"energy" | "bass" | "mid" | "treble" | "kick" | "snare" | "hat"}`
+  // Beat-locked LFO sources ("lfo:sine:1"): pure functions of track time and
+  // the beat grid — zero state, seek-stable by construction. See lfoValue().
+  | `lfo:${LfoWave}:${"0.25" | "0.5" | "1" | "2" | "4" | "8"}`;
+
+export type LfoWave = "sine" | "saw" | "square";
 
 /** Stem-source ids ("stem1:kick"). Kept in lockstep with stems.ts keys. */
 const STEM_SOURCE_RE = /^stem[1-4]:(energy|bass|mid|treble|kick|snare|hat)$/;
+
+/**
+ * LFO id grammar — PERSISTED FOREVER: `lfo:<wave>:<rate>` with wave ∈
+ * {sine, saw, square} and rate ∈ {0.25, 0.5, 1, 2, 4, 8} BEATS PER CYCLE,
+ * spelled exactly as JS number-to-string (no trailing zeros, "0.25" not
+ * ".25"). Growing either axis is additive; never respell existing ids.
+ */
+const LFO_SOURCE_RE = /^lfo:(sine|saw|square):(0\.25|0\.5|1|2|4|8)$/;
+
+const LFO_WAVES: readonly LfoWave[] = ["sine", "saw", "square"];
+const LFO_RATES: readonly number[] = [0.25, 0.5, 1, 2, 4, 8];
+
+/** id -> parsed wave/rate, built once so the per-frame path never parses. */
+const LFO_PARSED = new Map<string, { wave: LfoWave; rate: number }>();
+for (const wave of LFO_WAVES) {
+  for (const rate of LFO_RATES) {
+    LFO_PARSED.set(`lfo:${wave}:${rate}`, { wave, rate });
+  }
+}
+
+const LFO_WAVE_LABEL: Record<LfoWave, string> = { sine: "Sine", saw: "Saw", square: "Square" };
+const LFO_RATE_LABEL = new Map<number, string>([
+  [0.25, "¼ beat"],
+  [0.5, "½ beat"],
+  [1, "1 beat"],
+  [2, "2 beats"],
+  [4, "4 beats"],
+  [8, "8 beats"],
+]);
+
+/** LFO dropdown entries, one optgroup's worth — sibling of MOD_SOURCES. */
+export const LFO_SOURCES: Array<{ id: ModSource; label: string }> = [...LFO_PARSED.keys()].map(
+  (id) => {
+    const p = LFO_PARSED.get(id)!;
+    return {
+      id: id as ModSource,
+      label: `${LFO_WAVE_LABEL[p.wave]} · ${LFO_RATE_LABEL.get(p.rate)}`,
+    };
+  },
+);
+
+/**
+ * Beat-locked LFO value, 0..1 — a PURE function of (track time, beat grid):
+ *   beatPos = time × bpm / 60         (bpm === 0 → beatPos = time × 2,
+ *                                      i.e. a 120-BPM-equivalent fallback)
+ *   phase   = fract(beatPos / rate)   (rate = beats per cycle)
+ *   sine    = 0.5 − 0.5·cos(2π·phase)   — starts at 0, peaks mid-cycle
+ *   saw     = phase                      — ramp 0 → 1
+ *   square  = phase < 0.5 ? 1 : 0        — high half first
+ * Deterministic and seek-stable by construction; no state anywhere.
+ */
+function lfoValue(wave: LfoWave, rate: number, features: AudioFeatures): number {
+  const beatPos = features.bpm > 0 ? (features.time * features.bpm) / 60 : features.time * 2;
+  const cycles = beatPos / rate;
+  const phase = cycles - Math.floor(cycles);
+  if (wave === "sine") return 0.5 - 0.5 * Math.cos(2 * Math.PI * phase);
+  if (wave === "saw") return phase;
+  return phase < 0.5 ? 1 : 0;
+}
 
 export const MOD_SOURCES: Array<{ id: ModSource; label: string }> = [
   { id: "drive", label: "Drive" },
@@ -63,7 +153,7 @@ export const MOD_SOURCES: Array<{ id: ModSource; label: string }> = [
 const SOURCE_IDS = new Set<string>(MOD_SOURCES.map((s) => s.id));
 
 function isValidSource(v: string): boolean {
-  return SOURCE_IDS.has(v) || STEM_SOURCE_RE.test(v);
+  return SOURCE_IDS.has(v) || STEM_SOURCE_RE.test(v) || LFO_SOURCE_RE.test(v);
 }
 
 export function newRouteId(): string {
@@ -76,7 +166,96 @@ export function sourceValue(
   stems?: Record<string, number>,
 ): number {
   if (source.startsWith("stem")) return stems?.[source] ?? 0;
+  if (source.startsWith("lfo:")) {
+    const p = LFO_PARSED.get(source);
+    return p ? lfoValue(p.wave, p.rate, features) : 0;
+  }
   return features[source as keyof AudioFeatures & ModSource] as number;
+}
+
+/**
+ * Caller-owned smoothing memory for routes with attack/release. applyMods /
+ * applyPostMods stay pure functions OF this state: the live loop owns one for
+ * the preview, the export worker creates a FRESH one per run and walks frames
+ * sequentially — so every export of the same document is bit-identical, and
+ * the preview matches within the rate-independence of the EMA form (routes
+ * without lag stay EXACTLY bit-equal on both paths). Entries are allocated
+ * once per route and mutated in place — no per-frame Map churn.
+ */
+export interface ModEvalState {
+  routes: Map<string, { value: number; time: number }>;
+}
+
+export function createModEvalState(): ModEvalState {
+  return { routes: new Map() };
+}
+
+/** Validator bound for attack/release, seconds. */
+export const MOD_LAG_MAX_SEC = 10;
+
+/**
+ * Discontinuity threshold for the lag state: a track-time step that is
+ * backwards (seek back, loop wrap, track change) or larger than this snaps
+ * the smoothed value to the current target instead of gliding across the
+ * jump. Forward steps up to 1 s keep smoothing — dropped frames must not
+ * reset an envelope mid-swell.
+ */
+const LAG_SNAP_SEC = 1;
+
+/** Curve stage — see ModRoute.curve for the exact (forever) math. Linear or
+ * absent returns the raw value UNTOUCHED, preserving v1 bit-identity; the
+ * shaped curves clamp to 0..1 first so a hypothetical out-of-range source
+ * still lands in-range. */
+function shapedValue(curve: ModCurve | undefined, raw: number): number {
+  if (curve === "exp") {
+    const c = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+    return c * c;
+  }
+  if (curve === "smooth") {
+    const c = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+    return c * c * (3 - 2 * c);
+  }
+  return raw;
+}
+
+/**
+ * Full v2 source resolution for one route: raw source → curve → lag.
+ * Lag rules (forever):
+ *  - no state, or attack and release both absent/0 → instant (v1 path);
+ *  - first evaluation of a route → snap to the curved target;
+ *  - dt = features.time − last evaluation's time (TRACK time, never wall
+ *    clock); dt === 0 → hold the smoothed value (paused preview frames);
+ *  - dt < 0 or dt > 1 s → snap to the curved target (seek/loop/track change);
+ *  - otherwise τ = attack when rising, release when falling; τ ≤ 0 → snap;
+ *    value += (target − value) · (1 − exp(−dt/τ)).
+ */
+function routeValue(
+  route: ModRoute,
+  features: AudioFeatures,
+  stems: Record<string, number> | undefined,
+  state: ModEvalState | undefined,
+): number {
+  const target = shapedValue(route.curve, sourceValue(features, route.source, stems));
+  const attack = route.attack ?? 0;
+  const release = route.release ?? 0;
+  if (!state || (attack <= 0 && release <= 0)) return target;
+  const now = features.time;
+  let memo = state.routes.get(route.id);
+  if (!memo) {
+    memo = { value: target, time: now };
+    state.routes.set(route.id, memo);
+    return target;
+  }
+  const dt = now - memo.time;
+  memo.time = now;
+  if (dt === 0) return memo.value;
+  const tau = target > memo.value ? attack : release;
+  if (dt < 0 || dt > LAG_SNAP_SEC || tau <= 0) {
+    memo.value = target;
+    return target;
+  }
+  memo.value += (target - memo.value) * (1 - Math.exp(-dt / tau));
+  return memo.value;
 }
 
 /**
@@ -92,6 +271,9 @@ export function applyMods(
   /** Per-frame stem envelope values ("stem1:kick" -> 0..1); a route to a
    * stem that isn't loaded reads 0 — silently inert, never an error. */
   stems?: Record<string, number>,
+  /** Lag memory for routes with attack/release (P-16). Optional — omitted,
+   * such routes evaluate instantly; the function itself stays pure. */
+  state?: ModEvalState,
 ): ParamValues {
   if (routes.length === 0) return base;
   const specs = paramSpecMap(preset);
@@ -111,7 +293,7 @@ export function applyMods(
     // so a document whose routes are all inert keeps the identity fast path.
     if (spec.mod === "off") continue;
     if (!out) out = { ...base };
-    const value = sourceValue(features, route.source, stems);
+    const value = routeValue(route, features, stems, state);
     const range = spec.max - spec.min;
     let next = (out[route.param] ?? spec.default) + value * route.amount * range;
     // mod:"snap" (RP-2): counts and segment enums quantize to whole numbers,
@@ -153,6 +335,10 @@ export function applyPostMods(
   routes: ModRoute[],
   features: AudioFeatures,
   stems?: Record<string, number>,
+  /** Same lag memory as applyMods — a route targets EITHER a preset param or
+   * a post key, never both, so one shared state advances each route exactly
+   * once per frame across the two calls. */
+  state?: ModEvalState,
 ): PostSettings {
   let out: PostSettings | null = null;
   for (const route of routes) {
@@ -161,14 +347,26 @@ export function applyPostMods(
     const spec = POST_SPECS.get(key)!;
     if (!out) out = { ...base };
     const current = (out as unknown as Record<string, number>)[key] ?? spec.default;
-    const value = sourceValue(features, route.source, stems);
+    const value = routeValue(route, features, stems, state);
     const next = current + value * route.amount * (spec.max - spec.min);
     (out as unknown as Record<string, number>)[key] = Math.min(spec.max, Math.max(spec.min, next));
   }
   return out ?? base;
 }
 
-/** Validate an unknown blob into clean routes (project files, localStorage). */
+const MOD_CURVES = new Set<string>(["linear", "exp", "smooth"]);
+
+/** attack/release: finite number clamped to 0..MOD_LAG_MAX_SEC, else absent. */
+function validLagSec(n: unknown): number | undefined {
+  return typeof n === "number" && Number.isFinite(n)
+    ? Math.min(MOD_LAG_MAX_SEC, Math.max(0, n))
+    : undefined;
+}
+
+/** Validate an unknown blob into clean routes (project files, localStorage).
+ * The v2 fields (curve/attack/release) are carried only when valid and are
+ * OMITTED — not defaulted — otherwise, so a v1-shaped route round-trips with
+ * exactly its v1 keys. */
 export function validModRoutes(v: unknown): ModRoute[] {
   if (!Array.isArray(v)) return [];
   const out: ModRoute[] = [];
@@ -185,11 +383,18 @@ export function validModRoutes(v: unknown): ModRoute[] {
       typeof r.amount === "number" &&
       Number.isFinite(r.amount)
     ) {
+      const curve =
+        typeof r.curve === "string" && MOD_CURVES.has(r.curve) ? (r.curve as ModCurve) : undefined;
+      const attack = validLagSec(r.attack);
+      const release = validLagSec(r.release);
       out.push({
         id: r.id,
         source: r.source as ModSource,
         param: r.param.slice(0, 64),
         amount: Math.min(1, Math.max(-1, r.amount)),
+        ...(curve !== undefined ? { curve } : {}),
+        ...(attack !== undefined ? { attack } : {}),
+        ...(release !== undefined ? { release } : {}),
       });
     }
   }

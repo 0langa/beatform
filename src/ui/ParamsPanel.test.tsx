@@ -11,6 +11,8 @@ import { DEFAULT_SYNC } from "../audio/types";
 import { DEFAULT_AUDIOGRAM } from "../state/audiogram";
 import { DEFAULT_LYRIC_STYLE } from "../state/lyrics";
 import { defaultBuilderStack } from "../render/builder2";
+import { LFO_SOURCES } from "../state/modMatrix";
+import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
 
 afterEach(cleanup);
 
@@ -113,6 +115,7 @@ function makeProps(preset: PresetDef): ParamsPanelProps {
     onAddMod: vi.fn(),
     onUpdateMod: vi.fn(),
     onRemoveMod: vi.fn(),
+    onApplyModRecipe: vi.fn(),
     lyricFileName: null,
     lyricStyle: DEFAULT_LYRIC_STYLE,
     onImportLyrics: vi.fn(),
@@ -188,6 +191,46 @@ describe("modulation & MIDI target lists (RP-2 / RP-14)", () => {
         (o) => o.getAttribute("value") === "mirror" && /not modulatable/.test(o.textContent ?? ""),
       ),
     ).toBe(true);
+  });
+});
+
+describe("modulation v2 UI (P-16/P-7)", () => {
+  const routeProps = () => {
+    const preset = presets.find((p) => p.id === "spectrum-bars")!;
+    return {
+      ...makeProps(preset),
+      mods: [{ id: "r1", source: "kick" as const, param: "hue", amount: 0.5 }],
+    };
+  };
+
+  it("source picker offers the whole beat-synced LFO family", () => {
+    render(<ParamsPanel {...routeProps()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    const select = screen.getByTitle("What drives this route") as HTMLSelectElement;
+    const values = [...select.querySelectorAll("option")].map((o) => o.getAttribute("value"));
+    for (const s of LFO_SOURCES) expect(values).toContain(s.id);
+  });
+
+  it("recipe chips fire onApplyModRecipe with the recipe id", () => {
+    const props = makeProps(presets[0]);
+    render(<ParamsPanel {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    for (const rec of MOD_ROUTE_RECIPES) {
+      expect(screen.getByRole("button", { name: rec.name })).toBeTruthy();
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Kick punch" }));
+    expect(props.onApplyModRecipe).toHaveBeenCalledWith("kick-punch");
+  });
+
+  it("shape row edits curve via onUpdateMod, and Linear clears the field", () => {
+    const props = routeProps();
+    render(<ParamsPanel {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    const curveSel = screen.getByTitle(/Response curve/) as HTMLSelectElement;
+    fireEvent.change(curveSel, { target: { value: "exp" } });
+    expect(props.onUpdateMod).toHaveBeenCalledWith("r1", { curve: "exp" });
+    fireEvent.change(curveSel, { target: { value: "linear" } });
+    expect(props.onUpdateMod).toHaveBeenCalledWith("r1", { curve: undefined });
   });
 });
 

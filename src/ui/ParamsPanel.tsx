@@ -27,7 +27,15 @@ import { FACTORY_THEMES } from "../state/factoryThemes";
 import { GalleryLink } from "./GalleryDialog";
 import type { ThemeMeta } from "../state/themes";
 import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
-import { MOD_SOURCES, POST_TARGET_PREFIX, type ModRoute, type ModSource } from "../state/modMatrix";
+import {
+  LFO_SOURCES,
+  MOD_SOURCES,
+  POST_TARGET_PREFIX,
+  type ModCurve,
+  type ModRoute,
+  type ModSource,
+} from "../state/modMatrix";
+import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
 import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../audio/stems";
 import { LYRIC_ANIMS, type LyricStyle } from "../state/lyrics";
 import { LyricsEditPanel } from "./LyricsEditPanel";
@@ -430,6 +438,8 @@ export interface ParamsPanelProps {
   onAddMod: (source: ModSource, param: string) => void;
   onUpdateMod: (id: string, patch: Partial<ModRoute>) => void;
   onRemoveMod: (id: string) => void;
+  /** Apply a curated route recipe (P-7 chips) to the active visual. */
+  onApplyModRecipe: (id: string) => void;
   /** Timed lyrics: loaded file name (null = none) + display style. */
   lyricFileName: string | null;
   lyricStyle: LyricStyle;
@@ -1242,7 +1252,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       id: "Modulation",
       title: "Modulation",
       tab: "sync",
-      search: "modulation route stem source amount kick hats auto-route feature knob",
+      search:
+        "modulation route stem source amount kick hats auto-route feature knob lfo sine saw square curve shape exp smooth attack release lag recipe punch swell sway sweep sparkle",
       body: (
         <>
           {props.mods.length === 0 && (
@@ -1301,84 +1312,158 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               )
             )}
           </div>
+          {/* Route recipes (P-7): curated one-or-two-route starting points.
+              A chip ADDS plain routes targeting this visual's best-matching
+              knobs — from there they're ordinary rows to tweak or delete. */}
+          <div className="style-chips">
+            {MOD_ROUTE_RECIPES.map((rec) => (
+              <button
+                key={rec.id}
+                className="style-chip"
+                title={rec.hint}
+                onClick={() => props.onApplyModRecipe(rec.id)}
+              >
+                {rec.name}
+              </button>
+            ))}
+          </div>
           {props.mods.map((r) => (
-            <div key={r.id} className="mod-row">
-              <select
-                className="select mod-select"
-                value={r.source}
-                title="What drives this route"
-                onChange={(e) => props.onUpdateMod(r.id, { source: e.target.value as ModSource })}
-              >
-                {MOD_SOURCES.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-                {props.stems.map((st) =>
-                  STEM_TRACK_KEYS.map((k) => (
-                    <option key={`${st.slot}:${k}`} value={`${st.slot}:${k}`}>
-                      {st.analysis.name}: {k}
+            <Fragment key={r.id}>
+              <div className="mod-row">
+                <select
+                  className="select mod-select"
+                  value={r.source}
+                  title="What drives this route"
+                  onChange={(e) => props.onUpdateMod(r.id, { source: e.target.value as ModSource })}
+                >
+                  {MOD_SOURCES.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
                     </option>
-                  )),
-                )}
-              </select>
-              <span className="mod-arrow">→</span>
-              <select
-                className="select mod-select"
-                value={r.param}
-                title="Which knob it moves"
-                onChange={(e) => props.onUpdateMod(r.id, { param: e.target.value })}
-              >
-                {/* Grouped by the SAME ParamSpec.group the panel lays out, so
-                    a 35-knob visual reads as eight short lists instead of one
-                    unsearchable run of options. */}
-                {modTargetGroupViews.map(({ group, params }) => (
-                  <optgroup key={group.id} label={group.label}>
-                    {params.map((p) => (
-                      <option key={p.key} value={p.key}>
-                        {p.label}
+                  ))}
+                  {props.stems.map((st) =>
+                    STEM_TRACK_KEYS.map((k) => (
+                      <option key={`${st.slot}:${k}`} value={`${st.slot}:${k}`}>
+                        {st.analysis.name}: {k}
+                      </option>
+                    )),
+                  )}
+                  {/* Beat-locked LFOs: pure functions of track time and the beat
+                    grid (falls back to a 120-BPM clock before analysis). */}
+                  <optgroup label="LFO — beat-synced">
+                    {LFO_SOURCES.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label}
                       </option>
                     ))}
                   </optgroup>
-                ))}
-                {/* A route saved before a param went mod:"off" (or whose param
+                </select>
+                <span className="mod-arrow">→</span>
+                <select
+                  className="select mod-select"
+                  value={r.param}
+                  title="Which knob it moves"
+                  onChange={(e) => props.onUpdateMod(r.id, { param: e.target.value })}
+                >
+                  {/* Grouped by the SAME ParamSpec.group the panel lays out, so
+                    a 35-knob visual reads as eight short lists instead of one
+                    unsearchable run of options. */}
+                  {modTargetGroupViews.map(({ group, params }) => (
+                    <optgroup key={group.id} label={group.label}>
+                      {params.map((p) => (
+                        <option key={p.key} value={p.key}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  {/* A route saved before a param went mod:"off" (or whose param
                     this preset lacks) still needs a visible, selected option —
                     silently snapping the select to the first entry would
                     rewrite the route on the next unrelated edit. Such routes
                     are inert in applyMods. */}
-                {r.param.length > 0 &&
-                  !r.param.startsWith(POST_TARGET_PREFIX) &&
-                  !modTargetGroupViews.some(({ params }) =>
-                    params.some((p) => p.key === r.param),
-                  ) && <option value={r.param}>{`${r.param} (not modulatable)`}</option>}
-                {/* Post targets are namespaced ("post:chromatic") so they can
+                  {r.param.length > 0 &&
+                    !r.param.startsWith(POST_TARGET_PREFIX) &&
+                    !modTargetGroupViews.some(({ params }) =>
+                      params.some((p) => p.key === r.param),
+                    ) && <option value={r.param}>{`${r.param} (not modulatable)`}</option>}
+                  {/* Post targets are namespaced ("post:chromatic") so they can
                     live in the same route list as preset params — animating
                     the post chain was a direct user request. */}
-                <optgroup label="Post-processing">
-                  {POST_MOD_TARGETS.map((p) => (
-                    <option key={p.key} value={`${POST_TARGET_PREFIX}${p.key}`}>
-                      {p.label}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-              <SliderField
-                label={`${r.source} to ${r.param} amount`}
-                min={-1}
-                max={1}
-                step={0.01}
-                value={r.amount}
-                onChange={(amount) => props.onUpdateMod(r.id, { amount })}
-              />
-              <button
-                className="chip-x"
-                title="Remove route"
-                aria-label={`Remove ${r.source} to ${r.param} modulation route`}
-                onClick={() => props.onRemoveMod(r.id)}
-              >
-                ✕
-              </button>
-            </div>
+                  <optgroup label="Post-processing">
+                    {POST_MOD_TARGETS.map((p) => (
+                      <option key={p.key} value={`${POST_TARGET_PREFIX}${p.key}`}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+                <SliderField
+                  label={`${r.source} to ${r.param} amount`}
+                  min={-1}
+                  max={1}
+                  step={0.01}
+                  value={r.amount}
+                  onChange={(amount) => props.onUpdateMod(r.id, { amount })}
+                />
+                <button
+                  className="chip-x"
+                  title="Remove route"
+                  aria-label={`Remove ${r.source} to ${r.param} modulation route`}
+                  onClick={() => props.onRemoveMod(r.id)}
+                >
+                  ✕
+                </button>
+              </div>
+              {/* Shape row (P-16): response curve + attack/release lag. All
+                optional — Linear + 0/0 is exactly the classic instant route,
+                and the patches write `undefined` then so untouched routes
+                keep their v1 shape in saved documents. */}
+              <div className="mod-row mod-shape-row">
+                <select
+                  className="select mod-select"
+                  value={r.curve ?? "linear"}
+                  title="Response curve on the source before the amount — Exp emphasizes peaks, Smooth eases both ends"
+                  onChange={(e) =>
+                    props.onUpdateMod(r.id, {
+                      curve: e.target.value === "linear" ? undefined : (e.target.value as ModCurve),
+                    })
+                  }
+                >
+                  <option value="linear">Linear</option>
+                  <option value="exp">Exp</option>
+                  <option value="smooth">Smooth</option>
+                </select>
+                <span
+                  className="mod-arrow"
+                  title="Attack — how long the route takes to rise, seconds"
+                >
+                  A
+                </span>
+                <SliderField
+                  label={`${r.source} to ${r.param} attack seconds`}
+                  min={0}
+                  max={2}
+                  step={0.01}
+                  value={r.attack ?? 0}
+                  onChange={(v) => props.onUpdateMod(r.id, { attack: v === 0 ? undefined : v })}
+                />
+                <span
+                  className="mod-arrow"
+                  title="Release — how long the route takes to fall, seconds"
+                >
+                  R
+                </span>
+                <SliderField
+                  label={`${r.source} to ${r.param} release seconds`}
+                  min={0}
+                  max={2}
+                  step={0.01}
+                  value={r.release ?? 0}
+                  onChange={(v) => props.onUpdateMod(r.id, { release: v === 0 ? undefined : v })}
+                />
+              </div>
+            </Fragment>
           ))}
           <div className="save-look-row">
             <button

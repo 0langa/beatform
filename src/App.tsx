@@ -448,6 +448,10 @@ export default function App() {
     (id) => store().removeModRoute(id),
     [store],
   );
+  const applyModRecipe: ParamsPanelProps["onApplyModRecipe"] = useCallback(
+    (id) => store().applyModRouteRecipe(id),
+    [store],
+  );
   const importLyrics: ParamsPanelProps["onImportLyrics"] = useCallback(
     (f) => void f.text().then((t) => store().loadLyricsText(f.name, t)),
     [store],
@@ -1114,6 +1118,7 @@ export default function App() {
           onAddMod={addMod}
           onUpdateMod={updateMod}
           onRemoveMod={removeMod}
+          onApplyModRecipe={applyModRecipe}
           lyricFileName={lyricFileName}
           lyricStyle={lyricStyle}
           onImportLyrics={importLyrics}
