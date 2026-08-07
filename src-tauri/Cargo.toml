@@ -53,7 +53,7 @@ sha2 = "0.10"
 # requestMIDIAccess unless the WebView2 PermissionRequested event grants it.
 # Versions track what wry/tauri already pull in — no new tree entries.
 webview2-com = "0.38"
-windows-core = "0.61"
+windows-core = "0.62"
 # Uninstall-entry self-heal (uninstall_entry.rs): DisplayVersion went
 # stale across five auto-updates (ALIGN-002). Version tracks the tree's
 # existing winreg — no new tree entries.
