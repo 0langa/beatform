@@ -243,8 +243,16 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
   particles color-tier/snare-meteors/constellation; nebula v14 saturation
   migration + duo-palette/stars/wind; 15 new + 7 reworked styles; matrix
   151→168, all four @defaults device-identical, 7 changed hashes all
-  declared; strips at devstorage depth-batch2-strips) → **Batch 3** (echo-trails, metaballs,
-  oscilloscope-fragment, tunnel) → **Renderer block** (spectrum-scape,
+  declared; strips at devstorage depth-batch2-strips) → **Batch 3 DONE,
+  shipped v2.76.0 2026-08-07** (echo-trails source enum incl cover-art
+  accumulator + off-axis vortex + warp fields; metaballs smear/
+  bassWeight/eccentric/environment + beatSwell promoted, feedback
+  reclassification = pre-declared metaballs-family LSB class;
+  oscilloscope multi-trace split + beam/dots/sample-hold + graticule +
+  persist promoted; tunnel hex/wireframe/organic materials + cover-wall
+  mosaic + junctions + centerGlow promoted; 20 new styles; matrix
+  168→188 with 160 identical and 8 changed all pre-declared; strips at
+  devstorage depth-batch3-strips) → **Renderer block** (spectrum-scape,
   particle-flow, oscilloscope-XY) → **Builder bridge**. One release per
   batch.
 
