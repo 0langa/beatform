@@ -11,6 +11,7 @@ import {
 } from "../render/types";
 import type { OverlayMeta } from "../render/overlay";
 import type { ProjectDocument } from "../state/project";
+import { selectEffectiveBg } from "../state/selectors";
 import type { ExportOptions } from "./videoExporter";
 import type { LoudnessJob } from "./exportCore";
 import type { VideoCodecId } from "./codecProbe";
@@ -117,8 +118,10 @@ export function buildExportOptions(
   // Per-mode overrides (v2.46): the mode's own background wins over the
   // global one, and a custom center image replaces the track's cover art —
   // resolved HERE so the interactive export and the batch runner cannot
-  // drift apart.
-  const bg = doc.bgByPreset[doc.presetId] ?? doc.bg;
+  // drift apart. The bg rule is the SHARED selector the live render loop
+  // reads too (store.getFrameInput), so preview and export cannot resolve
+  // different backgrounds for the same document (BG1).
+  const bg = selectEffectiveBg(doc);
   const centerId = doc.centerImageByPreset[doc.presetId];
   const centerImage = centerId ? doc.assets[centerId]?.dataUrl : undefined;
   return {
