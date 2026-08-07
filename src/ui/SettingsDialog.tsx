@@ -65,12 +65,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-label="App settings"
+        aria-label="Preferences"
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-header">
-          <span className="panel-heading">App settings</span>
+          <span className="panel-heading">Preferences</span>
           <button
             className="icon-btn subtle"
             aria-label="Close"
@@ -83,7 +83,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
         <Segmented<Tab>
           value={tab}
           onChange={setTab}
-          ariaLabel="Settings section"
+          ariaLabel="Preferences section"
           options={[
             { value: "general", label: "General" },
             { value: "modes", label: "Modes" },
@@ -109,7 +109,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
             <div className="field">
               <span>Save dialogs open in</span>
               <div className="save-look-row">
-                <span className="row-value settings-path" title={prefs.lastSaveDir ?? undefined}>
+                <span className="row-value" title={prefs.lastSaveDir ?? undefined}>
                   {prefs.lastSaveDir ?? "System default"}
                 </span>
                 {prefs.lastSaveDir && (
@@ -124,9 +124,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </div>
             </div>
             <p className="section-hint">
-              Project-specific settings (visuals, sync, background, post…) live in the settings
-              panel (G) and save into your project file — this page is preferences about the app
-              itself. Beatform stores everything locally and sends no telemetry, ever.
+              Project choices (visuals, sync, background, post…) live in the Inspector (G) and save
+              into your project file — this page is about the app itself. Beatform stores everything
+              locally and sends no telemetry, ever.
             </p>
           </>
         )}

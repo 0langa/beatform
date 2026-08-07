@@ -253,7 +253,7 @@ export function UpdatePrompt({ update, onInstall, onRelaunch, onDismiss }: Updat
           <>
             <p className="update-fineprint" role="alert">
               {update.message} — nothing was changed; the installed version keeps running. You can
-              retry now or later from Settings → Updates.
+              retry now or later from Preferences → Updates.
             </p>
             <div className="update-actions">
               <button className="update-cta" onClick={onInstall}>

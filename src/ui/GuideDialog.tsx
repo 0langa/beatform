@@ -51,8 +51,8 @@ const SECTIONS: GuideSection[] = [
             one, or walk through them with <K k="N" /> and <K k="P" />.
           </li>
           <li>
-            <strong>Open the settings panel</strong> with <K k="G" /> (or the sliders icon, top
-            right) to shape the look of the current mode.
+            <strong>Open the Inspector</strong> with <K k="G" /> (or the sliders icon, top right) to
+            shape the look of the current mode.
           </li>
         </ol>
         <p>
@@ -92,15 +92,15 @@ const SECTIONS: GuideSection[] = [
           </li>
         </ul>
         <p>
-          Hover any control to see a plain-language hint in the panel footer. The search box at the
-          top of the panel finds any setting by name, across all tabs.
+          Hover any control to see a plain-language hint in the Inspector footer. The search box at
+          the top of the Inspector finds any control by name, across all tabs.
         </p>
         <h4>Center images</h4>
         <p>
           Bass Circle and Radial Burst can display artwork in their center: by default the track's
-          embedded cover art, or any image you choose (look for <em>Center image</em> in the panel).
-          Bass Circle's <em>Match cover colors</em> toggle reads the dominant color of that artwork
-          and sets Hue and Hue spread to fit — automatically again for every new track.
+          embedded cover art, or any image you choose (look for <em>Center image</em> in the
+          Inspector). Bass Circle's <em>Match cover colors</em> toggle reads the dominant color of
+          that artwork and sets Hue and Hue spread to fit — automatically again for every new track.
         </p>
         <h4>Your own shaders</h4>
         <p>
@@ -295,8 +295,8 @@ const SECTIONS: GuideSection[] = [
         <p>
           <strong>Good to know:</strong> while the timeline is enabled, scenes override the mode
           strip and scene parameters override the sliders — that's the point, but it can look like
-          "settings do nothing" if you forget it's on. Turn the timeline off (or use Project ▸ New
-          project) to get direct control back.
+          "the Inspector does nothing" if you forget it's on. Turn the timeline off (or use Project
+          ▸ New project) to get direct control back.
         </p>
       </>
     ),
@@ -434,28 +434,28 @@ const SECTIONS: GuideSection[] = [
     ),
   },
   {
-    id: "settings",
-    title: "Settings, updates & shortcuts",
+    id: "preferences",
+    title: "Preferences, updates & shortcuts",
     body: (
       <>
-        <h3>App settings</h3>
+        <h3>Preferences</h3>
         <p>
-          The gear icon in the top bar (or <K k="Ctrl+," />) opens preferences about the app itself:
-          autosave interval, save-dialog folder, a live-preview frame cap (exports always render
-          every frame), GPU preference for dual-GPU laptops, and updates.
+          The gear icon in the top bar (or <K k="Ctrl+," />) collects the choices that follow the
+          app, not the project: autosave interval, save-dialog folder, a live-preview frame cap
+          (exports always render every frame), GPU preference for dual-GPU laptops, and updates.
         </p>
         <h4>Updates</h4>
         <p>
           Beatform updates itself from GitHub Releases: shortly after launch it checks a static file
           (no telemetry, ever) and offers new versions in a dialog — install now, restart once,
           done. Every download is verified against Beatform's signing key before it installs. The
-          automatic check can be turned off in Settings ▸ Updates.
+          automatic check can be turned off in Preferences ▸ Updates.
         </p>
         <h4>Shortcuts</h4>
         <p>
           Press <K k="H" /> for the full list. The important ones: <K k="Space" /> play/pause,{" "}
           <K k="N" />/<K k="P" /> next/previous mode, <K k="1" />–<K k="9" /> jump to a mode,{" "}
-          <K k="G" /> settings panel, <K k="S" /> stage mode, <K k="0" /> blackout, <K k="F" />{" "}
+          <K k="G" /> Inspector, <K k="S" /> stage mode, <K k="0" /> blackout, <K k="F" />{" "}
           fullscreen, <K k="M" /> mute, <K k="L" /> loop, and <K k="I" />/<K k="O" /> A-B loop
           markers. Every shortcut is a letter or digit, so it sits on the same labeled key on every
           keyboard layout.
