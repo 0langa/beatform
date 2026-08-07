@@ -1,15 +1,17 @@
-# Templates — the .bftheme format
+# Themes — the .bftheme format
 
 One JSON file = one complete look: visual mode + parameters, background,
 text/logo layers (assets embedded as data URLs), timeline scenes, post
 chain, motion masters, plus metadata. **Import by dropping the file onto the
-app window.** Export via _Settings → Templates → Save as template…_
+app window.** Export via _Inspector ▸ Visual ▸ Themes ▸ Save as theme…_
 
-Templates contain **no code**. A template can only select and parameterize
-the app's built-in visuals, so importing one is exactly as safe as clicking
+Themes contain **no code**. A theme can only select and parameterize the
+app's built-in visuals, so importing one is exactly as safe as clicking
 around the UI. Share them anywhere — a GitHub discussion, Discord, a zip.
-Community templates live in
-[Discussions](https://github.com/0langa/beatform/discussions).
+Community themes live in
+[Discussions](https://github.com/0langa/beatform/discussions), and the
+in-app [Gallery](https://github.com/beatform-app/gallery) carries a curated,
+checksum-verified selection.
 
 ## File layout
 
@@ -68,10 +70,10 @@ Community templates live in
 ## Authoring tips
 
 - Tune a mode + styles, set Sync (mode/attack/release matter as much as
-  colors), add Post (bloom sells most looks), then _Save as template_.
+  colors), add Post (bloom sells most looks), then _Save as theme…_.
 - `bpmHint` tells users what tempo range you designed around; the app never
   blocks on it.
 - License defaults to CC0 on export so others can build on your look;
   change the JSON by hand if you want attribution (`CC-BY-4.0`).
-- Factory packs (in `src/state/factoryThemes.ts`) are validated by tests
+- Factory themes (in `src/state/factoryThemes.ts`) are validated by tests
   against the live preset schemas — a good reference for what's available.

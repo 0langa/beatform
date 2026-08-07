@@ -11,6 +11,50 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.80.0] - 2026-08-08
+
+### Changed
+
+- **The panel on the right is now the Inspector. The Ctrl+, dialog is now
+  Preferences.** Nothing moved, nothing was removed and nothing behaves
+  differently — only the names. Two completely different surfaces had been
+  sharing the word "settings", which made every tooltip, hint and help page
+  ambiguous about which one it meant:
+  - **Inspector** — press **G**, or the sliders button in the top bar.
+    Everything about the visual you are building: modes, styles, looks and
+    themes, motion, sync, modulation, background, post, layers, lyrics,
+    audiogram, and the live/MIDI controls. Almost all of it belongs to your
+    project and travels in the `.bfproj` file (beat-quantize and MIDI
+    bindings stay per-install, as they always have). Earlier release notes
+    call this the "Visual settings panel", or just "the settings panel" —
+    for example the Gallery that moved out of it into its own dialog in
+    2.72.0 still leaves its shortcut in the Inspector's **Themes** section.
+  - **Preferences** — press **Ctrl+,**, or the gear. The choices that follow
+    the app rather than the project: autosave delay, the remembered save
+    folder, the mode-strip order, the performance overlay, preview
+    resolution, GPU preference and updates. Earlier notes call this "App
+    settings" — so "App settings → Modes" from 2.57.0 is now
+    **Preferences ▸ Modes**, and "App Settings → Performance" from 2.68.0
+    is now **Preferences ▸ Performance**.
+- One knob or toggle is now a **control** (or a **parameter** where MIDI is
+  concerned), never "a setting". The Inspector's search box reads _Search
+  controls…_, and searching for something that isn't there says "No controls
+  match".
+- The in-app user guide, the online guide, the README and the bug-report
+  form all use the new names, including the shortcut list under **H**.
+
+### Fixed
+
+- **The Inspector no longer redraws itself on every meter tick.** With a
+  track playing it was rebuilding the entire panel four times a second — the
+  rate the playhead and the loudness readout update at — and once per
+  rendered frame during an export. It now watches only the values it
+  actually displays, so dragging a slider, typing in the search box or
+  opening a section stays responsive while music plays or a render runs. The
+  footer badges (LUFS, BPM, key, renderer) still update exactly as before.
+  This is internal plumbing: every control, every value and every exported
+  pixel is unchanged.
+
 ## [2.79.0] - 2026-08-07
 
 ### Added
@@ -2126,7 +2170,13 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.74.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.80.0...HEAD
+[2.80.0]: https://github.com/0langa/beatform/compare/v2.79.0...v2.80.0
+[2.79.0]: https://github.com/0langa/beatform/compare/v2.78.0...v2.79.0
+[2.78.0]: https://github.com/0langa/beatform/compare/v2.77.0...v2.78.0
+[2.77.0]: https://github.com/0langa/beatform/compare/v2.76.0...v2.77.0
+[2.76.0]: https://github.com/0langa/beatform/compare/v2.75.0...v2.76.0
+[2.75.0]: https://github.com/0langa/beatform/compare/v2.74.0...v2.75.0
 [2.74.0]: https://github.com/0langa/beatform/compare/v2.73.0...v2.74.0
 [2.73.0]: https://github.com/0langa/beatform/compare/v2.72.1...v2.73.0
 [2.72.1]: https://github.com/0langa/beatform/compare/v2.72.0...v2.72.1

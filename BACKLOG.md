@@ -140,6 +140,19 @@ regress these.
   **The word "Template" is retired** in UI, guide, docs, code comments.
 - **Gallery** — the public curated collection of looks + themes.
 
+Surface names (decided 2026-08-07 as P-2, shipped v2.80.0). Older entries in
+this ledger use the retired words; they are left as written:
+
+- **Inspector** — the right-hand dock (**G**). Was "Visual settings" or
+  "the settings panel".
+- **Preferences** — the Ctrl+, app dialog. Was "App settings".
+- **Control** (or **parameter**, where "control" would collide with the
+  verb) — one knob or toggle. **The bare word "settings" is retired from UI
+  copy**, with exactly one exemption: "Windows Sound settings", which names
+  an OS surface and is capitalized so it reads as a proper noun. Type names
+  (`BgSettings`, `ExportSettings`…) and persisted ids are unaffected — P-2
+  bans UI copy, not code.
+
 ### Track A — Gallery correctness + naming — DONE, shipped v2.73.0 (2026-08-06)
 
 - [x] A1 Install-state truth. Looks: "✓ Added" must track the installed
@@ -305,10 +318,33 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       Style/Look/Theme/Gallery per the vocabulary, add a Gallery section,
       correct every drifted term ("Styles — curated one-click looks" etc.),
       sweep all 12 sections for staleness (guide predates lyrics, Gallery,
-      perf overlay, preview scale…).
-- [ ] D2 README + docs/ site + gallery-repo docs same sweep.
+      perf overlay, preview scale…). **Partly paid down in v2.80.0** — the
+      in-app guide's Settings/Preferences section and every surface name are
+      now correct; the 12-section staleness sweep is still open.
+- [ ] D2 README + docs/ site + gallery-repo docs same sweep. **README,
+      `docs/index.md`, `docs/guide.md` and `docs/templates.md` done in
+      v2.80.0** (surface names + Template→Theme residue + the Preferences
+      tab inventory, which had never listed Modes or Performance; the
+      factory-pack names in `docs/index.md` named four themes that have not
+      existed since the seed set was rebuilt). Remaining: the gallery-repo
+      docs, and the docs page still lives at the `/templates` URL with the
+      file `docs/templates.md` — renaming both plus every inbound link is a
+      separate, link-breaking change.
 - [ ] D3 Repo-wide string audit for "template"/naming residue (UI strings,
-      tooltips, aria-labels, comments).
+      tooltips, aria-labels, comments). **README + `docs/` cleared in
+      v2.80.0**; UI strings/comments still to sweep. Note the two legitimate
+      survivors: `SectionDef.id: "Templates"` (persisted collapse key, title
+      reads "Themes") and the shader editor's "starter shader", which is a
+      code template, not a `.bftheme`.
+- [ ] D4 **READY — `CHANGELOG.md` has no `## [2.74.0]` section at all.**
+      The release shipped 2026-08-07 (mode-depth batch 1: voice-orb, aurora,
+      synthwave, led-matrix) and its link reference exists, but the notes
+      section was never written, so `changelogNotes.ts` — which slices
+      `## [x.y.z]` headings for the update dialog — silently skips it for
+      every user who updated across that version. Reconstruct the notes from
+      the Track B batch-1 record and the v2.74.0 commit range; do not
+      invent. (Found during the v2.80.0 docs pass, which also backfilled the
+      missing `[2.75.0]`–`[2.79.0]` link references.)
 
 ### Track E — Hardening burn-down (NEW, from the audit register)
 
@@ -321,6 +357,14 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       re-bless) — the owner's design call came in the same round. REMAINING
       from the shortlist: **RP-4** (→ E3), **DS-5/7/12** (README/guide/
       pages staleness → Track D scope), **TQ-3** (fixed), **SS-2** (fixed).
+      **Correction (2026-08-08): UI-2 did not actually close in v2.73.0.**
+      The panel still reconciled on the 4 Hz playback/loudness tick — the
+      test that passed measured prop identity through a `memo()` boundary
+      that a zero-prop component can never exercise, i.e. it was vacuously
+      green. Genuinely closed in **v2.80.0** (P-12 wave 1, program-extension
+      item 3): the store-direct rewrite plus a commit-count test that is red
+      on the pre-migration build. Treat any "memo is now effective" claim as
+      unproven until a render-count assertion backs it.
 - [ ] E2 Severity-2 waves per domain (state → UI → audio/export →
       platform → render), each wave gated + released.
 - [ ] E3 Register the RP-4 determinism question as its own
@@ -369,6 +413,86 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       zero movement). Kaleido-fold rescales deliberately left private
       (genuinely different domains).
 
+### Track G — Store-direct + naming follow-ups (NEW, from the v2.80.0 refactor release)
+
+Everything v2.80.0 deliberately left undone. The release's prime invariant
+was zero behavior change and zero pixel change, so each of these was cut for
+a named reason rather than forgotten. G1–G7 are the whole deferral list;
+nothing else from that release is outstanding.
+
+- [ ] G1 **READY — P-12 wave 2: the other seven panels go store-direct.**
+      PlayerBar, TimelinePanel, LibraryPanel, PresetStrip, BatchPanel,
+      ShaderEditor, ShadertoyImport. Wave 1 covered ParamsPanel only,
+      because the evidence mapped that panel exhaustively and the others'
+      data props not at all — migrating them blind alongside the idiom's
+      first use is how a "zero behavior change" release stops being one.
+      **TimelinePanel is the bigger performance target than ParamsPanel
+      ever was**: 11 props including `time` at 4 Hz and `activeParams` at
+      pointer rate, over an ~11,280 px / ~840-element DOM, with zero render
+      coverage before this release. v2.80.0 left `renderProbe()`-based
+      commit-count tests on TimelinePanel and PlayerBar precisely so wave 2
+      starts with a net — start by making those go red. BatchPanel's
+      `formatLabel` derivation is the sole reason App still subscribes to
+      all of `exportSettings`.
+- [ ] G2 **READY — BLOCKING: the first Inspector section keys its collapse
+      state on the visual mode's display name.** `ParamsPanel.tsx` builds
+      that SectionDef with `id: props.preset.name` — a dynamic, user-visible
+      string identical to the section's own title, directly violating the
+      `SectionDef.id` contract stated three lines above it ("retitling never
+      changes an id"). Renaming any mode's display name therefore resets
+      that mode's collapse state, and it fails **silently**: `prefs.ts` has
+      no numbered-migration machinery and degrades unknown
+      `collapsedSections` entries to defaults. Not fixed in v2.80.0 because
+      the fix needs a one-time `collapsedSections` name→`preset.id`
+      migration that cannot live in `prefs.ts` (it must not import the
+      preset registry) and must run in a `useEffect`, never as a
+      render-phase write. **This must land before any visual mode's display
+      name is changed again** — Track B's waves are complete, but Track C
+      and any later depth work can retitle a mode.
+- [ ] G3 **READY — extract the Inspector's footer `hint`.** Moving the
+      pointer across the Inspector re-renders the whole ~2,000-line panel
+      once per row crossed — a _higher_ frequency than the 4 Hz `lufs` tick
+      v2.80.0 fixed. Deferred because `onHint` is threaded through
+      ParamGroups, BuilderPanel and every `kit.tsx` row, so fixing it means
+      restructuring the hint channel. **Do not put `hint` in the zustand
+      store**: that would broadcast pointer-rate churn to every subscriber
+      in the app.
+- [ ] G4 Push subscriptions down to `ParamRow` — the real slider-drag fix
+      (`setParam` writes `activeParams` on every pointermove). Requires
+      `ParamGroups`/`paramControls` to become store-aware, which invalidates
+      the two largest surviving unit suites (`ParamGroups.test.tsx`,
+      `kit.test.tsx`). Sequence **after** P-1's page model exists.
+- [ ] G5 Move the `UpdatePhase` state machine out of `App.tsx` and finish
+      SettingsDialog. Its four update props are the only prop-drilling left
+      into an otherwise store-direct dialog; the machine is deliberately not
+      in the store today, and touching it would have meant a third
+      structural edit to App.tsx in one release.
+- [ ] G6 `gpuMatrix.ts` restores `rebuildBuilder2(defaultBuilderStack())`
+      rather than the store's stack, so module state can diverge from
+      `s.builderStack` after `window.__runGpuMatrix()`. Pre-existing and
+      harness-only — observable only with the Inspector open in Builder
+      mode, and the gate's `spectrumSmoke` leg uses `spectrum-bars`. Left
+      alone because the fix puts a store-shaped change inside the render
+      layer; do it deliberately, not opportunistically.
+- [ ] G7 Deduplicate `exportBlocked` (`App.tsx`) against
+      `SIMPLIFIED_EXPORT_REASON` (`store.ts`) — a real F2-class drift risk.
+      Deferred because it lives in the top bar that P-1 restructures.
+
+**Frozen by v2.80.0 — renaming any of these is a silent user-data or gate
+break, not a cleanup.** Persisted: `viz.exportSettings.v1`,
+`beatform.prefs.v1`, `panelOpen`, `panelWidth` (shared with the Library
+panel — `inspectorWidth` would be actively wrong), `paramsTab` **and its
+five values**, `collapsedSections`, `advancedOpen`, the whole `LEGACY` map,
+and all 15 SectionDef ids (including `"Templates"`, titled "Themes").
+Tooling-coupled CSS: `.params-panel`, the `.panel-*` family (nine call
+sites), `.section-toggle`, `.panel-resize-handle`, `--panel-w`, and
+`.update-hero-close` — the shared CDP bootstrap clicks that last one, so
+every device harness hangs at startup if it changes. Also standing: the
+`{showPanel && <ParamsPanel />}` mount gate stays in App (moving it inside
+would persist eleven pieces of local UI state across close/open), `memo()`
+does not come back to a zero-prop component, and `useShallow` stays unused —
+it has no prior art here and does not remove the `useMemo` anyway.
+
 ### Approved program extension (owner: "Approve as ranked", 2026-08-06)
 
 All PROPOSALS.md verdicts are in (see that file for per-item text).
@@ -395,8 +519,27 @@ Execution sequence around the running Track B program:
    sections + spans are segment-shifted like the beat grid; the live feed is
    ONE store subscription, not a call at each of the nine `lyrics` writers.
    GPU matrix 213 cases, zero movement.
-3. **Post-batch-3 refactor release:** P-12 store-direct migration (kills
-   props-drilling) + P-2 naming (Inspector / Preferences).
+3. ~~**Post-batch-3 refactor release:** P-12 store-direct migration (kills
+   props-drilling) + P-2 naming (Inspector / Preferences).~~
+   **DONE, shipped v2.80.0 2026-08-08.** P-12 **wave 1 only**: ParamsPanel
+   plus its two exclusive children (LayersPanel, BuilderPanel) went
+   store-direct — the 82-member props interface and the 46 App-level
+   `useCallback` forwarders deleted, `memo()` removed rather than kept (with
+   zero props it can never bail, so it was a false contract), and the footer
+   badges split into `PanelFooterBadges` so the 4 Hz `lufs` tick no longer
+   reconciles a 2,000-line panel (audit UI-2). Foundation: a new
+   `src/state/selectors.ts` collapses the per-mode background expression
+   that lived in **five** places (the divergence behind BG1) into one
+   function, and an eslint `no-restricted-syntax` rule makes an allocating
+   zustand-v5 selector unwritable — that mistake is a white screen on mount,
+   not a slow render. P-2: the right-hand dock is the **Inspector**, the
+   Ctrl+, dialog is **Preferences**, and one knob is a **control** (or
+   **parameter**); 39 UI strings changed while every persisted id, prefs
+   field and CSS class stayed frozen (Track G lists the freeze). Binding
+   invariant: zero behavior change, zero pixel change — GPU matrix 213
+   cases, and a single moved hash stops the release rather than being
+   re-blessed. Wave 2 (the other seven panels) and six other deliberate
+   deferrals: **Track G**.
 4. **After Track B completes:** P-1 Inspector dock (staged: shell + rail
    → per-section pages → Modulation showpiece page) with P-9 folded in.
 5. **Track C (seed v2):** with modulation v2 live; P-6 factory-themes-

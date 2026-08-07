@@ -204,7 +204,7 @@ mkdir C:\bf-test\media, C:\bf-test\out -Force
 ## ✅ Verified (v2.44.0/2.44.1 passes — no action needed)
 
 Installer/launch/sidecar · auto-updater end-to-end (twice: 2.39→2.43 and
-2.44.0→2.44.1) · 16 modes look correct · max-settings sweep (no hard circular
+2.44.0→2.44.1) · 16 modes look correct · max-parameter sweep (no hard circular
 clipping) · preview/export contract · lyrics anims · video-bg dim/blur · H.264, AV1,
 VP9-alpha (`alpha_mode: 1`), ProRes 4444 (`yuva444p12le` + PCM), GIF decode
 clean · batch 20 MP3s with ID3 titles + bad-file isolation · beat-quantized
@@ -220,13 +220,13 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   the browser). In Beatform click the **broadcast icon** (top bar).
   PASS: no error toast appears (the old failure was the toast "System-audio
   capture failed: Unable to load a worklet's module"), the icon shows the
-  live state, and the LUFS badge in the settings-panel footer (open with G)
+  live state, and the LUFS badge in the Inspector footer (open with G)
   moves with the external audio. Click the icon again to stop.
 - [✅] **Crash recovery.** PASS 2026-07-23 on v2.44.1: autosave existed
   (408337 bytes), forced termination produced the Restore/Discard bar,
   Restore returned the edited Speed 1.00 setting, and a later normal-close
   relaunch showed no recovery bar. Steps: launch app → open Demos menu → load any demo →
-  open panel (G) → change any slider → wait 8 s →
+  open the Inspector (G) → change any slider → wait 8 s →
   `powershell Stop-Process -Name beatform -Force` → verify the autosave
   exists: `Test-Path "$env:APPDATA\com.olanga.audiovisualizer\autosave.bfproj"`
   must be **True** (this file never existed before v2.44.1 — its presence
@@ -236,7 +236,7 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   PASS: no recovery bar.
 - [✅] **Shortcuts on a non-US keyboard.** PHYSICAL PASS 2026-07-26 by the
   owner on a real QWERTZ keyboard, v2.49.0: P/N/S/0/H and Esc all behave,
-  AND typing the AltGr chords `@ [ ] \ ~ EUR |` into the settings-panel
+  AND typing the AltGr chords `@ [ ] \ ~ EUR |` into the Inspector's
   search box inserted them as literal text with no mode switch and no
   Stage toggle (the AltGr = ctrl+alt guard from v2.44.1 holding). This
   supersedes the spoof below and CLOSES audit finding HW-2 — the physical
@@ -257,7 +257,7 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   one real pass on a QWERTZ layout still recommended before the v3 tag
   (costs a layout switch, not hardware).
 - [✅] **Unsupported video-bg codec message.** PASS 2026-07-26 on installed
-  v2.51.0: Panel (G) → Scene → Background → Video →
+  v2.51.0: Inspector (G) → Scene → Background → Video →
   `C:\bf-test\media\bg-bad.mp4` produced `Could not load video
 background: this clip's video codec isn't supported — re-encode it as
 H.264 or VP9 and try again`. No "Assertion failed" appeared.
@@ -273,7 +273,7 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   naming the new version with notes, **Install now** / **Later**;
   "Later" dismisses for the session; Install shows progress, then
   **Restart now** boots the new version. Manual checks from
-  Settings → Updates must NOT pop the modal. Requires the auto-check
+  Preferences ▸ Updates must NOT pop the modal. Requires the auto-check
   toggle ON (default).
 - [✅] **Per-mode backgrounds (new in v2.46.0).** PASS 2026-07-26 on
   installed v2.51.0. Spectrum Bars → This mode → Image loaded
@@ -296,7 +296,7 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
 - [✅] **In-app user guide (new in v2.46.0).** PASS 2026-07-26 on installed
   v2.51.0: H opened Keyboard shortcuts → User guide; all 12 TOC sections
   rendered distinct content, the Visual modes → Builder pager worked,
-  and Esc closed the dialog. Backgrounds and App settings sections were
+  and Esc closed the dialog. Backgrounds and Preferences sections were
   spot-checked against the running controls.
 - [x] **Update dialog redesign (new in v2.46.0).** PASS 2026-07-26, owner-
       confirmed on the real 2.50.0 -> 2.51.0 update offer: hero band with version
@@ -305,11 +305,15 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
       This is the first time it was checked against a genuine offer — the earlier
       screenshot attempt was inconclusive because the installed build predated the
       feature.
-- [✅] **App-settings gear discoverability (new in v2.45.0).** PASS
-  2026-07-26 on installed v2.51.0: the gear sits between Visual settings
-  and Keyboard shortcuts; its tooltip/accessibility description is
-  exactly `App settings — autosave, performance, updates (Ctrl+,)`;
-  clicking opened App settings and Esc closed it.
+- [✅] **Preferences gear discoverability (new in v2.45.0).** PASS
+  2026-07-26 on installed v2.51.0: the gear sits between the Inspector
+  toggle and Keyboard shortcuts; its tooltip/accessibility description is
+  exactly `Preferences — autosave, performance, updates (Ctrl+,)`;
+  clicking opened Preferences and Esc closed it. (The 2.51.0 run verified
+  the then-current `App settings — …` wording; the string was renamed in
+  v2.80.0 and this assertion tracks the shipping app, byte for byte —
+  it is duplicated at `App.tsx` top bar and help modal, and those three
+  copies must never diverge again.)
 
 - [✅] **PNG sequence export.** PASS 2026-07-23 on v2.44.1: a 5 s,
   720p30 fixture exported 150 PNGs (360,833,706 bytes) to
@@ -368,11 +372,11 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   params, a text overlay layer + an image layer, a mod route, a timeline
   with 2 scenes + 1 automation lane, non-default post + motion, edited
   lyric style + audiogram ON, and a custom WGSL visual (Shader editor →
-  compile the default template → save). Ctrl+S → `C:\bf-test\out\full.bfproj`.
+  compile the starter shader → save). Ctrl+S → `C:\bf-test\out\full.bfproj`.
   Then: switch mode, delete the custom visual, change everything → Ctrl+O
   the file back. PASS: every listed piece returns, INCLUDING the custom
   visual rendering (its WGSL travels in the file since schema v9).
-  (MIDI bindings + quantize are per-install session settings — excluded
+  (MIDI bindings + quantize are per-install session state — excluded
   by design.)
 - [✅] **Library scan + auto-advance.** PASS 2026-07-23 on v2.44.1: scan
   found 23 supported audio files (20 tagged batch fixtures plus three
