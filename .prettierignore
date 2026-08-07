@@ -1,5 +1,9 @@
 dist/
 node_modules/
+# Agent worktrees are full repo copies: formatting the parent must never
+# reach into one, or an in-flight branch fails the parent's gate (the
+# eslint config ignores .claude/ for the same reason).
+.claude/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/Cargo.lock
