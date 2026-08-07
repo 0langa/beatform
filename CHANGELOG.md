@@ -11,6 +11,30 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.77.0] - 2026-08-07
+
+### Added
+
+- **The renderer itself got deeper** — the three modes that were capped by
+  engine limits, uncapped:
+  - **Spectrum Scape** — the 3D city finally answers the beat: beat flash
+    and band response are real controls, plus grid layouts (rings, rows,
+    a spiral galaxy), bar shapes (boxes, pyramids, round columns), light
+    rig and fog controls, and the standard color pair. New styles: Bass
+    Terrain, Galaxy, Obsidian Spires, Flashpoint, Harbor Mist.
+  - **Particle Flow** — new force fields (jet stream, vortex street,
+    orbital) join the classic curl flow, ring and line attractors,
+    treble-driven sparks, ribbon streamers, and a backdrop wash. New
+    styles: Slipstream, Wake, Accretion, Halo, Horizon, Silk, Static
+    Charge.
+  - **Oscilloscope XY** — the genre's poster shot is finally real: a
+    stereo XY/Lissajous display plotting left against right with true
+    phase (goniometer-style), beam dwell that brightens where the trace
+    lingers, and a rotate control for spinning figures. New styles:
+    Lissajous Rose, Phase Scope, Vector Draw. Sweep mode and all
+    existing looks are untouched.
+    All defaults look exactly as before — every new axis is opt-in.
+
 ## [2.76.0] - 2026-08-07
 
 ### Added
