@@ -477,6 +477,26 @@ nothing else from that release is outstanding.
 - [ ] G7 Deduplicate `exportBlocked` (`App.tsx`) against
       `SIMPLIFIED_EXPORT_REASON` (`store.ts`) — a real F2-class drift risk.
       Deferred because it lives in the top bar that P-1 restructures.
+- [ ] G8 **Device harnesses that attach without recovery.**
+      `scripts/lyrics-e2e.mjs` wraps its FIRST IPC call in the re-attach
+      dance but not the initial `attach()` + `waitHooks` eval, and
+      `scripts/perf-family-check.mjs` uses bare `attach()` — both die on a
+      cold Vite reload with "Cannot find execution context" before reaching
+      any assertion. `gallery-e2e.mjs` uses `attachWithRecovery` and does
+      not. Port the survivors to `attachWithRecovery`. Found during the
+      v2.80.0 gate run, where `test:lyrics` could not be executed at all;
+      the branch it guards (`lyricFileName` gating the lyrics panels, which
+      W1 rewired) was verified directly in the running app instead.
+- [ ] G9 **A stale dev server silently poisons every e2e harness.** The
+      harnesses spawn the debug exe, which loads `devUrl
+      http://localhost:1420`; a leftover Vite from an earlier run — bound
+      IPv6-only, since `host: false` resolves to `[::1]` on this machine —
+      answers that URL and serves a different tree, so the harness attaches
+      to the wrong app and fails with a misleading context error. Two
+      fixes worth having: make `spawnApp` assert the server it reaches is
+      the one the harness expects (a build-stamp probe), and document
+      `TAURI_DEV_HOST=127.0.0.1` / `npm run dev -- --host` as the
+      dual-stack incantation. Costs real debugging time every session.
 
 **Frozen by v2.80.0 — renaming any of these is a silent user-data or gate
 break, not a cleanup.** Persisted: `viz.exportSettings.v1`,
