@@ -15,6 +15,18 @@ import { WGSL_PALETTE_PHASE } from "../wgslLib";
  * function of travel distance, so perspective shows the bends ahead and the
  * camera leans into them — up, down, left, right, like riding a flume
  * instead of staring down a straight illuminated bore.
+ *
+ * The v2.76 depth wave rebuilds what the wall can BE. A Wall material enum
+ * swaps the tile grid for staggered hex plates, a glowing wireframe lattice
+ * or warpFbm organic tissue — each branch only reshapes the fragment-local
+ * wall fields (fill, seam mask, seam gain); palette, fog, beat ring and core
+ * stay shared. Cover wall papers every wall cell with the track's album art
+ * (the first mode to wrap the art around the viewer), lit by the wall's own
+ * light so it reads as printed on the bore. Junctions cut side-bore mouths
+ * into the wall at fixed TRAVEL stations — features of the tube, like the
+ * rings, never event state — that flash with the beat grid and race past.
+ * All three default to off/Tiles and the tile math is untouched, so every
+ * pre-wave document renders bit-identically.
  */
 export const tunnelRings: PresetDef = {
   id: "tunnel-rings",
@@ -238,6 +250,155 @@ export const tunnelRings: PresetDef = {
         vignette: 0.6,
       },
     },
+    // Honeycomb — the hex material: staggered amber plates, per-cell shimmer
+    // (checker drives the cell tone spread), a club wall of honey glass.
+    {
+      id: "honeycomb",
+      name: "Honeycomb",
+      values: {
+        material: 1,
+        hue: 45,
+        hueSpread: 40,
+        speed: 0.3,
+        rings: 6,
+        spokes: 14,
+        twist: 0.5,
+        tileSat: 0.9,
+        tileSpectrum: 0.5,
+        checker: 0.24,
+        groutWidth: 0.04,
+        groutLevel: 0.3,
+        roundness: 0.7,
+        surfaceWarp: 0.6,
+        centerGlow: 0.4,
+        beatPulse: 0.75,
+      },
+    },
+    // Vector Grid — the wireframe material as a look: phosphor-green lattice
+    // over the void, flat shading, long draw distance — an 80s vector display.
+    {
+      id: "vector",
+      name: "Vector Grid",
+      values: {
+        material: 2,
+        hue: 130,
+        hueSpread: 12,
+        speed: 0.45,
+        rings: 9,
+        spokes: 16,
+        twist: 0,
+        roundness: 0.1,
+        surfaceWarp: 0,
+        tileLevel: 0.02,
+        tileSpectrum: 0.3,
+        groutWidth: 0.03,
+        groutLevel: 0.4,
+        fogFar: 0.9,
+        centerGlow: 0.56,
+        beatPulse: 0.9,
+        pulseWidth: 16,
+        vignette: 0.35,
+      },
+    },
+    // Gullet — the organic material at full flesh: crimson peristaltic bore,
+    // wide soft veins, maximum roundness — riding something's throat.
+    {
+      id: "gullet",
+      name: "Gullet",
+      values: {
+        material: 3,
+        hue: 355,
+        hueSpread: 25,
+        speed: 0.2,
+        rings: 5,
+        spokes: 8,
+        twist: 0.6,
+        roundness: 1,
+        surfaceWarp: 2.6,
+        tileLevel: 0.18,
+        tileSat: 0.86,
+        tileSpectrum: 0.36,
+        groutWidth: 0.09,
+        groutLevel: 0.26,
+        fogNear: 0.03,
+        fogFar: 0.75,
+        centerGlow: 0.24,
+        beatPulse: 0.55,
+        beatBright: 0.22,
+        vignette: 0.6,
+      },
+    },
+    // Gallery — the cover wall headline: big well-lit art panels framed by
+    // grout, cruising slowly so every cover can be read as it slides past.
+    {
+      id: "gallery",
+      name: "Gallery",
+      values: {
+        coverWall: 1,
+        speed: 0.1,
+        rings: 4.5,
+        spokes: 6,
+        twist: 0.2,
+        tileLevel: 0.14,
+        tileSpectrum: 0.3,
+        checker: 0,
+        groutWidth: 0.045,
+        groutLevel: 0.3,
+        roundness: 0.5,
+        surfaceWarp: 0.3,
+        centerGlow: 0.3,
+        beatPulse: 0.5,
+        beatBright: 0.1,
+        fogFar: 0.8,
+        vignette: 0.4,
+      },
+    },
+    // Interchange — the junction look: fast transit tube where side-bore
+    // mouths strobe with the kick as they whip past.
+    {
+      id: "interchange",
+      name: "Interchange",
+      values: {
+        junction: 1,
+        hue: 210,
+        hueSpread: 50,
+        speed: 0.7,
+        rings: 8,
+        twist: 0.3,
+        cruiseFloor: 0.6,
+        cruiseEnergy: 1.2,
+        beatPulse: 0.85,
+        beatBright: 0.26,
+        pulseWidth: 12,
+        tileSpectrum: 0.4,
+        groutLevel: 0.2,
+        fogFar: 0.85,
+        centerGlow: 0.4,
+      },
+    },
+    // Slipstream — the colorFade look: the palette permanently mid-crossfade
+    // (fade 1) over a wide spread, so colour pours down the bore instead of
+    // switching — an iridescent oil-slick tube.
+    {
+      id: "slipstream",
+      name: "Slipstream",
+      values: {
+        colorFade: 1,
+        hue: 280,
+        hueSpread: 180,
+        speed: 0.55,
+        rings: 10,
+        twist: 1.2,
+        roundness: 0.45,
+        surfaceWarp: 0.9,
+        tileSat: 0.9,
+        tileSpectrum: 0.4,
+        groutLevel: 0.16,
+        centerGlow: 0.5,
+        beatPulse: 0.6,
+        fogFar: 0.9,
+      },
+    },
   ],
   params: [
     {
@@ -309,6 +470,35 @@ export const tunnelRings: PresetDef = {
       hint: "Tile columns around the tunnel wall",
     },
     {
+      // Default 0 = the shipped tile math, kept verbatim in the shader's
+      // untaken-branch path — old looks render bit-identically without
+      // storing a value. Values are permanent: new materials append.
+      key: "material",
+      label: "Wall material",
+      group: "shape",
+      control: "enum",
+      mod: "off",
+      options: [
+        { value: 0, label: "Tiles", hint: "The classic lit ceramic grid" },
+        { value: 1, label: "Hex", hint: "Staggered honeycomb plates with per-cell shimmer" },
+        {
+          value: 2,
+          label: "Wireframe",
+          hint: "No wall at all — a glowing vector lattice with hot crossing nodes",
+        },
+        {
+          value: 3,
+          label: "Organic",
+          hint: "A living bore — peristaltic tissue and branching veins instead of tiles",
+        },
+      ],
+      min: 0,
+      max: 3,
+      step: 1,
+      default: 0,
+      hint: "What the wall is built from — Tiles is the shipped ceramic; the others rebuild the surface",
+    },
+    {
       key: "beatPulse",
       label: "Beat pulse",
       group: "reaction",
@@ -317,6 +507,18 @@ export const tunnelRings: PresetDef = {
       step: 0.01,
       default: 0.7,
       hint: "Each beat sends a ring of light flying into the tunnel",
+    },
+    {
+      // Default 0 = no junctions, and the whole block is guarded off — the
+      // straight uninterrupted bore every saved look renders today.
+      key: "junction",
+      label: "Junctions",
+      group: "reaction",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "Cuts side-bore mouths into the wall ahead — they flash on the beat and race past like passing platforms",
     },
     {
       // Default 0 = the straight bore every project saved before this param
@@ -329,6 +531,30 @@ export const tunnelRings: PresetDef = {
       step: 0.02,
       default: 0,
       hint: "Bends the tube's path like a waterslide — 0 keeps it straight",
+    },
+    {
+      // Default 0 = no art on the wall; the block is guarded off AND gated on
+      // hasCover(), so tracks without embedded art keep the bare material.
+      key: "coverWall",
+      label: "Cover wall",
+      group: "image",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "Papers every wall cell with the track's cover art — an album mosaic wrapped around you, streaming past",
+    },
+    {
+      // Promoted from Advanced (v2.76, pure spec move): the curated tier
+      // covered shape/color/motion/reaction but had no glow handle at all.
+      key: "centerGlow",
+      label: "Center glow",
+      group: "glow",
+      min: 0,
+      max: 1,
+      step: 0.02,
+      default: 0.2,
+      hint: "Glow at the tunnel's vanishing point",
     },
   ],
   advanced: [
@@ -463,16 +689,6 @@ export const tunnelRings: PresetDef = {
       hint: "Where the tunnel starts fading toward the screen edges",
     },
     {
-      key: "centerGlow",
-      label: "Center glow",
-      group: "glow",
-      min: 0,
-      max: 1,
-      step: 0.02,
-      default: 0.2,
-      hint: "Glow at the tunnel's vanishing point",
-    },
-    {
       key: "vignette",
       label: "Vignette",
       group: "backdrop",
@@ -569,6 +785,15 @@ fn tubePath(s: f32) -> vec2f {
 fn tubePathD(s: f32) -> vec2f {
   return vec2f(0.340 * cos(s * 0.34) + 0.073 * cos(s * 0.121),
                -0.260 * sin(s * 0.26) + 0.053 * cos(s * 0.089)) * 0.35;
+}
+
+// Hexagon edge distance for the Hex wall material: p is the offset from a
+// cell centre in lattice units (lattice pitch (1, sqrt(3)), cell "radius"
+// 0.5 toward every neighbour). 0 on the cell border, 0.5 at the centre --
+// the honeycomb analogue of min(d, 1 - d) on the square tile grid.
+fn hexEdge(p: vec2f) -> f32 {
+  let q = abs(p);
+  return 0.5 - max(dot(q, vec2f(0.5, 0.8660254)), q.x);
 }
 
 fn preset(uv: vec2f) -> vec4f {
@@ -774,13 +999,141 @@ fn preset(uv: vec2f) -> vec4f {
           + fluteShade * 0.22
           + surf * 0.3
           + v * P_tileSpectrum();
+  var seam = max(ringLine * ringVis, fluteLine);
+  var seamLevel = P_groutLevel();
+
+  // --- Wall material (v2.76 depth wave) -----------------------------------
+  // Tiles (0, the default) is the shipped math above, verbatim -- no branch
+  // taken, bit-identical. The other materials only rewrite the fragment-local
+  // wall fields (lit / seam / seamLevel); palette, cylinder shade, fog, beat
+  // ring and core stay shared, so every material lives in the same tube.
+  let wallMat = P_material();
+  if (wallMat > 2.5) {
+    // Organic -- the gullet. The grid dissolves: a domain-warped tissue field
+    // displaces soft peristaltic waves down the bore, and its contour band
+    // runs along the wall as branching veins (Grout width sets vein reach,
+    // Surface texture how gnarled the tissue is). The angle enters MIRRORED
+    // (the same triangle fold the spectrum mapping uses) because fbm is not
+    // periodic in a/TAU -- the fold keeps the tissue seamless round the wall.
+    let am = abs(fract(a / TAU + 0.5) * 2.0 - 1.0);
+    let tis = warpFbm(vec2f(am * 3.0, travel * 0.22), 1.2 + P_surfaceWarp() * 0.9);
+    let flesh = 0.5 + 0.5 * cos((ringF * 0.25 + tis * 1.1) * TAU);
+    // Veins are CONTOUR LINES of the tissue -- several iso-levels via fract,
+    // so they branch and pinch where the field bends (a single wide band
+    // around one level read as a flat wash, tried live). Line width breathes
+    // with the field's own gradient, which is what makes them organic.
+    let lvl = abs(fract(tis * 3.0 + 0.5) - 0.5) * 0.333;
+    let vein = smoothstep(P_groutWidth() * 1.1, 0.0, lvl);
+    lit = P_tileLevel() * 0.7 + flesh * 0.34 + surf * 0.22 + v * P_tileSpectrum();
+    seam = vein * (0.35 + 0.65 * flesh);
+  } else if (wallMat > 1.5) {
+    // Wireframe -- the wall vanishes: a vector lattice over the void.
+    // Gaussian line profiles (not smoothstep bars) give the wires a bloom-
+    // like halo, and crossings carry a hot node the peaks blow out. Ring
+    // wires keep the sustained-speed derate (ringVis) exactly like tile rows.
+    let lw = max(P_groutWidth(), 0.012);
+    let rgd = min(ringD, 1.0 - ringD);
+    let fgd = min(fluteD, 1.0 - fluteD);
+    let ringGlow = exp(-rgd * rgd / (lw * lw * 3.0)) * ringVis;
+    let fluteGlow = exp(-fgd * fgd / (lw * lw * 5.5));
+    lit = P_tileLevel() * 0.12 + surf * 0.05 + v * P_tileSpectrum() * 0.2;
+    seam = ringGlow + fluteGlow + ringGlow * fluteGlow * (1.5 + pk * 3.0);
+    // The lattice IS the wall, so the wires get a floor the grout slider
+    // cannot dim to nothing -- a wireframe with no wires is an empty screen.
+    seamLevel = P_groutLevel() * 1.3 + 0.15;
+  } else if (wallMat > 0.5) {
+    // Hex -- staggered honeycomb plates: two interleaved rect lattices make
+    // the hex grid; whichever candidate centre is nearer owns the fragment
+    // (the classic two-lattice hex trick, in unwrapped wall space).
+    let hx = vec2f(fluteF, ringF * 0.8660254);
+    let latR = vec2f(1.0, 1.7320508);
+    let ia = floor(hx / latR);
+    let ib = floor(hx / latR + vec2f(0.5));
+    let ga = hx - (ia + vec2f(0.5)) * latR;
+    let gb = hx - ib * latR;
+    let useA = dot(ga, ga) < dot(gb, gb);
+    let gv = select(gb, ga, useA);
+    let edge = hexEdge(gv);
+    // Per-cell tone seed, integer-exact and wrap-safe: the angular index
+    // wraps modulo Spokes so the cell straddling the angle seam keeps ONE
+    // tone (fract(rawIndex / spokes) differs across the wrap by f32
+    // rounding), and the row index -- odd rows lattice A, even lattice B --
+    // wraps mod 64 so hash21 never sees the huge phases that lose mantissa
+    // late in long tracks (grain()'s fract(u.time) precedent).
+    let spokeN = max(P_spokes(), 4.0);
+    let ix = select(ib.x, ia.x, useA);
+    let ixw = ix - spokeN * floor(ix / spokeN);
+    let iy = select(ib.y * 2.0, ia.y * 2.0 + 1.0, useA);
+    let iyw = iy - 64.0 * floor(iy / 64.0);
+    let cellTone = hash21(vec2f(ixw + 0.13, iyw + 0.57));
+    // Plate shading: face lit toward the centre, shadowed toward the border
+    // (pressed metal), per-cell tone shimmer on the checker knob, seams on
+    // the honey borders. Flutes are gone -- the lattice is the structure.
+    let bevel = smoothstep(0.0, 0.4, edge);
+    lit = P_tileLevel() * (0.5 + cellTone * P_checker() * 3.0 * ringVis)
+        + bevel * 0.2
+        + surf * 0.24
+        + v * P_tileSpectrum();
+    seam = smoothstep(P_groutWidth() * 1.8, 0.0, edge) * ringVis;
+  }
+
   var col = pal * lit * (0.35 + P_tileSat() * 0.9) * round;
+
+  // Cover-art wall (opt-in): every wall cell papers itself with the track's
+  // cover -- an album mosaic wrapped around the bore, streaming past. The art
+  // rides the SAME rect cell grid whatever the material (fluteD/ringD are
+  // cell-local 0..1), fitted with the shared cover machinery (crop fit, no
+  // pan -- the cell is the frame), and multiplied by the wall's own light and
+  // cylinder shade so it reads as PRINTED ON the wall rather than floated
+  // over it. Both cell axes are flipped so the art reads right on the FLOOR
+  // -- the surface the eye rests on: 1-ringD puts the image top at the far
+  // edge (road-marking convention, read as it approaches) and 1-fluteD makes
+  // u grow screen-right there; a tube wrap cannot also unmirror the ceiling.
+  // hasCover() gates the block, so a track without art keeps the bare
+  // material; the 0.92 ceiling keeps a breath of palette in the mix so the
+  // mosaic still belongs to the tunnel's colour world.
+  let cwall = P_coverWall();
+  if (cwall > 1e-4 && hasCover()) {
+    let cuv = fitUV(vec2f(1.0 - fluteD, 1.0 - ringD), coverAspect(), 1.0, 0.0, 1.0, vec2f(0.0));
+    let art = coverSample(cuv).rgb;
+    col = mix(col, art * (0.3 + lit * 1.4) * round, cwall * 0.92);
+  }
 
   // Bright seams (ring + flute lines), spectrum-lit; the loudest angle's seams
   // flare near-white (a hot desaturated core reads as emitting).
-  let seam = max(ringLine * ringVis, fluteLine);
-  col += pal * seam * P_groutLevel() * (0.6 + v * 1.6);
-  col += vec3f(1.0, 0.98, 0.94) * seam * pk * pk * P_groutLevel() * 1.4;
+  col += pal * seam * seamLevel * (0.6 + v * 1.6);
+  col += vec3f(1.0, 0.98, 0.94) * seam * pk * pk * seamLevel * 1.4;
+
+  // Beat junctions (opt-in): side-bore mouths cut into the wall at fixed
+  // TRAVEL stations -- features of the tube like the rings themselves, so a
+  // parked camera holds a junction perfectly still and flying makes it race
+  // past; no event state accumulates (determinism law). Each station hashes
+  // its own angle around the wall; the mouth is a soft hole where the wall
+  // light falls away into the side bore, with a rim that catches the palette
+  // and a beat flash (grid-locked kickP) that strobes the whole junction as
+  // it passes -- a lit platform whipping by. Sits BEFORE the fog on purpose:
+  // a junction emerges from the haze ahead exactly like the wall it is cut
+  // into.
+  let jAmt = P_junction();
+  if (jAmt > 1e-4) {
+    let jF = travel * 0.3;
+    let jI = floor(jF);
+    // Station index wraps mod 128 before hashing: hash11 is sin-based and
+    // f32 sin degrades on huge phases (grain()'s fract(u.time) precedent).
+    let jW = jI - 128.0 * floor(jI / 128.0);
+    let jD = fract(jF);
+    let jAng = hash11(jW + 0.37) * TAU;
+    // Angular distance to the station's side in half-turns (0 = centred on
+    // the mouth, 1 = the opposite wall), continuous across the angle wrap.
+    let dAng = abs(fract((aTwist - jAng) / TAU + 0.5) * 2.0 - 1.0);
+    let mouthA = smoothstep(0.22, 0.1, dAng);
+    let mouthD = smoothstep(0.26, 0.13, abs(jD - 0.5));
+    let mouth = mouthA * mouthD;
+    let jRim = mouth * (1.0 - mouth) * 4.0;
+    col = mix(col, pal * 0.02, mouth * jAmt * 0.85);
+    col += mix(pal, vec3f(1.0), 0.35) * jRim * jAmt * (0.3 + kickP * 1.3) * (0.5 + v);
+    col += pal * mouth * kickP * jAmt * 0.9;
+  }
 
   // Depth cue: near (frame edge) bright, far (centre) recedes into haze. This
   // is what turns a flat disc into a tube you are flying INTO.

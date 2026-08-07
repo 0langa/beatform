@@ -5675,28 +5675,31 @@ fn P_colorFade() -> f32 { return params[2u]; }
 fn P_speed() -> f32 { return params[3u]; }
 fn P_rings() -> f32 { return params[4u]; }
 fn P_spokes() -> f32 { return params[5u]; }
-fn P_beatPulse() -> f32 { return params[6u]; }
-fn P_curve() -> f32 { return params[7u]; }
-fn P_cruiseFloor() -> f32 { return params[8u]; }
-fn P_curveScale() -> f32 { return params[9u]; }
-fn P_cruiseEnergy() -> f32 { return params[10u]; }
-fn P_beatSpeed() -> f32 { return params[11u]; }
-fn P_tileLevel() -> f32 { return params[12u]; }
-fn P_tileSpectrum() -> f32 { return params[13u]; }
-fn P_pulseWidth() -> f32 { return params[14u]; }
-fn P_tileSat() -> f32 { return params[15u]; }
-fn P_checker() -> f32 { return params[16u]; }
-fn P_groutWidth() -> f32 { return params[17u]; }
-fn P_groutLevel() -> f32 { return params[18u]; }
-fn P_fogNear() -> f32 { return params[19u]; }
-fn P_fogFar() -> f32 { return params[20u]; }
-fn P_centerGlow() -> f32 { return params[21u]; }
-fn P_vignette() -> f32 { return params[22u]; }
-fn P_mirror() -> f32 { return params[23u]; }
-fn P_twist() -> f32 { return params[24u]; }
-fn P_roundness() -> f32 { return params[25u]; }
-fn P_surfaceWarp() -> f32 { return params[26u]; }
-fn P_beatBright() -> f32 { return params[27u]; }
+fn P_material() -> f32 { return params[6u]; }
+fn P_beatPulse() -> f32 { return params[7u]; }
+fn P_junction() -> f32 { return params[8u]; }
+fn P_curve() -> f32 { return params[9u]; }
+fn P_coverWall() -> f32 { return params[10u]; }
+fn P_centerGlow() -> f32 { return params[11u]; }
+fn P_cruiseFloor() -> f32 { return params[12u]; }
+fn P_curveScale() -> f32 { return params[13u]; }
+fn P_cruiseEnergy() -> f32 { return params[14u]; }
+fn P_beatSpeed() -> f32 { return params[15u]; }
+fn P_tileLevel() -> f32 { return params[16u]; }
+fn P_tileSpectrum() -> f32 { return params[17u]; }
+fn P_pulseWidth() -> f32 { return params[18u]; }
+fn P_tileSat() -> f32 { return params[19u]; }
+fn P_checker() -> f32 { return params[20u]; }
+fn P_groutWidth() -> f32 { return params[21u]; }
+fn P_groutLevel() -> f32 { return params[22u]; }
+fn P_fogNear() -> f32 { return params[23u]; }
+fn P_fogFar() -> f32 { return params[24u]; }
+fn P_vignette() -> f32 { return params[25u]; }
+fn P_mirror() -> f32 { return params[26u]; }
+fn P_twist() -> f32 { return params[27u]; }
+fn P_roundness() -> f32 { return params[28u]; }
+fn P_surfaceWarp() -> f32 { return params[29u]; }
+fn P_beatBright() -> f32 { return params[30u]; }
 
 // The tube's centreline as a lateral offset (tube-radius units) per unit of
 // TRAVEL distance -- two incommensurate sines per axis, so the path bends
@@ -5717,6 +5720,15 @@ fn tubePath(s: f32) -> vec2f {
 fn tubePathD(s: f32) -> vec2f {
   return vec2f(0.340 * cos(s * 0.34) + 0.073 * cos(s * 0.121),
                -0.260 * sin(s * 0.26) + 0.053 * cos(s * 0.089)) * 0.35;
+}
+
+// Hexagon edge distance for the Hex wall material: p is the offset from a
+// cell centre in lattice units (lattice pitch (1, sqrt(3)), cell "radius"
+// 0.5 toward every neighbour). 0 on the cell border, 0.5 at the centre --
+// the honeycomb analogue of min(d, 1 - d) on the square tile grid.
+fn hexEdge(p: vec2f) -> f32 {
+  let q = abs(p);
+  return 0.5 - max(dot(q, vec2f(0.5, 0.8660254)), q.x);
 }
 
 fn preset(uv: vec2f) -> vec4f {
@@ -5922,13 +5934,141 @@ fn preset(uv: vec2f) -> vec4f {
           + fluteShade * 0.22
           + surf * 0.3
           + v * P_tileSpectrum();
+  var seam = max(ringLine * ringVis, fluteLine);
+  var seamLevel = P_groutLevel();
+
+  // --- Wall material (v2.76 depth wave) -----------------------------------
+  // Tiles (0, the default) is the shipped math above, verbatim -- no branch
+  // taken, bit-identical. The other materials only rewrite the fragment-local
+  // wall fields (lit / seam / seamLevel); palette, cylinder shade, fog, beat
+  // ring and core stay shared, so every material lives in the same tube.
+  let wallMat = P_material();
+  if (wallMat > 2.5) {
+    // Organic -- the gullet. The grid dissolves: a domain-warped tissue field
+    // displaces soft peristaltic waves down the bore, and its contour band
+    // runs along the wall as branching veins (Grout width sets vein reach,
+    // Surface texture how gnarled the tissue is). The angle enters MIRRORED
+    // (the same triangle fold the spectrum mapping uses) because fbm is not
+    // periodic in a/TAU -- the fold keeps the tissue seamless round the wall.
+    let am = abs(fract(a / TAU + 0.5) * 2.0 - 1.0);
+    let tis = warpFbm(vec2f(am * 3.0, travel * 0.22), 1.2 + P_surfaceWarp() * 0.9);
+    let flesh = 0.5 + 0.5 * cos((ringF * 0.25 + tis * 1.1) * TAU);
+    // Veins are CONTOUR LINES of the tissue -- several iso-levels via fract,
+    // so they branch and pinch where the field bends (a single wide band
+    // around one level read as a flat wash, tried live). Line width breathes
+    // with the field's own gradient, which is what makes them organic.
+    let lvl = abs(fract(tis * 3.0 + 0.5) - 0.5) * 0.333;
+    let vein = smoothstep(P_groutWidth() * 1.1, 0.0, lvl);
+    lit = P_tileLevel() * 0.7 + flesh * 0.34 + surf * 0.22 + v * P_tileSpectrum();
+    seam = vein * (0.35 + 0.65 * flesh);
+  } else if (wallMat > 1.5) {
+    // Wireframe -- the wall vanishes: a vector lattice over the void.
+    // Gaussian line profiles (not smoothstep bars) give the wires a bloom-
+    // like halo, and crossings carry a hot node the peaks blow out. Ring
+    // wires keep the sustained-speed derate (ringVis) exactly like tile rows.
+    let lw = max(P_groutWidth(), 0.012);
+    let rgd = min(ringD, 1.0 - ringD);
+    let fgd = min(fluteD, 1.0 - fluteD);
+    let ringGlow = exp(-rgd * rgd / (lw * lw * 3.0)) * ringVis;
+    let fluteGlow = exp(-fgd * fgd / (lw * lw * 5.5));
+    lit = P_tileLevel() * 0.12 + surf * 0.05 + v * P_tileSpectrum() * 0.2;
+    seam = ringGlow + fluteGlow + ringGlow * fluteGlow * (1.5 + pk * 3.0);
+    // The lattice IS the wall, so the wires get a floor the grout slider
+    // cannot dim to nothing -- a wireframe with no wires is an empty screen.
+    seamLevel = P_groutLevel() * 1.3 + 0.15;
+  } else if (wallMat > 0.5) {
+    // Hex -- staggered honeycomb plates: two interleaved rect lattices make
+    // the hex grid; whichever candidate centre is nearer owns the fragment
+    // (the classic two-lattice hex trick, in unwrapped wall space).
+    let hx = vec2f(fluteF, ringF * 0.8660254);
+    let latR = vec2f(1.0, 1.7320508);
+    let ia = floor(hx / latR);
+    let ib = floor(hx / latR + vec2f(0.5));
+    let ga = hx - (ia + vec2f(0.5)) * latR;
+    let gb = hx - ib * latR;
+    let useA = dot(ga, ga) < dot(gb, gb);
+    let gv = select(gb, ga, useA);
+    let edge = hexEdge(gv);
+    // Per-cell tone seed, integer-exact and wrap-safe: the angular index
+    // wraps modulo Spokes so the cell straddling the angle seam keeps ONE
+    // tone (fract(rawIndex / spokes) differs across the wrap by f32
+    // rounding), and the row index -- odd rows lattice A, even lattice B --
+    // wraps mod 64 so hash21 never sees the huge phases that lose mantissa
+    // late in long tracks (grain()'s fract(u.time) precedent).
+    let spokeN = max(P_spokes(), 4.0);
+    let ix = select(ib.x, ia.x, useA);
+    let ixw = ix - spokeN * floor(ix / spokeN);
+    let iy = select(ib.y * 2.0, ia.y * 2.0 + 1.0, useA);
+    let iyw = iy - 64.0 * floor(iy / 64.0);
+    let cellTone = hash21(vec2f(ixw + 0.13, iyw + 0.57));
+    // Plate shading: face lit toward the centre, shadowed toward the border
+    // (pressed metal), per-cell tone shimmer on the checker knob, seams on
+    // the honey borders. Flutes are gone -- the lattice is the structure.
+    let bevel = smoothstep(0.0, 0.4, edge);
+    lit = P_tileLevel() * (0.5 + cellTone * P_checker() * 3.0 * ringVis)
+        + bevel * 0.2
+        + surf * 0.24
+        + v * P_tileSpectrum();
+    seam = smoothstep(P_groutWidth() * 1.8, 0.0, edge) * ringVis;
+  }
+
   var col = pal * lit * (0.35 + P_tileSat() * 0.9) * round;
+
+  // Cover-art wall (opt-in): every wall cell papers itself with the track's
+  // cover -- an album mosaic wrapped around the bore, streaming past. The art
+  // rides the SAME rect cell grid whatever the material (fluteD/ringD are
+  // cell-local 0..1), fitted with the shared cover machinery (crop fit, no
+  // pan -- the cell is the frame), and multiplied by the wall's own light and
+  // cylinder shade so it reads as PRINTED ON the wall rather than floated
+  // over it. Both cell axes are flipped so the art reads right on the FLOOR
+  // -- the surface the eye rests on: 1-ringD puts the image top at the far
+  // edge (road-marking convention, read as it approaches) and 1-fluteD makes
+  // u grow screen-right there; a tube wrap cannot also unmirror the ceiling.
+  // hasCover() gates the block, so a track without art keeps the bare
+  // material; the 0.92 ceiling keeps a breath of palette in the mix so the
+  // mosaic still belongs to the tunnel's colour world.
+  let cwall = P_coverWall();
+  if (cwall > 1e-4 && hasCover()) {
+    let cuv = fitUV(vec2f(1.0 - fluteD, 1.0 - ringD), coverAspect(), 1.0, 0.0, 1.0, vec2f(0.0));
+    let art = coverSample(cuv).rgb;
+    col = mix(col, art * (0.3 + lit * 1.4) * round, cwall * 0.92);
+  }
 
   // Bright seams (ring + flute lines), spectrum-lit; the loudest angle's seams
   // flare near-white (a hot desaturated core reads as emitting).
-  let seam = max(ringLine * ringVis, fluteLine);
-  col += pal * seam * P_groutLevel() * (0.6 + v * 1.6);
-  col += vec3f(1.0, 0.98, 0.94) * seam * pk * pk * P_groutLevel() * 1.4;
+  col += pal * seam * seamLevel * (0.6 + v * 1.6);
+  col += vec3f(1.0, 0.98, 0.94) * seam * pk * pk * seamLevel * 1.4;
+
+  // Beat junctions (opt-in): side-bore mouths cut into the wall at fixed
+  // TRAVEL stations -- features of the tube like the rings themselves, so a
+  // parked camera holds a junction perfectly still and flying makes it race
+  // past; no event state accumulates (determinism law). Each station hashes
+  // its own angle around the wall; the mouth is a soft hole where the wall
+  // light falls away into the side bore, with a rim that catches the palette
+  // and a beat flash (grid-locked kickP) that strobes the whole junction as
+  // it passes -- a lit platform whipping by. Sits BEFORE the fog on purpose:
+  // a junction emerges from the haze ahead exactly like the wall it is cut
+  // into.
+  let jAmt = P_junction();
+  if (jAmt > 1e-4) {
+    let jF = travel * 0.3;
+    let jI = floor(jF);
+    // Station index wraps mod 128 before hashing: hash11 is sin-based and
+    // f32 sin degrades on huge phases (grain()'s fract(u.time) precedent).
+    let jW = jI - 128.0 * floor(jI / 128.0);
+    let jD = fract(jF);
+    let jAng = hash11(jW + 0.37) * TAU;
+    // Angular distance to the station's side in half-turns (0 = centred on
+    // the mouth, 1 = the opposite wall), continuous across the angle wrap.
+    let dAng = abs(fract((aTwist - jAng) / TAU + 0.5) * 2.0 - 1.0);
+    let mouthA = smoothstep(0.22, 0.1, dAng);
+    let mouthD = smoothstep(0.26, 0.13, abs(jD - 0.5));
+    let mouth = mouthA * mouthD;
+    let jRim = mouth * (1.0 - mouth) * 4.0;
+    col = mix(col, pal * 0.02, mouth * jAmt * 0.85);
+    col += mix(pal, vec3f(1.0), 0.35) * jRim * jAmt * (0.3 + kickP * 1.3) * (0.5 + v);
+    col += pal * mouth * kickP * jAmt * 0.9;
+  }
 
   // Depth cue: near (frame edge) bright, far (centre) recedes into haze. This
   // is what turns a flat disc into a tube you are flying INTO.
@@ -5997,12 +6137,28 @@ exports[`shader golden baseline > tunnel-rings: param ABI (key + default, in ord
     "key": "spokes",
   },
   {
+    "default": 0,
+    "key": "material",
+  },
+  {
     "default": 0.7,
     "key": "beatPulse",
   },
   {
     "default": 0,
+    "key": "junction",
+  },
+  {
+    "default": 0,
     "key": "curve",
+  },
+  {
+    "default": 0,
+    "key": "coverWall",
+  },
+  {
+    "default": 0.2,
+    "key": "centerGlow",
   },
   {
     "default": 0.35,
@@ -6055,10 +6211,6 @@ exports[`shader golden baseline > tunnel-rings: param ABI (key + default, in ord
   {
     "default": 0.7,
     "key": "fogFar",
-  },
-  {
-    "default": 0.2,
-    "key": "centerGlow",
   },
   {
     "default": 0.3,
