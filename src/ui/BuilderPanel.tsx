@@ -6,8 +6,8 @@ import {
   BUILDER_MAX_LAYERS,
   type BuilderBlend,
   type BuilderLayer,
-  type BuilderStack,
 } from "../render/builder2";
+import { useVizStore } from "../state/store";
 import { DEGREES, ParamRow, SliderRow, Segmented } from "./kit";
 
 const BLEND_OPTIONS: Array<{ value: BuilderBlend; label: string; hint: string }> = [
@@ -29,24 +29,26 @@ const BLEND_OPTIONS: Array<{ value: BuilderBlend; label: string; hint: string }>
 ];
 
 /**
- * Builder Studio layer-stack editor. Props-only (like LayersPanel): every
- * mutation rebuilds a NEW BuilderStack and hands it to onChange — the store
- * owns recompile/upload. Never mutates props.stack.
+ * Builder Studio layer-stack editor. Store-direct (like LayersPanel): every
+ * mutation rebuilds a NEW BuilderStack and hands it to setBuilderStack — the
+ * store owns recompile/upload. Never mutates the subscribed stack.
+ *
+ * `onHint` stays a prop: the footer hint is the Inspector's own React state,
+ * not a store field, and putting it in the store would broadcast pointer-rate
+ * churn to every subscriber in the app.
  */
 export interface BuilderPanelProps {
-  stack: BuilderStack;
-  onChange: (stack: BuilderStack) => void;
-  onExport: () => void;
-  onImport: (file: File) => void;
   onHint?: (h: string | null) => void;
 }
 
 export function BuilderPanel(props: BuilderPanelProps) {
-  const layers = props.stack.layers;
+  const stack = useVizStore((s) => s.builderStack);
+  const store = useVizStore.getState;
+  const layers = stack.layers;
   const [selectedId, setSelectedId] = useState<string | null>(layers[0]?.id ?? null);
   const emitHint = props.onHint ?? (() => undefined);
 
-  const commit = (next: BuilderLayer[]) => props.onChange({ layers: next });
+  const commit = (next: BuilderLayer[]) => store().setBuilderStack({ layers: next });
   const patch = (id: string, p: Partial<BuilderLayer>) =>
     commit(layers.map((l) => (l.id === id ? { ...l, ...p } : l)));
   const patchParam = (id: string, key: string, value: number) =>
@@ -262,7 +264,7 @@ export function BuilderPanel(props: BuilderPanelProps) {
         <button
           className="text-btn"
           title="Save this layer stack as a shareable .bfbuilder file"
-          onClick={props.onExport}
+          onClick={() => void store().exportBuilderStack()}
         >
           Export .bfbuilder
         </button>
@@ -274,7 +276,7 @@ export function BuilderPanel(props: BuilderPanelProps) {
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) props.onImport(f);
+              if (f) void f.text().then((t) => store().importBuilderStackText(t));
               e.target.value = "";
             }}
           />

@@ -1,16 +1,8 @@
-import { Fragment, memo, useState, type ReactNode } from "react";
-import type { SpectrumResolution, SyncMode, SyncSettings } from "../audio/types";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
+import type { SpectrumResolution, SyncMode } from "../audio/types";
 import { MAX_FREQ, MIN_FREQ } from "../audio/featurePipeline";
 import { spectrumDiagnostics } from "../audio/dsp/displaySpectrum";
-import type {
-  BgFit,
-  BgMode,
-  BgSettings,
-  MotionSettings,
-  ParamValues,
-  PostSettings,
-  PresetDef,
-} from "../render/types";
+import type { BgFit, BgMode, MotionSettings, PostSettings } from "../render/types";
 import {
   BG_IMAGE,
   BG_PRESET,
@@ -21,26 +13,21 @@ import {
   DEFAULT_POST,
   defaultParams,
 } from "../render/types";
-import type { UserPreset } from "../state/userPresets";
-import { ASPECTS, type Aspect, type ProjectDocument } from "../state/project";
+import { ASPECTS } from "../state/project";
 import { FACTORY_THEMES } from "../state/factoryThemes";
 import { GalleryLink } from "./GalleryDialog";
-import type { ThemeMeta } from "../state/themes";
-import type { ImageLayer, OverlayAsset, OverlayLayer, TextLayer } from "../render/overlay";
 import {
   LFO_SOURCES,
   MOD_SOURCES,
   POST_TARGET_PREFIX,
   type ModCurve,
-  type ModRoute,
   type ModSource,
 } from "../state/modMatrix";
 import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
-import { MAX_STEMS, STEM_TRACK_KEYS, type StemEntry, type StemSlot } from "../audio/stems";
-import { LYRIC_ANIMS, type LyricStyle } from "../state/lyrics";
+import { MAX_STEMS, STEM_TRACK_KEYS } from "../audio/stems";
+import { LYRIC_ANIMS } from "../state/lyrics";
 import { LyricsEditPanel } from "./LyricsEditPanel";
 import { LyricsGenPanel } from "./LyricsGenPanel";
-import type { AudiogramSettings } from "../state/audiogram";
 import {
   allParams,
   groupParams,
@@ -49,8 +36,8 @@ import {
   POST_MOD_TARGETS,
   presetMasters,
 } from "../render/types";
-import { QUANTIZE_MODES, type QuantizeMode } from "../state/quantize";
-import { bindingId, type MidiBinding, type MidiLearn } from "../state/midi";
+import { QUANTIZE_MODES } from "../state/quantize";
+import { bindingId } from "../state/midi";
 import {
   HERTZ,
   PERCENT,
@@ -68,15 +55,31 @@ import type { AppPrefs } from "../state/prefs";
 import { getPrefs, setPrefs } from "../state/prefs";
 import { LayersPanel } from "./LayersPanel";
 import { BuilderPanel } from "./BuilderPanel";
+import { PanelFooterBadges } from "./PanelFooterBadges";
 import {
   BUILDER2_ID,
   BUILDER_FACTORY_STACKS,
   BUILDER_LAYER_TYPES,
   copyBuilderStack,
   sameStackValues,
-  type BuilderStack,
 } from "../render/builder2";
 import { IconClose } from "./Icons";
+import { useVizStore } from "../state/store";
+import {
+  selectBgPerMode,
+  selectCenterImageName,
+  selectEffectiveBg,
+  selectHasCoverArt,
+  selectPreset,
+} from "../state/selectors";
+import { askConfirm, isTauri } from "../state/platform";
+import { midiSupported } from "../state/midiInput";
+
+/** Evaluate-once environment probe, at MODULE scope exactly as App.tsx held
+ * it — this reads a capability KEY off navigator, it does not extract
+ * `navigator.requestMIDIAccess` into a local (CLAUDE.md's Web-MIDI rule).
+ * Tests replace it with `vi.mock("../state/midiInput")`, not a prop. */
+const MIDI_SUPPORTED = midiSupported();
 
 function hexToRgb(hex: string): [number, number, number] {
   const v = parseInt(hex.slice(1), 16);
@@ -347,115 +350,6 @@ const PARAMS_TABS: Array<{ id: ParamsTab; label: string; hint: string }> = [
   { id: "live", label: "Live", hint: "Live-performance switch quantize and MIDI mapping" },
 ];
 
-export interface ParamsPanelProps {
-  preset: PresetDef;
-  params: ParamValues;
-  onParam: (key: string, value: number) => void;
-  onApplyStyle: (values: Partial<ParamValues>) => void;
-  onReset: () => void;
-  bg: BgSettings;
-  onBg: (bg: BgSettings) => void;
-  onPickBackgroundImage: () => void;
-  onUseAlbumArtBackground: () => void;
-  /** True when the ACTIVE mode has its own background override. */
-  bgPerMode: boolean;
-  /** Toggle the per-mode background override for the active mode. */
-  onBgPerMode: (on: boolean) => void;
-  /** Name of the active mode's custom center image, null = track cover. */
-  centerImageName: string | null;
-  onPickCenterImage: () => void;
-  onClearCenterImage: () => void;
-  onPickVideoBackground: () => void;
-  videoBgLoading: boolean;
-  /** Offer the Video background option (desktop only). */
-  showVideoBg: boolean;
-  sync: SyncSettings;
-  /** Actual AudioContext rate; analyzer-quality readout must not assume 48 kHz. */
-  analysisSampleRate: number;
-  onSync: (sync: SyncSettings) => void;
-  rendererKind: string;
-  /**
-   * True while the Canvas2D fallback is drawing (audit F1). Everything this
-   * panel offers that the fallback cannot honour — Post, the Motion masters,
-   * Builder Studio, the Video background — is disabled and says why, instead
-   * of accepting the input and quietly dropping it on the floor.
-   */
-  simplifiedRenderer: boolean;
-  onClose: () => void;
-  /** Saved user looks for THIS visual mode (already filtered by caller). */
-  userPresets: UserPreset[];
-  onSaveUserPreset: (name: string) => void;
-  onApplyUserPreset: (id: string) => void;
-  onDeleteUserPreset: (id: string) => void;
-  onExportUserPreset: (id: string) => void;
-  onImportUserPreset: () => void;
-  /** Apply a factory theme's full document. */
-  onApplyTheme: (document: ProjectDocument, name: string) => void;
-  /** Save the whole current setup as a shareable .bftheme file. */
-  onExportTheme: (meta: ThemeMeta) => void;
-  aspect: Aspect;
-  onAspect: (a: Aspect) => void;
-  /** Momentary loudness readout; null before playback. */
-  lufs: number | null;
-  /** Detected tempo; null while unanalyzed. */
-  bpm: number | null;
-  /** Detected key name (e.g. "A minor"); null while unanalyzed/atonal. */
-  keyName: string | null;
-  overlayLayers: OverlayLayer[];
-  assets: Record<string, OverlayAsset>;
-  hasCoverArt: boolean;
-  onAddTextLayer: () => void;
-  onAddImageLayer: () => void;
-  onAddAlbumArtLayer: () => void;
-  onUpdateLayer: (id: string, patch: Partial<TextLayer> | Partial<ImageLayer>) => void;
-  onRemoveLayer: (id: string) => void;
-  smoothSpectrum: boolean;
-  onSmoothSpectrum: (v: boolean) => void;
-  post: PostSettings;
-  onPost: (patch: Partial<PostSettings>) => void;
-  motion: MotionSettings;
-  onMotion: (patch: Partial<MotionSettings>) => void;
-  /** Beat-quantized preset takeover mode (live performance). */
-  switchQuantize: QuantizeMode;
-  onSwitchQuantize: (mode: QuantizeMode) => void;
-  /** Web MIDI (live performance). Absent entirely where unsupported. */
-  midiSupported: boolean;
-  midiEnabled: boolean;
-  midiDevices: string[];
-  midiBindings: MidiBinding[];
-  midiLearn: MidiLearn | null;
-  onEnableMidi: () => void;
-  onDisableMidi: () => void;
-  onMidiLearn: (learn: MidiLearn | null) => void;
-  onRemoveMidiBinding: (id: string) => void;
-  mods: ModRoute[];
-  /** Imported stems (analysis-only modulation sources). */
-  stems: StemEntry[];
-  stemAnalyzing: string | null;
-  onAddStem: (file: File) => void;
-  onRemoveStem: (slot: StemSlot) => void;
-  onAutoRouteStem: (slot: StemSlot) => void;
-  onAddMod: (source: ModSource, param: string) => void;
-  onUpdateMod: (id: string, patch: Partial<ModRoute>) => void;
-  onRemoveMod: (id: string) => void;
-  /** Apply a curated route recipe (P-7 chips) to the active visual. */
-  onApplyModRecipe: (id: string) => void;
-  /** Timed lyrics: loaded file name (null = none) + display style. */
-  lyricFileName: string | null;
-  lyricStyle: LyricStyle;
-  onImportLyrics: (file: File) => void;
-  onClearLyrics: () => void;
-  onLyricStyle: (patch: Partial<LyricStyle>) => void;
-  /** Audiogram overlay elements (progress bar / time / waveform strip). */
-  audiogram: AudiogramSettings;
-  onAudiogram: (patch: Partial<AudiogramSettings>) => void;
-  /** Builder Studio layer stack (edited when preset.id === "builder2"). */
-  builderStack: BuilderStack;
-  onBuilderStack: (stack: BuilderStack) => void;
-  onBuilderExport: () => void;
-  onBuilderImport: (file: File) => void;
-}
-
 /** A settings section, mapped to a tab and given a searchable keyword blob.
  * `standalone` sections render their own `.panel-section` (LayersPanel) and
  * are not wrapped in a CollapsibleSection. */
@@ -477,18 +371,114 @@ interface SectionDef {
   standalone?: boolean;
 }
 
-/** Right-hand settings panel: styles, preset parameters, background.
- * Memoized (H13): App re-renders at ~4Hz alongside the 60fps render loop for
- * unrelated reasons (playback/lufs ticks), and this panel alone is 1,400+
- * lines — without memo it fully reconciled on every one of those ticks even
- * though none of ITS OWN props had changed. Requires every callback prop
- * from App.tsx to be reference-stable (see the useCallback block there); a
- * fresh arrow function per render would silently defeat this.
+/**
+ * The Inspector — the right-hand dock: styles, preset parameters, background,
+ * sync, scene, text and live mapping.
  *
- * v2.41: the former flat 13-section scroll is now grouped into five tabs
+ * Store-direct: it subscribes to the ~27 slices it actually reads and
+ * re-renders only when one of them changes. It is deliberately NOT memo()d —
+ * with zero props memo can never bail on anything, and leaving it there would
+ * assert a contract nothing enforces. The contract that replaced it is
+ * SELECTOR GRANULARITY, pinned by ParamsPanel.test.tsx: the 4 Hz playback tick
+ * (playback, lufs, stereoWidth) and the per-frame export tick (exporting) must
+ * produce ZERO commits here. lufs/bpm/keyName/rendererKind are subscribed
+ * inside <PanelFooterBadges />, which is the only thing that reads them.
+ * Never allocate inside a selector (lint enforces it; the failure mode is a
+ * crash, not a slowdown).
+ *
+ * v2.41: the former flat 13-section scroll is grouped into five tabs
  * (Visual/Sync/Scene/Text/Live) with per-section collapse and a search box
  * that bypasses the tabs. Active tab + collapsed titles persist via prefs. */
-export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
+export function ParamsPanel() {
+  // ── READS: one hook per field. A selector MUST return a store-owned
+  // reference or a primitive — never an object literal, array literal, spread
+  // or .filter/.map/.slice. zustand v5 hands the selector straight to
+  // useSyncExternalStore with no equality fn, so an allocating one is
+  // "Maximum update depth exceeded" ON MOUNT: a white screen, not a slow
+  // render. The shared derivations live in state/selectors.ts; lint blocks
+  // the allocating shapes at author time.
+  const preset = useVizStore(selectPreset);
+  const params = useVizStore((s) => s.activeParams);
+  const bg = useVizStore(selectEffectiveBg);
+  const bgPerMode = useVizStore(selectBgPerMode);
+  const centerImageName = useVizStore(selectCenterImageName);
+  const videoBgLoading = useVizStore((s) => s.videoBgLoading);
+  const sync = useVizStore((s) => s.sync);
+  const analysisSampleRate = useVizStore((s) => s.analysisSampleRate);
+  const simplifiedRenderer = useVizStore((s) => s.simplifiedRenderer);
+  const aspect = useVizStore((s) => s.aspect);
+  const userPresets = useVizStore((s) => s.userPresets);
+  const presetId = useVizStore((s) => s.presetId);
+  const hasCoverArt = useVizStore(selectHasCoverArt);
+  const smoothSpectrum = useVizStore((s) => s.smoothSpectrum);
+  const post = useVizStore((s) => s.post);
+  const motion = useVizStore((s) => s.motion);
+  const switchQuantize = useVizStore((s) => s.switchQuantize);
+  const midiEnabled = useVizStore((s) => s.midiEnabled);
+  const midiDevices = useVizStore((s) => s.midiDevices);
+  const midiBindings = useVizStore((s) => s.midiBindings);
+  const midiLearn = useVizStore((s) => s.midiLearn);
+  /** The store field is `activeMods`; the retired prop was called `mods`. */
+  const mods = useVizStore((s) => s.activeMods);
+  const stems = useVizStore((s) => s.stems);
+  const stemAnalyzing = useVizStore((s) => s.stemAnalyzing);
+  const lyricFileName = useVizStore((s) => s.lyricFileName);
+  const lyricStyle = useVizStore((s) => s.lyricStyle);
+  const audiogram = useVizStore((s) => s.audiogram);
+  /** Read here only for the factory-stack chips' active detection — the
+   * Builder editor below subscribes to the same field independently. */
+  const builderStack = useVizStore((s) => s.builderStack);
+
+  // ── A DERIVATION THAT ALLOCATES: two selections + useMemo, never a
+  // selector. `userPresets.filter(...)` inside one would hand
+  // useSyncExternalStore a fresh array on every store notification.
+  const looksForMode = useMemo(
+    () => userPresets.filter((p) => p.presetId === presetId),
+    [userPresets, presetId],
+  );
+
+  // ── WRITES: one stable accessor; actions are called at the click site.
+  // Actions are built once inside create()'s initializer and every write is a
+  // partial merge, so their identity is permanently stable — no useCallback.
+  const store = useVizStore.getState;
+
+  // Video backgrounds decode a local file, so the option is desktop-only. The
+  // env probe reads fine in the body (LyricsGenPanel.tsx:50 precedent); tests
+  // mock the module rather than injecting a boolean.
+  const showVideoBg = isTauri();
+
+  // ── UI-LEVEL GUARDS stay in the UI, never in the store action: the raw
+  // actions must remain prompt-free for E2E hooks and the generate-replace
+  // flow, which asks its own question.
+
+  /** Destructive AND not undoable: user looks live outside the document
+   * history (unlike shader delete), so a misclick on the 9-px ✕ destroyed an
+   * evening of tuning silently (audit UI-3). */
+  const deleteLook = async (id: string) => {
+    const s = store();
+    const name = s.userPresets.find((p) => p.id === id)?.name;
+    if (name === undefined) return;
+    const ok = await askConfirm(`Delete the look "${name}"? This can't be undone.`, "Delete look");
+    if (ok) s.deleteUserPreset(id);
+  };
+
+  /** Destructive clear-all: with the correction editor, loaded lyrics can
+   * carry real editing work — never drop them on a stray click. */
+  const clearLyricsGuarded = async () => {
+    const s = store();
+    const n = s.lyrics?.length ?? 0;
+    if (n > 0) {
+      const ok = await askConfirm(
+        `Remove the loaded lyrics (${n} line${n === 1 ? "" : "s"})? Unsaved edits are lost.`,
+        "Remove lyrics",
+      );
+      if (!ok) return;
+    }
+    s.clearLyrics();
+  };
+
+  const importLyrics = (f: File) => void f.text().then((t) => store().loadLyricsText(f.name, t));
+
   const [showAdvanced, setShowAdvanced] = useState(() => getPrefs().advancedOpen);
   const [hint, setHint] = useState<string | null>(null);
   const [savingLook, setSavingLook] = useState(false);
@@ -528,49 +518,42 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
     setPrefs({ advancedOpen: on });
   };
   const postChanged = (Object.keys(DEFAULT_POST) as Array<keyof PostSettings>).some(
-    (k) => props.post[k] !== DEFAULT_POST[k],
+    (k) => post[k] !== DEFAULT_POST[k],
   );
   const motionChanged = (Object.keys(DEFAULT_MOTION) as Array<keyof MotionSettings>).some(
-    (k) => props.motion[k] !== DEFAULT_MOTION[k],
+    (k) => motion[k] !== DEFAULT_MOTION[k],
   );
-  const advanced = props.preset.advanced ?? [];
-  const changedCount = advanced.filter(
-    (p) => (props.params[p.key] ?? p.default) !== p.default,
-  ).length;
-  const spectrumInfo = spectrumDiagnostics(props.sync, props.analysisSampleRate);
+  const advanced = preset.advanced ?? [];
+  const changedCount = advanced.filter((p) => (params[p.key] ?? p.default) !== p.default).length;
+  const spectrumInfo = spectrumDiagnostics(sync, analysisSampleRate);
   const resolutionLabel = (resolution: SpectrumResolution) =>
     `${Math.round(
-      spectrumDiagnostics(
-        { ...props.sync, spectrumResolution: resolution },
-        props.analysisSampleRate,
-      ).windowMs,
+      spectrumDiagnostics({ ...sync, spectrumResolution: resolution }, analysisSampleRate).windowMs,
     )} ms`;
   const resolutionLatency = (resolution: SpectrumResolution) =>
     `≈${Math.round(
-      spectrumDiagnostics(
-        { ...props.sync, spectrumResolution: resolution },
-        props.analysisSampleRate,
-      ).latencyMs,
+      spectrumDiagnostics({ ...sync, spectrumResolution: resolution }, analysisSampleRate)
+        .latencyMs,
     )} ms visual latency`;
 
   // Which global masters actually move THIS mode — used to hide inert sliders
   // (e.g. Rotation on a mode that can't spin, Detail on a non-discrete mode).
-  const caps = presetMasters(props.preset);
+  const caps = presetMasters(preset);
   const showMotion = caps.rotation || caps.pulse || caps.detail;
 
   // One sentence, reused by every control the Canvas2D fallback cannot honour
   // (F1). `undefined` on the normal WebGPU path, which is what leaves those
   // controls with their own hints and their own enabled behaviour — the
   // fallback must cost the 99% of users nothing.
-  const unavailable = props.simplifiedRenderer
+  const unavailable = simplifiedRenderer
     ? "Unavailable right now: hardware rendering (WebGPU) isn't available on this system, and the simplified renderer can't draw this"
     : undefined;
 
   // A style is "active" when current params exactly equal defaults + values
-  const defaults = defaultParams(props.preset);
-  const activeStyleId = (props.preset.styles ?? []).find((s) => {
+  const defaults = defaultParams(preset);
+  const activeStyleId = (preset.styles ?? []).find((s) => {
     const merged = { ...defaults, ...s.values };
-    return Object.keys(merged).every((k) => (props.params[k] ?? defaults[k]) === merged[k]);
+    return Object.keys(merged).every((k) => (params[k] ?? defaults[k]) === merged[k]);
   })?.id;
 
   const q = query.trim().toLowerCase();
@@ -579,21 +562,18 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
   // names of the groups they sit in. The old blob carried labels only, so
   // searching a hint's wording ("monstercat", "letterbox") found nothing even
   // though the row was right there.
-  const presetParamText = allParams(props.preset).map(paramSearchText).join(" ");
+  const presetParamText = allParams(preset).map(paramSearchText).join(" ");
   /** Every knob of this visual, grouped — reused by the panel's own layout
    * search blob and by the Modulation/MIDI target dropdowns. */
-  const paramGroupViews = groupParams(props.preset, allParams(props.preset));
+  const paramGroupViews = groupParams(preset, allParams(preset));
   const presetGroupText = paramGroupViews.map((g) => g.group.label).join(" ");
   // What modulation and MIDI may drive: mod:"off" params (pure toggles and
   // mode-choice enums, RP-2) are not targets, so neither picker offers them.
-  const modTargetGroupViews = groupParams(
-    props.preset,
-    allParams(props.preset).filter(isModTarget),
-  );
+  const modTargetGroupViews = groupParams(preset, allParams(preset).filter(isModTarget));
   const firstModTarget = modTargetGroupViews[0]?.params[0]?.key ?? "";
 
   /** The centre-image picker belongs with the Image knobs it affects. */
-  const centerImageExtras: ParamGroupExtra[] = props.preset.params.some((p) => p.key === "cover")
+  const centerImageExtras: ParamGroupExtra[] = preset.params.some((p) => p.key === "cover")
     ? [
         {
           group: "image",
@@ -604,21 +584,19 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               title="What this mode draws in its center: the track's embedded cover art, or any image you choose"
             >
               <span className="row-label">Center image</span>
-              <span className="center-image-value">
-                {props.centerImageName ?? "Track cover art"}
-              </span>
+              <span className="center-image-value">{centerImageName ?? "Track cover art"}</span>
               <button
                 className="text-btn"
                 title="Choose a custom image for this mode's center"
-                onClick={props.onPickCenterImage}
+                onClick={() => void store().pickCenterImage()}
               >
                 Choose…
               </button>
-              {props.centerImageName && (
+              {centerImageName && (
                 <button
                   className="text-btn"
                   title="Back to the track's embedded cover art"
-                  onClick={props.onClearCenterImage}
+                  onClick={() => store().clearCenterImage()}
                 >
                   ✕
                 </button>
@@ -632,32 +610,32 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
   const sections: SectionDef[] = [
     // ---------------- Visual ----------------
     {
-      id: props.preset.name,
-      title: props.preset.name,
+      id: preset.name,
+      title: preset.name,
       tab: "visual",
       search:
-        `${props.preset.name} ${props.preset.description ?? ""} preset style look custom save import gallery browse advanced essentials reset center image cover ${presetGroupText} ${presetParamText}`.toLowerCase(),
+        `${preset.name} ${preset.description ?? ""} preset style look custom save import gallery browse advanced essentials reset center image cover ${presetGroupText} ${presetParamText}`.toLowerCase(),
       headerExtra: (
         <button
           className="text-btn"
-          onClick={props.onReset}
-          title="Back to factory defaults (all settings incl. advanced)"
+          onClick={() => store().resetParams()}
+          title="Back to factory defaults (all controls incl. advanced)"
         >
           Reset
         </button>
       ),
       body: (
         <>
-          {props.preset.description && <p className="preset-desc">{props.preset.description}</p>}
+          {preset.description && <p className="preset-desc">{preset.description}</p>}
 
-          {(props.preset.styles?.length ?? 0) > 0 && (
+          {(preset.styles?.length ?? 0) > 0 && (
             <div className="style-chips">
-              {props.preset.styles!.map((s) => (
+              {preset.styles!.map((s) => (
                 <button
                   key={s.id}
                   className={`style-chip ${s.id === activeStyleId ? "active" : ""}`}
                   title={`Apply the "${s.name}" look`}
-                  onClick={() => props.onApplyStyle(s.values)}
+                  onClick={() => store().applyStyle(s.values)}
                 >
                   {s.name}
                 </button>
@@ -667,14 +645,14 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
           )}
 
           <div className="user-presets">
-            {props.userPresets.length > 0 && (
+            {looksForMode.length > 0 && (
               <div className="style-chips">
-                {props.userPresets.map((p) => (
+                {looksForMode.map((p) => (
                   <span key={p.id} className="user-chip-wrap">
                     <button
                       className="style-chip user"
                       title={`Apply your "${p.name}" look`}
-                      onClick={() => props.onApplyUserPreset(p.id)}
+                      onClick={() => store().applyUserPreset(p.id)}
                     >
                       {p.name}
                     </button>
@@ -682,7 +660,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                       className="chip-x"
                       title={`Delete "${p.name}"`}
                       aria-label={`Delete "${p.name}"`}
-                      onClick={() => props.onDeleteUserPreset(p.id)}
+                      onClick={() => void deleteLook(p.id)}
                     >
                       ✕
                     </button>
@@ -690,7 +668,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                       className="chip-x"
                       title={`Export "${p.name}" as .bfpreset file`}
                       aria-label={`Export "${p.name}" as .bfpreset file`}
-                      onClick={() => props.onExportUserPreset(p.id)}
+                      onClick={() => void store().exportUserPreset(p.id)}
                     >
                       ↗
                     </button>
@@ -703,7 +681,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 className="save-look-row"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  props.onSaveUserPreset(lookName);
+                  store().saveUserPreset(lookName);
                   setLookName("");
                   setSavingLook(false);
                 }}
@@ -730,7 +708,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               <div className="save-look-row">
                 <button
                   className="text-btn"
-                  title="Save the current settings as a named look for this visual"
+                  title="Save the current values as a named look for this visual"
                   onClick={() => setSavingLook(true)}
                 >
                   + Save look
@@ -738,7 +716,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 <button
                   className="text-btn"
                   title="Import a .bfpreset look file"
-                  onClick={props.onImportUserPreset}
+                  onClick={() => void store().importUserPreset()}
                 >
                   Import…
                 </button>
@@ -758,12 +736,12 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 value={showAdvanced ? 1 : 0}
                 onChange={(v) => setAdvanced(v === 1)}
                 onHint={setHint}
-                ariaLabel="Setting detail"
+                ariaLabel="Control detail"
                 options={[
                   {
                     value: 0,
                     label: "Essentials",
-                    hint: `The ${props.preset.params.length} knobs that shape this visual most`,
+                    hint: `The ${preset.params.length} knobs that shape this visual most`,
                   },
                   {
                     value: 1,
@@ -787,11 +765,11 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               modulation/MIDI/automation target lists, NOT for a second knob
               surface — BuilderPanel below stays the one editor, so the
               generic grouped rows are suppressed here (locked UI decision). */}
-          {props.preset.id !== BUILDER2_ID && (
+          {preset.id !== BUILDER2_ID && (
             <ParamGroups
-              preset={props.preset}
-              params={props.params}
-              onParam={props.onParam}
+              preset={preset}
+              params={params}
+              onParam={(key, value) => store().setParam(key, value)}
               onHint={setHint}
               showAdvanced={showAdvanced}
               query={q}
@@ -803,7 +781,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
         </>
       ),
     },
-    ...(props.preset.id === BUILDER2_ID
+    ...(preset.id === BUILDER2_ID
       ? [
           {
             id: "Builder layers",
@@ -812,7 +790,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             search:
               `builder layer stack compositor blend add screen opacity hue spread factory ${BUILDER_FACTORY_STACKS.map((f) => f.name).join(" ")} ${BUILDER_LAYER_TYPES.map((t) => t.label).join(" ")}`.toLowerCase(),
             standalone: true,
-            body: props.simplifiedRenderer ? (
+            body: simplifiedRenderer ? (
               // The whole stack compiles to WGSL, so there is nothing here the
               // fallback can render — showing the editor would invite edits
               // that change the picture not at all (F1).
@@ -832,30 +810,24 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 <div className="panel-section builder-factory-chips">
                   <div className="style-chips">
                     {BUILDER_FACTORY_STACKS.map((f) => {
-                      const active = sameStackValues(props.builderStack, f.stack);
+                      const active = sameStackValues(builderStack, f.stack);
                       return (
                         <button
                           key={f.id}
                           className={`style-chip ${active ? "active" : ""}`}
                           title={`Apply the "${f.name}" layer stack`}
-                          onClick={() => props.onBuilderStack(copyBuilderStack(f.stack))}
+                          onClick={() => store().setBuilderStack(copyBuilderStack(f.stack))}
                         >
                           {f.name}
                         </button>
                       );
                     })}
                     {!BUILDER_FACTORY_STACKS.some((f) =>
-                      sameStackValues(props.builderStack, f.stack),
+                      sameStackValues(builderStack, f.stack),
                     ) && <span className="style-custom">Custom</span>}
                   </div>
                 </div>
-                <BuilderPanel
-                  stack={props.builderStack}
-                  onChange={props.onBuilderStack}
-                  onExport={props.onBuilderExport}
-                  onImport={props.onBuilderImport}
-                  onHint={setHint}
-                />
+                <BuilderPanel onHint={setHint} />
               </>
             ),
           } satisfies SectionDef,
@@ -869,11 +841,11 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             tab: "visual" as const,
             search: "motion rotation pulse detail spin global",
             headerExtra:
-              motionChanged && !props.simplifiedRenderer ? (
+              motionChanged && !simplifiedRenderer ? (
                 <button
                   className="text-btn"
                   title="Back to normal motion (100% everywhere)"
-                  onClick={() => props.onMotion({ ...DEFAULT_MOTION })}
+                  onClick={() => store().setMotion({ ...DEFAULT_MOTION })}
                 >
                   Reset
                 </button>
@@ -887,8 +859,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     min={0}
                     max={2}
                     step={0.05}
-                    value={props.motion.rotation}
-                    onChange={(v) => props.onMotion({ rotation: v })}
+                    value={motion.rotation}
+                    onChange={(v) => store().setMotion({ rotation: v })}
                     format={PERCENT}
                     onHint={setHint}
                     disabledReason={unavailable}
@@ -901,8 +873,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     min={0}
                     max={2}
                     step={0.05}
-                    value={props.motion.pulse}
-                    onChange={(v) => props.onMotion({ pulse: v })}
+                    value={motion.pulse}
+                    onChange={(v) => store().setMotion({ pulse: v })}
                     format={PERCENT}
                     onHint={setHint}
                     disabledReason={unavailable}
@@ -915,16 +887,16 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     min={0}
                     max={1}
                     step={0.02}
-                    value={props.motion.detail}
-                    onChange={(v) => props.onMotion({ detail: v })}
+                    value={motion.detail}
+                    onChange={(v) => store().setMotion({ detail: v })}
                     format={PERCENT}
                     onHint={setHint}
                     disabledReason={unavailable}
                   />
                 )}
                 <p className="section-hint">
-                  {props.simplifiedRenderer
-                    ? "The motion masters drive the visual's own shader, so they need hardware rendering (WebGPU). Your settings are kept and apply again where it is available."
+                  {simplifiedRenderer
+                    ? "The motion masters drive the visual's own shader, so they need hardware rendering (WebGPU). Your values are kept and apply again where it is available."
                     : "Global motion for this mode — exports match."}
                 </p>
               </>
@@ -953,7 +925,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 key={t.meta.name}
                 className="style-chip"
                 title={`${t.meta.description ?? ""}${t.meta.bpmHint ? ` (~${t.meta.bpmHint[0]}-${t.meta.bpmHint[1]} BPM)` : ""}`}
-                onClick={() => props.onApplyTheme(t.document, t.meta.name)}
+                onClick={() => store().applyTheme(t.document, t.meta.name)}
               >
                 {t.meta.name}
               </button>
@@ -964,7 +936,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               className="save-look-row"
               onSubmit={(e) => {
                 e.preventDefault();
-                props.onExportTheme({
+                void store().exportCurrentTheme({
                   name: themeName.trim(),
                   author: themeAuthor.trim() || "anonymous",
                   license: "CC0-1.0",
@@ -1025,13 +997,13 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             {SYNC_OPTIONS.map((o) => (
               <button
                 key={o.mode}
-                className={`segment ${props.sync.mode === o.mode ? "active" : ""}`}
+                className={`segment ${sync.mode === o.mode ? "active" : ""}`}
                 title={o.hint}
                 onPointerEnter={() => setHint(o.hint)}
                 onPointerLeave={() => setHint(null)}
                 onFocus={() => setHint(o.hint)}
                 onBlur={() => setHint(null)}
-                onClick={() => props.onSync({ ...props.sync, mode: o.mode })}
+                onClick={() => store().setSync({ ...sync, mode: o.mode })}
               >
                 {o.label}
               </button>
@@ -1043,9 +1015,9 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             min={0}
             max={1}
             step={0.01}
-            value={props.sync.smooth}
+            value={sync.smooth}
             onChange={(v) =>
-              props.onSync({ ...props.sync, smooth: v, attack: undefined, release: undefined })
+              store().setSync({ ...sync, smooth: v, attack: undefined, release: undefined })
             }
             onHint={setHint}
           />
@@ -1055,8 +1027,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             min={0}
             max={1}
             step={0.01}
-            value={props.sync.attack ?? props.sync.smooth}
-            onChange={(v) => props.onSync({ ...props.sync, attack: v })}
+            value={sync.attack ?? sync.smooth}
+            onChange={(v) => store().setSync({ ...sync, attack: v })}
             onHint={setHint}
           />
           <SliderRow
@@ -1065,8 +1037,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             min={0}
             max={1}
             step={0.01}
-            value={props.sync.release ?? props.sync.smooth}
-            onChange={(v) => props.onSync({ ...props.sync, release: v })}
+            value={sync.release ?? sync.smooth}
+            onChange={(v) => store().setSync({ ...sync, release: v })}
             onHint={setHint}
           />
           {caps.spectrumSmooth && (
@@ -1077,25 +1049,25 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 min={0}
                 max={1}
                 step={0.02}
-                value={props.motion.spectrumSmooth}
-                onChange={(v) => props.onMotion({ spectrumSmooth: v })}
+                value={motion.spectrumSmooth}
+                onChange={(v) => store().setMotion({ spectrumSmooth: v })}
                 format={PERCENT}
                 onHint={setHint}
               />
               <ToggleRow
                 label="Smooth curve"
                 hint="Spline-smoothed spectrum: curves instead of corners"
-                checked={props.smoothSpectrum}
-                onChange={props.onSmoothSpectrum}
+                checked={smoothSpectrum}
+                onChange={(v) => store().setSmoothSpectrum(v)}
                 onHint={setHint}
               />
               <div className="row">
                 <span className="row-label">Resolution</span>
                 <div style={{ flex: 1 }}>
                   <Segmented
-                    value={props.sync.spectrumResolution ?? "responsive"}
+                    value={sync.spectrumResolution ?? "responsive"}
                     onChange={(spectrumResolution) =>
-                      props.onSync({ ...props.sync, spectrumResolution })
+                      store().setSync({ ...sync, spectrumResolution })
                     }
                     onHint={setHint}
                     ariaLabel="Drawn spectrum resolution"
@@ -1115,12 +1087,10 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 <div style={{ flex: 1 }}>
                   <Segmented
                     value={
-                      props.sync.spectrumSampling === "measured"
-                        ? "linear"
-                        : (props.sync.spectrumAxis ?? "log")
+                      sync.spectrumSampling === "measured" ? "linear" : (sync.spectrumAxis ?? "log")
                     }
-                    onChange={(spectrumAxis) => props.onSync({ ...props.sync, spectrumAxis })}
-                    disabled={props.sync.spectrumSampling === "measured"}
+                    onChange={(spectrumAxis) => store().setSync({ ...sync, spectrumAxis })}
+                    disabled={sync.spectrumSampling === "measured"}
                     onHint={setHint}
                     ariaLabel="Spectrum frequency axis"
                     options={[
@@ -1142,10 +1112,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 <span className="row-label">Sampling</span>
                 <div style={{ flex: 1 }}>
                   <Segmented
-                    value={props.sync.spectrumSampling ?? "interpolated"}
-                    onChange={(spectrumSampling) =>
-                      props.onSync({ ...props.sync, spectrumSampling })
-                    }
+                    value={sync.spectrumSampling ?? "interpolated"}
+                    onChange={(spectrumSampling) => store().setSync({ ...sync, spectrumSampling })}
                     onHint={setHint}
                     ariaLabel="Spectrum sampling"
                     options={[
@@ -1179,8 +1147,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 min={0}
                 max={1}
                 step={0.01}
-                value={props.sync.shapeMerge ?? 0}
-                onChange={(v) => props.onSync({ ...props.sync, shapeMerge: v })}
+                value={sync.shapeMerge ?? 0}
+                onChange={(v) => store().setSync({ ...sync, shapeMerge: v })}
                 format={PERCENT}
                 onHint={setHint}
               />
@@ -1190,8 +1158,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 min={0}
                 max={1}
                 step={0.01}
-                value={props.sync.shapeRound ?? 0}
-                onChange={(v) => props.onSync({ ...props.sync, shapeRound: v })}
+                value={sync.shapeRound ?? 0}
+                onChange={(v) => store().setSync({ ...sync, shapeRound: v })}
                 format={PERCENT}
                 onHint={setHint}
               />
@@ -1201,8 +1169,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 min={0}
                 max={1}
                 step={0.01}
-                value={props.sync.contrast ?? 0.5}
-                onChange={(v) => props.onSync({ ...props.sync, contrast: v })}
+                value={sync.contrast ?? 0.5}
+                onChange={(v) => store().setSync({ ...sync, contrast: v })}
                 format={PERCENT}
                 onHint={setHint}
               />
@@ -1212,12 +1180,12 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 min={10}
                 max={500}
                 step={1}
-                value={props.sync.freqMin ?? MIN_FREQ}
+                value={sync.freqMin ?? MIN_FREQ}
                 onChange={(v) =>
-                  props.onSync({
-                    ...props.sync,
+                  store().setSync({
+                    ...sync,
                     freqMin: v,
-                    freqMax: props.sync.freqMax ?? MAX_FREQ,
+                    freqMax: sync.freqMax ?? MAX_FREQ,
                   })
                 }
                 format={HERTZ}
@@ -1229,11 +1197,11 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 min={200}
                 max={22050}
                 step={50}
-                value={props.sync.freqMax ?? MAX_FREQ}
+                value={sync.freqMax ?? MAX_FREQ}
                 onChange={(v) =>
-                  props.onSync({
-                    ...props.sync,
-                    freqMin: props.sync.freqMin ?? MIN_FREQ,
+                  store().setSync({
+                    ...sync,
+                    freqMin: sync.freqMin ?? MIN_FREQ,
                     freqMax: v,
                   })
                 }
@@ -1256,14 +1224,14 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
         "modulation route stem source amount kick hats auto-route feature knob lfo sine saw square curve shape exp smooth attack release lag recipe punch swell sway sweep sparkle",
       body: (
         <>
-          {props.mods.length === 0 && (
+          {mods.length === 0 && (
             <p className="section-hint">
               Route any audio feature to any knob of this visual — kick pumps the zoom, hats flicker
               the glow. Applied in exports identically.
             </p>
           )}
           <div className="save-look-row">
-            {props.stems.map((st) => (
+            {stems.map((st) => (
               <span key={st.slot} className="user-chip-wrap">
                 <span
                   className="style-chip user"
@@ -1275,7 +1243,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   className="chip-x"
                   title="Auto-route: wire this stem's kick/bass/snare/hats/mids to the best-matching knobs of this visual"
                   aria-label={`Auto-route ${st.analysis.name}`}
-                  onClick={() => props.onAutoRouteStem(st.slot)}
+                  onClick={() => store().autoRouteStem(st.slot)}
                 >
                   ✦
                 </button>
@@ -1283,16 +1251,16 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   className="chip-x"
                   title="Remove this stem (routes to it go inert)"
                   aria-label={`Remove ${st.analysis.name} stem`}
-                  onClick={() => props.onRemoveStem(st.slot)}
+                  onClick={() => store().removeStem(st.slot)}
                 >
                   ✕
                 </button>
               </span>
             ))}
-            {props.stemAnalyzing ? (
-              <span className="section-hint">Analyzing {props.stemAnalyzing}…</span>
+            {stemAnalyzing ? (
+              <span className="section-hint">Analyzing {stemAnalyzing}…</span>
             ) : (
-              props.stems.length < MAX_STEMS && (
+              stems.length < MAX_STEMS && (
                 <label
                   className="text-btn"
                   title="Import a stem (drums/bass/vocals bounced from 0:00) — analyzed once, never played; its bands become modulation sources"
@@ -1304,7 +1272,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     hidden
                     onChange={(e) => {
                       const f = e.target.files?.[0];
-                      if (f) props.onAddStem(f);
+                      if (f) void store().addStem(f);
                       e.target.value = "";
                     }}
                   />
@@ -1321,27 +1289,29 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 key={rec.id}
                 className="style-chip"
                 title={rec.hint}
-                onClick={() => props.onApplyModRecipe(rec.id)}
+                onClick={() => store().applyModRouteRecipe(rec.id)}
               >
                 {rec.name}
               </button>
             ))}
           </div>
-          {props.mods.map((r) => (
+          {mods.map((r) => (
             <Fragment key={r.id}>
               <div className="mod-row">
                 <select
                   className="select mod-select"
                   value={r.source}
                   title="What drives this route"
-                  onChange={(e) => props.onUpdateMod(r.id, { source: e.target.value as ModSource })}
+                  onChange={(e) =>
+                    store().updateModRoute(r.id, { source: e.target.value as ModSource })
+                  }
                 >
                   {MOD_SOURCES.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.label}
                     </option>
                   ))}
-                  {props.stems.map((st) =>
+                  {stems.map((st) =>
                     STEM_TRACK_KEYS.map((k) => (
                       <option key={`${st.slot}:${k}`} value={`${st.slot}:${k}`}>
                         {st.analysis.name}: {k}
@@ -1363,7 +1333,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   className="select mod-select"
                   value={r.param}
                   title="Which knob it moves"
-                  onChange={(e) => props.onUpdateMod(r.id, { param: e.target.value })}
+                  onChange={(e) => store().updateModRoute(r.id, { param: e.target.value })}
                 >
                   {/* Grouped by the SAME ParamSpec.group the panel lays out, so
                     a 35-knob visual reads as eight short lists instead of one
@@ -1404,13 +1374,13 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   max={1}
                   step={0.01}
                   value={r.amount}
-                  onChange={(amount) => props.onUpdateMod(r.id, { amount })}
+                  onChange={(amount) => store().updateModRoute(r.id, { amount })}
                 />
                 <button
                   className="chip-x"
                   title="Remove route"
                   aria-label={`Remove ${r.source} to ${r.param} modulation route`}
-                  onClick={() => props.onRemoveMod(r.id)}
+                  onClick={() => store().removeModRoute(r.id)}
                 >
                   ✕
                 </button>
@@ -1425,7 +1395,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   value={r.curve ?? "linear"}
                   title="Response curve on the source before the amount — Exp emphasizes peaks, Smooth eases both ends"
                   onChange={(e) =>
-                    props.onUpdateMod(r.id, {
+                    store().updateModRoute(r.id, {
                       curve: e.target.value === "linear" ? undefined : (e.target.value as ModCurve),
                     })
                   }
@@ -1446,7 +1416,9 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   max={2}
                   step={0.01}
                   value={r.attack ?? 0}
-                  onChange={(v) => props.onUpdateMod(r.id, { attack: v === 0 ? undefined : v })}
+                  onChange={(v) =>
+                    store().updateModRoute(r.id, { attack: v === 0 ? undefined : v })
+                  }
                 />
                 <span
                   className="mod-arrow"
@@ -1460,7 +1432,9 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   max={2}
                   step={0.01}
                   value={r.release ?? 0}
-                  onChange={(v) => props.onUpdateMod(r.id, { release: v === 0 ? undefined : v })}
+                  onChange={(v) =>
+                    store().updateModRoute(r.id, { release: v === 0 ? undefined : v })
+                  }
                 />
               </div>
             </Fragment>
@@ -1469,7 +1443,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
             <button
               className="text-btn"
               title="Add a feature-to-knob route"
-              onClick={() => props.onAddMod("kick", firstModTarget)}
+              onClick={() => store().addModRoute("kick", firstModTarget)}
             >
               + Route
             </button>
@@ -1487,7 +1461,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       body: (
         <>
           <Segmented
-            value={props.bgPerMode ? 1 : 0}
+            value={bgPerMode ? 1 : 0}
             onHint={setHint}
             ariaLabel="Background scope"
             options={[
@@ -1499,60 +1473,59 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               {
                 value: 1,
                 label: "This mode",
-                hint: `Give ${props.preset.name} its own background — other modes keep the shared one`,
+                hint: `Give ${preset.name} its own background — other modes keep the shared one`,
               },
             ]}
-            onChange={(v) => props.onBgPerMode(v === 1)}
+            onChange={(v) => store().setBgPerMode(v === 1)}
           />
           <Segmented
-            value={props.bg.mode}
+            value={bg.mode}
             onHint={setHint}
             ariaLabel="Background mode"
-            options={(props.showVideoBg
-              ? [...BG_OPTIONS_BASE, BG_OPTION_VIDEO]
-              : BG_OPTIONS_BASE
-            ).map((o) => ({
-              value: o.mode,
-              label: o.label,
-              // Video frames are uploaded as GPU textures every frame — the
-              // simplified renderer has nowhere to put them, and picking Video
-              // there used to decode the whole clip and then draw a hue wash
-              // that matched nothing the user chose (F9).
-              disabled: o.mode === BG_VIDEO && props.simplifiedRenderer,
-              hint: o.mode === BG_VIDEO && unavailable ? unavailable : o.hint,
-            }))}
+            options={(showVideoBg ? [...BG_OPTIONS_BASE, BG_OPTION_VIDEO] : BG_OPTIONS_BASE).map(
+              (o) => ({
+                value: o.mode,
+                label: o.label,
+                // Video frames are uploaded as GPU textures every frame — the
+                // simplified renderer has nowhere to put them, and picking Video
+                // there used to decode the whole clip and then draw a hue wash
+                // that matched nothing the user chose (F9).
+                disabled: o.mode === BG_VIDEO && simplifiedRenderer,
+                hint: o.mode === BG_VIDEO && unavailable ? unavailable : o.hint,
+              }),
+            )}
             onChange={(mode) => {
-              if (mode === BG_IMAGE && !props.bg.image) props.onPickBackgroundImage();
-              else if (mode === BG_VIDEO && !props.bg.video) props.onPickVideoBackground();
-              else props.onBg({ ...props.bg, mode });
+              if (mode === BG_IMAGE && !bg.image) void store().pickBackgroundImage();
+              else if (mode === BG_VIDEO && !bg.video) void store().pickVideoBackground();
+              else store().setBg({ ...bg, mode });
             }}
           />
-          {props.bg.mode === BG_SOLID && (
+          {bg.mode === BG_SOLID && (
             <BgColorRow
-              value={props.bg.color}
-              onChange={(color) => props.onBg({ ...props.bg, color })}
+              value={bg.color}
+              onChange={(color) => store().setBg({ ...bg, color })}
               title="Custom background color"
             />
           )}
-          {props.bg.mode === BG_IMAGE && props.bg.image && (
+          {bg.mode === BG_IMAGE && bg.image && (
             <>
               <div className="save-look-row">
                 <button
                   className="text-btn"
                   title="Choose a different image file"
-                  onClick={props.onPickBackgroundImage}
+                  onClick={() => void store().pickBackgroundImage()}
                 >
                   Choose image…
                 </button>
                 <button
                   className="text-btn"
-                  disabled={!props.hasCoverArt}
+                  disabled={!hasCoverArt}
                   title={
-                    props.hasCoverArt
+                    hasCoverArt
                       ? "Use the loaded track's album art"
                       : "The loaded track has no embedded cover art"
                   }
-                  onClick={props.onUseAlbumArtBackground}
+                  onClick={() => store().useAlbumArtBackground()}
                 >
                   Use album art
                 </button>
@@ -1563,8 +1536,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 min={0}
                 max={0.9}
                 step={0.01}
-                value={props.bg.image.dim}
-                onChange={(dim) => props.onBg({ ...props.bg, image: { ...props.bg.image!, dim } })}
+                value={bg.image.dim}
+                onChange={(dim) => store().setBg({ ...bg, image: { ...bg.image!, dim } })}
               />
               <SliderRow
                 label="Blur"
@@ -1572,84 +1545,74 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 min={0}
                 max={60}
                 step={1}
-                value={props.bg.image.blur}
-                onChange={(blur) =>
-                  props.onBg({ ...props.bg, image: { ...props.bg.image!, blur } })
-                }
+                value={bg.image.blur}
+                onChange={(blur) => store().setBg({ ...bg, image: { ...bg.image!, blur } })}
               />
               <BgFitRows
                 what="image"
-                value={props.bg.image}
-                onChange={(patch) =>
-                  props.onBg({ ...props.bg, image: { ...props.bg.image!, ...patch } })
-                }
-                color={props.bg.color}
-                onColor={(color) => props.onBg({ ...props.bg, color })}
+                value={bg.image}
+                onChange={(patch) => store().setBg({ ...bg, image: { ...bg.image!, ...patch } })}
+                color={bg.color}
+                onColor={(color) => store().setBg({ ...bg, color })}
                 onHint={setHint}
               />
             </>
           )}
-          {props.bg.mode === BG_VIDEO && (
+          {bg.mode === BG_VIDEO && (
             <>
               <div className="save-look-row">
                 <button
                   className="text-btn"
-                  disabled={props.simplifiedRenderer}
+                  disabled={simplifiedRenderer}
                   title={unavailable ?? "Choose a different video file"}
-                  onClick={props.onPickVideoBackground}
+                  onClick={() => void store().pickVideoBackground()}
                 >
-                  {props.videoBgLoading ? "Decoding…" : "Choose video…"}
+                  {videoBgLoading ? "Decoding…" : "Choose video…"}
                 </button>
               </div>
-              {props.bg.video && (
+              {bg.video && (
                 <SliderRow
                   label="Dim"
                   hint="Darken the video so the visualization stays readable (re-decodes)"
                   min={0}
                   max={0.9}
                   step={0.01}
-                  value={props.bg.video.dim}
-                  onChange={(dim) =>
-                    props.onBg({ ...props.bg, video: { ...props.bg.video!, dim } })
-                  }
+                  value={bg.video.dim}
+                  onChange={(dim) => store().setBg({ ...bg, video: { ...bg.video!, dim } })}
                   disabledReason={unavailable}
                 />
               )}
-              {props.bg.video && (
+              {bg.video && (
                 <SliderRow
                   label="Blur"
                   hint="Soften the video behind the visualization (baked once per loop; re-decodes)"
                   min={0}
                   max={60}
                   step={1}
-                  value={props.bg.video.blur}
-                  onChange={(blur) =>
-                    props.onBg({ ...props.bg, video: { ...props.bg.video!, blur } })
-                  }
+                  value={bg.video.blur}
+                  onChange={(blur) => store().setBg({ ...bg, video: { ...bg.video!, blur } })}
                   disabledReason={unavailable}
                 />
               )}
-              {props.bg.video && (
+              {bg.video && (
                 <BgFitRows
                   what="video"
-                  value={props.bg.video}
-                  onChange={(patch) =>
-                    props.onBg({ ...props.bg, video: { ...props.bg.video!, ...patch } })
-                  }
-                  color={props.bg.color}
-                  onColor={(color) => props.onBg({ ...props.bg, color })}
+                  value={bg.video}
+                  onChange={(patch) => store().setBg({ ...bg, video: { ...bg.video!, ...patch } })}
+                  color={bg.color}
+                  onColor={(color) => store().setBg({ ...bg, color })}
                   onHint={setHint}
                   disabledReason={unavailable}
                 />
               )}
               <p className="section-hint">
-                {props.simplifiedRenderer
+                {simplifiedRenderer
                   ? "Video backgrounds upload a frame to the GPU every frame, so they need hardware rendering (WebGPU). This mode currently paints the flat background color instead — pick Animated, Solid or Image."
                   : `A short clip loops behind the visualization (first ${12}s, decoded to a fixed loop). Export selects frames from the same track-time index. Desktop only.`}
               </p>
             </>
           )}
-          {props.bg.mode === BG_TRANSPARENT && (
+          {bg.mode === BG_TRANSPARENT && (
             <p className="section-hint">
               Preview shows a checkerboard. MP4 exports have no alpha channel — transparent renders
               over black; use solid green/magenta for editor keying.
@@ -1667,8 +1630,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       body: (
         <>
           <Segmented
-            value={props.aspect}
-            onChange={props.onAspect}
+            value={aspect}
+            onChange={(a) => store().setAspect(a)}
             onHint={setHint}
             ariaLabel="Frame aspect"
             options={ASPECTS.map((a) => ({ value: a.id, label: a.label, hint: a.hint }))}
@@ -1686,11 +1649,11 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       search:
         `post processing finishing filmic tonemap aces ${POST_SLIDERS.map((r) => r.label).join(" ")}`.toLowerCase(),
       headerExtra:
-        postChanged && !props.simplifiedRenderer ? (
+        postChanged && !simplifiedRenderer ? (
           <button
             className="text-btn"
             title="Turn off all post-processing (neutral)"
-            onClick={() => props.onPost({ ...DEFAULT_POST })}
+            onClick={() => store().setPost({ ...DEFAULT_POST })}
           >
             Reset
           </button>
@@ -1700,8 +1663,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
           <ToggleRow
             label="Filmic tonemap"
             hint="Filmic (ACES) tonemap — cinematic contrast and highlight rolloff"
-            checked={props.post.tonemap}
-            onChange={(v) => props.onPost({ tonemap: v })}
+            checked={post.tonemap}
+            onChange={(v) => store().setPost({ tonemap: v })}
             onHint={setHint}
             disabledReason={unavailable}
           />
@@ -1713,15 +1676,15 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               min={r.min}
               max={r.max}
               step={r.step}
-              value={props.post[r.key]}
-              onChange={(v) => props.onPost({ [r.key]: v })}
+              value={post[r.key]}
+              onChange={(v) => store().setPost({ [r.key]: v })}
               onHint={setHint}
               disabledReason={unavailable}
             />
           ))}
           <p className="section-hint">
-            {props.simplifiedRenderer
-              ? "The finishing pass runs on the GPU, so it needs hardware rendering (WebGPU). Your settings are kept and apply again where it is available."
+            {simplifiedRenderer
+              ? "The finishing pass runs on the GPU, so it needs hardware rendering (WebGPU). Your values are kept and apply again where it is available."
               : "Finishing pass applied to the whole frame — grain is deterministic from track time in both preview and export."}
           </p>
         </>
@@ -1733,18 +1696,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       tab: "scene",
       search: "layers text image overlay album art drawn over visuals",
       standalone: true,
-      body: (
-        <LayersPanel
-          layers={props.overlayLayers}
-          assets={props.assets}
-          hasCoverArt={props.hasCoverArt}
-          onAddText={props.onAddTextLayer}
-          onAddImage={props.onAddImageLayer}
-          onAddAlbumArt={props.onAddAlbumArtLayer}
-          onUpdate={props.onUpdateLayer}
-          onRemove={props.onRemoveLayer}
-        />
-      ),
+      body: <LayersPanel />,
     },
     // ---------------- Text ----------------
     {
@@ -1756,16 +1708,16 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       body: (
         <>
           <div className="save-look-row">
-            {props.lyricFileName ? (
+            {lyricFileName ? (
               <span className="user-chip-wrap">
                 <span className="style-chip user" title="Loaded timed lyrics">
-                  {props.lyricFileName}
+                  {lyricFileName}
                 </span>
                 <button
                   className="chip-x"
                   title="Remove lyrics"
                   aria-label="Remove lyrics"
-                  onClick={props.onClearLyrics}
+                  onClick={() => void clearLyricsGuarded()}
                 >
                   ✕
                 </button>
@@ -1782,27 +1734,27 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                   hidden
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) props.onImportLyrics(f);
+                    if (f) importLyrics(f);
                     e.target.value = "";
                   }}
                 />
               </label>
             )}
           </div>
-          {props.lyricFileName && (
+          {lyricFileName && (
             <>
               <ToggleRow
                 label="Show"
                 hint="Draw the active lyric line over the visual"
-                checked={props.lyricStyle.enabled}
-                onChange={(v) => props.onLyricStyle({ enabled: v })}
+                checked={lyricStyle.enabled}
+                onChange={(v) => store().setLyricStyle({ enabled: v })}
                 onHint={setHint}
               />
               <SelectRow
                 label="Position"
                 hint="Where the lines sit in the frame"
-                value={props.lyricStyle.position}
-                onChange={(position) => props.onLyricStyle({ position })}
+                value={lyricStyle.position}
+                onChange={(position) => store().setLyricStyle({ position })}
                 onHint={setHint}
                 options={[
                   { value: "bottom" as const, label: "Bottom" },
@@ -1813,8 +1765,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               <SelectRow
                 label="Animation"
                 hint="How each line enters — plain fade, slide up, or a scale pop"
-                value={props.lyricStyle.anim ?? "plain"}
-                onChange={(anim) => props.onLyricStyle({ anim })}
+                value={lyricStyle.anim ?? "plain"}
+                onChange={(anim) => store().setLyricStyle({ anim })}
                 onHint={setHint}
                 options={LYRIC_ANIMS.map((a) => ({
                   value: a,
@@ -1834,8 +1786,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 min={0.5}
                 max={2}
                 step={0.05}
-                value={props.lyricStyle.size}
-                onChange={(v) => props.onLyricStyle({ size: v })}
+                value={lyricStyle.size}
+                onChange={(v) => store().setLyricStyle({ size: v })}
                 onHint={setHint}
               />
               <SliderRow
@@ -1844,20 +1796,20 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                 min={0}
                 max={1}
                 step={0.05}
-                value={props.lyricStyle.fadeSec}
-                onChange={(v) => props.onLyricStyle({ fadeSec: v })}
+                value={lyricStyle.fadeSec}
+                onChange={(v) => store().setLyricStyle({ fadeSec: v })}
                 onHint={setHint}
               />
               <ColorRow
                 label="Color"
                 hint="Lyric text color"
-                value={props.lyricStyle.color}
-                onChange={(color) => props.onLyricStyle({ color })}
+                value={lyricStyle.color}
+                onChange={(color) => store().setLyricStyle({ color })}
                 onHint={setHint}
               />
             </>
           )}
-          {!props.lyricFileName && (
+          {!lyricFileName && (
             <p className="section-hint">
               Drop an .lrc or .srt on the window (or import here) — the current line follows the
               music, karaoke-style, live and in every export.
@@ -1865,7 +1817,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
           )}
           {/* Local automatic lyrics (FEAT-004): generate an .lrc from the
               loaded track — the result lands exactly where an import would. */}
-          {!props.lyricFileName && <LyricsGenPanel />}
+          {!lyricFileName && <LyricsGenPanel />}
         </>
       ),
     },
@@ -1894,33 +1846,31 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
           <ToggleRow
             label="Progress bar"
             hint="A thin played/remaining bar driven by the track position"
-            checked={props.audiogram.progressBar}
-            onChange={(v) => props.onAudiogram({ progressBar: v })}
+            checked={audiogram.progressBar}
+            onChange={(v) => store().setAudiogram({ progressBar: v })}
             onHint={setHint}
           />
           <ToggleRow
             label="Time readout"
             hint="Elapsed / total time, drawn as text"
-            checked={props.audiogram.timeReadout}
-            onChange={(v) => props.onAudiogram({ timeReadout: v })}
+            checked={audiogram.timeReadout}
+            onChange={(v) => store().setAudiogram({ timeReadout: v })}
             onHint={setHint}
           />
           <ToggleRow
             label="Waveform strip"
             hint="A mini waveform overview with a moving playhead"
-            checked={props.audiogram.waveformStrip}
-            onChange={(v) => props.onAudiogram({ waveformStrip: v })}
+            checked={audiogram.waveformStrip}
+            onChange={(v) => store().setAudiogram({ waveformStrip: v })}
             onHint={setHint}
           />
-          {(props.audiogram.progressBar ||
-            props.audiogram.timeReadout ||
-            props.audiogram.waveformStrip) && (
+          {(audiogram.progressBar || audiogram.timeReadout || audiogram.waveformStrip) && (
             <>
               <SelectRow
                 label="Position"
                 hint="Which edge of the frame the audiogram elements sit against"
-                value={props.audiogram.position}
-                onChange={(position) => props.onAudiogram({ position })}
+                value={audiogram.position}
+                onChange={(position) => store().setAudiogram({ position })}
                 onHint={setHint}
                 options={[
                   { value: "bottom" as const, label: "Bottom" },
@@ -1930,8 +1880,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
               <ColorRow
                 label="Accent"
                 hint="Bar fill, playhead and played-waveform color"
-                value={props.audiogram.color}
-                onChange={(color) => props.onAudiogram({ color })}
+                value={audiogram.color}
+                onChange={(color) => store().setAudiogram({ color })}
                 onHint={setHint}
               />
             </>
@@ -1948,8 +1898,8 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       body: (
         <>
           <Segmented
-            value={props.switchQuantize}
-            onChange={props.onSwitchQuantize}
+            value={switchQuantize}
+            onChange={(m) => store().setSwitchQuantize(m)}
             onHint={setHint}
             ariaLabel="Switch quantize"
             options={QUANTIZE_MODES.map((m) => ({
@@ -1968,50 +1918,50 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
         </>
       ),
     },
-    ...(props.midiSupported
+    ...(MIDI_SUPPORTED
       ? [
           {
             id: "MIDI",
             title: "MIDI",
             tab: "live" as const,
             search: "midi controller cc note learn knob fader device mapping performance",
-            headerExtra: props.midiEnabled ? (
+            headerExtra: midiEnabled ? (
               <button
                 className="text-btn"
                 title="Stop listening to MIDI"
-                onClick={props.onDisableMidi}
+                onClick={() => store().disableMidi()}
               >
                 Disable
               </button>
             ) : undefined,
-            body: !props.midiEnabled ? (
+            body: !midiEnabled ? (
               <>
                 <div className="save-look-row">
                   <button
                     className="text-btn"
                     title="Grant MIDI access and start listening"
-                    onClick={props.onEnableMidi}
+                    onClick={() => void store().enableMidi()}
                   >
                     Enable MIDI…
                   </button>
                 </div>
                 <p className="section-hint">
-                  Map a controller's knobs to any setting and its notes to visual modes. Live
+                  Map a controller's knobs to any parameter and its notes to visual modes. Live
                   performance only — exports are unaffected.
                 </p>
               </>
             ) : (
               <>
                 <p className="section-hint">
-                  {props.midiDevices.length
-                    ? `Connected: ${props.midiDevices.join(", ")}`
+                  {midiDevices.length
+                    ? `Connected: ${midiDevices.join(", ")}`
                     : "No MIDI inputs detected — plug one in."}
                 </p>
                 <div className="save-look-row">
                   <select
                     className="select"
                     value={midiParam || firstModTarget}
-                    title="Which setting a knob/fader should control"
+                    title="Which parameter a knob/fader drives"
                     onChange={(e) => setMidiParam(e.target.value)}
                   >
                     {modTargetGroupViews.map(({ group, params }) => (
@@ -2028,39 +1978,42 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                     className="text-btn"
                     title="Then move a knob/fader on your controller to bind it"
                     onClick={() => {
-                      if (props.midiLearn?.kind === "cc") {
-                        props.onMidiLearn(null);
+                      if (midiLearn?.kind === "cc") {
+                        store().setMidiLearn(null);
                         return;
                       }
                       const key = midiParam || firstModTarget;
-                      const spec = allParams(props.preset).find((p) => p.key === key);
+                      const spec = allParams(preset).find((p) => p.key === key);
                       if (spec && isModTarget(spec))
-                        props.onMidiLearn({ kind: "cc", param: key, min: spec.min, max: spec.max });
+                        store().setMidiLearn({
+                          kind: "cc",
+                          param: key,
+                          min: spec.min,
+                          max: spec.max,
+                        });
                     }}
                   >
-                    {props.midiLearn?.kind === "cc" ? "Move a knob…" : "Learn CC"}
+                    {midiLearn?.kind === "cc" ? "Move a knob…" : "Learn CC"}
                   </button>
                 </div>
                 <div className="save-look-row">
                   <button
                     className="text-btn"
-                    title={`Bind a note to switch to ${props.preset.name}`}
+                    title={`Bind a note to switch to ${preset.name}`}
                     onClick={() =>
-                      props.midiLearn?.kind === "note"
-                        ? props.onMidiLearn(null)
-                        : props.onMidiLearn({ kind: "note", presetId: props.preset.id })
+                      midiLearn?.kind === "note"
+                        ? store().setMidiLearn(null)
+                        : store().setMidiLearn({ kind: "note", presetId: preset.id })
                     }
                   >
-                    {props.midiLearn?.kind === "note"
-                      ? "Play a note…"
-                      : `Learn note → ${props.preset.name}`}
+                    {midiLearn?.kind === "note" ? "Play a note…" : `Learn note → ${preset.name}`}
                   </button>
                 </div>
-                {props.midiBindings.map((b) => {
+                {midiBindings.map((b) => {
                   const id = bindingId(b);
                   const label =
                     b.kind === "cc"
-                      ? `CC ${b.cc} → ${allParams(props.preset).find((p) => p.key === b.param)?.label ?? b.param}`
+                      ? `CC ${b.cc} → ${allParams(preset).find((p) => p.key === b.param)?.label ?? b.param}`
                       : `Note ${b.note} → ${b.presetId}`;
                   return (
                     <div key={id} className="mod-row">
@@ -2071,7 +2024,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
                         className="chip-x"
                         title="Remove this binding"
                         aria-label={`Remove ${label}`}
-                        onClick={() => props.onRemoveMidiBinding(id)}
+                        onClick={() => store().removeMidiBinding(id)}
                       >
                         ✕
                       </button>
@@ -2092,8 +2045,12 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
   return (
     <aside className="chrome params-panel">
       <div className="panel-header">
-        <span className="panel-heading">Visual settings</span>
-        <button className="icon-btn subtle" title="Close (G)" onClick={props.onClose}>
+        <span className="panel-heading">Inspector</span>
+        <button
+          className="icon-btn subtle"
+          title="Close (G)"
+          onClick={() => store().setShowPanel(false)}
+        >
           <IconClose size={16} />
         </button>
       </div>
@@ -2103,7 +2060,7 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
           value={tab}
           onChange={changeTab}
           onHint={setHint}
-          ariaLabel="Settings tab"
+          ariaLabel="Inspector tab"
           options={PARAMS_TABS.map((t) => ({ value: t.id, label: t.label, hint: t.hint }))}
         />
       </div>
@@ -2111,9 +2068,9 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
       <input
         type="search"
         className="panel-search"
-        placeholder="Search settings…"
+        placeholder="Search controls…"
         value={query}
-        aria-label="Search settings"
+        aria-label="Search controls"
         onChange={(e) => setQuery(e.target.value)}
       />
 
@@ -2142,47 +2099,20 @@ export const ParamsPanel = memo(function ParamsPanel(props: ParamsPanelProps) {
           ),
         )}
         {searching && visibleSections.length === 0 && (
-          <p className="panel-empty">No settings match “{query.trim()}”.</p>
+          <p className="panel-empty">No controls match “{query.trim()}”.</p>
         )}
       </div>
 
       <div className="panel-footer">
-        {/* The backend id is developer shorthand — fine as a badge while it
-            reads "webgpu" and everything works, useless as the ONLY signal
-            that the app has quietly stopped drawing what you asked for (F1).
-            On the fallback it says so in words, in the app's warning colour. */}
-        <span
-          className={`renderer-badge ${props.simplifiedRenderer ? "danger" : ""}`}
-          title={
-            props.simplifiedRenderer
-              ? "Simplified renderer — hardware rendering (WebGPU) is unavailable, so every mode draws the same spectrum bars and video export is off"
-              : "Active render backend"
-          }
-        >
-          {props.simplifiedRenderer ? "simplified" : props.rendererKind}
-        </span>
-        {props.bpm !== null && props.bpm > 0 && (
-          <span className="renderer-badge" title="Detected tempo (beat grid)">
-            {props.bpm.toFixed(props.bpm % 1 === 0 ? 0 : 1)} BPM
-          </span>
-        )}
-        {props.keyName && (
-          <span className="renderer-badge" title="Detected musical key (Krumhansl profile match)">
-            {props.keyName}
-          </span>
-        )}
-        {props.lufs !== null && (
-          <span
-            className="renderer-badge"
-            title="Momentary loudness (BS.1770). Streaming targets sit around -14 LUFS."
-          >
-            {props.lufs <= -70 ? "−∞" : props.lufs.toFixed(1)} LUFS
-          </span>
-        )}
+        {/* Own component purely for subscription granularity: lufs ticks at
+            4 Hz for the whole of playback, and reading it here would put the
+            panel's ~2,000 lines back on that tick. The rendered DOM is
+            unchanged — test:gpu reads .params-panel's textContent. */}
+        <PanelFooterBadges />
         <span className={`footer-hint ${hint ? "is-hint" : ""}`}>
-          {hint ?? "Hover a setting to see what it does"}
+          {hint ?? "Hover a control to see what it does"}
         </span>
       </div>
     </aside>
   );
-});
+}

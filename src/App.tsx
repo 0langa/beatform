@@ -6,23 +6,23 @@ import { orderedPresets } from "./state/presetOrder";
 import { APP_VERSION } from "./version";
 import { BatchPanel, type BatchPanelProps } from "./ui/BatchPanel";
 import { RESOLUTIONS, useVizStore } from "./state/store";
+import { selectEffectiveBg } from "./state/selectors";
 import { installDevHooks } from "./devHooks";
 import { getPrefs, setPrefs, subscribePrefs } from "./state/prefs";
 import { PlayerBar, type PlayerBarProps } from "./ui/PlayerBar";
 import { LibraryPanel, type LibraryPanelProps } from "./ui/LibraryPanel";
-import { askConfirm, isTauri } from "./state/platform";
+import { isTauri } from "./state/platform";
 import {
   checkForUpdate,
   downloadAndInstallUpdate,
   relaunchApp,
   type UpdatePhase,
 } from "./state/updater";
-import { midiSupported } from "./state/midiInput";
 import { TimelinePanel, type TimelinePanelProps } from "./ui/TimelinePanel";
 import { PresetStrip } from "./ui/PresetStrip";
 import { ShaderEditor, type ShaderEditorProps } from "./ui/ShaderEditor";
 import { ShadertoyImport, type ShadertoyImportProps } from "./ui/ShadertoyImport";
-import { ParamsPanel, type ParamsPanelProps } from "./ui/ParamsPanel";
+import { ParamsPanel } from "./ui/ParamsPanel";
 import { EmptyState } from "./ui/EmptyState";
 import { useFocusTrap } from "./ui/useFocusTrap";
 import { useAppShortcuts, toggleFullscreen } from "./ui/useAppShortcuts";
@@ -47,8 +47,6 @@ import {
   IconStage,
 } from "./ui/Icons";
 import "./App.css";
-
-const MIDI_SUPPORTED = midiSupported();
 
 const SHORTCUTS: Array<[string, string]> = [
   ["Space", "Play / pause"],
@@ -79,21 +77,9 @@ export default function App() {
 
   const presetId = useVizStore((s) => s.presetId);
   const pendingPresetId = useVizStore((s) => s.pendingPresetId);
-  const switchQuantize = useVizStore((s) => s.switchQuantize);
-  const midiEnabled = useVizStore((s) => s.midiEnabled);
-  const midiDevices = useVizStore((s) => s.midiDevices);
-  const midiBindings = useVizStore((s) => s.midiBindings);
-  const midiLearn = useVizStore((s) => s.midiLearn);
   const preset = presetById(presetId);
   const params = useVizStore((s) => s.activeParams);
-  const bg = useVizStore((s) => s.bgByPreset[s.presetId] ?? s.bg);
-  const bgPerMode = useVizStore((s) => !!s.bgByPreset[s.presetId]);
-  const centerImageName = useVizStore((s) => {
-    const id = s.centerImageByPreset[s.presetId];
-    return id ? (s.assets[id]?.name ?? "Custom image") : null;
-  });
-  const sync = useVizStore((s) => s.sync);
-  const analysisSampleRate = useVizStore((s) => s.analysisSampleRate);
+  const bg = useVizStore(selectEffectiveBg);
   const playback = useVizStore((s) => s.playback);
   const volume = useVizStore((s) => s.volume);
   const muted = useVizStore((s) => s.muted);
@@ -114,18 +100,9 @@ export default function App() {
   const error = useVizStore((s) => s.error);
   const notice = useVizStore((s) => s.notice);
   const recoveredDoc = useVizStore((s) => s.recoveredDoc);
-  const userPresets = useVizStore((s) => s.userPresets);
   const overlayLayers = useVizStore((s) => s.overlayLayers);
-  const assets = useVizStore((s) => s.assets);
-  const coverArt = useVizStore((s) => s.coverArt);
   const aspect = useVizStore((s) => s.aspect);
-  const lufs = useVizStore((s) => s.lufs);
   const beatGrid = useVizStore((s) => s.beatGrid);
-  const trackKey = useVizStore((s) => s.trackKey);
-  const activeMods = useVizStore((s) => s.activeMods);
-  const smoothSpectrum = useVizStore((s) => s.smoothSpectrum);
-  const post = useVizStore((s) => s.post);
-  const motion = useVizStore((s) => s.motion);
   const sections = useVizStore((s) => s.sections);
   const timeline = useVizStore((s) => s.timeline);
   const showTimeline = useVizStore((s) => s.showTimeline);
@@ -143,13 +120,6 @@ export default function App() {
   const libraryAutoAdvance = useVizStore((s) => s.libraryAutoAdvance);
   const liveInputActive = useVizStore((s) => s.liveInputActive);
   const presetThumbs = useVizStore((s) => s.presetThumbs);
-  const stems = useVizStore((s) => s.stems);
-  const stemAnalyzing = useVizStore((s) => s.stemAnalyzing);
-  const lyricFileName = useVizStore((s) => s.lyricFileName);
-  const lyricStyle = useVizStore((s) => s.lyricStyle);
-  const audiogram = useVizStore((s) => s.audiogram);
-  const builderStack = useVizStore((s) => s.builderStack);
-  const videoBgLoading = useVizStore((s) => s.videoBgLoading);
   const showBatch = useVizStore((s) => s.showBatch);
   const customDefs = useVizStore((s) => s.customDefs);
   const showShaderEditor = useVizStore((s) => s.showShaderEditor);
@@ -159,13 +129,6 @@ export default function App() {
   const allPresets = useMemo(
     () => orderedPresets(presetOrder, customDefs),
     [presetOrder, customDefs],
-  );
-  // Memoized (audit UI-2): a bare `userPresets.filter(...)` in the JSX handed
-  // ParamsPanel a FRESH array identity every render, defeating its memo() at
-  // the 4 Hz playback tick exactly like an inline arrow prop would.
-  const userPresetsForMode = useMemo(
-    () => userPresets.filter((p) => p.presetId === presetId),
-    [userPresets, presetId],
   );
 
   const store = useVizStore.getState; // stable accessor for actions/handlers
@@ -259,12 +222,6 @@ export default function App() {
   // to a store action through the stable `store` accessor, so `[store]` is
   // the only real dependency — the one exception (toggleMute) is called
   // out where it happens.
-  //
-  // This contract already broke once, silently (audit UI-2): onBgPerMode /
-  // onPickCenterImage / onClearCenterImage were inline arrows and userPresets
-  // a fresh `.filter()` array, so ParamsPanel reconciled at every playback
-  // tick despite its memo. All four are hoisted now, and the memo mechanism
-  // is pinned by ParamsPanel.test.tsx — no new prop may be born in the JSX.
 
   // LibraryPanel
   const libraryPickFolder: LibraryPanelProps["onPickFolder"] = useCallback(
@@ -281,215 +238,6 @@ export default function App() {
   );
   const closeLibrary: LibraryPanelProps["onClose"] = useCallback(
     () => store().setShowLibrary(false),
-    [store],
-  );
-
-  // ParamsPanel
-  const setParam: ParamsPanelProps["onParam"] = useCallback(
-    (k, v) => store().setParam(k, v),
-    [store],
-  );
-  const applyStyleCb: ParamsPanelProps["onApplyStyle"] = useCallback(
-    (values) => store().applyStyle(values),
-    [store],
-  );
-  const resetParams: ParamsPanelProps["onReset"] = useCallback(
-    () => store().resetParams(),
-    [store],
-  );
-  const setBg: ParamsPanelProps["onBg"] = useCallback((next) => store().setBg(next), [store]);
-  // These three arrived as inline arrows in the JSX (audit UI-2) — three fresh
-  // function identities per render, which alone defeated ParamsPanel's memo()
-  // and put the whole panel back on the 4 Hz playback re-render.
-  const setBgPerMode: ParamsPanelProps["onBgPerMode"] = useCallback(
-    (v) => store().setBgPerMode(v),
-    [store],
-  );
-  const pickCenterImage: ParamsPanelProps["onPickCenterImage"] = useCallback(
-    () => void store().pickCenterImage(),
-    [store],
-  );
-  const clearCenterImage: ParamsPanelProps["onClearCenterImage"] = useCallback(
-    () => store().clearCenterImage(),
-    [store],
-  );
-  const pickBackgroundImage: ParamsPanelProps["onPickBackgroundImage"] = useCallback(
-    () => void store().pickBackgroundImage(),
-    [store],
-  );
-  const applyAlbumArtBackground: ParamsPanelProps["onUseAlbumArtBackground"] = useCallback(
-    () => store().useAlbumArtBackground(),
-    [store],
-  );
-  const pickVideoBackground: ParamsPanelProps["onPickVideoBackground"] = useCallback(
-    () => void store().pickVideoBackground(),
-    [store],
-  );
-  const setSync: ParamsPanelProps["onSync"] = useCallback((next) => store().setSync(next), [store]);
-  const closeParams: ParamsPanelProps["onClose"] = useCallback(
-    () => store().setShowPanel(false),
-    [store],
-  );
-  const setAspect: ParamsPanelProps["onAspect"] = useCallback((a) => store().setAspect(a), [store]);
-  const applyTheme: ParamsPanelProps["onApplyTheme"] = useCallback(
-    (document, name) => store().applyTheme(document, name),
-    [store],
-  );
-  const exportTheme: ParamsPanelProps["onExportTheme"] = useCallback(
-    (meta) => void store().exportCurrentTheme(meta),
-    [store],
-  );
-  const saveUserPreset: ParamsPanelProps["onSaveUserPreset"] = useCallback(
-    (name) => store().saveUserPreset(name),
-    [store],
-  );
-  const applyUserPreset: ParamsPanelProps["onApplyUserPreset"] = useCallback(
-    (id) => store().applyUserPreset(id),
-    [store],
-  );
-  const deleteUserPreset: ParamsPanelProps["onDeleteUserPreset"] = useCallback(
-    async (id) => {
-      // Destructive AND not undoable: user looks live outside the document
-      // history (unlike shader delete), so a misclick on the 9-px ✕ destroyed
-      // an evening of tuning silently (audit UI-3). Same confirm-or-undo
-      // policy as clearLyrics above.
-      const s = store();
-      const name = s.userPresets.find((p) => p.id === id)?.name;
-      if (name === undefined) return;
-      const ok = await askConfirm(
-        `Delete the look "${name}"? This can't be undone.`,
-        "Delete look",
-      );
-      if (ok) s.deleteUserPreset(id);
-    },
-    [store],
-  );
-  const exportUserPreset: ParamsPanelProps["onExportUserPreset"] = useCallback(
-    (id) => void store().exportUserPreset(id),
-    [store],
-  );
-  const importUserPreset: ParamsPanelProps["onImportUserPreset"] = useCallback(
-    () => void store().importUserPreset(),
-    [store],
-  );
-  const addTextLayer: ParamsPanelProps["onAddTextLayer"] = useCallback(
-    () => store().addTextLayer(),
-    [store],
-  );
-  const addImageLayer: ParamsPanelProps["onAddImageLayer"] = useCallback(
-    () => void store().addImageLayer(),
-    [store],
-  );
-  const addAlbumArtLayer: ParamsPanelProps["onAddAlbumArtLayer"] = useCallback(
-    () => store().addAlbumArtLayer(),
-    [store],
-  );
-  const updateLayer: ParamsPanelProps["onUpdateLayer"] = useCallback(
-    (id, patch) => store().updateOverlayLayer(id, patch),
-    [store],
-  );
-  const removeLayer: ParamsPanelProps["onRemoveLayer"] = useCallback(
-    (id) => store().removeOverlayLayer(id),
-    [store],
-  );
-  const setSmoothSpectrum: ParamsPanelProps["onSmoothSpectrum"] = useCallback(
-    (v) => store().setSmoothSpectrum(v),
-    [store],
-  );
-  const setPost: ParamsPanelProps["onPost"] = useCallback(
-    (patch) => store().setPost(patch),
-    [store],
-  );
-  const setMotion: ParamsPanelProps["onMotion"] = useCallback(
-    (patch) => store().setMotion(patch),
-    [store],
-  );
-  const setSwitchQuantize: ParamsPanelProps["onSwitchQuantize"] = useCallback(
-    (m) => store().setSwitchQuantize(m),
-    [store],
-  );
-  const enableMidi: ParamsPanelProps["onEnableMidi"] = useCallback(
-    () => void store().enableMidi(),
-    [store],
-  );
-  const disableMidi: ParamsPanelProps["onDisableMidi"] = useCallback(
-    () => store().disableMidi(),
-    [store],
-  );
-  const setMidiLearn: ParamsPanelProps["onMidiLearn"] = useCallback(
-    (l) => store().setMidiLearn(l),
-    [store],
-  );
-  const removeMidiBinding: ParamsPanelProps["onRemoveMidiBinding"] = useCallback(
-    (id) => store().removeMidiBinding(id),
-    [store],
-  );
-  const addStem: ParamsPanelProps["onAddStem"] = useCallback(
-    (f) => void store().addStem(f),
-    [store],
-  );
-  const removeStem: ParamsPanelProps["onRemoveStem"] = useCallback(
-    (slot) => store().removeStem(slot),
-    [store],
-  );
-  const autoRouteStem: ParamsPanelProps["onAutoRouteStem"] = useCallback(
-    (slot) => store().autoRouteStem(slot),
-    [store],
-  );
-  const addMod: ParamsPanelProps["onAddMod"] = useCallback(
-    (source, param) => store().addModRoute(source, param),
-    [store],
-  );
-  const updateMod: ParamsPanelProps["onUpdateMod"] = useCallback(
-    (id, patch) => store().updateModRoute(id, patch),
-    [store],
-  );
-  const removeMod: ParamsPanelProps["onRemoveMod"] = useCallback(
-    (id) => store().removeModRoute(id),
-    [store],
-  );
-  const applyModRecipe: ParamsPanelProps["onApplyModRecipe"] = useCallback(
-    (id) => store().applyModRouteRecipe(id),
-    [store],
-  );
-  const importLyrics: ParamsPanelProps["onImportLyrics"] = useCallback(
-    (f) => void f.text().then((t) => store().loadLyricsText(f.name, t)),
-    [store],
-  );
-  const clearLyrics: ParamsPanelProps["onClearLyrics"] = useCallback(async () => {
-    // Destructive clear-all: with the correction editor, loaded lyrics can
-    // carry real editing work — never drop them on a stray click. UI-level
-    // confirm so the programmatic action (E2E, generate-replace flow, which
-    // asks its own question) stays prompt-free.
-    const s = store();
-    const n = s.lyrics?.length ?? 0;
-    if (n > 0) {
-      const ok = await askConfirm(
-        `Remove the loaded lyrics (${n} line${n === 1 ? "" : "s"})? Unsaved edits are lost.`,
-        "Remove lyrics",
-      );
-      if (!ok) return;
-    }
-    s.clearLyrics();
-  }, [store]);
-  const setLyricStyle: ParamsPanelProps["onLyricStyle"] = useCallback(
-    (patch) => store().setLyricStyle(patch),
-    [store],
-  );
-  const setAudiogram: ParamsPanelProps["onAudiogram"] = useCallback(
-    (patch) => store().setAudiogram(patch),
-    [store],
-  );
-  const setBuilderStack: ParamsPanelProps["onBuilderStack"] = useCallback(
-    (stack) => store().setBuilderStack(stack),
-    [store],
-  );
-  const exportBuilderStack: ParamsPanelProps["onBuilderExport"] = useCallback(
-    () => void store().exportBuilderStack(),
-    [store],
-  );
-  const importBuilderStack: ParamsPanelProps["onBuilderImport"] = useCallback(
-    (f) => void f.text().then((t) => store().importBuilderStackText(t)),
     [store],
   );
 
@@ -1046,92 +794,7 @@ export default function App() {
           onPointerDown={startPanelResize}
         />
       )}
-      {showPanel && (
-        <ParamsPanel
-          preset={preset}
-          params={params}
-          onParam={setParam}
-          onApplyStyle={applyStyleCb}
-          onReset={resetParams}
-          bg={bg}
-          onBg={setBg}
-          bgPerMode={bgPerMode}
-          onBgPerMode={setBgPerMode}
-          centerImageName={centerImageName}
-          onPickCenterImage={pickCenterImage}
-          onClearCenterImage={clearCenterImage}
-          onPickBackgroundImage={pickBackgroundImage}
-          onUseAlbumArtBackground={applyAlbumArtBackground}
-          onPickVideoBackground={pickVideoBackground}
-          videoBgLoading={videoBgLoading}
-          showVideoBg={isTauri()}
-          sync={sync}
-          analysisSampleRate={analysisSampleRate}
-          onSync={setSync}
-          rendererKind={rendererKind}
-          simplifiedRenderer={simplifiedRenderer}
-          onClose={closeParams}
-          aspect={aspect}
-          onAspect={setAspect}
-          lufs={lufs}
-          bpm={beatGrid ? beatGrid.bpm : null}
-          keyName={trackKey ? trackKey.name : null}
-          userPresets={userPresetsForMode}
-          onApplyTheme={applyTheme}
-          onExportTheme={exportTheme}
-          onSaveUserPreset={saveUserPreset}
-          onApplyUserPreset={applyUserPreset}
-          onDeleteUserPreset={deleteUserPreset}
-          onExportUserPreset={exportUserPreset}
-          onImportUserPreset={importUserPreset}
-          overlayLayers={overlayLayers}
-          assets={assets}
-          hasCoverArt={!!coverArt}
-          onAddTextLayer={addTextLayer}
-          onAddImageLayer={addImageLayer}
-          onAddAlbumArtLayer={addAlbumArtLayer}
-          onUpdateLayer={updateLayer}
-          onRemoveLayer={removeLayer}
-          smoothSpectrum={smoothSpectrum}
-          onSmoothSpectrum={setSmoothSpectrum}
-          post={post}
-          onPost={setPost}
-          motion={motion}
-          onMotion={setMotion}
-          switchQuantize={switchQuantize}
-          onSwitchQuantize={setSwitchQuantize}
-          midiSupported={MIDI_SUPPORTED}
-          midiEnabled={midiEnabled}
-          midiDevices={midiDevices}
-          midiBindings={midiBindings}
-          midiLearn={midiLearn}
-          onEnableMidi={enableMidi}
-          onDisableMidi={disableMidi}
-          onMidiLearn={setMidiLearn}
-          onRemoveMidiBinding={removeMidiBinding}
-          mods={activeMods}
-          stems={stems}
-          stemAnalyzing={stemAnalyzing}
-          onAddStem={addStem}
-          onRemoveStem={removeStem}
-          onAutoRouteStem={autoRouteStem}
-          onAddMod={addMod}
-          onUpdateMod={updateMod}
-          onRemoveMod={removeMod}
-          onApplyModRecipe={applyModRecipe}
-          lyricFileName={lyricFileName}
-          lyricStyle={lyricStyle}
-          onImportLyrics={importLyrics}
-          onClearLyrics={clearLyrics}
-          onLyricStyle={setLyricStyle}
-          audiogram={audiogram}
-          onAudiogram={setAudiogram}
-          builderStack={builderStack}
-          onBuilderStack={setBuilderStack}
-          onBuilderExport={exportBuilderStack}
-          onBuilderImport={importBuilderStack}
-        />
-      )}
+      {showPanel && <ParamsPanel />}
 
       {showTimeline && (
         <TimelinePanel

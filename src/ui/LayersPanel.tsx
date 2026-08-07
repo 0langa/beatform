@@ -1,11 +1,7 @@
 import { useState } from "react";
-import type {
-  ImageLayer,
-  OverlayAnchor,
-  OverlayAsset,
-  OverlayLayer,
-  TextLayer,
-} from "../render/overlay";
+import type { ImageLayer, OverlayAnchor, TextLayer } from "../render/overlay";
+import { selectHasCoverArt } from "../state/selectors";
+import { useVizStore } from "../state/store";
 import { SliderRow } from "./kit";
 
 const ANCHOR_GRID: OverlayAnchor[] = ["tl", "tc", "tr", "cl", "cc", "cr", "bl", "bc", "br"];
@@ -194,17 +190,17 @@ function ImageLayerEditor(props: {
   );
 }
 
-/** Overlay layer list + editors: text, logo, album art over the visuals. */
-export function LayersPanel(props: {
-  layers: OverlayLayer[];
-  assets: Record<string, OverlayAsset>;
-  hasCoverArt: boolean;
-  onAddText: () => void;
-  onAddImage: () => void;
-  onAddAlbumArt: () => void;
-  onUpdate: (id: string, patch: Partial<TextLayer> | Partial<ImageLayer>) => void;
-  onRemove: (id: string) => void;
-}) {
+/** Overlay layer list + editors: text, logo, album art over the visuals.
+ *
+ * Store-direct and zero-prop: the Inspector is its only mount, and every value
+ * it showed was drilled straight through from the store. Its own subscriptions
+ * mean an overlay edit reconciles the layer list, not the whole Inspector. The
+ * open-editor row is local UI state and stays local. */
+export function LayersPanel() {
+  const layers = useVizStore((s) => s.overlayLayers);
+  const assets = useVizStore((s) => s.assets);
+  const hasCoverArt = useVizStore(selectHasCoverArt);
+  const store = useVizStore.getState;
   const [openId, setOpenId] = useState<string | null>(null);
 
   return (
@@ -212,12 +208,11 @@ export function LayersPanel(props: {
       <div className="section-head">
         <span className="section-title">Layers</span>
       </div>
-      {props.layers.length === 0 && (
+      {layers.length === 0 && (
         <p className="section-hint">Text and images drawn over the visuals — in exports too.</p>
       )}
-      {props.layers.map((l) => {
-        const label =
-          l.type === "text" ? l.text || "Text" : (props.assets[l.assetId]?.name ?? "Image");
+      {layers.map((l) => {
+        const label = l.type === "text" ? l.text || "Text" : (assets[l.assetId]?.name ?? "Image");
         return (
           <div key={l.id} className="layer-row-wrap">
             <div className="row layer-row">
@@ -233,16 +228,16 @@ export function LayersPanel(props: {
                 className="chip-x"
                 title="Remove layer"
                 aria-label={`Remove ${label} layer`}
-                onClick={() => props.onRemove(l.id)}
+                onClick={() => store().removeOverlayLayer(l.id)}
               >
                 ✕
               </button>
             </div>
             {openId === l.id &&
               (l.type === "text" ? (
-                <TextLayerEditor layer={l} onChange={(p) => props.onUpdate(l.id, p)} />
+                <TextLayerEditor layer={l} onChange={(p) => store().updateOverlayLayer(l.id, p)} />
               ) : (
-                <ImageLayerEditor layer={l} onChange={(p) => props.onUpdate(l.id, p)} />
+                <ImageLayerEditor layer={l} onChange={(p) => store().updateOverlayLayer(l.id, p)} />
               ))}
           </div>
         );
@@ -251,22 +246,22 @@ export function LayersPanel(props: {
         <button
           className="text-btn"
           title="Add a text layer ({title}, {artist} auto-fill)"
-          onClick={props.onAddText}
+          onClick={() => store().addTextLayer()}
         >
           + Text
         </button>
         <button
           className="text-btn"
           title="Add a logo or image from a file"
-          onClick={props.onAddImage}
+          onClick={() => void store().addImageLayer()}
         >
           + Image…
         </button>
-        {props.hasCoverArt && (
+        {hasCoverArt && (
           <button
             className="text-btn"
             title="Add the track's embedded cover art"
-            onClick={props.onAddAlbumArt}
+            onClick={() => store().addAlbumArtLayer()}
           >
             + Album art
           </button>
