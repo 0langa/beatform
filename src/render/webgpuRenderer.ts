@@ -265,6 +265,12 @@ struct Uniforms {
 // (slot layout defined in render/builder2.ts). A storage buffer, not the
 // 48-lane params array, so a deep layer stack never hits the uniform cap.
 @group(0) @binding(10) var<storage, read> builderLayers: array<f32>;
+// Second waveform lane: the STEREO pair behind the mono lane at binding 4,
+// planar — samples [0, waveCount) are the LEFT channel, [waveCount,
+// 2*waveCount) the RIGHT. Cut at the same zero-crossing trigger as binding 4
+// so the pair keeps its inter-channel phase; mono sources carry the mono
+// trace in both halves. Read it through waveAt2()/waveXY() below.
+@group(0) @binding(11) var<storage, read> waveform2: array<f32>;
 
 // Builder Studio: parameter slot s (0..15) of layer instance li.
 fn LP(li: u32, s: u32) -> f32 { return builderLayers[li * 16u + s]; }
@@ -401,6 +407,33 @@ fn waveAt(x: f32) -> f32 {
   let i = u32(fi);
   let fr = fract(fi);
   return mix(waveform[i], waveform[min(i + 1u, u.waveCount - 1u)], fr);
+}
+
+/** Second-channel waveform sampled at x in 0..1, linear interpolation,
+ * -1..1. The RIGHT channel of a stereo source, phase-locked to the SAME
+ * trigger as waveAt(); for mono sources it returns exactly waveAt(x). */
+fn waveAt2(x: f32) -> f32 {
+  let n = f32(u.waveCount);
+  let fi = clamp(x, 0.0, 0.999) * (n - 1.0);
+  let i = u32(fi);
+  let fr = fract(fi);
+  return mix(waveform2[u.waveCount + i], waveform2[u.waveCount + min(i + 1u, u.waveCount - 1u)], fr);
+}
+
+/** The stereo sample pair at t in 0..1: x = LEFT channel, y = RIGHT — plot
+ * y against x for an XY / Lissajous scope (oscilloscope-music tracks draw
+ * their figures with exactly this pair). Shares waveAt()'s trigger, so the
+ * inter-channel phase is real; mono sources collapse to the x == y diagonal. */
+fn waveXY(t: f32) -> vec2f {
+  let n = f32(u.waveCount);
+  let fi = clamp(t, 0.0, 0.999) * (n - 1.0);
+  let i = u32(fi);
+  let j = min(i + 1u, u.waveCount - 1u);
+  let fr = fract(fi);
+  return vec2f(
+    mix(waveform2[i], waveform2[j], fr),
+    mix(waveform2[u.waveCount + i], waveform2[u.waveCount + j], fr),
+  );
 }
 
 ${WGSL_HSL2RGB}
@@ -1532,6 +1565,8 @@ export class WebGPURenderer implements Renderer {
   private paramsBuf: GPUBuffer;
   private builderBuf: GPUBuffer;
   private waveBuf: GPUBuffer;
+  /** Second waveform lane (binding 11): planar stereo, L then R halves. */
+  private waveBuf2: GPUBuffer;
   private binCapacity = 0;
   /** 1x1 transparent stand-in bound when no overlay is set. */
   private emptyOverlay: GPUTexture;
@@ -1707,6 +1742,7 @@ export class WebGPURenderer implements Renderer {
   private uniformU32 = new Uint32Array(this.uniformData);
   private paramsData = new Float32Array(MAX_PARAMS);
   private waveData = new Float32Array(WAVE_POINTS);
+  private waveData2 = new Float32Array(WAVE_POINTS * 2);
 
   private _onDeviceLost: ((reason: string) => void) | null = null;
   // L7: device.lost is wired inside create() (below), but every caller
@@ -1799,6 +1835,10 @@ export class WebGPURenderer implements Renderer {
     });
     this.waveBuf = device.createBuffer({
       size: WAVE_POINTS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.waveBuf2 = device.createBuffer({
+      size: WAVE_POINTS * 2 * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.emptyOverlay = device.createTexture({
@@ -1903,6 +1943,7 @@ export class WebGPURenderer implements Renderer {
         { binding: 8, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
         { binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
         { binding: 10, visibility: GPUShaderStage.FRAGMENT, buffer: storage },
+        { binding: 11, visibility: GPUShaderStage.FRAGMENT, buffer: storage },
       ],
     });
     this.pipelineLayout = device.createPipelineLayout({
@@ -2187,6 +2228,7 @@ export class WebGPURenderer implements Renderer {
           { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
           { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
           { binding: 10, resource: { buffer: this.builderBuf } },
+          { binding: 11, resource: { buffer: this.waveBuf2 } },
         ],
       });
     }
@@ -2212,6 +2254,7 @@ export class WebGPURenderer implements Renderer {
           { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
           { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
           { binding: 10, resource: { buffer: this.builderBuf } },
+          { binding: 11, resource: { buffer: this.waveBuf2 } },
         ],
       });
     }
@@ -3212,6 +3255,27 @@ export class WebGPURenderer implements Renderer {
     }
     this.device.queue.writeBuffer(this.waveBuf, 0, this.waveData);
 
+    // Second lane: the stereo pair, downsampled with the SAME chunk-mean
+    // arithmetic into the planar halves of one buffer (L then R), so every
+    // lane's point i covers the same slice of the same triggered window.
+    // Mono sources arrive with waveformL/R equal to waveform, so both halves
+    // degrade to waveData and waveAt2() reads exactly what waveAt() reads.
+    const srcL = f.waveformL;
+    const srcR = f.waveformR;
+    const chunk2 = Math.max(1, Math.floor(srcL.length / WAVE_POINTS));
+    for (let i = 0; i < WAVE_POINTS; i++) {
+      let sl = 0;
+      let sr = 0;
+      const base = Math.min(srcL.length - chunk2, i * chunk2);
+      for (let j = 0; j < chunk2; j++) {
+        sl += srcL[base + j];
+        sr += srcR[base + j];
+      }
+      this.waveData2[i] = sl / chunk2;
+      this.waveData2[WAVE_POINTS + i] = sr / chunk2;
+    }
+    this.device.queue.writeBuffer(this.waveBuf2, 0, this.waveData2);
+
     this.paramsData.fill(0);
     allParams(this.preset).forEach((p, i) => {
       if (i < MAX_PARAMS) this.paramsData[i] = params[p.key] ?? p.default;
@@ -3448,6 +3512,7 @@ export class WebGPURenderer implements Renderer {
           { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
           { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
           { binding: 10, resource: { buffer: this.builderBuf } },
+          { binding: 11, resource: { buffer: this.waveBuf2 } },
         ],
       });
     }
@@ -3459,6 +3524,7 @@ export class WebGPURenderer implements Renderer {
     this.uniformBuf.destroy();
     this.paramsBuf.destroy();
     this.waveBuf.destroy();
+    this.waveBuf2.destroy();
     this.binsBuf?.destroy();
     this.peaksBuf?.destroy();
     this.overlayTexture?.destroy();
@@ -3536,6 +3602,7 @@ export class WebGPURenderer implements Renderer {
           { binding: 8, resource: (this.coverTexture ?? this.emptyCover).createView() },
           { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
           { binding: 10, resource: { buffer: this.builderBuf } },
+          { binding: 11, resource: { buffer: this.waveBuf2 } },
         ],
       });
     }

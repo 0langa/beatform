@@ -141,6 +141,15 @@ export interface PipelineInput {
   displayMagDb?: Float32Array;
   /** Time-domain samples, -1..1 */
   waveform: Float32Array;
+  /**
+   * Optional per-channel time-domain windows, same length and time alignment
+   * as `waveform` (which stays the mono mixdown). When absent — mono sources,
+   * or callers that predate the stereo lane — the mono window feeds both
+   * output lanes, so `waveformL`/`waveformR` degrade to exact copies of
+   * `waveform`. Pass BOTH or NEITHER; a lone channel falls back to mono.
+   */
+  waveformL?: Float32Array;
+  waveformR?: Float32Array;
   /** Playback position, seconds */
   time: number;
   /** Seconds since previous frame — pass exactly 1/fps for offline rendering */
@@ -273,6 +282,8 @@ export class FeaturePipeline {
       bins: new Float32Array(this.binCount),
       peaks: new Float32Array(this.binCount),
       waveform: new Float32Array(config.waveformLength),
+      waveformL: new Float32Array(config.waveformLength),
+      waveformR: new Float32Array(config.waveformLength),
       rms: 0,
       energy: 0,
       voice: 0,
@@ -550,6 +561,17 @@ export class FeaturePipeline {
       }
     }
     wOut.set(wIn.subarray(trig, trig + wOut.length));
+
+    // Stereo lanes ride the SAME trigger: the one zero-crossing found on the
+    // mono lane above indexes all three copies. Channels triggered on their
+    // own crossings would each be phase-stable alone yet lose their RELATIVE
+    // phase — the one thing an XY/Lissajous display exists to show. When the
+    // caller passes no channel pair (mono source, legacy caller) the mono
+    // window feeds both, so the lanes are exact copies of `waveform`.
+    const wInL = input.waveformL && input.waveformR ? input.waveformL : wIn;
+    const wInR = input.waveformL && input.waveformR ? input.waveformR : wIn;
+    f.waveformL.set(wInL.subarray(trig, trig + wOut.length));
+    f.waveformR.set(wInR.subarray(trig, trig + wOut.length));
 
     let sum = 0;
     for (let i = 0; i < wIn.length; i++) sum += wIn[i] ** 2;

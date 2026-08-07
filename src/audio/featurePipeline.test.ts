@@ -174,6 +174,51 @@ describe("FeaturePipeline", () => {
     expect(f.waveform[0]).toBeCloseTo(0.5, 5);
   });
 
+  it("cuts the stereo lanes with the SAME trigger the mono lane found", () => {
+    // One zero-crossing indexes all three copies: channels triggered on
+    // their own crossings would each be stable alone yet lose their RELATIVE
+    // phase — the thing an XY/Lissajous display exists to show.
+    const p = makePipeline();
+    const wave = new Float32Array(FFT_BINS);
+    for (let i = 0; i < FFT_BINS; i++) wave[i] = i < 256 ? -0.5 : 0.5;
+    // Index ramps make the copy offset directly observable.
+    const left = new Float32Array(FFT_BINS);
+    const right = new Float32Array(FFT_BINS);
+    for (let i = 0; i < FFT_BINS; i++) {
+      left[i] = i;
+      right[i] = -i;
+    }
+    const f = p.update(makeInput({ waveform: wave, waveformL: left, waveformR: right }));
+    // The mono trigger lands at 256 (first rising crossing)...
+    const trig = f.waveformL[0];
+    expect(trig).toBe(256);
+    // ...and BOTH lanes are contiguous windows starting at exactly that index.
+    for (let i = 0; i < WAVE_LEN; i += 97) {
+      expect(f.waveformL[i]).toBe(trig + i);
+      expect(f.waveformR[i]).toBe(-(trig + i));
+    }
+  });
+
+  it("mono degradation: absent channel inputs yield exact copies of the mono lane", () => {
+    const p = makePipeline();
+    const wave = new Float32Array(FFT_BINS);
+    for (let i = 0; i < FFT_BINS; i++) wave[i] = Math.sin(i / 40) * 0.7;
+    const f = p.update(makeInput({ waveform: wave }));
+    expect(Array.from(f.waveformL)).toEqual(Array.from(f.waveform));
+    expect(Array.from(f.waveformR)).toEqual(Array.from(f.waveform));
+  });
+
+  it("rms still reads the MONO input window, never the channel lanes", () => {
+    // Guards the offline golden trace: adding the stereo lanes must not move
+    // rms/energy, so a loud channel pair around a quiet mono window must
+    // leave rms exactly where the mono window puts it.
+    const p = makePipeline();
+    const quiet = new Float32Array(FFT_BINS).fill(0.01);
+    const loud = new Float32Array(FFT_BINS).fill(0.9);
+    const f = p.update(makeInput({ waveform: quiet, waveformL: loud, waveformR: loud }));
+    expect(f.rms).toBeCloseTo(0.01 * 2.5, 6);
+  });
+
   it("computes band energies in the right order for a bass-heavy spectrum", () => {
     const p = makePipeline();
     const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
