@@ -41,8 +41,12 @@ const UNIFORM_SIZE = 144;
 const SCENE_FORMAT: GPUTextureFormat = "rgba16float";
 /** Post uniform block: 8 f32 lanes = 32 bytes (16-byte aligned). */
 const POST_UNIFORM_SIZE = 48; // 9 f32 (8 post params + transparent flag), 16B-aligned
-/** Particle uniform block: 24 scalar lanes = 96 bytes. */
-const PARTICLE_UNIFORM_SIZE = 96;
+/** Particle uniform block: 35 scalar lanes = 140 bytes, padded to the 16 B
+ * uniform granularity. Layout: 8 fixed lanes, then PARTICLE_PARAM_KEYS in
+ * order, then the explicitly-packed extra audio lanes (mid, treble).
+ * Exported for the ABI test: a lane appended without this bump would write
+ * PAST the Float32Array view, which TypedArrays swallow silently. */
+export const PARTICLE_UNIFORM_SIZE = 144;
 /** Fixed particle simulation rate. Steps are keyed to track time
  * (target = floor(time * SIM_FPS)) so the sim speed is frame-rate independent.
  *
@@ -732,8 +736,14 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
 /** Order of a particle preset's params (main + advanced) mapped into the
  * particle uniform. The preset MUST declare these keys; the renderer copies
- * each ParamValues[key] into the matching PU field. */
-const PARTICLE_PARAM_KEYS = [
+ * each ParamValues[key] into the matching PU field.
+ *
+ * ABI growth protocol: ONLY append at the end, mirrored by the same fields in
+ * the same ordinal position at the end of the PU struct's param section —
+ * `F[8 + idx]` packing depends on this order, and the golden shader test
+ * freezes it. Never reorder or remove. Exported for the ABI test
+ * (particleFlow.test.ts). */
+export const PARTICLE_PARAM_KEYS = [
   "hue",
   "flowScale",
   "flowStrength",
@@ -750,6 +760,16 @@ const PARTICLE_PARAM_KEYS = [
   "density",
   "audioFlow",
   "sat",
+  // Depth wave (Track B): appended keys — see the doc above, order is ABI.
+  "field",
+  "attractor",
+  "midSwirl",
+  "trebleJitter",
+  "ribbon",
+  "vignette",
+  "bgLevel",
+  "saturation",
+  "lightness",
 ] as const;
 
 /**
@@ -771,6 +791,9 @@ struct PU {
   damping: f32, gravity: f32, size: f32, sizePulse: f32,
   brightness: f32, beatBurst: f32, hueSpread: f32, speedColor: f32,
   spawnRadius: f32, density: f32, audioFlow: f32, sat: f32,
+  field: f32, attractor: f32, midSwirl: f32, trebleJitter: f32,
+  ribbon: f32, vignette: f32, bgLevel: f32, saturation: f32,
+  lightness: f32, mid: f32, treble: f32,
 }
 @group(0) @binding(0) var<uniform> pu: PU;
 fn h11(p: f32) -> f32 { return fract(sin(p * 127.1) * 43758.5453); }
@@ -828,13 +851,83 @@ fn cs_sim(@builtin(global_invocation_id) gid: vec3u) {
   // factors keep raw curl / positional terms in a sane velocity range so the
   // exposed knobs read as intuitive 0..2 multipliers.
   let fp = pos * pu.flowScale + vec2f(pu.time * 0.05, pu.time * 0.037);
-  // Flow rides both the bass and the selected sync source, so the Sync panel
-  // visibly changes how the field surges.
-  var force = curl(fp) * pu.flowStrength * 0.04
-            * (1.0 + pu.bass * pu.audioFlow * 0.4 + pu.drive * pu.audioFlow);
-  // Rotational swirl around center + gentle pull so the field stays framed.
-  force += vec2f(-pos.y, pos.x) * pu.swirl * 0.4;
-  force += -pos * pu.gravity * 0.3;
+  // Shared audio gain on every family's main current — the exact multiplier
+  // the curl force always carried (hoisted unchanged; the flow rides both the
+  // bass and the selected sync source, so the Sync panel visibly changes how
+  // the field surges).
+  let audioAmp = 1.0 + pu.bass * pu.audioFlow * 0.4 + pu.drive * pu.audioFlow;
+
+  // FIELD FAMILY (pu.field). 0 = the original curl flow, term for term; the
+  // other families replace only the MAIN current — swirl, attractor pull,
+  // outward drift, bursts and respawn stay shared so every knob keeps meaning.
+  let fieldSel = u32(pu.field + 0.5);
+  var force = vec2f(0.0);
+  if (fieldSel == 1u) {
+    // JET STREAM: a laminar horizontal current, strongest along a slowly
+    // meandering axis, curl turbulence sheared into the flanks (weak in the
+    // core, strong at the edges) and a confinement pull that keeps escapees
+    // rejoining the stream. Particles blown off the right edge respawn on the
+    // centre disc and get re-entrained — a wind tunnel, not a fountain.
+    let axis = sin(pu.time * 0.23) * 0.35;
+    let lane = pos.y - axis;
+    let core = exp(-lane * lane * 5.0);
+    force = vec2f(pu.flowStrength * 0.12 * core * audioAmp, 0.0);
+    force += curl(fp) * pu.flowStrength * 0.016 * audioAmp * (1.0 - core * 0.6);
+    force += vec2f(0.0, -lane) * 0.06;
+  } else if (fieldSel == 2u) {
+    // VORTEX STREET: a staggered double row of counter-rotating eddies
+    // drifting downstream (a von Karman wake). Each particle feels the
+    // nearest vortex of each row (solid-body core -> 1/r tail) plus a steady
+    // downstream carry. round() picks the nearest shed vortex analytically —
+    // no loops, no state.
+    let drift = pu.time * 0.22;
+    let spacing = 1.15;
+    let cx0 = round((pos.x + drift) / spacing) * spacing - drift;
+    let cx1 = (round((pos.x + drift) / spacing - 0.5) + 0.5) * spacing - drift;
+    let d0 = pos - vec2f(cx0, 0.34);
+    let d1 = pos - vec2f(cx1, -0.34);
+    let v0 = vec2f(-d0.y, d0.x) / (dot(d0, d0) * 8.0 + 0.06);
+    let v1 = vec2f(d1.y, -d1.x) / (dot(d1, d1) * 8.0 + 0.06);
+    force = (v0 + v1) * pu.flowStrength * 0.05 * audioAmp;
+    force += vec2f(pu.flowStrength * 0.02 * audioAmp, 0.0);
+  } else if (fieldSel == 3u) {
+    // ORBITAL: Keplerian shear disc — tangential drive falling off with
+    // radius over a built-in centre hold, so inner particles lap outer ones
+    // and the disc winds itself into arms. A pinch of curl keeps the rings
+    // from reading as clean vector-art circles.
+    let rr = max(length(pos), 0.05);
+    let tang = vec2f(-pos.y, pos.x) / rr;
+    force = tang * (pu.flowStrength * 0.09 * audioAmp / sqrt(rr));
+    force += -pos * (0.22 / rr);
+    force += curl(fp) * pu.flowStrength * 0.008 * audioAmp;
+  } else {
+    // CURL FLOW (default): divergence-free curl noise — the original field.
+    force = curl(fp) * pu.flowStrength * 0.04 * audioAmp;
+  }
+
+  // Rotational swirl around center; mids modulate it when the routing knob is
+  // up (pu.midSwirl, default 0 keeps the authored term verbatim — the branch
+  // IS the neutrality guarantee).
+  if (pu.midSwirl > 0.0) {
+    force += vec2f(-pos.y, pos.x) * pu.swirl * 0.4 * (1.0 + pu.mid * pu.midSwirl);
+  } else {
+    force += vec2f(-pos.y, pos.x) * pu.swirl * 0.4;
+  }
+  // ATTRACTOR GEOMETRY (pu.attractor): what the Center pull knob pulls
+  // toward. 0 = the original point spring, verbatim; 1 = a fixed ring at
+  // r = 0.55 (signed pull, so inside pushes out and outside pulls in — the
+  // field gathers on a halo); 2 = the horizontal axis (a glowing band).
+  let attractorSel = u32(pu.attractor + 0.5);
+  if (attractorSel == 1u) {
+    let ar = length(pos);
+    var rdir = pos * (1.0 / max(ar, 1e-5));
+    if (ar < 1e-4) { rdir = bdir; }
+    force += rdir * (0.55 - ar) * pu.gravity * 0.9;
+  } else if (attractorSel == 2u) {
+    force += vec2f(0.0, -pos.y) * pu.gravity * 0.9;
+  } else {
+    force += -pos * pu.gravity * 0.3;
+  }
   // Steady outward drift: with the center respawn this makes a fountain, so the
   // curl field bends the outflow into visible radiating tendrils (a uniform
   // fill would look like static under divergence-free flow). Loudness feeds it.
@@ -842,6 +935,14 @@ fn cs_sim(@builtin(global_invocation_id) gid: vec3u) {
   var outward = pos * (1.0 / max(r, 1e-5));
   if (r < 1e-4) { outward = bdir; }
   force += outward * (0.03 + pu.drive * 0.05);
+  // TREBLE JITTER (pu.trebleJitter, opt-in, default 0): hats and cymbals
+  // shake every particle with fine random-direction kicks. The direction is a
+  // pure hash of (particle, step time) — the same idiom the respawn already
+  // uses — so any frame resolves identically in preview and export.
+  if (pu.trebleJitter > 0.0) {
+    let ja = h11(seed * 17.3 + pu.time * 61.7) * 6.28318530718;
+    force += vec2f(cos(ja), sin(ja)) * pu.treble * pu.trebleJitter * 0.6;
+  }
   // Radial burst on the selected sync source's beats (falls back to kicks in
   // Kick mode), weighted a bit above the continuous terms so a kick reads as
   // a distinct scatter instead of blending into the ambient flow.
@@ -935,8 +1036,18 @@ fn vs_draw(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
   // makes a curl-noise field read as FLOW rather than as scatter.
   let dir = select(vec2f(1.0, 0.0), p.vel / max(speed, 1e-6), speed > 1e-5);
   let perp = vec2f(-dir.y, dir.x);
-  let stretch = 1.0 + min(speed * 26.0, 3.5);
-  let off = dir * (c.x * size * stretch) + perp * (c.y * size);
+  var stretch = 1.0 + min(speed * 26.0, 3.5);
+  var width = size;
+  // RIBBON STREAKS (pu.ribbon, default 0 = the branch never runs): the honest
+  // trail — pure vertex-stage elongation along the velocity, zero cross-frame
+  // state, so it obeys the same determinism the sim does. Riding the stretch
+  // factor means the energy divisor below automatically conserves deposited
+  // light, and thinning the quad keeps a long streamer silky, not slab-like.
+  if (pu.ribbon > 0.0) {
+    stretch = stretch * (1.0 + pu.ribbon * (3.0 + min(speed * 40.0, 10.0)));
+    width = size / (1.0 + pu.ribbon * 1.2);
+  }
+  let off = dir * (c.x * size * stretch) + perp * (c.y * width);
 
   // pos is in NDC (-1..1 fills the frame); correct sprite x for aspect so
   // dots stay round. y is flipped for clip space.
@@ -951,6 +1062,18 @@ fn vs_draw(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
   // punch, and kept gentle so the flow reads as the main event.
   let glowReact = 1.0 + pu.bass * 0.5 + pu.driveBeat * 1.4 * pu.beatBurst * 0.4;
 
+  // Whole-visual colour tier at the mode's single authored-HSL chokepoint,
+  // colorScale form (min(value * control, 1)). Exact-identity at the
+  // defaults: x * 1.0 is an exact IEEE multiply and pu.sat <= 1 / 0.6 < 1
+  // keep both min() folds inert, so factory output stays bit-identical.
+  var col = hsl2rgb(hue, min(pu.sat * pu.saturation, 1.0), min(0.6 * pu.lightness, 1.0));
+  // Vignette on the particle light itself (pu.vignette, default 0 = branch
+  // never runs): same quadratic uv-space falloff as the fragment prelude's
+  // vignette() helper — NDC distance halves into uv distance, hence 0.25.
+  if (pu.vignette > 0.0) {
+    col = col * (1.0 - dot(p.pos, p.pos) * 0.25 * pu.vignette);
+  }
+
   // Nearer particles are brighter as well as bigger — the two cues together
   // are what sell depth.
   //
@@ -958,7 +1081,7 @@ fn vs_draw(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
   // ADDITIVELY blended, so a streak covering 4x the pixels of a dot deposits
   // 4x the light. Without this the field clipped to a solid white blob the
   // moment streaking was introduced (observed, not theorised).
-  out.shade = hsl2rgb(hue, pu.sat, 0.6) * pu.brightness * bright * depth * glowReact
+  out.shade = col * pu.brightness * bright * depth * glowReact
             / (0.45 + stretch * 0.75);
   return out;
 }
@@ -974,6 +1097,45 @@ fn fs_draw(in: VOut) -> @location(0) vec4f {
   return vec4f(col, a);
 }
 `;
+
+/**
+ * The particle draw pass's clear colour: a faint hue-tinted wash behind the
+ * field (`bgLevel`, CPU-consumed like `density`'s draw count — the PU lane is
+ * plumbed but the value acts here). Pure function of params, so preview and
+ * export resolve the identical clear. level <= 0 returns the exact pre-wave
+ * transparent-black clear. The whole-visual colour tier grades the wash the
+ * same way the draw shader grades sprites: saturation scales the tint's S
+ * (colorScale form), lightness multiplies the level.
+ */
+function particleBgClear(
+  level: number,
+  hueDeg: number,
+  satCtl: number,
+  lightCtl: number,
+): GPUColorDict {
+  if (level <= 0) return { r: 0, g: 0, b: 0, a: 0 };
+  // Plain hue->rgb at L=0.5 (the classic piecewise HSL hexcone), S fixed at a
+  // muted 0.55 so the wash reads as atmosphere rather than paint.
+  const h = (((hueDeg % 360) + 360) % 360) / 60;
+  const s = Math.min(0.55 * satCtl, 1);
+  const c = s; // chroma at L=0.5: (1 - |2L-1|) * s = s
+  const x = c * (1 - Math.abs((h % 2) - 1));
+  const [r, g, b] =
+    h < 1
+      ? [c, x, 0]
+      : h < 2
+        ? [x, c, 0]
+        : h < 3
+          ? [0, c, x]
+          : h < 4
+            ? [0, x, c]
+            : h < 5
+              ? [x, 0, c]
+              : [c, 0, x];
+  const m = 0.5 - c / 2;
+  const k = level * lightCtl;
+  return { r: (r + m) * k, g: (g + m) * k, b: (b + m) * k, a: 0 };
+}
 
 /** Mesh-3D uniform: mat4 viewProj (64) + 29 scalar lanes (116) = 180 bytes,
  * padded to the struct's 16-byte alignment = 192. Exported for the test that
@@ -2526,6 +2688,12 @@ export class WebGPURenderer implements Renderer {
     // Motion masters: swirl obeys Rotation, beat burst obeys Pulse.
     F[8 + PARTICLE_PARAM_KEYS.indexOf("swirl")] *= this.motion.rotation;
     F[8 + PARTICLE_PARAM_KEYS.indexOf("beatBurst")] *= this.motion.pulse;
+    // Extra audio lanes, packed by explicit index AFTER the param block (the
+    // PU struct ends `..., mid: f32, treble: f32`). The 8-lane fixed prefix
+    // and the F[8 + idx] param mapping above must never grow or shift.
+    const audioBase = 8 + PARTICLE_PARAM_KEYS.length;
+    F[audioBase] = f.mid;
+    F[audioBase + 1] = f.treble;
     this.device.queue.writeBuffer(
       this.particleUniform,
       slot * PARTICLE_SLOT_STRIDE,
@@ -2617,12 +2785,20 @@ export class WebGPURenderer implements Renderer {
       Math.max(0, paramOr(this.preset!, params, "density") * this.motion.detail),
     );
     const drawCount = Math.max(1, Math.floor(count * density));
+    // bgLevel wash: hue-tinted clear behind the field. 0 (the default) is the
+    // exact pre-wave transparent-black clear; the luma-keyed composite treats
+    // a non-zero wash like any preset-authored background light.
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
           view: this.visTex!.createView(),
           loadOp: "clear",
-          clearValue: { r: 0, g: 0, b: 0, a: 0 },
+          clearValue: particleBgClear(
+            paramOr(this.preset!, params, "bgLevel"),
+            paramOr(this.preset!, params, "hue"),
+            paramOr(this.preset!, params, "saturation"),
+            paramOr(this.preset!, params, "lightness"),
+          ),
           storeOp: "store",
         },
       ],
