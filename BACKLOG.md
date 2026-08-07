@@ -263,13 +263,23 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
   display + xyRotate goniometer, 3 styles — strictly additive, waveAt
   byte-identical; matrix 188→204→207 with ZERO existing-hash movement
   across both re-blesses; strips at renderer-block-strips; XY proven on
-  real stereo tracks) → **Builder bridge** (last Track B item). One
-  release per batch.
+  real stereo tracks) → **Builder bridge DONE, shipped v2.78.0
+  2026-08-07 — TRACK B COMPLETE** (RP-20: virtual ParamSpec list
+  `l<i>.opacity/hue/hueSpread` + `l<i>.<paramKey>` generated at makeDef
+  time so the compiled def carries real params+groups and the WeakMap
+  enumeration caches are correct by construction; builderStack stays the
+  persisted truth with a derived paramsByPreset mirror; ONE shared
+  `packBuilderFrame` chokepoint in live loop + export worker routes
+  mods/automation/MIDI into the storage buffer with dirty-checked
+  uploads — zero WGSL change; 6 factory stacks as chips
+  (classic/neon-club/sunset-drive/deep-space/cathedral/phosphor);
+  builder2 looks + resetParams + timeline laneSpec now real; matrix
+  207→213, six additive `builder2/stack/*` cases, every pre-existing
+  hash byte-identical; shots at 2026-08-07_builder-bridge-factory-stacks).
+  One release per batch.
 
-* [ ] B1..Bn Per-mode upgrade waves in the B0-ranked order (worktree
-      agents, one mode per agent — the proven v2.47/v2.68 pattern):
-      params + groups + styles + hints + GPU-matrix re-bless + device
-      screenshots per mode. Shallow tier first.
+* [x] B1..Bn Per-mode upgrade waves in the B0-ranked order — ALL DONE
+      (batches 1-3, renderer block, builder bridge; v2.74.0–v2.78.0).
 
 ### Track C — Seed set v2 (after B lands for the modes involved)
 
