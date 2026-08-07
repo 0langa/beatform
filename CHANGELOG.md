@@ -210,6 +210,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
   every other mode (it was a nonstandard 0–1 scale). Existing projects
   and looks are migrated automatically and render identically.
 
+## [2.74.0] - 2026-08-07
+
 ### Added
 
 - **Four visual modes got dramatically deeper.** First wave of the
