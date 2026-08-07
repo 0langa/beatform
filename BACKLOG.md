@@ -489,7 +489,7 @@ nothing else from that release is outstanding.
       W1 rewired) was verified directly in the running app instead.
 - [ ] G9 **A stale dev server silently poisons every e2e harness.** The
       harnesses spawn the debug exe, which loads `devUrl
-      http://localhost:1420`; a leftover Vite from an earlier run — bound
+    http://localhost:1420`; a leftover Vite from an earlier run — bound
       IPv6-only, since `host: false` resolves to `[::1]` on this machine —
       answers that URL and serves a different tree, so the harness attaches
       to the wrong app and fails with a misleading context error. Two
