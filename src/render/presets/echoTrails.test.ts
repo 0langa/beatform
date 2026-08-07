@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { echoTrails } from "./echoTrails";
+import { allParams, defaultParams, groupParams, presetMasters } from "../types";
 import { SHADER_SOURCES } from "../webgpuRenderer";
 
 /** The prelude's own TAU, so nothing here can drift from the shader's. */
@@ -452,5 +453,503 @@ describe("echo-trails club mirror spectrum coverage", () => {
         expect(seamKof((x + 0.5) / BINS, false), `mirror ${m} bin ${x}`).toBe(1);
       }
     }
+  });
+});
+
+/**
+ * Depth wave (Track B batch 3): source shapes, vortex pivot, warp fields.
+ *
+ * The wave's contract is default neutrality — at factory defaults the WGSL
+ * must reproduce the pre-wave picture bit-for-bit. Device identity is the GPU
+ * pixel matrix's half (echo-trails/@defaults and the eight legacy style
+ * hashes must NOT move); what a Node test can reach is the arithmetic: every
+ * new branch is unreachable at the defaults, and every expression the default
+ * path flows through is either untouched or an exact IEEE identity. These
+ * suites lift the shipped expressions out of the WGSL (the file's house
+ * pattern) so an edit that weakens a claim fails instead of agreeing with it.
+ */
+describe("echo-trails depth wave: default neutrality", () => {
+  const body = echoTrails.wgsl;
+  const specs = new Map(allParams(echoTrails).map((p) => [p.key, p]));
+
+  it("every new axis defaults to the legacy path, and no legacy style opts in", () => {
+    expect(specs.get("source")!.default).toBe(0);
+    expect(specs.get("warp")!.default).toBe(0);
+    expect(specs.get("centerX")!.default).toBe(0);
+    expect(specs.get("centerY")!.default).toBe(0);
+    // The legacy deck must keep rendering through pre-wave code paths: with
+    // the branch identities below, that is guaranteed iff no legacy style
+    // writes a new key. This is the Node half of "existing device hashes
+    // must not move".
+    for (const id of [
+      "tunnel",
+      "roseWindow",
+      "vortex",
+      "supernova",
+      "glacier",
+      "magnetar",
+      "smoke",
+      "prism",
+    ]) {
+      const style = (echoTrails.styles ?? []).find((s) => s.id === id);
+      expect(style, `legacy style ${id} is gone`).toBeDefined();
+      for (const key of ["source", "warp", "centerX", "centerY"]) {
+        expect(key in style!.values, `${id} writes new key ${key}`).toBe(false);
+      }
+    }
+  });
+
+  it("the pivot algebra is an exact identity at the 0,0 default", () => {
+    // Text pins: the four lines the identity argument reads.
+    expect(body).toContain("let pivot = vec2f(P_centerX() * u.aspect, P_centerY());");
+    expect(body).toContain("let cq = (c - pivot) / zoom;");
+    expect(body).toContain("var w = rot2(swirl) * cq;");
+    expect(body).toContain(
+      "let puv = vec2f((w.x + pivot.x) / u.aspect + 0.5, w.y + pivot.y + 0.5);",
+    );
+    // The arithmetic: at the default the pivot components are 0 * aspect = +0
+    // and +0, so per component cq is (x - 0) / zoom and puv is
+    // (x + 0) / aspect + 0.5 against the pre-wave x / aspect + 0.5. Subtracting
+    // +0 is a bit-level identity for EVERY x (including -0); adding +0 can only
+    // flip a -0 to +0, and the very next + 0.5 lands both signs of zero on the
+    // same 0.5 — value-identical everywhere. Object.is distinguishes -0, so
+    // these assertions prove the bit/value claims, not mere closeness; the
+    // identities are width-independent (exact in f64 here, exact in f32 on
+    // the GPU — aurora.test.ts's argument).
+    const px = 0 * (16 / 9); // P_centerX() * u.aspect at the default
+    expect(Object.is(px, 0)).toBe(true);
+    for (const x of [0, -0, 1e-38, -1e-38, 0.37, -0.37, 0.5, -0.5, 1.0625e-7]) {
+      expect(Object.is(x - px, x), `x - 0 must be x for ${x}`).toBe(true);
+      for (const aspect of [1, 16 / 9, 21 / 9]) {
+        expect(
+          Object.is((x + px) / aspect + 0.5, x / aspect + 0.5),
+          `puv identity at x=${x} aspect=${aspect}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("warp field 0 is the shipped swirl, assigned before a branch that only rewrites w", () => {
+    const iDefault = body.indexOf("var w = rot2(swirl) * cq;");
+    const iBranch = body.indexOf("if (P_warp() > 0.5) {");
+    const iPuv = body.indexOf("let puv =");
+    expect(iDefault).toBeGreaterThan(-1);
+    expect(iBranch).toBeGreaterThan(iDefault);
+    expect(iPuv).toBeGreaterThan(iBranch);
+    const branch = body.slice(iBranch, iPuv);
+    expect(branch).toContain("w = vec2f(cq.x + cq.y * swirl * 2.0, cq.y);");
+    expect(branch).toContain("w = rot2(swirl * 1.5 * cos(pr * 14.0)) * cq;");
+    // Every bare assignment inside the branch writes w and nothing else, so
+    // an off-default field can never leak into zoom/decay/puv structure.
+    const bare = branch
+      .split("\n")
+      .filter((l) => /^\s*[a-zA-Z_]\w*(\.\w+)?\s*=[^=]/.test(l) && !/^\s*let\s/.test(l));
+    expect(bare.length).toBe(2);
+    for (const l of bare) expect(l).toMatch(/^\s*w\s*=/);
+  });
+
+  it("source 0 selects the ring for every cover state; only cover-with-art leaves it", () => {
+    const src = /let useRing = ([^;]*);/.exec(body)?.[1];
+    expect(src, "useRing expression not found in the WGSL").toBeTruthy();
+    // Named ringSelected here only because a JS binding called useRing trips
+    // the react-hooks lint rule; the WGSL name it lifts is useRing.
+    const ringSelected = new Function("srcKind", "hasCover", `return ${src};`) as (
+      k: number,
+      has: () => boolean,
+    ) => boolean;
+    for (const has of [true, false]) expect(ringSelected(0, () => has)).toBe(true);
+    expect(ringSelected(4, () => false)).toBe(true); // no art -> ring fallback, never black
+    expect(ringSelected(4, () => true)).toBe(false);
+    for (const k of [1, 2, 3]) expect(ringSelected(k, () => true)).toBe(false);
+  });
+
+  it("the useRing branch is the pre-wave ring block, expression for expression", () => {
+    const start = body.indexOf("if (useRing) {");
+    const end = body.indexOf("} else if (srcKind < 1.5) {");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const block = body.slice(start, end);
+    for (const line of [
+      "var shape = 1.0;",
+      "if (P_sides() > 0.5) {",
+      "let beatP = max(u.driveBeat, gridPulse(7.0));",
+      "let lobe = cos(P_sides() * ang);",
+      "let star = softLimit(0.11 + P_beatStar() * beatP * u.pulse * 0.5, 0.9);",
+      "shape = 1.0 + star * lobe;",
+      "let ringR = softLimit((P_radius() + spec * P_react() * (0.6 + u.bass * 0.8)) * shape, frameCircle());",
+      "band = smoothstep(P_thick() + 0.02, 0.0, abs(rad - ringR));",
+    ]) {
+      expect(block, `pre-wave ring expression missing: ${line}`).toContain(line);
+    }
+    // ...and it never touches level, so the injection's (0.5 + level) is
+    // (0.5 + spec) BY VALUE on the default path — same number, same bits.
+    expect(block).not.toMatch(/\blevel\s*=/);
+    expect(body).toContain("var level = spec;");
+    expect(body).toContain("col += ringHot * band * (0.5 + level) * P_inject() * deposit;");
+  });
+});
+
+/**
+ * The cover source's stability law. An accumulator multiplies any steady
+ * injection by 1 / (1 - loopGain) — injecting the raw image would settle the
+ * whole disc ~10x hot and wash the frame white (the failure the preset's own
+ * comments document for tonemap and the peak crown). The (1 - loopGain)
+ * pre-scale is the unique factor whose fixed point is the art at its own
+ * brightness, and deposit makes that fixed point exact at every frame rate:
+ * (1 - L) * (1 - L^f) / (1 - L) is 1 - L^f, so S = art * vg for every f.
+ */
+describe("echo-trails cover source: bounded, frame-rate-exact fixed point", () => {
+  const body = echoTrails.wgsl;
+
+  it("the injection is pre-scaled by (1 - loopGain) and carries deposit", () => {
+    const line = body.split("\n").find((l) => l.includes("col += coverSample"));
+    expect(line, "cover injection line not found").toBeTruthy();
+    expect(line).toContain("* (1.0 - loopGain)");
+    expect(line).toContain("* deposit");
+  });
+
+  it("settles at art x vignette at every frame rate — and raw injection would not", () => {
+    // The shader's OWN deposit expression, lifted exactly as the frame-rate
+    // suite above lifts it.
+    const src = /let deposit = (.*);/.exec(body)?.[1];
+    expect(src, "deposit expression not found in the WGSL").toBeTruthy();
+    const deposit = new Function(
+      "loopGain",
+      "fpsComp",
+      `const pow = Math.pow, min = Math.min;
+       const select = (f, t, c) => (c ? t : f);
+       const authored = fpsComp === 1.0;
+       return ${src};`,
+    ) as (loopGain: number, fpsComp: number) => number;
+
+    /** One disc pixel of the cover loop:
+     *  col = (col*decay^f*vgFade + art*(1-L)*deposit)*vg, L = min(decay*vg, .999). */
+    const settle = (art: number, decay: number, vg: number, f: number, scaled: boolean) => {
+      const L = Math.min(decay * vg, 0.999);
+      const k = scaled ? 1 - L : 1;
+      const D = deposit(L, f);
+      const fade = f === 1 ? 1 : Math.pow(vg, f - 1);
+      let col = 0;
+      for (let n = 0; n < Math.round(6000 / f); n++) {
+        col = (col * Math.pow(decay, f) * fade + art * k * D) * vg;
+      }
+      return col;
+    };
+
+    const art = 0.73;
+    for (const [decay, vig] of [
+      [0.94, 0.4], // the Droste style's pair
+      [0.92, 0.3], // the defaults
+      [0.98, 0.5], // the longest shipped trail
+    ]) {
+      const vg = 1 - 0.25 * 0.25 * vig; // vignette() a quarter of the way out
+      for (const f of [1, 2, 2.5, 1.25, 0.5, 60 / 144]) {
+        expect(
+          Math.abs(settle(art, decay, vg, f, true) - art * vg),
+          `fixed point off at decay ${decay} vignette ${vig} fpsComp ${f}`,
+        ).toBeLessThan(1e-6);
+      }
+      // Non-vacuity: the raw art settles 1/(1-L) hotter — the white-out the
+      // pre-scale exists to prevent.
+      expect(settle(art, decay, vg, 1, false) / (art * vg)).toBeGreaterThan(5);
+    }
+  });
+});
+
+/**
+ * The waveform loop and the wrap. waveAt(0) and waveAt(1) are unrelated
+ * samples, so the loop has exactly the seam the spectrum ring had — and it
+ * borrows exactly the same fix, through the same seamK. Same lift-the-source
+ * approach as the spectrum suite above.
+ */
+describe("echo-trails waveform loop: the wrap closes through the same crossfade", () => {
+  const body = echoTrails.wgsl;
+
+  const lift = (name: string, args: string[]) => {
+    const src = new RegExp(`let ${name} = ([^;]*);`).exec(body)?.[1];
+    if (src === undefined) throw new Error(`${name} expression not found in the WGSL`);
+    return new Function(
+      ...args,
+      `${WGSL_SHIM}
+       return ${src.replace(/\s+/g, " ")};`,
+    ) as (...a: never[]) => number;
+  };
+
+  const seamKof = lift("seamK", ["specX", "folded"]) as (specX: number, folded: boolean) => number;
+  const wvLifted = lift("wv", ["specX", "seamK", "waveAt"]) as (
+    specX: number,
+    seamK: number,
+    waveAt: (x: number) => number,
+  ) => number;
+
+  /** An asymmetric trace: the two ends far apart — the worst wrap case. */
+  const wave = (x: number) => Math.sin(x * 11.3) * 0.7 + (x - 0.5) * 0.8;
+  const wv = (x: number) => wvLifted(x, seamKof(x, false), wave);
+
+  it("closes the loop: both ends meet at one value, the mean of the two", () => {
+    expect(wv(0)).toBe(wv(1));
+    expect(wv(0)).toBeCloseTo((wave(0) + wave(1)) / 2, 12);
+  });
+
+  it("away from the arc the loop is the raw trace — the fix is local", () => {
+    for (const x of [0.2, 0.35, 0.5, 0.65, 0.8]) expect(wv(x)).toBeCloseTo(wave(x), 15);
+  });
+
+  it("closes continuously, not as a steeper ramp (refinement, as the spectrum suite)", () => {
+    const stepAcrossWrap = (f: (x: number) => number, n: number) => Math.abs(f(1 - 1 / n) - f(0));
+    const fine = stepAcrossWrap(wv, 8192);
+    expect(stepAcrossWrap(wv, 4096) / fine).toBeGreaterThan(1.9);
+    // Non-vacuity: the raw trace's genuine jump dwarfs the residue the blend
+    // leaves. (The trace is smooth in x, so its sampled step does not hold
+    // its height to six digits the way the spectrum suite's piecewise-flat
+    // bins do — the load-bearing contrast is jump vs residue, two orders.)
+    expect(stepAcrossWrap(wave, 8192) / fine).toBeGreaterThan(100);
+  });
+});
+
+/**
+ * The star source's outline can never collapse: the spike depth soft-limits
+ * against 0.9 exactly as the polygon's lobes do, so the deepest valley leaves
+ * a positive radius even at full Beat bloom under the Pulse master's 200%.
+ */
+describe("echo-trails star source: the outline never collapses", () => {
+  const body = echoTrails.wgsl;
+
+  it("the prelude's softLimit still has the transcribed shape", () => {
+    // Guards the JS transcription below, the kaleido suite's approach to
+    // shared helpers.
+    expect(SHADER_SOURCES.header).toContain("let knee = lim * 0.72;");
+    expect(SHADER_SOURCES.header).toContain(
+      "return knee + (lim - knee) * tanh((x - knee) / (lim - knee));",
+    );
+  });
+
+  const softLimit = (x: number, lim: number) => {
+    const knee = lim * 0.72;
+    return x <= knee ? x : knee + (lim - knee) * Math.tanh((x - knee) / (lim - knee));
+  };
+
+  it("spike stays under 0.9 and the valley radius stays positive at Pulse 200%", () => {
+    const spikeSrc = /let spike = ([^;]*);/.exec(body)?.[1];
+    const shapeSrc = /let starShape = ([^;]*);/.exec(body)?.[1];
+    expect(spikeSrc, "spike expression not found").toBeTruthy();
+    expect(shapeSrc, "starShape expression not found").toBeTruthy();
+    const spikeOf = new Function(
+      "P_beatStar",
+      "beatP",
+      "u",
+      "softLimit",
+      `return ${spikeSrc};`,
+    ) as (
+      beatStar: () => number,
+      beatP: number,
+      u: { pulse: number },
+      sl: typeof softLimit,
+    ) => number;
+    const shapeOf = new Function("spike", "sect", `return ${shapeSrc};`) as (
+      spike: number,
+      sect: number,
+    ) => number;
+    for (const beatStar of [0, 0.5, 1]) {
+      for (const beatP of [0, 0.5, 1]) {
+        for (const pulse of [0, 1, 2]) {
+          const spike = spikeOf(() => beatStar, beatP, { pulse }, softLimit);
+          expect(spike).toBeLessThan(0.9);
+          for (const sect of [0, 0.25, 0.5, 0.75, 1]) {
+            expect(shapeOf(spike, sect), `negative star radius at sect ${sect}`).toBeGreaterThan(
+              0.1 - 1e-9,
+            );
+          }
+        }
+      }
+    }
+    // Non-vacuity: the points genuinely bloom on the beat...
+    const calm = spikeOf(() => 1, 0, { pulse: 1 }, softLimit);
+    const hit = spikeOf(() => 1, 1, { pulse: 1 }, softLimit);
+    expect(hit).toBeGreaterThan(calm);
+    // ...and a point outreaches a valley by construction.
+    expect(shapeOf(calm, 1)).toBeGreaterThan(shapeOf(calm, 0));
+  });
+
+  it("Round falls back to a five-point star (a 0-point star is nothing)", () => {
+    expect(body).toContain("let n = select(P_sides(), 5.0, P_sides() < 0.5);");
+  });
+});
+
+/**
+ * The bars source: quantization stays inside the spectrum, and the fill obeys
+ * the accumulator budget (the tip silhouette is the bright part; the body is
+ * deliberately dim so the zoom's self-feeding cannot run the wedges hot).
+ */
+describe("echo-trails bars source: quantization and budget", () => {
+  const body = echoTrails.wgsl;
+
+  it("48 cells sample bin centres, pinned at the top edge like bassCircle's", () => {
+    const src = /let cell = ([^;]*);/.exec(body)?.[1];
+    expect(src, "cell expression not found").toBeTruthy();
+    const cellOf = new Function(
+      "specX",
+      `const floor = Math.floor, min = Math.min; return ${src};`,
+    ) as (x: number) => number;
+    // Every cell centre lands strictly inside [0, 1) — binAt addresses real
+    // bins at every angle, folded wedges' exact specX = 1.0 included.
+    for (let i = 0; i <= 4096; i++) {
+      const c = cellOf(i / 4096);
+      expect(c).toBeGreaterThan(0);
+      expect(c).toBeLessThan(1);
+    }
+    expect(cellOf(1)).toBe(cellOf(1 - 1e-9)); // the top edge joins the last cell
+    expect(cellOf(0)).toBeCloseTo(0.5 / 48, 15);
+    // Non-vacuity: neighbouring cells address different centres.
+    expect(cellOf(0.5 / 48)).not.toBe(cellOf(1.5 / 48));
+  });
+
+  it("the notch closes at every cell edge and opens mid-cell", () => {
+    const src = /let gapM = ([^;]*);/.exec(body)?.[1];
+    expect(src, "gapM expression not found").toBeTruthy();
+    const gapOf = new Function(
+      "fc",
+      `${WGSL_SHIM}
+       return ${src!.replace(/\s+/g, " ")};`,
+    ) as (fc: number) => number;
+    expect(gapOf(0)).toBe(0);
+    expect(gapOf(1)).toBe(0);
+    expect(gapOf(0.5)).toBe(1);
+  });
+
+  it("the tip band rides Ring thickness; the fill is dimmed for the budget", () => {
+    expect(body).toContain("let tipBand = smoothstep(P_thick() + 0.02, 0.0, abs(rad - tip));");
+    expect(body).toContain("band = gapM * (tipBand + fill * (0.14 + 0.3 * along * along));");
+  });
+});
+
+describe("echo-trails depth wave: param + deck conventions", () => {
+  const specs = new Map(allParams(echoTrails).map((p) => [p.key, p]));
+
+  it("enums are mod-off with every option declared; centre sliders stay smooth", () => {
+    const source = specs.get("source")!;
+    expect(source.control).toBe("enum");
+    expect(source.mod).toBe("off");
+    expect(source.control === "enum" && source.options.map((o) => o.value)).toEqual([
+      0, 1, 2, 3, 4,
+    ]);
+    const warp = specs.get("warp")!;
+    expect(warp.control).toBe("enum");
+    expect(warp.mod).toBe("off");
+    expect(warp.control === "enum" && warp.options.map((o) => o.value)).toEqual([0, 1, 2]);
+    for (const key of ["centerX", "centerY"]) {
+      expect(specs.get(key)!.mod, `${key} must stay a smooth mod target`).toBeUndefined();
+    }
+  });
+
+  it("decay carries the log taper over 0.6..0.99 — display-only, value space untouched", () => {
+    const decay = specs.get("decay")!;
+    expect(decay.taper).toBe("log");
+    expect(decay.min).toBe(0.6); // log taper requires min > 0, and the range is unchanged
+    expect(decay.max).toBe(0.99);
+    expect(decay.default).toBe(0.92);
+  });
+
+  it("every knob ships a hint", () => {
+    for (const spec of allParams(echoTrails)) {
+      expect(spec.hint, `${spec.key} has no hint`).toBeTruthy();
+    }
+  });
+
+  it("the curated tier keeps the five-lens house, Source shape included", () => {
+    const mainGroups = groupParams(echoTrails, echoTrails.params).map((v) => v.group.id);
+    for (const lens of ["shape", "color", "motion", "reaction", "glow"]) {
+      expect(mainGroups, `curated tier misses ${lens}`).toContain(lens);
+    }
+  });
+
+  it("the masters footprint is unchanged (no accidental Detail flip)", () => {
+    expect(presetMasters(echoTrails)).toEqual({
+      rotation: true,
+      pulse: true,
+      detail: false,
+      spectrumSmooth: true,
+    });
+  });
+});
+
+describe("echo-trails IDs are forever + the deck exercises the new axes", () => {
+  it("the preset id and every pre-wave param key are unchanged", () => {
+    expect(echoTrails.id).toBe("echo-trails");
+    const keys = new Set(allParams(echoTrails).map((p) => p.key));
+    for (const key of [
+      "hue",
+      "decay",
+      "zoom",
+      "swirl",
+      "radius",
+      "react",
+      "inject",
+      "beatZoom",
+      "flowSwirl",
+      "thick",
+      "hueSpin",
+      "hueDrift",
+      "kickFlash",
+      "vignette",
+      "mirror",
+      "echoHue",
+      "sides",
+      "beatStar",
+    ]) {
+      expect(keys.has(key), `pre-wave key "${key}" is gone`).toBe(true);
+    }
+  });
+
+  it("the legacy deck keeps its ids; the six new identities join it", () => {
+    const ids = (echoTrails.styles ?? []).map((s) => s.id);
+    for (const id of [
+      "tunnel",
+      "roseWindow",
+      "vortex",
+      "supernova",
+      "glacier",
+      "magnetar",
+      "smoke",
+      "prism",
+    ]) {
+      expect(ids, `legacy style "${id}" is gone`).toContain(id);
+    }
+    for (const id of ["starfall", "pinwheel", "seismic", "droste", "riptide", "maelstrom"]) {
+      expect(ids, `new style "${id}" missing`).toContain(id);
+    }
+    // First chip is still the defaults (the strip opens on an active chip).
+    expect(echoTrails.styles?.[0]?.values).toEqual({});
+  });
+
+  it("every style writes only real params, inside their declared ranges", () => {
+    const specs = new Map(allParams(echoTrails).map((p) => [p.key, p]));
+    for (const style of echoTrails.styles ?? []) {
+      for (const [key, v] of Object.entries(style.values)) {
+        const spec = specs.get(key);
+        expect(spec, `${style.id} writes unknown param "${key}"`).toBeDefined();
+        expect(v, `${style.id}.${key} below min`).toBeGreaterThanOrEqual(spec!.min);
+        expect(v, `${style.id}.${key} above max`).toBeLessThanOrEqual(spec!.max);
+      }
+    }
+  });
+
+  it("the deck exercises every option of both enums, plus the off-axis pivot", () => {
+    const resolved = (echoTrails.styles ?? []).map(
+      (s) => ({ ...defaultParams(echoTrails), ...s.values }) as Record<string, number>,
+    );
+    for (const v of [0, 1, 2, 3, 4]) {
+      expect(
+        resolved.some((r) => r.source === v),
+        `no style exercises source ${v}`,
+      ).toBe(true);
+    }
+    for (const v of [0, 1, 2]) {
+      expect(
+        resolved.some((r) => r.warp === v),
+        `no style exercises warp ${v}`,
+      ).toBe(true);
+    }
+    expect(resolved.some((r) => r.centerX !== 0 && r.centerY !== 0)).toBe(true);
   });
 });

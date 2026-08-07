@@ -25,6 +25,21 @@ import { WGSL_PALETTE_STD } from "../wgslLib";
  *
  * All motion is a pure function of fixed-clock feedback state + uniforms — no
  * RNG. Presentation cadence does not change history cadence.
+ *
+ * Depth wave (Track B batch 3): the accumulator's diet was one ring/polygon,
+ * so every look was "glowing loop in a vortex". Three opt-in axes multiply the
+ * identity without moving a default pixel:
+ *   - Source shape — WHAT the loop eats: the verbatim legacy ring (default),
+ *     a sharp-pointed star, a stepped spectrum-bar skyline, the waveform bent
+ *     into a loop, or the album art itself (video feedback pointed at the
+ *     sleeve; injection pre-scaled by (1 - loopGain) so its fixed point is
+ *     the art at its own brightness — bounded by construction, see below);
+ *   - Vortex center — the warp's pivot, for off-axis vortices (exact IEEE
+ *     identity at the 0,0 default);
+ *   - Warp field — swirl (the legacy math, verbatim) / shear / radial wave.
+ * Default neutrality: source 0 executes the legacy ring block unchanged, the
+ * warp branch cannot be entered at 0, and the pivot algebra reduces to
+ * x - 0 and x + 0 — exact identities. echoTrails.test.ts pins each claim.
  */
 export const echoTrails: PresetDef = {
   id: "echo-trails",
@@ -205,6 +220,150 @@ export const echoTrails: PresetDef = {
         vignette: 0.35,
       },
     },
+    // Starfall — the star source's flagship: a five-point star stamped down the
+    // tunnel, its points punching on every beat — gold streaks per hit.
+    {
+      id: "starfall",
+      name: "Starfall",
+      values: {
+        hue: 42,
+        source: 1,
+        sides: 5,
+        beatStar: 0.84,
+        zoom: 0.55,
+        beatZoom: 0.7,
+        decay: 0.9,
+        swirl: 0.14,
+        flowSwirl: 0.24,
+        radius: 0.16,
+        react: 0.36,
+        inject: 1.25,
+        kickFlash: 0.6,
+        hueSpin: 0.3,
+        hueDrift: 0.12,
+        echoHue: 0.14,
+        vignette: 0.25,
+      },
+    },
+    // Pinwheel — the bars source under heavy swirl: the spectrum skyline's
+    // vanes twist as they age, a rainbow pinwheel spun by the music.
+    {
+      id: "pinwheel",
+      name: "Pinwheel",
+      values: {
+        hue: 152,
+        source: 2,
+        swirl: 0.58,
+        flowSwirl: 0.5,
+        zoom: 0.3,
+        decay: 0.93,
+        radius: 0.15,
+        thick: 0.025,
+        react: 0.42,
+        inject: 1.05,
+        hueSpin: 0.7,
+        echoHue: 0.2,
+        beatZoom: 0.3,
+        kickFlash: 0.36,
+        vignette: 0.35,
+      },
+    },
+    // Seismic — the waveform loop as a hairline scope trace, near-still and
+    // long-lived: each ripple of the signal drifts outward like a seismograph.
+    {
+      id: "seismic",
+      name: "Seismic",
+      values: {
+        hue: 96,
+        source: 3,
+        decay: 0.95,
+        zoom: 0.18,
+        swirl: 0.03,
+        flowSwirl: 0.06,
+        radius: 0.27,
+        thick: 0.005,
+        react: 0.4,
+        inject: 0.95,
+        beatZoom: 0.12,
+        kickFlash: 0.22,
+        hueSpin: 0.08,
+        hueDrift: 0.04,
+        echoHue: 0.06,
+        vignette: 0.45,
+      },
+    },
+    // Droste — the cover source: the sleeve swirling down its own tunnel.
+    // Echo hue drift is left at its 0 default so the echoes keep the art's
+    // true colors; the beat zoom pumps the ghost copies instead. Without art
+    // it falls back to the ring.
+    {
+      id: "droste",
+      name: "Droste",
+      values: {
+        hue: 210,
+        source: 4,
+        radius: 0.34,
+        zoom: 0.3,
+        beatZoom: 0.5,
+        decay: 0.94,
+        flowSwirl: 0.2,
+        kickFlash: 0.3,
+        hueDrift: 0.04,
+        vignette: 0.4,
+      },
+    },
+    // Riptide — shear warp off an off-axis eye: trails drag sideways like a
+    // current instead of orbiting, the first look where the vortex has a shore.
+    {
+      id: "riptide",
+      name: "Riptide",
+      values: {
+        hue: 205,
+        warp: 1,
+        centerX: -0.22,
+        centerY: 0.08,
+        swirl: 0.5,
+        flowSwirl: 0.44,
+        zoom: 0.3,
+        decay: 0.93,
+        radius: 0.2,
+        thick: 0.02,
+        react: 0.32,
+        inject: 1.15,
+        beatZoom: 0.36,
+        kickFlash: 0.44,
+        hueSpin: 0.5,
+        echoHue: 0.18,
+        vignette: 0.35,
+      },
+    },
+    // Maelstrom — radial-wave warp on an off-centre 6-lobe ring: rings of
+    // counter-twist braid the echoes into a whirlpool with a wandering eye.
+    {
+      id: "maelstrom",
+      name: "Maelstrom",
+      values: {
+        hue: 275,
+        warp: 2,
+        centerX: 0.16,
+        centerY: -0.1,
+        swirl: 0.72,
+        flowSwirl: 0.6,
+        zoom: 0.42,
+        decay: 0.91,
+        radius: 0.18,
+        thick: 0.025,
+        react: 0.3,
+        inject: 1.25,
+        beatZoom: 0.56,
+        kickFlash: 0.66,
+        hueSpin: 0.34,
+        echoHue: 0.3,
+        sides: 6,
+        beatStar: 0.56,
+        vignette: 0.25,
+      },
+    },
   ],
   params: [
     {
@@ -226,6 +385,11 @@ export const echoTrails: PresetDef = {
       max: 0.99,
       step: 0.01,
       default: 0.92,
+      // Display-side log taper (RP-14a): everything interesting lives 0.9+,
+      // so the slider spends its track on ratios instead of cramming the
+      // usable range into the last fifth. Position mapping only — stored
+      // values, ABI, mod and MIDI stay raw.
+      taper: "log",
       hint: "How long echoes linger — higher leaves longer trails",
     },
     {
@@ -246,7 +410,7 @@ export const echoTrails: PresetDef = {
       max: 1,
       step: 0.01,
       default: 0.2,
-      hint: "Rotation of the trails — negative spins the other way",
+      hint: "Rotation of the trails — negative spins the other way; drives whichever Warp field is chosen",
     },
     {
       key: "radius",
@@ -256,7 +420,34 @@ export const echoTrails: PresetDef = {
       max: 0.6,
       step: 0.01,
       default: 0.22,
-      hint: "Base radius of the injected spectrum ring",
+      hint: "Base radius of the injected source — ring, star, bars and waveform all build on it; the Cover art disc scales from it",
+    },
+    {
+      key: "source",
+      label: "Source shape",
+      group: "shape",
+      control: "enum",
+      mod: "off",
+      options: [
+        {
+          value: 0,
+          label: "Ring",
+          hint: "The classic spectrum ring — Ring shape morphs it into lobes",
+        },
+        { value: 1, label: "Star", hint: "A sharp-pointed star — Ring shape sets its point count" },
+        { value: 2, label: "Bars", hint: "The spectrum as a stepped radial skyline" },
+        { value: 3, label: "Waveform", hint: "The live waveform bent into a loop" },
+        {
+          value: 4,
+          label: "Cover art",
+          hint: "The album art itself, echoed down the tunnel — falls back to Ring when the track has none",
+        },
+      ],
+      min: 0,
+      max: 4,
+      step: 1,
+      default: 0,
+      hint: "What the tunnel echoes — the fresh shape drawn into the feedback loop each frame",
     },
     {
       key: "react",
@@ -266,7 +457,7 @@ export const echoTrails: PresetDef = {
       max: 0.5,
       step: 0.01,
       default: 0.25,
-      hint: "How much the spectrum pushes the ring outward",
+      hint: "How much the spectrum (or waveform) pushes the source outward",
     },
     {
       key: "inject",
@@ -308,7 +499,7 @@ export const echoTrails: PresetDef = {
       max: 0.1,
       step: 0.005,
       default: 0.03,
-      hint: "Thickness of the injected ring",
+      hint: "Thickness of the injected outline — ring, star, bar tips and waveform trace alike",
     },
     {
       key: "hueSpin",
@@ -407,7 +598,7 @@ export const echoTrails: PresetDef = {
       max: 8,
       step: 1,
       default: 0,
-      hint: "Morph the injected ring into an N-lobed polygon or star — 0 is a smooth circle",
+      hint: "Morph the injected ring into an N-lobed polygon or star — 0 is a smooth circle; the Star source reads it as its point count (Round = 5 points)",
     },
     {
       key: "beatStar",
@@ -417,7 +608,56 @@ export const echoTrails: PresetDef = {
       max: 1,
       step: 0.02,
       default: 0.4,
-      hint: "The ring's lobes punch outward into a star on every beat (needs Ring shape above 0)",
+      hint: "Lobes and star points punch outward on every beat (the Ring source needs Ring shape above 0; the Star source always has points)",
+    },
+    {
+      key: "warp",
+      label: "Warp field",
+      group: "motion",
+      control: "enum",
+      mod: "off",
+      options: [
+        {
+          value: 0,
+          label: "Swirl",
+          hint: "Echoes rotate about the vortex center — the classic tunnel",
+        },
+        {
+          value: 1,
+          label: "Shear",
+          hint: "Echoes skew sideways — trails lean and drag like a current",
+        },
+        {
+          value: 2,
+          label: "Radial wave",
+          hint: "Rings of alternating twist around the center — braided, differential spin",
+        },
+      ],
+      min: 0,
+      max: 2,
+      step: 1,
+      default: 0,
+      hint: "How the trails move as they age — the Swirl slider sets the strength of whichever field is chosen",
+    },
+    {
+      key: "centerX",
+      label: "Vortex center X",
+      group: "motion",
+      min: -0.5,
+      max: 0.5,
+      step: 0.01,
+      default: 0,
+      hint: "Slide the warp's eye sideways — the source stays put while its echoes stream around the off-axis vortex",
+    },
+    {
+      key: "centerY",
+      label: "Vortex center Y",
+      group: "motion",
+      min: -0.5,
+      max: 0.5,
+      step: 0.01,
+      default: 0,
+      hint: "Slide the warp's eye up or down — pair with X to park the vortex in a corner",
     },
   ],
   wgsl: /* wgsl */ `
@@ -444,8 +684,46 @@ fn preset(uv: vec2f) -> vec4f {
   let fpsComp = u.dt * 60.0;
   let zoom = pow(1.0 + P_zoom() * 0.06 + u.driveBeat * P_beatZoom() * 0.12 * u.pulse, fpsComp);
   let swirl = (P_swirl() * 0.15 + u.drive * P_flowSwirl() * 0.1) * u.spin * fpsComp;
-  let w = rot2(swirl) * (c / zoom);
-  let puv = vec2f(w.x / u.aspect + 0.5, w.y + 0.5);
+  // Vortex pivot (depth wave): the whole warp — every field below — runs
+  // about this point instead of the screen centre, so the tunnel's eye can
+  // sit off-axis. Units are frame fractions (x scaled by aspect to match
+  // centered()); the INJECTED source deliberately stays at the screen centre —
+  // an off-axis vortex dragging a centred source sideways is the look, and
+  // moving both would just be a pan. At the 0,0 default every added step is
+  // an exact IEEE identity: x - 0 = x and x + 0 = x for every finite x, and
+  // the one bit-level exception (-0 + 0 is +0) only ever swaps the sign of a
+  // zero, which the very next add of 0.5 collapses to the same 0.5 — so puv
+  // comes out value-identical to the pre-wave transform everywhere.
+  let pivot = vec2f(P_centerX() * u.aspect, P_centerY());
+  let cq = (c - pivot) / zoom;
+  // Warp field 0 — the shipped swirl, assigned unconditionally so the default
+  // path executes the exact pre-wave expression; other fields overwrite w and
+  // nothing else, so they inherit the zoom/fpsComp law for free.
+  var w = rot2(swirl) * cq;
+  if (P_warp() > 0.5) {
+    if (P_warp() < 1.5) {
+      // Shear: a horizontal skew growing with height. Shears COMPOSE EXACTLY
+      // (shear(a) then shear(b) is shear(a+b) — upper-triangular matrices),
+      // so riding the swirl term's linear fpsComp is exact per-second
+      // composition, the same argument that keeps the swirl angle linear.
+      w = vec2f(cq.x + cq.y * swirl * 2.0, cq.y);
+    } else {
+      // Radial wave: a rotation whose ANGLE alternates with distance from the
+      // pivot — rings of counter-twist, so trails braid instead of orbiting
+      // rigidly. cos(pr * 14) flips sign ~1.5 times inside the visible field.
+      // Composition honesty: unlike the swirl (angle independent of position,
+      // adds exactly) and the shear (adds exactly), a position-dependent
+      // twist composes only approximately under the zoom's advection — a
+      // point's radius moves ~2%/frame at the default zoom, so a 30 fps
+      // double step mis-twists by a few percent OF THE PER-FRAME ANGLE, with
+      // a sign that alternates along cos; the decay's short memory forgets
+      // the residue before it can accumulate, and 60 fps — the rate every
+      // style is authored and exported at by default — is exact single steps.
+      let pr = length(c - pivot);
+      w = rot2(swirl * 1.5 * cos(pr * 14.0)) * cq;
+    }
+  }
+  let puv = vec2f((w.x + pivot.x) / u.aspect + 0.5, w.y + pivot.y + 0.5);
 
   // --- Frame-rate normalisation, part 2: what is ADDED to the loop ---
   // The per-second decay below is only half of the law. This preset
@@ -622,33 +900,109 @@ fn preset(uv: vec2f) -> vec4f {
   // no blend) when the coord is folded, where there is no joint to close.
   let seamK = select(smoothstep(0.0, 0.09, min(specX, 1.0 - specX)), 1.0, folded);
   let spec = mix((binAt(0.0) + binAt(1.0)) * 0.5, binAt(specX), seamK);
-  // Frame-safety: the FRESH ring is the source the feedback zoom streams
-  // outward from — inject it on-screen (r<=0.45), or a loud/bright master at
-  // high Ring size + Reactivity puts the whole source off-frame and the tunnel
-  // has nothing to echo. The trails still extend past this via feedback.
-  // Ring shape: morph the smooth circle into an N-lobed polygon/star. On each
-  // beat (grid-locked when a tempo grid exists) the lobes punch outward — a
-  // beat-stamped shape the feedback zoom then streams down the tunnel as an
-  // expanding star. This modulates only the ring's RADIUS per angle (a
-  // radial/beat response, never an angle offset, so the monotonic law holds)
-  // and reuses the SAME band energy as the plain ring, adding no net energy to
-  // the accumulator. Sides is a shape count (static orientation) — not scaled
-  // by the Rotation master.
-  var shape = 1.0;
-  if (P_sides() > 0.5) {
+
+  // --- Source shape (depth wave): WHAT the accumulator eats. ---
+  // srcKind 0 keeps the shipped ring/polygon math verbatim (the useRing
+  // branch below); every band-drawing alternative reuses the same injected-
+  // energy form — band * (0.5 + level) * Brightness * deposit — so the
+  // accumulator's bounded-gain reasoning and the frame-rate law carry over
+  // unchanged. The cover source needs art to sample; without any it falls
+  // back to the ring rather than to a black frame, so useRing — not the
+  // raw enum — is what selects the legacy path.
+  let srcKind = P_source();
+  let useRing = srcKind < 0.5 || (srcKind > 3.5 && !hasCover());
+  // level drives the injected brightness, (0.5 + level): the spectrum for
+  // ring/star/bars, |waveform| for the loop. Initialized to spec so the
+  // default path's (0.5 + spec) is reproduced with the same value.
+  var level = spec;
+  var band = 0.0;
+  if (useRing) {
+    // Frame-safety: the FRESH ring is the source the feedback zoom streams
+    // outward from — inject it on-screen (r<=0.45), or a loud/bright master at
+    // high Ring size + Reactivity puts the whole source off-frame and the tunnel
+    // has nothing to echo. The trails still extend past this via feedback.
+    // Ring shape: morph the smooth circle into an N-lobed polygon/star. On each
+    // beat (grid-locked when a tempo grid exists) the lobes punch outward — a
+    // beat-stamped shape the feedback zoom then streams down the tunnel as an
+    // expanding star. This modulates only the ring's RADIUS per angle (a
+    // radial/beat response, never an angle offset, so the monotonic law holds)
+    // and reuses the SAME band energy as the plain ring, adding no net energy to
+    // the accumulator. Sides is a shape count (static orientation) — not scaled
+    // by the Rotation master.
+    var shape = 1.0;
+    if (P_sides() > 0.5) {
+      let beatP = max(u.driveBeat, gridPulse(7.0));
+      let lobe = cos(P_sides() * ang);
+      // Soft-limited, never min(): the Pulse master runs to 200%, so at full Beat
+      // bloom the raw lobe depth reaches 1.11 and the notches between lobes would
+      // drive the ring radius NEGATIVE — the ring collapsing inward on every beat,
+      // precisely when it should read loudest. Compressing against 0.9 leaves the
+      // deepest notch at ~0.11x the radius, and every shipped style sits under the
+      // 0.648 knee, so their stars are bit-identical.
+      let star = softLimit(0.11 + P_beatStar() * beatP * u.pulse * 0.5, 0.9);
+      shape = 1.0 + star * lobe;
+    }
+    let ringR = softLimit((P_radius() + spec * P_react() * (0.6 + u.bass * 0.8)) * shape, frameCircle());
+    band = smoothstep(P_thick() + 0.02, 0.0, abs(rad - ringR));
+  } else if (srcKind < 1.5) {
+    // Star: a sharp-pointed outline — the triangle fold of the sector angle
+    // raised to a cube, vs Ring shape's smooth cosine lobes. The point count
+    // rides Ring shape (Round falls back to a 5-point star: a 0-point star is
+    // nothing), and Beat bloom punches the points outward on the same grid-
+    // locked envelope as the polygon's. The spike depth soft-limits against
+    // 0.9 exactly like the lobes do, so the valleys never drive the radius
+    // negative even at Pulse 200%. Static orientation, like Sides.
+    let n = select(P_sides(), 5.0, P_sides() < 0.5);
     let beatP = max(u.driveBeat, gridPulse(7.0));
-    let lobe = cos(P_sides() * ang);
-    // Soft-limited, never min(): the Pulse master runs to 200%, so at full Beat
-    // bloom the raw lobe depth reaches 1.11 and the notches between lobes would
-    // drive the ring radius NEGATIVE — the ring collapsing inward on every beat,
-    // precisely when it should read loudest. Compressing against 0.9 leaves the
-    // deepest notch at ~0.11x the radius, and every shipped style sits under the
-    // 0.648 knee, so their stars are bit-identical.
-    let star = softLimit(0.11 + P_beatStar() * beatP * u.pulse * 0.5, 0.9);
-    shape = 1.0 + star * lobe;
+    let sect = abs(fract(ang * n / TAU) * 2.0 - 1.0);
+    let spike = softLimit(0.38 + P_beatStar() * beatP * u.pulse * 0.4, 0.9);
+    let starShape = 1.0 - spike + spike * 2.0 * sect * sect * sect;
+    let starR = softLimit((P_radius() + spec * P_react() * (0.6 + u.bass * 0.8)) * starShape, frameCircle());
+    band = smoothstep(P_thick() + 0.02, 0.0, abs(rad - starR));
+  } else if (srcKind < 2.5) {
+    // Bars: the spectrum as a radial skyline — 48 angular cells, each holding
+    // one bin, drawn as a bright tip band (the silhouette, through the same
+    // Ring thickness) over a deliberately dim body fill. The dimming IS the
+    // accumulator budget: a filled wedge is re-fed its own inner pixels by
+    // the zoom for the ~25 frames content takes to cross it, so a full-
+    // brightness fill would settle several times hotter than the thin ring
+    // ever does; 0.14 at the base keeps the settled body in the ring's range
+    // while the tips stay the loudest thing on screen. Quantized cells make
+    // the wrap and the wedge edges STEPS BY DESIGN — the seam at the joint
+    // looks like every other cell boundary — which is why this source alone
+    // samples its quantized coordinate raw instead of through the crossfade.
+    // min(): folded wedges reach specX = 1.0 exactly (their clamp), which
+    // floor()s to cell 48 — one past the last. Pinning to 47 keeps the edge
+    // continuous with the wedge body, the same guard bassCircle's cells use.
+    let cell = (min(floor(specX * 48.0), 47.0) + 0.5) / 48.0;
+    let sv = binAt(cell);
+    level = sv;
+    let fc = fract(specX * 48.0);
+    let gapM = smoothstep(0.05, 0.14, fc) * smoothstep(0.05, 0.14, 1.0 - fc);
+    let tip = softLimit(P_radius() + sv * P_react() * (0.6 + u.bass * 0.8) * 1.5, frameCircle());
+    // base never exceeds tip: at Ring size past the frame's soft cap the tip
+    // pins at the cap and the fill collapses to the tip band — the same
+    // pinned-circle degradation the ring source has there.
+    let base = min(P_radius(), tip);
+    let tipBand = smoothstep(P_thick() + 0.02, 0.0, abs(rad - tip));
+    let fill = smoothstep(base - 0.01, base + 0.01, rad) * smoothstep(tip + 0.005, tip - 0.005, rad);
+    let along = clamp((rad - base) / max(tip - base, 1e-3), 0.0, 1.0);
+    band = gapM * (tipBand + fill * (0.14 + 0.3 * along * along));
+  } else if (srcKind < 3.5) {
+    // Waveform loop: the trace bent into a circle — the radius rides the live
+    // waveform once around the ring. waveAt(0.0) and waveAt(1.0) are
+    // unrelated samples, so the loop has exactly the wrap problem the
+    // spectrum ring has, and it borrows the same fix: the same seamK
+    // crossfade eases both ends to their mean across the same arc (and the
+    // folded mappings mirror for free, seamK = 1 there, like the spectrum).
+    // |wave| drives the brightness the way the spectrum drives the ring's, so
+    // loud excursions glow. The max() floor keeps a hard negative swing at
+    // high Reactivity from folding the loop through the centre.
+    let wv = mix((waveAt(0.0) + waveAt(1.0)) * 0.5, waveAt(specX), seamK);
+    level = abs(wv);
+    let wr = softLimit(max(P_radius() + wv * P_react() * 1.4, 0.02), frameCircle());
+    band = smoothstep(P_thick() + 0.015, 0.0, abs(rad - wr));
   }
-  let ringR = softLimit((P_radius() + spec * P_react() * (0.6 + u.bass * 0.8)) * shape, frameCircle());
-  let band = smoothstep(P_thick() + 0.02, 0.0, abs(rad - ringR));
   // Cosine palette instead of a raw hsl2rgb hue rotated by angle and drifted
   // by time: a continuously sweeping HSL hue walks through its desaturated
   // middle and comes out muddy olive/brown. Hue spin/drift now phase a
@@ -704,7 +1058,32 @@ fn preset(uv: vec2f) -> vec4f {
   let pk = mix((peakAt(0.0) + peakAt(1.0)) * 0.5, peakAt(specX), seamK);
   let ringPal = cosPalette(ringT, ${WGSL_PALETTE_STD});
   let ringHot = mix(ringPal, vec3f(1.0, 0.98, 0.95), pk * pk * 0.7);
-  col += ringHot * band * (0.5 + spec) * P_inject() * deposit;
+  // level is spec on the default path (initialized above, never reassigned in
+  // the useRing branch), so this line computes the pre-wave value; the cover
+  // source leaves band at 0 and this add is an exact +0.
+  col += ringHot * band * (0.5 + level) * P_inject() * deposit;
+
+  // Cover art source: the album art itself becomes what the tunnel echoes —
+  // video feedback pointed at the sleeve. The injection is pre-scaled by
+  // (1 - loopGain): an accumulator multiplies any steady injection by
+  // 1 / (1 - loopGain), so this is the unique scale whose fixed point is the
+  // art at its OWN brightness (times Brightness, times the finishing vignette
+  // — the algebra lands on exactly art * vg, what a non-feedback preset would
+  // show), where injecting the raw image would settle ~10x hot and wash the
+  // frame white. deposit then makes that fixed point frame-rate exact:
+  // art*(1-L)*deposit + S*L^fpsComp has fixed point S = art at EVERY rate,
+  // because (1-L) * (1 - L^fpsComp)/(1-L) is 1 - L^fpsComp. The disc rides
+  // Ring size (x1.6 — a disc reads by area, and that lands the default size
+  // at a sleeve-sized stamp), and the kaleido fold above makes a club-
+  // mirrored cover a kaleidoscope for free. Bright art features the zoom
+  // drags off the disc edge decay like any other trail.
+  if (!useRing && srcKind > 3.5) {
+    let discR = softLimit(P_radius() * 1.6, frameCircle());
+    let mask = smoothstep(discR, discR - 0.012, rad);
+    let box = vec2f(c.x / discR, c.y / discR) * 0.5 + vec2f(0.5);
+    let cuv = fitUV(box, coverAspect(), 1.0, 0.0, 1.0, vec2f(0.0));
+    col += coverSample(cuv).rgb * mask * P_inject() * (1.0 - loopGain) * deposit;
+  }
 
   // Kick core: a bright central burst on kick hits, desaturating toward
   // white for a hot-flash look (bounded — see the note above; no push past
