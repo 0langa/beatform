@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PlaybackState } from "../audio/types";
+import { renderProbe } from "./testing/renderProbe";
 import { PlayerBar, type PlayerBarProps } from "./PlayerBar";
 
 afterEach(() => {
@@ -118,5 +120,110 @@ describe("PlayerBar A-B loop", () => {
       true,
     );
     expect(screen.queryByRole("button", { name: "Clear A-B loop" })).toBeNull();
+  });
+});
+
+/**
+ * The H13 stable-props contract. PlayerBar is always mounted, so before the
+ * memo it reconciled on EVERY App re-render for any reason at all — an
+ * Inspector edit, export progress, a notice toast. The memo only bails while
+ * every prop keeps its identity across those renders, a contract held up by
+ * App.tsx's `useCallback` block and nothing else.
+ *
+ * Instrument: a counting getter on `playback.time`, which the body reads once
+ * (`seekDragT ?? playback.time`) and `memo`'s shallow compare never touches —
+ * it compares `props.playback` by identity. So one read == one execution of
+ * the render body.
+ *
+ * `renderProbe()` counts commits of the whole probed subtree, which is what
+ * proves the parent tick landed; it deliberately is NOT the bail-out
+ * assertion. A `<Profiler>` fires whenever it re-renders itself, so under a
+ * ticking parent it reports the same count for stable and unstable props (see
+ * the long note in TimelinePanel.test.tsx). Without it, "the body never ran"
+ * would be indistinguishable from "the harness never ticked".
+ */
+const SECTIONS: number[] = [];
+const NOOP = () => {};
+
+function probedPlayback(): { playback: PlaybackState; bodyReads: () => number } {
+  let reads = 0;
+  return {
+    playback: {
+      ...PLAYBACK,
+      get time() {
+        reads += 1;
+        return 30;
+      },
+    },
+    bodyReads: () => reads,
+  };
+}
+
+/** Re-renders on demand, like App at the playback tick. `unstable` rebuilds
+ * one callback prop per render — the inline-arrow shape that defeats memo. */
+function Host({ playback, unstable }: { playback: PlaybackState; unstable?: boolean }) {
+  const [, setN] = useState(0);
+  const props: PlayerBarProps = {
+    playback,
+    sections: SECTIONS,
+    volume: 0.8,
+    muted: false,
+    onTogglePlay: NOOP,
+    onSeekStart: NOOP,
+    onSeekEnd: NOOP,
+    onToggleLoop: NOOP,
+    onSetLoopStart: NOOP,
+    onSetLoopEnd: NOOP,
+    onClearLoopRegion: NOOP,
+    onVolume: NOOP,
+    onToggleMute: NOOP,
+  };
+  return (
+    <>
+      <button onClick={() => setN((n) => n + 1)}>parent tick</button>
+      {unstable ? <PlayerBar {...props} onTogglePlay={() => NOOP()} /> : <PlayerBar {...props} />}
+    </>
+  );
+}
+
+describe("PlayerBar memo (H13 stable-props contract)", () => {
+  it("does not reconcile when the parent re-renders with stable prop identities", () => {
+    const { playback, bodyReads } = probedPlayback();
+    const { Probe, commits } = renderProbe();
+
+    render(
+      <Probe>
+        <Host playback={playback} />
+      </Probe>,
+    );
+    expect(screen.getByRole("slider", { name: "Seek" })).toBeTruthy(); // it mounted
+    const mountedCommits = commits();
+    const mountedReads = bodyReads();
+    expect(mountedReads).toBeGreaterThan(0); // the probe is live
+
+    fireEvent.click(screen.getByText("parent tick"));
+    fireEvent.click(screen.getByText("parent tick"));
+
+    expect(commits()).toBe(mountedCommits + 2); // the parent really ticked twice
+    expect(bodyReads()).toBe(mountedReads); // and the bar never re-rendered
+  });
+
+  it("control: one fresh callback identity per render defeats the memo", () => {
+    const { playback, bodyReads } = probedPlayback();
+    const { Probe, commits } = renderProbe();
+
+    render(
+      <Probe>
+        <Host playback={playback} unstable />
+      </Probe>,
+    );
+    const mountedCommits = commits();
+    const mountedReads = bodyReads();
+
+    fireEvent.click(screen.getByText("parent tick"));
+    fireEvent.click(screen.getByText("parent tick"));
+
+    expect(commits()).toBe(mountedCommits + 2);
+    expect(bodyReads()).toBeGreaterThan(mountedReads);
   });
 });

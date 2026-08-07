@@ -29,7 +29,9 @@ try {
     window.__prefs.set({ perfOverlay: true });
     // Two Rust polls minimum (family CPU needs a delta; scan is on poll 1).
     await new Promise(r => setTimeout(r, 3200));
-    const el = document.querySelector('[role="status"]');
+    // Not '[role="status"]': the notice toast carries that role too, so the
+    // lookup used to depend on PerfOverlay coming first in App's JSX.
+    const el = document.querySelector('[data-testid="perf-overlay"]');
     window.__prefs.set({ perfOverlay: false });
     return el ? el.textContent : null;
   })()`);

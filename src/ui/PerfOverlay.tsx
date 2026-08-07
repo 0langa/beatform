@@ -249,6 +249,13 @@ export function PerfOverlay(props: PerfOverlayProps) {
   return (
     <div
       className="perf-overlay"
+      // Harness handle. The device checks used to find this element by
+      // `[role="status"]`, which the notice toast also carries — they resolved
+      // correctly only because this overlay happens to sit above the toast in
+      // App's JSX. A testid makes the lookup independent of that ordering, so
+      // restructuring App can never make a harness silently parse a toast and
+      // report the Rust process-family filter as broken.
+      data-testid="perf-overlay"
       role="status"
       aria-label="Performance statistics"
       style={{
