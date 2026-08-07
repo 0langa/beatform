@@ -130,7 +130,9 @@ try {
   const stats = await cdp.eval(`(async () => {
     window.__prefs.set({ perfOverlay: true });
     await new Promise(r => setTimeout(r, 2600));
-    const el = document.querySelector('[role="status"]');
+    // Not '[role="status"]' — the notice toast shares that role (see
+    // perf-family-check.mjs).
+    const el = document.querySelector('[data-testid="perf-overlay"]');
     const text = el ? el.textContent : null;
     return { overlayMounted: !!el, overlayText: text ? text.slice(0, 300) : null,
              hasDigits: !!(text && /\\d/.test(text)) };
