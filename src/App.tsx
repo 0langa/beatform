@@ -58,15 +58,15 @@ const SHORTCUTS: Array<[string, string]> = [
   ["P / N", "Previous / next preset (also [ / ])"],
   ["1 – 9", "Jump to mode (beat-quantized when Live › Quantize is on)"],
   ["S", "Stage mode (chrome-free output) · 0 blackout · Esc exits (also \\ and .)"],
-  ["G", "Settings panel"],
+  ["G", "Inspector"],
   ["F", "Fullscreen"],
   ["Ctrl+S", "Save project"],
   ["Ctrl+O", "Open project"],
   ["Ctrl+Z / Ctrl+Y", "Undo / redo"],
-  ["T", "Timeline panel"],
+  ["T", "Timeline"],
   ["B", "Batch render"],
   ["Q", "Music library"],
-  ["Ctrl+,", "App settings"],
+  ["Ctrl+,", "Preferences"],
   ["H or ?", "This shortcut list"],
 ];
 
@@ -215,13 +215,17 @@ export default function App() {
     return () => clearTimeout(t);
   }, [runUpdateCheck]);
 
-  // Stable callback props for the six memoized panels below (H13): memo()
-  // does nothing if a component receives a FRESH function reference every
-  // render, so every callback these panels take is created once here
-  // instead of as an inline arrow in JSX. Nearly all of them just forward
-  // to a store action through the stable `store` accessor, so `[store]` is
-  // the only real dependency — the one exception (toggleMute) is called
-  // out where it happens.
+  // Stable callback props for the memoized panels below (H13): memo() does
+  // nothing if a component receives a FRESH function reference every render,
+  // so every callback these panels take is created once here instead of as
+  // an inline arrow in JSX. Nearly all of them just forward to a store action
+  // through the stable `store` accessor, so `[store]` is the only real
+  // dependency — the one exception (toggleMute) is called out where it
+  // happens.
+  //
+  // The Inspector no longer appears here: it reads the store itself (P-12), so
+  // there is no prop identity to keep stable. The panels that remain are wave
+  // 2 — see the store-direct idiom in state/selectors.ts and ParamsPanel.
 
   // LibraryPanel
   const libraryPickFolder: LibraryPanelProps["onPickFolder"] = useCallback(
@@ -721,8 +725,8 @@ export default function App() {
           </button>
           <button
             className={`icon-btn ${showPanel ? "active" : ""}`}
-            title="Visual settings (G)"
-            aria-label="Visual settings"
+            title="Inspector (G)"
+            aria-label="Inspector"
             aria-pressed={showPanel}
             onClick={() => store().setShowPanel((v) => !v)}
           >
@@ -730,8 +734,8 @@ export default function App() {
           </button>
           <button
             className={`icon-btn ${showSettings ? "active" : ""}`}
-            title="App settings — autosave, performance, updates (Ctrl+,)"
-            aria-label="App settings"
+            title="Preferences — autosave, performance, updates (Ctrl+,)"
+            aria-label="Preferences"
             aria-pressed={showSettings}
             onClick={() => store().setShowSettings(!showSettings)}
           >
@@ -789,8 +793,8 @@ export default function App() {
           className="panel-resize-handle chrome"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize the settings panel"
-          title="Drag to resize the panel"
+          aria-label="Resize the Inspector"
+          title="Drag to resize the Inspector"
           onPointerDown={startPanelResize}
         />
       )}
@@ -964,13 +968,13 @@ export default function App() {
               </button>
               <button
                 className="ghost-btn"
-                title="App settings — autosave, performance, updates (Ctrl+,)"
+                title="Preferences — autosave, performance, updates (Ctrl+,)"
                 onClick={() => {
                   store().setShowHelp(false);
                   store().setShowSettings(true);
                 }}
               >
-                App settings…
+                Preferences…
               </button>
             </div>
           </div>

@@ -336,7 +336,7 @@ const POST_SLIDERS: Array<{
 
 type ParamsTab = AppPrefs["paramsTab"];
 
-/** The five top-level tabs of the settings panel (v2.41). Each groups a set
+/** The five top-level tabs of the Inspector (v2.41). Each groups a set
  * of the former flat sections; the active tab persists via prefs. */
 const PARAMS_TABS: Array<{ id: ParamsTab; label: string; hint: string }> = [
   { id: "visual", label: "Visual", hint: "The visual itself — looks, motion and full themes" },
