@@ -2,22 +2,26 @@ import type { PresetDef } from "../types";
 
 /**
  * Particle Flow — a GPU compute-particle system. 120k particles are advanced
- * every frame by a curl-noise flow field plus audio forces (bass amplifies the
- * flow, kicks fire per-particle radial bursts), then drawn as additive sprites
- * that bloom into glowing streams. Unlike the fragment-shader "Particles"
- * preset, these are a real simulation with momentum and emergent structure.
+ * every frame by a selectable force field (curl-noise flow by default, plus
+ * jet stream / vortex street / orbital families) with audio forces layered on
+ * top (bass amplifies the current, kicks fire per-particle radial bursts,
+ * opt-in mid->swirl and treble->jitter routings), then drawn as additive
+ * sprites — optionally stretched into ribbon streamers — that bloom into
+ * glowing streams. Unlike the fragment-shader "Particles" preset, these are a
+ * real simulation with momentum and emergent structure.
  *
  * Driven by the renderer's built-in particle path (PARTICLE_SIM_WGSL +
  * PARTICLE_DRAW_WGSL); the `wgsl` fragment body below is an unused stub.
  * Params map by key into the sim uniform
  * (see PARTICLE_PARAM_KEYS). Deterministic: seeded init, fixed 60 Hz sim rate
- * keyed to track time, no RNG.
+ * keyed to track time, no RNG — the ribbon stretch and treble jitter are pure
+ * functions of the same state, never accumulated.
  */
 export const particleFlow: PresetDef = {
   id: "particle-flow",
   name: "Particle Flow",
   description:
-    "120k GPU particles swept through a curl-noise flow field — bass drives the current, kicks scatter them, additive glow blooms the streams. The looks span the sim's whole range, from a bound spiral galaxy to a full firehose.",
+    "120k GPU particles swept through a selectable force field — curl-noise flow, a jet stream, a vortex street or an orbital disc. Bass drives the current, kicks scatter them, additive glow (or silky ribbons) blooms the streams. The looks span the sim's whole range, from a bound spiral galaxy to a full firehose.",
   particles: { count: 120_000 },
   styles: [
     // Flow — the defaults — a curl-noise current with beat scatter.
@@ -157,6 +161,177 @@ export const particleFlow: PresetDef = {
         sizePulse: 0.15,
       },
     },
+    // Slipstream — jet-stream flagship: a laminar cyan current with short
+    // ribbons, bass gusting the core.
+    {
+      id: "slipstream",
+      name: "Slipstream",
+      values: {
+        field: 1,
+        hue: 195,
+        hueSpread: 30,
+        flowStrength: 1.5,
+        swirl: 0.05,
+        damping: 0.94,
+        gravity: 0,
+        size: 0.004,
+        brightness: 0.8,
+        density: 0.6,
+        ribbon: 0.35,
+        speedColor: 0.36,
+        sat: 0.7,
+        spawnRadius: 0.5,
+        sizePulse: 0.6,
+        audioFlow: 2.6,
+        beatBurst: 0.8,
+        flowScale: 1.4,
+      },
+    },
+    // Wake — vortex-street flagship: paired counter-spinning eddies shed
+    // downstream, read best at high density.
+    {
+      id: "wake",
+      name: "Wake",
+      values: {
+        field: 2,
+        hue: 170,
+        hueSpread: 35,
+        flowStrength: 1.3,
+        swirl: 0,
+        damping: 0.97,
+        gravity: 0,
+        size: 0.005,
+        brightness: 0.7,
+        density: 0.7,
+        speedColor: 0.2,
+        sat: 0.56,
+        spawnRadius: 0.6,
+        sizePulse: 0.4,
+        beatBurst: 0.6,
+      },
+    },
+    // Accretion — orbital flagship: a golden Keplerian disc, inner particles
+    // lapping the rim, vignette + wash framing it. Tuned to sit near
+    // centripetal balance (moderate flow, default-ish damping) so the disc
+    // BINDS instead of flinging into a fountain.
+    {
+      id: "accretion",
+      name: "Accretion",
+      values: {
+        field: 3,
+        hue: 38,
+        hueSpread: 60,
+        flowStrength: 0.9,
+        swirl: 0.1,
+        damping: 0.94,
+        gravity: 0.2,
+        size: 0.004,
+        brightness: 0.75,
+        density: 0.8,
+        speedColor: 0.5,
+        sat: 0.9,
+        spawnRadius: 0.44,
+        sizePulse: 0.7,
+        beatBurst: 1,
+        audioFlow: 1.4,
+        vignette: 0.35,
+        bgLevel: 0.02,
+      },
+    },
+    // Halo — ring-attractor flagship: strong pull onto the fixed ring gathers
+    // the field into a slowly swirling violet halo.
+    {
+      id: "halo",
+      name: "Halo",
+      values: {
+        attractor: 1,
+        gravity: 1.2,
+        hue: 275,
+        hueSpread: 40,
+        flowStrength: 0.55,
+        swirl: 0.6,
+        damping: 0.98,
+        size: 0.005,
+        brightness: 0.7,
+        density: 0.55,
+        spawnRadius: 0.5,
+        sat: 0.64,
+        speedColor: 0.14,
+        sizePulse: 0.3,
+        beatBurst: 1.2,
+        vignette: 0.3,
+      },
+    },
+    // Horizon — line-attractor flagship: the field collapses into a glowing
+    // ember band along the horizontal axis.
+    {
+      id: "horizon",
+      name: "Horizon",
+      values: {
+        attractor: 2,
+        gravity: 1.1,
+        hue: 12,
+        hueSpread: 25,
+        flowStrength: 1.1,
+        swirl: 0,
+        damping: 0.96,
+        size: 0.004,
+        brightness: 0.8,
+        density: 0.75,
+        spawnRadius: 0.36,
+        ribbon: 0.2,
+        sat: 0.86,
+        speedColor: 0.22,
+        bgLevel: 0.015,
+        vignette: 0.4,
+      },
+    },
+    // Silk — ribbon flagship: sparse long streamers on a slow curl current,
+    // the honest trail with zero feedback.
+    {
+      id: "silk",
+      name: "Silk",
+      values: {
+        ribbon: 0.8,
+        hue: 320,
+        hueSpread: 45,
+        flowStrength: 0.7,
+        swirl: 0.45,
+        damping: 0.985,
+        density: 0.3,
+        size: 0.006,
+        brightness: 0.9,
+        sizePulse: 0.8,
+        speedColor: 0.16,
+        sat: 0.6,
+        beatBurst: 0.8,
+        flowScale: 1.2,
+        gravity: 0.15,
+      },
+    },
+    // Static Charge — treble-routing flagship: hats shake the field with fine
+    // jitter, mids wind the swirl, near-white electric palette.
+    {
+      id: "static",
+      name: "Static Charge",
+      values: {
+        trebleJitter: 1.6,
+        midSwirl: 0.6,
+        hue: 205,
+        hueSpread: 15,
+        sat: 0.3,
+        flowStrength: 0.5,
+        damping: 0.9,
+        size: 0.003,
+        brightness: 1.05,
+        density: 0.9,
+        speedColor: 0.6,
+        beatBurst: 2,
+        sizePulse: 1,
+        spawnRadius: 0.6,
+        flowScale: 2.6,
+      },
+    },
   ],
   params: [
     {
@@ -170,6 +345,68 @@ export const particleFlow: PresetDef = {
       default: 200,
       hint: "Base particle color",
     },
+    // RP-6 colour tier — spec shape and hints are the roster contract, shared
+    // verbatim with spectrum-bars (the color-tier reference preset). Routed at
+    // the draw shader's single authored-HSL chokepoint; particleFlow.test.ts
+    // pins the routing (the fragment-preset colorControls contract does not
+    // reach the compute-particle draw path).
+    {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
+    },
+    // The headline depth axis: which force field the sim integrates. A
+    // structural switch (each family is its own branch in the sim shader), so
+    // modulating it could only teleport the physics — mod:"off".
+    {
+      key: "field",
+      label: "Force field",
+      group: "motion",
+      control: "enum",
+      mod: "off",
+      options: [
+        {
+          value: 0,
+          label: "Curl flow",
+          hint: "The original — divergence-free curl noise swept outward from the center",
+        },
+        {
+          value: 1,
+          label: "Jet stream",
+          hint: "A laminar horizontal current with turbulent shear at its flanks",
+        },
+        {
+          value: 2,
+          label: "Vortex street",
+          hint: "A staggered row of counter-spinning eddies shed downstream",
+        },
+        {
+          value: 3,
+          label: "Orbital",
+          hint: "A Keplerian disc — inner particles orbit fast, outer ones drift",
+        },
+      ],
+      min: 0,
+      max: 3,
+      step: 1,
+      default: 0,
+      hint: "The force field the particles ride — each family is a different physics",
+    },
     {
       key: "flowStrength",
       label: "Flow",
@@ -178,7 +415,7 @@ export const particleFlow: PresetDef = {
       max: 2,
       step: 0.05,
       default: 1,
-      hint: "Strength of the curl-noise current that sweeps the particles",
+      hint: "Strength of the main current that sweeps the particles",
     },
     {
       key: "swirl",
@@ -230,6 +467,16 @@ export const particleFlow: PresetDef = {
       default: 0.45,
       hint: "Fraction of the 120k particles drawn — lower shows the flow structure, 1.0 packs it solid",
     },
+    {
+      key: "ribbon",
+      label: "Ribbons",
+      group: "shape",
+      min: 0,
+      max: 1,
+      step: 0.05,
+      default: 0,
+      hint: "Stretches each particle into a silky streamer along its path — a true trail with no feedback smear",
+    },
   ],
   advanced: [
     {
@@ -260,7 +507,30 @@ export const particleFlow: PresetDef = {
       max: 1.5,
       step: 0.05,
       default: 0.05,
-      hint: "Pull back toward the center — balances the outward fountain",
+      hint: "Pull toward the attractor — balances the outward fountain",
+    },
+    // Structural like the field family: swapping the attractor's geometry
+    // mid-modulation could only teleport the pull — mod:"off".
+    {
+      key: "attractor",
+      label: "Attractor",
+      group: "motion",
+      control: "enum",
+      mod: "off",
+      options: [
+        { value: 0, label: "Point", hint: "Pull toward the center point" },
+        { value: 1, label: "Ring", hint: "Pull onto a ring — the field gathers into a halo" },
+        {
+          value: 2,
+          label: "Line",
+          hint: "Pull onto the horizontal axis — the field gathers into a band",
+        },
+      ],
+      min: 0,
+      max: 2,
+      step: 1,
+      default: 0,
+      hint: "What the Center pull knob pulls toward",
     },
     {
       key: "audioFlow",
@@ -271,6 +541,26 @@ export const particleFlow: PresetDef = {
       step: 0.1,
       default: 2,
       hint: "How much bass amplifies the flow current",
+    },
+    {
+      key: "midSwirl",
+      label: "Mid swirl",
+      group: "reaction",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      default: 0,
+      hint: "Mids modulate the swirl — melody audibly winds and unwinds the field",
+    },
+    {
+      key: "trebleJitter",
+      label: "Treble jitter",
+      group: "reaction",
+      min: 0,
+      max: 2,
+      step: 0.05,
+      default: 0,
+      hint: "Treble shakes the particles with fine random kicks — hats read as sparkle static",
     },
     {
       key: "sizePulse",
@@ -303,14 +593,17 @@ export const particleFlow: PresetDef = {
       hint: "Shifts color by particle speed",
     },
     {
+      // Key `sat` is persisted forever; only the LABEL moved when the
+      // whole-visual "Saturation" tier control arrived (same key would have
+      // shown two identical labels in one group).
       key: "sat",
-      label: "Saturation",
+      label: "Palette saturation",
       group: "color",
       min: 0,
       max: 1,
       step: 0.02,
       default: 0.8,
-      hint: "Color saturation",
+      hint: "Authored saturation of the particle palette — the whole-visual Saturation control scales on top",
     },
     {
       key: "spawnRadius",
@@ -321,6 +614,28 @@ export const particleFlow: PresetDef = {
       step: 0.02,
       default: 0.55,
       hint: "How near the center particles respawn after drifting off-frame",
+    },
+    // Backdrop pair — the mode shipped with zero backdrop control (bare black
+    // behind the field). Both default OFF: 0 keeps the pre-wave frame.
+    {
+      key: "vignette",
+      label: "Vignette",
+      group: "backdrop",
+      min: 0,
+      max: 1,
+      step: 0.05,
+      default: 0,
+      hint: "Darkening toward the screen corners",
+    },
+    {
+      key: "bgLevel",
+      label: "Bg level",
+      group: "backdrop",
+      min: 0,
+      max: 0.15,
+      step: 0.005,
+      default: 0,
+      hint: "Background brightness — a faint hue-tinted wash behind the particles",
     },
   ],
   // Unused: particle presets render via the built-in compute path. Stub keeps

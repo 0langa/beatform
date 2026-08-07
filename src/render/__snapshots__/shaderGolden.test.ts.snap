@@ -3189,21 +3189,30 @@ exports[`shader golden baseline > oscilloscope: param ABI (key + default, in ord
 
 exports[`shader golden baseline > particle-flow: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
-fn P_flowStrength() -> f32 { return params[1u]; }
-fn P_swirl() -> f32 { return params[2u]; }
-fn P_beatBurst() -> f32 { return params[3u]; }
-fn P_size() -> f32 { return params[4u]; }
-fn P_brightness() -> f32 { return params[5u]; }
-fn P_density() -> f32 { return params[6u]; }
-fn P_flowScale() -> f32 { return params[7u]; }
-fn P_damping() -> f32 { return params[8u]; }
-fn P_gravity() -> f32 { return params[9u]; }
-fn P_audioFlow() -> f32 { return params[10u]; }
-fn P_sizePulse() -> f32 { return params[11u]; }
-fn P_hueSpread() -> f32 { return params[12u]; }
-fn P_speedColor() -> f32 { return params[13u]; }
-fn P_sat() -> f32 { return params[14u]; }
-fn P_spawnRadius() -> f32 { return params[15u]; }
+fn P_saturation() -> f32 { return params[1u]; }
+fn P_lightness() -> f32 { return params[2u]; }
+fn P_field() -> f32 { return params[3u]; }
+fn P_flowStrength() -> f32 { return params[4u]; }
+fn P_swirl() -> f32 { return params[5u]; }
+fn P_beatBurst() -> f32 { return params[6u]; }
+fn P_size() -> f32 { return params[7u]; }
+fn P_brightness() -> f32 { return params[8u]; }
+fn P_density() -> f32 { return params[9u]; }
+fn P_ribbon() -> f32 { return params[10u]; }
+fn P_flowScale() -> f32 { return params[11u]; }
+fn P_damping() -> f32 { return params[12u]; }
+fn P_gravity() -> f32 { return params[13u]; }
+fn P_attractor() -> f32 { return params[14u]; }
+fn P_audioFlow() -> f32 { return params[15u]; }
+fn P_midSwirl() -> f32 { return params[16u]; }
+fn P_trebleJitter() -> f32 { return params[17u]; }
+fn P_sizePulse() -> f32 { return params[18u]; }
+fn P_hueSpread() -> f32 { return params[19u]; }
+fn P_speedColor() -> f32 { return params[20u]; }
+fn P_sat() -> f32 { return params[21u]; }
+fn P_spawnRadius() -> f32 { return params[22u]; }
+fn P_vignette() -> f32 { return params[23u]; }
+fn P_bgLevel() -> f32 { return params[24u]; }
 
 fn preset(uv: vec2f) -> vec4f { return vec4f(0.0); }
 "
@@ -3214,6 +3223,18 @@ exports[`shader golden baseline > particle-flow: param ABI (key + default, in or
   {
     "default": 200,
     "key": "hue",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
+  },
+  {
+    "default": 0,
+    "key": "field",
   },
   {
     "default": 1,
@@ -3240,6 +3261,10 @@ exports[`shader golden baseline > particle-flow: param ABI (key + default, in or
     "key": "density",
   },
   {
+    "default": 0,
+    "key": "ribbon",
+  },
+  {
     "default": 1.6,
     "key": "flowScale",
   },
@@ -3252,8 +3277,20 @@ exports[`shader golden baseline > particle-flow: param ABI (key + default, in or
     "key": "gravity",
   },
   {
+    "default": 0,
+    "key": "attractor",
+  },
+  {
     "default": 2,
     "key": "audioFlow",
+  },
+  {
+    "default": 0,
+    "key": "midSwirl",
+  },
+  {
+    "default": 0,
+    "key": "trebleJitter",
   },
   {
     "default": 0.5,
@@ -3274,6 +3311,14 @@ exports[`shader golden baseline > particle-flow: param ABI (key + default, in or
   {
     "default": 0.55,
     "key": "spawnRadius",
+  },
+  {
+    "default": 0,
+    "key": "vignette",
+  },
+  {
+    "default": 0,
+    "key": "bgLevel",
   },
 ]
 `;
@@ -5036,6 +5081,9 @@ struct PU {
   damping: f32, gravity: f32, size: f32, sizePulse: f32,
   brightness: f32, beatBurst: f32, hueSpread: f32, speedColor: f32,
   spawnRadius: f32, density: f32, audioFlow: f32, sat: f32,
+  field: f32, attractor: f32, midSwirl: f32, trebleJitter: f32,
+  ribbon: f32, vignette: f32, bgLevel: f32, saturation: f32,
+  lightness: f32, mid: f32, treble: f32,
 }
 @group(0) @binding(0) var<uniform> pu: PU;
 fn h11(p: f32) -> f32 { return fract(sin(p * 127.1) * 43758.5453); }
@@ -5099,8 +5147,18 @@ fn vs_draw(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
   // makes a curl-noise field read as FLOW rather than as scatter.
   let dir = select(vec2f(1.0, 0.0), p.vel / max(speed, 1e-6), speed > 1e-5);
   let perp = vec2f(-dir.y, dir.x);
-  let stretch = 1.0 + min(speed * 26.0, 3.5);
-  let off = dir * (c.x * size * stretch) + perp * (c.y * size);
+  var stretch = 1.0 + min(speed * 26.0, 3.5);
+  var width = size;
+  // RIBBON STREAKS (pu.ribbon, default 0 = the branch never runs): the honest
+  // trail — pure vertex-stage elongation along the velocity, zero cross-frame
+  // state, so it obeys the same determinism the sim does. Riding the stretch
+  // factor means the energy divisor below automatically conserves deposited
+  // light, and thinning the quad keeps a long streamer silky, not slab-like.
+  if (pu.ribbon > 0.0) {
+    stretch = stretch * (1.0 + pu.ribbon * (3.0 + min(speed * 40.0, 10.0)));
+    width = size / (1.0 + pu.ribbon * 1.2);
+  }
+  let off = dir * (c.x * size * stretch) + perp * (c.y * width);
 
   // pos is in NDC (-1..1 fills the frame); correct sprite x for aspect so
   // dots stay round. y is flipped for clip space.
@@ -5115,6 +5173,18 @@ fn vs_draw(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
   // punch, and kept gentle so the flow reads as the main event.
   let glowReact = 1.0 + pu.bass * 0.5 + pu.driveBeat * 1.4 * pu.beatBurst * 0.4;
 
+  // Whole-visual colour tier at the mode's single authored-HSL chokepoint,
+  // colorScale form (min(value * control, 1)). Exact-identity at the
+  // defaults: x * 1.0 is an exact IEEE multiply and pu.sat <= 1 / 0.6 < 1
+  // keep both min() folds inert, so factory output stays bit-identical.
+  var col = hsl2rgb(hue, min(pu.sat * pu.saturation, 1.0), min(0.6 * pu.lightness, 1.0));
+  // Vignette on the particle light itself (pu.vignette, default 0 = branch
+  // never runs): same quadratic uv-space falloff as the fragment prelude's
+  // vignette() helper — NDC distance halves into uv distance, hence 0.25.
+  if (pu.vignette > 0.0) {
+    col = col * (1.0 - dot(p.pos, p.pos) * 0.25 * pu.vignette);
+  }
+
   // Nearer particles are brighter as well as bigger — the two cues together
   // are what sell depth.
   //
@@ -5122,7 +5192,7 @@ fn vs_draw(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
   // ADDITIVELY blended, so a streak covering 4x the pixels of a dot deposits
   // 4x the light. Without this the field clipped to a solid white blob the
   // moment streaking was introduced (observed, not theorised).
-  out.shade = hsl2rgb(hue, pu.sat, 0.6) * pu.brightness * bright * depth * glowReact
+  out.shade = col * pu.brightness * bright * depth * glowReact
             / (0.45 + stretch * 0.75);
   return out;
 }
@@ -5147,6 +5217,9 @@ struct PU {
   damping: f32, gravity: f32, size: f32, sizePulse: f32,
   brightness: f32, beatBurst: f32, hueSpread: f32, speedColor: f32,
   spawnRadius: f32, density: f32, audioFlow: f32, sat: f32,
+  field: f32, attractor: f32, midSwirl: f32, trebleJitter: f32,
+  ribbon: f32, vignette: f32, bgLevel: f32, saturation: f32,
+  lightness: f32, mid: f32, treble: f32,
 }
 @group(0) @binding(0) var<uniform> pu: PU;
 fn h11(p: f32) -> f32 { return fract(sin(p * 127.1) * 43758.5453); }
@@ -5200,13 +5273,83 @@ fn cs_sim(@builtin(global_invocation_id) gid: vec3u) {
   // factors keep raw curl / positional terms in a sane velocity range so the
   // exposed knobs read as intuitive 0..2 multipliers.
   let fp = pos * pu.flowScale + vec2f(pu.time * 0.05, pu.time * 0.037);
-  // Flow rides both the bass and the selected sync source, so the Sync panel
-  // visibly changes how the field surges.
-  var force = curl(fp) * pu.flowStrength * 0.04
-            * (1.0 + pu.bass * pu.audioFlow * 0.4 + pu.drive * pu.audioFlow);
-  // Rotational swirl around center + gentle pull so the field stays framed.
-  force += vec2f(-pos.y, pos.x) * pu.swirl * 0.4;
-  force += -pos * pu.gravity * 0.3;
+  // Shared audio gain on every family's main current — the exact multiplier
+  // the curl force always carried (hoisted unchanged; the flow rides both the
+  // bass and the selected sync source, so the Sync panel visibly changes how
+  // the field surges).
+  let audioAmp = 1.0 + pu.bass * pu.audioFlow * 0.4 + pu.drive * pu.audioFlow;
+
+  // FIELD FAMILY (pu.field). 0 = the original curl flow, term for term; the
+  // other families replace only the MAIN current — swirl, attractor pull,
+  // outward drift, bursts and respawn stay shared so every knob keeps meaning.
+  let fieldSel = u32(pu.field + 0.5);
+  var force = vec2f(0.0);
+  if (fieldSel == 1u) {
+    // JET STREAM: a laminar horizontal current, strongest along a slowly
+    // meandering axis, curl turbulence sheared into the flanks (weak in the
+    // core, strong at the edges) and a confinement pull that keeps escapees
+    // rejoining the stream. Particles blown off the right edge respawn on the
+    // centre disc and get re-entrained — a wind tunnel, not a fountain.
+    let axis = sin(pu.time * 0.23) * 0.35;
+    let lane = pos.y - axis;
+    let core = exp(-lane * lane * 5.0);
+    force = vec2f(pu.flowStrength * 0.12 * core * audioAmp, 0.0);
+    force += curl(fp) * pu.flowStrength * 0.016 * audioAmp * (1.0 - core * 0.6);
+    force += vec2f(0.0, -lane) * 0.06;
+  } else if (fieldSel == 2u) {
+    // VORTEX STREET: a staggered double row of counter-rotating eddies
+    // drifting downstream (a von Karman wake). Each particle feels the
+    // nearest vortex of each row (solid-body core -> 1/r tail) plus a steady
+    // downstream carry. round() picks the nearest shed vortex analytically —
+    // no loops, no state.
+    let drift = pu.time * 0.22;
+    let spacing = 1.15;
+    let cx0 = round((pos.x + drift) / spacing) * spacing - drift;
+    let cx1 = (round((pos.x + drift) / spacing - 0.5) + 0.5) * spacing - drift;
+    let d0 = pos - vec2f(cx0, 0.34);
+    let d1 = pos - vec2f(cx1, -0.34);
+    let v0 = vec2f(-d0.y, d0.x) / (dot(d0, d0) * 8.0 + 0.06);
+    let v1 = vec2f(d1.y, -d1.x) / (dot(d1, d1) * 8.0 + 0.06);
+    force = (v0 + v1) * pu.flowStrength * 0.05 * audioAmp;
+    force += vec2f(pu.flowStrength * 0.02 * audioAmp, 0.0);
+  } else if (fieldSel == 3u) {
+    // ORBITAL: Keplerian shear disc — tangential drive falling off with
+    // radius over a built-in centre hold, so inner particles lap outer ones
+    // and the disc winds itself into arms. A pinch of curl keeps the rings
+    // from reading as clean vector-art circles.
+    let rr = max(length(pos), 0.05);
+    let tang = vec2f(-pos.y, pos.x) / rr;
+    force = tang * (pu.flowStrength * 0.09 * audioAmp / sqrt(rr));
+    force += -pos * (0.22 / rr);
+    force += curl(fp) * pu.flowStrength * 0.008 * audioAmp;
+  } else {
+    // CURL FLOW (default): divergence-free curl noise — the original field.
+    force = curl(fp) * pu.flowStrength * 0.04 * audioAmp;
+  }
+
+  // Rotational swirl around center; mids modulate it when the routing knob is
+  // up (pu.midSwirl, default 0 keeps the authored term verbatim — the branch
+  // IS the neutrality guarantee).
+  if (pu.midSwirl > 0.0) {
+    force += vec2f(-pos.y, pos.x) * pu.swirl * 0.4 * (1.0 + pu.mid * pu.midSwirl);
+  } else {
+    force += vec2f(-pos.y, pos.x) * pu.swirl * 0.4;
+  }
+  // ATTRACTOR GEOMETRY (pu.attractor): what the Center pull knob pulls
+  // toward. 0 = the original point spring, verbatim; 1 = a fixed ring at
+  // r = 0.55 (signed pull, so inside pushes out and outside pulls in — the
+  // field gathers on a halo); 2 = the horizontal axis (a glowing band).
+  let attractorSel = u32(pu.attractor + 0.5);
+  if (attractorSel == 1u) {
+    let ar = length(pos);
+    var rdir = pos * (1.0 / max(ar, 1e-5));
+    if (ar < 1e-4) { rdir = bdir; }
+    force += rdir * (0.55 - ar) * pu.gravity * 0.9;
+  } else if (attractorSel == 2u) {
+    force += vec2f(0.0, -pos.y) * pu.gravity * 0.9;
+  } else {
+    force += -pos * pu.gravity * 0.3;
+  }
   // Steady outward drift: with the center respawn this makes a fountain, so the
   // curl field bends the outflow into visible radiating tendrils (a uniform
   // fill would look like static under divergence-free flow). Loudness feeds it.
@@ -5214,6 +5357,14 @@ fn cs_sim(@builtin(global_invocation_id) gid: vec3u) {
   var outward = pos * (1.0 / max(r, 1e-5));
   if (r < 1e-4) { outward = bdir; }
   force += outward * (0.03 + pu.drive * 0.05);
+  // TREBLE JITTER (pu.trebleJitter, opt-in, default 0): hats and cymbals
+  // shake every particle with fine random-direction kicks. The direction is a
+  // pure hash of (particle, step time) — the same idiom the respawn already
+  // uses — so any frame resolves identically in preview and export.
+  if (pu.trebleJitter > 0.0) {
+    let ja = h11(seed * 17.3 + pu.time * 61.7) * 6.28318530718;
+    force += vec2f(cos(ja), sin(ja)) * pu.treble * pu.trebleJitter * 0.6;
+  }
   // Radial burst on the selected sync source's beats (falls back to kicks in
   // Kick mode), weighted a bit above the continuous terms so a kick reads as
   // a distinct scatter instead of blending into the ambient flow.
