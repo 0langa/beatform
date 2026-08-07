@@ -581,6 +581,120 @@ describe("analyzer-quality drawn spectrum", () => {
   });
 });
 
+describe("P-15 reactivity-fuel fields", () => {
+  it("carries honest defaults before any analysis is attached", () => {
+    const p = makePipeline();
+    const f = p.update(makeInput());
+    expect(f.beatIndex).toBe(-1);
+    expect(f.barIndex).toBe(-1);
+    expect(f.sectionIndex).toBe(-1);
+    expect(f.sectionPulse).toBe(0);
+    expect(f.vocal).toBe(0);
+    expect(Array.from(f.chroma!)).toEqual(new Array(12).fill(0));
+  });
+
+  it("passes grid/section/vocal readouts through, keeping the previous value when absent", () => {
+    const p = makePipeline();
+    const f = p.update(
+      makeInput({ beatIndex: 17, barIndex: 4, sectionIndex: 2, sectionPulse: 0.5, vocal: 0.8 }),
+    );
+    expect(f.beatIndex).toBe(17);
+    expect(f.barIndex).toBe(4);
+    expect(f.sectionIndex).toBe(2);
+    expect(f.sectionPulse).toBe(0.5);
+    expect(f.vocal).toBe(0.8);
+    // Absent inputs keep the previous frame's values — the bpm convention.
+    const g = p.update(makeInput({ time: DT }));
+    expect(g.beatIndex).toBe(17);
+    expect(g.barIndex).toBe(4);
+    expect(g.sectionIndex).toBe(2);
+    expect(g.sectionPulse).toBe(0.5);
+    expect(g.vocal).toBe(0.8);
+  });
+
+  it("a source reset returns every fuel field to the fresh-pipeline state", () => {
+    const p = makePipeline();
+    const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    fillBand(magDb, 430, 450, MAX_DB);
+    for (let i = 0; i < 30; i++) {
+      p.update(makeInput({ magDb, beatIndex: 9, sectionIndex: 1, vocal: 1, time: i * DT }));
+    }
+    expect(p.features.chroma![9]).toBeGreaterThan(0.1); // 440 Hz = A
+    p.reset("source");
+    expect(p.features.beatIndex).toBe(-1);
+    expect(p.features.barIndex).toBe(-1);
+    expect(p.features.sectionIndex).toBe(-1);
+    expect(p.features.sectionPulse).toBe(0);
+    expect(p.features.vocal).toBe(0);
+    expect(Math.max(...Array.from(p.features.chroma!))).toBe(0);
+  });
+
+  it("folds a 440 Hz tone into pitch class A and nowhere stronger", () => {
+    const p = makePipeline();
+    const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    fillBand(magDb, 435, 445, MAX_DB); // 440 Hz = A4, pitch class 9
+    let f = p.update(makeInput({ magDb }));
+    for (let i = 0; i < 120; i++) f = p.update(makeInput({ magDb, time: i * DT }));
+    const chroma = Array.from(f.chroma!);
+    expect(chroma[9]).toBeGreaterThan(0.9);
+    for (let i = 0; i < 12; i++) {
+      expect(chroma[i]).toBeGreaterThanOrEqual(0);
+      expect(chroma[i]).toBeLessThanOrEqual(1);
+      if (i !== 9) expect(chroma[i]).toBeLessThan(chroma[9]);
+    }
+  });
+
+  it("chroma reads the analysis transform, so a display transform cannot move it", () => {
+    // Same guard the drawn-spectrum quality path carries for bands/sync: an
+    // opt-in long display FFT changes drawn bins only, never the fuel.
+    const baseline = makePipeline();
+    const quality = makePipeline();
+    quality.setDisplayFftBins(8192);
+    const alternateDisplay = new Float32Array(8192).fill(DISPLAY_MAX_DB);
+    const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    fillBand(magDb, 435, 445, MAX_DB);
+    for (let i = 0; i < 60; i++) {
+      const input = makeInput({ magDb, time: i * DT });
+      const a = baseline.update(input);
+      const b = quality.update({ ...input, displayMagDb: alternateDisplay });
+      expect(Array.from(b.chroma!)).toEqual(Array.from(a.chroma!));
+    }
+  });
+
+  it("chroma attacks fast and releases slow, like the drawn bins", () => {
+    const p = makePipeline();
+    const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
+    fillBand(magDb, 435, 445, MAX_DB);
+    let up = 0;
+    while (p.update(makeInput({ magDb })).chroma![9] < 0.9 && up < 200) up++;
+    let down = 0;
+    while (p.update(makeInput()).chroma![9] > 0.1 && down < 200) down++;
+    expect(up).toBeLessThan(down);
+    expect(down).toBeLessThan(200);
+  });
+
+  it("chroma is deterministic across identical runs", () => {
+    const runs: number[][] = [];
+    for (let run = 0; run < 2; run++) {
+      const p = makePipeline();
+      const trace: number[] = [];
+      let seed = 4242;
+      const rand = () => {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        return seed / 0x7fffffff;
+      };
+      for (let i = 0; i < 60; i++) {
+        const magDb = new Float32Array(FFT_BINS);
+        for (let b = 0; b < FFT_BINS; b++) magDb[b] = MIN_DB + rand() * (MAX_DB - MIN_DB);
+        const f = p.update(makeInput({ magDb, time: i * DT }));
+        trace.push(...Array.from(f.chroma!));
+      }
+      runs.push(trace);
+    }
+    expect(runs[0]).toEqual(runs[1]);
+  });
+});
+
 describe("FeaturePipeline discontinuity reset", () => {
   /** Feed `frames` frames of a band-limited signal, return the last features. */
   function feed(p: FeaturePipeline, loHz: number, hiHz: number, frames: number, t0 = 0) {

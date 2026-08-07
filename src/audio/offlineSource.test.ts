@@ -242,6 +242,101 @@ describe("OfflineAnalyzer", () => {
     }
   });
 
+  it("P-15 inputs are additive: sections/vocal/grid move NO existing feature", () => {
+    // The law of the wave: every pre-existing field must be BIT-IDENTICAL
+    // with and without the new analysis attachments. The new values ride
+    // pass-through inputs and a chroma fold that only writes f.chroma, so
+    // the full per-frame trace of the old fields must match exactly.
+    const grid = {
+      bpm: 120,
+      beatTimes: new Float32Array(Array.from({ length: 8 }, (_, i) => i * 0.5)),
+      hopSec: 0.01,
+    };
+    const plain = new OfflineAnalyzer(makeTestBuffer(), FPS);
+    const loaded = new OfflineAnalyzer(
+      makeTestBuffer(),
+      FPS,
+      96,
+      undefined,
+      grid,
+      [1.0],
+      [{ start: 0.4, end: 0.8 }],
+    );
+    for (let n = 0; n < plain.frameCount; n++) {
+      const a = plain.nextFrameFeatures();
+      const b = loaded.nextFrameFeatures();
+      expect(b.rms).toBe(a.rms);
+      expect(b.energy).toBe(a.energy);
+      expect(b.voice).toBe(a.voice);
+      expect(b.drive).toBe(a.drive);
+      expect(b.driveBeat).toBe(a.driveBeat);
+      expect(b.bass).toBe(a.bass);
+      expect(b.mid).toBe(a.mid);
+      expect(b.treble).toBe(a.treble);
+      expect(b.width).toBe(a.width);
+      expect(b.lufs).toBe(a.lufs);
+      expect(b.kick).toBe(a.kick);
+      expect(b.snare).toBe(a.snare);
+      expect(b.hat).toBe(a.hat);
+      expect(b.beat).toBe(a.beat);
+      expect(b.beatIntensity).toBe(a.beatIntensity);
+      if (n % 20 === 0) {
+        expect(Array.from(b.bins)).toEqual(Array.from(a.bins));
+        expect(Array.from(b.waveform)).toEqual(Array.from(a.waveform));
+      }
+    }
+  });
+
+  it("resolves the P-15 fields deterministically through the offline path", () => {
+    const grid = {
+      bpm: 120,
+      beatTimes: new Float32Array(Array.from({ length: 4 }, (_, i) => i * 0.5)),
+      hopSec: 0.01,
+    };
+    const run = () => {
+      const a = new OfflineAnalyzer(
+        makeTestBuffer(),
+        FPS,
+        96,
+        undefined,
+        grid,
+        [1.0],
+        [{ start: 0.4, end: 0.8 }],
+      );
+      const out: Array<[number, number, number, number, number, number]> = [];
+      for (let n = 0; n < a.frameCount; n++) {
+        const f = a.nextFrameFeatures();
+        out.push([
+          f.beatIndex!,
+          f.barIndex!,
+          f.sectionIndex!,
+          f.sectionPulse!,
+          f.vocal!,
+          f.chroma![9],
+        ]);
+      }
+      return out;
+    };
+    const trace = run();
+    expect(trace).toEqual(run()); // fully deterministic, frame for frame
+
+    // Frame 36 is t = 0.6: inside the vocal span, beat 1 of bar 0, section 0.
+    expect(trace[36][0]).toBe(1);
+    expect(trace[36][1]).toBe(0);
+    expect(trace[36][2]).toBe(0);
+    expect(trace[36][4]).toBe(1);
+    // Frame 66 is t = 1.1: past the 1.0 s section boundary — index 1 with the
+    // pulse still ringing — and past the vocal release (0.8 + 0.25).
+    expect(trace[66][2]).toBe(1);
+    expect(trace[66][3]).toBeGreaterThan(0.5);
+    expect(trace[66][4]).toBe(0);
+    // Frame 90 is t = 1.5: bar 0 ended at beat 4's extrapolation... the grid
+    // has 4 beats (0..1.5), so t = 1.5 sits ON beat 3 exactly.
+    expect(trace[90][0]).toBe(3);
+    // The 440 Hz bed lights pitch class A (9) once the EMA settles.
+    expect(trace[119][5]).toBeGreaterThan(0.5);
+  });
+
   it("matches the golden feature trace (regression pin)", () => {
     const analyzer = new OfflineAnalyzer(makeTestBuffer(), FPS);
     const { beatFrames, trace } = collectTrace(analyzer);

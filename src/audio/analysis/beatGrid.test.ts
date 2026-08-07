@@ -126,10 +126,37 @@ describe("gridPhase", () => {
     const p = gridPhase(grid, -0.1);
     expect(p.beatPhase).toBeGreaterThanOrEqual(0);
     expect(p.beatPhase).toBeLessThanOrEqual(1);
+    // No beat has happened yet, so neither counter may count one.
+    expect(p.beatIndex).toBe(-1);
+    expect(p.barIndex).toBe(-1);
   });
 
   it("empty grid returns zeros", () => {
     const p = gridPhase({ bpm: 0, beatTimes: new Float32Array(0), hopSec: 0.01 }, 1);
-    expect(p).toEqual({ beatPhase: 0, barPhase: 0, beatIndex: -1 });
+    expect(p).toEqual({ beatPhase: 0, barPhase: 0, beatIndex: -1, barIndex: -1 });
+  });
+
+  it("counts beats and 4/4 bars from the grid (P-15)", () => {
+    // Beats at 0, 0.5, ... → t = 2.25 sits inside beat 4 (the fifth beat),
+    // which is the first beat of bar 1.
+    expect(gridPhase(grid, 0.0).beatIndex).toBe(0);
+    expect(gridPhase(grid, 0.0).barIndex).toBe(0);
+    expect(gridPhase(grid, 1.75).beatIndex).toBe(3);
+    expect(gridPhase(grid, 1.75).barIndex).toBe(0);
+    expect(gridPhase(grid, 2.25).beatIndex).toBe(4);
+    expect(gridPhase(grid, 2.25).barIndex).toBe(1);
+    // Extrapolation past the last beat stays on the last REAL beat's index —
+    // the grid ends, so the count must not invent beats that were never
+    // tracked.
+    expect(gridPhase(grid, 5.0).beatIndex).toBe(7);
+    expect(gridPhase(grid, 5.0).barIndex).toBe(1);
+  });
+
+  it("barIndex is exactly floor(beatIndex / 4) wherever a beat exists", () => {
+    for (let t = 0; t < 4; t += 0.13) {
+      const p = gridPhase(grid, t);
+      if (p.beatIndex >= 0) expect(p.barIndex).toBe(Math.floor(p.beatIndex / 4));
+      else expect(p.barIndex).toBe(-1);
+    }
   });
 });

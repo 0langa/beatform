@@ -59,6 +59,44 @@ export interface AudioFeatures {
   time: number;
   /** Track duration, seconds (0 when nothing loaded) */
   duration: number;
+  /**
+   * ---- Additive "reactivity fuel" fields (P-15) -------------------------
+   * Optional AT THE TYPE LEVEL ONLY, so hand-built feature frames elsewhere
+   * (tests, demo/thumbnail frames) stay valid without churn: the pipeline
+   * itself ALWAYS populates every one of them. CPU-side contract for the
+   * modulation engine and Canvas2D consumers — no GPU uniform carries them
+   * yet (per-mode adoption is a later wave). All of them resolve from track
+   * time or offline track analysis, never wall clock, so they are
+   * deterministic and seek-stable like everything else here.
+   */
+  /** Integer count of beats since track start at the current time, from the
+   * offline beat grid (the same grid behind bpm/beatPhase). −1 until
+   * analysis lands, and −1 before the grid's first beat — the value only
+   * ever counts REAL beats, matching gridPhase's convention. */
+  beatIndex?: number;
+  /** Integer 4/4 bar count: floor(beatIndex / 4) (the same 4-beat
+   * assumption barPhase already makes). −1 whenever beatIndex is −1. */
+  barIndex?: number;
+  /** Index of the current song section (intro/drop/breakdown...), from the
+   * offline section analysis: 0 before the first detected boundary, +1 at
+   * each boundary. −1 until section analysis lands. */
+  sectionIndex?: number;
+  /** 1 exactly at each section boundary, exponential decay after (~4/s) —
+   * a pure function of track time and the boundary list, so scrubbing
+   * resolves the identical pulse the export renders. 0 before the first
+   * boundary and while no section analysis is attached. */
+  sectionPulse?: number;
+  /** Pitch-class energies, C first (C, C#, ... B), each 0..1. Folded from
+   * the analysis FFT (55–2000 Hz, the keyDetect range) on the sync dB
+   * scale and smoothed with the same attack/release EMA as `bins`, so the
+   * lanes move like the spectrum does. Always length 12. */
+  chroma?: Float32Array;
+  /** Lyrics-derived vocal presence 0..1: 1 inside a timed word/line with
+   * short attack/release ramps at the edges, 0 in instrumental stretches.
+   * Document-derived (the .lrc timings) and a pure function of track time —
+   * NOT a DSP estimate; `voice` remains the voice-band energy. 0 when no
+   * timed lyrics are loaded. */
+  vocal?: number;
 }
 
 /** What the visuals react to — the primary sync source. */

@@ -129,6 +129,16 @@ export function demoFeatures(t: number): AudioFeatures {
   }
   const beatPhase = (t * 2) % 1; // 120 BPM
   const pulse = Math.exp(-beatPhase * 6);
+  // P-15 reactivity-fuel fields, deterministic in t like everything above.
+  // No renderer reads them on the GPU path, so no pixel hash can move; they
+  // exist so mod-matrix previews and future consumers see live-looking fuel.
+  // Chroma: a C-major triad (C/E/G peaks) breathing gently.
+  const chroma = new Float32Array(12);
+  for (let i = 0; i < 12; i++) {
+    const triad = i === 0 ? 0.85 : i === 4 ? 0.65 : i === 7 ? 0.75 : 0.15;
+    chroma[i] = Math.min(1, Math.max(0, triad + 0.1 * Math.sin(t * 1.3 + i * 2.1)));
+  }
+  const beatIndex = Math.floor(t * 2); // one beat per 0.5 s, matching beatPhase
   return {
     bins,
     peaks,
@@ -155,6 +165,12 @@ export function demoFeatures(t: number): AudioFeatures {
     beatIntensity: pulse,
     time: t,
     duration: 60,
+    beatIndex,
+    barIndex: Math.floor(beatIndex / 4), // matches barPhase's (t * 0.5) % 1
+    sectionIndex: Math.floor(t / 15), // a "section" every 15 s of demo time
+    sectionPulse: Math.exp(-(t % 15) * 4),
+    chroma,
+    vocal: 0.45 + 0.35 * Math.sin(t * 0.8), // slow sung/instrumental swell
   };
 }
 

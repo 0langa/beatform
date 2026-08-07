@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RealtimeAnalyzer } from "./realtimeSource";
+import { sectionStateAt } from "./analysis/sections";
+import { vocalPresenceAt } from "./vocalPresence";
 import type { AudioEngine } from "./engine";
 
 const SR = 48000;
@@ -228,6 +230,59 @@ describe("RealtimeAnalyzer analysis cadence", () => {
     },
     SLOW,
   );
+});
+
+describe("RealtimeAnalyzer P-15 fuel fields", () => {
+  it("resolves grid, section and vocal fuel from track time via the shared helpers", () => {
+    const { engine, setNow } = fakeEngine(dense);
+    const ana = new RealtimeAnalyzer(engine);
+    const grid = {
+      bpm: 120,
+      beatTimes: new Float32Array(Array.from({ length: 16 }, (_, i) => i * 0.5)),
+      hopSec: 0.01,
+    };
+    const sections = [1.0];
+    const spans = [{ start: 0.4, end: 0.8 }];
+    ana.setBeatGrid(grid);
+    ana.setSections(sections);
+    ana.setVocalSpans(spans);
+    for (let n = 0; n < 120; n++) {
+      const t = n / 60;
+      setNow(t);
+      const f = ana.update(t, t);
+      // The live path resolves each value through the SAME pure helpers the
+      // offline path calls with its frame clock — asserting against them here
+      // asserts live/offline agreement by construction.
+      const s = sectionStateAt(sections, t);
+      expect(f.sectionIndex).toBe(s.sectionIndex);
+      expect(f.sectionPulse).toBe(s.sectionPulse);
+      expect(f.vocal).toBe(vocalPresenceAt(spans, t));
+      expect(f.beatIndex).toBe(Math.min(15, Math.floor(t / 0.5)));
+      expect(f.barIndex).toBe(Math.floor(Math.min(15, Math.floor(t / 0.5)) / 4));
+    }
+  });
+
+  it("detaching the analyses stops driving the fields (they hold, like bpm)", () => {
+    const { engine, setNow } = fakeEngine(dense);
+    const ana = new RealtimeAnalyzer(engine);
+    ana.setSections([0.5]);
+    ana.setVocalSpans([{ start: 0, end: 10 }]);
+    setNow(1);
+    const f = ana.update(1, 1);
+    expect(f.sectionIndex).toBe(1);
+    expect(f.vocal).toBe(1);
+    ana.setSections(null);
+    ana.setVocalSpans(null);
+    setNow(1 + 1 / 60);
+    const g = ana.update(1 + 1 / 60, 1 + 1 / 60);
+    expect(g.sectionIndex).toBe(1); // held — the keep-previous convention
+    expect(g.vocal).toBe(1);
+    ana.reset("source"); // a source change clears them to the honest unknowns
+    setNow(1 + 2 / 60);
+    const h = ana.update(1 + 2 / 60, 1 + 2 / 60);
+    expect(h.sectionIndex).toBe(-1);
+    expect(h.vocal).toBe(0);
+  });
 });
 
 /**

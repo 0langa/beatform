@@ -171,6 +171,16 @@ export interface PipelineInput {
   bpm?: number;
   beatPhase?: number;
   barPhase?: number;
+  /** Beat/bar counters from the same grid (undefined = keep previous). */
+  beatIndex?: number;
+  barIndex?: number;
+  /** Section identity for this frame — sources resolve it from the detected
+   * boundary list via `sectionStateAt` (undefined = keep previous). */
+  sectionIndex?: number;
+  sectionPulse?: number;
+  /** Lyrics-derived vocal presence for this frame — sources resolve it from
+   * the timed-lyrics spans via `vocalPresenceAt` (undefined = keep previous). */
+  vocal?: number;
 }
 
 /**
@@ -226,6 +236,16 @@ export class FeaturePipeline {
   /** Upper FFT bin of the main beat detector's flux band (FLUX_HI_HZ). */
   private fluxHiBin: number;
 
+  /** Chroma fold (P-15): pitch class per FFT bin (C = 0, −1 out of range),
+   * the folded span, one frame's raw fold, and the smoothed output that
+   * `features.chroma` aliases. Precomputed once — the per-frame cost is a
+   * single pass over the 55–2000 Hz bins. */
+  private chromaPc: Int8Array;
+  private chromaLoBin: number;
+  private chromaHiBin: number;
+  private chromaRaw = new Float32Array(12);
+  private chromaSmooth = new Float32Array(12);
+
   /** Scales every detector's absolute flux floor — see REF_BINS_PER_HZ. */
   private floorScale: number;
 
@@ -278,6 +298,17 @@ export class FeaturePipeline {
     this.hatRange = [toBin(5000), toBin(15000)];
     this.fluxHiBin = toBin(FLUX_HI_HZ);
 
+    // Chroma fold map: the keyDetect range (55 Hz = A1 up to 2 kHz), each bin
+    // assigned its nearest pitch class relative to C4 = 261.6256 Hz. Same
+    // math as keyDetect.chromagram, computed once per transform geometry.
+    this.chromaLoBin = Math.max(1, Math.ceil(55 / hzPerBin));
+    this.chromaHiBin = Math.min(fftBins - 1, Math.floor(2000 / hzPerBin));
+    this.chromaPc = new Int8Array(fftBins).fill(-1);
+    for (let b = this.chromaLoBin; b <= this.chromaHiBin; b++) {
+      const semisFromC4 = Math.round(12 * Math.log2((b * hzPerBin) / 261.6256));
+      this.chromaPc[b] = ((semisFromC4 % 12) + 12) % 12;
+    }
+
     this.features = {
       bins: new Float32Array(this.binCount),
       peaks: new Float32Array(this.binCount),
@@ -304,6 +335,14 @@ export class FeaturePipeline {
       beatIntensity: 0,
       time: 0,
       duration: 0,
+      // P-15 additive fields — optional on the TYPE (so hand-built frames
+      // elsewhere stay valid), always present on pipeline output.
+      beatIndex: -1,
+      barIndex: -1,
+      sectionIndex: -1,
+      sectionPulse: 0,
+      chroma: this.chromaSmooth,
+      vocal: 0,
     };
   }
 
@@ -620,6 +659,27 @@ export class FeaturePipeline {
 
     f.voice = bandMean(mag, this.voiceRange);
 
+    // Chroma (P-15): fold the analysis spectrum into 12 pitch classes,
+    // taking each class's PEAK bin — peaks are what reads musically, the
+    // same rationale as bandLevel — then smooth with the bins' attack/release
+    // EMA so the lanes move like the drawn spectrum does. Reads `mag` (the
+    // −90..−22 sync scale), never magDisp, so display-resolution settings
+    // cannot move it and both sources resolve it from the same transform.
+    // Purely additive: writes chromaSmooth (aliased by f.chroma) only.
+    const chromaRaw = this.chromaRaw;
+    chromaRaw.fill(0);
+    for (let b = this.chromaLoBin; b <= this.chromaHiBin; b++) {
+      const pc = this.chromaPc[b];
+      const v = mag[b];
+      if (v > chromaRaw[pc]) chromaRaw[pc] = v;
+    }
+    const chroma = this.chromaSmooth;
+    for (let i = 0; i < 12; i++) {
+      const v = chromaRaw[i];
+      const prev = chroma[i];
+      chroma[i] = prev + (v - prev) * (v > prev ? attack : release);
+    }
+
     f.kick = this.kickDet.update(
       tick,
       mag,
@@ -679,6 +739,11 @@ export class FeaturePipeline {
     if (input.bpm !== undefined) f.bpm = input.bpm;
     if (input.beatPhase !== undefined) f.beatPhase = input.beatPhase;
     if (input.barPhase !== undefined) f.barPhase = input.barPhase;
+    if (input.beatIndex !== undefined) f.beatIndex = input.beatIndex;
+    if (input.barIndex !== undefined) f.barIndex = input.barIndex;
+    if (input.sectionIndex !== undefined) f.sectionIndex = input.sectionIndex;
+    if (input.sectionPulse !== undefined) f.sectionPulse = input.sectionPulse;
+    if (input.vocal !== undefined) f.vocal = input.vocal;
 
     f.time = input.time;
     f.duration = input.duration;
@@ -737,6 +802,16 @@ export class FeaturePipeline {
       this.features.rms = 0;
       this.driveValue = 0;
       this.syncBeatIntensity = 0;
+      // P-15 fields: a NEW source has no analysis yet (the store re-runs it
+      // and re-attaches grid/sections/lyrics), so start from the honest
+      // nothing-known values like a fresh pipeline. A seek keeps them — the
+      // sources re-resolve every one of them from track time each frame.
+      this.features.beatIndex = -1;
+      this.features.barIndex = -1;
+      this.features.sectionIndex = -1;
+      this.features.sectionPulse = 0;
+      this.features.vocal = 0;
+      this.chromaSmooth.fill(0);
     }
   }
 

@@ -6,6 +6,8 @@ import { RealFFT } from "./dsp/fft";
 import { LoudnessMeter } from "./dsp/lufs";
 import { stereoWidth } from "./dsp/stereo";
 import { gridPhase, type BeatGrid } from "./analysis/beatGrid";
+import { sectionStateAt } from "./analysis/sections";
+import { vocalPresenceAt, type VocalSpan } from "./vocalPresence";
 import { displaySpectrumFftSize, spectrumResolution } from "./dsp/displaySpectrum";
 
 /**
@@ -71,6 +73,10 @@ export class RealtimeAnalyzer {
   private timeR: Float32Array<ArrayBuffer>;
   private meter: LoudnessMeter;
   private grid: BeatGrid | null = null;
+  /** Detected section boundaries (null = no analysis yet). */
+  private sections: number[] | null = null;
+  /** Timed-lyrics sung spans (null = no timed lyrics loaded). */
+  private vocalSpans: VocalSpan[] | null = null;
   private lastFrameAt: number | null = null;
   /**
    * Time owed to the fixed analysis clock, seconds. Onset detection steps once
@@ -169,6 +175,21 @@ export class RealtimeAnalyzer {
   /** Attach the track's beat grid once analysis lands (null = none yet). */
   setBeatGrid(grid: BeatGrid | null): void {
     this.grid = grid;
+  }
+
+  /** Attach the track's detected section boundaries (null = none yet).
+   * Like the grid, the values derived from these resolve per-frame from
+   * track time, so attach/detach never leaves envelope state behind. */
+  setSections(sections: number[] | null): void {
+    this.sections = sections;
+  }
+
+  /** Attach the timed-lyrics sung spans (`vocalSpansFromLyrics`; null =
+   * no timed lyrics). Drives `features.vocal` as a pure function of track
+   * time — the offline path resolves the identical value from the same
+   * spans, so preview and export agree by construction. */
+  setVocalSpans(spans: VocalSpan[] | null): void {
+    this.vocalSpans = spans;
   }
 
   /** Whether latest update advanced canonical 60 Hz detector/state clock. */
@@ -274,6 +295,8 @@ export class RealtimeAnalyzer {
       width: gated ? 0 : stereoWidth(this.timeL, this.timeR),
       lufs: this.engine.playing ? this.meter.momentary : undefined,
       ...(this.grid ? { bpm: this.grid.bpm, ...gridPhase(this.grid, trackTime) } : {}),
+      ...(this.sections ? sectionStateAt(this.sections, trackTime) : {}),
+      ...(this.vocalSpans ? { vocal: vocalPresenceAt(this.vocalSpans, trackTime) } : {}),
     });
   }
 

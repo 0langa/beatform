@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectSections } from "./sections";
+import { detectSections, SECTION_PULSE_DECAY, sectionStateAt } from "./sections";
 
 const SR = 48000;
 
@@ -61,5 +61,39 @@ describe("section detection", () => {
     fillTexture(data, 0, SR * 20, [110], 0.2);
     fillTexture(data, SR * 20, SR * 40, [4000, 5000], 0.4);
     expect(detectSections(data, SR)).toEqual(detectSections(data, SR));
+  });
+});
+
+describe("sectionStateAt (P-15)", () => {
+  const bounds = [30, 62.5, 100];
+
+  it("indexes sections by counting crossed boundaries", () => {
+    expect(sectionStateAt(bounds, 0).sectionIndex).toBe(0);
+    expect(sectionStateAt(bounds, 29.999).sectionIndex).toBe(0);
+    expect(sectionStateAt(bounds, 30).sectionIndex).toBe(1);
+    expect(sectionStateAt(bounds, 75).sectionIndex).toBe(2);
+    expect(sectionStateAt(bounds, 500).sectionIndex).toBe(3);
+  });
+
+  it("an empty boundary list is one whole-track section, pulse-free", () => {
+    expect(sectionStateAt([], 42)).toEqual({ sectionIndex: 0, sectionPulse: 0 });
+  });
+
+  it("pulses to 1 at a boundary and decays exponentially after", () => {
+    expect(sectionStateAt(bounds, 30).sectionPulse).toBe(1);
+    const at250ms = sectionStateAt(bounds, 30.25).sectionPulse;
+    expect(at250ms).toBeCloseTo(Math.exp(-0.25 * SECTION_PULSE_DECAY), 10);
+    // Effectively gone within ~1.5 s, long before the next boundary.
+    expect(sectionStateAt(bounds, 31.5).sectionPulse).toBeLessThan(0.01);
+    // No pulse before the FIRST boundary — the track start is not a change.
+    expect(sectionStateAt(bounds, 5).sectionPulse).toBe(0);
+  });
+
+  it("is a pure function of (bounds, t): seek-stable by construction", () => {
+    // Same t, any visit order — byte-identical results.
+    const a = sectionStateAt(bounds, 62.7);
+    sectionStateAt(bounds, 5);
+    sectionStateAt(bounds, 400);
+    expect(sectionStateAt(bounds, 62.7)).toEqual(a);
   });
 });

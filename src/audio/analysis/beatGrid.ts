@@ -234,22 +234,24 @@ export function analyzeBeatGrid(pcm: PcmData): BeatGrid {
 
 /**
  * Phase within the grid at time t: fractional beat position 0..1 and bar
- * position 0..1 (4/4 assumption), plus the beat index. Constant-time-ish
+ * position 0..1 (4/4 assumption), plus the beat and bar indices (barIndex =
+ * floor(beatIndex / 4), −1 with beatIndex — it only ever counts REAL beats,
+ * so both indices are −1 before the grid's first beat). Constant-time-ish
  * lookup with a moving cursor is the caller's job; this does binary search.
  */
 export function gridPhase(
   grid: BeatGrid,
   t: number,
-): { beatPhase: number; barPhase: number; beatIndex: number } {
+): { beatPhase: number; barPhase: number; beatIndex: number; barIndex: number } {
   const beats = grid.beatTimes;
-  if (beats.length < 2) return { beatPhase: 0, barPhase: 0, beatIndex: -1 };
+  if (beats.length < 2) return { beatPhase: 0, barPhase: 0, beatIndex: -1, barIndex: -1 };
   // Binary search: last beat <= t
   let loIdx = 0;
   let hiIdx = beats.length - 1;
   if (t < beats[0]) {
     const period = beats[1] - beats[0];
     const phase = 1 - Math.min(1, Math.max(0, (beats[0] - t) / period));
-    return { beatPhase: phase, barPhase: phase / 4, beatIndex: -1 };
+    return { beatPhase: phase, barPhase: phase / 4, beatIndex: -1, barIndex: -1 };
   }
   while (loIdx < hiIdx) {
     const mid = (loIdx + hiIdx + 1) >> 1;
@@ -261,5 +263,5 @@ export function gridPhase(
   const span = Math.max(1e-6, next - beats[i]);
   const beatPhase = Math.min(1, Math.max(0, (t - beats[i]) / span));
   const barPhase = ((i % 4) + beatPhase) / 4;
-  return { beatPhase, barPhase, beatIndex: i };
+  return { beatPhase, barPhase, beatIndex: i, barIndex: (i / 4) | 0 };
 }

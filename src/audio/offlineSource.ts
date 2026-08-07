@@ -6,6 +6,8 @@ import { analysisFftSize } from "./dsp/fftSize";
 import { LoudnessMeter } from "./dsp/lufs";
 import { stereoWidth } from "./dsp/stereo";
 import { gridPhase, type BeatGrid } from "./analysis/beatGrid";
+import { sectionStateAt } from "./analysis/sections";
+import { vocalPresenceAt, type VocalSpan } from "./vocalPresence";
 import { displaySpectrumFftSize, spectrumResolution } from "./dsp/displaySpectrum";
 
 /**
@@ -124,6 +126,8 @@ export class OfflineAnalyzer {
   private duration: number;
 
   private grid: BeatGrid | null;
+  private sections: number[] | null;
+  private vocalSpans: VocalSpan[] | null;
 
   constructor(
     pcm: PcmData,
@@ -131,8 +135,17 @@ export class OfflineAnalyzer {
     binCount = 96,
     sync?: SyncSettings,
     grid: BeatGrid | null = null,
+    /** Detected section boundaries — same analysis document the live path
+     * gets via setSections, so preview and export resolve identical
+     * sectionIndex/sectionPulse from track time. */
+    sections: number[] | null = null,
+    /** Timed-lyrics sung spans (vocalSpansFromLyrics) — drives
+     * features.vocal exactly like the live path's setVocalSpans. */
+    vocalSpans: VocalSpan[] | null = null,
   ) {
     this.grid = grid;
+    this.sections = sections;
+    this.vocalSpans = vocalSpans;
     this.fps = fps;
     this.sampleRate = pcm.sampleRate;
     this.duration = pcm.duration;
@@ -404,6 +417,8 @@ export class OfflineAnalyzer {
       width: stereoWidth(this.left.subarray(start, end), this.right.subarray(start, end)),
       lufs: this.meter.momentary,
       ...(this.grid ? { bpm: this.grid.bpm, ...gridPhase(this.grid, t) } : {}),
+      ...(this.sections ? sectionStateAt(this.sections, t) : {}),
+      ...(this.vocalSpans ? { vocal: vocalPresenceAt(this.vocalSpans, t) } : {}),
     });
   }
 }

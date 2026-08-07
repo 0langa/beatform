@@ -133,3 +133,42 @@ export function detectSections(mono: Float32Array, sampleRate: number): number[]
   }
   return bounds.map((i) => i * BLOCK_SEC);
 }
+
+/**
+ * Section-pulse decay rate, 1/s. A section change is a bigger musical moment
+ * than a beat, so its pulse rings longer than beatIntensity (decay 8): at 4/s
+ * it reads ~0.37 after 250 ms and is gone (~2%) within a second.
+ */
+export const SECTION_PULSE_DECAY = 4;
+
+export interface SectionState {
+  /** 0 before the first boundary, +1 at each boundary crossed. */
+  sectionIndex: number;
+  /** 1 exactly at a boundary, exp(-Δt * SECTION_PULSE_DECAY) after, 0 before
+   * the first boundary. */
+  sectionPulse: number;
+}
+
+/**
+ * Section identity at time t, as a PURE function of (boundaries, t) — no
+ * envelope state, so scrubbing anywhere resolves the identical value the
+ * export renders at that track moment, and live/offline share one code path
+ * by construction (both call this with their track clock).
+ *
+ * The field names deliberately match `PipelineInput`/`AudioFeatures`, so the
+ * sources can spread the result straight into a pipeline update.
+ */
+export function sectionStateAt(bounds: number[], t: number): SectionState {
+  // Binary search: count of boundaries <= t (bounds ascending from
+  // detectSections; also correct on an empty list — one whole-track section).
+  let lo = 0;
+  let hi = bounds.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (bounds[mid] <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  const sectionIndex = lo;
+  const sectionPulse = lo > 0 ? Math.exp(-(t - bounds[lo - 1]) * SECTION_PULSE_DECAY) : 0;
+  return { sectionIndex, sectionPulse };
+}
