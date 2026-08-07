@@ -11,6 +11,39 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.76.0] - 2026-08-07
+
+### Added
+
+- **Four more modes got dramatically deeper.** Third wave of the
+  mode-depth program:
+  - **Echo Trails** — the vortex can now devour more than a ring: star,
+    spectrum-bar skyline, waveform loop, and **your album art** can all
+    be fed into the trail accumulator. The vortex center can sit
+    off-axis, and the warp field gained shear and radial-wave modes.
+    New styles: Starfall, Pinwheel, Seismic, Droste (cover art),
+    Riptide, Maelstrom.
+  - **Metaballs** — the lava lamp finally smears: an optional goo-trail
+    residue, bass-weighted blob sizes, per-blob squash for organic
+    shapes, and reflective environments for the gloss. The beat pump is
+    now a first-class control. New styles: Goo, Amoeba, Showroom,
+    Mercury Dawn.
+  - **Oscilloscope** — a real multi-trace bench: split the signal into
+    bass/mid/treble lanes, render as classic beam, dots, or
+    sample-hold staircase, and pick your graticule (none, crosshair,
+    full reticle). Trace persistence is now a first-class control. New
+    styles: Analyzer Bench, Dot Sampler, Logic Analyzer, Fireflies.
+  - **Tunnel** — new wall materials (honeycomb, glowing wireframe,
+    organic tissue), **album art projected around you** as a mosaic on
+    the tunnel walls, and beat-flashing junction mouths racing past.
+    Center glow is now a first-class control. New styles: Honeycomb,
+    Vector Grid, Gullet, Gallery, Interchange, Slipstream.
+    All defaults look exactly as before — new territory is opt-in via
+    parameters and the new styles. (One technical footnote: enabling
+    Metaballs' smear machinery moves its rendering onto the same
+    high-precision path the other trail modes use — indistinguishable
+    on screen.)
+
 ## [2.75.0] - 2026-08-07
 
 ### Added
