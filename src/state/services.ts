@@ -258,12 +258,27 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
     await installRenderer();
     if (disposed) return;
 
+    // Last backing-store size handed to onResize. Starts at 0 so the first
+    // measure always fires, and lives with `measure` so a renderer rebuild
+    // that recreates one recreates the other.
+    let lastW = 0;
+    let lastH = 0;
     measure = () => {
       const r = canvas.getBoundingClientRect();
       // previewScale multiplies the LIVE backing store only — exports size
       // their own offscreen canvas and never pass through this path.
       renderer?.resize(r.width, r.height, window.devicePixelRatio * getPrefs().previewScale);
-      hooks.onResize?.(canvas.width, canvas.height);
+      // Gate the hook on a REAL dimension change. subscribePrefs fires
+      // measure() on every prefs write, and the Inspector's section rail
+      // writes inspectorPage on every navigation click — ungated, each click
+      // ran a 60 ms-debounced full overlay re-rasterization at canvas
+      // resolution (store.ts's onResize -> refreshOverlay). renderer.resize
+      // already early-outs on unchanged dimensions; this makes the hook match.
+      if (canvas.width !== lastW || canvas.height !== lastH) {
+        lastW = canvas.width;
+        lastH = canvas.height;
+        hooks.onResize?.(canvas.width, canvas.height);
+      }
     };
     ro = new ResizeObserver(measure);
     ro.observe(canvas);

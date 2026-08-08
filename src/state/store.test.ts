@@ -354,6 +354,53 @@ describe("export and batch refuse to start on the simplified renderer (F2)", () 
 });
 
 /**
+ * P-1 / R11 regression: stage mode used to CLOSE the Inspector
+ * (`set({ showPanel: false })`). That was a raw destructive write — it
+ * bypassed setShowPanel, so prefs kept the old value and there was no restore
+ * on the way out: every demo, every capture, every S-keypress cost the user
+ * their open workspace.
+ *
+ * The dock is suppressed by layout instead (`.app.stage-mode` zeroes
+ * --inspector-w and `.app.stage-mode .chrome` hides it), which is stateless,
+ * so the only thing left to assert is that the store does not touch
+ * `showPanel` in EITHER branch. Asserting the exit branch matters too: the
+ * tempting "fix" is setShowPanel(true) on exit, which would write
+ * panelOpen: true for users who never opened the dock at all.
+ */
+describe("stage mode leaves the Inspector alone (P-1)", () => {
+  it("keeps an open dock open through a full S / S round-trip", async () => {
+    const { useVizStore } = await import("./store");
+
+    useVizStore.setState({ showPanel: true, stageMode: false, blackout: false });
+
+    useVizStore.getState().setStageMode(true);
+    expect(useVizStore.getState().showPanel).toBe(true);
+    expect(useVizStore.getState().stageMode).toBe(true);
+    // The panels stage mode DOES close are unchanged by this fix.
+    expect(useVizStore.getState().showTimeline).toBe(false);
+    expect(useVizStore.getState().showHelp).toBe(false);
+
+    useVizStore.getState().setStageMode(false);
+    expect(useVizStore.getState().showPanel).toBe(true);
+    expect(useVizStore.getState().stageMode).toBe(false);
+  });
+
+  it("does not open a closed dock on the way out", async () => {
+    const { useVizStore } = await import("./store");
+
+    useVizStore.setState({ showPanel: false, stageMode: false, blackout: true });
+
+    useVizStore.getState().setStageMode(true);
+    expect(useVizStore.getState().showPanel).toBe(false);
+
+    useVizStore.getState().setStageMode(false);
+    expect(useVizStore.getState().showPanel).toBe(false);
+    // Leaving stage still clears blackout — untouched by this change.
+    expect(useVizStore.getState().blackout).toBe(false);
+  });
+});
+
+/**
  * Strip display order. The store owns it because three surfaces have to agree
  * on one sequence — the chips, the N/P step keys, and the 1-9 number keys —
  * and because a change has to reach the strip immediately, not on next launch.

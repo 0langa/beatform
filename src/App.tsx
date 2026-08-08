@@ -70,6 +70,38 @@ const SHORTCUTS: Array<[string, string]> = [
   ["H or ?", "This shortcut list"],
 ];
 
+/**
+ * Keyboard resize for the two drag handles (P-1 §4). Arrows move the
+ * SEPARATOR — ARIA's window-splitter semantics — so the same keypress grows
+ * the left-hand Library and the right-hand Inspector in opposite directions;
+ * `sign` carries that. Home/End take the pane the handle controls to its
+ * minimum/maximum.
+ *
+ * Pointer-only was tolerable while the Inspector was an overlay nicety; it is
+ * a real gap now that this is the control sizing a permanent workspace.
+ * Returns null for keys it does not own, so the handler can bail without
+ * swallowing Tab or Escape.
+ */
+function resizeKeyValue(
+  e: React.KeyboardEvent<HTMLDivElement>,
+  current: number,
+  lo: number,
+  hi: number,
+  /** +1 when moving the separator RIGHT widens the pane (Library), -1 when it
+   *  narrows it (the right-hand Inspector dock). */
+  sign: 1 | -1,
+): number | null {
+  const step = (e.shiftKey ? 48 : 16) * sign;
+  let next: number;
+  if (e.key === "ArrowRight") next = current + step;
+  else if (e.key === "ArrowLeft") next = current - step;
+  else if (e.key === "Home") next = lo;
+  else if (e.key === "End") next = hi;
+  else return null;
+  e.preventDefault();
+  return Math.min(hi, Math.max(lo, next));
+}
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -152,18 +184,23 @@ export default function App() {
   // focus, no focus restore").
   const helpDialogRef = useFocusTrap(showHelp);
 
-  // Resizable settings/library panel width (v2.40 layout system). The value
-  // drives the `--panel-w` CSS variable on the app root; every offset that
-  // depends on it derives via calc() in App.css. Persisted per install.
+  // Library panel width (v2.40 layout system). The value drives the
+  // `--panel-w` CSS variable on the app root; every offset that depends on it
+  // derives via calc() in App.css. Persisted per install.
+  //
+  // Since P-1, `--panel-w` sizes the LIBRARY ONLY: the Inspector is a dock
+  // with its own `inspectorWidth` pref, a sibling field rather than a
+  // reinterpretation of this one — reusing `panelWidth` would have handed
+  // every existing user a 280px dock on first launch.
   const [panelW, setPanelW] = useState(() => getPrefs().panelWidth);
-  const startPanelResize = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  const startLibraryResize = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     const el = e.currentTarget;
     el.setPointerCapture(e.pointerId);
     let latest = 0;
     const onMove = (ev: PointerEvent) => {
-      // Panel hugs the right edge: width = distance from pointer to gutter.
-      latest = Math.min(440, Math.max(240, window.innerWidth - ev.clientX - 14));
+      // Library hugs the LEFT edge: width = pointer distance past the gutter.
+      latest = Math.min(440, Math.max(240, ev.clientX - 14));
       setPanelW(latest);
     };
     const onUp = () => {
@@ -178,6 +215,66 @@ export default function App() {
     // palm rejection) used to leak both listeners and skip the persist.
     el.addEventListener("pointercancel", onUp);
   }, []);
+  const libraryResizeKey = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const next = resizeKeyValue(e, panelW, 240, 440, 1);
+      if (next === null || next === panelW) return;
+      setPanelW(next);
+      setPrefs({ panelWidth: next });
+    },
+    [panelW],
+  );
+
+  // Inspector dock width. TWO values on purpose (P-1):
+  //   inspectorW      -> --inspector-w-set  -> the canvas column and all chrome
+  //   inspectorDragW  -> --inspector-w-drag -> the dock element and its handle
+  // They are the same number except while the handle is being dragged. A
+  // single committed width would push the `.stage` box on every pointermove,
+  // and the ResizeObserver behind it destroys and recreates EVERY render
+  // target at full DPR (fade, feedback, deep, post) with feedbackClearPending
+  // set — i.e. feedback trails strobing to black ~60 times a second. So the
+  // dock tracks the pointer and the canvas commits exactly once, on pointerup.
+  const [inspectorW, setInspectorW] = useState(() => getPrefs().inspectorWidth);
+  const [inspectorDragW, setInspectorDragW] = useState<number | null>(null);
+  const startInspectorResize = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    let latest = 0;
+    const onMove = (ev: PointerEvent) => {
+      // The dock is flush to the right edge — no gutter term, unlike the Library.
+      latest = Math.min(760, Math.max(380, window.innerWidth - ev.clientX));
+      setInspectorDragW(latest); // … the dock tracks the pointer …
+    };
+    const onUp = () => {
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+      setInspectorDragW(null);
+      // … and the canvas commits ONCE. Persisting is pointerup-only for the
+      // same reason: subscribePrefs(() => measure()) turns every prefs write
+      // into a full re-measure, so a per-move persist would run a second
+      // resize storm alongside the first.
+      if (latest > 0) {
+        setInspectorW(latest);
+        setPrefs({ inspectorWidth: latest });
+      }
+    };
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+  }, []);
+  const inspectorResizeKey = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      // No drag state: one keypress is one resize, not sixty a second, so this
+      // commits and persists immediately.
+      const next = resizeKeyValue(e, inspectorW, 380, 760, -1);
+      if (next === null || next === inspectorW) return;
+      setInspectorW(next);
+      setPrefs({ inspectorWidth: next });
+    },
+    [inspectorW],
+  );
 
   // Auto-updater (desktop): silent check shortly after boot; manual check +
   // install live in the Help modal. Local state on purpose — this is UI
@@ -448,9 +545,15 @@ export default function App() {
     ? "Video export needs hardware rendering (WebGPU), which isn't available on this system"
     : null;
 
-  // Idle-hide only when nothing interactive is open (audit U6): the params
-  // panel, library, guide and settings are .chrome too, so holding the
-  // pointer still while READING one used to fade it out under the cursor.
+  // Idle-hide only when nothing interactive is open (audit U6): the library,
+  // guide and settings are .chrome too, so holding the pointer still while
+  // READING one used to fade it out under the cursor.
+  //
+  // `!showPanel` is deliberately NOT in this chain since P-1. The Inspector is
+  // a persistent dock, so keeping it here would disable idle-hide — and
+  // cursor-hide — for the entire app, forever, for anyone who works with it
+  // open. The dock instead opts out of the fade itself (App.css,
+  // `.app.idle .params-panel`), which is what lets the bars still fade around it.
   const idle =
     chromeIdle &&
     playback.playing &&
@@ -458,13 +561,18 @@ export default function App() {
     !showHelp &&
     !showGuide &&
     !showSettings &&
-    !showPanel &&
     !showLibrary;
 
   return (
     <div
       className={`app ${dragOver ? "drag-over" : ""} ${idle ? "idle" : ""} ${stageMode ? "stage-mode" : ""}`}
-      style={{ "--panel-w": `${panelW}px` } as React.CSSProperties}
+      style={
+        {
+          "--panel-w": `${panelW}px`,
+          "--inspector-w-set": showPanel ? `${inspectorW}px` : "0px",
+          "--inspector-w-drag": showPanel ? `${inspectorDragW ?? inspectorW}px` : "0px",
+        } as React.CSSProperties
+      }
       onMouseMove={() => store().pokeChrome()}
       onPointerDown={() => store().pokeChrome()}
       // Keyboard focus (Tab) fires no pointer event, so without this a keyboard
@@ -723,14 +831,18 @@ export default function App() {
           >
             <IconStage size={18} />
           </button>
+          {/* Labelled, not a bare glyph: it now toggles a persistent dock that
+              takes real estate away from the visual, and `.ghost-btn` is the
+              established labelled-button idiom. Same slot, so the other eight
+              buttons keep their positions. */}
           <button
-            className={`icon-btn ${showPanel ? "active" : ""}`}
-            title="Inspector (G)"
-            aria-label="Inspector"
+            className={`ghost-btn ${showPanel ? "active" : ""}`}
+            title="Inspector — every control for the current visual (G)"
             aria-pressed={showPanel}
             onClick={() => store().setShowPanel((v) => !v)}
           >
-            <IconSettings size={18} />
+            <IconSettings size={16} />
+            Inspector
           </button>
           <button
             className={`icon-btn ${showSettings ? "active" : ""}`}
@@ -788,14 +900,38 @@ export default function App() {
         />
       )}
 
+      {/* The Library's own grip. Until P-1 the single resize handle mounted
+          only alongside the Inspector, so opening the Library on its own left
+          it unresizable — splitting the two widths is what exposes that. */}
+      {showLibrary && (
+        <div
+          className="panel-resize-handle library-resize-handle chrome"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the library"
+          aria-valuenow={panelW}
+          aria-valuemin={240}
+          aria-valuemax={440}
+          tabIndex={0}
+          title="Drag to resize the library"
+          onPointerDown={startLibraryResize}
+          onKeyDown={libraryResizeKey}
+        />
+      )}
+
       {showPanel && (
         <div
           className="panel-resize-handle chrome"
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize the Inspector"
+          aria-valuenow={inspectorDragW ?? inspectorW}
+          aria-valuemin={380}
+          aria-valuemax={760}
+          tabIndex={0}
           title="Drag to resize the Inspector"
-          onPointerDown={startPanelResize}
+          onPointerDown={startInspectorResize}
+          onKeyDown={inspectorResizeKey}
         />
       )}
       {showPanel && <ParamsPanel />}
