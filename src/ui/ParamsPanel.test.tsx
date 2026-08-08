@@ -6,6 +6,8 @@ import { DEFAULT_PREFS, getPrefs, setPrefs, subscribePrefs } from "../state/pref
 import { ParamsPanel } from "./ParamsPanel";
 import { renderProbe } from "./testing/renderProbe";
 import { presets } from "../render/presets";
+import { advancedKeys, allParams, groupParams } from "../render/types";
+import { BUILDER2_ID } from "../render/builder2";
 import { LFO_SOURCES } from "../state/modMatrix";
 import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
 
@@ -356,6 +358,32 @@ describe("no external-store writes during render", () => {
     expect(consoleErrors.filter((e) => e.includes("Cannot update a component"))).toEqual([]);
   });
 
+  /**
+   * The P-9 sibling of T12. `toggleAdvanced` has the identical hazardous
+   * shape — setPrefs from a click handler, outside the setState updater — and
+   * StrictMode re-running updaters in the render phase is what turns a
+   * setPrefs placed inside one into "Cannot update a component (App)".
+   * OPEN then CLOSE, so both writes are real: setPrefs early-exits on an
+   * unchanged value (samePrefs), and two identical clicks would evaporate
+   * half the repro.
+   */
+  it("T12c: a group's expert disclosure persists without a render-phase update (StrictMode)", () => {
+    render(
+      <StrictMode>
+        <PrefsMirror />
+        <StoreMirror />
+        <ParamsPanel />
+      </StrictMode>,
+    );
+    const tiers = document.querySelectorAll(".group-advanced");
+    expect(tiers.length).toBeGreaterThan(0);
+    fireEvent.click(tiers[0]);
+    expect(getPrefs().advancedGroups).toHaveLength(1);
+    fireEvent.click(document.querySelectorAll(".group-advanced")[0]);
+    expect(getPrefs().advancedGroups).toEqual([]);
+    expect(consoleErrors.filter((e) => e.includes("Cannot update a component"))).toEqual([]);
+  });
+
   it("T12b: rail navigation persists visualsPage without a render-phase update", () => {
     render(
       <StrictMode>
@@ -403,10 +431,15 @@ describe("Visuals section rail", () => {
       "text",
       "live",
     ]);
-    // The labels the harness must NOT select on, but the user reads.
+    // The labels the harness must NOT select on, but the user reads. The
+    // asymmetry with the ids above is deliberate and permanent: page ids are
+    // persisted (prefs.visualsPage) and selected on by
+    // scripts/gpu-pixel-matrix.mjs, so they are frozen; labels are an iterated
+    // design surface and "Motion" became "Global motion" in 2.82.0 because the
+    // per-visual `motion` group renders on Mode.
     expect(railItems().map((b) => b.querySelector(".rail-label")?.textContent)).toEqual([
       "Mode",
-      "Motion",
+      "Global motion",
       "Themes",
       "Sync",
       "Modulation",
@@ -474,27 +507,34 @@ describe("Visuals section rail", () => {
     // against the five-button Segmented the rail replaces.
     expect(items.filter((b) => b.tabIndex === 0)).toHaveLength(1);
     expect(items.find((b) => b.tabIndex === 0)!.dataset.section).toBe("mode");
-    expect(items.filter((b) => b.tabIndex === -1)).toHaveLength(7);
+    // Derived, not the literal 7: the contract is "every OTHER item is -1",
+    // and a hardcoded count silently weakens it the day a ninth page lands.
+    expect(items.filter((b) => b.tabIndex === -1)).toHaveLength(items.length - 1);
   });
 
   it("R7: arrows move and activate, wrapping; Home/End jump to the ends", () => {
     render(<ParamsPanel />);
     const at = () => document.activeElement as HTMLButtonElement;
+    // Derived from the rail itself for the same reason as R6 — the subject is
+    // "arrows move AND activate, with wrap", not which ids happen to be first
+    // and last today.
+    const ids = railItems().map((b) => b.dataset.section);
+    const [first, second, last] = [ids[0], ids[1], ids[ids.length - 1]];
 
     railItems()[0].focus();
     fireEvent.keyDown(at(), { key: "ArrowDown" });
-    expect(at().dataset.section).toBe("motion");
-    expect(getPrefs().visualsPage).toBe("motion"); // follow-focus
+    expect(at().dataset.section).toBe(second);
+    expect(getPrefs().visualsPage).toBe(second); // follow-focus
 
     fireEvent.keyDown(at(), { key: "End" });
-    expect(at().dataset.section).toBe("live");
+    expect(at().dataset.section).toBe(last);
     fireEvent.keyDown(at(), { key: "ArrowDown" }); // wraps
-    expect(at().dataset.section).toBe("mode");
+    expect(at().dataset.section).toBe(first);
     fireEvent.keyDown(at(), { key: "ArrowUp" }); // wraps the other way
-    expect(at().dataset.section).toBe("live");
+    expect(at().dataset.section).toBe(last);
     fireEvent.keyDown(at(), { key: "Home" });
-    expect(at().dataset.section).toBe("mode");
-    expect(getPrefs().visualsPage).toBe("mode");
+    expect(at().dataset.section).toBe(first);
+    expect(getPrefs().visualsPage).toBe(first);
   });
 
   it("R8: an unavailable destination is dimmed and clickable, and its page says why", () => {
@@ -502,7 +542,10 @@ describe("Visuals section rail", () => {
     act(() => useVizStore.setState({ presetId: "led-matrix" }));
     render(<ParamsPanel />);
     const motion = railItems().find((b) => b.dataset.section === "motion")!;
-    const reason = "This visual has no rotation, pulse or detail masters";
+    // The signpost half is load-bearing: the per-visual `motion` group DOES
+    // render on Mode, so "no motion controls" without it reads as a lie.
+    const reason =
+      "This visual has no rotation, pulse or detail masters — its own motion controls are on Mode";
     expect(motion.classList.contains("is-unavailable")).toBe(true);
     expect(motion.getAttribute("title")).toBe(reason);
     // F1: dimmed, never hidden, never aria-disabled — the page is reachable
@@ -572,6 +615,153 @@ describe("Visuals section rail", () => {
     expect(head.tagName).toBe("H3");
     expect(head.classList.contains("section-title")).toBe(true);
     expect(head.closest(".panel-section")).toBeTruthy();
+  });
+});
+
+/**
+ * P-9: the global Essentials/All switch is gone and every group owns its own
+ * expert tier. What the panel is responsible for is the WIRING — reading and
+ * writing `prefs.advancedGroups`, and the one-click bulk switch that stops
+ * per-group disclosures from charging a power user six clicks for what the
+ * retired switch charged one. The rendering contract itself (which rows are
+ * curated, where the button sits, that search ignores the tier) is
+ * ParamGroups' and is proven in ParamGroups.test.tsx.
+ */
+describe("per-group expert tier wiring (P-9)", () => {
+  /** The groups of a preset that actually RENDER a disclosure — read out of
+   * the registry, not out of the panel, so this stays a contract rather than
+   * a mirror of the implementation. spectrum-bars' Motion group has one
+   * curated knob and zero expert ones, which is exactly the case that makes
+   * "every group id" the wrong set to write. */
+  const expertGroupIds = (presetId: string) => {
+    const def = presets.find((p) => p.id === presetId)!;
+    const adv = advancedKeys(def);
+    return groupParams(def, allParams(def))
+      .filter((g) => g.params.some((s) => adv.has(s.key)))
+      .map((g) => g.group.id);
+  };
+
+  it("R13: the tier is closed at mount, and one click persists that group's bare id", () => {
+    act(() => useVizStore.setState({ presetId: "spectrum-bars" }));
+    render(<ParamsPanel />);
+    // Default closed — the seed from the retired switch happens in prefs, and
+    // DEFAULT_PREFS carries none of it.
+    expect(getPrefs().advancedGroups).toEqual([]);
+
+    const tiers = [...document.querySelectorAll(".group-advanced")];
+    expect(tiers.map((t) => t.getAttribute("aria-expanded"))).toEqual(tiers.map(() => "false"));
+    fireEvent.click(tiers[0]);
+
+    // BARE id, no "group:" prefix — advancedGroups is its own prefs field and
+    // does not share collapsedSections' namespace.
+    const first = expertGroupIds("spectrum-bars")[0];
+    expect(getPrefs().advancedGroups).toEqual([first]);
+    expect(getPrefs().collapsedSections).toEqual([]);
+    // Exactly one disclosure opened; the others are untouched.
+    const after = [...document.querySelectorAll(".group-advanced")];
+    expect(after.filter((t) => t.getAttribute("aria-expanded") === "true")).toHaveLength(1);
+  });
+
+  /**
+   * THE BULK-SETTER TEST, and the reason the button could not be built from
+   * ParamGroups' pinned props. A loop of `onToggleAdvanced(id, true)` collapses
+   * to last-write-wins: every call derives `next` from the same closure-captured
+   * `advancedGroups`, so N clicks-worth of intent lands as ONE open group and
+   * N prefs writes. This asserts the inverse of both halves — every disclosure
+   * open, from a SINGLE prefs notification.
+   */
+  it("R14: one click on Show every control opens every group, in one write", () => {
+    act(() => useVizStore.setState({ presetId: "spectrum-bars" }));
+    render(<ParamsPanel />);
+    const ids = expertGroupIds("spectrum-bars");
+    expect(ids.length).toBeGreaterThan(1); // or the test proves nothing
+    expect(document.querySelectorAll(".group-advanced")).toHaveLength(ids.length);
+
+    let writes = 0;
+    const stop = subscribePrefs(() => {
+      writes += 1;
+    });
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Show every control" }));
+    } finally {
+      stop();
+    }
+
+    expect(writes).toBe(1); // ONE update for N groups, not N updates
+    expect([...getPrefs().advancedGroups].sort()).toEqual([...ids].sort());
+    const open = [...document.querySelectorAll(".group-advanced")];
+    expect(open.map((t) => t.getAttribute("aria-expanded"))).toEqual(open.map(() => "true"));
+
+    // The label is the state readout, so it has to flip — and flipping back
+    // must leave nothing behind.
+    expect(screen.queryByRole("button", { name: "Show every control" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Hide expert controls" }));
+    expect(getPrefs().advancedGroups).toEqual([]);
+    expect(
+      [...document.querySelectorAll(".group-advanced")].every(
+        (t) => t.getAttribute("aria-expanded") === "false",
+      ),
+    ).toBe(true);
+  });
+
+  it("R15: the retired Essentials/All vocabulary left the search blob", () => {
+    render(<ParamsPanel />);
+    fireEvent.change(screen.getByLabelText("Search controls"), { target: { value: "essentials" } });
+    // A blob that still answers to a control that no longer exists sends the
+    // user to a page where they cannot find what they searched for.
+    expect(document.querySelector(".panel-empty")?.textContent).toBe(
+      "No controls match “essentials”.",
+    );
+    expect(document.querySelector(".param-groups")).toBeNull();
+  });
+
+  it("R16: builder2 renders neither the grouped rows nor the bulk switch", () => {
+    act(() => useVizStore.setState({ presetId: BUILDER2_ID }));
+    render(<ParamsPanel />);
+    // RP-20: builder2's virtual l<i>.* params exist for the modulation/MIDI
+    // target lists, NOT as a second knob surface beside BuilderPanel. The
+    // suppression guard was untested until the bulk switch joined it inside.
+    expect(document.querySelector(".param-groups")).toBeNull();
+    expect(document.querySelector(".param-groups-actions")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show every control" })).toBeNull();
+    // …and the absence is a suppression, not an empty page: builder2 IS the
+    // active visual and its own editor is what renders instead.
+    expect(document.querySelector(".visuals-context .section-title")?.textContent).toBe("Builder");
+    expect(document.querySelector(".panel-empty")).toBeNull();
+  });
+
+  it("R17: the whole-preset changed pill counts the expert TIER, not preset.advanced", () => {
+    const def = spectrumBars();
+    // `vignette` is a curated spec that still LIVES in advanced[] (the tier
+    // flag re-tiers in place, at zero ABI cost). Counting raw membership would
+    // bill it as expert; advancedKeys() must not.
+    const curated = (def.advanced ?? []).find((s) => s.tier === "curated")!;
+    const expert = (def.advanced ?? []).find((s) => s.tier === undefined)!;
+
+    act(() =>
+      useVizStore.setState({
+        presetId: "spectrum-bars",
+        activeParams: {
+          ...useVizStore.getState().activeParams,
+          [curated.key]: curated.default + 1,
+        },
+      }),
+    );
+    render(<ParamsPanel />);
+    expect(document.querySelector(".panel-scroll .advanced-count")).toBeNull();
+
+    cleanup();
+    act(() =>
+      useVizStore.setState({
+        activeParams: { ...useVizStore.getState().activeParams, [expert.key]: expert.default + 1 },
+      }),
+    );
+    render(<ParamsPanel />);
+    // The pill lives in the Mode section's header, beside Reset — the old one
+    // sat inside the density switch that no longer exists.
+    const pill = document.querySelector(".section-head .advanced-count")!;
+    expect(pill.textContent).toBe("1 changed");
+    expect(pill.parentElement?.querySelector(".text-btn")?.textContent).toBe("Reset");
   });
 });
 

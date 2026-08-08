@@ -29,6 +29,7 @@ import { LYRIC_ANIMS } from "../state/lyrics";
 import { LyricsEditPanel } from "./LyricsEditPanel";
 import { LyricsGenPanel } from "./LyricsGenPanel";
 import {
+  advancedKeys,
   allParams,
   groupParams,
   isModTarget,
@@ -355,7 +356,14 @@ const VISUALS_PAGES: ReadonlyArray<{
   dividerBefore?: boolean;
 }> = [
   { id: "mode", label: "Mode", hint: "The active visual and all of its controls" },
-  { id: "motion", label: "Motion", hint: "Rotation, pulse and detail masters" },
+  // "Global motion", not "Motion": the per-visual `motion` group (57 params
+  // across 14 of 15 modes) renders on Mode, and one word had to say which of
+  // the two a click leads to.
+  {
+    id: "motion",
+    label: "Global motion",
+    hint: "Rotation, pulse and detail masters — every visual obeys these",
+  },
   {
     id: "themes",
     label: "Themes",
@@ -543,7 +551,9 @@ export function ParamsPanel() {
 
   const importLyrics = (f: File) => void f.text().then((t) => store().loadLyricsText(f.name, t));
 
-  const [showAdvanced, setShowAdvanced] = useState(() => getPrefs().advancedOpen);
+  /** Group ids whose expert tier is open (P-9). Global, not per-preset: the
+   * old global Essentials/All switch seeded this once, in prefs. */
+  const [advancedGroups, setAdvancedGroups] = useState<string[]>(() => getPrefs().advancedGroups);
   const [hint, setHint] = useState<string | null>(null);
   const [savingLook, setSavingLook] = useState(false);
   const [lookName, setLookName] = useState("");
@@ -578,6 +588,23 @@ export function ParamsPanel() {
     setPrefs({ collapsedSections: next });
   };
   /**
+   * One group's expert tier (P-9), reported by ParamGroups as a BARE id.
+   *
+   * Plain value + setPrefs OUTSIDE the setState updater, for the same reason
+   * toggleGroup does it: React re-runs updaters in the render phase under
+   * StrictMode, and a setPrefs there notifies App's useSyncExternalStore
+   * mid-render ("Cannot update a component (App)").
+   */
+  const toggleAdvanced = (groupId: string, open: boolean) => {
+    const next = open
+      ? advancedGroups.includes(groupId)
+        ? advancedGroups
+        : [...advancedGroups, groupId]
+      : advancedGroups.filter((g) => g !== groupId);
+    setAdvancedGroups(next);
+    setPrefs({ advancedGroups: next });
+  };
+  /**
    * Roving tabindex: the rail is ONE tab stop, not eight. Arrows move AND
    * activate (follow-focus, wrapping at the ends), Home/End jump to the
    * first/last destination. Without this, reaching any page control costs
@@ -610,18 +637,21 @@ export function ParamsPanel() {
     next.focus();
     changePage(next.dataset.section as VisualsPageId);
   };
-  const setAdvanced = (on: boolean) => {
-    setShowAdvanced(on);
-    setPrefs({ advancedOpen: on });
-  };
   const postChanged = (Object.keys(DEFAULT_POST) as Array<keyof PostSettings>).some(
     (k) => post[k] !== DEFAULT_POST[k],
   );
   const motionChanged = (Object.keys(DEFAULT_MOTION) as Array<keyof MotionSettings>).some(
     (k) => motion[k] !== DEFAULT_MOTION[k],
   );
-  const advanced = preset.advanced ?? [];
-  const changedCount = advanced.filter((p) => (params[p.key] ?? p.default) !== p.default).length;
+  /** Whole-preset expert-tier drift, shown beside Reset. Derived from
+   * advancedKeys(), NEVER from `preset.advanced` membership: a spec carrying
+   * `tier: "curated"` still lives in that array but renders above the
+   * disclosure, so counting the raw array would bill 21 curated knobs across
+   * the registry as expert. This count is the sum of the per-group ones. */
+  const advKeys = advancedKeys(preset);
+  const changedCount = allParams(preset).filter(
+    (s) => advKeys.has(s.key) && (params[s.key] ?? s.default) !== s.default,
+  ).length;
   const spectrumInfo = spectrumDiagnostics(sync, analysisSampleRate);
   const resolutionLabel = (resolution: SpectrumResolution) =>
     `${Math.round(
@@ -659,7 +689,10 @@ export function ParamsPanel() {
   // the page you land on.
   const pageUnavailable: Partial<Record<VisualsPageId, string>> = showMotion
     ? {}
-    : { motion: "This visual has no rotation, pulse or detail masters" };
+    : {
+        motion:
+          "This visual has no rotation, pulse or detail masters — its own motion controls are on Mode",
+      };
   /** Counts from the DOCUMENT, shown when > 0. The pill is aria-hidden so
    * accessible names stay exactly the rail label; the count is spoken through
    * the button's title instead. */
@@ -694,6 +727,35 @@ export function ParamsPanel() {
    * search blob and by the Modulation/MIDI target dropdowns. */
   const paramGroupViews = groupParams(preset, allParams(preset));
   const presetGroupText = paramGroupViews.map((g) => g.group.label).join(" ");
+  /**
+   * THE BULK TIER SWITCH (P-9). Every group of this visual that actually HAS
+   * an expert tier — i.e. that renders a disclosure to open. Filtered rather
+   * than "every group id": a group with no expert params has no button, so no
+   * click could ever add its id, and an unfilterable id would pin
+   * `allTiersOpen` false forever (spectrum-bars' Motion group is exactly this
+   * — one curated knob, zero expert ones). It also keeps ids that can never
+   * mean anything out of the 32-entry prefs budget, and suppresses the button
+   * entirely on a preset with no expert tier at all (custom/Shadertoy).
+   */
+  const presetGroupIds = paramGroupViews
+    .filter((g) => g.params.some((s) => advKeys.has(s.key)))
+    .map((g) => g.group.id);
+  const allTiersOpen =
+    presetGroupIds.length > 0 && presetGroupIds.every((id) => advancedGroups.includes(id));
+  /**
+   * ONE update for N groups. This is why it lives here and not as a loop over
+   * `toggleAdvanced`: that updater derives `next` from the closure-captured
+   * `advancedGroups`, so N sequential calls in one handler all start from the
+   * same snapshot and the last one wins — exactly one group would open. The
+   * union/difference is computed once, then written once.
+   */
+  const setAllAdvanced = (on: boolean) => {
+    const next = on
+      ? [...new Set([...advancedGroups, ...presetGroupIds])]
+      : advancedGroups.filter((g) => !presetGroupIds.includes(g));
+    setAdvancedGroups(next);
+    setPrefs({ advancedGroups: next });
+  };
   // What modulation and MIDI may drive: mod:"off" params (pure toggles and
   // mode-choice enums, RP-2) are not targets, so neither picker offers them.
   const modTargetGroupViews = groupParams(preset, allParams(preset).filter(isModTarget));
@@ -742,16 +804,29 @@ export function ParamsPanel() {
       // make getByText(preset.name) ambiguous.
       id: preset.id,
       page: "mode",
+      // "advanced essentials" left with the global density switch (P-9) — a
+      // blob that still answers to a retired control surfaces a section for
+      // something the user cannot find once they get there.
       search:
-        `${preset.name} ${preset.description ?? ""} preset style look custom save import gallery browse advanced essentials reset center image cover ${presetGroupText} ${presetParamText}`.toLowerCase(),
+        `${preset.name} ${preset.description ?? ""} preset style look custom save import gallery browse expert reset center image cover ${presetGroupText} ${presetParamText}`.toLowerCase(),
       headerExtra: (
-        <button
-          className="text-btn"
-          onClick={() => store().resetParams()}
-          title="Back to factory defaults (all controls incl. advanced)"
-        >
-          Reset
-        </button>
+        <>
+          {changedCount > 0 && (
+            <span
+              className="advanced-count"
+              title="Expert knobs that no longer sit at their factory value"
+            >
+              {changedCount} changed
+            </span>
+          )}
+          <button
+            className="text-btn"
+            onClick={() => store().resetParams()}
+            title="Back to factory defaults (all controls incl. advanced)"
+          >
+            Reset
+          </button>
+        </>
       ),
       body: (
         <>
@@ -854,42 +929,6 @@ export function ParamsPanel() {
             )}
           </div>
 
-          {/* Density, not a drawer. "Advanced" used to be a second flat list
-              bolted under the first; as one switch over the SAME grouped view
-              it stays one mental model — every knob is always in the group it
-              belongs to, you only choose how many of them you see. Search
-              ignores it entirely (see ParamGroups). */}
-          {advanced.length > 0 && (
-            <div className="param-density">
-              <Segmented
-                value={showAdvanced ? 1 : 0}
-                onChange={(v) => setAdvanced(v === 1)}
-                onHint={setHint}
-                ariaLabel="Control detail"
-                options={[
-                  {
-                    value: 0,
-                    label: "Essentials",
-                    hint: `The ${preset.params.length} knobs that shape this visual most`,
-                  },
-                  {
-                    value: 1,
-                    label: "All",
-                    hint: `Every knob, including the ${advanced.length} expert constants`,
-                  },
-                ]}
-              />
-              {changedCount > 0 && (
-                <span
-                  className="advanced-count"
-                  title="Expert knobs that no longer sit at their factory value"
-                >
-                  {changedCount} changed
-                </span>
-              )}
-            </div>
-          )}
-
           {/* Builder (RP-20): its virtual l<i>.* params exist for the
               modulation/MIDI/automation target lists, NOT for a second knob
               surface — BuilderPanel below stays the one editor, so the
@@ -900,12 +939,34 @@ export function ParamsPanel() {
               params={params}
               onParam={(key, value) => store().setParam(key, value)}
               onHint={setHint}
-              showAdvanced={showAdvanced}
+              advancedGroups={advancedGroups}
+              onToggleAdvanced={toggleAdvanced}
               query={q}
               collapsed={collapsed}
               onToggleGroup={toggleGroup}
               extras={centerImageExtras}
             />
+          )}
+
+          {/* What the retired Essentials/All switch was actually FOR: one
+              click to "show me everything". Per-group disclosures alone would
+              charge a power user one click per group. Below the group list,
+              never in .section-head — three leaves in that flex clip at the
+              dock's 380px floor. */}
+          {preset.id !== BUILDER2_ID && presetGroupIds.length > 0 && (
+            <div className="param-groups-actions">
+              <button
+                className="text-btn"
+                title={
+                  allTiersOpen
+                    ? "Close every group's expert controls"
+                    : "Open every group's expert controls at once"
+                }
+                onClick={() => setAllAdvanced(!allTiersOpen)}
+              >
+                {allTiersOpen ? "Hide expert controls" : "Show every control"}
+              </button>
+            </div>
           )}
         </>
       ),
