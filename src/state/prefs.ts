@@ -65,9 +65,30 @@ export interface AppPrefs {
   previewScale: 1 | 0.75 | 0.5;
   /** Check GitHub Releases for updates shortly after launch. */
   updateAutoCheck: boolean;
-  /** Active tab of the per-visual settings panel. */
+  /**
+   * FROZEN (P-1). The Inspector's five tabs became the dock's section rail,
+   * so nothing writes this any more — but it is still validated and still
+   * read ONCE, to place an existing user on the page matching the tab they
+   * last used. Deleting it would silently land every upgrading user on Mode.
+   */
   paramsTab: "visual" | "sync" | "scene" | "text" | "live";
-  /** Collapsed section titles inside the settings panel. */
+  /** Active page of the Inspector dock's section rail (P-1). */
+  inspectorPage: "mode" | "motion" | "themes" | "sync" | "modulation" | "scene" | "text" | "live";
+  /**
+   * Inspector dock width, px. Deliberately NOT `panelWidth`: that one still
+   * sizes the Library panel, and reinterpreting a stored 280 as a dock width
+   * would hand every existing user a cramped dock on first launch.
+   */
+  inspectorWidth: number;
+  /**
+   * Collapsed GROUP keys inside an Inspector page ("group:<id>").
+   *
+   * P-1 retired in-page SECTION collapse — the rail is the one navigation
+   * model — so unprefixed section ids no longer have a reader and are pruned
+   * on validation. That prune is also what closes the old defect where the
+   * first section keyed its collapse state on the visual mode's display name:
+   * the mechanism it lived in no longer exists.
+   */
   collapsedSections: string[];
   /**
    * The user's own left-to-right order for the mode strip, as preset ids.
@@ -107,6 +128,8 @@ export const DEFAULT_PREFS: AppPrefs = {
   previewScale: 1,
   updateAutoCheck: true,
   paramsTab: "visual",
+  inspectorPage: "mode",
+  inspectorWidth: 480,
   collapsedSections: [],
   presetOrder: [],
   perfOverlay: false,
@@ -153,6 +176,19 @@ function oneOf<T extends string>(v: unknown, options: readonly T[], def: T): T {
   return options.includes(v as T) ? (v as T) : def;
 }
 
+/**
+ * Where an upgrading user lands when the retired five-tab layout becomes the
+ * dock's rail. "visual" carried mode + styles + looks + every param group, so
+ * it maps to Mode; the other four kept their names.
+ */
+const TAB_TO_PAGE: Record<AppPrefs["paramsTab"], AppPrefs["inspectorPage"]> = {
+  visual: "mode",
+  sync: "sync",
+  scene: "scene",
+  text: "text",
+  live: "live",
+};
+
 function validOverlayStats(raw: unknown): PerfOverlayStats {
   const p = (typeof raw === "object" && raw !== null ? raw : {}) as Partial<PerfOverlayStats>;
   const d = DEFAULT_PREFS.perfOverlayStats;
@@ -194,8 +230,34 @@ function validPrefs(raw: unknown): AppPrefs {
       p.paramsTab === "live"
         ? p.paramsTab
         : "visual",
+    // The rail's page is a NEW field, so every install predating the dock
+    // arrives without it. Rather than dump those users on Mode, it inherits
+    // the page matching the tab they last used. This runs at module import as
+    // pure coercion — no setPrefs, no effect — so it cannot schedule a React
+    // update mid-render, and it runs even for someone who never opens the
+    // dock (a panel-hosted migration would not).
+    inspectorPage: oneOf(
+      p.inspectorPage,
+      ["mode", "motion", "themes", "sync", "modulation", "scene", "text", "live"] as const,
+      TAB_TO_PAGE[
+        (p.paramsTab === "sync" ||
+        p.paramsTab === "scene" ||
+        p.paramsTab === "text" ||
+        p.paramsTab === "live"
+          ? p.paramsTab
+          : "visual") as AppPrefs["paramsTab"]
+      ],
+    ),
+    inspectorWidth: num(p.inspectorWidth, d.inspectorWidth, 380, 760),
+    // Only "group:"-prefixed keys still have a reader (ParamGroups); P-1
+    // retired section collapse, so bare section ids are pruned instead of
+    // sitting in the 64-entry budget forever. The prefix literal is
+    // duplicated from ParamGroups on purpose — state must not import UI —
+    // and prefs.test.ts asserts the two stay equal.
     collapsedSections: Array.isArray(p.collapsedSections)
-      ? p.collapsedSections.filter((s): s is string => typeof s === "string").slice(0, 64)
+      ? p.collapsedSections
+          .filter((s): s is string => typeof s === "string" && s.startsWith("group:"))
+          .slice(0, 64)
       : [],
     // Kept as raw ids, NOT reconciled here: prefs must not import the preset
     // registry (it would drag the whole render layer into every module that
@@ -368,6 +430,8 @@ function samePrefs(a: AppPrefs, b: AppPrefs): boolean {
     a.previewScale === b.previewScale &&
     a.updateAutoCheck === b.updateAutoCheck &&
     a.paramsTab === b.paramsTab &&
+    a.inspectorPage === b.inspectorPage &&
+    a.inspectorWidth === b.inspectorWidth &&
     sameStringList(a.collapsedSections, b.collapsedSections) &&
     sameStringList(a.presetOrder, b.presetOrder) &&
     a.perfOverlay === b.perfOverlay &&

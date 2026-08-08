@@ -209,8 +209,14 @@ describe("prefs: no-op writes", () => {
   it("compares list fields by CONTENT, not identity", async () => {
     // validPrefs rebuilds collapsedSections/presetOrder on every call, so an
     // identity comparison would never see a no-op here.
+    // Group keys, not bare section ids: P-1 prunes anything without the
+    // "group:" prefix, so a bare id would leave this asserting on an empty
+    // list and prove nothing about the comparison.
     seed(
-      JSON.stringify({ collapsedSections: ["Sync", "Post"], presetOrder: ["aurora", "nebula"] }),
+      JSON.stringify({
+        collapsedSections: ["group:shape", "group:glow"],
+        presetOrder: ["aurora", "nebula"],
+      }),
     );
     const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
     const before = getPrefs();
@@ -219,15 +225,15 @@ describe("prefs: no-op writes", () => {
       calls++;
     });
     // Fresh arrays, same contents.
-    expect(setPrefs({ collapsedSections: ["Sync", "Post"] })).toBe(before);
+    expect(setPrefs({ collapsedSections: ["group:shape", "group:glow"] })).toBe(before);
     expect(setPrefs({ presetOrder: ["aurora", "nebula"] })).toBe(before);
     expect(calls).toBe(0);
     // Order matters, and so does length.
     setPrefs({ presetOrder: ["nebula", "aurora"] });
     expect(calls).toBe(1);
-    setPrefs({ collapsedSections: ["Sync"] });
+    setPrefs({ collapsedSections: ["group:shape"] });
     expect(calls).toBe(2);
-    expect(getPrefs().collapsedSections).toEqual(["Sync"]);
+    expect(getPrefs().collapsedSections).toEqual(["group:shape"]);
   });
 
   it("compares the nested overlay-stats object by CONTENT, not identity", async () => {
@@ -259,5 +265,80 @@ describe("prefs: no-op writes", () => {
     setPrefs({ lastSaveDir: "" }); // empty string normalises to the stored null
     expect(calls).toBe(0);
     expect(getPrefs()).toBe(before);
+  });
+});
+
+describe("prefs: the Inspector dock's rail (P-1)", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("lands an upgrading user on the page matching the tab they last used", async () => {
+    // The whole reason `paramsTab` survives as a frozen field: without this
+    // read, everyone who had the panel on Sync gets dumped on Mode.
+    for (const [tab, page] of [
+      ["visual", "mode"],
+      ["sync", "sync"],
+      ["scene", "scene"],
+      ["text", "text"],
+      ["live", "live"],
+    ] as const) {
+      seed(JSON.stringify({ paramsTab: tab }));
+      const { getPrefs } = await importFresh();
+      expect(getPrefs().inspectorPage).toBe(page);
+    }
+  });
+
+  it("keeps an explicitly stored page over the retired tab's mapping", async () => {
+    seed(JSON.stringify({ paramsTab: "sync", inspectorPage: "modulation" }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().inspectorPage).toBe("modulation");
+  });
+
+  it("degrades an unknown page to Mode rather than rendering nothing", async () => {
+    seed(JSON.stringify({ inspectorPage: "wormhole" }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().inspectorPage).toBe("mode");
+  });
+
+  it("does not reinterpret the Library's stored width as the dock's", async () => {
+    // panelWidth still sizes the Library. Reusing it would hand every
+    // existing user a 280px dock — narrower than the dock's own minimum.
+    seed(JSON.stringify({ panelWidth: 280 }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().panelWidth).toBe(280);
+    expect(getPrefs().inspectorWidth).toBe(480);
+  });
+
+  it("clamps the dock width to its usable range", async () => {
+    seed(JSON.stringify({ inspectorWidth: 99999 }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().inspectorWidth).toBe(760);
+    seed(JSON.stringify({ inspectorWidth: 10 }));
+    const fresh = await importFresh();
+    expect(fresh.getPrefs().inspectorWidth).toBe(380);
+  });
+
+  it("prunes retired section-collapse entries but keeps group collapse", async () => {
+    // P-1 removed in-page section collapse, so bare ids have no reader. This
+    // prune is also what retires the old defect where the first section keyed
+    // its collapse state on the visual mode's DISPLAY NAME — a dynamic
+    // string that silently reset whenever a mode was renamed.
+    seed(
+      JSON.stringify({
+        collapsedSections: ["Sync", "Kaleido Nebula", "group:color", "group:motion"],
+      }),
+    );
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().collapsedSections).toEqual(["group:color", "group:motion"]);
+  });
+
+  it("uses the same group prefix ParamGroups writes", async () => {
+    // state must not import UI, so the literal is duplicated. If that copy
+    // ever drifts, every collapsed group is silently pruned on next launch.
+    const { GROUP_KEY } = await import("../ui/ParamGroups");
+    seed(JSON.stringify({ collapsedSections: [`${GROUP_KEY}shape`] }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().collapsedSections).toEqual([`${GROUP_KEY}shape`]);
   });
 });
