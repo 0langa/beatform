@@ -558,8 +558,8 @@ the `useMemo` anyway.
 ### Track H — P-1 stages 2 and 3 (NEW, from the v2.81.0 dock release)
 
 **Stage 1 shipped in v2.81.0** and is deliberately a SHELL: the floating
-overlay became a persistent, resizable right dock (the canvas letterboxes
-beside it via `--visuals-w`; the drag is split into `--visuals-w-set` /
+overlay became a persistent, resizable right dock (the visual runs full-bleed
+behind it; `--visuals-w` keeps other chrome clear; the drag is split into `--visuals-w-set` /
 `--visuals-w-live` so only the dock tracks the pointer and the canvas
 commits once, or every pointermove destroys and recreates every render
 target at full DPR and strobes feedback trails to black); the five tabs AND
@@ -729,7 +729,7 @@ Execution sequence around the running Track B program:
    per-section pages → Modulation showpiece page) with P-9 folded in.
    **Stage 1 DONE, shipped v2.81.0 2026-08-08.** Scope: the panel stopped
    being a floating overlay and became a persistent, resizable right dock
-   the canvas letterboxes beside (`--visuals-w`, with the set/live width
+   the visual runs behind (`--visuals-w`, with the set/live width
    split that keeps a resize drag from re-allocating every render target at
    60 Hz); the five tabs and the per-section collapses (13 of the 15 sections) were BOTH
    replaced by one vertical rail of eight destinations, so there is exactly

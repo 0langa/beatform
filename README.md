@@ -39,7 +39,7 @@ Free and open source. Built to become a professional-grade tool for producers an
   (~300 knobs app-wide), plain-language **hint** for every control (tooltip +
   live hint bar), all persisted per mode
 - **Visuals dock** (press **G**): a persistent, keyboard-resizable right-hand
-  column the canvas letterboxes beside rather than hiding under — tune while
+  column the visual runs full width behind — tune while
   you watch. One vertical **section rail** of eight destinations (Mode,
   Motion, Themes, Sync, Modulation, Scene, Text, Live), each a page; a header
   naming the current mode and style; a search box that finds any control by

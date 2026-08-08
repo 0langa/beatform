@@ -15,15 +15,15 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ### Changed
 
-- **The panel on the right is a dock now — the picture makes room for it
-  instead of disappearing under it.** It used to float over the visual, so
-  tuning a look meant covering the thing you were tuning. It is now a
-  permanent right-hand column and the visual letterboxes beside it: smaller,
-  never hidden. You can watch a slider land while you are still dragging it.
+- **The panel on the right is a dock now, and it stays put while you work.**
+  It is a permanent right-hand column rather than something you open, use and
+  close again, and the visual runs full width behind it — you can watch a
+  slider land while you are still dragging it.
   - Drag the dock's left edge to resize it (380–760 px, remembered per
     install). The edge takes the keyboard too — focus it and the arrow keys
     move it, Shift for bigger steps, Home/End for the extremes.
-  - Narrow the window and the dock gives ground before the picture does.
+  - The mode strip, toasts and the timeline keep clear of it instead of
+    sliding underneath.
   - **Stage mode** (**S**) is still the chrome-free full-bleed output and
     still hides the dock completely. The difference: leaving Stage now gives
     it back exactly as you left it, instead of quietly closing it and

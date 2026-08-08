@@ -45,7 +45,7 @@ Visuals dock.
 
 **G** opens **Visuals**, the panel on the right that holds every control for
 the visual you are building. It is a dock, not an overlay: the picture
-letterboxes beside it rather than hiding under it, so you can watch a slider
+runs full width behind it, so you can watch a slider
 land while you are dragging it. Drag its left edge to resize (or focus the
 edge and use the arrow keys — Shift for larger steps, Home/End for the
 extremes); the width is remembered. **Stage mode** (**S**) hides it entirely.
