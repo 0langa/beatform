@@ -1,21 +1,53 @@
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, useState, type CSSProperties } from "react";
 import { MAX_STEMS, STEM_TRACK_KEYS } from "../audio/stems";
-import { allParams, groupParams, isModTarget, POST_MOD_TARGETS } from "../render/types";
+import {
+  allParams,
+  groupParams,
+  isModTarget,
+  POST_MOD_TARGETS,
+  type ParamGroupView,
+  type ParamSpec,
+  type PostSettings,
+} from "../render/types";
 import {
   LFO_SOURCES,
+  MOD_LAG_MAX_SEC,
   MOD_SOURCES,
   POST_TARGET_PREFIX,
   type ModCurve,
+  type ModRoute,
   type ModSource,
 } from "../state/modMatrix";
 import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
 import { selectPreset } from "../state/selectors";
 import { useVizStore } from "../state/store";
-import { SliderField } from "./kit";
+import { formatValue, Segmented, SECONDS, SliderField } from "./kit";
 
 /**
- * The Modulation page (P-1 stage 3) — stems, route recipes, and the route
- * rows that wire an audio feature or beat-locked LFO onto one knob.
+ * The Modulation page (P-1 stage 3) — one CARD PER MODULATED CONTROL.
+ *
+ * Why target-first, and why exactly one layout at every dock width:
+ *  - The target is the primary key of a route in all 13 shipped factory
+ *    themes (distinct targets === route count in 13/13), the target axis is
+ *    the smaller one (26-37 targets vs 34-62 sources), and the card's
+ *    grouping key IS applyMods' accumulation key — `out[route.param]` is read
+ *    back and clamped once per route (modMatrix.ts), so two routes on one
+ *    knob genuinely are one stack and belong in one card.
+ *  - The content column here is `dockWidth - 206` (gutter, dock border, the
+ *    136px section rail + its border, .panel-scroll's 28px padding, the thin
+ *    scrollbar). That is 174px at the 380px minimum, 274px at the 480px
+ *    default and 554px at the 760px maximum. A two-column grid needs 720px
+ *    and a `@container (min-width: 560px)` threshold can never fire, so
+ *    there is NO container query, NO breakpoint and NO multi-column here.
+ *    Extra width goes into the range track and the two pickers' ellipsis.
+ *
+ * DETERMINISM: this page is a VIEW OVER applyMods, never a second evaluator.
+ * It renders the document and the target's spec, and the live marker is
+ * driven from outside by the meter engine writing one CSS custom property
+ * (`--v`) on `.mod-swing-arm` / `.mod-meter-fill`. Nothing here imports
+ * ModEvalState, createModEvalState or routeValue — routeValue mutates the
+ * caller's lag memo, so a UI call would advance every lagged route's envelope
+ * a second time per frame and change what the renderer draws.
  *
  * Its own component purely for SUBSCRIPTION GRANULARITY, in the shape
  * <PanelFooterBadges /> established: `stems` and `stemAnalyzing` are read by
@@ -31,10 +63,122 @@ import { SliderField } from "./kit";
  * render. Everything derived allocates inside useMemo instead; lint blocks the
  * allocating shapes at author time.
  *
+ * NOTHING NEW IS PERSISTED. Card disclosure and the source filter are
+ * component state: `validPrefs` prunes every key that is not `group:`-
+ * prefixed, and a `ModRoute` field for view state would be stripped by
+ * validModRoutes on the next load of every saved project and .bftheme.
+ *
  * Mounted only while this page is on screen (ParamsPanel's `visibleSections`
  * filter), and while a cross-page search matches the Modulation SectionDef's
  * blob — which stays in ParamsPanel with the rest of the section table.
  */
+
+/**
+ * The card's heading: the tail after the LAST " · ".
+ *
+ * Measured over all 427 target labels in the registry: median 10 chars, p90
+ * 15, max 31 — and every label over 18 chars is a Builder v2 virtual param of
+ * the form `L2 Particles · Density`, which already sits under a group header
+ * reading `Layer 2 · Particles`. No built-in preset label contains " · " at
+ * all (pinned by a test), so this rule fires ONLY where the prefix is already
+ * on screen, and never shortens a built-in. Result: heading <= 20 chars
+ * everywhere, which fits the 174px column without the ellipsis firing.
+ */
+export function cardHeading(label: string): string {
+  const i = label.lastIndexOf(" · ");
+  return i < 0 ? label : label.slice(i + 3);
+}
+
+const POST_GROUP = "Post-processing";
+/** Group header for a route whose target this visual does not have. */
+const INERT_GROUP = "Not on this visual";
+
+/** Where one target sits in the card list, plus the spec the card renders. */
+interface TargetPlace {
+  label: string;
+  spec: ParamSpec;
+  group: string;
+  rank: number;
+  order: number;
+}
+
+/** One card: a target, its place, and every route stacked on it. */
+interface ModCard {
+  param: string;
+  label: string;
+  heading: string;
+  spec: ParamSpec | null;
+  group: string;
+  rank: number;
+  order: number;
+  routes: ModRoute[];
+}
+
+const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+
+/**
+ * The target option list, shared by the card header picker and the create
+ * picker. A native <select> over the registry's own optgroups is the only
+ * enumeration surface that is keyboard- and screen-reader-complete for free,
+ * and it is what keeps the registry-derived assertions in the panel suite
+ * meaningful — so the two pickers stay <select>s. What died is the 96px
+ * `.mod-select` cap: both get the full content column with `min-width: 0`.
+ */
+function TargetOptions(props: {
+  groups: ParamGroupView[];
+  /** A route's current target, so a legacy/off one keeps a visible option. */
+  current?: string;
+  /** Already-routed targets — offered but disabled in the CREATE picker, so
+   *  N picks can no longer stack N compounding routes on one knob. */
+  routed?: ReadonlySet<string>;
+}) {
+  const { current, routed } = props;
+  return (
+    <>
+      {/* Grouped by the SAME ParamSpec.group the panel lays out, so a 35-knob
+          visual reads as eight short lists instead of one unsearchable run. */}
+      {props.groups.map(({ group, params }) => (
+        <optgroup key={group.id} label={group.label}>
+          {params.map((p) => (
+            <option
+              key={p.key}
+              value={p.key}
+              title={p.label}
+              disabled={routed?.has(p.key) ?? false}
+            >
+              {cardHeading(p.label)}
+              {routed?.has(p.key) ? " · routed" : ""}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+      {/* A route saved before a param went mod:"off" (or whose param this
+          preset lacks) still needs a visible, selected option — silently
+          snapping the select to the first entry would rewrite the route on
+          the next unrelated edit. Such routes are inert in applyMods. */}
+      {current !== undefined &&
+        current.length > 0 &&
+        !current.startsWith(POST_TARGET_PREFIX) &&
+        !props.groups.some(({ params }) => params.some((p) => p.key === current)) && (
+          <option value={current}>{`${current} (not modulatable)`}</option>
+        )}
+      {/* Post targets are namespaced ("post:chromatic") so they can live in
+          the same route list as preset params. */}
+      <optgroup label={POST_GROUP}>
+        {POST_MOD_TARGETS.map((p) => {
+          const key = `${POST_TARGET_PREFIX}${p.key}`;
+          return (
+            <option key={p.key} value={key} disabled={routed?.has(key) ?? false}>
+              {p.label}
+              {routed?.has(key) ? " · routed" : ""}
+            </option>
+          );
+        })}
+      </optgroup>
+    </>
+  );
+}
+
 export function ModulationPage() {
   /**
    * The active mode's def, resolved INSIDE the selector. `selectPreset` is a
@@ -49,6 +193,15 @@ export function ModulationPage() {
   const mods = useVizStore((s) => s.activeMods);
   const stems = useVizStore((s) => s.stems);
   const stemAnalyzing = useVizStore((s) => s.stemAnalyzing);
+  /** Base values — what each card's range is measured FROM. Both are plain
+   *  document fields, so both selectors return a store-owned reference. */
+  const params = useVizStore((s) => s.activeParams);
+  const post = useVizStore((s) => s.post);
+
+  /** Open cards and the source filter are view state and stay component-local
+   *  (see the file header: nothing new is persisted). */
+  const [openCards, setOpenCards] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const [pickedSource, setPickedSource] = useState<string | null>(null);
 
   // What modulation may drive: mod:"off" params (pure toggles and mode-choice
   // enums, RP-2) are not targets, so the picker does not offer them.
@@ -56,21 +209,173 @@ export function ModulationPage() {
     () => groupParams(preset, allParams(preset).filter(isModTarget)),
     [preset],
   );
-  const firstModTarget = modTargetGroupViews[0]?.params[0]?.key ?? "";
+
+  /** target key -> label, spec and sort position. Post targets sort after
+   *  every preset group; an unknown target falls through to INERT_GROUP. */
+  const places = useMemo(() => {
+    const m = new Map<string, TargetPlace>();
+    modTargetGroupViews.forEach(({ group, params: ps }, rank) => {
+      ps.forEach((p, order) => {
+        m.set(p.key, { label: p.label, spec: p, group: group.label, rank, order });
+      });
+    });
+    const postRank = modTargetGroupViews.length;
+    POST_MOD_TARGETS.forEach((p, order) => {
+      m.set(`${POST_TARGET_PREFIX}${p.key}`, {
+        label: p.label,
+        spec: p,
+        group: POST_GROUP,
+        rank: postRank,
+        order,
+      });
+    });
+    return m;
+  }, [modTargetGroupViews]);
+
+  /** One card per distinct target, routes kept in DOCUMENT order inside it —
+   *  applyMods sums in array order, so the card must not reorder them. */
+  const cards = useMemo(() => {
+    const byParam = new Map<string, ModRoute[]>();
+    for (const r of mods) {
+      const stack = byParam.get(r.param);
+      if (stack) stack.push(r);
+      else byParam.set(r.param, [r]);
+    }
+    const out: ModCard[] = [];
+    for (const [param, routes] of byParam) {
+      const place = places.get(param);
+      const label = place?.label ?? param;
+      out.push({
+        param,
+        label,
+        heading: cardHeading(label),
+        spec: place?.spec ?? null,
+        group: place?.group ?? INERT_GROUP,
+        rank: place?.rank ?? Number.MAX_SAFE_INTEGER,
+        order: place?.order ?? 0,
+        routes,
+      });
+    }
+    out.sort((a, b) => a.rank - b.rank || a.order - b.order || a.heading.localeCompare(b.heading));
+    return out;
+  }, [mods, places]);
+
+  /** Every source id the document actually uses, in first-seen order. Meters
+   *  exist per source-IN-USE and per route — never one per registry entry. */
+  const sourcesInUse = useMemo(() => {
+    const seen = new Set<string>();
+    const out: ModSource[] = [];
+    for (const r of mods) {
+      if (seen.has(r.source)) continue;
+      seen.add(r.source);
+      out.push(r.source);
+    }
+    return out;
+  }, [mods]);
+
+  /** Source id -> the label the pickers and chips print. */
+  const sourceLabels = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of MOD_SOURCES) m.set(s.id, s.label);
+    for (const s of LFO_SOURCES) m.set(s.id, s.label);
+    for (const st of stems) {
+      for (const k of STEM_TRACK_KEYS) m.set(`${st.slot}:${k}`, `${st.analysis.name}: ${k}`);
+    }
+    return m;
+  }, [stems]);
+
+  /** Targets already carrying a route — the create picker greys these out. */
+  const routed = useMemo(() => new Set(mods.map((r) => r.param)), [mods]);
+
+  // DERIVED, never stored back: a filter on a source whose last route was
+  // just deleted resolves to "no filter" instead of an empty page, with no
+  // render-phase setState to get there.
+  const filter =
+    pickedSource !== null && sourcesInUse.includes(pickedSource as ModSource) ? pickedSource : null;
+  const shown = useMemo(
+    () =>
+      filter === null ? cards : cards.filter((c) => c.routes.some((r) => r.source === filter)),
+    [cards, filter],
+  );
 
   // WRITES: one stable accessor; actions are called at the click site. Actions
   // are built once inside create()'s initializer and every write is a partial
   // merge, so their identity is permanently stable — no useCallback.
   const store = useVizStore.getState;
 
+  const toggleCard = (key: string) =>
+    setOpenCards((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+
+  /** The value a card's range starts from: the knob as the user set it. */
+  const baseOf = (card: ModCard): number | null => {
+    if (!card.spec) return params[card.param] ?? null;
+    if (card.param.startsWith(POST_TARGET_PREFIX)) {
+      const key = card.param.slice(POST_TARGET_PREFIX.length) as keyof PostSettings;
+      const v = post[key];
+      return typeof v === "number" ? v : card.spec.default;
+    }
+    return params[card.param] ?? card.spec.default;
+  };
+
+  const sourceName = (id: string) => sourceLabels.get(id) ?? id;
+
   return (
     <>
       {mods.length === 0 && (
-        <p className="section-hint">
-          Route any audio feature to any knob of this visual — kick pumps the zoom, hats flicker the
-          glow. Applied in exports identically.
+        <p className="section-hint mod-empty">
+          Modulation lets the music move a knob for you. Pick a control below, choose what drives it
+          — kick, bass, vocals or a beat-locked LFO — then set how far it swings. Your own value
+          stays the resting point, and an export renders exactly the movement you see here.
         </p>
       )}
+
+      {/* PRIMARY ACTION, target-first. A picker rather than a button: "+ Route"
+          wrote `param: ""` on any visual with no modulatable knobs (the route
+          then vanished on reload), and it stacked a fresh compounding route on
+          every extra click. Both are unreachable from a list of real targets
+          whose already-routed entries are disabled. */}
+      <div className="save-look-row">
+        <select
+          className="select mod-create"
+          value=""
+          title="Choose a knob to modulate"
+          aria-label="Modulate a control"
+          onChange={(e) => {
+            const param = e.target.value;
+            if (param) store().addModRoute("kick", param);
+          }}
+        >
+          <option value="">+ Modulate a control…</option>
+          <TargetOptions groups={modTargetGroupViews} routed={routed} />
+        </select>
+      </div>
+      {modTargetGroupViews.length === 0 && (
+        <p className="section-hint">
+          This visual has no knobs to modulate. Post-processing is still on the list — those routes
+          follow the image wherever the mode goes.
+        </p>
+      )}
+
+      {/* Route recipes (P-7): curated one-or-two-route starting points, always
+          visible — a chip ADDS plain routes targeting this visual's
+          best-matching knobs, and from there they are ordinary cards. */}
+      <div className="style-chips">
+        {MOD_ROUTE_RECIPES.map((rec) => (
+          <button
+            key={rec.id}
+            className="style-chip"
+            title={rec.hint}
+            onClick={() => store().applyModRouteRecipe(rec.id)}
+          >
+            {rec.name}
+          </button>
+        ))}
+      </div>
+
       <div className="save-look-row">
         {stems.map((st) => (
           <span key={st.slot} className="user-chip-wrap">
@@ -121,164 +426,294 @@ export function ModulationPage() {
           )
         )}
       </div>
-      {/* Route recipes (P-7): curated one-or-two-route starting points.
-          A chip ADDS plain routes targeting this visual's best-matching
-          knobs — from there they're ordinary rows to tweak or delete. */}
-      <div className="style-chips">
-        {MOD_ROUTE_RECIPES.map((rec) => (
-          <button
-            key={rec.id}
-            className="style-chip"
-            title={rec.hint}
-            onClick={() => store().applyModRouteRecipe(rec.id)}
-          >
-            {rec.name}
-          </button>
-        ))}
-      </div>
-      {mods.map((r) => (
-        <Fragment key={r.id}>
-          <div className="mod-row">
-            <select
-              className="select mod-select"
-              value={r.source}
-              title="What drives this route"
-              onChange={(e) =>
-                store().updateModRoute(r.id, { source: e.target.value as ModSource })
-              }
-            >
-              {MOD_SOURCES.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-              {stems.map((st) =>
-                STEM_TRACK_KEYS.map((k) => (
-                  <option key={`${st.slot}:${k}`} value={`${st.slot}:${k}`}>
-                    {st.analysis.name}: {k}
-                  </option>
-                )),
-              )}
-              {/* Beat-locked LFOs: pure functions of track time and the beat
-                    grid (falls back to a 120-BPM clock before analysis). */}
-              <optgroup label="LFO — beat-synced">
-                {LFO_SOURCES.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            <span className="mod-arrow">→</span>
-            <select
-              className="select mod-select"
-              value={r.param}
-              title="Which knob it moves"
-              onChange={(e) => store().updateModRoute(r.id, { param: e.target.value })}
-            >
-              {/* Grouped by the SAME ParamSpec.group the panel lays out, so
-                    a 35-knob visual reads as eight short lists instead of one
-                    unsearchable run of options. */}
-              {modTargetGroupViews.map(({ group, params }) => (
-                <optgroup key={group.id} label={group.label}>
-                  {params.map((p) => (
-                    <option key={p.key} value={p.key}>
-                      {p.label}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-              {/* A route saved before a param went mod:"off" (or whose param
-                    this preset lacks) still needs a visible, selected option —
-                    silently snapping the select to the first entry would
-                    rewrite the route on the next unrelated edit. Such routes
-                    are inert in applyMods. */}
-              {r.param.length > 0 &&
-                !r.param.startsWith(POST_TARGET_PREFIX) &&
-                !modTargetGroupViews.some(({ params }) =>
-                  params.some((p) => p.key === r.param),
-                ) && <option value={r.param}>{`${r.param} (not modulatable)`}</option>}
-              {/* Post targets are namespaced ("post:chromatic") so they can
-                    live in the same route list as preset params — animating
-                    the post chain was a direct user request. */}
-              <optgroup label="Post-processing">
-                {POST_MOD_TARGETS.map((p) => (
-                  <option key={p.key} value={`${POST_TARGET_PREFIX}${p.key}`}>
-                    {p.label}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            <SliderField
-              label={`${r.source} to ${r.param} amount`}
-              min={-1}
-              max={1}
-              step={0.01}
-              value={r.amount}
-              onChange={(amount) => store().updateModRoute(r.id, { amount })}
-            />
+
+      {/* Live source meters, one per source IN USE. Each chip also filters the
+          cards below it — click again (or the same chip) to clear. */}
+      {sourcesInUse.length > 0 && (
+        <div className="mod-sources">
+          <span className="mod-sources-label">Driven by</span>
+          {sourcesInUse.map((id) => (
             <button
-              className="chip-x"
-              title="Remove route"
-              aria-label={`Remove ${r.source} to ${r.param} modulation route`}
-              onClick={() => store().removeModRoute(r.id)}
-            >
-              ✕
-            </button>
-          </div>
-          {/* Shape row (P-16): response curve + attack/release lag. All
-                optional — Linear + 0/0 is exactly the classic instant route,
-                and the patches write `undefined` then so untouched routes
-                keep their v1 shape in saved documents. */}
-          <div className="mod-row mod-shape-row">
-            <select
-              className="select mod-select"
-              value={r.curve ?? "linear"}
-              title="Response curve on the source before the amount — Exp emphasizes peaks, Smooth eases both ends"
-              onChange={(e) =>
-                store().updateModRoute(r.id, {
-                  curve: e.target.value === "linear" ? undefined : (e.target.value as ModCurve),
-                })
+              key={id}
+              className={`style-chip mod-source-chip${filter === id ? " active" : ""}`}
+              aria-pressed={filter === id}
+              title={
+                filter === id
+                  ? "Showing only the controls this drives — click to show all again"
+                  : `Show only the controls ${sourceName(id)} drives`
               }
+              onClick={() => setPickedSource(filter === id ? null : id)}
             >
-              <option value="linear">Linear</option>
-              <option value="exp">Exp</option>
-              <option value="smooth">Smooth</option>
-            </select>
-            <span className="mod-arrow" title="Attack — how long the route takes to rise, seconds">
-              A
-            </span>
-            <SliderField
-              label={`${r.source} to ${r.param} attack seconds`}
-              min={0}
-              max={2}
-              step={0.01}
-              value={r.attack ?? 0}
-              onChange={(v) => store().updateModRoute(r.id, { attack: v === 0 ? undefined : v })}
-            />
-            <span className="mod-arrow" title="Release — how long the route takes to fall, seconds">
-              R
-            </span>
-            <SliderField
-              label={`${r.source} to ${r.param} release seconds`}
-              min={0}
-              max={2}
-              step={0.01}
-              value={r.release ?? 0}
-              onChange={(v) => store().updateModRoute(r.id, { release: v === 0 ? undefined : v })}
-            />
-          </div>
-        </Fragment>
-      ))}
-      <div className="save-look-row">
-        <button
-          className="text-btn"
-          title="Add a feature-to-knob route"
-          onClick={() => store().addModRoute("kick", firstModTarget)}
-        >
-          + Route
-        </button>
-      </div>
+              <span className="mod-chip-label">{sourceName(id)}</span>
+              {/* METER SEAM (WU-5): ref={meterRef({ source: id })}. The driver
+                  writes `--v` (0..1) on this element and nothing else. */}
+              <span className="mod-chip-meter">
+                <span className="mod-meter-fill" />
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {shown.map((card, i) => {
+        const spec = card.spec;
+        const base = baseOf(card);
+        const open = openCards.has(card.param);
+        return (
+          <Fragment key={card.param}>
+            {(i === 0 || shown[i - 1].group !== card.group) && (
+              <div className="mod-group-head">{card.group}</div>
+            )}
+            <div className="mod-card">
+              <div className="mod-card-head">
+                {/* LEADING triangle, the app's own disclosure idiom
+                    (ParamGroups' `.group-chevron`), and leading for a reason:
+                    a trailing one sits right beside the target select's native
+                    arrow and the two read as one ambiguous pair of chevrons. */}
+                <button
+                  className="mod-card-toggle"
+                  aria-expanded={open}
+                  aria-label={`Response shape for ${card.label}`}
+                  title="Response curve, rise and fall for this control"
+                  onClick={() => toggleCard(card.param)}
+                >
+                  <span className="mod-card-chevron">▸</span>
+                </button>
+                <select
+                  className="select mod-card-target"
+                  value={card.param}
+                  title="Which knob it moves"
+                  aria-label={`Modulate ${card.label}`}
+                  onChange={(e) => {
+                    // EVERY route on the card moves. updateModRoute re-reads
+                    // get() per call, so a stack of two does not last-write-win
+                    // itself back down to one.
+                    const param = e.target.value;
+                    for (const r of card.routes) store().updateModRoute(r.id, { param });
+                  }}
+                >
+                  <TargetOptions groups={modTargetGroupViews} current={card.param} />
+                </select>
+                {/* NO resting-value column here, deliberately. Measured at the
+                    380px minimum: a 44px readout leaves the heading 59px of
+                    text, and the p90 target label is ~90px — so the card's own
+                    name would truncate on most controls, which is exactly the
+                    defect (`.mod-select`'s 96px cap) this page exists to fix.
+                    The resting value is the LEFT side of every route's
+                    `210 → 360` line, paired with where the route takes it,
+                    which is strictly more useful than the number alone. */}
+              </div>
+
+              {card.routes.map((r) => {
+                const src = sourceName(r.source);
+                const shape = shapeSummary(r);
+                // The range this route paints: from the resting value to what
+                // the knob reaches at full signal, clamped by the spec exactly
+                // the way applyMods clamps it.
+                let track: CSSProperties | null = null;
+                let rangeText = "";
+                let rangeTitle = "";
+                if (spec && base !== null) {
+                  const span = spec.max - spec.min;
+                  const raw = base + r.amount * span;
+                  const reach = clamp(raw, spec.min, spec.max);
+                  const pct = (v: number) =>
+                    span > 0 ? clamp((v - spec.min) / span, 0, 1) * 100 : 0;
+                  const a = pct(base);
+                  const b = pct(reach);
+                  const rising = r.amount >= 0;
+                  track = {
+                    "--from": `${Math.min(a, b)}%`,
+                    "--span": `${Math.abs(b - a)}%`,
+                    "--start": rising ? 0 : 1,
+                    "--dir": rising ? 1 : -1,
+                  } as CSSProperties;
+                  rangeText = `${formatValue(undefined, base, spec.step)} → ${formatValue(undefined, reach, spec.step)}`;
+                  rangeTitle =
+                    `${card.label} rests at ${formatValue(undefined, base, spec.step)} and reaches ` +
+                    `${formatValue(undefined, reach, spec.step)} when ${src} peaks` +
+                    (raw === reach ? "" : " — the knob's own limit stops it there");
+                }
+                return (
+                  <div key={r.id} className="mod-route">
+                    <div className="mod-route-head">
+                      <select
+                        className="select mod-source"
+                        value={r.source}
+                        title="What drives this route"
+                        aria-label={`What moves ${card.label}`}
+                        onChange={(e) =>
+                          store().updateModRoute(r.id, { source: e.target.value as ModSource })
+                        }
+                      >
+                        {MOD_SOURCES.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.label}
+                          </option>
+                        ))}
+                        {stems.map((st) =>
+                          STEM_TRACK_KEYS.map((k) => (
+                            <option key={`${st.slot}:${k}`} value={`${st.slot}:${k}`}>
+                              {st.analysis.name}: {k}
+                            </option>
+                          )),
+                        )}
+                        {/* Stems are runtime-only while the routes to them
+                            persist, so EVERY reopened stem project has routes
+                            whose source matches no option. Without this the
+                            route row's primary text renders blank. */}
+                        {r.source.startsWith("stem") && !sourceLabels.has(r.source) && (
+                          <option value={r.source}>{`${r.source} (stem not loaded)`}</option>
+                        )}
+                        {/* Beat-locked LFOs: pure functions of track time and
+                            the beat grid (falls back to a 120-BPM clock before
+                            analysis). */}
+                        <optgroup label="LFO — beat-synced">
+                          {LFO_SOURCES.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
+                      <button
+                        className="chip-x"
+                        title="Remove this route"
+                        aria-label={`Stop ${src} from moving ${card.label}`}
+                        onClick={() => store().removeModRoute(r.id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="mod-depth">
+                      <span className="mod-depth-label">Depth</span>
+                      <SliderField
+                        label={`How far ${src} moves ${card.label}`}
+                        hint="Share of the knob's own range added at full signal — negative pulls the other way"
+                        min={-1}
+                        max={1}
+                        step={0.01}
+                        value={r.amount}
+                        onChange={(amount) => store().updateModRoute(r.id, { amount })}
+                      />
+                    </div>
+
+                    {track ? (
+                      <div className="mod-range">
+                        <span className="mod-range-text" title={rangeTitle}>
+                          {rangeText}
+                        </span>
+                        <span className="mod-range-track" style={track}>
+                          <span className="mod-range-fill" />
+                          <span className="mod-range-swing">
+                            {/* METER SEAM (WU-5):
+                                ref={meterRef({ source: r.source, curve: r.curve })}
+                                on the arm below. The driver writes `--v` and
+                                nothing else; CSS owns every pixel of travel. */}
+                            <span className="mod-swing-arm">
+                              <span className="mod-diamond" />
+                            </span>
+                          </span>
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="mod-inert">
+                        This visual has no {card.param} knob, so the route does nothing. Retarget it
+                        above, or remove it.
+                      </p>
+                    )}
+
+                    {/* The disclosure is never width-gated, so a non-default
+                        shape must still be readable while it is closed. */}
+                    {!open && shape !== null && <p className="mod-shape-summary">{shape}</p>}
+
+                    {open && (
+                      <div className="mod-shape">
+                        <Segmented<ModCurve>
+                          ariaLabel={`Response curve for ${src} to ${card.heading}`}
+                          value={r.curve ?? "linear"}
+                          options={CURVE_OPTIONS}
+                          onChange={(v) =>
+                            store().updateModRoute(r.id, {
+                              // Linear writes `undefined`, never the literal —
+                              // a route that merely got LOOKED at must keep its
+                              // v1 shape in every saved document.
+                              curve: v === "linear" ? undefined : v,
+                            })
+                          }
+                        />
+                        <div className="mod-lag">
+                          <span className="mod-depth-label">Rise</span>
+                          <SliderField
+                            label={`Rise time for ${src} to ${card.label}`}
+                            hint="How long the knob takes to follow the source up"
+                            min={0}
+                            max={MOD_LAG_MAX_SEC}
+                            step={0.01}
+                            format={SECONDS}
+                            value={r.attack ?? 0}
+                            onChange={(v) =>
+                              store().updateModRoute(r.id, { attack: v === 0 ? undefined : v })
+                            }
+                          />
+                        </div>
+                        <div className="mod-lag">
+                          <span className="mod-depth-label">Fall</span>
+                          <SliderField
+                            label={`Fall time for ${src} to ${card.label}`}
+                            hint="How long the knob takes to fall back once the source drops"
+                            min={0}
+                            max={MOD_LAG_MAX_SEC}
+                            step={0.01}
+                            format={SECONDS}
+                            value={r.release ?? 0}
+                            onChange={(v) =>
+                              store().updateModRoute(r.id, { release: v === 0 ? undefined : v })
+                            }
+                          />
+                        </div>
+                        {(r.attack ?? 0) + (r.release ?? 0) > 0 && (
+                          <p className="section-hint">
+                            The marker above reads the source, not the smoothed value, so it leads
+                            the render while rise or fall is set.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Fragment>
+        );
+      })}
     </>
   );
+}
+
+/** Curve choices. Module scope: a fresh array per render would remount the
+ *  Segmented's buttons on every keystroke elsewhere in the panel. */
+const CURVE_OPTIONS: Array<{ value: ModCurve; label: string; hint: string }> = [
+  { value: "linear", label: "Linear", hint: "Straight through — the knob follows the source 1:1" },
+  { value: "exp", label: "Exp", hint: "Squares the source, so only the peaks move the knob much" },
+  {
+    value: "smooth",
+    label: "Smooth",
+    hint: "Eases both ends, so the knob settles instead of snapping",
+  },
+];
+
+/**
+ * What a collapsed card still has to say about a route's shape. Empty for the
+ * default (linear, no lag), which is every one of the 43 routes in the 13
+ * shipped factory themes — so the common card pays nothing for this.
+ */
+function shapeSummary(r: ModRoute): string | null {
+  const bits: string[] = [];
+  if (r.curve === "exp") bits.push("Exp");
+  else if (r.curve === "smooth") bits.push("Smooth");
+  if (r.attack) bits.push(`rise ${r.attack.toFixed(2)} s`);
+  if (r.release) bits.push(`fall ${r.release.toFixed(2)} s`);
+  return bits.length > 0 ? bits.join(" · ") : null;
 }

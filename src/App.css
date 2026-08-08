@@ -3033,26 +3033,26 @@ kbd {
   height: min(100cqh, calc(100cqw / var(--ar)));
 }
 
-/* ---------- modulation matrix ---------- */
+/* ---------- modulation ----------------------------------------------------
+ *
+ * ONE LAYOUT AT EVERY DOCK WIDTH. The content column here is
+ * `dockWidth − 206` (14px gutter ×2, the dock border, the 136px section rail
+ * + its border, .panel-scroll's 14px padding ×2, the thin scrollbar): 174px
+ * at the 380px minimum, 274px at the 480px default, 554px at the 760px
+ * maximum. A two-column `minmax(360px, 1fr)` grid needs 720px and a
+ * `@container (min-width: 560px)` threshold can never fire, so there is no
+ * container query, no breakpoint and no second layout in this block. Extra
+ * width goes into the range track and the two pickers' ellipsis — nowhere
+ * else. Do not reintroduce a wide variant.
+ */
 
+/* Still the MIDI-binding row on the Live page (ParamsPanel) — modulation's
+ * own rows became cards in P-1 stage 3, but this row shape did not move. */
 .mod-row {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
-}
-
-/* Keep the route row's slider, readout and remove-✕ from crowding into each
- * other (owner screenshot: ✕ sat on the value even at max panel width): the
- * readout keeps its column, the slider absorbs the flex, the ✕ never
- * shrinks and gets a hair of breathing room. */
-.mod-row .slider {
-  flex: 1 1 40px;
-  min-width: 24px;
-}
-
-.mod-row .row-value {
-  flex: 0 0 34px;
 }
 
 .mod-row .chip-x {
@@ -3068,16 +3068,305 @@ kbd {
   padding: 4px 6px;
 }
 
-.mod-arrow {
-  color: var(--text-faint);
-  font-size: 11px;
+/* The create picker is the page's primary action, so it takes the full
+ * column — `.mod-select`'s 96px cap is exactly what made every label on this
+ * page truncate at every width. */
+.mod-create {
+  min-width: 0;
+  font-size: 12px;
+  padding: 6px 8px;
 }
 
-/* Per-route shape row (curve / attack / release, P-16): indented under its
- * route row and pulled up against it so the pair reads as one unit. */
-.mod-shape-row {
-  padding-left: 14px;
-  margin-top: -2px;
+/* ---- sources in use: one live meter per source, never one per registry --- */
+
+.mod-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 0 10px;
+}
+
+.mod-sources-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.mod-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mod-chip-meter {
+  display: block;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.13);
+  overflow: hidden;
+}
+
+/* METER CONTRACT: the driver writes ONLY `--v` (0..1) on this element. All
+ * geometry is here, and scaleX is compositor-only — no layout, no repaint of
+ * the chip. Default 0 so the skeleton is correct with no analyzer at all. */
+.mod-meter-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transform-origin: left center;
+  transform: scaleX(var(--v, 0));
+}
+
+/* ---- cards: one per modulated control ----------------------------------- */
+
+.mod-group-head {
+  margin: 10px 0 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mod-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 5px 8px 8px;
+  margin-bottom: 8px;
+}
+
+.mod-card-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The card's heading IS its target picker: it reads as a heading until you
+ * touch it, and it is a native <select> so the whole registry stays
+ * keyboard- and screen-reader-reachable for free. `min-width: 0` plus the
+ * ellipsis is what absorbs the 380px column; the option labels are already
+ * shortened to the tail after the last " · ". */
+.mod-card-target {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  padding: 3px 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mod-card-target:hover,
+.mod-card-target:focus {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--border);
+}
+
+/* The app's disclosure idiom, matched exactly (ParamGroups' `.group-chevron`):
+ * a LEADING ▸ that rotates 90°. Leading, not trailing — a trailing one lands
+ * beside the target select's native arrow and the two read as one ambiguous
+ * pair of chevrons. */
+.mod-card-toggle {
+  flex: 0 0 16px;
+  color: var(--text-faint);
+  line-height: 1;
+}
+
+.mod-card-toggle:hover {
+  color: var(--text);
+}
+
+.mod-card-chevron {
+  display: inline-block;
+  font-size: 9px;
+  transition: transform 0.15s;
+}
+
+.mod-card-toggle[aria-expanded="true"] .mod-card-chevron {
+  transform: rotate(90deg);
+}
+
+/* ---- one route inside a card -------------------------------------------- */
+
+.mod-route {
+  padding-left: 8px;
+  margin-top: 4px;
+}
+
+/* Two routes on one knob really are a stack — applyMods sums them in array
+ * order into the same accumulator — so they share the card and get a rule
+ * between them instead of a card each. */
+.mod-route + .mod-route {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+  margin-top: 6px;
+}
+
+.mod-route-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mod-source {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11.5px;
+  padding: 4px 6px;
+}
+
+.mod-route-head .chip-x {
+  flex: 0 0 auto;
+}
+
+.mod-depth,
+.mod-lag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.mod-depth-label {
+  flex: 0 0 30px;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.mod-depth .slider,
+.mod-lag .slider {
+  flex: 1 1 40px;
+  min-width: 24px;
+}
+
+.mod-depth .row-value {
+  flex: 0 0 40px;
+}
+
+/* "10.00 s" needs the extra column the depth readout does not. */
+.mod-lag .row-value {
+  flex: 0 0 48px;
+}
+
+/* ---- the resulting range, painted --------------------------------------- */
+
+.mod-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.mod-range-text {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+/* The knob's WHOLE range. The painted span is where this route can take it,
+ * and the diamond is where the live signal has it right now. This is the one
+ * element that grows with the dock. */
+.mod-range-track {
+  position: relative;
+  flex: 1 1 40px;
+  min-width: 24px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mod-range-fill,
+.mod-range-swing {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--from, 0%);
+  width: var(--span, 0%);
+}
+
+.mod-range-fill {
+  border-radius: 3px;
+  background: rgba(106, 168, 255, 0.4);
+}
+
+/* METER CONTRACT: the driver writes ONLY `--v` (0..1) here. The arm is as
+ * wide as the route's own span, so translating it by a fraction of its own
+ * width walks the diamond from the resting value to the reach — and back to
+ * front when the depth is negative (`--start: 1; --dir: -1`). Transform
+ * only: compositor work, no layout, no card repaint. */
+.mod-swing-arm {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  transform: translateX(calc((var(--start, 0) + var(--v, 0) * var(--dir, 1)) * 100%));
+}
+
+.mod-diamond {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+
+/* ---- shape: curve + rise/fall ------------------------------------------- */
+
+.mod-shape {
+  margin-top: 7px;
+}
+
+.mod-shape .segmented {
+  font-size: 11.5px;
+}
+
+.mod-shape .segment {
+  padding: 4px 8px;
+  font-size: 11.5px;
+}
+
+/* A non-default curve or lag is printed on the CLOSED card too — the
+ * disclosure is a user's choice, never a width gate, so nothing it hides may
+ * be the only place a set value appears. */
+.mod-shape-summary {
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.mod-inert {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--danger);
+}
+
+.mod-empty {
+  margin-bottom: 10px;
 }
 
 .seek-section-tick {
