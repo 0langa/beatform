@@ -43,7 +43,14 @@ export interface AppPrefs {
   panelOpen: boolean;
   /** Timeline panel open at boot. */
   timelineOpen: boolean;
-  /** Per-preset Advanced disclosure. */
+  /**
+   * FROZEN (P-9, v2.82.0). The global Essentials/All switch is gone, so
+   * nothing writes this any more -- but it is still validated and still read
+   * ONCE, in validPrefs, to seed `advancedGroups` for an upgrading install.
+   * Deleting it in this release would forfeit the seed: prefs are rewritten
+   * at module import, before React mounts, so the value would be destroyed on
+   * the first boot after upgrade with no recovery path. Delete in 2.83.0.
+   */
   advancedOpen: boolean;
   /** Live switch quantize (off/beat/bar). */
   switchQuantize: QuantizeMode;
@@ -91,6 +98,18 @@ export interface AppPrefs {
    */
   collapsedSections: string[];
   /**
+   * Group ids whose Advanced (expert-tier) disclosure is OPEN (P-9).
+   *
+   * Deliberately NOT a third prefix inside `collapsedSections`: the semantics
+   * invert. Collapse is a CLOSED set over a default-open list; Advanced is an
+   * OPEN set over a default-closed one, and two prefixes in one array meaning
+   * opposite things is how a prune rule becomes unwritable.
+   *
+   * Global, not per-preset: 8 shared ids + "more" + a legacy builder's ten is
+   * ~19 keys; per-preset x per-group does not fit any honest cap.
+   */
+  advancedGroups: string[];
+  /**
    * The user's own left-to-right order for the mode strip, as preset ids.
    * EMPTY means "never customised" — and that is load-bearing: an empty value
    * follows whatever order the app ships, so someone who never touched this
@@ -131,6 +150,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   visualsPage: "mode",
   visualsWidth: 480,
   collapsedSections: [],
+  advancedGroups: [],
   presetOrder: [],
   perfOverlay: false,
   perfOverlayCorner: "top-left",
@@ -204,6 +224,24 @@ function validOverlayStats(raw: unknown): PerfOverlayStats {
   };
 }
 
+/**
+ * What `advancedOpen: true` expands to. The eight shared PARAM_GROUPS ids plus
+ * the "more" fallback, DUPLICATED here on purpose -- state must not import the
+ * render layer (the rule that already forced the "group:" literal to be copied
+ * below). prefs.test.ts asserts this list equals PARAM_GROUPS + FALLBACK_GROUP.
+ */
+export const ADVANCED_SEED_GROUPS = [
+  "shape",
+  "color",
+  "motion",
+  "reaction",
+  "glow",
+  "image",
+  "camera",
+  "backdrop",
+  "more",
+] as const;
+
 function validPrefs(raw: unknown): AppPrefs {
   const p = (typeof raw === "object" && raw !== null ? raw : {}) as Partial<AppPrefs>;
   const d = DEFAULT_PREFS;
@@ -259,6 +297,18 @@ function validPrefs(raw: unknown): AppPrefs {
           .filter((s): s is string => typeof s === "string" && s.startsWith("group:"))
           .slice(0, 64)
       : [],
+    // Seeded, not defaulted. A user who had density "All" must not be dropped
+    // back to essentials-on-every-group. `setPrefs` spreads current prefs
+    // before validating, so once this field exists it is never undefined
+    // again -- and an EMPTY array (a user who closed every disclosure) is not
+    // undefined, so it is never re-seeded. The seed lives here rather than in
+    // a panel mount effect for the same reason visualsPage's does: a
+    // dock-hosted migration never runs for someone who does not open the dock.
+    advancedGroups: Array.isArray(p.advancedGroups)
+      ? p.advancedGroups.filter((s): s is string => typeof s === "string").slice(0, 32)
+      : p.advancedOpen === true
+        ? [...ADVANCED_SEED_GROUPS]
+        : [],
     // Kept as raw ids, NOT reconciled here: prefs must not import the preset
     // registry (it would drag the whole render layer into every module that
     // reads a volume). Anything non-array degrades to "never customised".
@@ -433,6 +483,7 @@ function samePrefs(a: AppPrefs, b: AppPrefs): boolean {
     a.visualsPage === b.visualsPage &&
     a.visualsWidth === b.visualsWidth &&
     sameStringList(a.collapsedSections, b.collapsedSections) &&
+    sameStringList(a.advancedGroups, b.advancedGroups) &&
     sameStringList(a.presetOrder, b.presetOrder) &&
     a.perfOverlay === b.perfOverlay &&
     a.perfOverlayCorner === b.perfOverlayCorner &&

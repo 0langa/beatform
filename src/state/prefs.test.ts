@@ -342,3 +342,109 @@ describe("prefs: the Visuals dock's rail (P-1)", () => {
     expect(getPrefs().collapsedSections).toEqual([`${GROUP_KEY}shape`]);
   });
 });
+
+/**
+ * Per-group Advanced disclosure (P-9).
+ *
+ * The global Essentials/All switch is retired, so `advancedGroups` replaces
+ * `advancedOpen` as the live field. `advancedOpen` is FROZEN but still read —
+ * exactly once, here, to seed the new field for an upgrading install. Prefs
+ * are rewritten at module import before React mounts, so a deletion in this
+ * release would destroy that record on the first boot after upgrade.
+ */
+describe("prefs: per-group Advanced (P-9)", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("P-A1 seeds every group for a user who had the global switch on All", async () => {
+    seed(JSON.stringify({ advancedOpen: true }));
+    const { getPrefs, ADVANCED_SEED_GROUPS } = await importFresh();
+    expect(getPrefs().advancedGroups).toEqual([...ADVANCED_SEED_GROUPS]);
+    expect(getPrefs().advancedGroups).toHaveLength(9);
+  });
+
+  it("P-A2 seeds nothing for a user who was on Essentials", async () => {
+    seed(JSON.stringify({ advancedOpen: false }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().advancedGroups).toEqual([]);
+  });
+
+  it("P-A3 never re-seeds once the field exists, not even when empty", async () => {
+    // An empty array is a user who CLOSED every disclosure. It is not
+    // undefined, so the seed must not fire again and re-open all nine.
+    seed(JSON.stringify({ advancedOpen: true, advancedGroups: [] }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().advancedGroups).toEqual([]);
+  });
+
+  it("P-A4 persists a write AND notifies subscribers (the samePrefs guard)", async () => {
+    // THE regression this field is most likely to have: samePrefs is a plain
+    // && chain and, unlike validPrefs, is NOT compiler-enforced. Omit
+    // advancedGroups there and setPrefs early-exits on every write — nothing
+    // persists, no listener fires, no reader re-renders, and typecheck, lint
+    // and every other test stay green. The listener count is the assertion
+    // that names the failure: a stale read-back could be blamed on
+    // validation, but a silent listener can only be the equality guard.
+    seed(undefined);
+    const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
+    const before = getPrefs();
+    let calls = 0;
+    subscribePrefs(() => {
+      calls++;
+    });
+    setPrefs({ advancedGroups: ["glow"] });
+    expect(calls).toBe(1);
+    expect(getPrefs()).not.toBe(before);
+    expect(getPrefs().advancedGroups).toEqual(["glow"]);
+    // ...and re-applying the same content is still a no-op (content, not
+    // identity — validPrefs rebuilds the array on every call).
+    const after = getPrefs();
+    expect(setPrefs({ advancedGroups: ["glow"] })).toBe(after);
+    expect(calls).toBe(1);
+    setPrefs({ advancedGroups: [] });
+    expect(calls).toBe(2);
+    expect(getPrefs().advancedGroups).toEqual([]);
+  });
+
+  it("P-A5 degrades a corrupt value and caps a runaway list", async () => {
+    seed(`{"volume":0.3,"advancedGroups":"glow"}`);
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().advancedGroups).toEqual([]);
+    expect(getPrefs().volume).toBe(0.3);
+
+    seed(`{"advancedGroups":["glow",7,null,"shape"]}`);
+    const filtered = await importFresh();
+    expect(filtered.getPrefs().advancedGroups).toEqual(["glow", "shape"]);
+
+    seed(JSON.stringify({ advancedGroups: Array.from({ length: 40 }, (_, i) => `g${i}`) }));
+    const capped = await importFresh();
+    expect(capped.getPrefs().advancedGroups).toHaveLength(32);
+  });
+
+  it("P-A6 keeps the seed list equal to the render layer's group ids", async () => {
+    // state must not import the render layer, so the ids are duplicated. If
+    // that copy drifts, a ninth group would never open for an upgrading user.
+    const { PARAM_GROUPS, FALLBACK_GROUP } = await import("../render/types");
+    seed(undefined);
+    const { ADVANCED_SEED_GROUPS } = await importFresh();
+    expect([...ADVANCED_SEED_GROUPS]).toEqual([
+      ...PARAM_GROUPS.map((g) => g.id),
+      FALLBACK_GROUP.id,
+    ]);
+  });
+
+  it("P-A7 keeps advancedOpen round-tripping while it is frozen", async () => {
+    // Frozen, not deleted: it is the ONLY record that a user chose "All", and
+    // the seed above is its one reader. Delete in 2.83.0 (BACKLOG H9).
+    seed(JSON.stringify({ advancedOpen: true }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().advancedOpen).toBe(true);
+
+    seed(undefined);
+    const fresh = await importFresh();
+    expect(fresh.getPrefs().advancedOpen).toBe(false);
+    fresh.setPrefs({ advancedOpen: true });
+    expect(fresh.getPrefs().advancedOpen).toBe(true);
+  });
+});
