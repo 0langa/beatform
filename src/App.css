@@ -169,7 +169,14 @@ body,
   right: 0;
   bottom: 0;
   width: var(--visuals-w);
-  background: var(--bg-strong);
+  /* BLACK, not a lit slab. This is the bay the dock floats in, and it is the
+     same black the canvas already letterboxes into in fixed-aspect mode — so
+     the image butts into a value it was always going to meet, with no hairline
+     between two lit surfaces to read as a scratch. It also puts the plate
+     ABOVE its ground: --glass over #000 composites to rgb(9,10,15), lighter
+     than the bay, which is what makes a bordered, rounded plate read as
+     floating rather than as a slab welded to the window. */
+  background: #000;
   pointer-events: none;
   z-index: 0;
 }
@@ -1123,21 +1130,23 @@ button:disabled {
    Visuals toggle ~480px out from under the cursor on every click. */
 .params-panel {
   position: absolute;
+  /* The Library panel's mirror twin. Same vertical insets, same glass, same
+     border and radius, same gutter from its own window edge — the app already
+     has a docked-panel idiom and this is it, flipped. A treatment the app uses
+     everywhere else cannot look out of place.
+     No backdrop-filter, unlike the Library: nothing animated sits behind this
+     one, so a blur would cost a full-column pass to resolve against a static
+     black bay. --glass over that bay is what lifts the plate off its ground. */
   top: var(--topbar-h);
-  right: 0;
+  right: var(--gutter);
   bottom: var(--playerbar-h);
   /* The DOCK tracks the pointer during a drag; the canvas commits on release. */
-  width: var(--visuals-w-live);
+  width: calc(var(--visuals-w-live) - var(--gutter) * 2);
   display: flex;
   flex-direction: column;
-  /* SOLID, not glass. `--glass` + backdrop-filter existed to blur the VISUAL
-     behind a floating overlay. Docked, the canvas is inset away from this
-     column, so there is nothing behind the dock to blur — the blur resolved
-     against the app background and the whole right side read as a flat black
-     box. A permanent workspace surface should look like one. Dropping the
-     filter also retires a full-size backdrop pass every frame. */
-  background: var(--bg-strong);
-  border-left: 1px solid var(--border);
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   /* Above the timeline (6), below its own resize handle (9). */
   z-index: 8;
   overflow: hidden;
