@@ -337,3 +337,30 @@ export function lyricProgressAt(lines: LyricLine[], idx: number, t: number): num
   }
   return Math.max(0, Math.min(1, sung / totalChars));
 }
+
+/**
+ * Rebase lyric lines from TRACK time into a segment export's CLIP time.
+ *
+ * An exported helper rather than an inline map in videoExporter, for the same
+ * reason `shiftStemAnalysis` is one: the segment rebasing is arithmetic worth
+ * testing directly, and the caller that uses it lives behind a Worker.
+ *
+ * The WORDS move with their line. They carry their own t/end, and the karaoke
+ * wipe reads those — shifting only the line left every word span in absolute
+ * track time while `lyricProgressAt` compared them against clip time, so the
+ * line rendered dim with no sung fill for the whole clip while the preview
+ * swept it normally (F4a). An open-ended `end: null` stays null: it means
+ * "until the next one", which is a relationship, not a timestamp.
+ */
+export function shiftLyricsForSegment(lines: LyricLine[], startSec: number): LyricLine[] {
+  if (startSec === 0) return lines;
+  const shift = (v: number | null) => (v === null ? null : v - startSec);
+  return lines.map((l) => ({
+    ...l,
+    t: l.t - startSec,
+    end: shift(l.end),
+    ...(l.words
+      ? { words: l.words.map((w) => ({ ...w, t: w.t - startSec, end: shift(w.end) })) }
+      : {}),
+  }));
+}
