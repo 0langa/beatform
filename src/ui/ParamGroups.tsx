@@ -65,6 +65,24 @@ export interface ParamGroupsProps {
    * ParamsPanel's "Show every control", which writes every group id into
    * `advancedGroups` rather than bypassing it. */
 
+  /**
+   * Param keys something ELSE is moving right now — a modulation route today,
+   * a timeline automation lane the moment H10 lands. Both write the same key
+   * without touching the document, so the slider sits exactly where the user
+   * left it while the render does something else; the mark is the only place
+   * that fact appears on the page where the knob is edited.
+   *
+   * REQUIRED, for the reason `advancedGroups` above is: an optional set makes
+   * a caller that forgets it render a panel where the feature simply never
+   * appears, with green typecheck, green lint and green tests. Derive it with
+   * `drivenParamKeys(preset, mods)` (src/state/drivenTargets.ts) — this file
+   * stays store-unaware, so the caller owns the subscription.
+   *
+   * Not a live VALUE, deliberately: `.row-value` is the editor (double-click
+   * to type), a moving number cannot be double-clicked, and the number you
+   * would type is the base while the number shown would be the modulated one.
+   */
+  driven: ReadonlySet<string>;
   /** Trimmed, lowercased search query. Non-empty = filter rows, ignore tiers. */
   query: string;
   /** Group keys the user collapsed (GROUP_KEY-prefixed), from prefs. */
@@ -185,8 +203,30 @@ export function ParamGroups(props: ParamGroupsProps) {
     return searching ? <p className="panel-empty">No knobs of {preset.name} match that.</p> : null;
   }
 
+  /**
+   * The `driven` mark is a CLASS on the existing slot and NOTHING ELSE — no
+   * fourth child, no badge element. `.param-row` is a fixed
+   * `76px minmax(0,1fr) 44px` grid, so an extra child breaks the label column
+   * on every page that renders a param row, and any new leaf is one more
+   * `text-clip` candidate for `__auditUI` at the 380px dock floor. The tier
+   * mark beside it (`is-advanced`) is the same mechanism, for the same reason.
+   *
+   * The `title` is an attribute, not an element, so it costs nothing here. It
+   * only surfaces on the slot's own padding: a row whose spec has a hint puts
+   * that hint on the inner `<label>`, and the innermost title wins on hover.
+   */
   const row = (spec: ParamSpec) => (
-    <div key={spec.key} className={`param-slot ${advanced.has(spec.key) ? "is-advanced" : ""}`}>
+    <div
+      key={spec.key}
+      className={`param-slot ${advanced.has(spec.key) ? "is-advanced" : ""} ${
+        props.driven.has(spec.key) ? "is-driven" : ""
+      }`}
+      title={
+        props.driven.has(spec.key)
+          ? "Driven — modulation is moving this while it plays. This slider is still the base value."
+          : undefined
+      }
+    >
       <ParamRow
         spec={spec}
         value={props.params[spec.key] ?? spec.default}
@@ -212,6 +252,21 @@ export function ParamGroups(props: ParamGroupsProps) {
         const changed = expert.filter(
           (s) => (props.params[s.key] ?? s.default) !== s.default,
         ).length;
+        /**
+         * Driven knobs of THIS group, counted over its full membership — a
+         * route lands on the best-matching knob regardless of tier (recipes,
+         * `autoRouteStem`), so a row-only mark is invisible exactly when the
+         * target sits in a collapsed group or a shut expert tier, which is the
+         * common case. The header has to carry it.
+         *
+         * MERGED INTO `.group-count`, never a third pill: `.group-head` is a
+         * flex of chevron + name + count, and a third leaf at the measured
+         * 174px content column is precisely the crowding that got
+         * `.param-groups-actions` moved out of `.section-head`. Below the
+         * measured 174px the name ellipsises; the pill never wraps.
+         */
+        const drivenHere = params.filter((s) => props.driven.has(s.key)).length;
+        const total = params.length + mine.length;
         return (
           <section className="param-group" key={group.id}>
             <button
@@ -228,8 +283,21 @@ export function ParamGroups(props: ParamGroupsProps) {
               <span className="group-chevron">▸</span>
               <span className="group-name">{group.label}</span>
               {/* TOTAL, curated + expert: the badge must not shift under the
-                  user when a disclosure opens. */}
-              <span className="group-count">{params.length + mine.length}</span>
+                  user when a disclosure opens. With driven knobs inside it
+                  reads "2/7" and tints — the aria-label is what stops that
+                  being spoken as "two slash seven", and the pill keeps its
+                  bare total the instant the last route goes away. */}
+              <span
+                className={`group-count ${drivenHere > 0 ? "is-driven" : ""}`}
+                aria-label={drivenHere > 0 ? `${drivenHere} of ${total} driven` : undefined}
+                title={
+                  drivenHere > 0
+                    ? `${drivenHere} of ${total} controls here are driven — see the Modulation page`
+                    : undefined
+                }
+              >
+                {drivenHere > 0 ? `${drivenHere}/${total}` : total}
+              </span>
             </button>
             {open && (
               <div className="param-group-body">

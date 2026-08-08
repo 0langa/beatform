@@ -3660,3 +3660,66 @@ kbd {
   background: rgba(255, 255, 255, 0.06);
   border-color: var(--border);
 }
+
+/* ---------- driven mark (P-1 stage 3) ---------- */
+
+/* A control something ELSE is moving: a modulation route today, a timeline
+   automation lane when H10 lands. Both write the same key per frame WITHOUT
+   touching the document, so the slider sits exactly where you left it while
+   the render does something else — before this, that fact only appeared on the
+   Modulation page, which is not the page where you edit the knob.
+
+   Mechanism is a class on `.param-slot` and nothing else, mirroring
+   `.is-advanced` above: `.param-row` is a fixed `76px minmax(0, 1fr) 44px`
+   grid, a fourth child would break the label column on every surface that
+   renders a param row, and every new leaf is one more `text-clip` candidate
+   for `__auditUI` at the 380px dock floor.
+
+   No live value here on purpose — `.row-value` IS the editor (double-click to
+   type), a moving number cannot be double-clicked, and the number you would
+   type is the base while the number modulation draws is the modulated one.
+
+   MIDI CC deliberately has no mark: it writes through `setParam`, so the
+   slider physically moves and is already self-describing. */
+.param-slot.is-driven {
+  /* Negative margin + equal padding, never a real border and never a layout
+     box: the tint reaches into the group body's own 9px left padding, so a
+     driven row's 76px label column stays pixel-aligned with the undriven rows
+     above it. 7 < 9, so nothing touches the group rail and nothing can
+     overflow-x at the 380px floor. */
+  margin-left: -7px;
+  padding-left: 7px;
+  border-radius: var(--radius-sm);
+  /* The house idiom: a hairline and a whisper of fill, no box. Inset, so it
+     costs no layout at all. */
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 62%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 11%, transparent),
+    transparent 62%
+  );
+}
+
+/* The label carries the mark's colour — at 76px it is the fastest read on the
+   row, and it is the one leaf every control shape has (a toggle and an enum
+   row have no slider track to tint). Written AFTER
+   `.param-slot.is-advanced .row-label` and at equal specificity, so on a knob
+   that is both expert-tier and driven the driven tint wins on source order.
+   That precedence is deliberate: the tier dimming says "extra", the mark says
+   "this is not what it looks like". */
+.param-slot.is-driven .row-label {
+  color: var(--accent);
+}
+
+/* The group header's share. MERGED into the existing count pill, never a third
+   leaf in `.group-head` — chevron + name + count already fills the measured
+   174px content column, and a third is exactly the crowding that moved
+   `.param-groups-actions` out of `.section-head`.
+
+   Scoped by the modifier alone, so the identically-classed rail badges in
+   ParamsPanel (aria-hidden route counts) are untouched. */
+.group-count.is-driven {
+  color: var(--accent-fg);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent);
+}

@@ -17,6 +17,12 @@ afterEach(cleanup);
  * exists: the tier is a per-group disclosure now, so the same subject is
  * asserted by G2 against one group instead of the whole panel.
  *
+ * The second describe below owns the `driven` mark (P-1 stage 3). It is kept
+ * separate rather than folded in because every test in the first one is about
+ * the panel with nothing driven, which is the state it must keep rendering
+ * exactly as it always did — `driven` defaults to empty in `view()` for that
+ * reason, so no assertion above changed meaning when the prop landed.
+ *
  * TOMBSTONE (P-9, v2.82.0) — "keeps the deprecated showAdvanced shim opening
  * every tier at once" is gone with the prop it pinned. It existed for exactly
  * one wave, so this file could land against an un-rewritten ParamsPanel. Its
@@ -40,6 +46,12 @@ const PRESET: PresetDef = {
   wgsl: "",
 };
 
+/** `driven` is REQUIRED (P-1 stage 3), for the same reason `advancedGroups`
+ *  is: an optional set renders a panel where the mark silently never appears.
+ *  Empty by default here, so every test written before it stays a test about
+ *  what it was about. */
+const NONE: ReadonlySet<string> = new Set<string>();
+
 function view(over: Partial<React.ComponentProps<typeof ParamGroups>> = {}) {
   const onToggleGroup = vi.fn();
   const onToggleAdvanced = vi.fn();
@@ -53,6 +65,7 @@ function view(over: Partial<React.ComponentProps<typeof ParamGroups>> = {}) {
       query=""
       collapsed={[]}
       advancedGroups={[]}
+      driven={NONE}
       onToggleGroup={onToggleGroup}
       onToggleAdvanced={onToggleAdvanced}
       {...over}
@@ -60,6 +73,13 @@ function view(over: Partial<React.ComponentProps<typeof ParamGroups>> = {}) {
   );
   return { onToggleGroup, onToggleAdvanced, onParam, ...utils };
 }
+
+/** The slot wrapping one param row, by param key — the element the tier mark
+ *  and the driven mark both live on. */
+const slot = (key: string) =>
+  [...document.querySelectorAll<HTMLElement>(".param-slot")].find(
+    (s) => s.querySelector(".row-label")?.textContent === key,
+  );
 
 const headings = () =>
   [...document.querySelectorAll(".group-name")].map((e) => e.textContent ?? "");
@@ -95,6 +115,7 @@ describe("ParamGroups", () => {
         onParam={() => undefined}
         onHint={() => undefined}
         advancedGroups={["backdrop"]}
+        driven={NONE}
         query=""
         collapsed={[]}
         onToggleGroup={() => undefined}
@@ -143,6 +164,7 @@ describe("ParamGroups", () => {
         onParam={() => undefined}
         onHint={() => undefined}
         advancedGroups={["backdrop"]}
+        driven={NONE}
         query=""
         collapsed={[]}
         onToggleGroup={() => undefined}
@@ -231,5 +253,106 @@ describe("ParamGroups", () => {
       extras: [{ group: "image", search: "center image cover", node: <p>center-image-row</p> }],
     });
     expect(screen.queryByText("center-image-row")).toBeNull();
+  });
+});
+
+/**
+ * The `driven` mark (P-1 stage 3). P-1 asked for "which params are modulated"
+ * shown back inside the mode page: modulation never writes the document, so
+ * the slider sits where you left it while the render does something else, and
+ * before this the only place that appeared was a different page.
+ *
+ * Two things are load-bearing beyond "a class shows up", and each has its own
+ * test below: the mark costs ZERO new DOM (a fourth child of `.param-row`
+ * breaks the 76px label column app-wide; a third leaf in `.group-head` is the
+ * crowding `.param-groups-actions` was moved out of `.section-head` to avoid),
+ * and the GROUP HEADER carries it — a row-only mark is invisible for exactly
+ * the common case, since a recipe or `autoRouteStem` picks the best-matching
+ * knob whether or not its group is collapsed and its tier shut.
+ */
+describe("ParamGroups: the driven mark", () => {
+  it("D-M1: marks the driven row's slot, and only that one", () => {
+    view({ driven: new Set(["size"]) });
+    expect(slot("size")?.classList.contains("is-driven")).toBe(true);
+    expect(slot("Bloom")?.classList.contains("is-driven")).toBe(false);
+    // Hover text, so the mark explains itself rather than being decoration.
+    expect(slot("size")?.getAttribute("title")).toMatch(/Driven/);
+    expect(slot("Bloom")?.getAttribute("title")).toBeNull();
+  });
+
+  it("D-M2: costs zero new DOM — no fourth grid child, no third pill", () => {
+    // `.param-row` is a fixed `76px minmax(0,1fr) 44px` grid: label, slider,
+    // readout. A badge element here would break label alignment on every
+    // surface that renders a param row, and add a `text-clip` candidate for
+    // __auditUI at the 380px dock floor. Same count driven and not.
+    const marked = view({ driven: new Set(["size"]) });
+    expect(slot("size")!.querySelector(".param-row")!.children.length).toBe(3);
+    expect(slot("Bloom")!.querySelector(".param-row")!.children.length).toBe(3);
+    // chevron + name + count, before and after: the driven count MERGES into
+    // the existing pill instead of adding a fourth leaf.
+    const head = () => groupEl("Shape").querySelector(".group-head")!;
+    expect(head().children.length).toBe(3);
+    expect(groupEl("Shape").querySelectorAll(".group-count").length).toBe(1);
+    marked.unmount();
+    view();
+    expect(head().children.length).toBe(3);
+  });
+
+  it("D-M3: the group header reports it while the group is COLLAPSED", () => {
+    // The reason the header carries the mark at all: the row is not rendered.
+    view({ collapsed: [GROUP_KEY + "shape"], driven: new Set(["size"]) });
+    expect(screen.queryByText("size")).toBeNull();
+    const pill = groupEl("Shape").querySelector(".group-count")!;
+    expect(pill.textContent).toBe("1/1");
+    expect(pill.classList.contains("is-driven")).toBe(true);
+    // "1 slash 1" is not a sentence. The label is an attribute, not an element.
+    expect(pill.getAttribute("aria-label")).toBe("1 of 1 driven");
+    expect(pill.getAttribute("title")).toMatch(/Modulation page/);
+  });
+
+  it("D-M4: the group header reports it while the EXPERT TIER is shut", () => {
+    // The other invisible case, and the more common one: routes land on the
+    // best-matching knob regardless of tier, and `vignette` is expert-only.
+    view({ advancedGroups: [], driven: new Set(["vignette"]) });
+    expect(screen.queryByText("vignette")).toBeNull();
+    expect(groupEl("Backdrop").querySelector(".group-count")?.textContent).toBe("1/1");
+  });
+
+  it("D-M5: an expert knob that is also driven keeps BOTH marks", () => {
+    // The tier dimming and the mark are different facts. CSS decides which
+    // colour wins on the label; the markup must not decide it by dropping one.
+    view({ advancedGroups: ["backdrop"], driven: new Set(["vignette"]) });
+    const s = slot("vignette")!;
+    expect(s.classList.contains("is-advanced")).toBe(true);
+    expect(s.classList.contains("is-driven")).toBe(true);
+  });
+
+  it("D-M6: a driven key this preset does not have invents no row and no count", () => {
+    // `post:` routes and routes left over from another mode both arrive as
+    // keys with no spec here. drivenParamKeys already filters them; this pins
+    // that the component cannot resurrect one on its own.
+    view({ driven: new Set(["post:chromatic", "gone"]) });
+    expect(headings()).toEqual(["Shape", "Color", "Glow", "Backdrop"]);
+    expect(document.querySelector(".group-count.is-driven")).toBeNull();
+    expect(document.querySelector(".param-slot.is-driven")).toBeNull();
+    expect(groupEl("Shape").querySelector(".group-count")?.textContent).toBe("1");
+  });
+
+  it("D-M7: search still ignores the tier, and a hit that is driven is marked", () => {
+    view({ query: "vignette", advancedGroups: [], driven: new Set(["vignette"]) });
+    expect(screen.getByText("vignette")).toBeTruthy();
+    expect(slot("vignette")?.classList.contains("is-driven")).toBe(true);
+    expect(groupEl("Backdrop").querySelector(".group-count")?.textContent).toBe("1/1");
+  });
+
+  it("D-M8: with nothing driven the pill is the bare total, unmarked and unlabelled", () => {
+    // The mark must vanish completely the instant the last route goes away —
+    // G6 pins the format, this pins that the attributes go too.
+    view();
+    const pill = groupEl("Shape").querySelector(".group-count")!;
+    expect(pill.textContent).toBe("1");
+    expect(pill.classList.contains("is-driven")).toBe(false);
+    expect(pill.getAttribute("aria-label")).toBeNull();
+    expect(pill.getAttribute("title")).toBeNull();
   });
 });
