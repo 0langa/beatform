@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SpectrumResolution, SyncMode } from "../audio/types";
 import { MAX_FREQ, MIN_FREQ } from "../audio/featurePipeline";
 import { spectrumDiagnostics } from "../audio/dsp/displaySpectrum";
@@ -47,7 +47,6 @@ import {
   SliderRow,
   Segmented,
   ToggleRow,
-  CollapsibleSection,
   type ValueUnit,
 } from "./kit";
 import { GROUP_KEY, ParamGroups, type ParamGroupExtra } from "./ParamGroups";
@@ -334,41 +333,100 @@ const POST_SLIDERS: Array<{
   },
 ];
 
-type ParamsTab = AppPrefs["paramsTab"];
+type InspectorPageId = AppPrefs["inspectorPage"];
 
-/** The five top-level tabs of the Inspector (v2.41). Each groups a set
- * of the former flat sections; the active tab persists via prefs. */
-const PARAMS_TABS: Array<{ id: ParamsTab; label: string; hint: string }> = [
-  { id: "visual", label: "Visual", hint: "The visual itself — looks, motion and full themes" },
-  { id: "sync", label: "Sync", hint: "What the visual reacts to, and audio-to-knob modulation" },
+/**
+ * The Inspector's section rail (P-1): eight destinations, one page each.
+ *
+ * A DATA TABLE on purpose. Everything the rail renders — order, label, hint,
+ * the hairline groupings — is a row here, so later stages add a destination
+ * without touching the shell. Labels are the design surface and may be
+ * retuned; the `id`s are frozen, because they persist as `inspectorPage` and
+ * are what the GPU harness selects on (`[data-section="sync"]`).
+ *
+ * Modulation is a top-level destination rather than a link at the bottom of
+ * Sync — that placement is the whole reason this rail exists.
+ */
+const INSPECTOR_PAGES: ReadonlyArray<{
+  id: InspectorPageId;
+  label: string;
+  hint: string;
+  /** Draw a hairline above this item — grouping only, never a heading. */
+  dividerBefore?: boolean;
+}> = [
+  { id: "mode", label: "Mode", hint: "The active visual and all of its controls" },
+  { id: "motion", label: "Motion", hint: "Rotation, pulse and detail masters" },
+  {
+    id: "themes",
+    label: "Themes",
+    hint: "Whole-project looks — color, sync, post and background at once",
+  },
+  {
+    id: "sync",
+    label: "Sync",
+    hint: "What the visual reacts to, and how hard",
+    dividerBefore: true,
+  },
+  {
+    id: "modulation",
+    label: "Modulation",
+    hint: "Route audio and LFOs onto individual controls",
+  },
   {
     id: "scene",
     label: "Scene",
-    hint: "Background, frame shape, post-processing and overlay layers",
+    hint: "Background, frame, finishing and overlay layers",
+    dividerBefore: true,
   },
-  { id: "text", label: "Text", hint: "Timed lyrics and audiogram overlays" },
-  { id: "live", label: "Live", hint: "Live-performance switch quantize and MIDI mapping" },
+  { id: "text", label: "Text", hint: "Lyrics and the audiogram strip" },
+  { id: "live", label: "Live", hint: "Switch quantize and MIDI control", dividerBefore: true },
 ];
 
-/** A settings section, mapped to a tab and given a searchable keyword blob.
- * `standalone` sections render their own `.panel-section` (LayersPanel) and
- * are not wrapped in a CollapsibleSection. */
+/** A settings section, mapped to a rail page and given a searchable keyword
+ * blob. `standalone` sections render their own `.panel-section` (LayersPanel)
+ * and are not wrapped in a `PageSection`. */
 interface SectionDef {
   /**
-   * Stable identity for collapse state and React keys — NOT the title.
-   * Retitling a section (Motion → Global motion) must not silently drop the
-   * user's collapsed/expanded choice for it, which keying by title did. The
-   * ids below are the pre-v2.53 titles verbatim so state persisted under the
-   * old scheme keeps applying.
+   * React key only. It used to be the persisted collapse identity, which is
+   * why several ids are pre-v2.53 titles ("Templates" for the Themes
+   * section) — P-1 retired in-page section collapse, so nothing reads these
+   * off disk any more and they are kept purely to avoid a pointless diff.
    */
   id: string;
-  title: string;
-  tab: ParamsTab;
+  /** Omitted when the page's context header already names the section. */
+  title?: string;
+  page: InspectorPageId;
   /** Lowercased title + control labels/hints, matched by the search box. */
   search: string;
   headerExtra?: ReactNode;
   body: ReactNode;
   standalone?: boolean;
+}
+
+/**
+ * One section on a page. The rail is the single navigation model, so a
+ * section no longer collapses — it is a plain heading over its body, using
+ * the same `.panel-section`/`.section-head`/`.section-title` idiom
+ * LayersPanel, BuilderPanel and TimelinePanel already emit.
+ */
+function PageSection(props: { title?: string; headerExtra?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="panel-section">
+      {(props.title || props.headerExtra) && (
+        <div className="section-head">
+          {props.title && <h3 className="section-title">{props.title}</h3>}
+          {props.headerExtra}
+        </div>
+      )}
+      {props.children}
+    </section>
+  );
+}
+
+/** "3 active routes" / "1 active route" — badge titles are spoken, so they
+ * may not read "1 active routes". */
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 /**
@@ -386,9 +444,11 @@ interface SectionDef {
  * Never allocate inside a selector (lint enforces it; the failure mode is a
  * crash, not a slowdown).
  *
- * v2.41: the former flat 13-section scroll is grouped into five tabs
- * (Visual/Sync/Scene/Text/Live) with per-section collapse and a search box
- * that bypasses the tabs. Active tab + collapsed titles persist via prefs. */
+ * P-1: ONE navigation model. The five tabs and the per-section collapse are
+ * both gone, replaced by a vertical rail of eight destinations
+ * (INSPECTOR_PAGES) that each render their sections as a page. The search box
+ * spans the whole dock and bypasses the rail entirely — results cross pages.
+ * The active page persists as `inspectorPage`. */
 export function ParamsPanel() {
   // ── READS: one hook per field. A selector MUST return a store-owned
   // reference or a primitive — never an object literal, array literal, spread
@@ -418,6 +478,10 @@ export function ParamsPanel() {
   const midiDevices = useVizStore((s) => s.midiDevices);
   const midiBindings = useVizStore((s) => s.midiBindings);
   const midiLearn = useVizStore((s) => s.midiLearn);
+  /** Rail badge only. DOCUMENT slice, never a per-frame one: a badge that
+   * ticks would put the whole panel back on the render loop (T1–T6). Anything
+   * live belongs in <PanelFooterBadges />, which exists for exactly that. */
+  const overlayLayers = useVizStore((s) => s.overlayLayers);
   /** The store field is `activeMods`; the retired prop was called `mods`. */
   const mods = useVizStore((s) => s.activeMods);
   const stems = useVizStore((s) => s.stems);
@@ -487,17 +551,19 @@ export function ParamsPanel() {
   const [themeName, setThemeName] = useState("");
   const [themeAuthor, setThemeAuthor] = useState("");
   const [midiParam, setMidiParam] = useState("");
-  const [tab, setTab] = useState<ParamsTab>(() => getPrefs().paramsTab);
+  const [page, setPage] = useState<InspectorPageId>(() => getPrefs().inspectorPage);
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<string[]>(() => getPrefs().collapsedSections);
-  const changeTab = (t: ParamsTab) => {
-    setTab(t);
-    setPrefs({ paramsTab: t });
+  const railRef = useRef<HTMLElement | null>(null);
+  const changePage = (p: InspectorPageId) => {
+    setPage(p);
+    setPrefs({ inspectorPage: p });
   };
-  /** Collapse state for one section or one param group. Sections pass their
-   * stable `id`, groups a GROUP_KEY-prefixed one — same persisted list, no
-   * chance of a group named "Post" closing the Post section. */
-  const toggleCollapsed = (key: string, open: boolean) => {
+  /** Collapse state for one param group, persisted as GROUP_KEY + id — since
+   * P-1 retired section collapse, that prefix is the whole meaning of
+   * `collapsedSections` (prefs prunes anything else on read). */
+  const toggleGroup = (groupId: string, open: boolean) => {
+    const key = GROUP_KEY + groupId;
     // Plain value + setPrefs OUTSIDE the setState updater: React re-runs
     // updaters in the render phase (StrictMode always does), and a setPrefs
     // there notifies App's useSyncExternalStore mid-render — the "Cannot
@@ -511,8 +577,39 @@ export function ParamsPanel() {
     setCollapsed(next);
     setPrefs({ collapsedSections: next });
   };
-  const toggleGroup = (groupId: string, open: boolean) =>
-    toggleCollapsed(GROUP_KEY + groupId, open);
+  /**
+   * Roving tabindex: the rail is ONE tab stop, not eight. Arrows move AND
+   * activate (follow-focus, wrapping at the ends), Home/End jump to the
+   * first/last destination. Without this, reaching any page control costs
+   * eight tab presses — a real regression against the 5-button Segmented the
+   * rail replaces.
+   */
+  const onRailKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
+    e.preventDefault();
+    // Read from the DOM rather than an index: the search item shares the rail
+    // and must never be a wrap-around target.
+    const items = railRef.current
+      ? [
+          ...railRef.current.querySelectorAll<HTMLButtonElement>(
+            'button.rail-item[data-section]:not([data-section="search"])',
+          ),
+        ]
+      : [];
+    if (items.length === 0) return;
+    const here = items.indexOf(e.currentTarget);
+    const at =
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+          ? items.length - 1
+          : e.key === "ArrowDown"
+            ? (here + 1 + items.length) % items.length
+            : (here - 1 + items.length) % items.length;
+    const next = items[at];
+    next.focus();
+    changePage(next.dataset.section as InspectorPageId);
+  };
   const setAdvanced = (on: boolean) => {
     setShowAdvanced(on);
     setPrefs({ advancedOpen: on });
@@ -551,10 +648,43 @@ export function ParamsPanel() {
 
   // A style is "active" when current params exactly equal defaults + values
   const defaults = defaultParams(preset);
-  const activeStyleId = (preset.styles ?? []).find((s) => {
+  const activeStyle = (preset.styles ?? []).find((s) => {
     const merged = { ...defaults, ...s.values };
     return Object.keys(merged).every((k) => (params[k] ?? defaults[k]) === merged[k]);
-  })?.id;
+  });
+  const activeStyleId = activeStyle?.id;
+  /** The context header's second line. A mode that ships no styles has no
+   * "Custom" to be — only a mode WITH styles can be off all of them. */
+  const hasStyles = (preset.styles?.length ?? 0) > 0;
+
+  // ── RAIL DATA. Dimmed-not-hidden (F1): an unavailable destination stays
+  // focusable and clickable, says why on hover, and explains itself again on
+  // the page you land on.
+  const pageUnavailable: Partial<Record<InspectorPageId, string>> = showMotion
+    ? {}
+    : { motion: "This visual has no rotation, pulse or detail masters" };
+  /** Counts from the DOCUMENT, shown when > 0. The pill is aria-hidden so
+   * accessible names stay exactly the rail label; the count is spoken through
+   * the button's title instead. */
+  const pageBadge: Partial<Record<InspectorPageId, number>> = {
+    modulation: mods.length,
+    scene: overlayLayers.length,
+    live: midiBindings.length,
+  };
+  const pageBadgeTitle: Partial<Record<InspectorPageId, string>> = {
+    modulation:
+      mods.length > 0
+        ? `Modulation — ${plural(mods.length, "active route", "active routes")}`
+        : undefined,
+    scene:
+      overlayLayers.length > 0
+        ? `Scene — ${plural(overlayLayers.length, "overlay layer", "overlay layers")}`
+        : undefined,
+    live:
+      midiBindings.length > 0
+        ? `Live — ${plural(midiBindings.length, "MIDI binding", "MIDI bindings")}`
+        : undefined,
+  };
 
   const q = query.trim().toLowerCase();
   const searching = q.length > 0;
@@ -608,11 +738,13 @@ export function ParamsPanel() {
     : [];
 
   const sections: SectionDef[] = [
-    // ---------------- Visual ----------------
+    // ---------------- Mode ----------------
     {
-      id: preset.name,
-      title: preset.name,
-      tab: "visual",
+      // React key only now. No `title`: the page's context header already
+      // names the mode, and a second copy would both read as a stutter and
+      // make getByText(preset.name) ambiguous.
+      id: preset.id,
+      page: "mode",
       search:
         `${preset.name} ${preset.description ?? ""} preset style look custom save import gallery browse advanced essentials reset center image cover ${presetGroupText} ${presetParamText}`.toLowerCase(),
       headerExtra: (
@@ -786,7 +918,7 @@ export function ParamsPanel() {
           {
             id: "Builder layers",
             title: "Builder layers",
-            tab: "visual" as const,
+            page: "mode" as const,
             search:
               `builder layer stack compositor blend add screen opacity hue spread factory ${BUILDER_FACTORY_STACKS.map((f) => f.name).join(" ")} ${BUILDER_LAYER_TYPES.map((t) => t.label).join(" ")}`.toLowerCase(),
             standalone: true,
@@ -838,7 +970,7 @@ export function ParamsPanel() {
           {
             id: "Motion",
             title: "Global motion",
-            tab: "visual" as const,
+            page: "motion" as const,
             search: "motion rotation pulse detail spin global",
             headerExtra:
               motionChanged && !simplifiedRenderer ? (
@@ -910,7 +1042,7 @@ export function ParamsPanel() {
       // section now that it reads THEMES.
       id: "Templates",
       title: "Themes",
-      tab: "visual",
+      page: "themes",
       search:
         `themes theme templates complete looks colors sync post save export import bftheme gallery community browse ${FACTORY_THEMES.map((t) => t.meta.name).join(" ")}`.toLowerCase(),
       body: (
@@ -988,7 +1120,7 @@ export function ParamsPanel() {
     {
       id: "Sync",
       title: "Sync",
-      tab: "sync",
+      page: "sync",
       search:
         "sync react kick energy bass melody voice treble snare hats smoothing attack release spectrum smooth curve merge rounding contrast monstercat flatten shape frequency range low high edge hz analyzer resolution fft measured bins interpolation linear logarithmic",
       body: (
@@ -1217,9 +1349,12 @@ export function ParamsPanel() {
       ),
     },
     {
+      // ---------------- Modulation ----------------
+      // Its own destination as of P-1. It spent four releases as a "+ Route"
+      // link at the bottom of Sync, where nobody found it.
       id: "Modulation",
       title: "Modulation",
-      tab: "sync",
+      page: "modulation",
       search:
         "modulation route stem source amount kick hats auto-route feature knob lfo sine saw square curve shape exp smooth attack release lag recipe punch swell sway sweep sparkle",
       body: (
@@ -1455,7 +1590,7 @@ export function ParamsPanel() {
     {
       id: "Background",
       title: "Background",
-      tab: "scene",
+      page: "scene",
       search:
         "background animated solid transparent image video color dim blur album art chroma green magenta keying per-mode this mode scope override fit fill contain stretch cover crop letterbox zoom pan align position offset x y",
       body: (
@@ -1624,7 +1759,7 @@ export function ParamsPanel() {
     {
       id: "Frame",
       title: "Frame",
-      tab: "scene",
+      page: "scene",
       search:
         `frame aspect ratio shape preview export ${ASPECTS.map((a) => a.label).join(" ")} shorts posts`.toLowerCase(),
       body: (
@@ -1645,7 +1780,7 @@ export function ParamsPanel() {
     {
       id: "Post",
       title: "Post",
-      tab: "scene",
+      page: "scene",
       search:
         `post processing finishing filmic tonemap aces ${POST_SLIDERS.map((r) => r.label).join(" ")}`.toLowerCase(),
       headerExtra:
@@ -1693,7 +1828,7 @@ export function ParamsPanel() {
     {
       id: "Layers",
       title: "Layers",
-      tab: "scene",
+      page: "scene",
       search: "layers text image overlay album art drawn over visuals",
       standalone: true,
       body: <LayersPanel />,
@@ -1702,7 +1837,7 @@ export function ParamsPanel() {
     {
       id: "Lyrics",
       title: "Lyrics",
-      tab: "text",
+      page: "text",
       search:
         "lyrics lrc srt karaoke position animation slide pop size fade color import timed generate ai whisper local transcribe vocals",
       body: (
@@ -1824,7 +1959,7 @@ export function ParamsPanel() {
     {
       id: "LyricsEdit",
       title: "Edit lyrics",
-      tab: "text",
+      page: "text",
       search:
         "edit lyrics correct fix words timing nudge split merge insert delete line word karaoke " +
         "confidence flagged re-align align save lrc export undo redo",
@@ -1835,7 +1970,7 @@ export function ParamsPanel() {
     {
       id: "Audiogram",
       title: "Audiogram",
-      tab: "text",
+      page: "text",
       search: "audiogram progress bar time readout waveform strip position accent podcast reel",
       body: (
         <>
@@ -1893,7 +2028,7 @@ export function ParamsPanel() {
     {
       id: "Live",
       title: "Live",
-      tab: "live",
+      page: "live",
       search: "live switch quantize off beat bar boundary ableton number keys performance",
       body: (
         <>
@@ -1923,7 +2058,7 @@ export function ParamsPanel() {
           {
             id: "MIDI",
             title: "MIDI",
-            tab: "live" as const,
+            page: "live" as const,
             search: "midi controller cc note learn knob fader device mapping performance",
             headerExtra: midiEnabled ? (
               <button
@@ -2038,8 +2173,10 @@ export function ParamsPanel() {
       : []),
   ];
 
+  // Search bypasses the rail entirely: a match is a match wherever it lives,
+  // and filtering results by page would make the box look broken.
   const visibleSections = sections.filter((s) =>
-    searching ? s.search.includes(q) : s.tab === tab,
+    searching ? s.search.includes(q) : s.page === page,
   );
 
   return (
@@ -2055,16 +2192,8 @@ export function ParamsPanel() {
         </button>
       </div>
 
-      <div className="panel-tabs">
-        <Segmented
-          value={tab}
-          onChange={changeTab}
-          onHint={setHint}
-          ariaLabel="Inspector tab"
-          options={PARAMS_TABS.map((t) => ({ value: t.id, label: t.label, hint: t.hint }))}
-        />
-      </div>
-
+      {/* Full dock width, above the rail AND the page: results cross pages, so
+          it must not read as belonging to the page column. */}
       <input
         type="search"
         className="panel-search"
@@ -2074,33 +2203,105 @@ export function ParamsPanel() {
         onChange={(e) => setQuery(e.target.value)}
       />
 
-      <div className="panel-scroll">
-        {searching && visibleSections.length > 0 && (
-          <p className="search-summary">
-            {visibleSections.length === 1
-              ? "1 section matches"
-              : `${visibleSections.length} sections match`}{" "}
-            “{query.trim()}” — tabs are bypassed while searching.
-          </p>
-        )}
-        {visibleSections.map((s) =>
-          s.standalone ? (
-            <Fragment key={s.id}>{s.body}</Fragment>
-          ) : (
-            <CollapsibleSection
-              key={s.id}
-              title={s.title}
-              open={searching ? true : !collapsed.includes(s.id)}
-              onToggle={searching ? undefined : (open) => toggleCollapsed(s.id, open)}
-              headerExtra={s.headerExtra}
+      <div className="inspector-body">
+        {/* A nav of plain buttons, NOT a tablist: these switch views inside a
+            panel, and role="tab" would also rename every item's role out from
+            under the suites that address them by button name. */}
+        <nav className="inspector-rail" aria-label="Inspector sections" ref={railRef}>
+          {searching && (
+            <button
+              type="button"
+              className="rail-item active"
+              data-section="search"
+              aria-current="true"
+              tabIndex={0}
+              title="Clear the search and go back to the page you were on"
+              onClick={() => setQuery("")}
             >
-              {s.body}
-            </CollapsibleSection>
-          ),
-        )}
-        {searching && visibleSections.length === 0 && (
-          <p className="panel-empty">No controls match “{query.trim()}”.</p>
-        )}
+              <span className="rail-label">Search results</span>
+              <span className="group-count" aria-hidden="true">
+                {visibleSections.length}
+              </span>
+            </button>
+          )}
+          {INSPECTOR_PAGES.map((p) => {
+            const active = !searching && p.id === page;
+            const badge = pageBadge[p.id] ?? 0;
+            return (
+              <Fragment key={p.id}>
+                {p.dividerBefore && <hr className="rail-divider" />}
+                <button
+                  type="button"
+                  className={`rail-item ${active ? "active" : ""}${
+                    pageUnavailable[p.id] ? " is-unavailable" : ""
+                  }`}
+                  // The ATTRIBUTE is the harness contract, never the label:
+                  // labels are an iterated design surface, page ids are frozen
+                  // in prefs (scripts/gpu-pixel-matrix.mjs selects on this).
+                  data-section={p.id}
+                  aria-current={active ? "true" : undefined}
+                  tabIndex={p.id === page ? 0 : -1}
+                  title={pageUnavailable[p.id] ?? pageBadgeTitle[p.id] ?? p.hint}
+                  onPointerEnter={() => setHint(p.hint)}
+                  onPointerLeave={() => setHint(null)}
+                  onFocus={() => setHint(p.hint)}
+                  onBlur={() => setHint(null)}
+                  onKeyDown={onRailKeyDown}
+                  onClick={() => changePage(p.id)}
+                >
+                  <span className="rail-label">{p.label}</span>
+                  {badge > 0 && (
+                    <span className="group-count" aria-hidden="true">
+                      {badge}
+                    </span>
+                  )}
+                </button>
+              </Fragment>
+            );
+          })}
+        </nav>
+
+        <div className="inspector-page">
+          {/* A NON-SCROLLING flex sibling, never position:sticky inside
+              .panel-scroll — a sticky header there is the classic way to push
+              a trailing row past the viewport with nothing the UI auditor can
+              credit as a scrollable ancestor. */}
+          <div className="inspector-context">
+            <span className="section-title">{preset.name}</span>
+            <span className="inspector-style">
+              {activeStyle?.name ?? (hasStyles ? <em className="style-custom">Custom</em> : null)}
+            </span>
+          </div>
+
+          <div className="panel-scroll">
+            {searching && visibleSections.length > 0 && (
+              <p className="search-summary">
+                {visibleSections.length === 1
+                  ? "1 section matches"
+                  : `${visibleSections.length} sections match`}{" "}
+                “{query.trim()}” — pages are bypassed while searching.
+              </p>
+            )}
+            {visibleSections.map((s) =>
+              s.standalone ? (
+                <Fragment key={s.id}>{s.body}</Fragment>
+              ) : (
+                <PageSection key={s.id} title={s.title} headerExtra={s.headerExtra}>
+                  {s.body}
+                </PageSection>
+              ),
+            )}
+            {visibleSections.length === 0 && (
+              <p className="panel-empty">
+                {searching
+                  ? `No controls match “${query.trim()}”.`
+                  : // A dimmed rail item says WHY on hover; the page it leads
+                    // to has to say it again, or arriving here is a dead end.
+                    (pageUnavailable[page] ?? `Nothing here for ${preset.name}.`)}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="panel-footer">

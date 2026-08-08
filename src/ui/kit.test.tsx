@@ -2,15 +2,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  CollapsibleSection,
-  ParamRow,
-  PERCENT,
-  Segmented,
-  SelectRow,
-  SliderRow,
-  ToggleRow,
-} from "./kit";
+import { ParamRow, PERCENT, Segmented, SelectRow, SliderRow, ToggleRow } from "./kit";
 
 afterEach(cleanup);
 
@@ -297,38 +289,8 @@ describe("SelectRow", () => {
   });
 });
 
-describe("CollapsibleSection", () => {
-  it("uncontrolled: toggles its body and aria-expanded", async () => {
-    render(
-      <CollapsibleSection title="Motion">
-        <div>body-content</div>
-      </CollapsibleSection>,
-    );
-    const btn = screen.getByRole("button", { name: /Motion/ });
-    expect(btn.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.queryByText("body-content")).toBeTruthy();
-    await userEvent.click(btn);
-    expect(btn.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("body-content")).toBeNull();
-  });
-
-  it("controlled: renders from the open prop and reports the intended state", async () => {
-    const onToggle = vi.fn();
-    const { rerender } = render(
-      <CollapsibleSection title="Sync" open={false} onToggle={onToggle}>
-        <div>sync-body</div>
-      </CollapsibleSection>,
-    );
-    expect(screen.queryByText("sync-body")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: /Sync/ }));
-    expect(onToggle).toHaveBeenCalledWith(true);
-    // Parent owns the state — body appears only when the prop changes.
-    expect(screen.queryByText("sync-body")).toBeNull();
-    rerender(
-      <CollapsibleSection title="Sync" open onToggle={onToggle}>
-        <div>sync-body</div>
-      </CollapsibleSection>,
-    );
-    expect(screen.queryByText("sync-body")).toBeTruthy();
-  });
-});
+/* The two CollapsibleSection cases (uncontrolled toggle, controlled open/
+ * onToggle) are deleted with the component: P-1 retired in-page section
+ * collapse, so there is no behaviour left for them to protect. What replaced
+ * it — one navigation model, exercised through the rail — is covered in
+ * ParamsPanel.test.tsx. */

@@ -234,6 +234,14 @@ describe("selector granularity (P-12: the Inspector subscribes only what it read
   });
 });
 
+/**
+ * T7–T11 changed in exactly ONE way for P-1: the navigation click that gets
+ * them to the routes is now `Modulation`, not `Sync`. Every assertion after
+ * it is untouched, because their subjects are untouched — Modulation is a
+ * first-class rail destination now instead of a "+ Route" link buried at the
+ * bottom of Sync, and these five clicks are the proof that it is reachable
+ * under that name. They stay the stage-3 canary for the routing grid.
+ */
 describe("modulation & MIDI target lists (RP-2 / RP-14)", () => {
   it('T7: mod:"off" params are absent from the route-target picker', () => {
     // spectrum-bars: "mirror"/"peaks" are pure toggles (mod:"off"); "hue" is a
@@ -241,7 +249,7 @@ describe("modulation & MIDI target lists (RP-2 / RP-14)", () => {
     expect(spectrumBars().params.find((p) => p.key === "mirror")?.mod).toBe("off");
     seedRoute("hue");
     render(<ParamsPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
     const select = screen.getByTitle("Which knob it moves") as HTMLSelectElement;
     const values = [...select.querySelectorAll("option")].map((o) => o.getAttribute("value"));
     expect(values).toContain("hue");
@@ -253,7 +261,7 @@ describe("modulation & MIDI target lists (RP-2 / RP-14)", () => {
   it("T8: a legacy route to an off param stays visible, inert and unrewritten", () => {
     seedRoute("mirror");
     render(<ParamsPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
     const select = screen.getByTitle("Which knob it moves") as HTMLSelectElement;
     expect(select.value).toBe("mirror");
     expect(
@@ -272,7 +280,7 @@ describe("modulation v2 UI (P-16/P-7)", () => {
   it("T9: source picker offers the whole beat-synced LFO family", () => {
     seedRoute();
     render(<ParamsPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
     const select = screen.getByTitle("What drives this route") as HTMLSelectElement;
     const values = [...select.querySelectorAll("option")].map((o) => o.getAttribute("value"));
     for (const s of LFO_SOURCES) expect(values).toContain(s.id);
@@ -281,7 +289,7 @@ describe("modulation v2 UI (P-16/P-7)", () => {
   it("T10: every recipe has a chip, and clicking one lands real routes", () => {
     act(() => useVizStore.setState({ presetId: "spectrum-bars", activeMods: [] }));
     render(<ParamsPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
     for (const rec of MOD_ROUTE_RECIPES) {
       expect(screen.getByRole("button", { name: rec.name })).toBeTruthy();
     }
@@ -294,7 +302,7 @@ describe("modulation v2 UI (P-16/P-7)", () => {
   it("T11: the shape row writes a curve, and Linear clears the field", () => {
     seedRoute();
     render(<ParamsPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
     const curveSel = screen.getByTitle(/Response curve/) as HTMLSelectElement;
     fireEvent.change(curveSel, { target: { value: "exp" } });
     expect(useVizStore.getState().activeMods[0].curve).toBe("exp");
@@ -323,7 +331,17 @@ describe("no external-store writes during render", () => {
     return <span data-testid="store-mirror">{id}</span>;
   }
 
-  it("T12: section collapse persists prefs without a render-phase update (StrictMode)", () => {
+  /**
+   * Re-pointed from `.section-toggle` to `.group-head` for P-1, deliberately
+   * NOT to a rail item. The hazard is `setPrefs` called from a click handler
+   * OUTSIDE a setState updater (ParamsPanel's toggleGroup), and group collapse
+   * is the surviving code path with that exact shape. A rail item would look
+   * like the same test and be a weaker one: `setPrefs` no-ops on an unchanged
+   * value, so clicking one item twice writes nothing at all and half the
+   * repro evaporates. T12b covers the rail with two DIFFERENT items, so both
+   * writes are real.
+   */
+  it("T12: group collapse persists prefs without a render-phase update (StrictMode)", () => {
     render(
       <StrictMode>
         <PrefsMirror />
@@ -331,11 +349,229 @@ describe("no external-store writes during render", () => {
         <ParamsPanel />
       </StrictMode>,
     );
-    const toggles = document.querySelectorAll(".section-toggle");
-    expect(toggles.length).toBeGreaterThan(0);
-    fireEvent.click(toggles[0]);
-    fireEvent.click(toggles[0]);
+    const heads = document.querySelectorAll(".group-head");
+    expect(heads.length).toBeGreaterThan(0);
+    fireEvent.click(heads[0]);
+    fireEvent.click(heads[0]);
     expect(consoleErrors.filter((e) => e.includes("Cannot update a component"))).toEqual([]);
+  });
+
+  it("T12b: rail navigation persists inspectorPage without a render-phase update", () => {
+    render(
+      <StrictMode>
+        <PrefsMirror />
+        <StoreMirror />
+        <ParamsPanel />
+      </StrictMode>,
+    );
+    // Two DIFFERENT destinations, so neither write is swallowed by samePrefs.
+    fireEvent.click(screen.getByRole("button", { name: "Scene" }));
+    expect(getPrefs().inspectorPage).toBe("scene");
+    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
+    expect(getPrefs().inspectorPage).toBe("modulation");
+    expect(consoleErrors.filter((e) => e.includes("Cannot update a component"))).toEqual([]);
+  });
+});
+
+/**
+ * The section rail (P-1 stage 1). One navigation model: eight destinations,
+ * each rendering its existing sections as a page. Everything here is
+ * jsdom-verifiable — structure, roles, keyboard, page switching, persistence.
+ * What is NOT verifiable without U2's stylesheet is the LOOK: the rail's
+ * width, the active spine, the dimmed treatment of `.is-unavailable`, and the
+ * dock geometry itself. Those classes are asserted as contracts here, not as
+ * appearance.
+ */
+describe("Inspector section rail", () => {
+  const rail = () => document.querySelector(".inspector-rail")!;
+  const railItems = () =>
+    [
+      ...rail().querySelectorAll<HTMLButtonElement>(
+        'button.rail-item[data-section]:not([data-section="search"])',
+      ),
+    ] as HTMLButtonElement[];
+
+  it("R1: eight destinations, in order, addressed by the frozen page ids", () => {
+    render(<ParamsPanel />);
+    expect(railItems().map((b) => b.dataset.section)).toEqual([
+      "mode",
+      "motion",
+      "themes",
+      "sync",
+      "modulation",
+      "scene",
+      "text",
+      "live",
+    ]);
+    // The labels the harness must NOT select on, but the user reads.
+    expect(railItems().map((b) => b.querySelector(".rail-label")?.textContent)).toEqual([
+      "Mode",
+      "Motion",
+      "Themes",
+      "Sync",
+      "Modulation",
+      "Scene",
+      "Text",
+      "Live",
+    ]);
+  });
+
+  it("R2: it is a nav of buttons, not a tablist, and marks the current page", () => {
+    render(<ParamsPanel />);
+    // Landmark, not role="tab": these switch views inside a panel, and the
+    // suites address every item by button name.
+    expect(screen.getByRole("navigation", { name: "Inspector sections" })).toBe(rail());
+    expect(rail().querySelector('[role="tab"]')).toBeNull();
+    // aria-current="true", never "page" — a screen reader must not announce
+    // "current page" for a view switcher.
+    const current = railItems().filter((b) => b.getAttribute("aria-current") === "true");
+    expect(current).toHaveLength(1);
+    expect(current[0].dataset.section).toBe("mode");
+    expect(rail().querySelector('[aria-current="page"]')).toBeNull();
+  });
+
+  it("R3: Modulation is a first-class destination, not a link inside Sync", () => {
+    // The entire justification for P-1. It must be reachable by its own name
+    // from the rail, and its content must NOT be on the Sync page.
+    seedRoute("hue");
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    expect(screen.queryByTitle("Which knob it moves")).toBeNull();
+    expect(screen.queryByRole("button", { name: "+ Route" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
+    expect(screen.getByTitle("Which knob it moves")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "+ Route" })).toBeTruthy();
+  });
+
+  it("R4: clicking a destination swaps the page and persists it", () => {
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+    expect(getPrefs().inspectorPage).toBe("text");
+    expect(screen.getByRole("heading", { name: "Audiogram" })).toBeTruthy();
+    // Frame lives on Scene, so it must be gone from the Text page.
+    expect(screen.queryByRole("heading", { name: "Frame" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Scene" }));
+    expect(getPrefs().inspectorPage).toBe("scene");
+    expect(screen.getByRole("heading", { name: "Frame" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Audiogram" })).toBeNull();
+  });
+
+  it("R5: the persisted page is where a fresh mount lands", () => {
+    setPrefs({ inspectorPage: "live" });
+    render(<ParamsPanel />);
+    expect(
+      railItems().find((b) => b.getAttribute("aria-current") === "true")?.dataset.section,
+    ).toBe("live");
+    expect(screen.getByRole("heading", { name: "Live" })).toBeTruthy();
+  });
+
+  it("R6: roving tabindex — the rail is ONE tab stop", () => {
+    render(<ParamsPanel />);
+    const items = railItems();
+    // Nine tab stops before any page control would be a real regression
+    // against the five-button Segmented the rail replaces.
+    expect(items.filter((b) => b.tabIndex === 0)).toHaveLength(1);
+    expect(items.find((b) => b.tabIndex === 0)!.dataset.section).toBe("mode");
+    expect(items.filter((b) => b.tabIndex === -1)).toHaveLength(7);
+  });
+
+  it("R7: arrows move and activate, wrapping; Home/End jump to the ends", () => {
+    render(<ParamsPanel />);
+    const at = () => document.activeElement as HTMLButtonElement;
+
+    railItems()[0].focus();
+    fireEvent.keyDown(at(), { key: "ArrowDown" });
+    expect(at().dataset.section).toBe("motion");
+    expect(getPrefs().inspectorPage).toBe("motion"); // follow-focus
+
+    fireEvent.keyDown(at(), { key: "End" });
+    expect(at().dataset.section).toBe("live");
+    fireEvent.keyDown(at(), { key: "ArrowDown" }); // wraps
+    expect(at().dataset.section).toBe("mode");
+    fireEvent.keyDown(at(), { key: "ArrowUp" }); // wraps the other way
+    expect(at().dataset.section).toBe("live");
+    fireEvent.keyDown(at(), { key: "Home" });
+    expect(at().dataset.section).toBe("mode");
+    expect(getPrefs().inspectorPage).toBe("mode");
+  });
+
+  it("R8: an unavailable destination is dimmed and clickable, and its page says why", () => {
+    // led-matrix drives none of the three motion masters (presetMasters).
+    act(() => useVizStore.setState({ presetId: "led-matrix" }));
+    render(<ParamsPanel />);
+    const motion = railItems().find((b) => b.dataset.section === "motion")!;
+    const reason = "This visual has no rotation, pulse or detail masters";
+    expect(motion.classList.contains("is-unavailable")).toBe(true);
+    expect(motion.getAttribute("title")).toBe(reason);
+    // F1: dimmed, never hidden, never aria-disabled — the page is reachable
+    // and explains itself when you get there.
+    expect(motion.getAttribute("aria-disabled")).toBeNull();
+    expect(motion.hasAttribute("disabled")).toBe(false);
+
+    fireEvent.click(motion);
+    expect(document.querySelector(".panel-empty")?.textContent).toBe(reason);
+  });
+
+  it("R9: badges count the document and never touch the accessible name", () => {
+    seedRoute("hue");
+    render(<ParamsPanel />);
+    const mod = railItems().find((b) => b.dataset.section === "modulation")!;
+    const badge = mod.querySelector(".group-count")!;
+    expect(badge.textContent).toBe("1");
+    // aria-hidden so getByRole("button", { name }) stays exact; the count is
+    // spoken through the title instead.
+    expect(badge.getAttribute("aria-hidden")).toBe("true");
+    expect(mod.getAttribute("title")).toBe("Modulation — 1 active route");
+    expect(screen.getByRole("button", { name: "Modulation" })).toBe(mod);
+    // A page with nothing to count shows no pill at all.
+    expect(
+      railItems()
+        .find((b) => b.dataset.section === "text")!
+        .querySelector(".group-count"),
+    ).toBeNull();
+  });
+
+  it("R10: the context header names the mode once", () => {
+    act(() => useVizStore.setState({ presetId: "spectrum-bars" }));
+    render(<ParamsPanel />);
+    const name = presets.find((p) => p.id === "spectrum-bars")!.name;
+    expect(document.querySelector(".inspector-context .section-title")?.textContent).toBe(name);
+    // Once, not twice: this is why the mode section dropped its own title.
+    expect(screen.getByText(name)).toBeTruthy();
+  });
+
+  it("R11: search pins its own rail item and crosses pages", () => {
+    render(<ParamsPanel />);
+    // "vignette" is a Post control (Scene page) while the rail sits on Mode.
+    fireEvent.change(screen.getByLabelText("Search controls"), { target: { value: "vignette" } });
+
+    const pinned = rail().querySelector('[data-section="search"]')!;
+    expect(pinned.classList.contains("active")).toBe(true);
+    expect(pinned.getAttribute("aria-current")).toBe("true");
+    // While searching no destination claims to be current.
+    expect(railItems().some((b) => b.getAttribute("aria-current") === "true")).toBe(false);
+    expect(screen.getByRole("heading", { name: "Post" })).toBeTruthy();
+
+    // Clicking it clears the query and returns to the page it left.
+    fireEvent.click(pinned);
+    expect((screen.getByLabelText("Search controls") as HTMLInputElement).value).toBe("");
+    expect(rail().querySelector('[data-section="search"]')).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Post" })).toBeNull();
+  });
+
+  it("R12: no section collapses any more — one navigation model", () => {
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Scene" }));
+    expect(document.querySelectorAll(".section-toggle")).toHaveLength(0);
+    expect(document.querySelector(".panel-tabs")).toBeNull();
+    // Section headings are plain headings inside the shared .panel-section /
+    // .section-head / .section-title idiom.
+    const head = screen.getByRole("heading", { name: "Frame" });
+    expect(head.tagName).toBe("H3");
+    expect(head.classList.contains("section-title")).toBe(true);
+    expect(head.closest(".panel-section")).toBeTruthy();
   });
 });
 

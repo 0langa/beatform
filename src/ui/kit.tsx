@@ -617,42 +617,7 @@ export function Segmented<T extends string | number>(props: {
   );
 }
 
-/**
- * Collapsible section shell: a header button toggling its body, with
- * aria-expanded. Uncontrolled by default (open unless told otherwise);
- * pass `open`/`onToggle` to control it (the v2.41 tabbed panel persists
- * per-section state through exactly that pair).
- */
-export function CollapsibleSection(props: {
-  title: string;
-  children: ReactNode;
-  defaultOpen?: boolean;
-  open?: boolean;
-  onToggle?: (open: boolean) => void;
-  /** Extra header content (e.g. a Reset button), right-aligned. */
-  headerExtra?: ReactNode;
-}) {
-  const [localOpen, setLocalOpen] = useState(props.defaultOpen ?? true);
-  const open = props.open ?? localOpen;
-  const toggle = () => {
-    props.onToggle?.(!open);
-    if (props.open === undefined) setLocalOpen(!open);
-  };
-  return (
-    <div className="panel-section">
-      <div className="section-head">
-        <button
-          className="section-toggle"
-          aria-expanded={open}
-          onClick={toggle}
-          title={open ? "Collapse" : "Expand"}
-        >
-          <span className={`section-chevron ${open ? "open" : ""}`}>▸</span>
-          {props.title}
-        </button>
-        {props.headerExtra}
-      </div>
-      {open && props.children}
-    </div>
-  );
-}
+/* CollapsibleSection lived here until P-1. The Inspector's section rail is
+ * now the one navigation model, so a section no longer collapses — its single
+ * production call site became ParamsPanel's local PageSection, and the
+ * component, its CSS and its two tests went with it. */
