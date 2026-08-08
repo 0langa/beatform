@@ -952,8 +952,12 @@ export function ParamsPanel() {
               click to "show me everything". Per-group disclosures alone would
               charge a power user one click per group. Below the group list,
               never in .section-head — three leaves in that flex clip at the
-              dock's 380px floor. */}
-          {preset.id !== BUILDER2_ID && presetGroupIds.length > 0 && (
+              dock's 380px floor.
+              Hidden while searching, for the reason ParamGroups hides the
+              disclosures themselves: search already crosses the tier, so every
+              match is on screen and there is nothing left for this to reveal.
+              A control that cannot change what you see is noise. */}
+          {!searching && preset.id !== BUILDER2_ID && presetGroupIds.length > 0 && (
             <div className="param-groups-actions">
               <button
                 className="text-btn"

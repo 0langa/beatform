@@ -715,6 +715,20 @@ describe("per-group expert tier wiring (P-9)", () => {
     expect(document.querySelector(".param-groups")).toBeNull();
   });
 
+  it("R15b: the bulk switch goes away while searching", () => {
+    // Search already crosses the tier, so every match is on screen and the
+    // switch has nothing left to reveal. ParamGroups hides the per-group
+    // disclosures mid-search for the same reason; the two must agree, or the
+    // page offers a control that cannot change what you are looking at.
+    render(<ParamsPanel />);
+    expect(document.querySelector(".param-groups-actions")).not.toBeNull();
+    fireEvent.change(screen.getByLabelText("Search controls"), { target: { value: "hue" } });
+    expect(document.querySelector(".param-groups")).not.toBeNull();
+    expect(document.querySelector(".param-groups-actions")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Search controls"), { target: { value: "" } });
+    expect(document.querySelector(".param-groups-actions")).not.toBeNull();
+  });
+
   it("R16: builder2 renders neither the grouped rows nor the bulk switch", () => {
     act(() => useVizStore.setState({ presetId: BUILDER2_ID }));
     render(<ParamsPanel />);
