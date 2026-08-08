@@ -124,6 +124,8 @@ const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi 
  * and it is what keeps the registry-derived assertions in the panel suite
  * meaningful — so the two pickers stay <select>s. What died is the 96px
  * `.mod-select` cap: both get the full content column with `min-width: 0`.
+ * The rule itself was deleted in 2.84.0 once it was confirmed to have no
+ * emitter left anywhere; see its tombstone in App.css beside `.mod-create`.
  */
 function TargetOptions(props: {
   groups: ParamGroupView[];
@@ -550,7 +552,8 @@ export function ModulationPage() {
                     380px minimum: a 44px readout leaves the heading 59px of
                     text, and the p90 target label is ~90px — so the card's own
                     name would truncate on most controls, which is exactly the
-                    defect (`.mod-select`'s 96px cap) this page exists to fix.
+                    defect (`.mod-select`'s 96px cap, the rule itself deleted
+                    in 2.84.0) this page exists to fix.
                     The resting value is the LEFT side of every route's
                     `210 → 360` line, paired with where the route takes it,
                     which is strictly more useful than the number alone. */}

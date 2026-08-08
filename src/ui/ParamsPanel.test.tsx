@@ -1004,6 +1004,28 @@ describe("Visuals section rail", () => {
   });
 
   /**
+   * R12's other half, and the reason it is a separate test: Layers is the one
+   * section on Scene that LayersPanel owns rather than ParamsPanel, and it was
+   * the only one whose title was a <span>. Visually identical — `.section-title`
+   * is the same rule — but it left Scene rendering three headings for four
+   * sections, so the heading tree said the layer list belonged to whatever
+   * section came before it. Asserting the tag, not just the class, is the
+   * point: a class alone is what let this drift.
+   */
+  it("R12b: the Layers section heading is a real heading, in the shared idiom", () => {
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Scene" }));
+    const head = screen.getByRole("heading", { name: "Layers" });
+    expect(head.tagName).toBe("H3");
+    expect(head.classList.contains("section-title")).toBe(true);
+    expect(head.closest(".panel-section")).toBeTruthy();
+    // All four of Scene's sections are headed the same way.
+    for (const name of ["Background", "Frame", "Post", "Layers"]) {
+      expect(screen.getByRole("heading", { name }).tagName).toBe("H3");
+    }
+  });
+
+  /**
    * D6, and the whole reason the split is a split. The SAVE/MANAGE half of
    * looks (your saved chips, the save form, Import…, the Gallery deep link) is
    * occasional and is what makes a destination worth visiting, so it moved.

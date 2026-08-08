@@ -1283,7 +1283,11 @@ button:disabled {
 
 /* `min-width: 0` is NOT cosmetic: without it the page column refuses to shrink
    below its content and `__auditUI` reports outside-scope-x for every wide
-   row in the dock. */
+   row in the dock.
+
+   This element is also the dock's query container: the whole container
+   contract is one block at the END of this file. This rule is what
+   ExportDialog / SettingsDialog / TimelinePanel still get. */
 .visuals-page {
   flex: 1;
   min-width: 0;
@@ -1370,15 +1374,17 @@ button:disabled {
   margin-bottom: 9px;
 }
 
+/* The dock overrides this row's label column through `--row-label-w`; the
+   whole container contract is one block at the END of this file. This rule is
+   what ExportDialog / SettingsDialog / TimelinePanel still get. */
 .param-row {
   display: grid;
   /* minmax(0, 1fr), not bare 1fr: a bare 1fr track's minimum is the
      content's min-content size, and an <input type=range> reports a fixed
-     ~129px intrinsic width — so on narrow panels (and 14px deeper inside the
-     Advanced drawer) the grid overflowed the panel edge and the value column
-     poked outside. Letting the track shrink to 0 keeps the row inside its
-     container at every panel width; the slider itself stretches via width:
-     100%. */
+     ~129px intrinsic width — so on narrow panels the grid overflowed the panel
+     edge and the value column poked outside. Letting the track shrink to 0
+     keeps the row inside its container at every panel width; the slider itself
+     stretches via width: 100%. */
   grid-template-columns: 76px minmax(0, 1fr) 44px;
 }
 
@@ -1796,7 +1802,11 @@ button.row-value:focus-visible {
 }
 
 /* A dropdown param row — same label column as .param-row so a group of mixed
-   sliders and dropdowns still reads as one aligned column of labels. */
+   sliders and dropdowns still reads as one aligned column of labels.
+
+   The dock overrides this row's label column through `--row-label-w`; the
+   whole container contract is one block at the END of this file. This rule is
+   what ExportDialog / SettingsDialog / TimelinePanel still get. */
 .select-row {
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
@@ -1809,7 +1819,12 @@ button.row-value:focus-visible {
 
 /* Selects that are not param rows (Lyrics position, Audiogram accent) share
    the panel's label column too — .field's own 88px is sized for the wider
-   modals it also serves. */
+   modals it also serves.
+
+   The dock overrides this row's label column through `--row-label-w`; the
+   whole container contract is one block at the END of this file. The bare
+   `.field` rule is what ExportDialog / SettingsDialog / TimelinePanel still
+   get. */
 .panel-scroll .field {
   grid-template-columns: 76px minmax(0, 1fr);
   gap: 9px;
@@ -1821,7 +1836,12 @@ button.row-value:focus-visible {
 }
 
 /* Angle row: dial, then the same slider + typed readout every other row has.
-   The dial points where the value points; the slider owns the keyboard. */
+   The dial points where the value points; the slider owns the keyboard.
+
+   The dock overrides this row's label column through `--row-label-w` AND
+   stacks the slider under the label at narrow widths; the whole container
+   contract is one block at the END of this file. This rule is what
+   ExportDialog / SettingsDialog / TimelinePanel still get. */
 .angle-row {
   display: grid;
   grid-template-columns: 76px 24px minmax(0, 1fr) 44px;
@@ -1958,9 +1978,18 @@ button.row-value:focus-visible {
   margin-top: 10px;
 }
 
+/* `flex-shrink: 0` pins the declared 36px, it does not grant new width. Every
+   call site is a flex child (`.color-row`, `.color-field-row`, `.layer-flags`)
+   and a colour input is a POINTER TARGET with no text to reflow — under
+   pressure it was the only thing in its row that yielded, so on the text
+   layer's flags row at the 380px floor it absorbed that row's whole overflow
+   and measured 8px — a target nobody can hit. The two background/frame rows
+   are unaffected: neither is over budget at any dock width (36 + 4×22 + gaps =
+   160px of content in a 177px row), so nothing there was shrinking anyway. */
 .bg-color {
   width: 36px;
   height: 26px;
+  flex-shrink: 0;
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
@@ -2897,15 +2926,30 @@ kbd {
   margin: 2px 0 8px 6px;
 }
 
+/* SINGLE COLUMN AT EVERY WIDTH (H4, v2.84.0). This was the app's one shipped
+   two-column layout — a 54px anchor picker beside a `flex: 1` column of param
+   rows — and it is exactly what the H4 amendment condemns. Measured at the
+   380px dock floor: the row needed 204px and had ~160 (`.panel-scroll`'s 177px
+   content column, less `.layer-editor`'s 6px margin, 2px border and 8px of
+   padding), so it overflowed by 44px and the `flex: 1` column was pinned at
+   its 138px min-content floor (`.param-row`'s 76 + 44 plus two 9px `.row`
+   gaps) — which leaves the `minmax(0, 1fr)` middle track, i.e. the Size,
+   Opacity and Glow sliders, rendering at WIDTH 0. Not a narrow-width
+   bug to gate on a breakpoint: extra dock width belongs to the range tracks,
+   and the same editor's Offset X/Y and Spacing have always been full-width
+   below this block, so a side-by-side pair was never the idiom here anyway.
+   The anchor picker sits on its own line above the sliders. Do not
+   reintroduce a wide variant. */
 .layer-editor-grid {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   margin-top: 8px;
 }
 
 .layer-editor-col {
-  flex: 1;
+  flex: 0 0 auto;
 }
 
 .anchor-grid {
@@ -2931,14 +2975,29 @@ kbd {
   border-color: rgba(106, 168, 255, 0.7);
 }
 
+/* Four leaves — swatch, Bold, AA, font name — needing 218px in a ~160px row at
+   the 380px dock floor (58px over). It wraps rather than squeezing, the house
+   precedent being `.user-presets .save-look-row` above, which took the same
+   treatment for the same reason: three fixed-label actions that must not
+   become multi-line buttons. `row-gap` matches that rule so a wrapped flags
+   row and a wrapped looks row sit on the same rhythm. */
 .layer-flags {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  row-gap: 2px;
   margin-top: 6px;
 }
 
+/* `.look-name-input`'s `flex: 1` with no `min-width: 0` made this the row's
+   immovable object: a text input's min-content floor is its intrinsic size, so
+   the 110px cap behaved as a 110px MINIMUM and the shrink went to the colour
+   swatch instead. `flex: 1 1 110px` under the same `max-width` lets it give
+   ground before anything else in the row does. */
 .font-input {
+  min-width: 0;
+  flex: 1 1 110px;
   max-width: 110px;
 }
 
@@ -3060,17 +3119,24 @@ kbd {
   margin-left: 2px;
 }
 
-.mod-select {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 96px;
-  font-size: 11px;
-  padding: 4px 6px;
-}
+/* TOMBSTONE (H4, v2.84.0) — `.mod-select` lived here: a `flex: 0 1 auto` with
+   a `max-width: 96px` cap, worn by the old modulation page's inline target and
+   source pickers. Those rows became cards in P-1 stage 3 (v2.83.0) and every
+   picker moved to `.mod-create` / `.mod-card-target` / `.mod-source`, none of
+   which want a 96px cap — the cap is the exact defect that page was rebuilt to
+   fix. The class then had ZERO emitters tree-wide (verified: the rule, its own
+   neighbouring comment, and two ModulationPage comments recording the
+   decision — no markup, and `document.querySelectorAll('.mod-select')` is
+   empty on all eight dock pages), and a rule with no emitter is the
+   `.builder-factory-chips` mistake. So it is deleted, not re-derived for the
+   dock's width. The two ModulationPage comments are re-pointed here rather
+   than removed: they document a real decision, not a live selector. The
+   `.mod-row` above STAYS — it is the Live page's MIDI binding row, which did
+   not move. */
 
 /* The create picker is the page's primary action, so it takes the full
- * column — `.mod-select`'s 96px cap is exactly what made every label on this
- * page truncate at every width. */
+ * column — the deleted `.mod-select`'s 96px cap is exactly what made every
+ * label on this page truncate at every width. */
 .mod-create {
   min-width: 0;
   font-size: 12px;
