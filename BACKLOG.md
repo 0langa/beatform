@@ -574,41 +574,46 @@ own resize grip; both separators take the keyboard. **Zero section bodies
 changed** — stage 1 is a pure re-parenting. Everything below is what that
 buys and what it does not.
 
-- [ ] H1 **BLOCKING stage 2 — decide, in writing, where the other six param
-      groups live. The rail is a better index over the SAME pile until this
-      is answered.** Measured on the shipped v2.81.0 tree, and the reason
-      stage 2 is not cosmetic: **the eight rail destinations name at most
-      ONE of the eight `PARAM_GROUPS`** — `Motion`, and even that page holds
-      the GLOBAL motion masters (`Global motion`), not the per-visual
-      `motion` group. `ParamGroups` renders inside the `mode` section and
-      stage 1 did not touch it, so **100% of the per-visual knobs are still
-      on one page**: shape 111, color 69, reaction 69, glow 60, motion 57,
-      backdrop 48, image 18, camera 6 = **438 grouped params** across the
-      registry, plus the `more` fallback — which is where **every** imported
-      Shadertoy preset's knobs land, since `custom.ts` strips `group`. Even
-      after stage 2's planned Color+Motion carve-out that is 126 of 438
-      (29%) moved and **~71% left with no rail home**, so Mode stays an
-      accordion pile. Without a decided answer, stage 2 relabels the
-      imbalance instead of removing it.
-- [ ] H2 **Stage 2 — split section #1 and carve out the group pages.** The
-      style chips, "My Looks", the Save-look form and both `GalleryLink`s
-      move onto the `themes` page, which is relabelled **Looks & themes**
-      (the page id `themes` is already frozen, so the relabel costs
-      nothing). `color` becomes a new **Color** rail item and the per-visual
-      `motion` group joins the masters on **Motion** — nine destinations,
-      finally matching the original brief. Needs `ParamGroups` to take a
-      group-subset argument (or `groupParams` called per page) so
-      `ParamSpec.group` stays the single source of placement. Sequenced
-      after H1.
-- [ ] H3 **Stage 2 — fold in P-9: per-group Advanced disclosure.** Replace
-      the global Essentials/All switch with a per-group **Advanced**
-      disclosure keyed by group id (8 shared ids, ~9 keys — the only variant
-      that fits the 64-entry budget), stored in a **new `advancedGroups`
-      field**, never as a third prefix inside `collapsedSections` (the
-      semantics invert: collapse is a closed set, Advanced defaults closed).
-      Seed it from `advancedOpen` and keep that field declared for one full
-      release before deleting it — retiring it in the same release that
-      seeds its replacement forfeits the seed.
+- [x] H1 **ANSWERED in v2.82.0 — the pile was a TIER problem, not a grouping
+      problem, and the answer is "nowhere: no group gets its own rail
+      destination."** The measured registry refuted the premise this entry
+      was written on. Group _presence_ is nearly constant (12 of 15 modes use
+      exactly 6 groups, 3 use 7), the median curated cell is **2 rows** and
+      the largest anywhere is **6** — so a group rail would have changed by
+      1-2 rows between modes: maximum navigation churn for almost no
+      differentiation. The real concentration is on the other axis: **259 of
+      433 params (60%) are expert tier**, and every cell holding 8+ rows is
+      majority-advanced. Stage 2 therefore split by tier, per group, in
+      place. H2's "Color becomes a new rail item, nine destinations" is
+      **declined** on that evidence, not forgotten.
+- [x] H2 **PARTLY SHIPPED in v2.82.0, partly declined.** Shipped: user looks,
+      the save form, Import and the look `GalleryLink` moved to the `themes`
+      page, relabelled **Looks & themes** (page id untouched); the rail's
+      `Motion` is now **Global motion** with a signpost on its unavailable
+      state. Declined: the group carve-out pages — see H1. The factory style
+      chips deliberately **stayed on Mode**, beside the context header that
+      names the active one; separating a chip row from the heading that
+      reports its state is a regression. The group-subset argument
+      `ParamGroups` would have needed is specified and frozen as a comment at
+      its insertion point, unimplemented, because an orphan surface with no
+      consumer is the `.builder-factory-chips` mistake.
+- [x] H3 **SHIPPED in v2.82.0 — P-9 done as written here.** Per-group expert
+      disclosure keyed by group id in a new `advancedGroups` prefs field,
+      seeded once from `advancedOpen`, which stays declared and validated for
+      one release (delete in 2.83.0). Two things the entry did not anticipate:
+      the UI calls the tier **expert controls**, not "Advanced" — the retired
+      drawer owned that word and reusing it would blur the distinction; and a
+      bulk **Show every control** button was required, because per-group
+      disclosures alone charge a power user one click per group where the
+      switch charged one. It writes every group id in a SINGLE update — the
+      naive per-group loop collapses to last-write-wins.
+      Also fixed here so the disclosures were not mostly empty theatre: 21
+      registry promotions via a new `ParamSpec.tier?: "curated"` flag that
+      re-tiers **in place**. Specs are never moved between `params[]` and
+      `advanced[]` — those arrays ARE the ABI and a move repacks every
+      accessor index. Guarded permanently by `abiOrder.test.ts` (baseline
+      captured pre-change) and `curation.test.ts` (every group of every
+      built-in has at least one control above its expert line).
 - [ ] H4 **Stage 2 — the page layout pass.** **Reset** and a **Save look**
       button in the context header (deliberately not shipped in stage 1:
       Save look had no destination until the Looks page exists, and a header

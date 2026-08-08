@@ -11,6 +11,38 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.82.0] - 2026-08-08
+
+### Changed
+
+- **Every group of controls now hides its own expert tier, instead of one
+  switch hiding all of them.** The **Essentials / All** toggle is gone. Each
+  group on the Mode page — Shape, Color, Motion, Glow, Reaction, Backdrop —
+  shows the controls that shape the look, with the internal constants behind
+  its own line reading _"7 expert controls"_. Open only the group you are
+  working in. **Show every control**, under the group list, still opens the
+  lot in one click, and if you used to sit on "All" you keep everything open
+  after the update.
+  - Each group's line carries its own **n changed** count, so you can see at a
+    glance which expert tier you have been editing. The whole-visual count
+    moved next to Reset.
+  - Searching still reaches every control, expert ones included, and hides the
+    disclosures while you search — there is nothing left to reveal when every
+    match is already on screen.
+- **Every group a visual declares now has something in it.** On thirteen of
+  the fifteen modes **Backdrop** used to be a bare heading, and a group whose
+  controls were all expert vanished from the page entirely. Each group now
+  leads with the one control most likely to change how it looks — Vignette on
+  most, the graticule on Oscilloscope, wall brightness in Tunnel, panel
+  variance on LED Matrix, horizon fog on Synthwave.
+- **Your saved looks moved to Looks & themes**, the rail destination formerly
+  called Themes — saving, importing, deleting and the Gallery shortcut all
+  live there now. A visual's own **style chips stay on Mode**, next to the
+  header that names the active one.
+- **The rail's Motion destination is now Global motion**, because a visual's
+  own motion controls are on its Mode page. Picking it on a visual that has no
+  masters says so, instead of just dimming.
+
 ## [2.81.0] - 2026-08-08
 
 ### Changed
@@ -2243,7 +2275,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.81.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.82.0...HEAD
+[2.82.0]: https://github.com/0langa/beatform/compare/v2.81.0...v2.82.0
 [2.81.0]: https://github.com/0langa/beatform/compare/v2.80.0...v2.81.0
 [2.80.0]: https://github.com/0langa/beatform/compare/v2.79.0...v2.80.0
 [2.79.0]: https://github.com/0langa/beatform/compare/v2.78.0...v2.79.0

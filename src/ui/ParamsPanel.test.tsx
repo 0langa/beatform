@@ -86,10 +86,10 @@ afterEach(() => {
   cleanup();
   // Never setState(x, true): a full replace would drop the actions.
   useVizStore.setState(PRISTINE);
-  // Prefs bleed between tests otherwise — the panel seeds showAdvanced/tab/
-  // collapsed from getPrefs() at MOUNT, so a collapse written by one test
-  // silently hides controls from the next (it only ever worked because that
-  // describe was last in the file).
+  // Prefs bleed between tests otherwise — the panel seeds advancedGroups,
+  // the active page and the collapse set from getPrefs() at MOUNT, so a
+  // collapse written by one test silently hides controls from the next (it
+  // only ever worked because that describe was last in the file).
   setPrefs(DEFAULT_PREFS);
   errorSpy.mockRestore();
   // The standing anti-allocation guard for the whole file: an allocating
