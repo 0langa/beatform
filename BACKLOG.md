@@ -323,37 +323,94 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
 
 ### Track D — Docs truth pass (after A naming lands)
 
-- [ ] D1 In-app user guide full rewrite against the current app: define
-      Style/Look/Theme/Gallery per the vocabulary, add a Gallery section,
-      correct every drifted term ("Styles — curated one-click looks" etc.),
-      sweep all 12 sections for staleness (guide predates lyrics, Gallery,
-      perf overlay, preview scale…). **Partly paid down in v2.80.0** — the
-      in-app guide's Settings/Preferences section and every surface name are
-      now correct; the 12-section staleness sweep is still open.
+- [x] D1 **DONE (docs truth pass, 2026-08-09).** The 12-section staleness
+      sweep landed: every section read against the live code, a **Gallery**
+      section added (13 now — `docs/guide.md`'s section count updated with
+      it), and the Style/Look/Theme/Gallery vocabulary defined in one place
+      on the Projects section. Corrected FALSE claims, not phrasing: the
+      Preferences section listed neither the **Modes** tab, preview
+      resolution nor Performance display (the same hole D2 fixed in
+      `docs/guide.md` in v2.80.0 — the in-app copy was never touched);
+      "every shortcut is a letter or digit" (Space, arrows, `?`, `[ ] \ .`
+      all exist — the truth is _primary_ bindings are letters/digits, the
+      punctuation aliases are `e.code`-bound); "Every mode has Styles"
+      (Builder has none — it has six stack presets); post chain missing
+      Filmic tonemap and Bloom threshold; background Image "cover-fit"
+      (it is Fill/Fit/Stretch + zoom + pan); the background scope switch
+      labels; lyric animation labels; audiogram Position (Top/Bottom only,
+      not free); the transition list missing Wipe ↑; the export list missing
+      **AV1 10-bit** and mis-filing Canvas loop as a format; "Match cover
+      colors" attributed to Bass Circle alone; Builder's "orb" (Orb core).
+      The Modulation paragraph was rewritten for v2.83.0 — target-first
+      cards, depth, curve/rise/fall, six recipes, LFO sources, the **Driven
+      by** meters and the **driven** mark on the sliders themselves.
 - [ ] D2 README + docs/ site + gallery-repo docs same sweep. **README,
       `docs/index.md`, `docs/guide.md` and `docs/templates.md` done in
       v2.80.0** (surface names + Template→Theme residue + the Preferences
       tab inventory, which had never listed Modes or Performance; the
       factory-pack names in `docs/index.md` named four themes that have not
-      existed since the seed set was rebuilt). Remaining: the gallery-repo
-      docs, and the docs page still lives at the `/templates` URL with the
-      file `docs/templates.md` — renaming both plus every inbound link is a
-      separate, link-breaking change.
-- [ ] D3 Repo-wide string audit for "template"/naming residue (UI strings,
-      tooltips, aria-labels, comments). **README + `docs/` cleared in
-      v2.80.0**; UI strings/comments still to sweep. Note the two legitimate
-      survivors: `SectionDef.id: "Templates"` (persisted collapse key, title
-      reads "Themes") and the shader editor's "starter shader", which is a
-      code template, not a `.bftheme`.
-- [ ] D4 **READY — `CHANGELOG.md` has no `## [2.74.0]` section at all.**
-      The release shipped 2026-08-07 (mode-depth batch 1: voice-orb, aurora,
-      synthwave, led-matrix) and its link reference exists, but the notes
-      section was never written, so `changelogNotes.ts` — which slices
-      `## [x.y.z]` headings for the update dialog — silently skips it for
-      every user who updated across that version. Reconstruct the notes from
-      the Track B batch-1 record and the v2.74.0 commit range; do not
-      invent. (Found during the v2.80.0 docs pass, which also backfilled the
-      missing `[2.75.0]`–`[2.79.0]` link references.)
+      existed since the seed set was rebuilt). **Second pass 2026-08-09**
+      re-ran all four against the code and fixed what v2.80.0's naming pass
+      did not look at: README's "5-7 curated factory styles" (it is 6-14),
+      its Preferences one-liner (same missing tabs as D1), its sync-source
+      list (missing snare/hats), its "letter/digit keys only" claim, its
+      "cover-fit image", and a **Dev section that named only
+      `fetch-ffmpeg.mjs`** while `tauri build` needs whisper, onnxruntime
+      and the lyrics sidecar too — plus a CI line that claimed five web
+      gates when CI also runs cargo fmt/clippy/test and two audits.
+      `docs/templates.md` advertised `projectSchemaVersion: 6`; the app
+      writes **14**. `docs/presets.md` told new preset authors to write
+      "5–7 curated looks". Remaining: **the gallery-repo docs** (the
+      `beatform-app/gallery` repo is not checked out beside this one, so it
+      was not audited — do it from a clone). The `/templates` URL rename
+      stays filed and OUT OF SCOPE: it breaks every inbound link, including
+      external ones, and is the owner's call.
+- [x] D3 **DONE (2026-08-09) — repo-wide string audit is clean in the
+      surfaces this track owns.** No "Inspector" anywhere in `src/`,
+      `docs/` or README. No "Template" in any rendered UI string, tooltip
+      or aria-label. The two legitimate survivors are intact and were not
+      touched: `SectionDef.id: "Templates"` (title reads "Looks & themes")
+      and the shader editor's `NEW_SHADER_TEMPLATE` starter shader.
+      Deliberately left: the word `templates` inside the Looks & themes
+      section's hidden search blob (`ParamsPanel.tsx`) — it is a search
+      alias, not a label, and it is the word a user coming from an older
+      build would type. **Filed, not fixed** (all outside this track's
+      write scope — see the D5 note): "Builder Studio" in a user-facing
+      toast in `App.tsx`, and "template" as the running word for `.bftheme`
+      throughout `src/state/factoryThemes.ts`, `themes.ts`, `project.ts`
+      and `store.ts` comments.
+- [x] D4 **CLOSED — already fixed, no work needed.** The premise held only
+      until commit `cecbdaf` ("docs(changelog): restore the missing 2.74.0
+      heading"): the v2.74.0 notes had been written but had **lost their
+      `## [2.74.0]` heading**, so they were being absorbed into the 2.75.0
+      section and `changelogNotes.ts` — which slices on `## [x.y.z]` — skipped
+      the version entirely in the update dialog. The heading was restored,
+      not the notes reconstructed. Verified 2026-08-09:
+      `rg -n "^## \[2\.74\.0\]" CHANGELOG.md` → `388:## [2.74.0] - 2026-08-07`,
+      and every heading from `[2.70.0]` to `[2.84.0]` is present and in order.
+- [ ] D5 **NEW, from the D3 sweep — naming residue outside the docs track's
+      write scope.** Three findings, all reported rather than changed:
+      (a) `src/App.tsx` — the Canvas2D-fallback toast tells the user
+      "Builder Studio … [is] switched off"; the mode is called **Builder**
+      everywhere a user can see it, and "Studio" is a retired surface word.
+      One-word fix in a user-facing string.
+      (b) `src/state/factoryThemes.ts`, `themes.ts`, `project.ts`,
+      `store.ts` and `src/render/overlay.ts` still use "template" as the
+      running word for a `.bftheme` ("Factory template packs", "Apply a
+      template's document", "a template gallery"). Comments only — no
+      rendered string — but it is the retired vocabulary sitting in the
+      files that define the format.
+      (c) **Code-truth defect, not naming:** the comment at
+      `ParamsPanel.tsx:1065-1069` says collapse state "persisted as
+      `Templates` must keep applying to this section". It cannot —
+      `prefs.ts:295-299` filters `collapsedSections` down to entries
+      prefixed `group:`, so a bare `Templates` key is pruned on read, and
+      the `SectionDef.id` doc comment 670 lines above says the opposite
+      ("P-1 retired in-page section collapse, so nothing reads these off
+      disk any more"). One of the two comments is wrong and the id's
+      justification is the wrong one. **The id itself must still not be
+      renamed** — it is a React key whose churn buys nothing — but the
+      stated reason should be corrected to match `prefs.ts`.
 
 ### Track E — Hardening burn-down (NEW, from the audit register)
 

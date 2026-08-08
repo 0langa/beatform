@@ -19,8 +19,8 @@ checksum-verified selection.
 {
   "kind": "bftheme",
   "schemaVersion": 1, // .bftheme format version
-  "projectSchemaVersion": 6, // embedded document schema (same as .bfproj)
-  "appVersion": "2.17.0", // app that wrote it (informational)
+  "projectSchemaVersion": 14, // embedded document schema (same as .bfproj)
+  "appVersion": "2.84.0", // app that wrote it (informational)
   "meta": {
     "name": "Midnight Phonk", // required
     "author": "you", // defaults to "unknown"

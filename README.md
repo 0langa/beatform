@@ -35,12 +35,13 @@ Free and open source. Built to become a professional-grade tool for producers an
   **Bass Circle** (circular bass visualizer with album art), and **Builder** — a real
   layer compositor: stack up to twelve layers, each with its own blend mode,
   color and parameters; share stacks as `.bfbuilder` files
-- Every mode: 5-7 curated factory **styles**, plus its controls sorted into
-  groups (~430 app-wide). Each group leads with the controls that change the
+- Every mode but Builder: 6-14 curated factory **styles**, plus its controls
+  sorted into groups (~430 app-wide). Each group leads with the controls that change the
   look and folds its internal constants behind its own **expert line**, closed
   by default and counting what you have changed; **Show every control** opens
   them all at once. Plain-language **hint** for every control (tooltip + live
-  hint bar), all persisted per mode
+  hint bar), all persisted per mode. Builder carries six whole-stack starting
+  points instead of style chips
 - **Visuals dock** (press **G**): a persistent, keyboard-resizable right-hand
   column the visual runs full width behind — tune while
   you watch. One vertical **section rail** of eight destinations (Mode, Global
@@ -62,8 +63,11 @@ Free and open source. Built to become a professional-grade tool for producers an
   visual and its `.bfshader` exports
 - **Auto-updates**: the app checks GitHub Releases and installs new versions
   in one click (signature-verified; no telemetry — the check is a plain fetch
-  of a static file). **Preferences** (Ctrl+,): autosave delay, live frame
-  cap, GPU preference, update controls
+  of a static file). **Preferences** (Ctrl+,), four tabs: _General_ (autosave
+  delay, remembered save-dialog folder), _Modes_ (drag the mode strip into
+  your own order), _Performance_ (live frame cap, preview resolution, GPU
+  preference, and a **Performance display** FPS/CPU/memory overlay drawn over
+  the preview and never into it), _Updates_
 - **Project files**: save/open the whole setup (preset, params, sync,
   background, layers) as versioned `.bfproj` files — Ctrl+S / Ctrl+O,
   native dialogs
@@ -79,13 +83,18 @@ Free and open source. Built to become a professional-grade tool for producers an
 - **Musical analysis on every track** (background worker): BPM + beat grid
   (visuals get beat/bar phase), kick/snare/hat onset classes as sync
   sources, key detection (Krumhansl), section boundaries as seek-bar ticks
-- **Modulation matrix**: route any audio feature (drums, bands, width,
-  beat phase...) to any knob of the active visual — resolved by the same
-  track-time functions in exports
+- **Modulation matrix**: target-first cards routing any audio feature (drums,
+  bands, width, beat/bar phase, section change, the lyric line, an imported
+  stem's bands) or one of eighteen beat-synced LFOs onto any knob of the
+  active visual **and the whole post chain** — with depth, response curve,
+  rise/fall, six one-click recipes, live per-source meters, and a _driven_
+  mark on the sliders themselves. Resolved by the same track-time functions in
+  exports
 - **Smooth curve toggle**: spline-connected spectrum (Catmull-Rom through
   the bins) instead of hard-edged bars, across all visuals
 - **Timeline workstation** (press T): arrange scenes (any visual per song
-  part) with beat-snapped drag, crossfade transitions, and keyframe
+  part) with beat-snapped drag, seven scene transitions (crossfade, two
+  wipes, iris, zoom, glitch, hard cut), and keyframe
   automation lanes for any parameter — against a waveform overview with a
   beat/bar ruler and section markers. Exports resolve the arrangement from
   deterministic track-time timestamps.
@@ -93,11 +102,13 @@ Free and open source. Built to become a professional-grade tool for producers an
   (a slider drag is one step); crash-safe autosave on desktop, offered back on the
   next launch if the app died with unsaved work
 - Sync-source system: choose what visuals react to (kicks, energy, bass,
-  melody, voice, treble) + smoothing, per mode
+  melody, voice, treble, snare, hats) + smoothing/attack/release, saved per mode
 - Background system on every preset: preset-animated, any solid color
   (incl. chroma green/magenta swatches), transparent (luma alpha,
-  checkerboard preview), a cover-fit **image** (or album art), or a looped
-  **video** (desktop; deterministic frame-by-track-time so exports match)
+  checkerboard preview), an **image** (or album art), or a looped
+  **video** (desktop; deterministic frame-by-track-time so exports match).
+  Image and video share a Fill/Fit/Stretch framing row with zoom and pan, and
+  a scope switch gives any single mode its own background
 - **MP4 export**: offline-rendered WebCodecs pipeline (H.264 + AAC, hardware
   encode, faster than realtime) running **in a worker** — the UI never
   freezes. On desktop, exports **stream straight to disk** (fragmented MP4,
@@ -151,7 +162,10 @@ Free and open source. Built to become a professional-grade tool for producers an
   chrome-free full-bleed output with blackout and a mode-name HUD; **Web MIDI**
   maps knobs to any parameter and notes to modes (local, no drivers). Preview-only
   — never affects exports
-- Product chrome: auto-hides while playing (the Visuals dock stays lit), keyboard shortcuts (press H — letter/digit keys only, so they work on every keyboard layout),
+- Product chrome: auto-hides while playing (the Visuals dock stays lit),
+  keyboard shortcuts (press H — every performance shortcut has a letter or
+  digit as its primary binding, so it works on every keyboard layout; the
+  punctuation aliases are bound by physical key position),
   hover-scrub seek bar, onboarding empty state, GPU-loss auto-recovery
 - Three synthesized demo tracks (120 BPM house / 174 BPM DnB / 70 BPM ambient)
   for instant cross-style testing without files
@@ -201,16 +215,28 @@ slice and is what `.bfproj` serializes.
 
 ```
 npm install
-node scripts/fetch-ffmpeg.mjs  # one-time: ProRes sidecar (~110 MB, not in git)
+
+# one-time, none of these are in git:
+node scripts/fetch-ffmpeg.mjs          # ffmpeg sidecar (~110 MB) — ProRes/AV1/GIF/WebP
+node scripts/fetch-whisper.mjs         # whisper.cpp runtime (lyrics)
+node scripts/fetch-onnxruntime.mjs     # onnxruntime + DirectML (lyrics)
+node scripts/build-lyrics-sidecar.mjs  # lyrics sidecar exe — required before any cargo
+                                       # command works (the bundle resource must exist)
+
 npm run dev          # browser dev at localhost:1420 (fastest iteration)
 npm run tauri dev    # full desktop shell
-npm run tauri build  # installer (needs the ffmpeg sidecar fetched)
+npm run tauri build  # installer (needs every sidecar above)
 npm test             # vitest (DSP, schemas, golden traces)
 npm run lint         # eslint
 npm run typecheck    # tsc --noEmit
 ```
 
-CI runs typecheck, lint, format check, tests and build on every push/PR.
+The full gate list — web, Rust, and the device/E2E suites with the rules for
+when each is mandatory — is [`GATES.md`](GATES.md). CI runs the web gates
+(typecheck, lint, format check, tests, build) on every push/PR, plus a desktop
+job (`cargo fmt --all`, `cargo clippy --workspace`, `cargo test --workspace`)
+and a dependency audit. Always pass `--workspace`/`--all` to cargo: bare cargo
+silently skips the lyrics-sidecar member.
 
 ## Roadmap
 
