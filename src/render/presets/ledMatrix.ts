@@ -571,6 +571,7 @@ export const ledMatrix: PresetDef = {
       key: "panelVariance",
       label: "Panel variance",
       group: "backdrop",
+      tier: "curated",
       min: 0,
       max: 1,
       step: 0.02,

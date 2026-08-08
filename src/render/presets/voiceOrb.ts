@@ -629,6 +629,7 @@ export const voiceOrb: PresetDef = {
       key: "vignette",
       label: "Vignette",
       group: "backdrop",
+      tier: "curated",
       min: 0,
       max: 1,
       step: 0.05,

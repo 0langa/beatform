@@ -511,6 +511,7 @@ export const spectrumBars: PresetDef = {
       key: "vignette",
       label: "Vignette",
       group: "backdrop",
+      tier: "curated",
       min: 0,
       max: 1.2,
       step: 0.05,

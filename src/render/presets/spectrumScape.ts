@@ -694,6 +694,7 @@ export const spectrumScape: PresetDef = {
       key: "fogDensity",
       label: "Fog",
       group: "backdrop",
+      tier: "curated",
       min: 0,
       max: 0.2,
       step: 0.005,
