@@ -133,6 +133,13 @@ function assertRuntime(matrix) {
   if (!modulation?.passed) {
     failures.push(`modulation page layout audit failed: ${JSON.stringify(modulation)}`);
   }
+  // H4: row geometry plus the eight-page clipping audit at both ends of the
+  // dock's range. Not a pixel assertion — the hashes cannot see the panel —
+  // and it is the only gate in the tree that can look at a rendered row at
+  // all. Its `overflow` field is diagnostic, deliberately not asserted
+  // (BACKLOG Q8): read it, never wave it through.
+  const dock = matrix.dockLayoutSmoke;
+  if (!dock?.passed) failures.push(`dock layout audit failed: ${JSON.stringify(dock)}`);
   if (failures.length) throw new Error(failures.join("\n"));
 }
 
@@ -201,6 +208,10 @@ async function evaluateMatrix() {
             new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
           let spectrumSmoke;
           let modulationSmoke;
+          // Declared out here with the other two, NOT inside the leg it
+          // belongs to: the return below sits AFTER the outer finally, so a
+          // binding scoped to that try block is a ReferenceError every run.
+          let dockLayoutSmoke;
           try {
             store.getState().setSync({
               ...originalSync,
@@ -389,12 +400,236 @@ async function evaluateMatrix() {
                 }
               }
             }
+
+            // ---- Dock layout leg (H4, v2.84.0). -----------------------
+            // The row-geometry gate, and the only place it CAN live. The
+            // hash matrix above renders into an OffscreenCanvas and is
+            // awaited before the panel is ever shown, so it is structurally
+            // incapable of seeing a row; jsdom has no layout, so vitest
+            // cannot see one either. Between them that left the dock's row
+            // geometry uncheckable, and a slider rendering at 0px width
+            // shipped for three releases with every gate green.
+            //
+            // radial-burst DELIBERATELY. Its "Angle" is a CURATED param —
+            // declared in the preset's own params array, not behind a
+            // group's expert disclosure — so the row whose track measured
+            // 0px at the 380px floor, and reported a real text-clip of the
+            // range thumb, is on screen with nothing opened. A baseline
+            // taken on a preset that declares no angle param records a
+            // FALSE GREEN, and that is exactly how this survived v2.81-2.83.
+            const originalPreset = store.getState().presetId;
+            const originalCollapsed = [...window.__prefs.get().collapsedSections];
+            try {
+              store.getState().switchPreset("radial-burst");
+              await settle();
+
+              // The dock's width is React state seeded from prefs once at
+              // mount, so writing the pref cannot move it. The separator's
+              // KEYBOARD path is the real one and it is exact at both ends:
+              // Home = 380 (the floor), End = 760 (the ceiling).
+              const dockHandle = document.querySelector('[aria-label="Resize Visuals"]');
+              if (!dockHandle) throw new Error("Visuals dock: no resize separator");
+              const pressWidth = async key => {
+                dockHandle.dispatchEvent(
+                  new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+                );
+                await settle();
+              };
+
+              // Frozen ids, not labels — same contract the Sync and
+              // Modulation legs select on (ParamsPanel data-section).
+              const PAGES = [
+                "mode",
+                "motion",
+                "themes",
+                "sync",
+                "modulation",
+                "scene",
+                "text",
+                "live",
+              ];
+              const goToPage = async id => {
+                const rail = [...document.querySelectorAll(".rail-item")]
+                  .find(button => button.dataset.section === id);
+                if (!rail) throw new Error("Visuals rail: no " + id + " destination");
+                rail.click();
+                await settle();
+              };
+
+              // Group disclosures PERSIST (prefs.collapsedSections) and are
+              // seeded into React state at mount, so a dev session that left
+              // "Motion" collapsed would hide the angle row and turn the
+              // anti-vacuity clause below into a false FAILURE about this
+              // machine's localStorage. Opening them restores the SHIPPED
+              // DEFAULT (collapsedSections is [] out of the box); it does
+              // not open any group's expert tier, so "curated, no disclosure
+              // opened" still describes exactly what the angle row is.
+              // Re-queried each pass because React re-renders between the
+              // synchronous clicks, and bounded so a styling change that
+              // stops .open landing cannot spin here.
+              await goToPage("mode");
+              let openedGroups = 0;
+              for (let i = 0; i < 24; i++) {
+                const shut = [...document.querySelectorAll(".param-group > .group-head")]
+                  .find(head => !head.classList.contains("open") && !head.disabled);
+                if (!shut) break;
+                shut.click();
+                openedGroups++;
+                await settle();
+              }
+
+              const widthLeg = async key => {
+                await pressWidth(key);
+                const pages = [];
+                for (const id of PAGES) {
+                  await goToPage(id);
+                  const scroller = document.querySelector(".panel-scroll");
+                  const context = document.querySelector(".visuals-context");
+                  if (!scroller || !context) {
+                    throw new Error("Visuals page: no scroller/context on " + id);
+                  }
+                  pages.push({
+                    page: id,
+                    audit: window.__auditUI(".params-panel"),
+                    header: Math.round(context.getBoundingClientRect().height),
+                    // Reported so an empty AUDIT can be told apart from an
+                    // audit of an empty PAGE. Pages legitimately differ:
+                    // Motion is a single explanatory paragraph whenever the
+                    // active visual declares no rotation/pulse/detail
+                    // masters, and Live is a short list until MIDI is bound.
+                    // That is why this is a diagnostic and the anti-vacuity
+                    // assertion is anchored on the Mode page instead.
+                    rows: scroller.querySelectorAll(".row, .field, .panel-section").length,
+                    // REPORTED, NOT ASSERTED — owner decision (BACKLOG Q8).
+                    // .panel-scroll declares overflow-y:auto, which computes
+                    // overflow-x to auto as well, so __auditUI's
+                    // outside-scope-x walk always finds a scrollable ancestor
+                    // and can NEVER fire inside the dock: a too-wide row
+                    // grows a scrollbar instead of reporting. Its text-clip
+                    // check is no help either, because it skips any element
+                    // with children — a truncated <select> is invisible to
+                    // it. Both of those are why the two measured Layers
+                    // overflows were invisible to the gate. A non-empty entry
+                    // here is a finding to fix or file, NEVER something to
+                    // wave through as "auditor clean".
+                    overflow: [
+                      ...scroller.querySelectorAll(
+                        ".row, .layer-editor, .layer-editor-grid, .param-group-body",
+                      ),
+                    ]
+                      .filter(el => el.scrollWidth > el.clientWidth + 1)
+                      .map(el => ({
+                        el: String(el.className),
+                        px: el.scrollWidth - el.clientWidth,
+                      })),
+                  });
+                }
+                await goToPage("mode");
+                const panel = document.querySelector(".params-panel");
+                const page = document.querySelector(".visuals-page");
+                const scroller = document.querySelector(".panel-scroll");
+                if (!panel || !page || !scroller) {
+                  throw new Error("Visuals dock: no panel/page/scroller to measure");
+                }
+                const widths = sel =>
+                  [...document.querySelectorAll(sel)].map(el =>
+                    Math.round(el.getBoundingClientRect().width),
+                  );
+                return {
+                  // Reported, not asserted, for the reason the Modulation
+                  // leg reports its own: --visuals-w is additionally clamped
+                  // to 100vw minus 560px, so on a narrow display the wide leg
+                  // genuinely cannot reach 760 and a hard 760 assertion would
+                  // be a false failure about the SCREEN, not about the dock.
+                  dockWidth: Math.round(panel.getBoundingClientRect().width),
+                  container: Math.round(page.getBoundingClientRect().width),
+                  labelColumn: getComputedStyle(scroller)
+                    .getPropertyValue("--row-label-w")
+                    .trim(),
+                  angleSliders: widths(".panel-scroll .angle-row .slider"),
+                  paramSliders: widths(".panel-scroll .param-row .slider"),
+                  pages,
+                };
+              };
+
+              const narrow = await widthLeg("Home");
+              const wide = await widthLeg("End");
+              const seen = [...narrow.pages, ...wide.pages];
+              dockLayoutSmoke = {
+                passed:
+                  // ANTI-VACUITY, and first on purpose: an audit over a page
+                  // that rendered nothing is empty for the WRONG REASON, and
+                  // every clause after this one is meaningless if the sweep
+                  // never saw the geometry it claims to gate. radial-burst
+                  // puts one angle row and well over five param rows on the
+                  // Mode page with no expert tier opened, at BOTH ends of the
+                  // range — the wide half matters too, because a query that
+                  // stacked or hid a row would otherwise read as clean.
+                  narrow.angleSliders.length >= 1 &&
+                  wide.angleSliders.length >= 1 &&
+                  narrow.paramSliders.length >= 5 &&
+                  wide.paramSliders.length >= 5 &&
+                  seen.every(p => Array.isArray(p.audit) && p.audit.length === 0) &&
+                  // The defect this release closes. At the floor the angle
+                  // track was 0px; 80px is where a 13px thumb finally has
+                  // more travel than thumb.
+                  Math.min(...narrow.angleSliders) >= 80 &&
+                  Math.min(...wide.angleSliders) >= 80 &&
+                  Math.min(...wide.paramSliders) >= 80 &&
+                  Math.min(...narrow.paramSliders) > 0 &&
+                  // The container contract actually FIRED, and only above the
+                  // step. A no-op query — the token declared on the query
+                  // container itself, or a selector whose specificity the
+                  // base rule beats — still passes the narrow half, so the
+                  // wide half is the one that catches it.
+                  narrow.labelColumn === "76px" &&
+                  wide.labelColumn === "104px" &&
+                  // The precondition any future context-header work must
+                  // clear. __auditUI is blind to a wrapped .section-title
+                  // (it wraps, it does not clip, and the auditor only sees
+                  // clipping), so height is the only signal that a fourth
+                  // leaf pushed the header onto two lines. One line measures
+                  // ~26px: 12.5px type plus 2+8 padding and a 1px rule.
+                  seen.every(p => p.header <= 36),
+                openedGroups,
+                narrow,
+                wide,
+              };
+            } finally {
+              // switchPreset records an undo entry and writes localStorage;
+              // switching back reverses both, exactly as the other legs undo
+              // what they mutate. The group disclosures go back through prefs
+              // for the same reason the dock width does — the next boot reads
+              // the persisted set, not this session's React state.
+              store.getState().switchPreset(originalPreset);
+              window.__prefs.set({ collapsedSections: originalCollapsed });
+              // …and walk the LIVE width back off the 760 ceiling this leg
+              // left it on, the same way the Modulation leg does: the outer
+              // finally restores the pref, but an --attach run keeps looking
+              // at the window afterwards.
+              const dockHandleBack = document.querySelector('[aria-label="Resize Visuals"]');
+              if (dockHandleBack) {
+                dockHandleBack.dispatchEvent(
+                  new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }),
+                );
+                const backSteps = Math.round((originalWidth - 380) / 16);
+                for (let i = 0; i < backSteps; i++) {
+                  dockHandleBack.dispatchEvent(
+                    new KeyboardEvent("keydown", {
+                      key: "ArrowLeft",
+                      bubbles: true,
+                      cancelable: true,
+                    }),
+                  );
+                }
+              }
+            }
           } finally {
             store.getState().setSync(originalSync);
             store.getState().setShowPanel(originalPanel);
             window.__prefs.set({ visualsPage: originalPage, visualsWidth: originalWidth });
           }
-          return { ...matrix, spectrumSmoke, modulationSmoke };
+          return { ...matrix, spectrumSmoke, modulationSmoke, dockLayoutSmoke };
         })()`,
         awaitPromise: true,
         returnByValue: true,
@@ -458,7 +693,9 @@ try {
         `0 GPU errors, ${rawHashChanges} tolerance-only raw hash changes; ` +
         `spectrum smoke ${matrix.spectrumSmoke.displayBins} measured bins; ` +
         `modulation audit clean at ${matrix.modulationSmoke.narrow.dockWidth}px and ` +
-        `${matrix.modulationSmoke.wide.dockWidth}px`,
+        `${matrix.modulationSmoke.wide.dockWidth}px; ` +
+        `dock layout clean on 8 pages at ${matrix.dockLayoutSmoke.narrow.dockWidth}px and ` +
+        `${matrix.dockLayoutSmoke.wide.dockWidth}px`,
     );
   }
 } finally {
