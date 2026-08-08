@@ -41,6 +41,7 @@ import {
   type ValueUnit,
 } from "./kit";
 import { GROUP_KEY, ParamGroups, type ParamGroupExtra } from "./ParamGroups";
+import { drivenParamKeys } from "../state/drivenTargets";
 import type { AppPrefs } from "../state/prefs";
 import { getPrefs, setPrefs } from "../state/prefs";
 import { LayersPanel } from "./LayersPanel";
@@ -502,6 +503,17 @@ export function ParamsPanel() {
     () => userPresets.filter((p) => p.presetId === presetId),
     [userPresets, presetId],
   );
+  /**
+   * The `driven` mark's input: which knobs of this mode a modulation route
+   * will actually move (P-1 stage 3). Same shape and same reason as
+   * `looksForMode` directly above — `useMemo`, NEVER a zustand selector. An
+   * allocating selector hands useSyncExternalStore a fresh Set on every store
+   * notification, which is "Maximum update depth exceeded" on mount.
+   *
+   * Zero new subscriptions: `mods` is already read above for the rail badge,
+   * and `preset` at the top of this component.
+   */
+  const driven = useMemo(() => drivenParamKeys(preset, mods), [preset, mods]);
 
   // ── WRITES: one stable accessor; actions are called at the click site.
   // Actions are built once inside create()'s initializer and every write is a
@@ -871,6 +883,7 @@ export function ParamsPanel() {
               onHint={setHint}
               advancedGroups={advancedGroups}
               onToggleAdvanced={toggleAdvanced}
+              driven={driven}
               query={q}
               collapsed={collapsed}
               onToggleGroup={toggleGroup}
