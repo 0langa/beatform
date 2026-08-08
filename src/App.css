@@ -151,6 +151,29 @@ body,
   --visuals-w-live: 0px;
 }
 
+/* The dock's COLUMN, painted window-edge to window-edge.
+   The dock spans only between the two bars (D2), and the canvas is inset away
+   from this column entirely — so the strips above and below the dock fell
+   through to the app background, and the right-hand side read as a black box
+   with a panel floating inside it. Painting the full column makes the dock,
+   the strip behind the top bar's right cluster and the strip behind the
+   transport read as one continuous surface.
+   Collapses to zero width when the dock is closed and in stage mode, because
+   it derives from the same token. First child in DOM order at z-index 0, so
+   every positioned sibling — bars, strip, timeline, the dock itself — paints
+   above it without needing a z-index of its own. */
+.app::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--visuals-w);
+  background: var(--bg-strong);
+  pointer-events: none;
+  z-index: 0;
+}
+
 /* ---------- canvas ---------- */
 
 .viz-canvas {
@@ -1107,8 +1130,13 @@ button:disabled {
   width: var(--visuals-w-live);
   display: flex;
   flex-direction: column;
-  background: var(--glass);
-  backdrop-filter: blur(18px);
+  /* SOLID, not glass. `--glass` + backdrop-filter existed to blur the VISUAL
+     behind a floating overlay. Docked, the canvas is inset away from this
+     column, so there is nothing behind the dock to blur — the blur resolved
+     against the app background and the whole right side read as a flat black
+     box. A permanent workspace surface should look like one. Dropping the
+     filter also retires a full-size backdrop pass every frame. */
+  background: var(--bg-strong);
   border-left: 1px solid var(--border);
   /* Above the timeline (6), below its own resize handle (9). */
   z-index: 8;
