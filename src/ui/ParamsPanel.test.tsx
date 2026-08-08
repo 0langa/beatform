@@ -1,14 +1,22 @@
 // @vitest-environment jsdom
 import { StrictMode, useSyncExternalStore } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { DEFAULT_PREFS, getPrefs, setPrefs, subscribePrefs } from "../state/prefs";
 import { ParamsPanel } from "./ParamsPanel";
+import { cardHeading } from "./ModulationPage";
+import { formatValue } from "./kit";
 import { renderProbe } from "./testing/renderProbe";
 import { presets } from "../render/presets";
-import { advancedKeys, allParams, groupParams } from "../render/types";
+import {
+  advancedKeys,
+  allParams,
+  groupParams,
+  isModTarget,
+  POST_MOD_TARGETS,
+} from "../render/types";
 import { BUILDER2_ID } from "../render/builder2";
-import { LFO_SOURCES } from "../state/modMatrix";
+import { LFO_SOURCES, MOD_LAG_MAX_SEC, MOD_SOURCES } from "../state/modMatrix";
 import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
 
 /**
@@ -237,13 +245,32 @@ describe("selector granularity (P-12: the Visuals subscribes only what it reads)
 });
 
 /**
- * T7–T11 changed in exactly ONE way for P-1: the navigation click that gets
- * them to the routes is now `Modulation`, not `Sync`. Every assertion after
- * it is untouched, because their subjects are untouched — Modulation is a
- * first-class rail destination now instead of a "+ Route" link buried at the
- * bottom of Sync, and these five clicks are the proof that it is reachable
- * under that name. They stay the stage-3 canary for the routing grid.
+ * T7–T11 keep their subjects verbatim across P-1 stage 3; only the SELECTOR
+ * moved. The Modulation page is now one CARD PER MODULATED CONTROL, so a
+ * page-wide `getByTitle("Which knob it moves")` matches one picker per card
+ * the moment a second knob is modulated — every one of these scopes into a
+ * single `.mod-card` instead. They stay the canary for the routing grid.
  */
+
+/** Navigate to the Modulation page. Its own name in the rail is the P-1 claim. */
+function gotoModulation() {
+  fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
+}
+
+/** One card per modulated target — every route on that target lives inside. */
+function cards(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>(".mod-card")];
+}
+
+/** A second real target of spectrum-bars, taken from the registry rather than
+ *  spelled out, so re-tiering a param cannot quietly rot these tests. */
+function otherTarget(): string {
+  return allParams(spectrumBars())
+    .filter(isModTarget)
+    .map((p) => p.key)
+    .find((k) => k !== "hue")!;
+}
+
 describe("modulation & MIDI target lists (RP-2 / RP-14)", () => {
   it('T7: mod:"off" params are absent from the route-target picker', () => {
     // spectrum-bars: "mirror"/"peaks" are pure toggles (mod:"off"); "hue" is a
@@ -251,30 +278,47 @@ describe("modulation & MIDI target lists (RP-2 / RP-14)", () => {
     expect(spectrumBars().params.find((p) => p.key === "mirror")?.mod).toBe("off");
     seedRoute("hue");
     render(<ParamsPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
-    const select = screen.getByTitle("Which knob it moves") as HTMLSelectElement;
+    gotoModulation();
+    const select = within(cards()[0]).getByTitle("Which knob it moves") as HTMLSelectElement;
     const values = [...select.querySelectorAll("option")].map((o) => o.getAttribute("value"));
+    // Derived from the registry, never a literal list: the contract is
+    // "everything allParams+isModTarget offers, plus every post target".
+    const offered = new Set(values);
+    for (const p of allParams(spectrumBars()).filter(isModTarget)) {
+      expect(offered.has(p.key)).toBe(true);
+    }
+    for (const p of POST_MOD_TARGETS) expect(offered.has(`post:${p.key}`)).toBe(true);
     expect(values).toContain("hue");
     expect(values).not.toContain("mirror");
     expect(values).not.toContain("peaks");
     expect(values).toContain("post:chromatic"); // post targets unaffected
   });
 
-  it("T8: a legacy route to an off param stays visible, inert and unrewritten", () => {
+  it("T8: a legacy route to an off param stays visible, inert, unrewritten and deletable", () => {
     seedRoute("mirror");
     render(<ParamsPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
-    const select = screen.getByTitle("Which knob it moves") as HTMLSelectElement;
+    gotoModulation();
+    // A card list that only drew VALID (source, target) pairs would make this
+    // route invisible — worse than the select-snapping bug below, because it
+    // survives in the saved file with no way to see or delete it.
+    expect(cards()).toHaveLength(1);
+    const card = cards()[0];
+    const select = within(card).getByTitle("Which knob it moves") as HTMLSelectElement;
     expect(select.value).toBe("mirror");
     expect(
       [...select.querySelectorAll("option")].some(
         (o) => o.getAttribute("value") === "mirror" && /not modulatable/.test(o.textContent ?? ""),
       ),
     ).toBe(true);
+    // Labelled inert in the card BODY, not only inside a closed dropdown.
+    expect(within(card).getByText(/does nothing/i)).toBeTruthy();
     // Opening the Visuals must not MUTATE the document — snapping the select
     // onto the first modulatable param would rewrite the route on the next
     // unrelated edit.
     expect(useVizStore.getState().activeMods[0].param).toBe("mirror");
+    // …and there is a way out of it.
+    fireEvent.click(within(card).getByRole("button", { name: /^Stop /i }));
+    expect(useVizStore.getState().activeMods).toHaveLength(0);
   });
 });
 
@@ -282,36 +326,276 @@ describe("modulation v2 UI (P-16/P-7)", () => {
   it("T9: source picker offers the whole beat-synced LFO family", () => {
     seedRoute();
     render(<ParamsPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
-    const select = screen.getByTitle("What drives this route") as HTMLSelectElement;
+    gotoModulation();
+    const select = within(cards()[0]).getByTitle("What drives this route") as HTMLSelectElement;
     const values = [...select.querySelectorAll("option")].map((o) => o.getAttribute("value"));
+    // Registry iteration, deliberately: the 19th LFO is covered for free.
     for (const s of LFO_SOURCES) expect(values).toContain(s.id);
+    for (const s of MOD_SOURCES) expect(values).toContain(s.id);
   });
 
-  it("T10: every recipe has a chip, and clicking one lands real routes", () => {
+  it("T10: every recipe has a chip below the primary action, and clicking one lands real routes", () => {
     act(() => useVizStore.setState({ presetId: "spectrum-bars", activeMods: [] }));
     render(<ParamsPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
+    gotoModulation();
     for (const rec of MOD_ROUTE_RECIPES) {
       expect(screen.getByRole("button", { name: rec.name })).toBeTruthy();
     }
+    // Recipes sit BELOW the create picker and are always visible — they are a
+    // shortcut, not an empty-state placeholder.
+    const create = screen.getByTitle("Choose a knob to modulate");
+    const firstChip = screen.getByRole("button", { name: MOD_ROUTE_RECIPES[0].name });
+    expect(
+      create.compareDocumentPosition(firstChip) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
     fireEvent.click(screen.getByRole("button", { name: "Kick punch" }));
     // Assert the DOCUMENT, not a spy's argument shape.
     expect(useVizStore.getState().activeMods.length).toBeGreaterThan(0);
     expect(useVizStore.getState().activeMods.some((r) => r.source === "kick")).toBe(true);
+    // Still offered once the page has content.
+    expect(screen.getByRole("button", { name: "Kick punch" })).toBeTruthy();
   });
 
-  it("T11: the shape row writes a curve, and Linear clears the field", () => {
+  it("T11: the shape controls write curve and lag, and the defaults clear the fields", () => {
     seedRoute();
     render(<ParamsPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
-    const curveSel = screen.getByTitle(/Response curve/) as HTMLSelectElement;
-    fireEvent.change(curveSel, { target: { value: "exp" } });
+    gotoModulation();
+    const card = cards()[0];
+    fireEvent.click(within(card).getByRole("button", { name: /^Response shape for/ }));
+
+    fireEvent.click(within(card).getByRole("button", { name: "Exp" }));
     expect(useVizStore.getState().activeMods[0].curve).toBe("exp");
-    fireEvent.change(curveSel, { target: { value: "linear" } });
-    // The persisted-shape guarantee: Linear writes `undefined`, so an
-    // untouched route keeps its v1 shape in saved documents.
+    fireEvent.click(within(card).getByRole("button", { name: "Linear" }));
     expect(useVizStore.getState().activeMods[0].curve).toBeUndefined();
+
+    // Rise/Fall reach the validator's own bound now, not the old one-way 2 s
+    // valve that made half the accepted range unreachable from the UI.
+    const lag = card.querySelectorAll<HTMLInputElement>(".mod-lag .slider");
+    expect(lag).toHaveLength(2);
+    expect(lag[0].max).toBe(String(MOD_LAG_MAX_SEC));
+    expect(lag[1].max).toBe(String(MOD_LAG_MAX_SEC));
+    fireEvent.change(lag[1], { target: { value: "0.35" } });
+    expect(useVizStore.getState().activeMods[0].release).toBeCloseTo(0.35);
+    fireEvent.change(lag[1], { target: { value: "0" } });
+
+    // THE PERSISTED-SHAPE GUARANTEE, asserted on the projection that actually
+    // reaches disk: a widget that wrote concrete neutrals would rewrite the
+    // shape of every route it merely RENDERED, in every saved project and
+    // .bftheme, and validModRoutes omits rather than defaults.
+    const route = useVizStore.getState().activeMods[0];
+    expect(Object.keys(JSON.parse(JSON.stringify(route))).sort()).toEqual([
+      "amount",
+      "id",
+      "param",
+      "source",
+    ]);
+  });
+
+  it("T18: retargeting a stacked card moves EVERY route on it", () => {
+    const a = { id: "r1", source: "kick" as const, param: "hue", amount: 0.5 };
+    const b = { id: "r2", source: "bass" as const, param: "hue", amount: -0.25 };
+    act(() =>
+      useVizStore.setState({
+        presetId: "spectrum-bars",
+        activeMods: [a, b],
+        modsByPreset: { ...useVizStore.getState().modsByPreset, "spectrum-bars": [a, b] },
+      }),
+    );
+    render(<ParamsPanel />);
+    gotoModulation();
+    // Two routes on one knob are ONE card: that grouping is applyMods'
+    // accumulation key (`out[route.param]` read back and clamped per route),
+    // not a presentation choice.
+    expect(cards()).toHaveLength(1);
+    expect(within(cards()[0]).getAllByTitle("What drives this route")).toHaveLength(2);
+    const next = otherTarget();
+    fireEvent.change(within(cards()[0]).getByTitle("Which knob it moves"), {
+      target: { value: next },
+    });
+    // The R14 last-write-wins lesson: one patch per route, each re-reading
+    // get(), or the second route is silently left behind on the old target.
+    expect(useVizStore.getState().activeMods.map((r) => r.param)).toEqual([next, next]);
+  });
+
+  it('T20: no built-in target label contains " · ", so the heading rule never eats one', () => {
+    // The safety proof for the card heading, pinned. cardHeading() prints the
+    // tail after the LAST " · " so a Builder v2 virtual param
+    // (`L2 Particles · Density`) reads as `Density` under its own
+    // `Layer 2 · Particles` header. If a BUILT-IN ever adopted that
+    // separator, the rule would silently eat half of its label.
+    for (const preset of presets) {
+      if (preset.id === BUILDER2_ID) continue; // the one deliberate user, below
+      for (const p of allParams(preset).filter(isModTarget)) {
+        expect(`${preset.id}/${p.key}: ${p.label}`).not.toContain(" · ");
+        expect(cardHeading(p.label)).toBe(p.label);
+      }
+    }
+    for (const p of POST_MOD_TARGETS) expect(cardHeading(p.label)).toBe(p.label);
+
+    // The deliberate case, ASSERTED rather than assumed: every Builder label
+    // that carries the separator shortens to a heading whose dropped prefix
+    // is already printed by that param's own group header, one line above.
+    const builder = presets.find((p) => p.id === BUILDER2_ID)!;
+    let shortened = 0;
+    for (const { group, params } of groupParams(builder, allParams(builder).filter(isModTarget))) {
+      for (const p of params) {
+        if (!p.label.includes(" · ")) continue;
+        shortened += 1;
+        const cut = p.label.lastIndexOf(" · ");
+        expect(cardHeading(p.label)).toBe(p.label.slice(cut + 3));
+        const [, n, type] = /^L(\d+) (.+)$/.exec(p.label.slice(0, cut))!;
+        expect(group.label).toBe(`Layer ${n} · ${type}`);
+      }
+    }
+    expect(shortened).toBeGreaterThan(0);
+  });
+
+  it("T21: a card names the control, its resting value and where the route takes it", () => {
+    seedRoute("hue"); // amount 0.5
+    const hue = allParams(spectrumBars()).find((p) => p.key === "hue")!;
+    act(() => useVizStore.setState({ activeParams: { hue: hue.min } }));
+    render(<ParamsPanel />);
+    gotoModulation();
+    const card = cards()[0];
+    // The heading takes the WHOLE header row — no resting-value column beside
+    // it. At the 380px minimum a 44px readout leaves the heading 59px of text
+    // against a ~90px p90 label, i.e. the card's own name truncating on most
+    // controls. The resting value lives in the range line instead.
+    expect(card.querySelector(".mod-card-base")).toBeNull();
+    // The resulting range, both as text and as the painted span the live
+    // marker walks. amount 0.5 from the bottom of the range = the lower half.
+    const track = card.querySelector<HTMLElement>(".mod-range-track")!;
+    expect(track.style.getPropertyValue("--from")).toBe("0%");
+    expect(track.style.getPropertyValue("--span")).toBe("50%");
+    expect(track.style.getPropertyValue("--dir")).toBe("1");
+    expect(card.querySelector(".mod-range-text")!.textContent).toBe(
+      `${formatValue(undefined, hue.min, hue.step)} → ${formatValue(undefined, hue.min + 0.5 * (hue.max - hue.min), hue.step)}`,
+    );
+    // The two elements the meter engine drives. It writes `--v` on these and
+    // nothing else; every pixel of travel is CSS.
+    expect(card.querySelector(".mod-swing-arm")).toBeTruthy();
+    expect(card.querySelector(".mod-diamond")).toBeTruthy();
+
+    // Negative depth paints the same span the other way, so the marker walks
+    // DOWN from the resting value instead of up.
+    act(() =>
+      useVizStore.setState({
+        activeParams: { hue: hue.max },
+        activeMods: [{ id: "r1", source: "kick", param: "hue", amount: -0.5 }],
+      }),
+    );
+    const flipped = cards()[0].querySelector<HTMLElement>(".mod-range-track")!;
+    expect(flipped.style.getPropertyValue("--from")).toBe("50%");
+    expect(flipped.style.getPropertyValue("--span")).toBe("50%");
+    expect(flipped.style.getPropertyValue("--start")).toBe("1");
+    expect(flipped.style.getPropertyValue("--dir")).toBe("-1");
+  });
+
+  it("T22: the create picker is target-first and cannot stack a duplicate", () => {
+    act(() =>
+      useVizStore.setState({ presetId: "spectrum-bars", activeMods: [], modsByPreset: {} }),
+    );
+    render(<ParamsPanel />);
+    gotoModulation();
+    const create = screen.getByTitle("Choose a knob to modulate") as HTMLSelectElement;
+    expect(create.value).toBe("");
+    fireEvent.change(create, { target: { value: "hue" } });
+    // The retired "+ Route" button wrote `param: ""` on any visual with no
+    // modulatable knobs (validModRoutes then dropped the route on reload) and
+    // stacked a fresh compounding route on every extra click. A list of real
+    // targets whose routed entries are disabled makes both unreachable.
+    const mods = useVizStore.getState().activeMods;
+    expect(mods).toHaveLength(1);
+    expect(mods[0].param).toBe("hue");
+    expect(mods[0].source).toBe("kick");
+    expect(create.value).toBe("");
+    const routedOption = [...create.querySelectorAll("option")].find((o) => o.value === "hue")!;
+    expect(routedOption.disabled).toBe(true);
+    expect([...create.querySelectorAll("option")].every((o) => o.value !== "mirror")).toBe(true);
+  });
+
+  it("T23: a route to a stem that is not loaded still names itself", () => {
+    seedRoute("hue", { source: "stem1:kick" });
+    render(<ParamsPanel />);
+    gotoModulation();
+    const select = within(cards()[0]).getByTitle("What drives this route") as HTMLSelectElement;
+    // `stems` is runtime-only while `modsByPreset` persists, so EVERY
+    // reopened stem project lands here. Blank is not survivable: the source
+    // is the route row's primary text.
+    expect(select.value).toBe("stem1:kick");
+    expect(select.selectedOptions[0].textContent).toMatch(/stem not loaded/);
+    expect(useVizStore.getState().activeMods[0].source).toBe("stem1:kick");
+  });
+
+  it("T24: the Driven by chips meter the sources in use and filter the cards", () => {
+    const other = otherTarget();
+    const a = { id: "r1", source: "kick" as const, param: "hue", amount: 0.5 };
+    const b = { id: "r2", source: "bass" as const, param: other, amount: 0.4 };
+    act(() =>
+      useVizStore.setState({
+        presetId: "spectrum-bars",
+        activeMods: [a, b],
+        modsByPreset: { ...useVizStore.getState().modsByPreset, "spectrum-bars": [a, b] },
+      }),
+    );
+    render(<ParamsPanel />);
+    gotoModulation();
+    // One meter per source IN USE — never one per registry entry (34–62 of
+    // those is exactly the load v2.80.0 removed).
+    expect(document.querySelectorAll(".mod-source-chip")).toHaveLength(2);
+    expect(document.querySelectorAll(".mod-chip-meter .mod-meter-fill")).toHaveLength(2);
+    expect(cards()).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Kick" }));
+    expect(cards()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Kick" }));
+    expect(cards()).toHaveLength(2);
+
+    // The filter is DERIVED, never stored back: deleting the last route on
+    // the filtered source must not leave a page filtered to nothing, and
+    // getting there must not need a setState during render.
+    fireEvent.click(screen.getByRole("button", { name: "Bass" }));
+    expect(cards()).toHaveLength(1);
+    act(() =>
+      useVizStore.setState({
+        activeMods: [a],
+        modsByPreset: { ...useVizStore.getState().modsByPreset, "spectrum-bars": [a] },
+      }),
+    );
+    expect(cards()).toHaveLength(1);
+    expect(within(cards()[0]).getByTitle("Which knob it moves")).toHaveProperty("value", "hue");
+  });
+
+  it("T25: a non-default curve or lag is printed on the CLOSED card", () => {
+    seedRoute("hue", { curve: "exp", release: 0.35 });
+    render(<ParamsPanel />);
+    gotoModulation();
+    const card = cards()[0];
+    // The disclosure is a USER's choice and is never width-gated, so nothing
+    // it hides may be the only place a set value appears.
+    expect(within(card).queryByRole("button", { name: "Exp" })).toBeNull();
+    expect(within(card).getByText("Exp · fall 0.35 s")).toBeTruthy();
+
+    fireEvent.click(within(card).getByRole("button", { name: /^Response shape for/ }));
+    expect(within(card).getByRole("button", { name: "Exp" })).toBeTruthy();
+    expect(within(card).queryByText("Exp · fall 0.35 s")).toBeNull();
+    // Nothing about opening it touched the document.
+    expect(useVizStore.getState().activeMods[0].release).toBe(0.35);
+  });
+
+  it("T26: the empty page teaches what modulation is for", () => {
+    act(() => useVizStore.setState({ presetId: "spectrum-bars", activeMods: [] }));
+    render(<ParamsPanel />);
+    gotoModulation();
+    expect(cards()).toHaveLength(0);
+    // P-1 promoted this page precisely so a first-time user learns the idea
+    // HERE. An empty list with an add button teaches nothing.
+    const hint = document.querySelector(".mod-empty")!;
+    expect(hint.textContent).toMatch(/music move a knob/i);
+    expect(hint.textContent).toMatch(/export/i);
+    // …and the primary action is still right there.
+    expect(screen.getByTitle("Choose a knob to modulate")).toBeTruthy();
   });
 });
 
@@ -467,16 +751,21 @@ describe("Visuals section rail", () => {
 
   it("R3: Modulation is a first-class destination, not a link inside Sync", () => {
     // The entire justification for P-1. It must be reachable by its own name
-    // from the rail, and its content must NOT be on the Sync page.
+    // from the rail, and its content must NOT be on the Sync page. Re-pointed
+    // at `.mod-card` and the create picker for stage 3 — the old "+ Route"
+    // button and page-wide target select are gone, but the NEGATIVE half is
+    // what stops a refactor putting modulation back on Sync, so it stays.
     seedRoute("hue");
     render(<ParamsPanel />);
     fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    expect(document.querySelector(".mod-card")).toBeNull();
     expect(screen.queryByTitle("Which knob it moves")).toBeNull();
-    expect(screen.queryByRole("button", { name: "+ Route" })).toBeNull();
+    expect(screen.queryByTitle("Choose a knob to modulate")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
+    expect(document.querySelectorAll(".mod-card")).toHaveLength(1);
     expect(screen.getByTitle("Which knob it moves")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "+ Route" })).toBeTruthy();
+    expect(screen.getByTitle("Choose a knob to modulate")).toBeTruthy();
   });
 
   it("R4: clicking a destination swaps the page and persists it", () => {
