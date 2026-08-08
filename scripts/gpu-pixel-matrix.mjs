@@ -197,13 +197,15 @@ async function evaluateMatrix() {
             store.getState().setShowPanel(true);
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
-            const syncTab = [...document.querySelectorAll(".panel-tabs button")]
-              .find(button => button.textContent?.trim() === "Sync");
-            syncTab?.click();
-            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-            const syncSection = [...document.querySelectorAll(".section-toggle")]
-              .find(button => button.textContent?.trim() === "Sync");
-            if (syncSection?.getAttribute("aria-expanded") === "false") syncSection.click();
+            // P-1 replaced the tab bar AND the per-section collapse with one
+            // rail, so reaching Sync is now a single click instead of two.
+            // What this leg verifies is unchanged: that the Sync controls
+            // render, and that the measured-bars readout below reflects the
+            // real display FFT.
+            const syncRail = [...document.querySelectorAll(".rail-item")]
+              .find(button => button.dataset.section === "sync");
+            if (!syncRail) throw new Error("Visuals rail: no Sync destination");
+            syncRail.click();
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
             const panel = document.querySelector(".params-panel");

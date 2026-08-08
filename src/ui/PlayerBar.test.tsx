@@ -126,7 +126,7 @@ describe("PlayerBar A-B loop", () => {
 /**
  * The H13 stable-props contract. PlayerBar is always mounted, so before the
  * memo it reconciled on EVERY App re-render for any reason at all — an
- * Inspector edit, export progress, a notice toast. The memo only bails while
+ * Visuals edit, export progress, a notice toast. The memo only bails while
  * every prop keeps its identity across those renders, a contract held up by
  * App.tsx's `useCallback` block and nothing else.
  *

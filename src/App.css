@@ -123,23 +123,23 @@ body,
   --timeline-h: 264px;
   --gutter: 14px;
 
-  /* Inspector dock (P-1). TWO inline inputs, TWO derived outputs.
+  /* Visuals dock (P-1). TWO inline inputs, TWO derived outputs.
      INVARIANT: no selector outside this block may read *-set or *-drag.
-       --inspector-w       = committed width  -> canvas column + all chrome
-       --inspector-w-live  = live drag width  -> the dock element + its handle
+       --visuals-w       = committed width  -> canvas column + all chrome
+       --visuals-w-live  = live drag width  -> the dock element + its handle
      They are equal except during a resize drag: the dock tracks the pointer
      while the canvas commits once, on pointerup. Without that split, every
      pointermove destroys and recreates every render target at full DPR and
      sets feedbackClearPending, strobing feedback trails to black at 60 Hz. */
-  --inspector-w-set: 0px;
-  --inspector-w-drag: 0px;
+  --visuals-w-set: 0px;
+  --visuals-w-drag: 0px;
   /* The canvas column never drops below 560px: the dock gives ground first
      (down to a 320px floor, past which the window is too small for either).
      Pure CSS, so a window resize is handled with zero JS — and deliberately
      NOT a media query: `@media { .app { … } }` has EQUAL specificity to this
      rule in a 3000-line file and would be settled by source order. */
-  --inspector-w: min(var(--inspector-w-set), max(320px, calc(100vw - 560px)));
-  --inspector-w-live: min(var(--inspector-w-drag), max(320px, calc(100vw - 560px)));
+  --visuals-w: min(var(--visuals-w-set), max(320px, calc(100vw - 560px)));
+  --visuals-w-live: min(var(--visuals-w-drag), max(320px, calc(100vw - 560px)));
 }
 
 /* Stage mode suppresses the dock by LAYOUT, not by closing it — the store
@@ -147,8 +147,8 @@ body,
    beats the 0,1,0 base rule above, which is why the derivation lives in CSS
    and not in the inline style. */
 .app.stage-mode {
-  --inspector-w: 0px;
-  --inspector-w-live: 0px;
+  --visuals-w: 0px;
+  --visuals-w-live: 0px;
 }
 
 /* ---------- canvas ---------- */
@@ -193,7 +193,7 @@ body,
   pointer-events: auto;
 }
 
-/* The Inspector dock opts OUT of the idle fade. It is a persistent workspace
+/* The Visuals dock opts OUT of the idle fade. It is a persistent workspace
    the canvas makes room for, not something floating over the visual: fading
    it would leave a lit rectangle of empty letterbox beside a ghost panel, and
    `!showPanel` was removed from App's idle chain precisely so the rest of the
@@ -460,7 +460,7 @@ button:disabled {
   top: var(--topbar-h);
   /* Centred on the CANVAS column, not the window — the dock is chrome beside
      the visual, so anything that reads as "over the visual" shifts with it. */
-  left: calc(50% - var(--inspector-w) / 2);
+  left: calc(50% - var(--visuals-w) / 2);
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -469,7 +469,7 @@ button:disabled {
      not enough: a 1040px strip centred on a 960px column overhangs the dock by
      40px on the right (and runs off-screen on the left), and the dock paints
      over it at z-index 8, so the strip looked arbitrarily truncated. */
-  max-width: min(calc((100vw - var(--inspector-w)) * 0.92), 1040px);
+  max-width: min(calc((100vw - var(--visuals-w)) * 0.92), 1040px);
 }
 
 .chips {
@@ -1087,24 +1087,24 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Inspector dock ---------- */
+/* ---------- Visuals dock ---------- */
 
 /* The class name is FROZEN: gpu-pixel-matrix.mjs scrapes `.params-panel` for
    text and uses it as the `__auditUI` scope, and a rename fails that gate with
    an object-not-array error that reads exactly like a shader regression. No
-   `.inspector-dock` alias is added either — an orphan class with no rule is
+   `.visuals-dock` alias is added either — an orphan class with no rule is
    the `.builder-factory-chips` mistake.
    Geometry (D2): flush to the right edge, BETWEEN the two bars. Full height
    would either paint over the top bar's right cluster (neither has a z-index
    and the dock renders later) or force the bar to inset, which teleports the
-   Inspector toggle ~480px out from under the cursor on every click. */
+   Visuals toggle ~480px out from under the cursor on every click. */
 .params-panel {
   position: absolute;
   top: var(--topbar-h);
   right: 0;
   bottom: var(--playerbar-h);
   /* The DOCK tracks the pointer during a drag; the canvas commits on release. */
-  width: var(--inspector-w-live);
+  width: var(--visuals-w-live);
   display: flex;
   flex-direction: column;
   background: var(--glass);
@@ -1152,12 +1152,12 @@ button:disabled {
   border-color: var(--border-strong);
 }
 
-/* ---------- Inspector section rail + page ---------- */
+/* ---------- Visuals section rail + page ---------- */
 
 /* The two-column body of the dock: a fixed rail of destinations, and the page
    that fills the rest. `min-height: 0` is what lets the page's own scroller
    own the overflow instead of the body growing past the dock. */
-.inspector-body {
+.visuals-body {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1166,7 +1166,7 @@ button:disabled {
 
 /* `border-right` (not a spine on the item) is what makes a row read as
    owning the page beside it. */
-.inspector-rail {
+.visuals-rail {
   flex: 0 0 136px;
   display: flex;
   flex-direction: column;
@@ -1254,7 +1254,7 @@ button:disabled {
 /* `min-width: 0` is NOT cosmetic: without it the page column refuses to shrink
    below its content and `__auditUI` reports outside-scope-x for every wide
    row in the dock. */
-.inspector-page {
+.visuals-page {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -1265,7 +1265,7 @@ button:disabled {
    inside it: a sticky header in `.panel-scroll` is the classic way to push a
    trailing element past innerHeight with nothing the auditor can credit as a
    scrollable ancestor (below-viewport-unscrollable). */
-.inspector-context {
+.visuals-context {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1274,7 +1274,7 @@ button:disabled {
   border-bottom: 1px solid var(--border);
 }
 
-.inspector-style {
+.visuals-style {
   font-size: 11.5px;
   color: var(--text-faint);
   min-width: 0;
@@ -1939,7 +1939,7 @@ button.row-value:focus-visible {
 .empty-state {
   position: absolute;
   /* Centred in the canvas column, not under the dock. */
-  inset: 0 var(--inspector-w) 0 0;
+  inset: 0 var(--visuals-w) 0 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2017,7 +2017,7 @@ button.row-value:focus-visible {
 .drop-overlay {
   position: absolute;
   /* Stops at the dock's edge — the drop target is the canvas column. */
-  inset: 14px calc(14px + var(--inspector-w)) 14px 14px;
+  inset: 14px calc(14px + var(--visuals-w)) 14px 14px;
   border: 2px dashed rgba(106, 168, 255, 0.7);
   border-radius: 16px;
   display: flex;
@@ -2200,7 +2200,7 @@ kbd {
   padding-top: 2px;
 }
 
-/* Drag handle riding the Inspector dock's inner edge (position derives from
+/* Drag handle riding the Visuals dock's inner edge (position derives from
    the same variables as the dock itself — the LIVE one, so the grip stays
    under the pointer while the canvas waits for the commit). Must sit above
    the dock's z-index 8 or the last 3px of the grip is unhittable. */
@@ -2208,7 +2208,7 @@ kbd {
   position: absolute;
   top: var(--topbar-h);
   bottom: var(--playerbar-h);
-  right: calc(var(--inspector-w-live) - 3px);
+  right: calc(var(--visuals-w-live) - 3px);
   width: 8px;
   cursor: ew-resize;
   z-index: 9;
@@ -2222,7 +2222,7 @@ kbd {
 
 /* The Library's own grip. Composed with `.panel-resize-handle`, so it must
    stay AFTER it (equal specificity). Before P-1 the single handle mounted
-   only alongside the Inspector, so opening the Library on its own left it
+   only alongside Visuals, so opening the Library on its own left it
    unresizable — the split is what closes that. */
 .library-resize-handle {
   right: auto;
@@ -2590,7 +2590,7 @@ kbd {
   position: absolute;
   bottom: 92px;
   /* Centred on the canvas column, like the preset strip. */
-  left: calc(50% - var(--inspector-w) / 2);
+  left: calc(50% - var(--visuals-w) / 2);
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -2599,7 +2599,7 @@ kbd {
   /* Same budget as the preset strip: 92% of the canvas column, capped. Without
      the column term a narrow window (dock clamped to 320, column 480) let a
      560px toast run 40px under the dock on each side. */
-  max-width: min(calc((100vw - var(--inspector-w)) * 0.92), 560px);
+  max-width: min(calc((100vw - var(--visuals-w)) * 0.92), 560px);
   z-index: 15;
   /* The column spans the full width so its children can centre; without this
      the gaps between toasts would swallow clicks on the visual behind them. */
@@ -2919,7 +2919,7 @@ kbd {
 
 /* ---------- stage / fixed aspect ---------- */
 
-/* THIS is the letterbox. The canvas column gives up `--inspector-w` on the
+/* THIS is the letterbox. The canvas column gives up `--visuals-w` on the
    right instead of being covered by the dock; `container-type: size` already
    makes `.viz-canvas.fixed-aspect`'s 100cqw/100cqh re-letterbox for free, and
    the free-aspect canvas is `inset: 0` of this box and follows. The width is
@@ -2927,7 +2927,7 @@ kbd {
    there is no per-pointermove renderer.resize and nothing to squash. */
 .stage {
   position: absolute;
-  inset: 0 var(--inspector-w) 0 0;
+  inset: 0 var(--visuals-w) 0 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3005,7 +3005,7 @@ kbd {
   position: absolute;
   left: 10px;
   /* Stops at the dock rather than running under it. */
-  right: calc(10px + var(--inspector-w));
+  right: calc(10px + var(--visuals-w));
   bottom: var(--timeline-bottom);
   max-height: var(--timeline-h);
   overflow-y: auto;
@@ -3023,9 +3023,9 @@ kbd {
 /* With the timeline open, lift the library panel above it — the timeline is
    opaque and otherwise buries the lower ~250px of the track list with no way
    to scroll it into view.
-   The Inspector dock is deliberately NOT in this selector any more: it is
+   The Visuals dock is deliberately NOT in this selector any more: it is
    z-index 8 above the timeline's 6 AND the timeline is now inset by
-   `--inspector-w`, so it never reaches the dock and the lift would only
+   `--visuals-w`, so it never reaches the dock and the lift would only
    shorten the dock for nothing. */
 .app:has(.timeline-panel) .library-panel {
   /* Derived, not hand-computed: timeline bottom + its max height + a gap. */

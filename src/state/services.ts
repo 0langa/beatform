@@ -269,8 +269,8 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       // their own offscreen canvas and never pass through this path.
       renderer?.resize(r.width, r.height, window.devicePixelRatio * getPrefs().previewScale);
       // Gate the hook on a REAL dimension change. subscribePrefs fires
-      // measure() on every prefs write, and the Inspector's section rail
-      // writes inspectorPage on every navigation click — ungated, each click
+      // measure() on every prefs write, and the Visuals section rail
+      // writes visualsPage on every navigation click — ungated, each click
       // ran a 60 ms-debounced full overlay re-rasterization at canvas
       // resolution (store.ts's onResize -> refreshOverlay). renderer.resize
       // already early-outs on unchanged dimensions; this makes the hook match.

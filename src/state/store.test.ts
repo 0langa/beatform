@@ -354,20 +354,20 @@ describe("export and batch refuse to start on the simplified renderer (F2)", () 
 });
 
 /**
- * P-1 / R11 regression: stage mode used to CLOSE the Inspector
+ * P-1 / R11 regression: stage mode used to CLOSE Visuals
  * (`set({ showPanel: false })`). That was a raw destructive write — it
  * bypassed setShowPanel, so prefs kept the old value and there was no restore
  * on the way out: every demo, every capture, every S-keypress cost the user
  * their open workspace.
  *
  * The dock is suppressed by layout instead (`.app.stage-mode` zeroes
- * --inspector-w and `.app.stage-mode .chrome` hides it), which is stateless,
+ * --visuals-w and `.app.stage-mode .chrome` hides it), which is stateless,
  * so the only thing left to assert is that the store does not touch
  * `showPanel` in EITHER branch. Asserting the exit branch matters too: the
  * tempting "fix" is setShowPanel(true) on exit, which would write
  * panelOpen: true for users who never opened the dock at all.
  */
-describe("stage mode leaves the Inspector alone (P-1)", () => {
+describe("stage mode leaves Visuals alone (P-1)", () => {
   it("keeps an open dock open through a full S / S round-trip", async () => {
     const { useVizStore } = await import("./store");
 

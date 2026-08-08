@@ -617,7 +617,7 @@ export function Segmented<T extends string | number>(props: {
   );
 }
 
-/* CollapsibleSection lived here until P-1. The Inspector's section rail is
+/* CollapsibleSection lived here until P-1. The the Visuals section rail is
  * now the one navigation model, so a section no longer collapses — its single
  * production call site became ParamsPanel's local PageSection, and the
  * component, its CSS and its two tests went with it. */

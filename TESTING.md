@@ -220,13 +220,13 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   the browser). In Beatform click the **broadcast icon** (top bar).
   PASS: no error toast appears (the old failure was the toast "System-audio
   capture failed: Unable to load a worklet's module"), the icon shows the
-  live state, and the LUFS badge in the Inspector footer (open with G)
+  live state, and the LUFS badge in the Visuals footer (open with G)
   moves with the external audio. Click the icon again to stop.
 - [✅] **Crash recovery.** PASS 2026-07-23 on v2.44.1: autosave existed
   (408337 bytes), forced termination produced the Restore/Discard bar,
   Restore returned the edited Speed 1.00 setting, and a later normal-close
   relaunch showed no recovery bar. Steps: launch app → open Demos menu → load any demo →
-  open the Inspector (G) → change any slider → wait 8 s →
+  open Visuals (G) → change any slider → wait 8 s →
   `powershell Stop-Process -Name beatform -Force` → verify the autosave
   exists: `Test-Path "$env:APPDATA\com.olanga.audiovisualizer\autosave.bfproj"`
   must be **True** (this file never existed before v2.44.1 — its presence
@@ -236,7 +236,7 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   PASS: no recovery bar.
 - [✅] **Shortcuts on a non-US keyboard.** PHYSICAL PASS 2026-07-26 by the
   owner on a real QWERTZ keyboard, v2.49.0: P/N/S/0/H and Esc all behave,
-  AND typing the AltGr chords `@ [ ] \ ~ EUR |` into the Inspector's
+  AND typing the AltGr chords `@ [ ] \ ~ EUR |` into the Visuals
   search box inserted them as literal text with no mode switch and no
   Stage toggle (the AltGr = ctrl+alt guard from v2.44.1 holding). This
   supersedes the spoof below and CLOSES audit finding HW-2 — the physical
@@ -257,7 +257,7 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   one real pass on a QWERTZ layout still recommended before the v3 tag
   (costs a layout switch, not hardware).
 - [✅] **Unsupported video-bg codec message.** PASS 2026-07-26 on installed
-  v2.51.0: Inspector (G) → Scene → Background → Video →
+  v2.51.0: Visuals (G) → Scene → Background → Video →
   `C:\bf-test\media\bg-bad.mp4` produced `Could not load video
 background: this clip's video codec isn't supported — re-encode it as
 H.264 or VP9 and try again`. No "Assertion failed" appeared.
@@ -306,7 +306,7 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
       screenshot attempt was inconclusive because the installed build predated the
       feature.
 - [✅] **Preferences gear discoverability (new in v2.45.0).** PASS
-  2026-07-26 on installed v2.51.0: the gear sits between the Inspector
+  2026-07-26 on installed v2.51.0: the gear sits between the Visuals button
   toggle and Keyboard shortcuts; its tooltip/accessibility description is
   exactly `Preferences — autosave, performance, updates (Ctrl+,)`;
   clicking opened Preferences and Esc closed it. (The 2.51.0 run verified

@@ -3,7 +3,7 @@
 One JSON file = one complete look: visual mode + parameters, background,
 text/logo layers (assets embedded as data URLs), timeline scenes, post
 chain, motion masters, plus metadata. **Import by dropping the file onto the
-app window.** Export via _Inspector ▸ Visual ▸ Themes ▸ Save as theme…_
+app window.** Export via _Visuals ▸ Visual ▸ Themes ▸ Save as theme…_
 
 Themes contain **no code**. A theme can only select and parameterize the
 app's built-in visuals, so importing one is exactly as safe as clicking

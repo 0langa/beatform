@@ -18,10 +18,10 @@ labels: bug
 - App version (Help modal shows it):
 - Windows version:
 - GPU + driver version:
-- Renderer badge (Inspector footer — press G): WebGPU / Canvas2D
+- Renderer badge (Visuals footer — press G): WebGPU / Canvas2D
 
 **If it's about an export**: format (MP4/PNG/ProRes), codec, resolution/fps,
 and whether the live preview looked correct.
 
 **If it's about sync**: which mode/preset, and whether the track has a
-detected BPM (the Inspector footer shows it — press G).
+detected BPM (the Visuals footer shows it — press G).

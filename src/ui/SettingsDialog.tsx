@@ -124,7 +124,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </div>
             </div>
             <p className="section-hint">
-              Project choices (visuals, sync, background, post…) live in the Inspector (G) and save
+              Project choices (visuals, sync, background, post…) live in the Visuals (G) and save
               into your project file — this page is about the app itself. Beatform stores everything
               locally and sends no telemetry, ever.
             </p>

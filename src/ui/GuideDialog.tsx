@@ -51,8 +51,8 @@ const SECTIONS: GuideSection[] = [
             one, or walk through them with <K k="N" /> and <K k="P" />.
           </li>
           <li>
-            <strong>Open the Inspector</strong> with <K k="G" /> (or the sliders icon, top right) to
-            shape the look of the current mode.
+            <strong>Open Visuals</strong> with <K k="G" /> (or the sliders icon, top right) to shape
+            the look of the current mode.
           </li>
         </ol>
         <p>
@@ -92,14 +92,14 @@ const SECTIONS: GuideSection[] = [
           </li>
         </ul>
         <p>
-          Hover any control to see a plain-language hint in the Inspector footer. The search box at
-          the top of the Inspector finds any control by name, across all tabs.
+          Hover any control to see a plain-language hint in the Visuals footer. The search box at
+          the top of Visuals finds any control by name, across all tabs.
         </p>
         <h4>Center images</h4>
         <p>
           Bass Circle and Radial Burst can display artwork in their center: by default the track's
           embedded cover art, or any image you choose (look for <em>Center image</em> in the
-          Inspector). Bass Circle's <em>Match cover colors</em> toggle reads the dominant color of
+          Visuals). Bass Circle's <em>Match cover colors</em> toggle reads the dominant color of
           that artwork and sets Hue and Hue spread to fit — automatically again for every new track.
         </p>
         <h4>Your own shaders</h4>
@@ -295,8 +295,8 @@ const SECTIONS: GuideSection[] = [
         <p>
           <strong>Good to know:</strong> while the timeline is enabled, scenes override the mode
           strip and scene parameters override the sliders — that's the point, but it can look like
-          "the Inspector does nothing" if you forget it's on. Turn the timeline off (or use Project
-          ▸ New project) to get direct control back.
+          "the Visuals does nothing" if you forget it's on. Turn the timeline off (or use Project ▸
+          New project) to get direct control back.
         </p>
       </>
     ),
@@ -455,10 +455,10 @@ const SECTIONS: GuideSection[] = [
         <p>
           Press <K k="H" /> for the full list. The important ones: <K k="Space" /> play/pause,{" "}
           <K k="N" />/<K k="P" /> next/previous mode, <K k="1" />–<K k="9" /> jump to a mode,{" "}
-          <K k="G" /> Inspector, <K k="S" /> stage mode, <K k="0" /> blackout, <K k="F" />{" "}
-          fullscreen, <K k="M" /> mute, <K k="L" /> loop, and <K k="I" />/<K k="O" /> A-B loop
-          markers. Every shortcut is a letter or digit, so it sits on the same labeled key on every
-          keyboard layout.
+          <K k="G" /> Visuals, <K k="S" /> stage mode, <K k="0" /> blackout, <K k="F" /> fullscreen,{" "}
+          <K k="M" /> mute, <K k="L" /> loop, and <K k="I" />/<K k="O" /> A-B loop markers. Every
+          shortcut is a letter or digit, so it sits on the same labeled key on every keyboard
+          layout.
         </p>
       </>
     ),

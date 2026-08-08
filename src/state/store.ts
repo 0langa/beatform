@@ -2068,8 +2068,8 @@ export const useVizStore = create<VizState>((set, get) => {
     setStageMode(stageMode) {
       // Entering stage closes panels for a clean output; leaving clears blackout.
       //
-      // The Inspector is NOT among them since P-1: stage mode suppresses the
-      // dock by LAYOUT (`.app.stage-mode` zeroes --inspector-w, and
+      // The Visuals is NOT among them since P-1: stage mode suppresses the
+      // dock by LAYOUT (`.app.stage-mode` zeroes --visuals-w, and
       // `.app.stage-mode .chrome { display: none }` already hid it), not by
       // closing it. The old `showPanel: false` was a raw destructive write
       // with no restore — it bypassed setShowPanel, so prefs kept the old

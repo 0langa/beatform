@@ -69,15 +69,15 @@ const COLORS: Record<PerfOverlayColor, string> = {
 
 /** Corner anchors: top offsets clear the top bar, bottom offsets clear the
  * player bar — plain CSS, no collision logic. The right-hand pair also clears
- * the Inspector dock: this is the one component whose chrome offsets live in
+ * the Visuals dock: this is the one component whose chrome offsets live in
  * TypeScript rather than App.css, and the var is inherited from `.app` (the
  * overlay is a direct child), so it resolves in an inline style and collapses
  * to a bare 12 in Stage mode for free. */
 const CORNER_STYLE: Record<PerfOverlayCorner, React.CSSProperties> = {
   "top-left": { top: 56, left: 12 },
-  "top-right": { top: 56, right: "calc(12px + var(--inspector-w))" },
+  "top-right": { top: 56, right: "calc(12px + var(--visuals-w))" },
   "bottom-left": { bottom: 72, left: 12 },
-  "bottom-right": { bottom: 72, right: "calc(12px + var(--inspector-w))" },
+  "bottom-right": { bottom: 72, right: "calc(12px + var(--visuals-w))" },
 };
 
 /** Text update cadence (ms) — ~4 Hz. FPS is still measured every frame. */

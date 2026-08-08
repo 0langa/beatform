@@ -268,7 +268,7 @@ describe("prefs: no-op writes", () => {
   });
 });
 
-describe("prefs: the Inspector dock's rail (P-1)", () => {
+describe("prefs: the Visuals dock's rail (P-1)", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
   });
@@ -285,20 +285,20 @@ describe("prefs: the Inspector dock's rail (P-1)", () => {
     ] as const) {
       seed(JSON.stringify({ paramsTab: tab }));
       const { getPrefs } = await importFresh();
-      expect(getPrefs().inspectorPage).toBe(page);
+      expect(getPrefs().visualsPage).toBe(page);
     }
   });
 
   it("keeps an explicitly stored page over the retired tab's mapping", async () => {
-    seed(JSON.stringify({ paramsTab: "sync", inspectorPage: "modulation" }));
+    seed(JSON.stringify({ paramsTab: "sync", visualsPage: "modulation" }));
     const { getPrefs } = await importFresh();
-    expect(getPrefs().inspectorPage).toBe("modulation");
+    expect(getPrefs().visualsPage).toBe("modulation");
   });
 
   it("degrades an unknown page to Mode rather than rendering nothing", async () => {
-    seed(JSON.stringify({ inspectorPage: "wormhole" }));
+    seed(JSON.stringify({ visualsPage: "wormhole" }));
     const { getPrefs } = await importFresh();
-    expect(getPrefs().inspectorPage).toBe("mode");
+    expect(getPrefs().visualsPage).toBe("mode");
   });
 
   it("does not reinterpret the Library's stored width as the dock's", async () => {
@@ -307,16 +307,16 @@ describe("prefs: the Inspector dock's rail (P-1)", () => {
     seed(JSON.stringify({ panelWidth: 280 }));
     const { getPrefs } = await importFresh();
     expect(getPrefs().panelWidth).toBe(280);
-    expect(getPrefs().inspectorWidth).toBe(480);
+    expect(getPrefs().visualsWidth).toBe(480);
   });
 
   it("clamps the dock width to its usable range", async () => {
-    seed(JSON.stringify({ inspectorWidth: 99999 }));
+    seed(JSON.stringify({ visualsWidth: 99999 }));
     const { getPrefs } = await importFresh();
-    expect(getPrefs().inspectorWidth).toBe(760);
-    seed(JSON.stringify({ inspectorWidth: 10 }));
+    expect(getPrefs().visualsWidth).toBe(760);
+    seed(JSON.stringify({ visualsWidth: 10 }));
     const fresh = await importFresh();
-    expect(fresh.getPrefs().inspectorWidth).toBe(380);
+    expect(fresh.getPrefs().visualsWidth).toBe(380);
   });
 
   it("prunes retired section-collapse entries but keeps group collapse", async () => {

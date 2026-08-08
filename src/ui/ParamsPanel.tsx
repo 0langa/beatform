@@ -333,22 +333,22 @@ const POST_SLIDERS: Array<{
   },
 ];
 
-type InspectorPageId = AppPrefs["inspectorPage"];
+type VisualsPageId = AppPrefs["visualsPage"];
 
 /**
- * The Inspector's section rail (P-1): eight destinations, one page each.
+ * The the Visuals section rail (P-1): eight destinations, one page each.
  *
  * A DATA TABLE on purpose. Everything the rail renders — order, label, hint,
  * the hairline groupings — is a row here, so later stages add a destination
  * without touching the shell. Labels are the design surface and may be
- * retuned; the `id`s are frozen, because they persist as `inspectorPage` and
+ * retuned; the `id`s are frozen, because they persist as `visualsPage` and
  * are what the GPU harness selects on (`[data-section="sync"]`).
  *
  * Modulation is a top-level destination rather than a link at the bottom of
  * Sync — that placement is the whole reason this rail exists.
  */
-const INSPECTOR_PAGES: ReadonlyArray<{
-  id: InspectorPageId;
+const VISUALS_PAGES: ReadonlyArray<{
+  id: VisualsPageId;
   label: string;
   hint: string;
   /** Draw a hairline above this item — grouping only, never a heading. */
@@ -395,7 +395,7 @@ interface SectionDef {
   id: string;
   /** Omitted when the page's context header already names the section. */
   title?: string;
-  page: InspectorPageId;
+  page: VisualsPageId;
   /** Lowercased title + control labels/hints, matched by the search box. */
   search: string;
   headerExtra?: ReactNode;
@@ -430,7 +430,7 @@ function plural(n: number, one: string, many: string): string {
 }
 
 /**
- * The Inspector — the right-hand dock: styles, preset parameters, background,
+ * The Visuals — the right-hand dock: styles, preset parameters, background,
  * sync, scene, text and live mapping.
  *
  * Store-direct: it subscribes to the ~27 slices it actually reads and
@@ -446,9 +446,9 @@ function plural(n: number, one: string, many: string): string {
  *
  * P-1: ONE navigation model. The five tabs and the per-section collapse are
  * both gone, replaced by a vertical rail of eight destinations
- * (INSPECTOR_PAGES) that each render their sections as a page. The search box
+ * (VISUALS_PAGES) that each render their sections as a page. The search box
  * spans the whole dock and bypasses the rail entirely — results cross pages.
- * The active page persists as `inspectorPage`. */
+ * The active page persists as `visualsPage`. */
 export function ParamsPanel() {
   // ── READS: one hook per field. A selector MUST return a store-owned
   // reference or a primitive — never an object literal, array literal, spread
@@ -551,13 +551,13 @@ export function ParamsPanel() {
   const [themeName, setThemeName] = useState("");
   const [themeAuthor, setThemeAuthor] = useState("");
   const [midiParam, setMidiParam] = useState("");
-  const [page, setPage] = useState<InspectorPageId>(() => getPrefs().inspectorPage);
+  const [page, setPage] = useState<VisualsPageId>(() => getPrefs().visualsPage);
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<string[]>(() => getPrefs().collapsedSections);
   const railRef = useRef<HTMLElement | null>(null);
-  const changePage = (p: InspectorPageId) => {
+  const changePage = (p: VisualsPageId) => {
     setPage(p);
-    setPrefs({ inspectorPage: p });
+    setPrefs({ visualsPage: p });
   };
   /** Collapse state for one param group, persisted as GROUP_KEY + id — since
    * P-1 retired section collapse, that prefix is the whole meaning of
@@ -608,7 +608,7 @@ export function ParamsPanel() {
             : (here - 1 + items.length) % items.length;
     const next = items[at];
     next.focus();
-    changePage(next.dataset.section as InspectorPageId);
+    changePage(next.dataset.section as VisualsPageId);
   };
   const setAdvanced = (on: boolean) => {
     setShowAdvanced(on);
@@ -660,18 +660,18 @@ export function ParamsPanel() {
   // ── RAIL DATA. Dimmed-not-hidden (F1): an unavailable destination stays
   // focusable and clickable, says why on hover, and explains itself again on
   // the page you land on.
-  const pageUnavailable: Partial<Record<InspectorPageId, string>> = showMotion
+  const pageUnavailable: Partial<Record<VisualsPageId, string>> = showMotion
     ? {}
     : { motion: "This visual has no rotation, pulse or detail masters" };
   /** Counts from the DOCUMENT, shown when > 0. The pill is aria-hidden so
    * accessible names stay exactly the rail label; the count is spoken through
    * the button's title instead. */
-  const pageBadge: Partial<Record<InspectorPageId, number>> = {
+  const pageBadge: Partial<Record<VisualsPageId, number>> = {
     modulation: mods.length,
     scene: overlayLayers.length,
     live: midiBindings.length,
   };
-  const pageBadgeTitle: Partial<Record<InspectorPageId, string>> = {
+  const pageBadgeTitle: Partial<Record<VisualsPageId, string>> = {
     modulation:
       mods.length > 0
         ? `Modulation — ${plural(mods.length, "active route", "active routes")}`
@@ -2182,7 +2182,7 @@ export function ParamsPanel() {
   return (
     <aside className="chrome params-panel">
       <div className="panel-header">
-        <span className="panel-heading">Inspector</span>
+        <span className="panel-heading">Visuals</span>
         <button
           className="icon-btn subtle"
           title="Close (G)"
@@ -2203,11 +2203,11 @@ export function ParamsPanel() {
         onChange={(e) => setQuery(e.target.value)}
       />
 
-      <div className="inspector-body">
+      <div className="visuals-body">
         {/* A nav of plain buttons, NOT a tablist: these switch views inside a
             panel, and role="tab" would also rename every item's role out from
             under the suites that address them by button name. */}
-        <nav className="inspector-rail" aria-label="Inspector sections" ref={railRef}>
+        <nav className="visuals-rail" aria-label="Visuals sections" ref={railRef}>
           {searching && (
             <button
               type="button"
@@ -2224,7 +2224,7 @@ export function ParamsPanel() {
               </span>
             </button>
           )}
-          {INSPECTOR_PAGES.map((p) => {
+          {VISUALS_PAGES.map((p) => {
             const active = !searching && p.id === page;
             const badge = pageBadge[p.id] ?? 0;
             return (
@@ -2261,14 +2261,14 @@ export function ParamsPanel() {
           })}
         </nav>
 
-        <div className="inspector-page">
+        <div className="visuals-page">
           {/* A NON-SCROLLING flex sibling, never position:sticky inside
               .panel-scroll — a sticky header there is the classic way to push
               a trailing row past the viewport with nothing the UI auditor can
               credit as a scrollable ancestor. */}
-          <div className="inspector-context">
+          <div className="visuals-context">
             <span className="section-title">{preset.name}</span>
-            <span className="inspector-style">
+            <span className="visuals-style">
               {activeStyle?.name ?? (hasStyles ? <em className="style-custom">Custom</em> : null)}
             </span>
           </div>

@@ -2,11 +2,11 @@ import { useVizStore } from "../state/store";
 import { selectBpm, selectKeyName } from "../state/selectors";
 
 /**
- * The Inspector footer's readout badges — renderer backend, tempo, key,
+ * The Visuals footer's readout badges — renderer backend, tempo, key,
  * loudness.
  *
  * Its own component purely for SUBSCRIPTION GRANULARITY: `lufs` ticks at 4 Hz
- * for the whole of playback, and reading it at the Inspector's top level would
+ * for the whole of playback, and reading it at the Visuals top level would
  * put the panel's ~2,000 lines back on that tick — which is exactly the cost
  * the store-direct migration exists to remove. Everything here is read by
  * nothing else in the panel, so the four-badge subtree is the only thing that

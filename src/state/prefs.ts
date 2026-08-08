@@ -66,22 +66,22 @@ export interface AppPrefs {
   /** Check GitHub Releases for updates shortly after launch. */
   updateAutoCheck: boolean;
   /**
-   * FROZEN (P-1). The Inspector's five tabs became the dock's section rail,
+   * FROZEN (P-1). The the Visuals five tabs became the dock's section rail,
    * so nothing writes this any more — but it is still validated and still
    * read ONCE, to place an existing user on the page matching the tab they
    * last used. Deleting it would silently land every upgrading user on Mode.
    */
   paramsTab: "visual" | "sync" | "scene" | "text" | "live";
-  /** Active page of the Inspector dock's section rail (P-1). */
-  inspectorPage: "mode" | "motion" | "themes" | "sync" | "modulation" | "scene" | "text" | "live";
+  /** Active page of the Visuals dock's section rail (P-1). */
+  visualsPage: "mode" | "motion" | "themes" | "sync" | "modulation" | "scene" | "text" | "live";
   /**
-   * Inspector dock width, px. Deliberately NOT `panelWidth`: that one still
+   * Visuals dock width, px. Deliberately NOT `panelWidth`: that one still
    * sizes the Library panel, and reinterpreting a stored 280 as a dock width
    * would hand every existing user a cramped dock on first launch.
    */
-  inspectorWidth: number;
+  visualsWidth: number;
   /**
-   * Collapsed GROUP keys inside an Inspector page ("group:<id>").
+   * Collapsed GROUP keys inside an Visuals page ("group:<id>").
    *
    * P-1 retired in-page SECTION collapse — the rail is the one navigation
    * model — so unprefixed section ids no longer have a reader and are pruned
@@ -128,8 +128,8 @@ export const DEFAULT_PREFS: AppPrefs = {
   previewScale: 1,
   updateAutoCheck: true,
   paramsTab: "visual",
-  inspectorPage: "mode",
-  inspectorWidth: 480,
+  visualsPage: "mode",
+  visualsWidth: 480,
   collapsedSections: [],
   presetOrder: [],
   perfOverlay: false,
@@ -181,7 +181,7 @@ function oneOf<T extends string>(v: unknown, options: readonly T[], def: T): T {
  * dock's rail. "visual" carried mode + styles + looks + every param group, so
  * it maps to Mode; the other four kept their names.
  */
-const TAB_TO_PAGE: Record<AppPrefs["paramsTab"], AppPrefs["inspectorPage"]> = {
+const TAB_TO_PAGE: Record<AppPrefs["paramsTab"], AppPrefs["visualsPage"]> = {
   visual: "mode",
   sync: "sync",
   scene: "scene",
@@ -236,8 +236,8 @@ function validPrefs(raw: unknown): AppPrefs {
     // pure coercion — no setPrefs, no effect — so it cannot schedule a React
     // update mid-render, and it runs even for someone who never opens the
     // dock (a panel-hosted migration would not).
-    inspectorPage: oneOf(
-      p.inspectorPage,
+    visualsPage: oneOf(
+      p.visualsPage,
       ["mode", "motion", "themes", "sync", "modulation", "scene", "text", "live"] as const,
       TAB_TO_PAGE[
         (p.paramsTab === "sync" ||
@@ -248,7 +248,7 @@ function validPrefs(raw: unknown): AppPrefs {
           : "visual") as AppPrefs["paramsTab"]
       ],
     ),
-    inspectorWidth: num(p.inspectorWidth, d.inspectorWidth, 380, 760),
+    visualsWidth: num(p.visualsWidth, d.visualsWidth, 380, 760),
     // Only "group:"-prefixed keys still have a reader (ParamGroups); P-1
     // retired section collapse, so bare section ids are pruned instead of
     // sitting in the 64-entry budget forever. The prefix literal is
@@ -430,8 +430,8 @@ function samePrefs(a: AppPrefs, b: AppPrefs): boolean {
     a.previewScale === b.previewScale &&
     a.updateAutoCheck === b.updateAutoCheck &&
     a.paramsTab === b.paramsTab &&
-    a.inspectorPage === b.inspectorPage &&
-    a.inspectorWidth === b.inspectorWidth &&
+    a.visualsPage === b.visualsPage &&
+    a.visualsWidth === b.visualsWidth &&
     sameStringList(a.collapsedSections, b.collapsedSections) &&
     sameStringList(a.presetOrder, b.presetOrder) &&
     a.perfOverlay === b.perfOverlay &&

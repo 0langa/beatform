@@ -192,9 +192,9 @@ function ImageLayerEditor(props: {
 
 /** Overlay layer list + editors: text, logo, album art over the visuals.
  *
- * Store-direct and zero-prop: the Inspector is its only mount, and every value
+ * Store-direct and zero-prop: Visuals is its only mount, and every value
  * it showed was drilled straight through from the store. Its own subscriptions
- * mean an overlay edit reconciles the layer list, not the whole Inspector. The
+ * mean an overlay edit reconciles the layer list, not the whole Visuals. The
  * open-editor row is local UI state and stays local. */
 export function LayersPanel() {
   const layers = useVizStore((s) => s.overlayLayers);

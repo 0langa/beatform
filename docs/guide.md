@@ -3,7 +3,7 @@
 Everything the app does, panel by panel — all of it also lives in the app
 itself: the **User guide** button in the shortcut overlay (press `H`) opens
 a 12-section in-app walkthrough. Keyboard shortcuts: press `H` (or
-`?`) in the app (Space play/pause, P/N switch mode, G Inspector, T timeline,
+`?`) in the app (Space play/pause, P/N switch mode, G Visuals, T timeline,
 B batch, Q library, L loop, I/O set A-B markers, F fullscreen, S stage,
 Ctrl+Z undo). Every
 shortcut is a letter or digit, so it sits on the same labeled key on every
@@ -38,7 +38,7 @@ Bass Circle and Radial Burst show artwork in their center: the track's
 **Center image** row (saved per mode). Bass Circle's **Match cover colors**
 toggle analyzes whichever image is displayed and sets Hue + Hue spread to
 fit it — automatically again on every new track. Hover
-any control for a plain-language hint. The Inspector (G) is organized
+any control for a plain-language hint. The Visuals (G) is organized
 into **tabs** (Visual / Sync / Scene / Text / Live), every section
 collapses, its edge drags to resize — and the **search box** at the
 top finds any control by name across all tabs.
@@ -55,7 +55,7 @@ like. Every layer has its own on/off, opacity, **blend mode**
 
 ## Sync — what drives the motion
 
-_Inspector ▸ Sync_ routes ONE source to every mode: **Kicks** (default),
+_Visuals ▸ Sync_ routes ONE source to every mode: **Kicks** (default),
 Energy, Bass, Melody, Voice, Treble, Snare, or Hats. Smoothing has a macro
 slider plus independent **Attack**/**Release** for punchy-in, ease-out
 reactions.
@@ -93,7 +93,7 @@ Two kinds of beat reaction work together:
 
 - **Onset pulses** fire on actual hits in the selected band.
 - **Beat-grid pulses** ride the track's detected tempo grid (BPM shown in the
-  Inspector footer), landing on every metronome beat — Synthwave's grid scrolls
+  Visuals footer), landing on every metronome beat — Synthwave's grid scrolls
   exactly one line per beat, Tunnel launches a light ring per beat that
   arrives as the next one lands, Bass Circle pumps on the grid. Tracks
   without a detectable grid fall back to onset pulses automatically.
@@ -102,7 +102,7 @@ Two kinds of beat reaction work together:
 spectrum smoothing globally — dial the whole app calmer or wilder from one
 place.
 
-_Inspector ▸ Sync ▸ Modulation_ routes any audio feature to any knob. The
+_Visuals ▸ Sync ▸ Modulation_ routes any audio feature to any knob. The
 target list covers this visual's own parameters **and the post-processing
 chain** — so the kick can drive Chromatic, bass can breathe the Bloom, and
 the whole look moves with the track. Exports resolve routes from the same
@@ -139,7 +139,7 @@ Beatform doubles as a live/VJ tool. Everything here is preview-only — it never
 changes an export.
 
 - **Jump between modes hands-free.** Number keys **1–9** (or clicking a mode
-  chip) switch the visual. With **Inspector ▸ Live ▸ Quantize** set to **Beat**
+  chip) switch the visual. With **Visuals ▸ Live ▸ Quantize** set to **Beat**
   or **Bar**, the switch doesn't happen instantly — it waits and lands exactly
   on the next beat/bar of the detected grid, Ableton-session-launch style. The
   queued mode's chip pulses until it takes over. Off = instant.
@@ -148,7 +148,7 @@ changes an export.
   screen-share. The mode name flashes briefly on each switch so you can drive
   blind. **0** blacks out (the VJ cut — 1–9 pick modes, 0 cuts to black);
   **Esc** exits.
-- **MIDI** (Inspector ▸ Live ▸ MIDI ▸ Enable, on Chromium-based builds): map a
+- **MIDI** (Visuals ▸ Live ▸ MIDI ▸ Enable, on Chromium-based builds): map a
   controller's knobs and pads. **Learn CC** then move a knob to bind it to the
   selected parameter; **Learn note → &lt;mode&gt;** then play a note to switch to
   that mode (it obeys the beat-quantize too). Bindings are remembered. Local
@@ -163,12 +163,12 @@ Drop an `.lrc` file (any lyrics site exports them) or `.srt` subtitles onto
 the window — the current line follows the music, karaoke-style, live and in
 every export. Position/size/color, an **Animation** (plain / slide / pop, or
 **karaoke** — the line fills bright left-to-right as it's sung) and fade live in
-the Inspector's **Lyrics** section. Drop the lyrics together with
+the Visuals **Lyrics** section. Drop the lyrics together with
 the track or after it; they attach to the loaded track like stems do.
 
 ## Stems
 
-Import a stem (drums/bass/vocals bounced from 0:00) in the Inspector's
+Import a stem (drums/bass/vocals bounced from 0:00) in the Visuals
 **Modulation** section — it's analyzed once, never played, and its bands
 become modulation sources. Hit the **✦** on a stem chip to auto-wire its
 kick/bass/snare/hats/mids to the best-matching knobs of the current visual;
@@ -176,7 +176,7 @@ tweak the amounts from there.
 
 ## Audiogram
 
-The Inspector's **Audiogram** section adds track-driven overlay elements — a
+The the Visuals **Audiogram** section adds track-driven overlay elements — a
 progress bar, an elapsed/total time readout, and a mini-waveform strip with
 a moving playhead (the podcast/reel look). Position and accent color are
 yours; exports use the same timed overlay definition.
@@ -235,4 +235,4 @@ off in Preferences ▸ Updates if you prefer manual.
 - **Ctrl+S / Ctrl+O** — `.bfproj` project files (everything, portable).
 - **Save look** — a named parameter set for one mode (`.bfpreset`).
 - **Themes** — a complete setup as one shareable `.bftheme` file, saved from
-  _Inspector ▸ Visual ▸ Themes_; see [Themes](templates).
+  _Visuals ▸ Visual ▸ Themes_; see [Themes](templates).

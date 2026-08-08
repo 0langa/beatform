@@ -10,7 +10,7 @@ import { LFO_SOURCES } from "../state/modMatrix";
 import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
 
 /**
- * The Inspector's contract after P-12.
+ * The the Visuals contract after P-12.
  *
  * What this file used to prove — "memo() bails when every prop keeps its
  * identity" — no longer exists to be proven: the panel takes no props, so
@@ -161,7 +161,7 @@ function seedRoute(param = "hue", extra: Record<string, unknown> = {}) {
   });
 }
 
-describe("selector granularity (P-12: the Inspector subscribes only what it reads)", () => {
+describe("selector granularity (P-12: the Visuals subscribes only what it reads)", () => {
   it("T1: the 4 Hz LUFS meter tick does not reconcile the panel body", () => {
     act(() => useVizStore.setState({ presetId: "spectrum-bars" }));
     const probe = probePresetParams("spectrum-bars");
@@ -230,7 +230,7 @@ describe("selector granularity (P-12: the Inspector subscribes only what it read
     act(() => {
       for (let i = 0; i < 200; i++) useVizStore.setState({ lufs: -20 + i * 0.01 });
     });
-    expect(screen.getByText("Inspector")).toBeTruthy();
+    expect(screen.getByText("Visuals")).toBeTruthy();
   });
 });
 
@@ -269,7 +269,7 @@ describe("modulation & MIDI target lists (RP-2 / RP-14)", () => {
         (o) => o.getAttribute("value") === "mirror" && /not modulatable/.test(o.textContent ?? ""),
       ),
     ).toBe(true);
-    // Opening the Inspector must not MUTATE the document — snapping the select
+    // Opening the Visuals must not MUTATE the document — snapping the select
     // onto the first modulatable param would rewrite the route on the next
     // unrelated edit.
     expect(useVizStore.getState().activeMods[0].param).toBe("mirror");
@@ -315,7 +315,7 @@ describe("modulation v2 UI (P-16/P-7)", () => {
 
 describe("no external-store writes during render", () => {
   /** Stand-in for App's prefs subscription (useSyncExternalStore(subscribePrefs,
-   * getPrefs)): a setPrefs executed while the Inspector renders schedules an
+   * getPrefs)): a setPrefs executed while the Visuals renders schedules an
    * update on this component mid-render — React dev logs "Cannot update a
    * component…". StrictMode is what re-runs useState updaters in the render
    * phase, so it is required for the repro. */
@@ -324,7 +324,7 @@ describe("no external-store writes during render", () => {
     return <span data-testid="prefs-mirror">{p.collapsedSections.length}</span>;
   }
 
-  /** Second mirror, on the zustand store — the Inspector now writes THERE too,
+  /** Second mirror, on the zustand store — the Visuals now writes THERE too,
    * and today's guard covered only the prefs emitter. */
   function StoreMirror() {
     const id = useVizStore((s) => s.presetId);
@@ -356,7 +356,7 @@ describe("no external-store writes during render", () => {
     expect(consoleErrors.filter((e) => e.includes("Cannot update a component"))).toEqual([]);
   });
 
-  it("T12b: rail navigation persists inspectorPage without a render-phase update", () => {
+  it("T12b: rail navigation persists visualsPage without a render-phase update", () => {
     render(
       <StrictMode>
         <PrefsMirror />
@@ -366,9 +366,9 @@ describe("no external-store writes during render", () => {
     );
     // Two DIFFERENT destinations, so neither write is swallowed by samePrefs.
     fireEvent.click(screen.getByRole("button", { name: "Scene" }));
-    expect(getPrefs().inspectorPage).toBe("scene");
+    expect(getPrefs().visualsPage).toBe("scene");
     fireEvent.click(screen.getByRole("button", { name: "Modulation" }));
-    expect(getPrefs().inspectorPage).toBe("modulation");
+    expect(getPrefs().visualsPage).toBe("modulation");
     expect(consoleErrors.filter((e) => e.includes("Cannot update a component"))).toEqual([]);
   });
 });
@@ -382,8 +382,8 @@ describe("no external-store writes during render", () => {
  * dock geometry itself. Those classes are asserted as contracts here, not as
  * appearance.
  */
-describe("Inspector section rail", () => {
-  const rail = () => document.querySelector(".inspector-rail")!;
+describe("Visuals section rail", () => {
+  const rail = () => document.querySelector(".visuals-rail")!;
   const railItems = () =>
     [
       ...rail().querySelectorAll<HTMLButtonElement>(
@@ -420,7 +420,7 @@ describe("Inspector section rail", () => {
     render(<ParamsPanel />);
     // Landmark, not role="tab": these switch views inside a panel, and the
     // suites address every item by button name.
-    expect(screen.getByRole("navigation", { name: "Inspector sections" })).toBe(rail());
+    expect(screen.getByRole("navigation", { name: "Visuals sections" })).toBe(rail());
     expect(rail().querySelector('[role="tab"]')).toBeNull();
     // aria-current="true", never "page" — a screen reader must not announce
     // "current page" for a view switcher.
@@ -447,19 +447,19 @@ describe("Inspector section rail", () => {
   it("R4: clicking a destination swaps the page and persists it", () => {
     render(<ParamsPanel />);
     fireEvent.click(screen.getByRole("button", { name: "Text" }));
-    expect(getPrefs().inspectorPage).toBe("text");
+    expect(getPrefs().visualsPage).toBe("text");
     expect(screen.getByRole("heading", { name: "Audiogram" })).toBeTruthy();
     // Frame lives on Scene, so it must be gone from the Text page.
     expect(screen.queryByRole("heading", { name: "Frame" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Scene" }));
-    expect(getPrefs().inspectorPage).toBe("scene");
+    expect(getPrefs().visualsPage).toBe("scene");
     expect(screen.getByRole("heading", { name: "Frame" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Audiogram" })).toBeNull();
   });
 
   it("R5: the persisted page is where a fresh mount lands", () => {
-    setPrefs({ inspectorPage: "live" });
+    setPrefs({ visualsPage: "live" });
     render(<ParamsPanel />);
     expect(
       railItems().find((b) => b.getAttribute("aria-current") === "true")?.dataset.section,
@@ -484,7 +484,7 @@ describe("Inspector section rail", () => {
     railItems()[0].focus();
     fireEvent.keyDown(at(), { key: "ArrowDown" });
     expect(at().dataset.section).toBe("motion");
-    expect(getPrefs().inspectorPage).toBe("motion"); // follow-focus
+    expect(getPrefs().visualsPage).toBe("motion"); // follow-focus
 
     fireEvent.keyDown(at(), { key: "End" });
     expect(at().dataset.section).toBe("live");
@@ -494,7 +494,7 @@ describe("Inspector section rail", () => {
     expect(at().dataset.section).toBe("live");
     fireEvent.keyDown(at(), { key: "Home" });
     expect(at().dataset.section).toBe("mode");
-    expect(getPrefs().inspectorPage).toBe("mode");
+    expect(getPrefs().visualsPage).toBe("mode");
   });
 
   it("R8: an unavailable destination is dimmed and clickable, and its page says why", () => {
@@ -537,7 +537,7 @@ describe("Inspector section rail", () => {
     act(() => useVizStore.setState({ presetId: "spectrum-bars" }));
     render(<ParamsPanel />);
     const name = presets.find((p) => p.id === "spectrum-bars")!.name;
-    expect(document.querySelector(".inspector-context .section-title")?.textContent).toBe(name);
+    expect(document.querySelector(".visuals-context .section-title")?.textContent).toBe(name);
     // Once, not twice: this is why the mode section dropped its own title.
     expect(screen.getByText(name)).toBeTruthy();
   });

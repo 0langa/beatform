@@ -320,7 +320,7 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
               setRows([...rows, { ...EMPTY_ROW, uid: nextRowUid() }]);
               setDirty(true);
             }}
-            title="Add a parameter (becomes P_<key>() in WGSL and a slider in the Inspector)"
+            title="Add a parameter (becomes P_<key>() in WGSL and a slider in Visuals)"
           >
             + Parameter
           </button>

@@ -33,7 +33,7 @@ const BLEND_OPTIONS: Array<{ value: BuilderBlend; label: string; hint: string }>
  * mutation rebuilds a NEW BuilderStack and hands it to setBuilderStack — the
  * store owns recompile/upload. Never mutates the subscribed stack.
  *
- * `onHint` stays a prop: the footer hint is the Inspector's own React state,
+ * `onHint` stays a prop: the footer hint is the Visuals own React state,
  * not a store field, and putting it in the store would broadcast pointer-rate
  * churn to every subscriber in the app.
  */

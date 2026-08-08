@@ -17,7 +17,7 @@ GitHub is the only channel and everything is free forever.
    reads its tags, detects BPM + key, and locks grid-synced visuals to the
    real beats.
 3. **Pick a look.** Sixteen visual modes across the top; each ships 5–7
-   curated styles. Or open _Inspector ▸ Visual ▸ Themes_ and click a factory
+   curated styles. Or open _Visuals ▸ Visual ▸ Themes_ and click a factory
    theme — Cover Story, Hyperlane, Chrome Sunset, Ion Storm, and more — for a
    complete tuned setup in one click.
 4. **Make it yours.** _Layers_ adds your title (auto-filled from tags), logo,
