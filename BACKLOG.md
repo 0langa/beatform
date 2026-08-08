@@ -140,12 +140,21 @@ regress these.
   **The word "Template" is retired** in UI, guide, docs, code comments.
 - **Gallery** — the public curated collection of looks + themes.
 
-Surface names (decided 2026-08-07 as P-2, shipped v2.80.0). Older entries in
-this ledger use the retired words; they are left as written:
+Surface names (decided 2026-08-07 as P-2, shipped v2.80.0; the dock's name
+revised again in v2.81.0). Older entries in this ledger use the retired
+words; they are left as written:
 
-- **Inspector** — the right-hand dock (**G**). Was "Visual settings" or
-  "the settings panel".
-- **Preferences** — the Ctrl+, app dialog. Was "App settings".
+- **Visuals** — the right-hand dock (**G**). Was "Visual settings" or "the
+  settings panel", then **Inspector** for exactly one release (v2.80.0).
+  **Renamed again in v2.81.0 and superseded: "Inspector" is retired.** The
+  owner's reason: it names a kind of window, not what the button reveals.
+  Entries in this ledger written before v2.81.0 say "Inspector"; they are
+  left as written and mean this surface. The persisted keys moved with the
+  word (`inspectorPage`/`inspectorWidth` → `visualsPage`/`visualsWidth`) —
+  free, because they had never shipped; after v2.81.0 that costs a
+  migration.
+- **Preferences** — the Ctrl+, app dialog. Was "App settings". Unchanged by
+  v2.81.0 — only the dock was renamed.
 - **Control** (or **parameter**, where "control" would collide with the
   verb) — one knob or toggle. **The bare word "settings" is retired from UI
   copy**, with exactly one exemption: "Windows Sound settings", which names
@@ -434,23 +443,28 @@ nothing else from that release is outstanding.
       starts with a net — start by making those go red. BatchPanel's
       `formatLabel` derivation is the sole reason App still subscribes to
       all of `exportSettings`.
-- [ ] G2 **READY — BLOCKING: the first Inspector section keys its collapse
-      state on the visual mode's display name.** `ParamsPanel.tsx` builds
-      that SectionDef with `id: props.preset.name` — a dynamic, user-visible
-      string identical to the section's own title, directly violating the
-      `SectionDef.id` contract stated three lines above it ("retitling never
-      changes an id"). Renaming any mode's display name therefore resets
-      that mode's collapse state, and it fails **silently**: `prefs.ts` has
-      no numbered-migration machinery and degrades unknown
-      `collapsedSections` entries to defaults. Not fixed in v2.80.0 because
-      the fix needs a one-time `collapsedSections` name→`preset.id`
-      migration that cannot live in `prefs.ts` (it must not import the
-      preset registry) and must run in a `useEffect`, never as a
-      render-phase write. **This must land before any visual mode's display
-      name is changed again** — Track B's waves are complete, but Track C
-      and any later depth work can retitle a mode.
-- [ ] G3 **READY — extract the Inspector's footer `hint`.** Moving the
-      pointer across the Inspector re-renders the whole ~2,000-line panel
+- [x] G2 **CLOSED BY DELETION in v2.81.0 (P-1 stage 1). No migration was
+      written, and none is owed.** The finding was real: the first section's
+      `SectionDef` used `id: props.preset.name`, so renaming a visual mode's
+      display name silently reset that mode's collapse state. P-1 deleted
+      the mechanism the bug lived in — **in-page section collapse no longer
+      exists**, the rail is the only navigation model, and `CollapsibleSection`
+      is gone from `kit.tsx` with its two kit tests. The id is now a React
+      key only and moved to `preset.id` anyway (ParamsPanel.tsx), so the
+      contract violation is closed on both sides. `collapsedSections`
+      survives with a narrowed meaning: `validPrefs` prunes it to
+      `group:`-prefixed keys, which are `ParamGroups`' per-group folds and
+      the array's only remaining reader — a `preset.name`→`preset.id`
+      rewrite would have produced entries nothing reads. **The blocking
+      clause is lifted: a visual mode's display name may now be changed
+      freely.** Side effect worth recording — the prune also fixes a
+      pre-existing cap bug: `collapsedSections` was `.slice(0, 64)` (keeping
+      the head) while the toggle appended, so at the cap new folds were
+      dropped on the round-trip while the UI showed them applied. Dropping
+      ~16 section ids plus one `preset.name` entry per mode restores the
+      headroom P-9's per-group state will spend.
+- [ ] G3 **READY — extract the Visuals dock's footer `hint`.** Moving the
+      pointer across the dock re-renders the whole ~2,000-line panel
       once per row crossed — a _higher_ frequency than the 4 Hz `lufs` tick
       v2.80.0 fixed. Deferred because `onHint` is threaded through
       ParamGroups, BuilderPanel and every `kit.tsx` row, so fixing it means
@@ -461,7 +475,9 @@ nothing else from that release is outstanding.
       (`setParam` writes `activeParams` on every pointermove). Requires
       `ParamGroups`/`paramControls` to become store-aware, which invalidates
       the two largest surviving unit suites (`ParamGroups.test.tsx`,
-      `kit.test.tsx`). Sequence **after** P-1's page model exists.
+      `kit.test.tsx`). Sequence **after** P-1's page model exists —
+      **unblocked as of v2.81.0**, though the pages themselves are still
+      un-curated until P-1 stage 2 (Track H).
 - [ ] G5 Move the `UpdatePhase` state machine out of `App.tsx` and finish
       SettingsDialog. Its four update props are the only prop-drilling left
       into an otherwise store-direct dialog; the machine is deliberately not
@@ -470,13 +486,16 @@ nothing else from that release is outstanding.
 - [ ] G6 `gpuMatrix.ts` restores `rebuildBuilder2(defaultBuilderStack())`
       rather than the store's stack, so module state can diverge from
       `s.builderStack` after `window.__runGpuMatrix()`. Pre-existing and
-      harness-only — observable only with the Inspector open in Builder
+      harness-only — observable only with the Visuals dock open in Builder
       mode, and the gate's `spectrumSmoke` leg uses `spectrum-bars`. Left
       alone because the fix puts a store-shaped change inside the render
       layer; do it deliberately, not opportunistically.
 - [ ] G7 Deduplicate `exportBlocked` (`App.tsx`) against
       `SIMPLIFIED_EXPORT_REASON` (`store.ts`) — a real F2-class drift risk.
       Deferred because it lives in the top bar that P-1 restructures.
+      **Unblocked as of v2.81.0**: P-1 stage 1's only top-bar edit was
+      turning the dock toggle into a labelled `.ghost-btn`; the export
+      cluster is untouched and no later stage is scheduled to move it.
 - [ ] G8 **Device harnesses that attach without recovery.**
       `scripts/lyrics-e2e.mjs` wraps its FIRST IPC call in the re-attach
       dance but not the initial `attach()` + `waitHooks` eval, and
@@ -498,20 +517,164 @@ nothing else from that release is outstanding.
       `TAURI_DEV_HOST=127.0.0.1` / `npm run dev -- --host` as the
       dual-stack incantation. Costs real debugging time every session.
 
-**Frozen by v2.80.0 — renaming any of these is a silent user-data or gate
-break, not a cleanup.** Persisted: `viz.exportSettings.v1`,
-`beatform.prefs.v1`, `panelOpen`, `panelWidth` (shared with the Library
-panel — `inspectorWidth` would be actively wrong), `paramsTab` **and its
-five values**, `collapsedSections`, `advancedOpen`, the whole `LEGACY` map,
-and all 15 SectionDef ids (including `"Templates"`, titled "Themes").
-Tooling-coupled CSS: `.params-panel`, the `.panel-*` family (nine call
-sites), `.section-toggle`, `.panel-resize-handle`, `--panel-w`, and
-`.update-hero-close` — the shared CDP bootstrap clicks that last one, so
-every device harness hangs at startup if it changes. Also standing: the
-`{showPanel && <ParamsPanel />}` mount gate stays in App (moving it inside
-would persist eleven pieces of local UI state across close/open), `memo()`
-does not come back to a zero-prop component, and `useShallow` stays unused —
-it has no prior art here and does not remove the `useMemo` anyway.
+**Frozen by v2.80.0, revised by v2.81.0 — renaming any of these is a silent
+user-data or gate break, not a cleanup.** Persisted:
+`viz.exportSettings.v1`, `beatform.prefs.v1`, `panelOpen`, `panelWidth`
+(**sizes the Library ONLY since P-1**; `visualsWidth` is a sibling field, so
+no stored value was ever reinterpreted as a dock width), `visualsWidth`
+(380..760), `visualsPage` **and its eight ids** — the ids are frozen, the
+rail LABELS are not — `paramsTab` **and its five values** (declared,
+validated, never written again: its whole remaining job is seeding
+`visualsPage` for upgrading installs, and deleting the field would delete
+the seed on first boot), `collapsedSections` (**`group:`-prefixed keys
+only** since P-1 — bare section ids are pruned on read; the literal is
+duplicated into `prefs.ts` because state must not import UI, and
+`prefs.test.ts` asserts it equals `ParamGroups.GROUP_KEY`), `advancedOpen`,
+the whole `LEGACY` map, and all 15 SectionDef ids (including `"Templates"`,
+titled "Themes") — now React keys only, no longer persisted identities.
+Tooling-coupled CSS: `.params-panel` (still the dock root — `gpu-pixel-matrix.mjs`
+scrapes its `textContent` and scopes `__auditUI` to it; no
+`.visuals-dock` alias was added, an orphan class with no rule is the
+`.builder-factory-chips` mistake), `.panel-scroll` (the auditor's
+scrollable-ancestor walk must find it), **`.rail-item` + its
+`data-section`** (`gpu-pixel-matrix.mjs:205` selects `.rail-item` and
+matches `dataset.section === "sync"` — the ATTRIBUTE, never the label,
+because rail labels are an iterated design surface and the page ids are
+frozen in prefs), `.panel-resize-handle`, `--panel-w`, and
+`.update-hero-close` — the shared
+CDP bootstrap clicks that last one, so every device harness hangs at startup
+if it changes. **Removed from this list by P-1:** `.section-toggle` and
+`.panel-tabs` (both deleted with the collapse and tab machinery). Also
+corrected: the `.panel-*` family is **not** nine harness call sites — no
+harness selects `.panel-search`, `.panel-scroll`, `.panel-footer`,
+`.panel-heading`, `.panel-resize-handle` or `.param-density`; only
+`.params-panel` is tooling-coupled, plus `.panel-scroll` indirectly through
+`__auditUI`. Also standing: the `{showPanel && <ParamsPanel />}` mount gate
+stays in App (moving it inside would persist eleven pieces of local UI state
+across close/open), `memo()` does not come back to a zero-prop component,
+and `useShallow` stays unused — it has no prior art here and does not remove
+the `useMemo` anyway.
+
+### Track H — P-1 stages 2 and 3 (NEW, from the v2.81.0 dock release)
+
+**Stage 1 shipped in v2.81.0** and is deliberately a SHELL: the floating
+overlay became a persistent, resizable right dock (the canvas letterboxes
+beside it via `--visuals-w`; the drag is split into `--visuals-w-set` /
+`--visuals-w-live` so only the dock tracks the pointer and the canvas
+commits once, or every pointermove destroys and recreates every render
+target at full DPR and strobes feedback trails to black); the five tabs AND
+the per-section collapses (13 of the 15 sections had one) became ONE
+vertical rail of eight destinations (Mode · Motion · Themes · Sync ·
+Modulation · Scene · Text · Live)
+with roving-tabindex keyboard, badges, and dimmed-with-a-reason
+unavailability; Modulation became a top-level destination; a non-scrolling
+context header names the mode and its active style; Stage mode suppresses
+the dock by layout instead of destructively closing it; the Library got its
+own resize grip; both separators take the keyboard. **Zero section bodies
+changed** — stage 1 is a pure re-parenting. Everything below is what that
+buys and what it does not.
+
+- [ ] H1 **BLOCKING stage 2 — decide, in writing, where the other six param
+      groups live. The rail is a better index over the SAME pile until this
+      is answered.** Measured on the shipped v2.81.0 tree, and the reason
+      stage 2 is not cosmetic: **the eight rail destinations name at most
+      ONE of the eight `PARAM_GROUPS`** — `Motion`, and even that page holds
+      the GLOBAL motion masters (`Global motion`), not the per-visual
+      `motion` group. `ParamGroups` renders inside the `mode` section and
+      stage 1 did not touch it, so **100% of the per-visual knobs are still
+      on one page**: shape 111, color 69, reaction 69, glow 60, motion 57,
+      backdrop 48, image 18, camera 6 = **438 grouped params** across the
+      registry, plus the `more` fallback — which is where **every** imported
+      Shadertoy preset's knobs land, since `custom.ts` strips `group`. Even
+      after stage 2's planned Color+Motion carve-out that is 126 of 438
+      (29%) moved and **~71% left with no rail home**, so Mode stays an
+      accordion pile. Without a decided answer, stage 2 relabels the
+      imbalance instead of removing it.
+- [ ] H2 **Stage 2 — split section #1 and carve out the group pages.** The
+      style chips, "My Looks", the Save-look form and both `GalleryLink`s
+      move onto the `themes` page, which is relabelled **Looks & themes**
+      (the page id `themes` is already frozen, so the relabel costs
+      nothing). `color` becomes a new **Color** rail item and the per-visual
+      `motion` group joins the masters on **Motion** — nine destinations,
+      finally matching the original brief. Needs `ParamGroups` to take a
+      group-subset argument (or `groupParams` called per page) so
+      `ParamSpec.group` stays the single source of placement. Sequenced
+      after H1.
+- [ ] H3 **Stage 2 — fold in P-9: per-group Advanced disclosure.** Replace
+      the global Essentials/All switch with a per-group **Advanced**
+      disclosure keyed by group id (8 shared ids, ~9 keys — the only variant
+      that fits the 64-entry budget), stored in a **new `advancedGroups`
+      field**, never as a third prefix inside `collapsedSections` (the
+      semantics invert: collapse is a closed set, Advanced defaults closed).
+      Seed it from `advancedOpen` and keep that field declared for one full
+      release before deleting it — retiring it in the same release that
+      seeds its replacement forfeits the seed.
+- [ ] H4 **Stage 2 — the page layout pass.** **Reset** and a **Save look**
+      button in the context header (deliberately not shipped in stage 1:
+      Save look had no destination until the Looks page exists, and a header
+      carrying Reset but not Save look is half a contract); re-derive
+      `.param-row`'s `76px minmax(0,1fr) 44px` grid and `.mod-select`'s
+      96 px cap for dock width; two-column layouts behind a **container**
+      query on `.visuals-page`, never a media query (the dock resizes
+      independently of the window, and a `@media { .app { … } }` override
+      has equal specificity to the base rule in a 3,000-line file); real
+      sub-structure on Scene (Background+Frame / Post / Layers).
+- [ ] H5 **P-1 stage 3 — the Modulation showpiece.** Stage 1 gave Modulation
+      a destination; it is still literally the old section on a page. Turn it
+      into a source × target routing grid with per-route depth and curve,
+      live source meters, and "which params are modulated" badges that must
+      render on **other** pages too (post targets' sliders live on Scene), so
+      the badge mechanism has to be page-independent. Two things get decided
+      rather than inherited: whether MIDI CC bindings join the grid — they
+      are the same source→param abstraction over the identical
+      `modTargetGroupViews` list and currently sit on a different page, so a
+      grid that excludes them reads as an omission — and whether the native
+      `<select>` popup survives (if it does, `App.css`'s forced-dark
+      `option`/`optgroup` rule must come with it, or the target list goes
+      white-on-white under a light OS theme). **The v2.79.0 document-shape
+      guarantees are non-negotiable and must be carried into the grid's
+      tests, not dropped with the selects:** `mod: 'off'` params stay out of
+      the target picker, legacy off-param routes stay visible/inert/
+      unrewritten, the full beat-locked LFO source family is offered,
+      recipes land real routes, and neutral values still write `undefined`
+      so an untouched route never mutates its saved document. The existing
+      Modulation assertions are the canary — rewrite them against the grid
+      with every assertion's SUBJECT preserved.
+- [x] H6 **Map defect, recorded so it is not re-derived: two of the four P-1
+      planning documents asserted that `CollapsibleSection` / `.section-toggle`
+      had call sites outside the panel (ExportDialog was named).** Verified
+      false before stage 1 was written — one production call site,
+      `ParamsPanel.tsx`, plus `kit.test.tsx`. It was deleted outright with
+      its CSS and its two kit tests. Cost of the wrong claim, had it been
+      believed: the whole "delete the collapse mechanism" decision (D4/G2)
+      looks impossible instead of trivial.
+- [ ] H7 **Stale doc pointers left by the v2.81.0 mechanical rename, in
+      files outside the docs unit's ownership.** Each is a path a user can
+      follow and fail: `docs/templates.md` says
+      _Visuals ▸ Visual ▸ Themes ▸ Save as theme…_ and
+      `src/ui/GuideDialog.tsx` says the search box "finds any control by
+      name, across all tabs" plus the ungrammatical "the Visuals does
+      nothing". **There is no `Visual` destination any more** — the rail
+      reads Mode · Motion · Themes · Sync · Modulation · Scene · Text · Live,
+      so every `▸ Visual ▸` path is dead. Sweep both, and diff the in-app
+      guide against `docs/guide.md`: they are hand-kept in sync today, which
+      is exactly what P-21 (single-source guides, Track D) exists to fix.
+- [ ] H8 **`shotCanvas` still frames the canvas with the dock open — the
+      P-1 plan's R16 mitigation was specified and not implemented.**
+      `scripts/lib/cdp.mjs:93` clips `Page.captureScreenshot` to the
+      `<canvas>` bounding rect. Since P-1 that rect is the LETTERBOXED
+      canvas, so any evidence shot taken with the dock open has a different
+      frame from every shot in the archive — and GATES.md makes wave-shot
+      evidence the basis of the `test:gpu` re-bless protocol, i.e. old and
+      new screenshots stop being comparable exactly when a re-bless needs
+      them side by side. Not urgent today (`panelOpen` defaults to `false`
+      and no harness opens the dock before shooting), which is why it slipped
+      — but it is a silent trap the first time someone does. Fix: read
+      `showPanel`, `setShowPanel(false)`, measure + shoot, restore. Also
+      noted while verifying: the plan's `railFound` / `auditScopeOk` booleans
+      were not added to the `spectrumSmoke` payload either; the smoke throws
+      `"Visuals rail: no Sync destination"` instead, which names the failure
+      just as well — recorded so nobody re-derives the gap as a defect.
 
 ### Approved program extension (owner: "Approve as ranked", 2026-08-06)
 
@@ -552,7 +715,9 @@ Execution sequence around the running Track B program:
    that lived in **five** places (the divergence behind BG1) into one
    function, and an eslint `no-restricted-syntax` rule makes an allocating
    zustand-v5 selector unwritable — that mistake is a white screen on mount,
-   not a slow render. P-2: the right-hand dock is the **Inspector**, the
+   not a slow render. P-2: the right-hand dock is the **Inspector** (the
+   name v2.80.0 actually shipped — **superseded by "Visuals" in v2.81.0**;
+   this record is left as written), the
    Ctrl+, dialog is **Preferences**, and one knob is a **control** (or
    **parameter**); 39 UI strings changed while every persisted id, prefs
    field and CSS class stayed frozen (Track G lists the freeze). Binding
@@ -560,8 +725,33 @@ Execution sequence around the running Track B program:
    cases, and a single moved hash stops the release rather than being
    re-blessed. Wave 2 (the other seven panels) and six other deliberate
    deferrals: **Track G**.
-4. **After Track B completes:** P-1 Inspector dock (staged: shell + rail
-   → per-section pages → Modulation showpiece page) with P-9 folded in.
+4. **After Track B completes:** P-1 dock (staged: shell + rail →
+   per-section pages → Modulation showpiece page) with P-9 folded in.
+   **Stage 1 DONE, shipped v2.81.0 2026-08-08.** Scope: the panel stopped
+   being a floating overlay and became a persistent, resizable right dock
+   the canvas letterboxes beside (`--visuals-w`, with the set/live width
+   split that keeps a resize drag from re-allocating every render target at
+   60 Hz); the five tabs and the per-section collapses (13 of the 15 sections) were BOTH
+   replaced by one vertical rail of eight destinations, so there is exactly
+   one navigation model; **Modulation became a top-level destination**,
+   which is the change the redesign was approved for; a non-scrolling
+   context header names the mode and its active style; Stage mode suppresses
+   the dock by layout rather than destructively closing it; the Library got
+   the resize grip it had been missing whenever the dock was shut; both
+   separators take the keyboard, and the rail is one tab stop with
+   follow-focus arrows. Prefs: new `visualsPage` (seeded from the retired
+   `paramsTab`, so upgrading users land where they left off) and
+   `visualsWidth` (a SIBLING of `panelWidth`, never a reinterpretation);
+   `collapsedSections` narrowed to `group:` keys. **Zero section bodies
+   changed** and no control moved between concepts. `test:gpu` must come
+   back 213/213 with **zero hash movement**, and if it does not, the failure
+   is a SELECTOR failure — **never** run `test:gpu:update` for it: panel
+   layout cannot move an exported or matrix pixel, because `exportCore`
+   allocates its own `OffscreenCanvas` inside a worker with no DOM reference
+   and the matrix allocates its own 192×108 surface at dpr 1.
+   Owner call taken mid-stage: the dock is **Visuals**, superseding
+   v2.80.0's "Inspector" — see the vocabulary block. Stages 2 and 3, and
+   the honest limit of what stage 1 bought: **Track H**.
 5. **Track C (seed v2):** with modulation v2 live; P-6 factory-themes-
    into-Gallery lands here.
 6. **Track D (docs):** after P-1's rename settles; P-21 single-source
@@ -589,9 +779,11 @@ Execution sequence around the running Track B program:
    (gallery correctness + naming) → F1/F2 (gates + flake, tiny) → B0
    audit matrix sign-off → F5 (WGSL consolidation) → B waves ∥ E2 →
    D docs truth → C seed v2. Approve or reshuffle.
-5. **PROPOSALS.md verdict pass**: 10 product proposals (P-1 Inspector
-   dock … P-10 polish bundle) + the endorsed audit proposals appended
-   there await your approve/adjust/reject per item.
+5. **PROPOSALS.md verdict pass**: 10 product proposals (P-1 … P-10 polish
+   bundle) + the endorsed audit proposals appended there await your
+   approve/adjust/reject per item. Note that PROPOSALS.md titles P-1
+   "…a docked Inspector" — that document is quoted verbatim throughout and
+   predates both renames; the surface is **Visuals**.
 
 ### Parked (do not start)
 

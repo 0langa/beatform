@@ -38,10 +38,44 @@ Bass Circle and Radial Burst show artwork in their center: the track's
 **Center image** row (saved per mode). Bass Circle's **Match cover colors**
 toggle analyzes whichever image is displayed and sets Hue + Hue spread to
 fit it — automatically again on every new track. Hover
-any control for a plain-language hint. The Visuals (G) is organized
-into **tabs** (Visual / Sync / Scene / Text / Live), every section
-collapses, its edge drags to resize — and the **search box** at the
-top finds any control by name across all tabs.
+any control for a plain-language hint, which appears at the bottom of the
+Visuals dock.
+
+## The Visuals dock
+
+**G** opens **Visuals**, the panel on the right that holds every control for
+the visual you are building. It is a dock, not an overlay: the picture
+letterboxes beside it rather than hiding under it, so you can watch a slider
+land while you are dragging it. Drag its left edge to resize (or focus the
+edge and use the arrow keys — Shift for larger steps, Home/End for the
+extremes); the width is remembered. **Stage mode** (**S**) hides it entirely.
+
+Down its left side is the **section rail** — eight destinations, one page
+each:
+
+| Destination    | What is on it                                              |
+| -------------- | ---------------------------------------------------------- |
+| **Mode**       | The active visual: styles, your looks, and all its knobs   |
+| **Motion**     | The global rotation / pulse / detail masters               |
+| **Themes**     | Whole-project themes and the Gallery shortcut              |
+| **Sync**       | What the visual reacts to, and how hard                    |
+| **Modulation** | Routes and stems — audio and LFOs onto individual controls |
+| **Scene**      | Background, frame, post-processing, overlay layers         |
+| **Text**       | Lyrics and the audiogram strip                             |
+| **Live**       | Beat-quantized mode switching and MIDI                     |
+
+Click a destination to go there; the arrow keys walk the rail (the whole
+rail is one Tab stop). Modulation, Scene and Live show a small count when
+you have routes, overlay layers or MIDI bindings. A destination the current
+visual cannot use — Motion on a mode that has nothing to rotate or pulse —
+is dimmed and says why on hover. A header above the page always names the
+mode you are editing, plus its style when one is exactly applied. The page
+you were last on is remembered.
+
+Pages do not fold. The **parameter groups** on the Mode page (Shape, Color,
+Motion, Reaction, Glow, Image, Camera, Backdrop) still do, and remember it.
+The **search box** spans the top of the dock and ignores the rail entirely —
+it finds a control by name wherever it lives.
 
 ## Builder
 
@@ -98,15 +132,18 @@ Two kinds of beat reaction work together:
   arrives as the next one lands, Bass Circle pumps on the grid. Tracks
   without a detectable grid fall back to onset pulses automatically.
 
-**Motion masters** scale rotation, pulse strength, element count, and
-spectrum smoothing globally — dial the whole app calmer or wilder from one
-place.
+_Visuals ▸ Motion_ holds the **motion masters**: rotation, pulse strength,
+element count and spectrum smoothing, scaled globally — dial the whole app
+calmer or wilder from one place. On a mode that has nothing to rotate or
+pulse the destination is dimmed and tells you so.
 
-_Visuals ▸ Sync ▸ Modulation_ routes any audio feature to any knob. The
+_Visuals ▸ Modulation_ routes any audio feature to any knob. The
 target list covers this visual's own parameters **and the post-processing
 chain** — so the kick can drive Chromatic, bass can breathe the Bloom, and
-the whole look moves with the track. Exports resolve routes from the same
-track-time functions.
+the whole look moves with the track. Give a route a **shape**
+(linear / exponential / smooth) and an **attack**/**release** so it punches
+or eases, or start from one of the six one-click **recipes**. Exports
+resolve routes from the same track-time functions.
 
 ## Layers
 
@@ -162,21 +199,22 @@ changes an export.
 Drop an `.lrc` file (any lyrics site exports them) or `.srt` subtitles onto
 the window — the current line follows the music, karaoke-style, live and in
 every export. Position/size/color, an **Animation** (plain / slide / pop, or
-**karaoke** — the line fills bright left-to-right as it's sung) and fade live in
-the Visuals **Lyrics** section. Drop the lyrics together with
+**karaoke** — the line fills bright left-to-right as it's sung) and fade live
+on _Visuals ▸ Text_. Drop the lyrics together with
 the track or after it; they attach to the loaded track like stems do.
 
 ## Stems
 
-Import a stem (drums/bass/vocals bounced from 0:00) in the Visuals
-**Modulation** section — it's analyzed once, never played, and its bands
+Import a stem (drums/bass/vocals bounced from 0:00) on
+_Visuals ▸ Modulation_ — it's analyzed once, never played, and its bands
 become modulation sources. Hit the **✦** on a stem chip to auto-wire its
 kick/bass/snare/hats/mids to the best-matching knobs of the current visual;
 tweak the amounts from there.
 
 ## Audiogram
 
-The the Visuals **Audiogram** section adds track-driven overlay elements — a
+_Visuals ▸ Text_ also carries the **Audiogram** section: track-driven
+overlay elements — a
 progress bar, an elapsed/total time readout, and a mini-waveform strip with
 a moving playhead (the podcast/reel look). Position and accent color are
 yours; exports use the same timed overlay definition.
@@ -235,4 +273,4 @@ off in Preferences ▸ Updates if you prefer manual.
 - **Ctrl+S / Ctrl+O** — `.bfproj` project files (everything, portable).
 - **Save look** — a named parameter set for one mode (`.bfpreset`).
 - **Themes** — a complete setup as one shareable `.bftheme` file, saved from
-  _Visuals ▸ Visual ▸ Themes_; see [Themes](templates).
+  _Visuals ▸ Themes_; see [Themes](templates).
