@@ -646,32 +646,90 @@ buys and what it does not.
       accessor index. Guarded permanently by `abiOrder.test.ts` (baseline
       captured pre-change) and `curation.test.ts` (every group of every
       built-in has at least one control above its expert line).
-- [ ] H4 **Stage 2 — the page layout pass.** **Reset** and a **Save look**
-      button in the context header (deliberately not shipped in stage 1:
-      Save look had no destination until the Looks page exists, and a header
-      carrying Reset but not Save look is half a contract); re-derive
-      `.param-row`'s `76px minmax(0,1fr) 44px` grid and `.mod-select`'s
-      96 px cap for dock width; ~~two-column layouts behind a **container**
-      query on `.visuals-page`~~ — see the amendment below; real
-      sub-structure on Scene (Background+Frame / Post / Layers).
-      **AMENDED 2026-08-08 by a stage-3 measurement: two-column layouts in
-      the dock are UNREACHABLE, at any dock width.** The content column is
-      `visualsWidth − 206` (14 px gutter, 1 px dock border, the 136 px
-      `.visuals-rail` + its 1 px border, `.panel-scroll`'s 28 px padding,
-      ~11 px thin scrollbar) → **174 px at the 380 floor, 274 px at the 480
-      default, 554 px at the 760 ceiling**. So a container threshold at or
-      above ~560 px can never fire, and a two-column
-      `repeat(auto-fill, minmax(360px, 1fr))` grid needs 720 px it will
-      never have. The
-      container-query DIRECTION is still right (a media query is wrong for a
-      pane that resizes independently of the window, and `container-type`
-      appears exactly 3 times in App.css, all on `.viz-canvas` — there is no
-      container context in the dock at all); what has to go is the
-      two-column OUTCOME. Extra dock width belongs in slider tracks and
-      select ellipsis. The Modulation page (v2.83.0) is built to that
-      finding: one layout, 174 → 554 px, no breakpoint. `.mod-select`'s 96 px
-      cap is likewise settled for that page — it stopped being USED there
-      rather than being widened, so every other consumer keeps it.
+- [x] H4 **SHIPPED in v2.84.0 — partly, and one third declined on evidence.**
+      SHIPPED: the dock's first container context (named `visuals` on
+      `.visuals-page`, tokens on `.panel-scroll` — a container is excluded
+      from its own query's subject set, so the token MUST live on a
+      descendant); one label step 76px → 104px at `C ≥ 300`; the angle row
+      stacks below `C 351`; both measured Layers overflows; `.mod-select`
+      deleted, not re-derived (zero consumers tree-wide — a rule with no
+      emitter is the `.builder-factory-chips` mistake).
+      **THE DEFECT THIS TURNED OUT TO BE ABOUT:** at the 380 floor the angle
+      row's `1fr` collapsed to **0px** — no draggable track at all — on six
+      built-ins, two of them (radial-burst "Angle", particles "Direction") at
+      CURATED tier, on screen with no disclosure opened. `__auditUI` went
+      **1 → 0** and the A/B was proven live by neutralising the container.
+      The Layers editor overflowed **44px** and its flags row **58px**, with
+      Size/Opacity/Glow at width 0 and the colour swatch at 8 of 36px.
+      **CORRECTED GEOMETRY (D2), so the old numbers stop propagating:** the
+      container is `visualsWidth − 166` = **214.7 / 314.7 / 594.7** at dock
+      380 / 480 / 760; the scroller's content column is `visualsWidth − 203`
+      = **177 / 277 / 557**. The earlier `−206` / 174·274·554 was 3px
+      pessimistic. Two-column layouts remain unreachable at every width.
+      **A regression this release introduced and then fixed before shipping:**
+      the stacked angle row first sized its readout `auto`, so the readout
+      grew with its own digit count and slid the dial 6.2px left across 9/10
+      and 99/100 — `Dial.set` re-reads the rect on every pointermove, so a
+      stationary pointer that had produced 100 read 88.1, an 11.9° backward
+      kick that oscillates while dragging. Pinned to the 44px column every
+      other readout uses. `__auditUI` is blind to it; only a human drag found
+      it.
+      **ITEM 3 (Scene restructure) DECLINED**, four measured reasons: Scene is
+      11 rows over 4 headed sections — better delimited per row than Sync's 13
+      rows in ONE undifferentiated section that nobody has flagged; the
+      proposed regrouping folds Frame (the aspect of the whole render, preview
+      AND export) into Background where an aspect search would resolve to a
+      section titled "Background"; Post as a collapsible needs a permanent
+      `collapsedSections` id (prefs has no migration) and would hide the six
+      `is-driven` post rows behind a closed disclosure with no count pill;
+      Scene uses zero `PARAM_GROUPS` machinery, so every sub-structure is new
+      hand-built DOM and new leaves to audit. **ITEM 1 (context-header
+      actions) NOT SHIPPED — it is product judgement, see H14.**
+- [ ] H14 **READY — the context-header actions (H4 item 1), an owner decision
+      packet, not an implementation task.** Six questions, each with its
+      measurement: (Q2) which Reset does a header carry — params-only with an
+      honest label, or page-aware? `resetParams()` touches only the active
+      preset's params; Motion's and Post's Resets call `setMotion`/`setPost`,
+      are conditional on drift, and cannot move. Params-only = a button inert
+      on 7 pages and two visible "Reset"s on Scene; page-aware = a feature,
+      not a move. (Q3) where does header **Save look** land? The form is two
+      ParamsPanel-level `useState`s on the Looks page; inline is ruled out by
+      measurement (header inner 186.7px at the floor) and a popover would be
+      the dock's first floating layer, so the only mechanical option
+      (`changePage("themes")`) PERSISTS `visualsPage` — a save today reopens
+      on Looks & themes next session. (Q4) does the "n changed" pill survive?
+      It cannot enter the header (`outside-scope-x +28px` at 380) and its
+      designed neighbour would be leaving. (Q5) may the header be two rows
+      below C 332? Prototyped clean, +18.6px permanent non-scrolling. (Q6)
+      `+ Save look` → `Save look` costs 11.5px and touches 4 files. (Q7)
+      should `.section-title` gain ellipsis? It is shared with LayersPanel,
+      BuilderPanel and TimelinePanel, and preset names are unbounded
+      (Shadertoy imports), so the header has no truncation strategy today.
+      **`__auditUI` cannot gate any of this** — see H16. Fit thresholds
+      measured: dock ≥ 498 for text buttons, C 332 for the two-row collapse.
+- [ ] H15 **READY — the general stacked row below `C 300` (dock < 466).** The
+      only layout that gives a non-angle slider more than 35px at the floor:
+      track 23 → 161px (7×), enum select 76 → 161px, wrapped labels → 0. Price:
+      row 16 → 22px, Mode-page scroll +9.9% at the floor, and a different-
+      looking row for the whole 380–465 band. Deferred because today's 23px
+      track is NOT an auditor failure, so shipping it unattended would be a
+      taste call with no defect behind it. **The CSS is frozen, complete and
+      commented-out at its insertion point in the H4 block** — enabling it is
+      uncommenting one block, and the parsed CSSOM was verified to contain
+      exactly two `@container` rules, so the frozen one is provably inert.
+- [ ] H16 **READY — two harness gaps that let a 0px slider ship for three
+      releases.** (a) `.panel-scroll` declares `overflow-y: auto`, so the other
+      axis computes to `auto` too and `__auditUI`'s `outside-scope-x` walk
+      ALWAYS finds a scrollable ancestor — it can never fire inside the dock;
+      a too-wide row grows a scrollbar instead of reporting. (b) its
+      `text-clip` check requires `el.children.length === 0`, so a truncated
+      `<select>` is invisible. Those two together are why both Layers
+      overflows were invisible to the gate. v2.84.0 lands the evidence
+      REPORT-ONLY: `dockLayoutSmoke` records per-page overflow at both dock
+      ends without asserting it (Q8 — turning it into an assertion could light
+      up pre-existing failures app-wide, which is a decision, not a fix). **A
+      non-empty `overflow` entry is a finding to fix or file — never wave it
+      through as "auditor clean".**
 - [x] H5 **SHIPPED in v2.83.0 — and P-1 is COMPLETE with it (stages 1, 2 and
       3 all delivered: v2.81.0, v2.82.0, v2.83.0).** The Modulation body was
       lifted out of `ParamsPanel` into a store-direct, zero-prop

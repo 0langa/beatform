@@ -11,6 +11,30 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.84.0] - 2026-08-09
+
+### Fixed
+
+- **The angle dials had no draggable track at the narrowest dock width.** On
+  Radial Burst, Particles, Kaleido Nebula, Metaballs, Spectrum Scape and Bass
+  Circle, an angle control squeezed into a dock at its minimum width left
+  nothing to drag — the slider was zero pixels wide, with only the dial itself
+  still working. Those rows now stack the slider under its label when the dock
+  is narrow, so there is always a full-width track. On a wide dock they stay on
+  one line as before.
+- **The overlay-layer editor overflowed the panel on Scene.** With a text or
+  image layer open at a narrow dock, its Size, Opacity and Glow sliders were
+  unusable and the colour swatch was squeezed to a few pixels. The editor is a
+  single column now at every width — which also gives those three sliders more
+  than twice the track on a wide dock than they had before.
+
+### Changed
+
+- **Sliders grow with the dock.** Widening the Visuals dock now puts the extra
+  room into the slider tracks rather than leaving it as empty space, and past
+  roughly 470px the control labels get more room too — so names like _Graticule
+  beat flash_ and _Match cover colors_ stop wrapping onto two lines.
+
 ## [2.83.0] - 2026-08-08
 
 ### Changed
@@ -2323,7 +2347,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.83.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.84.0...HEAD
+[2.84.0]: https://github.com/0langa/beatform/compare/v2.83.0...v2.84.0
 [2.83.0]: https://github.com/0langa/beatform/compare/v2.82.0...v2.83.0
 [2.82.0]: https://github.com/0langa/beatform/compare/v2.81.0...v2.82.0
 [2.81.0]: https://github.com/0langa/beatform/compare/v2.80.0...v2.81.0
