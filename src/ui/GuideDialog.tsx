@@ -93,7 +93,7 @@ const SECTIONS: GuideSection[] = [
         </ul>
         <p>
           Hover any control to see a plain-language hint in the Visuals footer. The search box at
-          the top of Visuals finds any control by name, across all tabs.
+          the top of Visuals finds any control by name, across every section.
         </p>
         <h4>Center images</h4>
         <p>
@@ -295,8 +295,8 @@ const SECTIONS: GuideSection[] = [
         <p>
           <strong>Good to know:</strong> while the timeline is enabled, scenes override the mode
           strip and scene parameters override the sliders — that's the point, but it can look like
-          "the Visuals does nothing" if you forget it's on. Turn the timeline off (or use Project ▸
-          New project) to get direct control back.
+          "Visuals does nothing" if you forget it's on. Turn the timeline off (or use Project ▸ New
+          project) to get direct control back.
         </p>
       </>
     ),

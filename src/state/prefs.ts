@@ -66,7 +66,7 @@ export interface AppPrefs {
   /** Check GitHub Releases for updates shortly after launch. */
   updateAutoCheck: boolean;
   /**
-   * FROZEN (P-1). The the Visuals five tabs became the dock's section rail,
+   * FROZEN (P-1). The Visuals panel's five tabs became the dock's section rail,
    * so nothing writes this any more — but it is still validated and still
    * read ONCE, to place an existing user on the page matching the tab they
    * last used. Deleting it would silently land every upgrading user on Mode.

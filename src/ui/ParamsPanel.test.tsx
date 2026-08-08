@@ -10,7 +10,7 @@ import { LFO_SOURCES } from "../state/modMatrix";
 import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
 
 /**
- * The the Visuals contract after P-12.
+ * The Visuals contract after P-12.
  *
  * What this file used to prove — "memo() bails when every prop keeps its
  * identity" — no longer exists to be proven: the panel takes no props, so

@@ -336,7 +336,7 @@ const POST_SLIDERS: Array<{
 type VisualsPageId = AppPrefs["visualsPage"];
 
 /**
- * The the Visuals section rail (P-1): eight destinations, one page each.
+ * The Visuals section rail (P-1): eight destinations, one page each.
  *
  * A DATA TABLE on purpose. Everything the rail renders — order, label, hint,
  * the hairline groupings — is a row here, so later stages add a destination
