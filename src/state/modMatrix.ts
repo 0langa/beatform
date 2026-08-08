@@ -218,7 +218,7 @@ const LAG_SNAP_SEC = 1;
  * absent returns the raw value UNTOUCHED, preserving v1 bit-identity; the
  * shaped curves clamp to 0..1 first so a hypothetical out-of-range source
  * still lands in-range. */
-function shapedValue(curve: ModCurve | undefined, raw: number): number {
+export function shapedValue(curve: ModCurve | undefined, raw: number): number {
   if (curve === "exp") {
     const c = raw < 0 ? 0 : raw > 1 ? 1 : raw;
     return c * c;

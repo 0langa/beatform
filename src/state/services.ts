@@ -60,6 +60,22 @@ let presentedFrames = 0;
 export function getPresentedFrames(): number {
   return presentedFrames;
 }
+/** Latest per-frame stem envelope values the LOOP resolved ("stem1:kick" ->
+ * 0..1), or null when no stems are loaded. Published for the Modulation
+ * page's source meters, in exactly the shape `presentedFrames` above is
+ * published: one module-level slot, one assignment in the hot path, one plain
+ * getter, no subscription and no store write.
+ *
+ * It is the LOOP's object, deliberately: a meter that called stemValuesAt()
+ * itself would allocate a second 28-key Record per frame AND resolve it at a
+ * track time the loop may not have used, producing a meter that disagrees
+ * with the render for reasons that look like a modulation bug. Read-only by
+ * contract; never mutate it. */
+let lastStemValues: Record<string, number> | null = null;
+
+export function getLiveStemValues(): Record<string, number> | undefined {
+  return lastStemValues ?? undefined;
+}
 /**
  * Identity guard for the three module-level singletons above (engine already
  * had its own ad hoc version of this — `if (engine === eng) engine = null`).
@@ -432,6 +448,10 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         fadeFromPreset = null;
       }
       const stemValues = hooks.getStemValues?.(trackTime);
+      // The one hot-path addition for the Modulation source meters: publish
+      // the object the loop is about to modulate with. No branch, no
+      // allocation, no callback — structurally `presentedFrames++`.
+      lastStemValues = stemValues ?? null;
       // Post-targeted routes animate the post chain. applyPostMods returns the
       // base object itself when nothing targets post, so an unmodulated
       // project does no extra work — but once modulation stops we must push
@@ -558,6 +578,10 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       renderer = null;
       analyzer = null;
       measure = null;
+      // Drop the loop's stem snapshot with the loop that published it —
+      // otherwise a meter mounted after teardown would read a stale Record
+      // from a session that no longer exists.
+      lastStemValues = null;
     }
   };
 }
