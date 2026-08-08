@@ -206,7 +206,7 @@ export function LayersPanel() {
   return (
     <section className="panel-section">
       <div className="section-head">
-        <span className="section-title">Layers</span>
+        <h3 className="section-title">Layers</h3>
       </div>
       {layers.length === 0 && (
         <p className="section-hint">Text and images drawn over the visuals — in exports too.</p>

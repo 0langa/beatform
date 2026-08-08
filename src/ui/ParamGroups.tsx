@@ -205,11 +205,13 @@ export function ParamGroups(props: ParamGroupsProps) {
 
   /**
    * The `driven` mark is a CLASS on the existing slot and NOTHING ELSE — no
-   * fourth child, no badge element. `.param-row` is a fixed
-   * `76px minmax(0,1fr) 44px` grid, so an extra child breaks the label column
-   * on every page that renders a param row, and any new leaf is one more
-   * `text-clip` candidate for `__auditUI` at the 380px dock floor. The tier
-   * mark beside it (`is-advanced`) is the same mechanism, for the same reason.
+   * fourth child, no badge element. `.param-row` is a THREE-track grid —
+   * `var(--row-label-w) minmax(0,1fr) 44px`, the label column being the one
+   * thing the dock's container query moves — so an extra child breaks the
+   * label column on every page that renders a param row, and any new leaf is
+   * one more `text-clip` candidate for `__auditUI` at the 380px dock floor.
+   * The tier mark beside it (`is-advanced`) is the same mechanism, for the
+   * same reason.
    *
    * The `title` is an attribute, not an element, so it costs nothing here. It
    * only surfaces on the slot's own padding: a row whose spec has a hint puts
