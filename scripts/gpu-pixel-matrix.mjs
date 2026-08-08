@@ -126,6 +126,13 @@ function assertRuntime(matrix) {
   if (!spectrum?.passed) {
     failures.push(`analyzer-quality spectrum smoke failed: ${JSON.stringify(spectrum)}`);
   }
+  // D16: the Modulation page's clipping audit, at both ends of the dock's
+  // range. Not a pixel assertion — the hashes above cannot see the panel at
+  // all — so it is reported separately and read as a layout gate.
+  const modulation = matrix.modulationSmoke;
+  if (!modulation?.passed) {
+    failures.push(`modulation page layout audit failed: ${JSON.stringify(modulation)}`);
+  }
   if (failures.length) throw new Error(failures.join("\n"));
 }
 
@@ -184,7 +191,16 @@ async function evaluateMatrix() {
           const engine = window.__engine;
           const originalSync = { ...store.getState().sync };
           const originalPanel = store.getState().showPanel;
+          // The dock's own prefs. Both legs below navigate the rail and the
+          // Modulation leg resizes the dock, and both of those PERSIST — so
+          // an interrupted run must not leave the app booting on Sync at
+          // 760px forever.
+          const originalPage = window.__prefs.get().visualsPage;
+          const originalWidth = window.__prefs.get().visualsWidth;
+          const settle = () =>
+            new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
           let spectrumSmoke;
+          let modulationSmoke;
           try {
             store.getState().setSync({
               ...originalSync,
@@ -233,11 +249,152 @@ async function evaluateMatrix() {
               axisLocked,
               audit,
             };
+
+            // ---- Modulation leg (P-1 stage 3). ------------------------
+            // The showpiece of 2.83.0 and, without this, the only dock page
+            // with zero layout coverage in any gate: the hash matrix above
+            // renders into an OffscreenCanvas and is awaited before the
+            // panel is even shown, so it is structurally incapable of
+            // noticing a card that clips. __auditUI is that coverage, and it
+            // runs at BOTH ends of the dock's range — 380px is where the
+            // measured content column is 174px (the width the card layout
+            // was designed against) and 760px is where a fixed-width child
+            // would leave a hole.
+            const seeded = [];
+            try {
+              const modRail = [...document.querySelectorAll(".rail-item")]
+                .find(button => button.dataset.section === "modulation");
+              if (!modRail) throw new Error("Visuals rail: no Modulation destination");
+              modRail.click();
+              await settle();
+              // A dev session boots with whatever routes localStorage holds,
+              // so everything below is a DELTA against what was already here.
+              const cardsBefore = document.querySelectorAll(".mod-card").length;
+
+              // Seeded from the page's OWN create picker, never a literal key
+              // list: it enumerates exactly allParams+isModTarget for whatever
+              // visual is active, so re-tiering a knob cannot rot this leg.
+              // Sorted LONGEST LABEL FIRST on purpose — those are the clip
+              // candidates the 174px column has to absorb.
+              const create = document.querySelector(".mod-create");
+              if (!create) throw new Error("Modulation page: no create picker");
+              const options = [...create.querySelectorAll("option")]
+                .filter(option => option.value && !option.disabled)
+                .sort((a, b) => b.textContent.trim().length - a.textContent.trim().length)
+                .map(option => option.value);
+              const paramTargets = options.filter(v => !v.startsWith("post:")).slice(0, 3);
+              const postTarget = options.find(v => v.startsWith("post:"));
+              if (paramTargets.length < 3 || !postTarget) {
+                throw new Error("Modulation page: create picker offered too little");
+              }
+
+              // Four cards over three distinct sources, so the "Driven by"
+              // chip row is populated too. "Vocals (lyrics)" is the longest
+              // source label in the registry.
+              const add = (source, param) => {
+                store.getState().addModRoute(source, param);
+                const routes = store.getState().activeMods;
+                const id = routes[routes.length - 1].id;
+                seeded.push(id);
+                return id;
+              };
+              add("kick", paramTargets[0]);
+              const negative = add("vocal", paramTargets[1]);
+              add("rms", paramTargets[2]);
+              add("kick", postTarget);
+              // A negative depth reverses the painted range (--start/--dir),
+              // and a non-default shape prints the collapsed summary line.
+              store.getState().updateModRoute(negative, {
+                amount: -0.72,
+                curve: "smooth",
+                attack: 0.42,
+                release: 3.5,
+              });
+              await settle();
+              // …and one card's disclosure open, so the Segmented and the two
+              // lag rows are measured rather than assumed.
+              document.querySelector(".mod-card-toggle")?.click();
+              await settle();
+
+              // The dock's width is React state seeded from prefs, so writing
+              // the pref cannot move it. The resize separator's KEYBOARD path
+              // is the real one and it is exact at both ends: Home = 380 (the
+              // floor), End = 760 (the ceiling).
+              const handle = document.querySelector('[aria-label="Resize Visuals"]');
+              if (!handle) throw new Error("Visuals dock: no resize separator");
+              const press = async (key, shiftKey = false) => {
+                handle.dispatchEvent(
+                  new KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true }),
+                );
+                await settle();
+              };
+              const legAt = async key => {
+                await press(key);
+                const panel = document.querySelector(".params-panel");
+                return {
+                  // Reported, not asserted: the --visuals-w custom property
+                  // is additionally clamped to 100vw minus 560px, so on a
+                  // narrow display the ceiling leg genuinely cannot reach 760
+                  // and a hard assertion would be a false failure about the
+                  // SCREEN rather than about this page.
+                  dockWidth: Math.round(panel.getBoundingClientRect().width),
+                  audit: window.__auditUI(".params-panel"),
+                };
+              };
+
+              const narrow = await legAt("Home");
+              const wide = await legAt("End");
+              const cards = document.querySelectorAll(".mod-card").length;
+              const chips = document.querySelectorAll(".mod-source-chip").length;
+              const meters = document.querySelectorAll(
+                ".mod-meter-fill, .mod-swing-arm",
+              ).length;
+
+              modulationSmoke = {
+                // The three counts are the anti-vacuity clause: an audit over
+                // a page that rendered nothing is empty for the wrong reason.
+                // 4 new cards, at least the 3 sources they introduced, and at
+                // least one meter per chip plus one arm per card.
+                passed:
+                  cards === cardsBefore + 4 && chips >= 3 && meters >= 7 &&
+                  Array.isArray(narrow.audit) && narrow.audit.length === 0 &&
+                  Array.isArray(wide.audit) && wide.audit.length === 0,
+                cardsBefore,
+                cards,
+                chips,
+                meters,
+                narrow,
+                wide,
+              };
+            } finally {
+              for (const id of seeded) store.getState().removeModRoute(id);
+              // Walk the live width back toward where it started. Only the
+              // 16/48px steps are reachable by keyboard, so the exact value
+              // is restored through prefs immediately after — the next boot
+              // reads that, not the in-session state.
+              const handle = document.querySelector('[aria-label="Resize Visuals"]');
+              if (handle) {
+                handle.dispatchEvent(
+                  new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }),
+                );
+                const steps = Math.round((originalWidth - 380) / 16);
+                for (let i = 0; i < steps; i++) {
+                  handle.dispatchEvent(
+                    new KeyboardEvent("keydown", {
+                      key: "ArrowLeft",
+                      bubbles: true,
+                      cancelable: true,
+                    }),
+                  );
+                }
+              }
+            }
           } finally {
             store.getState().setSync(originalSync);
             store.getState().setShowPanel(originalPanel);
+            window.__prefs.set({ visualsPage: originalPage, visualsWidth: originalWidth });
           }
-          return { ...matrix, spectrumSmoke };
+          return { ...matrix, spectrumSmoke, modulationSmoke };
         })()`,
         awaitPromise: true,
         returnByValue: true,
@@ -299,7 +456,9 @@ try {
     console.log(
       `GPU matrix passed: ${matrix.cases.length} cases, 0 compile errors, ` +
         `0 GPU errors, ${rawHashChanges} tolerance-only raw hash changes; ` +
-        `spectrum smoke ${matrix.spectrumSmoke.displayBins} measured bins`,
+        `spectrum smoke ${matrix.spectrumSmoke.displayBins} measured bins; ` +
+        `modulation audit clean at ${matrix.modulationSmoke.narrow.dockWidth}px and ` +
+        `${matrix.modulationSmoke.wide.dockWidth}px`,
     );
   }
 } finally {

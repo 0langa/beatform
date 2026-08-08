@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { DEFAULT_PREFS, getPrefs, setPrefs, subscribePrefs } from "../state/prefs";
 import { ParamsPanel } from "./ParamsPanel";
 import { cardHeading } from "./ModulationPage";
+import { __meterCount } from "./ModMeters";
 import { formatValue } from "./kit";
 import { renderProbe } from "./testing/renderProbe";
 import { presets } from "../render/presets";
@@ -57,6 +58,12 @@ vi.mock("../state/services", () => ({
   })),
   getAnalyzer: vi.fn(() => ({ setSync: vi.fn() })),
   peekAnalyzer: vi.fn(() => null),
+  // ModMeters is in this file's import graph as of P-1 stage 3 (the Modulation
+  // page mounts the driver). The driver bails on `peekAnalyzer() -> null`
+  // before it ever reads stems, but a mock that simply OMITS an export the
+  // subject imports is a TypeError waiting for the first test that hands the
+  // analyzer back — so it is stubbed rather than left undefined.
+  getLiveStemValues: vi.fn(() => undefined),
   getRenderer: vi.fn(() => null),
   setLiveRenderPaused: vi.fn(),
   remeasure: vi.fn(),
@@ -104,6 +111,11 @@ afterEach(() => {
   // selector is a crash class, and the `.filter()` shape dies with no React
   // warning at all — this is what notices it.
   expect(consoleErrors.join("\n")).not.toMatch(/getSnapshot should be cached|Maximum update depth/);
+  // The meter registry is MODULE-level, so an element that unmounts without
+  // its ref cleanup running leaks across the whole suite and every later
+  // assertion about meter counts is measuring the previous test. Mirrors
+  // ModMeters.test.tsx's own guard; `cleanup()` above is what makes it hold.
+  expect(__meterCount()).toBe(0);
 });
 
 /** The panel wrapped in a commit counter. */
@@ -596,6 +608,89 @@ describe("modulation v2 UI (P-16/P-7)", () => {
     expect(hint.textContent).toMatch(/export/i);
     // …and the primary action is still right there.
     expect(screen.getByTitle("Choose a knob to modulate")).toBeTruthy();
+  });
+});
+
+describe("the meter seam (P-1 stage 3)", () => {
+  it("T27: meters register with the driver on this page only, and survive a depth drag", () => {
+    seedRoute("hue");
+    render(<ParamsPanel />);
+    // The registry is module-level and the driver's rAF is created by the
+    // page's own subtree, so nothing exists until you are looking at it.
+    expect(__meterCount()).toBe(0);
+    gotoModulation();
+    // One chip meter (kick is the only source in use) + one route arm.
+    expect(__meterCount()).toBe(2);
+
+    // WHY THE REF IS MEMOIZED, asserted rather than asserted-in-a-comment. A
+    // ref callback built inline has a fresh identity every render, so React
+    // runs its cleanup — which REMOVES `--v` — and re-registers. This page
+    // re-renders once per pointer move while Depth is dragged, and on a paused
+    // track the driver's "track time did not move" fast path would then leave
+    // every meter at its resting position for up to 250 ms. `--v` is written
+    // here the way the driver writes it, and must still be there afterwards.
+    const arm = document.querySelector<HTMLElement>(".mod-swing-arm")!;
+    arm.style.setProperty("--v", "0.400");
+    act(() => useVizStore.getState().updateModRoute("r1", { amount: 0.31 }));
+    expect(
+      document.querySelector<HTMLElement>(".mod-swing-arm")!.style.getPropertyValue("--v"),
+    ).toBe("0.400");
+    expect(__meterCount()).toBe(2);
+
+    // It DOES re-register when the displayed value would change anyway — the
+    // spec is memoized on (source, curve), not frozen.
+    act(() => useVizStore.getState().updateModRoute("r1", { source: "bass" }));
+    expect(
+      document.querySelector<HTMLElement>(".mod-swing-arm")!.style.getPropertyValue("--v"),
+    ).toBe("");
+    expect(__meterCount()).toBe(2);
+
+    // Leaving the page tears the whole subtree down; the file's afterEach
+    // guard is what proves the same for unmount.
+    fireEvent.click(screen.getByRole("button", { name: "Scene" }));
+    expect(__meterCount()).toBe(0);
+  });
+});
+
+describe("the driven mark reaches the post rows (P-1 stage 3)", () => {
+  /** The Post row whose label is `label`, and the `.param-slot` around it. */
+  function postSlot(label: string): HTMLElement | undefined {
+    return [...document.querySelectorAll<HTMLElement>(".param-slot")].find(
+      (slot) => slot.querySelector(".row-label")?.textContent === label,
+    );
+  }
+
+  it("T28: a post: route marks its Scene row, and only that row", () => {
+    // `drivenParamKeys` deliberately excludes post: routes — post targets are
+    // namespaced keys no preset declares and they never reach ParamGroups —
+    // so this is the OTHER half of that decision. Without it, the one class of
+    // route that lives on a different page from its knob would have no mark
+    // anywhere, which is exactly the page-independence H5 asked for.
+    seedRoute("post:bloom");
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Scene" }));
+
+    const bloom = postSlot("Bloom");
+    expect(bloom).toBeTruthy();
+    expect(bloom!.className).toContain("is-driven");
+    expect(bloom!.getAttribute("title")).toMatch(/still the base value/i);
+    // The mark is on the SLOT, never a fourth child of the row: `.param-row`
+    // is a fixed 76px / 1fr / 44px grid on every surface the kit serves.
+    expect(bloom!.querySelectorAll(".param-row")).toHaveLength(1);
+    expect(bloom!.querySelector(".param-row")!.children).toHaveLength(3);
+
+    // Every other post row is untouched — a mark that lit all six would be
+    // indistinguishable from decoration.
+    for (const other of ["Exposure", "Bloom threshold", "Vignette", "Chromatic", "Film grain"]) {
+      expect(postSlot(other)?.className).not.toContain("is-driven");
+    }
+    expect(document.querySelectorAll(".param-slot.is-driven")).toHaveLength(1);
+
+    // …and it did not leak onto Mode: a post: route moves no preset knob, so
+    // `drivenParamKeys` must leave that page completely unmarked.
+    fireEvent.click(screen.getByRole("button", { name: "Mode" }));
+    expect(document.querySelectorAll(".param-slot").length).toBeGreaterThan(0);
+    expect(document.querySelectorAll(".param-slot.is-driven")).toHaveLength(0);
   });
 });
 

@@ -42,6 +42,7 @@ import {
 } from "./kit";
 import { GROUP_KEY, ParamGroups, type ParamGroupExtra } from "./ParamGroups";
 import { drivenParamKeys } from "../state/drivenTargets";
+import { postTargetKey } from "../state/modMatrix";
 import type { AppPrefs } from "../state/prefs";
 import { getPrefs, setPrefs } from "../state/prefs";
 import { LayersPanel } from "./LayersPanel";
@@ -514,6 +515,25 @@ export function ParamsPanel() {
    * and `preset` at the top of this component.
    */
   const driven = useMemo(() => drivenParamKeys(preset, mods), [preset, mods]);
+  /**
+   * The same mark's input for the SIX POST ROWS, which live on Scene and never
+   * pass through ParamGroups. `drivenParamKeys` deliberately excludes `post:`
+   * routes — post targets are namespaced keys no preset declares, applied by
+   * applyPostMods against PostSettings — so this is the other half of that
+   * decision rather than a second implementation of it.
+   *
+   * `postTargetKey` IS applyPostMods' only inert rule (its single `continue`),
+   * so a mark here can never claim a knob the renderer skips. Same `useMemo`
+   * discipline as `driven` above, and the same zero new subscriptions.
+   */
+  const drivenPost = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of mods) {
+      const key = postTargetKey(r.param);
+      if (key) s.add(key);
+    }
+    return s;
+  }, [mods]);
 
   // ── WRITES: one stable accessor; actions are called at the click site.
   // Actions are built once inside create()'s initializer and every write is a
@@ -1688,19 +1708,34 @@ export function ParamsPanel() {
             onHint={setHint}
             disabledReason={unavailable}
           />
+          {/* The `driven` mark reaches the post rows through a LOCAL wrapper,
+              never a prop on SliderRow. The kit is shared with LayersPanel,
+              ExportDialog, BuilderPanel and TimelinePanel, none of which has
+              any business knowing modulation exists — and `.param-slot` is
+              already the exact element ParamGroups marks, so the two pages
+              render one visual language from one CSS rule. */}
           {POST_SLIDERS.map((r) => (
-            <SliderRow
+            <div
               key={r.key}
-              label={r.label}
-              hint={r.hint}
-              min={r.min}
-              max={r.max}
-              step={r.step}
-              value={post[r.key]}
-              onChange={(v) => store().setPost({ [r.key]: v })}
-              onHint={setHint}
-              disabledReason={unavailable}
-            />
+              className={`param-slot ${drivenPost.has(r.key) ? "is-driven" : ""}`}
+              title={
+                drivenPost.has(r.key)
+                  ? "Driven — modulation is moving this while it plays. This slider is still the base value."
+                  : undefined
+              }
+            >
+              <SliderRow
+                label={r.label}
+                hint={r.hint}
+                min={r.min}
+                max={r.max}
+                step={r.step}
+                value={post[r.key]}
+                onChange={(v) => store().setPost({ [r.key]: v })}
+                onHint={setHint}
+                disabledReason={unavailable}
+              />
+            </div>
           ))}
           <p className="section-hint">
             {simplifiedRenderer

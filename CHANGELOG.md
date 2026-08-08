@@ -11,6 +11,54 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.83.0] - 2026-08-08
+
+### Changed
+
+- **Modulation is a page you can read now.** It used to be a list of rows —
+  one line per route, a source and a target and a number — which told you
+  what you had wired but never what it was doing. It is rebuilt around the
+  thing you actually think in: **one card per control**. The card is named
+  after the knob, and everything moving that knob lives inside it, so two
+  routes stacked on one control finally look like one stack instead of two
+  unrelated lines.
+  - **Live meters.** A **Driven by** row across the top shows every source
+    your project is using — kick, bass, vocals, an LFO — each with a meter
+    that moves with the track. Click one to show only the controls it
+    drives, click again for all of them.
+  - **You can see the range a route sweeps.** Each route paints the span it
+    covers on the knob's own scale, reading _0.20 → 0.68_, with a marker
+    riding it in time with the music. When the knob's own limit stops the
+    swing short, the card says so rather than quietly clipping.
+  - **Response shape has its own place.** Curve, rise and fall are behind a
+    small triangle on each card, closed by default and identical at every
+    dock width. A route with a shape set prints it on the closed card —
+    _Exp · fall 0.35 s_ — so nothing is ever hidden where you cannot find it.
+  - **Rise and fall go to 10 seconds** instead of 2. The longer times were
+    always accepted in saved projects; the sliders just could not reach
+    them. They are labelled Rise and Fall now, not _A_ and _R_.
+- **Every control something else is driving is marked where you edit it.**
+  Modulation never writes your document — the slider sits exactly where you
+  left it while the render does something else — and until now the only
+  place that fact appeared was the Modulation page. A driven control now
+  carries a tinted edge and a coloured label on the Mode page and on Scene's
+  finishing controls, and each group's count reads **3/9** so you can see it
+  without opening the group. The slider is still the resting value, and
+  hovering the mark says so.
+- **Adding a route starts from the control.** The old **+ Route** button
+  guessed a target and could land on nothing at all; now you pick the knob
+  from a grouped list of everything this visual can modulate, with anything
+  already routed greyed out. Clicking a recipe chip five times can no longer
+  stack five compounding routes on one knob.
+- **A route to a stem you have not loaded yet says so.** Stems are analysed
+  per session while the routes to them are saved with the project, so
+  reopening a stem project used to show a blank source on those routes. It
+  now names the stem and marks it as not loaded, and the route comes back to
+  life the moment you re-import.
+- **Nothing about your projects changed.** All of the above is presentation:
+  the same document, the same routes, the same frames. A project saved in
+  2.82.0 opens unchanged and exports identically.
+
 ## [2.82.0] - 2026-08-08
 
 ### Changed
@@ -2275,7 +2323,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.82.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.83.0...HEAD
+[2.83.0]: https://github.com/0langa/beatform/compare/v2.82.0...v2.83.0
 [2.82.0]: https://github.com/0langa/beatform/compare/v2.81.0...v2.82.0
 [2.81.0]: https://github.com/0langa/beatform/compare/v2.80.0...v2.81.0
 [2.80.0]: https://github.com/0langa/beatform/compare/v2.79.0...v2.80.0

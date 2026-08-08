@@ -22,6 +22,7 @@ import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
 import { selectPreset } from "../state/selectors";
 import { useVizStore } from "../state/store";
 import { formatValue, Segmented, SECONDS, SliderField } from "./kit";
+import { meterRef, ModMeterDriver } from "./ModMeters";
 
 /**
  * The Modulation page (P-1 stage 3) — one CARD PER MODULATED CONTROL.
@@ -179,6 +180,52 @@ function TargetOptions(props: {
   );
 }
 
+/**
+ * THE ONE CROSS-UNIT SEAM. These two leaves are the only elements this page
+ * hands to the meter engine; the engine writes `--v` (0..1) on them every
+ * frame and touches nothing else. All geometry is CSS (`scaleX` on the chip
+ * fill, `translateX` on the swing arm) — compositor-only, so a tick never
+ * lays out or repaints a card.
+ *
+ * Both are COMPONENTS rather than an inline `ref={meterRef({...})}`, and that
+ * is a measured choice, not ceremony. A ref callback built during render has a
+ * fresh identity every render, so React runs its cleanup and re-registers —
+ * and the cleanup deliberately removes `--v` (a re-registered element must not
+ * keep a stale quantum). This page re-renders once per pointer move while a
+ * Depth slider is dragged, so with an inline ref every meter on screen would
+ * be stripped back to its resting position on every frame of that drag; on a
+ * PAUSED track it would then stay there for up to 250 ms, because the driver's
+ * "track time did not move" fast path skips the write until the next text
+ * tick. Memoized on (source, curve) — the only two fields the spec carries —
+ * the registration survives depth drags, card disclosure, source filtering,
+ * retargeting and stem imports, and re-registers exactly when the value being
+ * displayed would change anyway.
+ *
+ * Neither component holds the spec in a ref or mutates it: `meterRef` is
+ * re-called with a fresh spec when, and only when, its inputs change.
+ */
+function SourceMeter(props: { source: ModSource }) {
+  const { source } = props;
+  const ref = useMemo(() => meterRef({ source }), [source]);
+  return (
+    <span className="mod-chip-meter">
+      <span className="mod-meter-fill" ref={ref} />
+    </span>
+  );
+}
+
+/** The diamond that walks a route's painted range. `curve` is display-only —
+ *  the raw source through the shipping curve stage, never the lagged value. */
+function RouteMeter(props: { source: ModSource; curve?: ModCurve }) {
+  const { source, curve } = props;
+  const ref = useMemo(() => meterRef({ source, curve }), [source, curve]);
+  return (
+    <span className="mod-swing-arm" ref={ref}>
+      <span className="mod-diamond" />
+    </span>
+  );
+}
+
 export function ModulationPage() {
   /**
    * The active mode's def, resolved INSIDE the selector. `selectPreset` is a
@@ -325,6 +372,15 @@ export function ModulationPage() {
 
   return (
     <>
+      {/* EXACTLY ONE driver for the whole page. It renders null and owns no
+          DOM — it is the single rAF that samples the analyzer and writes `--v`
+          on every element the two meter components registered. Mounted HERE,
+          inside the Modulation SectionDef's body, so its lifetime is the
+          page's: ParamsPanel's `visibleSections` filter unmounts this subtree
+          on any other destination and the effect's cleanup cancels the frame.
+          Nothing above this point in the tree ticks at frame rate. */}
+      <ModMeterDriver />
+
       {mods.length === 0 && (
         <p className="section-hint mod-empty">
           Modulation lets the music move a knob for you. Pick a control below, choose what drives it
@@ -445,11 +501,7 @@ export function ModulationPage() {
               onClick={() => setPickedSource(filter === id ? null : id)}
             >
               <span className="mod-chip-label">{sourceName(id)}</span>
-              {/* METER SEAM (WU-5): ref={meterRef({ source: id })}. The driver
-                  writes `--v` (0..1) on this element and nothing else. */}
-              <span className="mod-chip-meter">
-                <span className="mod-meter-fill" />
-              </span>
+              <SourceMeter source={id} />
             </button>
           ))}
         </div>
@@ -607,13 +659,7 @@ export function ModulationPage() {
                         <span className="mod-range-track" style={track}>
                           <span className="mod-range-fill" />
                           <span className="mod-range-swing">
-                            {/* METER SEAM (WU-5):
-                                ref={meterRef({ source: r.source, curve: r.curve })}
-                                on the arm below. The driver writes `--v` and
-                                nothing else; CSS owns every pixel of travel. */}
-                            <span className="mod-swing-arm">
-                              <span className="mod-diamond" />
-                            </span>
+                            <RouteMeter source={r.source} curve={r.curve} />
                           </span>
                         </span>
                       </div>

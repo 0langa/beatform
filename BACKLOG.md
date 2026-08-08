@@ -580,6 +580,12 @@ the `useMemo` anyway.
 
 ### Track H — P-1 stages 2 and 3 (NEW, from the v2.81.0 dock release)
 
+**P-1 IS COMPLETE as of v2.83.0.** Stage 1 shipped the dock and the rail
+(v2.81.0), stage 2 the per-group expert tiers (v2.82.0), stage 3 the
+Modulation showpiece and the page-independent `driven` mark (v2.83.0).
+H1/H2/H3/H5/H6 are closed. What remains under this track — H4, H7, H8, and
+H9–H13 opened by stage 3 — is follow-on work, not P-1.
+
 **Stage 1 shipped in v2.81.0** and is deliberately a SHELL: the floating
 overlay became a persistent, resizable right dock (the visual runs full-bleed
 behind it; `--visuals-w` keeps other chrome clear; the drag is split into `--visuals-w-set` /
@@ -623,7 +629,10 @@ buys and what it does not.
 - [x] H3 **SHIPPED in v2.82.0 — P-9 done as written here.** Per-group expert
       disclosure keyed by group id in a new `advancedGroups` prefs field,
       seeded once from `advancedOpen`, which stays declared and validated for
-      one release (delete in 2.83.0). Two things the entry did not anticipate:
+      one release (delete in 2.83.0). **NOT done in 2.83.0 — that release was
+      P-1 stage 3 and touching the prefs schema in it would have put a
+      migration in the middle of a UI wave. Carry it: delete `advancedOpen`
+      and its `validPrefs` clause in the next prefs-touching release.** Two things the entry did not anticipate:
       the UI calls the tier **expert controls**, not "Advanced" — the retired
       drawer owned that word and reusing it would blur the distinction; and a
       bulk **Show every control** button was required, because per-group
@@ -642,32 +651,84 @@ buys and what it does not.
       Save look had no destination until the Looks page exists, and a header
       carrying Reset but not Save look is half a contract); re-derive
       `.param-row`'s `76px minmax(0,1fr) 44px` grid and `.mod-select`'s
-      96 px cap for dock width; two-column layouts behind a **container**
-      query on `.visuals-page`, never a media query (the dock resizes
-      independently of the window, and a `@media { .app { … } }` override
-      has equal specificity to the base rule in a 3,000-line file); real
+      96 px cap for dock width; ~~two-column layouts behind a **container**
+      query on `.visuals-page`~~ — see the amendment below; real
       sub-structure on Scene (Background+Frame / Post / Layers).
-- [ ] H5 **P-1 stage 3 — the Modulation showpiece.** Stage 1 gave Modulation
-      a destination; it is still literally the old section on a page. Turn it
-      into a source × target routing grid with per-route depth and curve,
-      live source meters, and "which params are modulated" badges that must
-      render on **other** pages too (post targets' sliders live on Scene), so
-      the badge mechanism has to be page-independent. Two things get decided
-      rather than inherited: whether MIDI CC bindings join the grid — they
-      are the same source→param abstraction over the identical
-      `modTargetGroupViews` list and currently sit on a different page, so a
-      grid that excludes them reads as an omission — and whether the native
-      `<select>` popup survives (if it does, `App.css`'s forced-dark
-      `option`/`optgroup` rule must come with it, or the target list goes
-      white-on-white under a light OS theme). **The v2.79.0 document-shape
-      guarantees are non-negotiable and must be carried into the grid's
-      tests, not dropped with the selects:** `mod: 'off'` params stay out of
-      the target picker, legacy off-param routes stay visible/inert/
-      unrewritten, the full beat-locked LFO source family is offered,
-      recipes land real routes, and neutral values still write `undefined`
-      so an untouched route never mutates its saved document. The existing
-      Modulation assertions are the canary — rewrite them against the grid
-      with every assertion's SUBJECT preserved.
+      **AMENDED 2026-08-08 by a stage-3 measurement: two-column layouts in
+      the dock are UNREACHABLE, at any dock width.** The content column is
+      `visualsWidth − 206` (14 px gutter, 1 px dock border, the 136 px
+      `.visuals-rail` + its 1 px border, `.panel-scroll`'s 28 px padding,
+      ~11 px thin scrollbar) → **174 px at the 380 floor, 274 px at the 480
+      default, 554 px at the 760 ceiling**. So a container threshold at or
+      above ~560 px can never fire, and a two-column
+      `repeat(auto-fill, minmax(360px, 1fr))` grid needs 720 px it will
+      never have. The
+      container-query DIRECTION is still right (a media query is wrong for a
+      pane that resizes independently of the window, and `container-type`
+      appears exactly 3 times in App.css, all on `.viz-canvas` — there is no
+      container context in the dock at all); what has to go is the
+      two-column OUTCOME. Extra dock width belongs in slider tracks and
+      select ellipsis. The Modulation page (v2.83.0) is built to that
+      finding: one layout, 174 → 554 px, no breakpoint. `.mod-select`'s 96 px
+      cap is likewise settled for that page — it stopped being USED there
+      rather than being widened, so every other consumer keeps it.
+- [x] H5 **SHIPPED in v2.83.0 — and P-1 is COMPLETE with it (stages 1, 2 and
+      3 all delivered: v2.81.0, v2.82.0, v2.83.0).** The Modulation body was
+      lifted out of `ParamsPanel` into a store-direct, zero-prop
+      `ModulationPage` and rebuilt as **one card per modulated control**, not
+      the source × target grid this entry asked for. The grid was refuted by
+      the corpus before a line was written: across the 13 factory themes,
+      `distinct targets === route count` in **13 of 13** and distinct sources
+      is strictly smaller in 3 of 13 (mean 3.08 sources per theme) — the
+      target is the primary key of a route in every shipped document, the
+      target axis is the smaller one (26–37 targets vs 34–62 sources), and
+      the card's grouping key IS `applyMods`' accumulation key. A grid would
+      also have drawn cells only for valid pairs, which makes a legacy
+      off-param route **invisible but still saved** — strictly worse than the
+      bug the T8 assertion exists to prevent.
+      Delivered: live meters per source-in-use and per route (a pull-only rAF
+      writing ONE CSS custom property on refs — no store field, no setState,
+      no canvas, so the v2.80.0/v2.82.0 reconciliation win survives); a
+      painted range per route reading `0.20 → 0.68` with the knob's own clamp
+      named when it stops the swing short; curve/rise/fall behind a per-route
+      disclosure that is never width-gated and prints a non-default shape on
+      the CLOSED face; rise/fall raised from a 2 s slider cap to the
+      validator's real `MOD_LAG_MAX_SEC` (10) with real labels; a
+      target-first create picker that deletes two shipped bugs by
+      construction (`addModRoute(source, "")` on a preset with no targets,
+      and N clicks stacking N compounding routes); the stem escape-hatch
+      option for reopened stem projects.
+      **The page-independent mark shipped as `.param-slot.is-driven`** — a
+      CSS class on the slot `is-advanced` already uses, zero new DOM
+      (`.param-row` is a fixed `76px minmax(0,1fr) 44px` grid app-wide),
+      merged into the existing `.group-count` pill so a route into a
+      collapsed group or a closed expert tier is still visible. Named
+      **driven**, not "modulated", so timeline automation lanes join it
+      additively (H11 below). Scene's six post rows carry it through a LOCAL
+      wrapper in `ParamsPanel`, never a prop on the shared `SliderRow` — the
+      kit serves LayersPanel, ExportDialog, BuilderPanel and TimelinePanel
+      and none of them has any business knowing modulation exists.
+      **Both open questions are DECIDED, not deferred — do not re-litigate:**
+      (1) **The native `<select>` survives**, for the target and source
+      pickers only. It is the one enumeration surface that is keyboard- and
+      screen-reader-complete for free and it keeps the registry-derived
+      assertions meaningful. `App.css`'s forced-dark `option`/`optgroup` rule
+      therefore **stays and must not be touched**. (2) **MIDI CC does not
+      join, and stays on Live.** It is a different binding class: MIDI writes
+      the document through `setParam` (`midiActions.ts`), so the slider
+      physically moves and the binding is self-describing; modulation is
+      non-destructive per frame. Merging them would move the Live rail badge
+      and R9's contract for no user gain — which is also why MIDI gets no
+      `driven` mark.
+      Every v2.79.0 document-shape guarantee was carried into the rewritten
+      tests with its SUBJECT preserved (T7–T11, R3, R9, R11): `mod: 'off'`
+      params stay out of the picker, a legacy off-param route stays visible,
+      inert, unrewritten AND deletable, the whole LFO family is offered,
+      recipes land real routes, and Linear/0 still write `undefined` —
+      asserted on the persisted projection — the key list of a
+      `JSON.parse(JSON.stringify(route))` round-trip — not on the in-memory
+      object. Nothing new is
+      persisted: no `ModRoute` field, no prefs key, no `schemaVersion` bump.
 - [x] H6 **Map defect, recorded so it is not re-derived: two of the four P-1
       planning documents asserted that `CollapsibleSection` / `.section-toggle`
       had call sites outside the panel (ExportDialog was named).** Verified
@@ -703,6 +764,68 @@ buys and what it does not.
       were not added to the `spectrumSmoke` payload either; the smoke throws
       `"Visuals rail: no Sync destination"` instead, which names the failure
       just as well — recorded so nobody re-derives the gap as a defect.
+
+**H9–H13 opened 2026-08-08 by the v2.83.0 (P-1 stage 3) plan §7.** They are
+the things that plan deliberately kept OUT of stage 3, recorded here so they
+read as scope decisions rather than leaks. _(The plan numbered them H8–H12;
+H8 was already taken by the `shotCanvas` entry above, so they are filed one
+higher. Nothing else moved.)_
+
+- [ ] H9 **Exact post-lag route meters.** The v2.83.0 indicator is the RAW
+      source through the CURVE — the shipping `sourceValue` fed through the
+      shipping `shapedValue` — and deliberately **not** post-attack/release.
+      It could not be: the per-route lag evaluator MUTATES the caller's memo
+      and the live
+      loop owns exactly one, so a UI call through it would advance every
+      lagged route's envelope a second time per frame and change what the
+      renderer draws — preview would diverge from export depending on whether
+      the panel happens to be open. That is why it is not exported from
+      `modMatrix.ts`. Doing this properly means publishing resolved per-route
+      values OUT of the loop, PerfOverlay-style (a module-level slot filled
+      only where the evaluator already runs), and it must never reach
+      `exportCore` — a worker has no panel. Buys accuracy on a minority of
+      routes: **0 of the 43 routes in the 13 shipped factory themes carry
+      curve or lag**, so for shipped content today's indicator is bit-exactly
+      the multiplicand. The card names the discrepancy in a hint while any
+      rise/fall is set. **Blocked on evidence that anyone tunes lag enough to
+      notice.**
+- [ ] H10 **Harden `addModRoute` at the action, not just at the UI.** It
+      accepts `param: ""` (then `validModRoutes` drops the route on the next
+      load — it silently vanishes from the saved file) and it does not dedupe
+      on `(source, param)` (N calls stack N compounding routes on one knob).
+      v2.83.0 makes both **unreachable from the UI** by construction — the
+      create picker offers only real targets and greys out routed ones — but
+      the action is still callable from recipes, tests and future callers.
+      Fix: reject an empty/unknown `param`, and dedupe on `(source, param)`.
+      Note `modRoutePresets`' "Already routed — tweak the existing route's
+      amount instead" flash is the user-visible half and must keep firing, or
+      a second recipe click reads as a broken button.
+- [ ] H11 **Extend the `driven` mark to timeline automation lanes.** Purely
+      additive by design: the vocabulary was chosen for it (v2.83.0 named the
+      mark **driven**, not "modulated", precisely so this needs no rename
+      across CSS, markup and tests). Automation lanes (`timeline.ts`, applied
+      in `frameResolve.ts` **before** modulation) drive the same param keys
+      just as invisibly, `TimelinePanel` already lets you add a lane per param
+      key, and `drivenParamKeys(preset, mods)` is a pure function with one
+      call site — widening it to `(preset, mods, lanes)` is the whole change,
+      plus the same treatment for Scene's post rows.
+- [ ] H12 **Per-route solo/mute and route reordering on a stacked card.**
+      `applyMods` sums in **array order** and clamps per route, so order is
+      genuinely user-visible when two routes share one knob — and a card is
+      where that finally became legible. Both need document-shape decisions
+      first: mute is an optional validated `ModRoute` field (and
+      `validModRoutes` OMITS rather than defaults, so anything added must
+      round-trip a v1 route unchanged), reorder is array position. Reorder
+      also needs a coalescing decision for the drag gesture: `"mod-add"` is
+      in history's UNGROUPABLE set while `updateModRoute` coalesces by
+      `mod:${id}:${keys}`.
+- [ ] H13 **Bulk actions on the Modulation page** — "clear every route for
+      this source", "set depth on N routes". Deliberately absent from
+      v2.83.0: a bulk destructive action crosses audit UI-3 (needs
+      `askConfirm` plus a T13-shaped test) and needs a history decision
+      first, because `"mod-add"` is UNGROUPABLE — N cleared routes would push
+      N undo entries unless a new grouped label is introduced. Per-route `✕`
+      correctly keeps no confirm: it is one undoable history record.
 
 ### Approved program extension (owner: "Approve as ranked", 2026-08-06)
 
