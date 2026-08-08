@@ -162,24 +162,10 @@ body,
    it derives from the same token. First child in DOM order at z-index 0, so
    every positioned sibling — bars, strip, timeline, the dock itself — paints
    above it without needing a z-index of its own. */
-.app::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: var(--visuals-w);
-  /* BLACK, not a lit slab. This is the bay the dock floats in, and it is the
-     same black the canvas already letterboxes into in fixed-aspect mode — so
-     the image butts into a value it was always going to meet, with no hairline
-     between two lit surfaces to read as a scratch. It also puts the plate
-     ABOVE its ground: --glass over #000 composites to rgb(9,10,15), lighter
-     than the bay, which is what makes a bordered, rounded plate read as
-     floating rather than as a slab welded to the window. */
-  background: #000;
-  pointer-events: none;
-  z-index: 0;
-}
+/* No bay element: the image runs edge to edge behind the dock. Painting a
+   column here — flat, lit or black — was the whole defect. `--visuals-w` still
+   exists, but now it only keeps OTHER chrome (mode strip, toasts, timeline,
+   drop overlay) out from under the dock. */
 
 /* ---------- canvas ---------- */
 
@@ -1134,9 +1120,9 @@ button:disabled {
      border and radius, same gutter from its own window edge — the app already
      has a docked-panel idiom and this is it, flipped. A treatment the app uses
      everywhere else cannot look out of place.
-     No backdrop-filter, unlike the Library: nothing animated sits behind this
-     one, so a blur would cost a full-column pass to resolve against a static
-     black bay. --glass over that bay is what lifts the plate off its ground. */
+     Including the blur: the image runs full-bleed behind this now, so there is
+     something live to soften, and that softening is what stops a 587px plate
+     from reading as a hole punched in the visual. */
   top: var(--topbar-h);
   right: var(--gutter);
   bottom: var(--playerbar-h);
@@ -1145,6 +1131,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   background: var(--glass);
+  backdrop-filter: blur(18px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   /* Above the timeline (6), below its own resize handle (9). */
@@ -1212,6 +1199,12 @@ button:disabled {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  /* The rail recesses; the page it navigates sits forward. Without this the
+     whole plate is one flat sheet — a divider line and nothing else — and a
+     460px panel with no internal planes reads as undesigned. Kept to a shade:
+     the app separates surfaces with a hairline and a whisper of fill, not
+     boxes. */
+  background: rgba(0, 0, 0, 0.16);
   border-right: 1px solid var(--border);
 }
 
@@ -2964,7 +2957,12 @@ kbd {
    there is no per-pointermove renderer.resize and nothing to squash. */
 .stage {
   position: absolute;
-  inset: 0 var(--visuals-w) 0 0;
+  /* FULL-BLEED, deliberately. P-1 first insetted this by the dock's width so
+     the image letterboxed beside it — which meant the whole right column was
+     dead black whenever the dock was open, a worse trade than the covering it
+     avoided. The image is the app; it fills the window, and the dock floats
+     over it on glass exactly like the Library panel does. */
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
