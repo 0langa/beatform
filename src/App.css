@@ -1624,11 +1624,14 @@ button.row-value:focus-visible {
   gap: 10px;
 }
 
-/* ---------- parameter groups (v2.53) ----------------------------------
+/* ---------- parameter groups (v2.53, re-tiered v2.82) -----------------
    The knobs of one visual, laid out by their declared ParamSpec.group. Sized
-   tighter than a top-level section on purpose: these are the SECOND level of
-   the hierarchy (tab > section > group > row), and a group header that shouts
-   as loud as its section header is what made the flat list unreadable. */
+   tighter than a top-level section on purpose: they sit one step BELOW a
+   section in the hierarchy — page > section > group > tier > row. (Not
+   `tab > section > group > row`: there are no tabs, the rail replaced them in
+   v2.81, and P-9 inserted the per-group expert tier under the group.) A group
+   header that shouts as loud as its section header is what made the flat list
+   unreadable. */
 .param-groups {
   margin-top: 2px;
 }
@@ -1773,22 +1776,15 @@ button.row-value:focus-visible {
   margin-top: 6px;
 }
 
-/* Essentials / All. Retired by P-9 — the density switch is per group now.
-   Kept until its last call site goes with ParamsPanel (U4/U5). */
-.param-density {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 2px 0 8px;
-}
-
-.param-density .segmented {
-  flex: 1;
-}
-
-.param-density .segment {
-  font-size: 11.5px;
-}
+/* TOMBSTONE (P-9, v2.82.0) — `.param-density` and its two `.segmented` /
+   `.segment` overrides lived here. They styled the global Essentials / All
+   switch above the group list; the tier is a per-group disclosure now
+   (`.group-advanced`), and the one-click equivalent is `.param-groups-actions`
+   below the list. No emitter survived U4, and a rule with no emitter is the
+   `.builder-factory-chips` mistake in the other direction. Only the two
+   `.param-density`-scoped overrides went: the base `.segmented` / `.segment`
+   rules are untouched, the kit control has call sites all over the panel and
+   the dialogs. */
 
 .advanced-count {
   font-size: 10.5px;

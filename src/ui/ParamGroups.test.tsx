@@ -16,6 +16,14 @@ afterEach(cleanup);
  * it" is gone. It named the global Essentials/All Segmented, which no longer
  * exists: the tier is a per-group disclosure now, so the same subject is
  * asserted by G2 against one group instead of the whole panel.
+ *
+ * TOMBSTONE (P-9, v2.82.0) — "keeps the deprecated showAdvanced shim opening
+ * every tier at once" is gone with the prop it pinned. It existed for exactly
+ * one wave, so this file could land against an un-rewritten ParamsPanel. Its
+ * two halves both survive elsewhere: that an OPEN tier renders its expert rows
+ * is G2, and that one click can open every tier at once is ParamsPanel's R14
+ * over the real "Show every control" button, which writes each group id into
+ * `advancedGroups` instead of overriding it.
  */
 
 const num = (key: string, over: Partial<ParamSpec> = {}): ParamSpec =>
@@ -44,6 +52,7 @@ function view(over: Partial<React.ComponentProps<typeof ParamGroups>> = {}) {
       onHint={() => undefined}
       query=""
       collapsed={[]}
+      advancedGroups={[]}
       onToggleGroup={onToggleGroup}
       onToggleAdvanced={onToggleAdvanced}
       {...over}
@@ -89,6 +98,7 @@ describe("ParamGroups", () => {
         query=""
         collapsed={[]}
         onToggleGroup={() => undefined}
+        onToggleAdvanced={() => undefined}
       />,
     );
     expect(screen.getByText("vignette")).toBeTruthy();
@@ -136,6 +146,7 @@ describe("ParamGroups", () => {
         query=""
         collapsed={[]}
         onToggleGroup={() => undefined}
+        onToggleAdvanced={() => undefined}
       />,
     );
     expect(count()).toBe("1");
@@ -220,13 +231,5 @@ describe("ParamGroups", () => {
       extras: [{ group: "image", search: "center image cover", node: <p>center-image-row</p> }],
     });
     expect(screen.queryByText("center-image-row")).toBeNull();
-  });
-
-  it("keeps the deprecated showAdvanced shim opening every tier at once", () => {
-    // Wave-A only: ParamsPanel still passes it until U4. `true` == every tier
-    // open, which is exactly how `advancedOpen: true` seeds `advancedGroups`.
-    view({ showAdvanced: true });
-    expect(screen.getByText("vignette")).toBeTruthy();
-    expect(screen.getByText("hueSpread")).toBeTruthy();
   });
 });

@@ -48,16 +48,23 @@ export interface ParamGroupsProps {
   params: ParamValues;
   onParam: (key: string, value: number) => void;
   onHint: (hint: string | null) => void;
-  /** Group ids whose expert tier is OPEN. Absent/empty = every tier closed. */
-  advancedGroups?: readonly string[];
-  /** Reports the BARE group id; the caller owns persistence. */
-  onToggleAdvanced?: (groupId: string, open: boolean) => void;
   /**
-   * @deprecated Wave-A shim so this file compiles against the untouched
-   * ParamsPanel call site. `true` == every tier open, which is exactly how
-   * `advancedOpen: true` seeds `advancedGroups`. Removed in U5.
+   * Group ids whose expert tier is OPEN. Empty = every tier closed.
+   *
+   * REQUIRED, and deliberately so: an optional `advancedGroups` silently
+   * renders a panel where no disclosure ever opens, which is indistinguishable
+   * from a broken toggle. The caller owns persistence, so the caller must say.
    */
-  showAdvanced?: boolean;
+  advancedGroups: readonly string[];
+  /** Reports the BARE group id; the caller owns persistence. */
+  onToggleAdvanced: (groupId: string, open: boolean) => void;
+  /* TOMBSTONE (P-9, v2.82.0) — a `showAdvanced?: boolean` prop lived here for
+   * one wave, mapping the retired global Essentials/All switch onto "every
+   * tier open" so this file could land before ParamsPanel was rewritten. Both
+   * the switch and that call site are gone; opening every tier at once is now
+   * ParamsPanel's "Show every control", which writes every group id into
+   * `advancedGroups` rather than bypassing it. */
+
   /** Trimmed, lowercased search query. Non-empty = filter rows, ignore tiers. */
   query: string;
   /** Group keys the user collapsed (GROUP_KEY-prefixed), from prefs. */
@@ -70,8 +77,6 @@ export function ParamGroups(props: ParamGroupsProps) {
   const { preset, query } = props;
   const searching = query.length > 0;
   const advanced = advancedKeys(preset);
-  const openTiers = props.advancedGroups ?? [];
-  const allTiersOpen = props.showAdvanced === true; // U5 deletes
 
   // Search deliberately ignores the tier. A user who types "vignette" is
   // asking where it is, and answering "nowhere" because the knob happens to
@@ -203,7 +208,7 @@ export function ParamGroups(props: ParamGroupsProps) {
         // be a lie about what is hidden.
         const curated = searching ? params : params.filter((s) => !advanced.has(s.key));
         const expert = searching ? [] : params.filter((s) => advanced.has(s.key));
-        const tierOpen = allTiersOpen || openTiers.includes(group.id);
+        const tierOpen = props.advancedGroups.includes(group.id);
         const changed = expert.filter(
           (s) => (props.params[s.key] ?? s.default) !== s.default,
         ).length;
@@ -242,7 +247,7 @@ export function ParamGroups(props: ParamGroupsProps) {
                     className={`group-advanced ${tierOpen ? "open" : ""}`}
                     aria-expanded={tierOpen}
                     title="Expert controls — every internal constant of this group"
-                    onClick={() => props.onToggleAdvanced?.(group.id, !tierOpen)}
+                    onClick={() => props.onToggleAdvanced(group.id, !tierOpen)}
                   >
                     <span className="group-chevron">▸</span>
                     <span className="group-advanced-label">
