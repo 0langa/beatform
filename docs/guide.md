@@ -31,8 +31,14 @@ Sixteen modes on the strip: Spectrum Bars, Radial Burst, Oscilloscope,
 Particles, Tunnel, Kaleido Nebula, Metaballs, LED Matrix, Voice Orb, Echo
 Trails, Particle Flow (120k GPU particles), Spectrum Scape (3D), Aurora,
 Synthwave, Bass Circle, and **Builder** (the layer compositor, below).
-Each mode has curated **styles** (one-click looks), main parameters, and an
-**Advanced** drawer exposing every internal constant worth touching.
+Each mode has curated **styles** (one-click looks) and sorts its controls into
+groups. A group leads with the few controls that change the look, then a line
+reading **3 expert controls** folding away that group's internal constants —
+closed until you click it, and marked **_n_ changed** once you move one of
+them. **Show every control**, below the groups, opens every expert line at
+once; it then reads **Hide expert controls**. Search reaches expert controls
+whether their line is open or not.
+
 Bass Circle and Radial Burst show artwork in their center: the track's
 **embedded cover art** by default, or any image you choose via the
 **Center image** row (saved per mode). Bass Circle's **Match cover colors**
@@ -53,29 +59,32 @@ extremes); the width is remembered. **Stage mode** (**S**) hides it entirely.
 Down its left side is the **section rail** — eight destinations, one page
 each:
 
-| Destination    | What is on it                                              |
-| -------------- | ---------------------------------------------------------- |
-| **Mode**       | The active visual: styles, your looks, and all its knobs   |
-| **Motion**     | The global rotation / pulse / detail masters               |
-| **Themes**     | Whole-project themes and the Gallery shortcut              |
-| **Sync**       | What the visual reacts to, and how hard                    |
-| **Modulation** | Routes and stems — audio and LFOs onto individual controls |
-| **Scene**      | Background, frame, post-processing, overlay layers         |
-| **Text**       | Lyrics and the audiogram strip                             |
-| **Live**       | Beat-quantized mode switching and MIDI                     |
+| Destination        | What is on it                                                |
+| ------------------ | ------------------------------------------------------------ |
+| **Mode**           | The active visual: its styles and every one of its controls  |
+| **Global motion**  | The rotation / pulse / detail masters every visual obeys     |
+| **Looks & themes** | Your saved looks, whole-project themes, the Gallery shortcut |
+| **Sync**           | What the visual reacts to, and how hard                      |
+| **Modulation**     | Routes and stems — audio and LFOs onto individual controls   |
+| **Scene**          | Background, frame, post-processing, overlay layers           |
+| **Text**           | Lyrics and the audiogram strip                               |
+| **Live**           | Beat-quantized mode switching and MIDI                       |
 
 Click a destination to go there; the arrow keys walk the rail (the whole
 rail is one Tab stop). Modulation, Scene and Live show a small count when
 you have routes, overlay layers or MIDI bindings. A destination the current
-visual cannot use — Motion on a mode that has nothing to rotate or pulse —
-is dimmed and says why on hover. A header above the page always names the
+visual cannot use — Global motion on a visual that has nothing to rotate or
+pulse — is dimmed and says why on hover, pointing you at that visual's own
+Motion group on Mode. A header above the page always names the
 mode you are editing, plus its style when one is exactly applied. The page
 you were last on is remembered.
 
-Pages do not fold. The **parameter groups** on the Mode page (Shape, Color,
+Pages do not fold. The **control groups** on the Mode page (Shape, Color,
 Motion, Reaction, Glow, Image, Camera, Backdrop) still do, and remember it.
-The **search box** spans the top of the dock and ignores the rail entirely —
-it finds a control by name wherever it lives.
+Every group a visual declares appears, each showing at least one control
+above its expert line. The **search box** spans the top of the dock and
+ignores the rail entirely — it finds a control by name wherever it lives,
+including behind a closed expert line or a collapsed group.
 
 ## Builder
 
@@ -83,7 +92,7 @@ A real layer compositor: stack up to twelve layers from nine types
 (background wash, particles, spectrum bars, radial ring, pulse rings,
 waveform circle, orb, wave line, vignette) — the same type as often as you
 like. Every layer has its own on/off, opacity, **blend mode**
-(Normal / Add / Screen), color (hue + spread) and parameters; reorder with
+(Normal / Add / Screen), color (hue + spread) and controls; reorder with
 ▲▼, duplicate with ⧉. Stacks save inside your project, and
 **Export .bfbuilder** shares a stack as a single file anyone can import.
 
@@ -132,13 +141,15 @@ Two kinds of beat reaction work together:
   arrives as the next one lands, Bass Circle pumps on the grid. Tracks
   without a detectable grid fall back to onset pulses automatically.
 
-_Visuals ▸ Motion_ holds the **motion masters**: rotation, pulse strength,
-element count and spectrum smoothing, scaled globally — dial the whole app
-calmer or wilder from one place. On a mode that has nothing to rotate or
-pulse the destination is dimmed and tells you so.
+_Visuals ▸ Global motion_ holds the **motion masters**: rotation, pulse
+strength, element count and spectrum smoothing, scaled globally — dial the
+whole app calmer or wilder from one place. The name says which of the two it
+is: a visual's own motion controls sit in the Motion group on Mode. On a
+visual that has nothing to rotate or pulse the destination is dimmed and
+tells you so.
 
 _Visuals ▸ Modulation_ routes any audio feature to any knob. The
-target list covers this visual's own parameters **and the post-processing
+target list covers this visual's own controls **and the post-processing
 chain** — so the kick can drive Chromatic, bass can breathe the Bloom, and
 the whole look moves with the track. Give a route a **shape**
 (linear / exponential / smooth) and an **attack**/**release** so it punches
@@ -257,7 +268,7 @@ so hour-long renders hold flat memory. Preview parity scope and tolerances:
 
 The **gear icon** in the top bar (or **Ctrl+,**) opens **Preferences** — the
 choices that follow the app rather than the project, so nothing here is saved
-into a `.bfproj`. Four tabs: **General** (autosave delay, the remembered
+into a `.bfproj`. Four sections: **General** (autosave delay, the remembered
 save-dialog folder), **Modes** (drag the mode strip into your own order),
 **Performance** (a **live-preview frame cap** and **preview resolution** —
 exports always render every frame at full size, a **GPU preference** for
@@ -271,6 +282,9 @@ off in Preferences ▸ Updates if you prefer manual.
 ## Projects, looks, themes
 
 - **Ctrl+S / Ctrl+O** — `.bfproj` project files (everything, portable).
-- **Save look** — a named parameter set for one mode (`.bfpreset`).
+- **Save look** — a named control set for one mode (`.bfpreset`). Save,
+  delete, import and export your looks on _Visuals ▸ Looks & themes_; the
+  factory style chips stay on Mode, beside the header that names the active
+  one.
 - **Themes** — a complete setup as one shareable `.bftheme` file, saved from
-  _Visuals ▸ Themes_; see [Themes](templates).
+  the same page; see [Themes](templates).

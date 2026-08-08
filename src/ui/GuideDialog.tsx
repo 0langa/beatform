@@ -52,7 +52,8 @@ const SECTIONS: GuideSection[] = [
           </li>
           <li>
             <strong>Open Visuals</strong> with <K k="G" /> (or the sliders icon, top right) to shape
-            the look of the current mode.
+            the look of the current mode. The rail down its left side holds eight pages: Mode,
+            Global motion, Looks &amp; themes, Sync, Modulation, Scene, Text and Live.
           </li>
         </ol>
         <p>
@@ -82,25 +83,32 @@ const SECTIONS: GuideSection[] = [
         </p>
         <ul>
           <li>
-            <strong>Styles</strong> — curated one-click looks at the top of the Visual tab.
+            <strong>Styles</strong> — curated one-click looks at the top of the Mode page.
           </li>
           <li>
-            <strong>Main parameters</strong> — the handful of sliders that define the mode.
+            <strong>Grouped controls</strong> — Shape, Color, Motion, Reaction, Glow and the rest.
+            Every group a visual uses is on the page, and each one leads with the handful of
+            controls that change the look.
           </li>
           <li>
-            <strong>An Advanced drawer</strong> — every internal constant worth touching.
+            <strong>An expert line per group</strong> — a row reading <em>3 expert controls</em>{" "}
+            folds that group&rsquo;s internal constants away until you click it, and reads{" "}
+            <em>n changed</em> once you move one of them. <em>Show every control</em>, below the
+            groups, opens all of them at once.
           </li>
         </ul>
         <p>
           Hover any control to see a plain-language hint in the Visuals footer. The search box at
-          the top of Visuals finds any control by name, across every section.
+          the top of Visuals finds any control by name, across every page of the dock — expert
+          controls included, whether their line is open or not.
         </p>
         <h4>Center images</h4>
         <p>
           Bass Circle and Radial Burst can display artwork in their center: by default the track's
-          embedded cover art, or any image you choose (look for <em>Center image</em> in the
-          Visuals). Bass Circle's <em>Match cover colors</em> toggle reads the dominant color of
-          that artwork and sets Hue and Hue spread to fit — automatically again for every new track.
+          embedded cover art, or any image you choose (look for <em>Center image</em> in the Image
+          group on the Mode page). Bass Circle's <em>Match cover colors</em> toggle reads the
+          dominant color of that artwork and sets Hue and Hue spread to fit — automatically again
+          for every new track.
         </p>
         <h4>Your own shaders</h4>
         <p>
@@ -128,7 +136,7 @@ const SECTIONS: GuideSection[] = [
           <li>
             a <strong>blend mode</strong> (Normal, Add, Screen),
           </li>
-          <li>color (hue + spread) and its own parameter set,</li>
+          <li>color (hue + spread) and its own controls,</li>
           <li>reorder arrows and a duplicate button.</li>
         </ul>
         <p>
@@ -145,7 +153,7 @@ const SECTIONS: GuideSection[] = [
       <>
         <h3>Sync — what the visual listens to</h3>
         <p>
-          The Sync tab routes <strong>one source</strong> to the current mode: Kicks (default),
+          The Sync page routes <strong>one source</strong> to the current mode: Kicks (default),
           Energy, Bass, Melody, Voice, Treble, Snare or Hats. Pick what should drive the motion — a
           vocal-heavy track often looks better on Voice than on Kicks.
         </p>
@@ -177,7 +185,7 @@ const SECTIONS: GuideSection[] = [
         </p>
         <h4>Modulation</h4>
         <p>
-          The Modulation section routes any audio feature to any knob — kick pumps the zoom, hats
+          The Modulation page routes any audio feature to any knob — kick pumps the zoom, hats
           flicker the glow. Import a stem (a drums/bass/vocals bounce starting at 0:00) and its
           bands become extra sources; the ✦ button auto-wires a stem to the best-matching knobs of
           the current mode.
@@ -192,7 +200,7 @@ const SECTIONS: GuideSection[] = [
       <>
         <h3>Backgrounds, post effects and the frame</h3>
         <h4>Backgrounds</h4>
-        <p>The Scene tab picks what sits behind the visualization:</p>
+        <p>The Scene page picks what sits behind the visualization:</p>
         <ul>
           <li>
             <strong>Animated</strong> — the mode's own moving background.
@@ -222,7 +230,7 @@ const SECTIONS: GuideSection[] = [
         <h4>Post effects</h4>
         <p>
           Bloom, exposure, vignette, chromatic aberration and deterministic film grain — all in the
-          Scene tab, all rendered identically in exports. Bloom plus a dark background is the
+          Scene page, all rendered identically in exports. Bloom plus a dark background is the
           fastest way to make any mode look "produced".
         </p>
         <h4>Aspect</h4>
@@ -241,7 +249,7 @@ const SECTIONS: GuideSection[] = [
         <h3>Overlays</h3>
         <h4>Text and images</h4>
         <p>
-          The Scene tab's Layers section adds text and image overlays. Text supports{" "}
+          The Scene page's Layers section adds text and image overlays. Text supports{" "}
           <code>{"{title}"}</code> and <code>{"{artist}"}</code> placeholders filled from the
           track's tags; images can be your logo or the embedded album art. Layers anchor to nine
           positions and scale fractionally — they render identically in exports.
@@ -250,12 +258,13 @@ const SECTIONS: GuideSection[] = [
         <p>
           Drop an <code>.lrc</code> or <code>.srt</code> file onto the window — the current line
           follows the music karaoke-style, live and in every export. Position, size, color, an
-          animation style (plain, slide, pop, or karaoke fill) and fade timing live in the Text tab.
+          animation style (plain, slide, pop, or karaoke fill) and fade timing live on the Text
+          page.
         </p>
         <h4>Generate lyrics (desktop)</h4>
         <p>
-          No .lrc at hand? The Text tab can generate timed lyrics from the loaded track, entirely on
-          your PC: vocals are isolated with an Ultimate Vocal Remover (UVR) MDX-Net model,
+          No .lrc at hand? The Text page can generate timed lyrics from the loaded track, entirely
+          on your PC: vocals are isolated with an Ultimate Vocal Remover (UVR) MDX-Net model,
           transcribed with OpenAI's Whisper running on whisper.cpp, then each word is timed against
           the isolated vocal with a wav2vec2 forced aligner — the karaoke fill follows the singer
           word by word. (Enhanced .lrc files with word tags from other tools get the same per-word
@@ -281,8 +290,8 @@ const SECTIONS: GuideSection[] = [
         <h3>Timeline — visuals as an arrangement</h3>
         <p>
           Press <K k="T" />. Scenes switch visual modes at chosen beats (drags snap to the detected
-          grid), and automation lanes keyframe any parameter over time. Each scene picks a
-          transition for its incoming edge: crossfade, wipe, iris, zoom, glitch or hard cut.
+          grid), and automation lanes keyframe any control over time. Each scene picks a transition
+          for its incoming edge: crossfade, wipe, iris, zoom, glitch or hard cut.
         </p>
         <ul>
           <li>Click a keyframe dot to cycle its curve: linear → smooth → hold.</li>
@@ -294,9 +303,9 @@ const SECTIONS: GuideSection[] = [
         </ul>
         <p>
           <strong>Good to know:</strong> while the timeline is enabled, scenes override the mode
-          strip and scene parameters override the sliders — that's the point, but it can look like
-          "Visuals does nothing" if you forget it's on. Turn the timeline off (or use Project ▸ New
-          project) to get direct control back.
+          strip and keyframes override the controls — that's the point, but it can look like the
+          Visuals dock has stopped responding if you forget it's on. Turn the timeline off (or use{" "}
+          <em>Project ▸ New project</em>) to get direct control back.
         </p>
       </>
     ),
@@ -344,9 +353,9 @@ const SECTIONS: GuideSection[] = [
             cut. <K k="Esc" /> exits everything.
           </li>
           <li>
-            <strong>MIDI</strong> (Live tab): map a controller's knobs to any parameter and pads to
-            modes. <em>Learn CC</em>, move a knob, done — bindings are remembered. Notes obey the
-            beat-quantize too.
+            <strong>MIDI</strong> (the Live page): map a controller's knobs to any parameter and
+            pads to modes. <em>Learn CC</em>, move a knob, done — bindings are remembered. Notes
+            obey the beat-quantize too.
           </li>
         </ul>
         <p>
@@ -408,21 +417,22 @@ const SECTIONS: GuideSection[] = [
         <ul>
           <li>
             <strong>Projects</strong> (<K k="Ctrl+S" /> / <K k="Ctrl+O" />) — a single{" "}
-            <code>.bfproj</code> file holds everything: mode, parameters, sync, backgrounds,
-            overlays, timeline, Builder stacks, lyrics style, audiogram, even embedded images.
-            Opening it on another machine restores the exact setup.
+            <code>.bfproj</code> file holds everything: mode, controls, sync, backgrounds, overlays,
+            timeline, Builder stacks, lyrics style, audiogram, even embedded images. Opening it on
+            another machine restores the exact setup.
           </li>
           <li>
-            <strong>Themes</strong> — export the whole current look as a <code>.bftheme</code>{" "}
-            anyone can drop onto their Beatform window.
+            <strong>Themes</strong> — <em>Visuals ▸ Looks &amp; themes</em> exports the whole
+            current look as a <code>.bftheme</code> anyone can drop onto their Beatform window.
           </li>
           <li>
             <strong>Builder stacks</strong> — <code>.bfbuilder</code> files share a single Builder
             creation.
           </li>
           <li>
-            <strong>Your looks</strong> — the Save-look button in the Visual tab stores the current
-            slider state per mode, locally.
+            <strong>Your looks</strong> — <em>+ Save look</em> on <em>Looks &amp; themes</em> stores
+            the current control values for one mode, locally. The visual&rsquo;s factory style chips
+            stay on Mode, beside the header that names the active one.
           </li>
         </ul>
         <h4>Never lose work</h4>
