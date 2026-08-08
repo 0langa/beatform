@@ -364,10 +364,13 @@ const VISUALS_PAGES: ReadonlyArray<{
     label: "Global motion",
     hint: "Rotation, pulse and detail masters — every visual obeys these",
   },
+  // "Looks & themes", not "Themes": the save/manage surface for this visual's
+  // own looks moved here in 2.82.0 (the factory style chips stayed on Mode,
+  // beside the context header that names the active one).
   {
     id: "themes",
-    label: "Themes",
-    hint: "Whole-project looks — color, sync, post and background at once",
+    label: "Looks & themes",
+    hint: "Your saved looks for this visual, and whole-project themes",
   },
   {
     id: "sync",
@@ -396,8 +399,8 @@ const VISUALS_PAGES: ReadonlyArray<{
 interface SectionDef {
   /**
    * React key only. It used to be the persisted collapse identity, which is
-   * why several ids are pre-v2.53 titles ("Templates" for the Themes
-   * section) — P-1 retired in-page section collapse, so nothing reads these
+   * why several ids are pre-v2.53 titles ("Templates" for what now reads
+   * Looks & themes) — P-1 retired in-page section collapse, so nothing reads these
    * off disk any more and they are kept purely to avoid a pointless diff.
    */
   id: string;
@@ -806,9 +809,15 @@ export function ParamsPanel() {
       page: "mode",
       // "advanced essentials" left with the global density switch (P-9) — a
       // blob that still answers to a retired control surfaces a section for
-      // something the user cannot find once they get there.
+      // something the user cannot find once they get there. "look save import
+      // gallery browse" left with the user-looks surface for the same reason
+      // (it lives on Looks & themes now). "custom" STAYS: it is not looks
+      // vocabulary — it covers the "Custom" style readout and the center-image
+      // extra ("choose custom picture"), both of which are still rendered
+      // here, and sections are filtered by this blob while ParamGroups filters
+      // rows, so dropping it would hide the row its own search text advertises.
       search:
-        `${preset.name} ${preset.description ?? ""} preset style look custom save import gallery browse expert reset center image cover ${presetGroupText} ${presetParamText}`.toLowerCase(),
+        `${preset.name} ${preset.description ?? ""} preset style custom expert reset center image cover ${presetGroupText} ${presetParamText}`.toLowerCase(),
       headerExtra: (
         <>
           {changedCount > 0 && (
@@ -848,86 +857,13 @@ export function ParamsPanel() {
             </div>
           )}
 
-          <div className="user-presets">
-            {looksForMode.length > 0 && (
-              <div className="style-chips">
-                {looksForMode.map((p) => (
-                  <span key={p.id} className="user-chip-wrap">
-                    <button
-                      className="style-chip user"
-                      title={`Apply your "${p.name}" look`}
-                      onClick={() => store().applyUserPreset(p.id)}
-                    >
-                      {p.name}
-                    </button>
-                    <button
-                      className="chip-x"
-                      title={`Delete "${p.name}"`}
-                      aria-label={`Delete "${p.name}"`}
-                      onClick={() => void deleteLook(p.id)}
-                    >
-                      ✕
-                    </button>
-                    <button
-                      className="chip-x"
-                      title={`Export "${p.name}" as .bfpreset file`}
-                      aria-label={`Export "${p.name}" as .bfpreset file`}
-                      onClick={() => void store().exportUserPreset(p.id)}
-                    >
-                      ↗
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            {savingLook ? (
-              <form
-                className="save-look-row"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  store().saveUserPreset(lookName);
-                  setLookName("");
-                  setSavingLook(false);
-                }}
-              >
-                <input
-                  className="look-name-input"
-                  autoFocus
-                  placeholder="Name this look…"
-                  value={lookName}
-                  maxLength={32}
-                  onChange={(e) => setLookName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      setSavingLook(false);
-                      setLookName("");
-                    }
-                  }}
-                />
-                <button type="submit" className="text-btn" disabled={!lookName.trim()}>
-                  Save
-                </button>
-              </form>
-            ) : (
-              <div className="save-look-row">
-                <button
-                  className="text-btn"
-                  title="Save the current values as a named look for this visual"
-                  onClick={() => setSavingLook(true)}
-                >
-                  + Save look
-                </button>
-                <button
-                  className="text-btn"
-                  title="Import a .bfpreset look file"
-                  onClick={() => void store().importUserPreset()}
-                >
-                  Import…
-                </button>
-                <GalleryLink filter="look">Browse looks in the Gallery…</GalleryLink>
-              </div>
-            )}
-          </div>
+          {/* The user-looks surface (chips, save form, Import…, the Gallery
+              deep link) moved to Looks & themes in 2.82.0. The FACTORY style
+              chips above stayed: they are this visual's own presets, the first
+              thing touched after picking a mode, and the context header right
+              there names which one is active. What left is the occasional
+              save/manage half — ~70px of chrome off the tallest page in the
+              dock, and the thing that makes Looks & themes worth visiting. */}
 
           {/* Builder (RP-20): its virtual l<i>.* params exist for the
               modulation/MIDI/automation target lists, NOT for a second knob
@@ -1101,14 +1037,114 @@ export function ParamsPanel() {
     {
       // The id keeps the retired pre-vocabulary title (see SectionDef.id):
       // collapse state persisted as "Templates" must keep applying to this
-      // section now that it reads THEMES.
+      // section now that it reads LOOKS & THEMES. The rail id stays `themes`
+      // for the harder reason — it persists as `visualsPage` and prefs.ts has
+      // no page-id migration, so labels move and ids never do.
       id: "Templates",
-      title: "Themes",
+      title: "Looks & themes",
       page: "themes",
+      // Two surfaces, one blob, because they are one section (see below).
+      // The user looks' own NAMES are in it: a saved look is the only thing on
+      // this page the user named themselves, so it is the first word they
+      // would type to find it again.
       search:
-        `themes theme templates complete looks colors sync post save export import bftheme gallery community browse ${FACTORY_THEMES.map((t) => t.meta.name).join(" ")}`.toLowerCase(),
+        `looks themes look theme templates save import export bfpreset bftheme complete colors sync post gallery community browse ${looksForMode
+          .map((p) => p.name)
+          .join(" ")} ${FACTORY_THEMES.map((t) => t.meta.name).join(" ")}`.toLowerCase(),
       body: (
         <>
+          {/* ONE section, not two. A second PageSection would put a bare
+              heading on the page whenever its body collapsed to nothing, and
+              the two halves answer the same question at two scopes — what this
+              visual looks like, and what the whole project looks like.
+              "…for this visual", never `for ${preset.name}`: the context
+              header above already prints the name, and a second copy makes
+              getByText(name) ambiguous as well as reading as a stutter. */}
+          <p className="section-hint">
+            Looks saved for this visual — your own tunings of its controls. Save the current values,
+            import a .bfpreset file, or browse the Gallery.
+          </p>
+          <div className="user-presets">
+            {looksForMode.length > 0 && (
+              <div className="style-chips">
+                {looksForMode.map((p) => (
+                  <span key={p.id} className="user-chip-wrap">
+                    <button
+                      className="style-chip user"
+                      title={`Apply your "${p.name}" look`}
+                      onClick={() => store().applyUserPreset(p.id)}
+                    >
+                      {p.name}
+                    </button>
+                    <button
+                      className="chip-x"
+                      title={`Delete "${p.name}"`}
+                      aria-label={`Delete "${p.name}"`}
+                      onClick={() => void deleteLook(p.id)}
+                    >
+                      ✕
+                    </button>
+                    <button
+                      className="chip-x"
+                      title={`Export "${p.name}" as .bfpreset file`}
+                      aria-label={`Export "${p.name}" as .bfpreset file`}
+                      onClick={() => void store().exportUserPreset(p.id)}
+                    >
+                      ↗
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {savingLook ? (
+              <form
+                className="save-look-row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  store().saveUserPreset(lookName);
+                  setLookName("");
+                  setSavingLook(false);
+                }}
+              >
+                <input
+                  className="look-name-input"
+                  autoFocus
+                  placeholder="Name this look…"
+                  value={lookName}
+                  maxLength={32}
+                  onChange={(e) => setLookName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setSavingLook(false);
+                      setLookName("");
+                    }
+                  }}
+                />
+                <button type="submit" className="text-btn" disabled={!lookName.trim()}>
+                  Save
+                </button>
+              </form>
+            ) : (
+              <div className="save-look-row">
+                <button
+                  className="text-btn"
+                  title="Save the current values as a named look for this visual"
+                  onClick={() => setSavingLook(true)}
+                >
+                  + Save look
+                </button>
+                <button
+                  className="text-btn"
+                  title="Import a .bfpreset look file"
+                  onClick={() => void store().importUserPreset()}
+                >
+                  Import…
+                </button>
+                <GalleryLink filter="look">Browse looks in the Gallery…</GalleryLink>
+              </div>
+            )}
+          </div>
+
           <p className="section-hint">
             Complete looks — visual, colors, sync, post — in one click. Drop any .bftheme file onto
             the window to import; save yours to share.

@@ -435,12 +435,14 @@ describe("Visuals section rail", () => {
     // asymmetry with the ids above is deliberate and permanent: page ids are
     // persisted (prefs.visualsPage) and selected on by
     // scripts/gpu-pixel-matrix.mjs, so they are frozen; labels are an iterated
-    // design surface and "Motion" became "Global motion" in 2.82.0 because the
-    // per-visual `motion` group renders on Mode.
+    // design surface. Two moved in 2.82.0 with no id change: "Motion" became
+    // "Global motion" because the per-visual `motion` group renders on Mode,
+    // and "Themes" became "Looks & themes" because the user-looks save/manage
+    // surface moved onto that page.
     expect(railItems().map((b) => b.querySelector(".rail-label")?.textContent)).toEqual([
       "Mode",
       "Global motion",
-      "Themes",
+      "Looks & themes",
       "Sync",
       "Modulation",
       "Scene",
@@ -615,6 +617,107 @@ describe("Visuals section rail", () => {
     expect(head.tagName).toBe("H3");
     expect(head.classList.contains("section-title")).toBe(true);
     expect(head.closest(".panel-section")).toBeTruthy();
+  });
+
+  /**
+   * D6, and the whole reason the split is a split. The SAVE/MANAGE half of
+   * looks (your saved chips, the save form, Import…, the Gallery deep link) is
+   * occasional and is what makes a destination worth visiting, so it moved.
+   * The FACTORY style chips are the visual's own presets — the first thing
+   * touched after picking a mode, with the context header right above them
+   * naming which one is active — so they stayed. Asserting both halves in one
+   * test is deliberate: either one drifting alone is the regression.
+   */
+  it("R18: the looks save/manage surface is on Looks & themes; the factory chips stayed on Mode", () => {
+    const def = spectrumBars();
+    const style = def.styles![0];
+    act(() =>
+      useVizStore.setState({
+        presetId: "spectrum-bars",
+        userPresets: [
+          {
+            id: "u1",
+            name: "Evening",
+            presetId: "spectrum-bars",
+            params: {},
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    render(<ParamsPanel />);
+
+    // Mode keeps the visual's own presets and its description…
+    expect(screen.getByTitle(`Apply the "${style.name}" look`)).toBeTruthy();
+    expect(document.querySelector(".preset-desc")).not.toBeNull();
+    // …and none of the save/manage chrome (~70px off the tallest page).
+    expect(document.querySelector(".user-presets")).toBeNull();
+    expect(screen.queryByRole("button", { name: 'Delete "Evening"' })).toBeNull();
+    expect(screen.queryByRole("button", { name: "+ Save look" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Import…" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Looks & themes" }));
+    expect(screen.getByRole("button", { name: 'Delete "Evening"' })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "+ Save look" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Import…" })).toBeTruthy();
+    expect(screen.getByText("Browse looks in the Gallery…")).toBeTruthy();
+    // The factory chips did NOT follow.
+    expect(screen.queryByTitle(`Apply the "${style.name}" look`)).toBeNull();
+    expect(document.querySelector(".preset-desc")).toBeNull();
+    // ONE section on the page, not a second bare-headed one, and the looks
+    // hint says "this visual" rather than printing the name — R10's
+    // getByText(preset.name) throws on a second match, so this is the guard
+    // that keeps the wording honest from here.
+    expect(document.querySelectorAll(".panel-scroll .panel-section")).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Looks & themes" })).toBeTruthy();
+    expect(screen.getByText(def.name)).toBeTruthy();
+  });
+
+  /**
+   * The blob has to move with the content. Sections are filtered by
+   * `SectionDef.search` while ParamGroups filters ROWS, so a word left behind
+   * on the Mode blob routes the user to a page where the thing they typed is
+   * not there — and a word never added to the Themes blob makes the surface
+   * unreachable by search at its new address.
+   *
+   * radial-burst rather than spectrum-bars: it is one of the two presets with
+   * a `cover` param, so it renders the center-image extra — the reason
+   * "custom" had to STAY on the Mode blob even though the rest of the looks
+   * vocabulary left with the surface.
+   */
+  it("R19: search follows the looks surface to Looks & themes", () => {
+    act(() =>
+      useVizStore.setState({
+        presetId: "radial-burst",
+        userPresets: [
+          {
+            id: "u1",
+            name: "Evening",
+            presetId: "radial-burst",
+            params: {},
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    render(<ParamsPanel />);
+    const search = screen.getByLabelText("Search controls");
+
+    // Found at the new address — including by the one name on the page the
+    // user chose themselves.
+    for (const q of ["bfpreset", "gallery", "evening"]) {
+      fireEvent.change(search, { target: { value: q } });
+      expect(screen.getByRole("button", { name: "+ Save look" })).toBeTruthy();
+      // …and no longer at the old one: the Mode section did not match.
+      expect(document.querySelector(".preset-desc")).toBeNull();
+    }
+
+    // "custom" is NOT looks vocabulary — it covers the "Custom" style readout
+    // and the center-image extra ("choose custom picture"), both still on
+    // Mode. Dropping it from the blob would hide the very row whose own search
+    // text advertises it.
+    fireEvent.change(search, { target: { value: "custom" } });
+    expect(document.querySelector(".center-image-row")).not.toBeNull();
   });
 });
 
@@ -797,6 +900,10 @@ describe("destructive actions ask first (audit UI-3)", () => {
       }),
     );
     render(<ParamsPanel />);
+    // The looks surface lives on Looks & themes since 2.82.0; the subject of
+    // this test — a declined askConfirm leaves userPresets untouched — is
+    // unchanged, only its address is.
+    fireEvent.click(screen.getByRole("button", { name: "Looks & themes" }));
     fireEvent.click(screen.getByRole("button", { name: 'Delete "Evening"' }));
     await act(async () => {});
 
