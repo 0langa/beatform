@@ -653,9 +653,6 @@ export function ParamsPanel() {
     return Object.keys(merged).every((k) => (params[k] ?? defaults[k]) === merged[k]);
   });
   const activeStyleId = activeStyle?.id;
-  /** The context header's second line. A mode that ships no styles has no
-   * "Custom" to be — only a mode WITH styles can be off all of them. */
-  const hasStyles = (preset.styles?.length ?? 0) > 0;
 
   // ── RAIL DATA. Dimmed-not-hidden (F1): an unavailable destination stays
   // focusable and clickable, says why on hover, and explains itself again on
@@ -2268,9 +2265,10 @@ export function ParamsPanel() {
               credit as a scrollable ancestor. */}
           <div className="visuals-context">
             <span className="section-title">{preset.name}</span>
-            <span className="visuals-style">
-              {activeStyle?.name ?? (hasStyles ? <em className="style-custom">Custom</em> : null)}
-            </span>
+            {/* Only a real style is named here. "Custom" is the ABSENCE of one,
+                and the chips row inside the page already says so — printing it
+                in both places put the same word twice on one screen. */}
+            <span className="visuals-style">{activeStyle?.name ?? null}</span>
           </div>
 
           <div className="panel-scroll">
