@@ -72,7 +72,14 @@ vi.mock("../render/canvas2dRenderer", () => {
   return { Canvas2DRenderer };
 });
 
-import { getAnalyzer, getEngine, getRenderer, initServices, type ServiceHooks } from "./services";
+import {
+  getAnalyzer,
+  getEngine,
+  getLiveStemValues,
+  getRenderer,
+  initServices,
+  type ServiceHooks,
+} from "./services";
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { PresetDef, BgSettings } from "../render/types";
 import { DEFAULT_POST } from "../render/types";
@@ -278,6 +285,119 @@ describe("services.ts frame loop — custom preset def cache (L8)", () => {
     // by resolved def reference, not id) makes this push the fresh def.
     rafBox.cb?.(48);
     expect(setPreset).toHaveBeenLastCalledWith(defB);
+
+    dispose();
+  });
+});
+
+/**
+ * P-1 stage 3 (D7): the ONE loop-side publish the Modulation source meters
+ * need. The meter must not call stemValuesAt() itself — that allocates a
+ * second 28-key Record per frame AND resolves it at a track time the loop may
+ * not have used, producing a meter that disagrees with the render for reasons
+ * that look like a modulation bug. So the loop hands over the very object it
+ * modulated with, in the shape presentedFrames is published in: one slot, one
+ * assignment, one plain getter, no subscription and no store write.
+ */
+describe("services.ts frame loop — live stem publication (P-1 stage 3)", () => {
+  const PRESET_ID = "custom-stem-publish-test";
+
+  afterEach(() => {
+    unregisterCustomPreset(PRESET_ID);
+  });
+
+  it("publishes the loop's OWN stem record per frame and drops it on teardown", async () => {
+    registerCustomPreset({
+      id: PRESET_ID,
+      name: "S",
+      params: [],
+      wgsl: "// s",
+    } as unknown as PresetDef);
+
+    const rafBox: { cb: ((t: number) => void) | null } = { cb: null };
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((cb: (t: number) => void) => {
+        rafBox.cb = cb;
+        return 1;
+      }),
+    );
+
+    // Distinct object per call, so identity — not just deep equality — proves
+    // the meter reads what the loop resolved rather than a lookalike.
+    const records: Array<Record<string, number>> = [{ "stem1:kick": 0.25 }, { "stem1:kick": 0.75 }];
+    let frame = 0;
+
+    const dispose = initServices(
+      fakeCanvas(),
+      fakeHooks({
+        getStemValues: () => records[Math.min(frame, records.length - 1)],
+        getFrameInput: () =>
+          ({
+            timeline: EMPTY_TIMELINE,
+            basePresetId: PRESET_ID,
+            baseParams: {},
+            baseMods: [],
+            baseBg: {} as BgSettings,
+            paramsByPreset: {},
+            modsByPreset: {},
+          }) as FrameResolveInput,
+      }),
+    );
+    await flush();
+
+    rafBox.cb?.(16);
+    expect(getLiveStemValues()).toBe(records[0]);
+
+    frame = 1;
+    rafBox.cb?.(32);
+    expect(getLiveStemValues()).toBe(records[1]);
+
+    // Teardown clears it: a meter mounted after the session ended must not
+    // read a stale Record from a loop that no longer exists.
+    dispose();
+    expect(getLiveStemValues()).toBeUndefined();
+  });
+
+  it("reports undefined — never an empty object — when no stems are loaded", async () => {
+    registerCustomPreset({
+      id: PRESET_ID,
+      name: "S",
+      params: [],
+      wgsl: "// s",
+    } as unknown as PresetDef);
+
+    const rafBox: { cb: ((t: number) => void) | null } = { cb: null };
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((cb: (t: number) => void) => {
+        rafBox.cb = cb;
+        return 1;
+      }),
+    );
+
+    const dispose = initServices(
+      fakeCanvas(),
+      fakeHooks({
+        // No getStemValues hook at all — the common case.
+        getFrameInput: () =>
+          ({
+            timeline: EMPTY_TIMELINE,
+            basePresetId: PRESET_ID,
+            baseParams: {},
+            baseMods: [],
+            baseBg: {} as BgSettings,
+            paramsByPreset: {},
+            modsByPreset: {},
+          }) as FrameResolveInput,
+      }),
+    );
+    await flush();
+
+    rafBox.cb?.(16);
+    // sourceValue()'s `stems?.[source] ?? 0` treats undefined as "no signal",
+    // exactly like an unloaded stem — no branch needed at the meter.
+    expect(getLiveStemValues()).toBeUndefined();
 
     dispose();
   });

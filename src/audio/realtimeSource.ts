@@ -197,7 +197,14 @@ export class RealtimeAnalyzer {
     return this.lastUpdateTicked;
   }
 
-  /** Latest immutable-by-convention feature snapshot for DEV diagnostics. */
+  /**
+   * Latest feature snapshot. Read-only, per-frame, and MUTATED IN PLACE by
+   * update(): read the scalars you need synchronously inside your own tick and
+   * never retain the reference (or diff two "snapshots" — they are the same
+   * object). A SUPPORTED contract as of v2.83.0, where the Modulation page's
+   * source meters pull it through peekAnalyzer(); it read "for DEV
+   * diagnostics" before that.
+   */
   get features(): AudioFeatures {
     return this.pipeline.features;
   }
