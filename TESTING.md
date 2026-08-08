@@ -236,7 +236,7 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   PASS: no recovery bar.
 - [✅] **Shortcuts on a non-US keyboard.** PHYSICAL PASS 2026-07-26 by the
   owner on a real QWERTZ keyboard, v2.49.0: P/N/S/0/H and Esc all behave,
-  AND typing the AltGr chords `@ [ ] \ ~ EUR |` into the Visuals
+  AND typing the AltGr chords `@ [ ] \ ~ EUR |` into the Visuals dock's
   search box inserted them as literal text with no mode switch and no
   Stage toggle (the AltGr = ctrl+alt guard from v2.44.1 holding). This
   supersedes the spoof below and CLOSES audit finding HW-2 — the physical
@@ -264,6 +264,34 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
 
 ## ⬜ Still to test
 
+- [ ] **Visuals dock + section rail (new in v2.81.0).** Not yet run on
+      device. Open with **G** and check, in one pass:
+      **Letterbox** — the canvas gives up the dock's width instead of
+      hiding under it, at Fill and at 16:9; drag the dock's left edge
+      end-to-end on a feedback mode (Echo Trails) and the trails must NOT
+      strobe black — the picture snaps once, on release. Keyboard on the
+      same edge: arrows move ±16 px, Shift ±48, Home/End hit 380/760.
+      **Nothing floats over it** — press **T** (timeline stops at the
+      dock's edge), raise a toast (it centres in the canvas column, not the
+      window), drag a file onto the window (the drop overlay stops at the
+      dock), and switch the perf overlay to both right-hand corners with
+      the dock at 760.
+      **Rail** — eight destinations (Mode · Motion · Themes · Sync ·
+      Modulation · Scene · Text · Live); clicking one swaps the page;
+      arrow keys walk it and switch as they go; the whole rail is ONE Tab
+      stop. Modulation/Scene/Live show counts once you have routes,
+      overlay layers or MIDI bindings. On **Voice Orb** or **LED Matrix** —
+      shaders that read none of `u.spin`/`u.pulse`/`u.detail` — the
+      **Motion** destination is dimmed and says why on hover, and is still
+      clickable.
+      **Stage round-trip** — **S** hides the dock, **S** again brings it
+      back exactly as it was (the pre-v2.81.0 bug closed it for good).
+      **Idle** — play a track and hold the pointer still: the top bar and
+      player bar fade, the dock and its grip stay lit.
+      **Library grip** — open the library (**Q**) with the dock CLOSED and
+      drag its right edge; it was unresizable in that state before.
+      **Persistence** — pick a page, resize, relaunch: both come back.
+
 - [✅] **Startup update prompt (new in v2.45.0).** PASS 2026-07-24, owner
   hardware: installed 2.45.0 offered 2.45.1 in the startup dialog and
   the full install/restart flow completed ("auto updater and popup
@@ -285,7 +313,9 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   override and restored shared Animated.
 - [✅] **Custom center image (new in v2.46.0).** PASS 2026-07-26 on installed
   v2.51.0. With no-cover `track5.wav`, Radial Burst → Visual → Center
-  image → `test-bg.png` showed the magenta/cyan grid; ✕ restored the
+  image (**since v2.81.0 that path is Visuals (G) ▸ Mode ▸ Image ▸ Center
+  image** — the five tabs were replaced by the section rail) →
+  `test-bg.png` showed the magenta/cyan grid; ✕ restored the
   `Track cover art` fallback. H.264/AAC 1280×720/30 fps export
   `radial-center.mp4` decoded with the custom center matching preview.
   Bass Circle remained independent until separately assigned; with Match
@@ -306,14 +336,18 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
       screenshot attempt was inconclusive because the installed build predated the
       feature.
 - [✅] **Preferences gear discoverability (new in v2.45.0).** PASS
-  2026-07-26 on installed v2.51.0: the gear sits between the Visuals button
-  toggle and Keyboard shortcuts; its tooltip/accessibility description is
+  2026-07-26 on installed v2.51.0: the gear sits between the dock toggle
+  and Keyboard shortcuts; its tooltip/accessibility description is
   exactly `Preferences — autosave, performance, updates (Ctrl+,)`;
   clicking opened Preferences and Esc closed it. (The 2.51.0 run verified
   the then-current `App settings — …` wording; the string was renamed in
   v2.80.0 and this assertion tracks the shipping app, byte for byte —
   it is duplicated at `App.tsx` top bar and help modal, and those three
-  copies must never diverge again.)
+  copies must never diverge again. **v2.81.0 note, unverified on device:**
+  the neighbour to its left is no longer a 34 px icon — the dock toggle is
+  now a labelled `.ghost-btn` reading **Visuals**, tooltip
+  `Visuals — every control for the current visual (G)`. Order is unchanged;
+  re-check the gear's position on the next installed run.)
 
 - [✅] **PNG sequence export.** PASS 2026-07-23 on v2.44.1: a 5 s,
   720p30 fixture exported 150 PNGs (360,833,706 bytes) to
@@ -401,7 +435,7 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   `Orb core`, imported the file, and recovered all six layers with
   `Orb core` blend `Add`. Saving/loading
   `C:\bf-test\out\builder-project.bfproj` again restored the same stack.
-  Select the Builder mode → Visual tab →
+  Select the Builder mode → Visuals (G) ▸ **Mode** →
   add a layer from the picker (e.g. Orb), change its blend to Add →
   "Export .bfbuilder" → `C:\bf-test\out\stack.bfbuilder`. Delete/modify
   layers, then Import… the file back. PASS: the stack (incl. the added

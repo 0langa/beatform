@@ -17,12 +17,17 @@ GitHub is the only channel and everything is free forever.
    reads its tags, detects BPM + key, and locks grid-synced visuals to the
    real beats.
 3. **Pick a look.** Sixteen visual modes across the top; each ships 5–7
-   curated styles. Or open _Visuals ▸ Visual ▸ Themes_ and click a factory
+   curated styles. Or open _Visuals ▸ Themes_ and click a factory
    theme — Cover Story, Hyperlane, Chrome Sunset, Ion Storm, and more — for a
    complete tuned setup in one click.
-4. **Make it yours.** _Layers_ adds your title (auto-filled from tags), logo,
-   or album art. _Sync_ chooses what drives the motion (kicks, bass, melody,
-   voice…). _Post_ adds bloom, grain, vignette.
+4. **Make it yours.** Press **G** for **Visuals**, the dock on the right —
+   the picture makes room for it, so you can tune while you watch. Its
+   section rail is the whole app in eight stops: _Mode_, _Motion_,
+   _Themes_, _Sync_, _Modulation_, _Scene_, _Text_, _Live_. _Scene ▸
+   Layers_ adds your title (auto-filled from tags), logo or album art;
+   _Sync_ chooses what drives the motion (kicks, bass, melody, voice…);
+   _Scene ▸ Post_ adds bloom, grain and vignette; _Modulation_ wires any
+   audio feature straight onto a knob.
 5. **Export.** One MP4 (H.264/HEVC/AV1), a transparent WebM (VP9 + alpha), a
    PNG sequence with alpha, or a ProRes 4444 `.mov` for your editor. The same
    project definition renders on an indexed export timeline; live reaction and

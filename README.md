@@ -36,8 +36,14 @@ Free and open source. Built to become a professional-grade tool for producers an
   layer compositor: stack up to twelve layers, each with its own blend mode,
   color and parameters; share stacks as `.bfbuilder` files
 - Every mode: 5-7 curated factory **styles**, curated params + full **Advanced** section
-  (~300 knobs app-wide), plain-language **hint** for every setting (tooltip +
+  (~300 knobs app-wide), plain-language **hint** for every control (tooltip +
   live hint bar), all persisted per mode
+- **Visuals dock** (press **G**): a persistent, keyboard-resizable right-hand
+  column the canvas letterboxes beside rather than hiding under — tune while
+  you watch. One vertical **section rail** of eight destinations (Mode,
+  Motion, Themes, Sync, Modulation, Scene, Text, Live), each a page; a header
+  naming the current mode and style; a search box that finds any control by
+  name across every page. Stage mode (**S**) hides it entirely
 - **User looks**: save your own named looks per visual mode, share them as
   `.bfpreset` files (import/export)
 - **Gallery**: browse a public, curated collection of community looks and
@@ -139,9 +145,9 @@ Free and open source. Built to become a professional-grade tool for producers an
   MIDI controller, with optional **beat-quantized takeover** (the switch lands
   on the next beat/bar, Ableton-style); **Stage mode** (**S**) gives a clean
   chrome-free full-bleed output with blackout and a mode-name HUD; **Web MIDI**
-  maps knobs to any setting and notes to modes (local, no drivers). Preview-only
+  maps knobs to any parameter and notes to modes (local, no drivers). Preview-only
   — never affects exports
-- Product chrome: auto-hides while playing, keyboard shortcuts (press H — letter/digit keys only, so they work on every keyboard layout),
+- Product chrome: auto-hides while playing (the Visuals dock stays lit), keyboard shortcuts (press H — letter/digit keys only, so they work on every keyboard layout),
   hover-scrub seek bar, onboarding empty state, GPU-loss auto-recovery
 - Three synthesized demo tracks (120 BPM house / 174 BPM DnB / 70 BPM ambient)
   for instant cross-style testing without files

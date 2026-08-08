@@ -11,6 +11,77 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.81.0] - 2026-08-08
+
+### Changed
+
+- **The panel on the right is a dock now — the picture makes room for it
+  instead of disappearing under it.** It used to float over the visual, so
+  tuning a look meant covering the thing you were tuning. It is now a
+  permanent right-hand column and the visual letterboxes beside it: smaller,
+  never hidden. You can watch a slider land while you are still dragging it.
+  - Drag the dock's left edge to resize it (380–760 px, remembered per
+    install). The edge takes the keyboard too — focus it and the arrow keys
+    move it, Shift for bigger steps, Home/End for the extremes.
+  - Narrow the window and the dock gives ground before the picture does.
+  - **Stage mode** (**S**) is still the chrome-free full-bleed output and
+    still hides the dock completely. The difference: leaving Stage now gives
+    it back exactly as you left it, instead of quietly closing it and
+    costing you your workspace every time you demo something.
+- **One way to get around: a section rail instead of tabs.** The five tabs
+  (Visual / Sync / Scene / Text / Live) and the sections that folded up
+  individually inside them were two navigation models stacked on each other,
+  and neither of them told you where anything lived. Both are gone, replaced by
+  a single list of eight destinations down the side of the dock —
+  **Mode**, **Motion**, **Themes**, **Sync**, **Modulation**, **Scene**,
+  **Text**, **Live**. Each one is a page: click it and it is on screen. No
+  control was removed, renamed or moved to a different concept; the same
+  sections simply sit behind fewer clicks.
+  - **Modulation is a destination of its own.** It used to be a section
+    below the whole of Sync, on the Sync tab — which is where most people
+    never found it. Routing audio, stems and beat-locked LFOs onto
+    individual controls is one of the best things the app does, so it now
+    has its own name on the rail, with a badge counting your active routes.
+    This is the single change the whole redesign was for.
+  - **Scene** and **Live** carry badges too — overlay layers, and MIDI
+    bindings.
+  - A destination the current visual cannot use — **Motion** on a mode with
+    no rotation, pulse or detail — is dimmed rather than hidden, and says
+    why when you hover it.
+  - The rail is **one** Tab stop, not eight: arrow keys walk it and switch
+    page as they go, Home/End jump to the ends.
+  - The page you were last on is remembered. Upgrading puts you on the page
+    matching the tab you last used.
+- **A header that always says what you are editing** — the current mode's
+  name, and the name of its style when one is exactly applied. It stays put
+  while the page scrolls.
+- The **search box** now spans the full width of the dock, above both the
+  rail and the page, and behaves as before: it finds a control by name
+  across everything, and results ignore the rail entirely.
+- **The music library got its own resize grip.** It was only resizable while
+  the panel on the right happened to be open, because the two shared one
+  handle and one width. They are separate now.
+- **The panel is called "Visuals".** 2.80.0 renamed it from "the settings
+  panel" to **Inspector**; this release renames it once more, because
+  "Inspector" names a kind of window rather than what the button opens.
+  This is where you shape how the whole thing looks, so it is **Visuals** —
+  on the top-bar button, the heading, the shortcut list under **H**, and the
+  user guide. The shortcut is still **G**. The **Ctrl+,** dialog is still
+  **Preferences** and is untouched. If you read 2.80.0's notes: yes, that is
+  two renames in two releases, and this is the name it keeps.
+
+### Removed
+
+- **Sections no longer fold up one by one.** The rail does that job now, and
+  keeping both meant two ways to hide the same controls. The **parameter
+  groups** on the Mode page (Shape, Color, Motion, Glow, Reaction…) still
+  fold and still remember it — only the section-level folds are gone, and
+  the app forgets the old ones on first launch.
+- Worth knowing if you move between versions: running a build older than
+  2.81.0 once clears the remembered page and dock width, and the old section
+  folds do not come back either. Projects, looks, themes and everything in
+  Preferences are unaffected.
+
 ## [2.80.0] - 2026-08-08
 
 ### Changed
@@ -2172,7 +2243,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.80.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.81.0...HEAD
+[2.81.0]: https://github.com/0langa/beatform/compare/v2.80.0...v2.81.0
 [2.80.0]: https://github.com/0langa/beatform/compare/v2.79.0...v2.80.0
 [2.79.0]: https://github.com/0langa/beatform/compare/v2.78.0...v2.79.0
 [2.78.0]: https://github.com/0langa/beatform/compare/v2.77.0...v2.78.0
