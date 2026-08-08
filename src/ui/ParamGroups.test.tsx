@@ -281,10 +281,12 @@ describe("ParamGroups: the driven mark", () => {
   });
 
   it("D-M2: costs zero new DOM — no fourth grid child, no third pill", () => {
-    // `.param-row` is a fixed `76px minmax(0,1fr) 44px` grid: label, slider,
-    // readout. A badge element here would break label alignment on every
-    // surface that renders a param row, and add a `text-clip` candidate for
-    // __auditUI at the 380px dock floor. Same count driven and not.
+    // `.param-row` is a three-track grid — label, slider, readout — whose
+    // label column is `--row-label-w` inside the dock (76px, 104px past the
+    // container step) and a flat 76px everywhere else. A badge element here
+    // would break label alignment on every surface that renders a param row,
+    // and add a `text-clip` candidate for __auditUI at the 380px dock floor.
+    // Same count driven and not.
     const marked = view({ driven: new Set(["size"]) });
     expect(slot("size")!.querySelector(".param-row")!.children.length).toBe(3);
     expect(slot("Bloom")!.querySelector(".param-row")!.children.length).toBe(3);
