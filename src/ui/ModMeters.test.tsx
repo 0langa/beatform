@@ -549,15 +549,27 @@ describe("T19 — structural: the UI cannot become a second evaluator", () => {
   const LAG_EVAL = "route" + "Value";
   const FORBIDDEN_IN_UI = [EVAL_STATE, "create" + EVAL_STATE, LAG_EVAL];
 
-  it("no file under src/ui names the engine's caller-owned lag state or its evaluator", () => {
+  /** Comments out, code in. The guard is about what the UI CALLS, not what it
+   *  is allowed to explain — and the clearest place to record why the UI must
+   *  never touch the lag evaluator is a docblock that has to name it. Scanning
+   *  raw text banned the explanation along with the offence, so ModulationPage
+   *  tripped this on a comment saying exactly what this test enforces.
+   *  Stripping first keeps the sharp edge (an import or a call still hits)
+   *  without making the rule unstatable in prose. */
+  const stripComments = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+  it("no file under src/ui calls the engine's caller-owned lag state or its evaluator", () => {
     expect(UI_SOURCES.length).toBeGreaterThan(10); // the scan is live
     const hits: string[] = [];
     for (const [path, src] of UI_SOURCES) {
-      src.split("\n").forEach((line, i) => {
-        for (const token of FORBIDDEN_IN_UI) {
-          if (line.includes(token)) hits.push(`${path}:${i + 1}: ${token}`);
-        }
-      });
+      stripComments(src)
+        .split("\n")
+        .forEach((line, i) => {
+          for (const token of FORBIDDEN_IN_UI) {
+            if (line.includes(token)) hits.push(`${path}:${i + 1}: ${token}`);
+          }
+        });
     }
     // A UI call through the lag evaluator with the loop's state would advance
     // every lagged route's envelope twice per frame and make the loop see
