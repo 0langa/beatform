@@ -3959,8 +3959,10 @@ kbd {
    Modulation page, which is not the page where you edit the knob.
 
    Mechanism is a class on `.param-slot` and nothing else, mirroring
-   `.is-advanced` above: `.param-row` is a fixed `76px minmax(0, 1fr) 44px`
-   grid, a fourth child would break the label column on every surface that
+   `.is-advanced` above: `.param-row` is a THREE-track grid whose label column
+   is now `--row-label-w` (v2.84.0 — 76px, 104px above the step; the container
+   contract is one block at the END of this file), still exactly three
+   children — a fourth would break the label column on every surface that
    renders a param row, and every new leaf is one more `text-clip` candidate
    for `__auditUI` at the 380px dock floor.
 
@@ -3973,9 +3975,10 @@ kbd {
 .param-slot.is-driven {
   /* Negative margin + equal padding, never a real border and never a layout
      box: the tint reaches into the group body's own 9px left padding, so a
-     driven row's 76px label column stays pixel-aligned with the undriven rows
-     above it. 7 < 9, so nothing touches the group rail and nothing can
-     overflow-x at the 380px floor. */
+     driven row's label column stays pixel-aligned with the undriven rows above
+     it at every dock width (the column is a token, and every row in the group
+     reads the same one). 7 < 9, so nothing touches the group rail and nothing
+     can overflow-x at the 380px floor. */
   margin-left: -7px;
   padding-left: 7px;
   border-radius: var(--radius-sm);
@@ -3989,9 +3992,9 @@ kbd {
   );
 }
 
-/* The label carries the mark's colour — at 76px it is the fastest read on the
-   row, and it is the one leaf every control shape has (a toggle and an enum
-   row have no slider track to tint). Written AFTER
+/* The label carries the mark's colour — in a 76-104px column it is the fastest
+   read on the row, and it is the one leaf every control shape has (a toggle
+   and an enum row have no slider track to tint). Written AFTER
    `.param-slot.is-advanced .row-label` and at equal specificity, so on a knob
    that is both expert-tier and driven the driven tint wins on source order.
    That precedence is deliberate: the tier dimming says "extra", the mark says
@@ -4012,3 +4015,181 @@ kbd {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent);
 }
+
+/* ---------- page layout pass (H4, v2.84.0) ---------- */
+
+/*
+ * THE DOCK'S ONLY CONTAINER CONTEXT.
+ *
+ * `.visuals-page` is the query container; `.panel-scroll`, its child, carries
+ * the tokens. That split is not stylistic: a query container is EXCLUDED from
+ * its own query's subject set, so declaring and overriding `--row-label-w` on
+ * `.visuals-page` computes to nothing at all — the rule matches and the token
+ * stays 76px at container 594.7px. The token must live on a DESCENDANT.
+ *
+ * Not `.panel-scroll` as the container either: it is `overflow-y: auto`, so
+ * its content box gains or loses the 10px thin scrollbar whenever the page
+ * crosses the overflow boundary — a query that changes row height could then
+ * toggle its own container width. `.visuals-page` has no scrollbar and takes
+ * its width from flex.
+ *
+ * NAMED, ALWAYS. `.stage` is already a container (`container-type: size`) and
+ * an unnamed `@container` matches the nearest container of ANY type. The name
+ * is also what keeps every rule below inert in ExportDialog, SettingsDialog
+ * and TimelinePanel, which render `.param-row` / `.select-row` / `.field`
+ * outside the dock and must keep the historical 76px / 44px columns.
+ * Container queries add NO specificity, so the selector shape inside a
+ * `@container` block must match the base rule exactly — `.visuals-page
+ * .angle-row` (0,2,0) would beat `@container { .angle-row }` (0,1,0) at every
+ * width and make the whole thing a silent no-op.
+ *
+ * WHAT THIS QUERY MAY CHANGE: the label column's width, and whether the angle
+ * row's slider sits beside its label or under it. NOTHING ELSE — and in
+ * particular NO TWO-COLUMN OUTCOME, at any width. Measured: the container is
+ * 214.7 / 314.7 / 594.7px at dock 380 / 480 / 760 (= dock − 166; the
+ * scroller's content column is dock − 203 = 177 / 277 / 557). A
+ * `repeat(auto-fill, minmax(360px, 1fr))` pair needs 720px it can never have
+ * and a 560px threshold can never fire. Extra dock width goes into the range
+ * track and the selects' ellipsis. Do not reintroduce a wide variant.
+ *
+ * COSTS, all checked before this landed. `container-type: inline-size` implies
+ * `contain: layout inline-size`, so: (1) `.visuals-page` becomes the
+ * containing block for absolutely-positioned descendants — the only one in
+ * here is `.knob`, the Switch thumb, which resolves against `.switch`'s own
+ * `position: relative`, so nothing moves; (2) its inline size must not depend
+ * on its contents, and it is already `flex: 1; min-width: 0`; (3) it creates a
+ * stacking context — the dock's z-index work lives on ancestors
+ * (`.params-panel` z-8, the resize handle z-9), never inside. CONSEQUENCE FOR
+ * FUTURE WORK: a popover or tooltip rendered INSIDE the page is now clipped to
+ * this column. Render it in the panel, not the page.
+ *
+ * DEGRADATION: every rule below overrides a base rule that still stands alone.
+ * Without container-query support the label column is 76px and the angle row
+ * is inline — exactly v2.83.0.
+ */
+.visuals-page {
+  container-type: inline-size;
+  container-name: visuals;
+}
+
+/* The label column as a token. 76px is the historical value and the floor. */
+.panel-scroll {
+  --row-label-w: 76px;
+}
+
+.panel-scroll .param-row {
+  grid-template-columns: var(--row-label-w) minmax(0, 1fr) 44px;
+}
+
+.panel-scroll .select-row {
+  grid-template-columns: var(--row-label-w) minmax(0, 1fr);
+}
+
+.panel-scroll .angle-row {
+  grid-template-columns: var(--row-label-w) 24px minmax(0, 1fr) 44px;
+}
+
+/* Lyrics position / Audiogram accent share the param label column so a page of
+   mixed rows reads as ONE column of labels — so they take the step too, or the
+   two surfaces stop aligning above dock 466. They only ever gain width. */
+.panel-scroll .field {
+  grid-template-columns: var(--row-label-w) minmax(0, 1fr);
+}
+
+/* ONE STEP, DERIVED. A grouped row's track is `C − label − 116` (44px value
+ * column, two 9px `.row` gaps, 54px of group-body chrome), so an 80px track —
+ * where a 13px thumb finally has more travel than thumb — needs
+ * `label <= C − 196`. At the corpus number that is C >= 300 (dock 466).
+ *
+ * 104px IS the corpus number, measured over all 458 registry params at the
+ * panel's real 12px font: 44 of 433 labels (10.2%) wrap at 76px and EXACTLY
+ * ZERO wrap at 104px, on all 15 non-Builder presets. (Builder Studio's long
+ * compound names never reach a `.row-label` — BuilderPanel prints the short
+ * per-layer names; the compound strings live in the modulation target select,
+ * the search index and MIDI binding names. No label column needs 178px.)
+ *
+ * `.row-label` wraps rather than truncating (`white-space: normal`), which is
+ * why the auditor never reported this: the row silently grew 16px per extra
+ * line instead of clipping. And because 76px was a CONSTANT, the same labels
+ * wrapped at content 177 and at 557 — extra dock width bought the label
+ * literally nothing before this rule.
+ *
+ * No second step above 104px: past it the extra width buys the label nothing
+ * measurable and belongs entirely to the track. Do not add one.
+ */
+@container visuals (min-width: 300px) {
+  .panel-scroll {
+    --row-label-w: 104px;
+  }
+}
+
+/* THE ANGLE ROW IS THE TIGHT ONE, AND IT WAS BROKEN.
+ *
+ * It carries a 24px dial and a fourth gap on its own 7px gutter, so its fixed
+ * chrome is 165px against a 161px grouped row at the 380px dock floor: the
+ * `minmax(0, 1fr)` track collapsed to ZERO and `__auditUI` reported a real
+ * `text-clip` — the range input's own thumb, 13px, in a zero-width track — on
+ * all six built-ins that declare an angle param. Two of them (radial-burst
+ * "Angle", particles "Direction") are CURATED tier, i.e. reachable with no
+ * disclosure opened. This block is what takes that from 1 issue to 0; the
+ * matrix harness's new eight-page leg is what keeps it there.
+ *
+ * Below the threshold the row STACKS: label + dial + readout on line one, the
+ * slider full-width underneath. Pure `grid-column` / `grid-row` on the four
+ * children `AngleRow` already renders — no new element, no new prop — so
+ * `.param-slot.is-driven`, the double-click editor and every non-dock consumer
+ * of the kit are untouched, and `.param-row` still has exactly three children.
+ *
+ * 350.98, not the bare derivation (track = C − label − 143 >= 80 puts it at
+ * 327): between 327 and 351 the inline track is 80-104px against a dial that
+ * is a pointer target as well as a readout. 351 is where it measured
+ * comfortable. It is a max-width, so a no-container browser gets the inline
+ * base rule.
+ */
+@container visuals (max-width: 350.98px) {
+  .panel-scroll .angle-row {
+    grid-template-columns: minmax(0, 1fr) 24px auto;
+    row-gap: 2px;
+  }
+  .panel-scroll .angle-row > .dial {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .panel-scroll .angle-row > .row-value,
+  .panel-scroll .angle-row > .row-value-input {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .panel-scroll .angle-row > .slider {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* FROZEN, DELIBERATELY UNIMPLEMENTED — BACKLOG H15, owner decision Q1.
+ * Same treatment as H2's group-subset argument: the spec lives at its
+ * insertion point so nobody re-derives it, and no orphan surface ships.
+ *
+ * Below C 300 (dock 466) NO single-line layout works for an ordinary row
+ * either: the grouped row is 161px and the fixed chrome is 138px, so even a
+ * zero-width label leaves 85px, and shrinking the value column to 36 and the
+ * gaps to 7 only reaches 35px of track. Measured effect of stacking every row
+ * at dock 380: slider 23 -> 161px, enum select 76 -> 161px (the widest
+ * registry option, "Bass / mid / treble", needs 126.7px and stops
+ * truncating), wrapped labels 3-5 -> 0. Price: row height 16 -> 22px and
+ * +9.9% of Mode-page scroll on radial-burst (1577 -> 1733); above the step it
+ * REVERSES (dock 480: 1531 -> 1489, -2.7%).
+ *
+ * It is not shipped because 23px is ugly but is not an auditor failure, and
+ * changing the row idiom for the whole 380-465 band is a taste call, not a
+ * defect fix. If the owner says yes, this is the entire change:
+ *
+ *   @container visuals (max-width: 299.98px) {
+ *     .panel-scroll .param-row { grid-template-columns: minmax(0,1fr) auto; row-gap: 2px; }
+ *     .panel-scroll .param-row > .row-value,
+ *     .panel-scroll .param-row > .row-value-input { grid-column: 2; grid-row: 1; }
+ *     .panel-scroll .param-row > .slider { grid-column: 1 / -1; grid-row: 2; }
+ *     .panel-scroll .select-row,
+ *     .panel-scroll .field { grid-template-columns: minmax(0,1fr); row-gap: 2px; }
+ *   }
+ */
