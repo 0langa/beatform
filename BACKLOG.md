@@ -410,12 +410,35 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       port bases, isolated WV2 profiles, PID-tree-only kills, socket-death
       rejection; two harnesses re-proven on device post-port. Full
       scenario-registry framework deliberately deferred.
-- [ ] F4 Close the invariant-coverage holes: overlay-compose chokepoint
-      direct tests, exportCore determinism test, GPU matrix
+- [ ] F4 Close the invariant-coverage holes: ~~overlay-compose chokepoint
+      direct tests~~, ~~exportCore determinism test~~, GPU matrix
       param-extreme + post/motion variants, parser fuzzing (fast-check +
       one cargo-fuzz target on the GLSL translator). DONE in v2.73.0:
       MIDI illegal-invocation regression stub (mutation-checked),
       `no-restricted-globals` for bare confirm/alert/prompt.
+      DONE 2026-08-08 (first two holes, 26 tests, every one mutation-checked):
+      `src/render/overlayCompose.test.ts` (recording-2D-context traces over
+      `rasterizeOverlay` + `composeOverlayFrame`: determinism, no wall
+      clock/randomness, equal-frame-key ⇒ equal draw, segment-shift
+      equivalence, resolution independence, font-probe degrade, stale-asset
+      re-decode), `src/state/liveOverlayCompose.test.ts` +
+      `src/export/exportCoreDeterminism.test.ts` (the two callers asserted
+      against the SAME compose tuple), and the export walk proven identical
+      across two runs under a moving wall clock, with `createModEvalState`
+      counted per run and the 60 Hz feedback walk proven to hold its own lag
+      memory. Remaining: the GPU-matrix variants and the fuzzing.
+- [ ] F4a **DEFECT found by F4, UNFIXED** — a SEGMENT export (Canvas-loop
+      mode) does not shift lyric WORD timings, so the karaoke wipe diverges
+      from the preview. `videoExporter.ts` (~line 347) rebuilds each line as
+      `{ ...l, t: l.t - segment.start, end: l.end - segment.start }`; `words`
+      rides the spread in unshifted TRACK time while `lyricProgressAt` reads
+      it against CLIP time. Repro: line t=60..64 with word tags, segment
+      start 58, `anim: "wipe"` — preview progress sweeps 0.159 → 0.966 across
+      t=60.5..63.9 while the export resolves 0 at every one of those frames,
+      i.e. the whole line renders dim with no sung fill. Fix is to map
+      `words` (`t`, `end`) with the same offset; needs a regression test at
+      the videoExporter level. Compose-side contract already pinned by
+      "the karaoke wipe reads WORD times" in `overlayCompose.test.ts`.
 - [x] F5 DONE 2026-08-06 (wave 0) — `src/render/wgslLib.ts`; ACES/hsl2rgb/
       color-controls/palette sites consolidated byte-identically
       (shaderGolden zero snapshot updates; device GPU matrix 137 cases
