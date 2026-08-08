@@ -676,6 +676,7 @@ export const oscilloscope: PresetDef = {
       key: "gridLevel",
       label: "Grid level",
       group: "backdrop",
+      tier: "curated",
       min: 0,
       max: 0.3,
       step: 0.01,

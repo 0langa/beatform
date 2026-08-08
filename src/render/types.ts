@@ -40,6 +40,17 @@ interface ParamSpecBase {
    */
   order?: number;
   /**
+   * TIER OVERRIDE. `params` and `advanced` are the ABI: allParams packs them
+   * in that order and a spec's shader accessor index IS its position, so a
+   * spec may NEVER be moved between the two arrays to change which tier it
+   * renders in -- that repacks the whole buffer and moves every GPU pixel
+   * hash. This flag re-tiers in place at zero ABI cost.
+   *
+   * "curated" = render above this group's Advanced disclosure even though the
+   * spec lives in `advanced`. Read by advancedKeys() and by nothing else.
+   */
+  tier?: "curated";
+  /**
    * DISPLAY-side slider taper. "log" maps thumb position to value
    * logarithmically, so a wide multiplicative range (Hz edges, zoom/scale
    * factors) spends equal track on equal RATIOS instead of cramming all the
@@ -151,7 +162,7 @@ export const PARAM_GROUPS: ParamGroupDef[] = [
   {
     id: "backdrop",
     label: "Backdrop",
-    hint: "Behind and around it — wash, fog, vignette",
+    hint: "Behind and around this visual — wash, fog, vignette. The project background lives on Scene.",
     rank: 80,
   },
 ];
@@ -286,12 +297,20 @@ export function paramSpecMap(preset: PresetDef): Map<string, ParamSpec> {
   return map;
 }
 
-/** Keys that live in `advanced` — the expert tier. Memoized per preset def. */
+/**
+ * Keys in the EXPERT tier: they live in `advanced` and were not re-tiered by
+ * a `tier: "curated"` override. Memoized per preset def — the WeakMap is keyed
+ * on preset identity, which is what keeps Builder Studio's mint-on-edit
+ * correct.
+ *
+ * The array is the ABI, the flag is the tier: a spec is never moved between
+ * `params` and `advanced` for presentation reasons (see ParamSpecBase.tier).
+ */
 const advancedKeyCache = new WeakMap<PresetDef, Set<string>>();
 export function advancedKeys(preset: PresetDef): Set<string> {
   let set = advancedKeyCache.get(preset);
   if (!set) {
-    set = new Set((preset.advanced ?? []).map((p) => p.key));
+    set = new Set((preset.advanced ?? []).filter((p) => p.tier !== "curated").map((p) => p.key));
     advancedKeyCache.set(preset, set);
   }
   return set;

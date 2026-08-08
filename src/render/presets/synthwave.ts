@@ -611,6 +611,7 @@ export const synthwave: PresetDef = {
       key: "fog",
       label: "Atmospheric fog",
       group: "backdrop",
+      tier: "curated",
       min: 0,
       max: 1.5,
       step: 0.05,

@@ -602,6 +602,7 @@ export const tunnelRings: PresetDef = {
       key: "tileLevel",
       label: "Tile level",
       group: "backdrop",
+      tier: "curated",
       min: 0,
       max: 0.4,
       step: 0.01,
