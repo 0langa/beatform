@@ -4148,7 +4148,16 @@ kbd {
  */
 @container visuals (max-width: 350.98px) {
   .panel-scroll .angle-row {
-    grid-template-columns: minmax(0, 1fr) 24px auto;
+    /* Track 3 is a FIXED 44px, not `auto`. Content-sizing it made the readout
+       grow with its own digit count (10.5px at 0°, 22.9px at 180°), which
+       slides the dial 6.2px left as the value crosses 9/10 and 99/100. Dial.set
+       re-reads getBoundingClientRect on every pointermove, so a stationary
+       pointer that had just produced 100 read 88.1 after the shift — an 11.9°
+       backward kick, and 88 narrows the column again: bistable oscillation
+       while dragging. Measured, and invisible to __auditUI. 44px is also the
+       column every other row's readout sits in, which is D4's own alignment
+       argument applied here. */
+    grid-template-columns: minmax(0, 1fr) 24px 44px;
     row-gap: 2px;
   }
   .panel-scroll .angle-row > .dial {
