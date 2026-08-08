@@ -35,17 +35,21 @@ Free and open source. Built to become a professional-grade tool for producers an
   **Bass Circle** (circular bass visualizer with album art), and **Builder** — a real
   layer compositor: stack up to twelve layers, each with its own blend mode,
   color and parameters; share stacks as `.bfbuilder` files
-- Every mode: 5-7 curated factory **styles**, curated params + full **Advanced** section
-  (~300 knobs app-wide), plain-language **hint** for every control (tooltip +
-  live hint bar), all persisted per mode
+- Every mode: 5-7 curated factory **styles**, plus its controls sorted into
+  groups (~430 app-wide). Each group leads with the controls that change the
+  look and folds its internal constants behind its own **expert line**, closed
+  by default and counting what you have changed; **Show every control** opens
+  them all at once. Plain-language **hint** for every control (tooltip + live
+  hint bar), all persisted per mode
 - **Visuals dock** (press **G**): a persistent, keyboard-resizable right-hand
   column the visual runs full width behind — tune while
-  you watch. One vertical **section rail** of eight destinations (Mode,
-  Motion, Themes, Sync, Modulation, Scene, Text, Live), each a page; a header
-  naming the current mode and style; a search box that finds any control by
-  name across every page. Stage mode (**S**) hides it entirely
-- **User looks**: save your own named looks per visual mode, share them as
-  `.bfpreset` files (import/export)
+  you watch. One vertical **section rail** of eight destinations (Mode, Global
+  motion, Looks & themes, Sync, Modulation, Scene, Text, Live), each a page; a
+  header naming the current mode and style; a search box that finds any control
+  by name across every page, expert controls included. Stage mode (**S**) hides
+  it entirely
+- **User looks**: save your own named looks per visual mode on _Looks &
+  themes_, share them as `.bfpreset` files (import/export)
 - **Gallery**: browse a public, curated collection of community looks and
   themes right in the app (top-bar button) — every entry pinned to an
   immutable version and checksum-verified before it is ever parsed; add a

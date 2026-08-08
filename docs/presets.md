@@ -74,6 +74,22 @@ Params become WGSL accessors `P_<key>()`. A param with `min:0, max:1,
 step:1` renders as a toggle. `styles` values are partial overrides —
 machine-check yours against the schema like `themes.test.ts` does.
 
+### Groups and tiers
+
+Give every param a `group` (`shape`, `color`, `motion`, `reaction`, `glow`,
+`image`, `camera`, `backdrop`, or one your preset declares); anything without
+one lands in **More**. The panel renders one collapsible section per group,
+and inside it the `params` entries sit above the group's expert line while the
+`advanced` entries hide behind it.
+
+**The two arrays are the ABI.** `allParams` packs `params` then `advanced` in
+declaration order, and a spec's position _is_ its shader accessor index — move
+one between the arrays and every GPU pixel hash shifts. To show an `advanced`
+spec above the expert line instead, set `tier: "curated"` on it in place; that
+changes nothing about packing. Every group must have at least one control
+above its expert line, or it renders as a bare header — `curation.test.ts`
+enforces that and `abiOrder.test.ts` catches a moved spec in seconds.
+
 ## Audio uniforms (`u.`)
 
 | Field                                                                | Meaning                                                                                                                                                                                                                                                                                   |
