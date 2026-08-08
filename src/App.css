@@ -1682,9 +1682,16 @@ button.row-value:focus-visible {
   transform: rotate(90deg);
 }
 
+/* __auditUI's text-clip check reads a LEAF's own scrollWidth: no scrollable
+   ancestor saves it, so this had to gain overflow handling the moment it sat
+   beside a count on a body narrowed by the group rail (P-9). */
 .group-name {
   flex: 1;
+  min-width: 0;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .group-count {
@@ -1707,13 +1714,67 @@ button.row-value:focus-visible {
   border-left: 1px solid var(--border);
 }
 
-/* An expert-tier knob, only visible with density = All. Marked so the extra
-   rows read as extra instead of merging into the essentials. */
+/* An expert-tier knob, visible only while its group's Advanced disclosure is
+   open. The dimmed label marks what disappears again when that disclosure is
+   closed, so the extra rows read as extra instead of merging into the curated
+   ones the user actually reaches for. */
 .param-slot.is-advanced .row-label {
   color: var(--text-faint);
 }
 
-/* Essentials / All. */
+/* The group's own expert tier (P-9). A SIBLING of .group-head — that header
+   is a button, and nesting one inside it is invalid HTML the browser
+   reparents. Sits at the end of the body so the curated rows read first. */
+.group-advanced {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 6px;
+  margin-top: 2px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: 11px;
+  text-align: left;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.group-advanced:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dim);
+}
+
+.group-advanced:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.group-advanced.open .group-chevron {
+  transform: rotate(90deg);
+}
+
+/* __auditUI's text-clip check reads a LEAF's own scrollWidth: no scrollable
+   ancestor saves it, so the label ellipsises at the 380px dock floor. */
+.group-advanced-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The bulk tier switch. Below the groups, never in .section-head: three
+   leaves in that flex clip at the dock's 380px minimum. */
+.param-groups-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 6px;
+}
+
+/* Essentials / All. Retired by P-9 — the density switch is per group now.
+   Kept until its last call site goes with ParamsPanel (U4/U5). */
 .param-density {
   display: flex;
   align-items: center;
