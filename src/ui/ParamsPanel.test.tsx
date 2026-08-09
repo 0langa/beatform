@@ -903,6 +903,141 @@ describe("the driven mark reaches the post rows (P-1 stage 3)", { timeout: 30_00
   });
 });
 
+/**
+ * H11 — the same mark for timeline automation lanes. `TimelinePanel` is a
+ * different panel from the Visuals dock, so a lane was the ONE driver whose
+ * effect never appeared anywhere near the knob it moves; the vocabulary
+ * v2.83.0 chose ("driven", not "modulated") is what let this land as a widened
+ * pure function plus one sentence of copy.
+ *
+ * What must be pinned HERE rather than in drivenTargets.test.ts is the wiring:
+ * that the panel reads the lanes at all, that it reads them NARROWLY (T32), and
+ * that the two inert cases stay unmarked end to end.
+ */
+describe("the driven mark reaches automation lanes (H11)", { timeout: 30_000 }, () => {
+  /** One lane, one keyframe — exactly what TimelinePanel's "+ Automation
+   *  lane…" creates (it seeds a keyframe at the playhead). */
+  const lane = (param: string, value = 200) => ({
+    param,
+    keyframes: [{ id: `k-${param}`, t: 0, value, curve: "linear" as const }],
+  });
+
+  function seedTimeline(lanes: Array<ReturnType<typeof lane>>, enabled = true) {
+    act(() => {
+      useVizStore.setState({
+        presetId: "spectrum-bars",
+        activeMods: [],
+        timeline: { enabled, scenes: [], lanes },
+      });
+    });
+  }
+
+  /** The `.param-slot` around the row whose label is `label`. */
+  const paramSlot = (label: string) =>
+    [...document.querySelectorAll<HTMLElement>(".param-slot")].find(
+      (slot) => slot.querySelector(".row-label")?.textContent === label,
+    );
+
+  const gotoMode = () => fireEvent.click(screen.getByRole("button", { name: "Mode" }));
+
+  it("T29: an enabled lane marks its Mode row and its group pill", () => {
+    seedTimeline([lane("hue")]);
+    render(<ParamsPanel />);
+    gotoMode();
+
+    const hue = paramSlot("Hue");
+    expect(hue).toBeTruthy();
+    expect(hue!.className).toContain("is-driven");
+    // The copy has to name the lane, or the hover sends the user to the
+    // Modulation page to look for a route that is not there.
+    expect(hue!.getAttribute("title")).toMatch(/timeline lane/i);
+    // Zero routes exist: this mark is the lane's alone.
+    expect(useVizStore.getState().activeMods).toHaveLength(0);
+    expect(document.querySelectorAll(".param-slot.is-driven")).toHaveLength(1);
+    // …and the header count carries it too, which is the half that survives a
+    // collapsed group — a lane can target any param of the mode, expert tier
+    // included, because TimelinePanel's picker is allParams().
+    const pill = document.querySelector(".group-count.is-driven");
+    expect(pill?.textContent).toMatch(/^1\//);
+  });
+
+  it("T30: the two inert lanes mark nothing — the master switch, and no keyframes", () => {
+    // Both are reachable in the shipping UI: the timeline's Enabled switch, and
+    // any Timeline handed in by a theme or a project file. A mark that survived
+    // either would claim a knob is moving while the render provably ignores it.
+    seedTimeline([lane("hue")], false);
+    const { unmount } = render(<ParamsPanel />);
+    gotoMode();
+    expect(paramSlot("Hue")).toBeTruthy(); // the row is there…
+    expect(document.querySelectorAll(".param-slot.is-driven")).toHaveLength(0); // …unmarked
+    unmount();
+
+    seedTimeline([{ param: "hue", keyframes: [] }]);
+    render(<ParamsPanel />);
+    gotoMode();
+    expect(paramSlot("Hue")).toBeTruthy();
+    expect(document.querySelectorAll(".param-slot.is-driven")).toHaveLength(0);
+  });
+
+  it("T31: a lane cannot mark a Post row — automation never reaches PostSettings", () => {
+    // The finding behind `drivenPost` staying modulation-only. evalTimeline
+    // writes lane values into TimelineFrame.automation, resolveActiveFrame
+    // spreads that over the resolved PARAMS and nothing else, and both render
+    // loops call applyPostMods(post, rf.mods, …) — never with automation. So a
+    // lane literally named "bloom" moves no post knob, and TimelinePanel does
+    // not even offer post as a lane target. If automation ever learns about
+    // post, this test is the one that says so.
+    seedTimeline([lane("bloom", 0.8)]);
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Scene" }));
+    expect(paramSlot("Bloom")).toBeTruthy();
+    expect(paramSlot("Bloom")!.className).not.toContain("is-driven");
+    expect(document.querySelectorAll(".param-slot.is-driven")).toHaveLength(0);
+    // Nor on Mode: spectrum-bars declares no `bloom`, so the lane has no row.
+    gotoMode();
+    expect(document.querySelectorAll(".param-slot.is-driven")).toHaveLength(0);
+  });
+
+  it("T32: the panel subscribes LANES, not the timeline — a scene write costs it nothing", () => {
+    // G4 removed the panel's whole-`activeParams` subscription and P-12's
+    // contract is that this component hears only what it reads. `s.timeline`
+    // would have put every scene drag — a pointermove-rate document write —
+    // back through all ~2,000 lines for a mark that cannot change.
+    seedTimeline([]);
+    const probe = probePresetParams("spectrum-bars");
+    try {
+      mountProbed();
+      const before = probe.reads();
+      expect(before).toBeGreaterThan(0);
+
+      // A scene edit. TimelinePanel's `update()` spreads the previous timeline,
+      // so `lanes` keeps its identity across it — which is exactly what makes
+      // the narrow read safe.
+      act(() =>
+        useVizStore.setState({
+          timeline: {
+            ...useVizStore.getState().timeline,
+            scenes: [{ id: "s1", name: "S", presetId: "spectrum-bars", start: 1 }],
+          },
+        }),
+      );
+      expect(probe.reads()).toBe(before);
+
+      // A lane edit must still land, or the subscription is too narrow to be a
+      // feature. Both halves in one test on purpose: each is the other's alibi.
+      act(() =>
+        useVizStore.setState({
+          timeline: { ...useVizStore.getState().timeline, lanes: [lane("hue")] },
+        }),
+      );
+      expect(probe.reads()).toBeGreaterThan(before);
+      expect(document.querySelectorAll(".param-slot.is-driven").length).toBe(1);
+    } finally {
+      probe.restore();
+    }
+  });
+});
+
 describe("no external-store writes during render", { timeout: 30_000 }, () => {
   /** Stand-in for App's prefs subscription (useSyncExternalStore(subscribePrefs,
    * getPrefs)): a setPrefs executed while the Visuals renders schedules an

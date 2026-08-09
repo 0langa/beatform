@@ -1454,7 +1454,35 @@ higher. Nothing else moved.)_
       Note `modRoutePresets`' "Already routed — tweak the existing route's
       amount instead" flash is the user-visible half and must keep firing, or
       a second recipe click reads as a broken button.
-- [ ] H11 **Extend the `driven` mark to timeline automation lanes.** Purely
+- [x] H11 **DONE 2026-08-09 — and it was NOT the pure widening this entry
+      predicted, because modulation and automation do not obey the same
+      rules.** `drivenParamKeys` grew a third argument
+      (`timeline?: { enabled, lanes }`, structural so a whole `Timeline`
+      satisfies it, optional so every pre-H11 caller still means what it
+      meant). A lane drives a key iff the timeline is enabled
+      (`evalTimeline` returns `{}` otherwise), the lane has at least one
+      keyframe (`laneValue` returns null for an empty one), and the key is a
+      real spec on the active preset. Time-INDEPENDENT on purpose: `laneValue`
+      pads both ends, so one keyframe drives the param at every `t`.
+      **The trap, and the reason this needed reading rather than copying:
+      `mod: "off"` does NOT apply to lanes.** `applyMods` skips an off param,
+      but `resolveActiveFrame` spreads automation over the params record with
+      no spec check, and `TimelinePanel`'s picker offers `allParams` — so a
+      lane on `mirror` genuinely moves it. Copying the modulation rule across
+      would have HIDDEN a real driver. Both directions are asserted in one
+      test: the lane on `mirror` is claimed, the route on `mirror` is not.
+      **Post rows stay modulation-only, proven rather than assumed:**
+      `resolveActiveFrame` merges automation into params and nothing else, and
+      both loops call `applyPostMods(post, rf.mods, …)`, so automation cannot
+      reach a post row. A lane literally named `bloom` marks nothing there.
+      Subscriptions: two narrow reads (`s.timeline.lanes`, `s.timeline.enabled`)
+      rather than `s.timeline`, because every timeline write spreads the
+      previous object, so `lanes` keeps identity across scene edits and a scene
+      drag costs the panel zero renders — pinned by a test, and the mutation
+      that subscribes `s.timeline` instead turns it red. G4's work is not
+      undone. Eleven mutations, all red.
+      Copy now names both drivers, since the Set cannot say which one.
+      ORIGINAL — **Extend the `driven` mark to timeline automation lanes.** Purely
       additive by design: the vocabulary was chosen for it (v2.83.0 named the
       mark **driven**, not "modulated", precisely so this needs no rename
       across CSS, markup and tests). Automation lanes (`timeline.ts`, applied

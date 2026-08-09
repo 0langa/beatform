@@ -429,6 +429,15 @@ describe("ParamGroups: the footer-hint channel (G3)", () => {
  * shown back inside the mode page: modulation never writes the document, so
  * the slider sits where you left it while the render does something else, and
  * before this the only place that appeared was a different page.
+ * The `driven` mark (P-1 stage 3, widened to automation lanes by H11). P-1
+ * asked for "which params are modulated" shown back inside the mode page:
+ * neither modulation nor a timeline lane writes the document, so the slider
+ * sits where you left it while the render does something else, and before this
+ * the only place that appeared was a different page (or a different panel).
+ *
+ * Nothing in this component changed for H11 and that is the point — it takes a
+ * Set of keys and never asks where they came from, so lanes joined by widening
+ * `drivenParamKeys` and one sentence of copy (D-M9).
  *
  * Two things are load-bearing beyond "a class shows up", and each has its own
  * test below: the mark costs ZERO new DOM (a fourth child of `.param-row`
@@ -524,5 +533,17 @@ describe("ParamGroups: the driven mark", () => {
     expect(pill.classList.contains("is-driven")).toBe(false);
     expect(pill.getAttribute("aria-label")).toBeNull();
     expect(pill.getAttribute("title")).toBeNull();
+  });
+
+  it("D-M9: the copy names BOTH drivers, because the set cannot say which (H11)", () => {
+    // The prop is a bare Set of keys — by the time it arrives, "a route moves
+    // this" and "an automation lane moves this" are the same fact. The copy
+    // must therefore cover both, or every lane-driven knob hovers a sentence
+    // that names the wrong page. This is the whole user-visible half of H11:
+    // the class, the count and the CSS were already right.
+    view({ driven: new Set(["size"]) });
+    expect(slot("size")!.getAttribute("title")).toMatch(/modulation or a timeline lane/i);
+    const pill = groupEl("Shape").querySelector(".group-count")!;
+    expect(pill.getAttribute("title")).toMatch(/Modulation page or the timeline/);
   });
 });

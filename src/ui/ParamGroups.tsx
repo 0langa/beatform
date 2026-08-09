@@ -101,7 +101,11 @@ const ParamSlot = memo(function ParamSlot(props: {
       }`}
       title={
         props.driven
-          ? "Driven — modulation is moving this while it plays. This slider is still the base value."
+          ? // Names BOTH drivers: the set does not say which one, and a knob
+            // can be under both at once (automation resolves first, modulation
+            // on top of it). "is moving this" stays singular — it is the
+            // render that moves, not the drivers being counted.
+            "Driven — modulation or a timeline lane is moving this while it plays. This slider is still the base value."
           : undefined
       }
     >
@@ -168,17 +172,23 @@ export interface ParamGroupsProps {
    * `advancedGroups` rather than bypassing it. */
 
   /**
-   * Param keys something ELSE is moving right now — a modulation route today,
-   * a timeline automation lane the moment H10 lands. Both write the same key
-   * without touching the document, so the slider sits exactly where the user
-   * left it while the render does something else; the mark is the only place
-   * that fact appears on the page where the knob is edited.
+   * Param keys something ELSE is moving right now — a modulation route or a
+   * timeline automation lane (H11). Both write the same key without touching
+   * the document, so the slider sits exactly where the user left it while the
+   * render does something else; the mark is the only place that fact appears
+   * on the page where the knob is edited.
+   *
+   * DELIBERATELY A BARE SET, not a key -> driver map: the two are the same fact
+   * to the reader of a panel ("this number is not what renders"), they share
+   * one CSS class, and the copy below names both. A map would buy per-row
+   * wording at the cost of a prop shape every caller and every test would have
+   * to learn.
    *
    * REQUIRED, for the reason `advancedGroups` above is: an optional set makes
    * a caller that forgets it render a panel where the feature simply never
    * appears, with green typecheck, green lint and green tests. Derive it with
-   * `drivenParamKeys(preset, mods)` (src/state/drivenTargets.ts) — this file
-   * stays store-unaware, so the caller owns the subscription.
+   * `drivenParamKeys(preset, mods, timeline)` (src/state/drivenTargets.ts) —
+   * this file stays store-unaware, so the caller owns the subscription.
    *
    * Not a live VALUE, deliberately: `.row-value` is the editor (double-click
    * to type), a moving number cannot be double-clicked, and the number you
@@ -331,9 +341,11 @@ export function ParamGroups(props: ParamGroupsProps) {
         /**
          * Driven knobs of THIS group, counted over its full membership — a
          * route lands on the best-matching knob regardless of tier (recipes,
-         * `autoRouteStem`), so a row-only mark is invisible exactly when the
-         * target sits in a collapsed group or a shut expert tier, which is the
-         * common case. The header has to carry it.
+         * `autoRouteStem`) and an automation lane may target any param the mode
+         * declares (TimelinePanel's picker is `allParams`), so a row-only mark
+         * is invisible exactly when the target sits in a collapsed group or a
+         * shut expert tier, which is the common case. The header has to carry
+         * it.
          *
          * MERGED INTO `.group-count`, never a third pill: `.group-head` is a
          * flex of chevron + name + count, and a third leaf at the measured
@@ -368,7 +380,7 @@ export function ParamGroups(props: ParamGroupsProps) {
                 aria-label={drivenHere > 0 ? `${drivenHere} of ${total} driven` : undefined}
                 title={
                   drivenHere > 0
-                    ? `${drivenHere} of ${total} controls here are driven — see the Modulation page`
+                    ? `${drivenHere} of ${total} controls here are driven — see the Modulation page or the timeline`
                     : undefined
                 }
               >

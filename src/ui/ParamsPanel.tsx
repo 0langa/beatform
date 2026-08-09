@@ -574,6 +574,20 @@ export function ParamsPanel() {
    * <ModulationPage />, which subscribes it (and `stems`/`stemAnalyzing`)
    * independently. */
   const mods = useVizStore((s) => s.activeMods);
+  /**
+   * The other half of the `driven` mark's input (H11). TWO NARROW READS, never
+   * `s.timeline`: the panel would then reconcile on every scene drag, and
+   * P-12's whole contract here is that this component subscribes what it reads
+   * and nothing else. Both are safe selector shapes — a store-owned array
+   * reference and a boolean — and `lanes` keeps its identity across scene
+   * edits, because every timeline write is a spread of the previous object
+   * (TimelinePanel's `update`, the store's `autoArrange`).
+   *
+   * `enabled` is not optional decoration: it is `evalTimeline`'s first line. A
+   * project full of lanes with the master switch off drives nothing at all.
+   */
+  const lanes = useVizStore((s) => s.timeline.lanes);
+  const timelineEnabled = useVizStore((s) => s.timeline.enabled);
   const lyricFileName = useVizStore((s) => s.lyricFileName);
   const lyricStyle = useVizStore((s) => s.lyricStyle);
   const audiogram = useVizStore((s) => s.audiogram);
@@ -589,22 +603,40 @@ export function ParamsPanel() {
     [userPresets, presetId],
   );
   /**
-   * The `driven` mark's input: which knobs of this mode a modulation route
-   * will actually move (P-1 stage 3). Same shape and same reason as
-   * `looksForMode` directly above — `useMemo`, NEVER a zustand selector. An
-   * allocating selector hands useSyncExternalStore a fresh Set on every store
-   * notification, which is "Maximum update depth exceeded" on mount.
+   * The `driven` mark's input: which knobs of this mode a modulation route or a
+   * timeline automation lane will actually move (P-1 stage 3, widened by H11).
+   * Same shape and same reason as `looksForMode` directly above — `useMemo`,
+   * NEVER a zustand selector. An allocating selector hands
+   * useSyncExternalStore a fresh Set on every store notification, which is
+   * "Maximum update depth exceeded" on mount. The `{ enabled, lanes }` literal
+   * is built INSIDE the memo factory, which is a plain function call and not a
+   * subscription, so it costs one object per lane edit and nothing per tick.
    *
-   * Zero new subscriptions: `mods` is already read above for the rail badge,
-   * and `preset` at the top of this component.
+   * `mods` is already read above for the rail badge and `preset` at the top of
+   * this component; the lane pair right above it is the only new subscription
+   * this feature needed, and it fires on lane edits — a document gesture,
+   * never a playback or export tick.
    */
-  const driven = useMemo(() => drivenParamKeys(preset, mods), [preset, mods]);
+  const driven = useMemo(
+    () => drivenParamKeys(preset, mods, { enabled: timelineEnabled, lanes }),
+    [preset, mods, timelineEnabled, lanes],
+  );
   /**
    * The same mark's input for the SIX POST ROWS, which live on Scene and never
    * pass through ParamGroups. `drivenParamKeys` deliberately excludes `post:`
    * routes — post targets are namespaced keys no preset declares, applied by
    * applyPostMods against PostSettings — so this is the other half of that
    * decision rather than a second implementation of it.
+   *
+   * MODULATION ONLY, and that is a finding rather than an omission (H11):
+   * automation cannot reach post at all. `evalTimeline` writes lane values into
+   * `TimelineFrame.automation`, `resolveActiveFrame` spreads that over the
+   * resolved PARAMS and nothing else, and both render loops call
+   * `applyPostMods(post, rf.mods, …)` — never with automation. TimelinePanel's
+   * lane picker offers `allParams(activePreset)`, which contains no `post:`
+   * key. A lane called "bloom" therefore moves a preset knob named bloom if one
+   * exists and the Post row never; ParamsPanel.test's T31 is the standing guard
+   * on that, and is the test to update if automation ever learns about post.
    *
    * `postTargetKey` IS applyPostMods' only inert rule (its single `continue`),
    * so a mark here can never claim a knob the renderer skips. Same `useMemo`
@@ -1810,7 +1842,10 @@ export function ParamsPanel() {
               ExportDialog, BuilderPanel and TimelinePanel, none of which has
               any business knowing modulation exists — and `.param-slot` is
               already the exact element ParamGroups marks, so the two pages
-              render one visual language from one CSS rule. */}
+              render one visual language from one CSS rule.
+              The hover copy says "modulation" flat, where ParamGroups' says
+              "modulation or a timeline lane": that is precision, not drift —
+              a lane provably cannot reach PostSettings (see `drivenPost`). */}
           {POST_SLIDERS.map((r) => (
             <div
               key={r.key}
