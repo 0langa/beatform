@@ -94,12 +94,37 @@ fn spec_by_id(id: &str) -> Result<&'static ModelSpec, String> {
         .ok_or(format!("unknown model id: {id}"))
 }
 
+/// A running sidecar plus everything terminating it has to clean up.
+///
+/// The slot used to hold a bare `Child`, which meant the abnormal-termination
+/// paths (app close, cancel's kill fallback) could end the process but had no
+/// idea which files it owned. Both temps then survived forever: `create_temp_new`
+/// names are per-pid/per-seq, so no later run ever reclaims them, and the staged
+/// mezzanine WAV is the WHOLE decoded track — ~42 MB for a four-minute song,
+/// ~635 MB for an hour-long set, on the system drive whose exhaustion the export
+/// pre-flight exists to catch. `ProresJob` has carried its paths for exactly this
+/// reason; this is the same shape.
+///
+/// Deliberately NO `Drop` impl: the success path takes the job out of the slot
+/// while the LRC still has to be read. Only `end_job` deletes.
+pub struct LyricsJob {
+    child: Child,
+    /// Kills the sidecar's OWN children too — see `proc_tree`.
+    tree: proc_tree::ProcessTree,
+    /// The staged WAV this job is consuming (generation: the whole track;
+    /// --align-line: one line's slice).
+    input_path: PathBuf,
+    /// The reserved LRC temp. `None` for --align-line, which returns words
+    /// over the wire and writes no file.
+    lrc_path: Option<PathBuf>,
+}
+
 #[derive(Default)]
 pub struct LyricsState {
     /// Running sidecar (kill on cancel-timeout / app close). LOCK ORDER where
     /// both are needed: `job` first, then `job_stdin` — same discipline as
     /// ProresState.
-    pub job: Mutex<Option<Child>>,
+    pub job: Mutex<Option<LyricsJob>>,
     /// The sidecar's stdin, held separately so the graceful-cancel write can
     /// never wait behind the supervising read loop.
     pub job_stdin: Mutex<Option<ChildStdin>>,
@@ -503,6 +528,169 @@ pub fn lyrics_audio_end(state: tauri::State<'_, LyricsState>) -> Result<(), Stri
 }
 
 // ---------------------------------------------------------------------------
+// Process-tree teardown
+
+/// Windows job objects: kill a sidecar and everything it spawned.
+///
+/// `Child::kill()` is `TerminateProcess` on ONE process, and the lyrics
+/// sidecar is a process TREE — it spawns the decode ffmpeg, then whisper-cli
+/// with `-t 4`. Killing only the sidecar (what app shutdown and the
+/// cancel-kill fallback did) left whisper-cli running: no window
+/// (CREATE_NO_WINDOW), no parent, four cores pegged for the rest of a
+/// medium-model transcription, and its `-ojf` JSON abandoned in %TEMP%. On a
+/// laptop that is minutes of full-tilt CPU after the app is visibly gone.
+///
+/// `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` covers both halves: `terminate()`
+/// ends the tree on demand, and the OS closing the handle when this process
+/// dies ends it too — so an app CRASH is covered without a shutdown hook.
+/// Descendants inherit job membership, so assigning the sidecar is enough.
+///
+/// Best-effort by construction: every failure path yields a no-op handle and
+/// the caller behaves exactly as it did before — one process killed, nothing
+/// worse. (The child is assigned just after spawn rather than being started
+/// suspended: a grandchild spawned inside that window would escape the job.
+/// The sidecar's first act is loading ONNX Runtime, and whisper starts stages
+/// later, so the window is not reachable in practice.)
+#[cfg(windows)]
+mod proc_tree {
+    use std::process::Child;
+
+    const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: i32 = 9;
+    const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x2000;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateJobObjectW(attrs: *const std::ffi::c_void, name: *const u16) -> isize;
+        fn SetInformationJobObject(
+            job: isize,
+            class: i32,
+            info: *const std::ffi::c_void,
+            len: u32,
+        ) -> i32;
+        fn AssignProcessToJobObject(job: isize, process: isize) -> i32;
+        fn TerminateJobObject(job: isize, exit_code: u32) -> i32;
+        fn CloseHandle(handle: isize) -> i32;
+    }
+
+    /// JOBOBJECT_BASIC_LIMIT_INFORMATION, field-for-field. `repr(C)` applies
+    /// the same alignment padding the Windows headers do.
+    #[repr(C)]
+    #[derive(Default)]
+    struct BasicLimits {
+        per_process_user_time: i64,
+        per_job_user_time: i64,
+        limit_flags: u32,
+        minimum_working_set: usize,
+        maximum_working_set: usize,
+        active_process_limit: u32,
+        affinity: usize,
+        priority_class: u32,
+        scheduling_class: u32,
+    }
+
+    /// IO_COUNTERS.
+    #[repr(C)]
+    #[derive(Default)]
+    struct IoCounters {
+        read_ops: u64,
+        write_ops: u64,
+        other_ops: u64,
+        read_bytes: u64,
+        write_bytes: u64,
+        other_bytes: u64,
+    }
+
+    /// JOBOBJECT_EXTENDED_LIMIT_INFORMATION.
+    #[repr(C)]
+    #[derive(Default)]
+    struct ExtendedLimits {
+        basic: BasicLimits,
+        io: IoCounters,
+        process_memory_limit: usize,
+        job_memory_limit: usize,
+        peak_process_memory_used: usize,
+        peak_job_memory_used: usize,
+    }
+
+    /// Owns a job-object handle. `0` = no job (creation or assignment
+    /// failed); every method is then a no-op.
+    pub struct ProcessTree(isize);
+
+    impl ProcessTree {
+        /// Put `child` — and everything it spawns from here on — in a fresh
+        /// kill-on-close job.
+        pub fn adopt(child: &Child) -> Self {
+            use std::os::windows::io::AsRawHandle;
+            // SAFETY: null attributes/name is the documented "unnamed,
+            // default-security job" call; it returns an owned handle or 0.
+            let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+            if job == 0 {
+                return Self(0);
+            }
+            let limits = ExtendedLimits {
+                basic: BasicLimits {
+                    limit_flags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            // SAFETY: `job` is the handle just created; the pointer is to a
+            // live, correctly-sized ExtendedLimits on this stack frame.
+            let set = unsafe {
+                SetInformationJobObject(
+                    job,
+                    JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                    std::ptr::from_ref(&limits).cast(),
+                    std::mem::size_of::<ExtendedLimits>() as u32,
+                )
+            };
+            // SAFETY: the Child owns a live process handle for as long as it
+            // is alive, and `&Child` keeps it alive across this call.
+            let assigned = set != 0
+                && unsafe { AssignProcessToJobObject(job, child.as_raw_handle() as isize) } != 0;
+            if !assigned {
+                // SAFETY: `job` is ours and not yet handed out.
+                unsafe { CloseHandle(job) };
+                return Self(0);
+            }
+            Self(job)
+        }
+
+        /// End every process in the job, now.
+        pub fn terminate(&self) {
+            if self.0 != 0 {
+                // SAFETY: `self.0` is a live job handle this struct owns.
+                unsafe { TerminateJobObject(self.0, 1) };
+            }
+        }
+    }
+
+    impl Drop for ProcessTree {
+        fn drop(&mut self) {
+            if self.0 != 0 {
+                // Kill-on-close: this is also the app-crash safety net.
+                // SAFETY: `self.0` is a live job handle this struct owns and
+                // is giving up.
+                unsafe { CloseHandle(self.0) };
+            }
+        }
+    }
+}
+
+/// Non-Windows stand-in so the job plumbing compiles everywhere. The app only
+/// ships on Windows; this keeps `cargo check` on other hosts honest.
+#[cfg(not(windows))]
+mod proc_tree {
+    pub struct ProcessTree;
+    impl ProcessTree {
+        pub fn adopt(_child: &std::process::Child) -> Self {
+            Self
+        }
+        pub fn terminate(&self) {}
+    }
+}
+
+// ---------------------------------------------------------------------------
 // GPU probe + generation job
 
 /// Cached sidecar `--probe-gpu` run: can DirectML sessions be created here?
@@ -528,9 +716,17 @@ pub fn lyrics_gpu_probe(
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000);
     }
-    let out = cmd
-        .output()
+    // spawn + adopt rather than output(): the probe loads the GPU driver
+    // stack, and a probe left running after the app closed would be exactly
+    // the orphan the job object exists to prevent. The tree handle lives
+    // until this call returns, so the OS closing it kills the probe.
+    let child = cmd
+        .spawn()
         .map_err(|e| format!("probe spawn failed: {e}"))?;
+    let _tree = proc_tree::ProcessTree::adopt(&child);
+    let out = child
+        .wait_with_output()
+        .map_err(|e| format!("probe failed: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout);
     let dml = text
         .lines()
@@ -553,17 +749,41 @@ fn kill_and_reap(mut child: Child) {
     }
 }
 
+/// End a job the abnormal way: kill its whole process tree, reap it, and
+/// delete the temps it owned.
+///
+/// Only the abnormal paths (cancel's force fallback, app shutdown) call this.
+/// The normal returns of `lyrics_generate` / `lyrics_align_line` clean up
+/// their own temps, and `lyrics_generate` takes the job out of the slot while
+/// the LRC still has to be READ — which is why `LyricsJob` has no `Drop`.
+fn end_job(job: LyricsJob) {
+    // Tree first: the sidecar's whisper-cli / ffmpeg children outlive a plain
+    // kill of the sidecar itself.
+    job.tree.terminate();
+    kill_and_reap(job.child);
+    let _ = std::fs::remove_file(&job.input_path);
+    if let Some(lrc) = &job.lrc_path {
+        let _ = std::fs::remove_file(lrc);
+    }
+}
+
 /// Kill a running sidecar (bounded reap) and clear the job slot. Used by
 /// cancel's force path and by app shutdown (lib.rs window-destroyed hook).
+///
+/// Sweeps %TEMP% on the way out, exactly like `prores::kill_running_job`:
+/// the running job's staged WAV and reserved LRC (via `end_job`) plus any
+/// staged-but-unconsumed audio. Shutdown is the last chance — `create_temp_new`
+/// names are per-pid/per-seq, so nothing later ever reclaims them.
 pub fn kill_running_job(state: &LyricsState) {
     if let Ok(mut stdin) = state.job_stdin.lock() {
         drop(stdin.take());
     }
     if let Ok(mut guard) = state.job.lock() {
-        if let Some(child) = guard.take() {
-            kill_and_reap(child);
+        if let Some(job) = guard.take() {
+            end_job(job);
         }
     }
+    drop_stale_staging(state);
 }
 
 /// The delayed half of a graceful cancel: kill ONLY if the slot still holds
@@ -572,11 +792,11 @@ pub fn kill_running_job(state: &LyricsState) {
 /// murder the newcomer, so the pid is the identity check.
 fn kill_job_if_pid(state: &LyricsState, pid: u32) {
     if let Ok(mut guard) = state.job.lock() {
-        if guard.as_ref().map(|c| c.id()) != Some(pid) {
+        if guard.as_ref().map(|j| j.child.id()) != Some(pid) {
             return;
         }
-        if let Some(child) = guard.take() {
-            kill_and_reap(child);
+        if let Some(job) = guard.take() {
+            end_job(job);
         }
         // job then job_stdin — the documented lock order.
         if let Ok(mut stdin) = state.job_stdin.lock() {
@@ -621,7 +841,7 @@ pub fn lyrics_generate_cancel(
     // the bounded kill against exactly this child (see kill_job_if_pid).
     let pid = {
         let guard = state.job.lock().map_err(|_| "state poisoned")?;
-        guard.as_ref().map(|c| c.id())
+        guard.as_ref().map(|j| j.child.id())
     };
     if let Some(pid) = pid {
         std::thread::spawn(move || {
@@ -688,7 +908,7 @@ fn supervise(
 /// first Child handle — minutes of running inference left with no kill
 /// handle, unreachable by cancel and by the app-close hook, its stdin
 /// clobbered along with it.
-fn claim_job_slot(state: &LyricsState) -> Result<MutexGuard<'_, Option<Child>>, String> {
+fn claim_job_slot(state: &LyricsState) -> Result<MutexGuard<'_, Option<LyricsJob>>, String> {
     let guard = state.job.lock().map_err(|_| "state poisoned")?;
     if guard.is_some() {
         return Err("Lyrics generation is already running".into());
@@ -855,9 +1075,15 @@ pub fn lyrics_generate(
         }
     };
     let stdout = child.stdout.take().expect("stdout piped");
+    let tree = proc_tree::ProcessTree::adopt(&child);
     // job held, then job_stdin — the documented lock order.
     *state.job_stdin.lock().map_err(|_| "state poisoned")? = child.stdin.take();
-    *job_guard = Some(child);
+    *job_guard = Some(LyricsJob {
+        child,
+        tree,
+        input_path: staged.clone(),
+        lrc_path: Some(lrc_path.clone()),
+    });
     drop(job_guard);
 
     // Blocking supervision (this command runs on the blocking pool). The job
@@ -868,13 +1094,17 @@ pub fn lyrics_generate(
     let status = {
         let mut guard = state.job.lock().map_err(|_| "state poisoned")?;
         match guard.take() {
-            Some(mut child) => {
+            Some(mut job) => {
                 let deadline = std::time::Instant::now() + Duration::from_secs(30);
                 loop {
-                    match child.try_wait() {
+                    match job.child.try_wait() {
                         Ok(Some(s)) => break Some(s),
                         Ok(None) if std::time::Instant::now() >= deadline => {
-                            let _ = child.kill();
+                            // Stdout hit EOF but the tree is still up: end all
+                            // of it, not just the sidecar. NOT end_job() — the
+                            // LRC below still has to be read.
+                            job.tree.terminate();
+                            let _ = job.child.kill();
                             break None;
                         }
                         Ok(None) => std::thread::sleep(Duration::from_millis(50)),
@@ -1050,9 +1280,16 @@ pub fn lyrics_align_line(
         }
     };
     let stdout = child.stdout.take().expect("stdout piped");
+    let tree = proc_tree::ProcessTree::adopt(&child);
     // job held, then job_stdin — the documented lock order.
     *state.job_stdin.lock().map_err(|_| "state poisoned")? = child.stdin.take();
-    *job_guard = Some(child);
+    *job_guard = Some(LyricsJob {
+        child,
+        tree,
+        input_path: staged.clone(),
+        // --align-line answers over the wire; it writes no LRC.
+        lrc_path: None,
+    });
     drop(job_guard);
 
     // Supervise to EOF: capture the one terminal event. Seconds-long job, no
@@ -1105,13 +1342,14 @@ pub fn lyrics_align_line(
     let status = {
         let mut guard = state.job.lock().map_err(|_| "state poisoned")?;
         match guard.take() {
-            Some(mut child) => {
+            Some(mut job) => {
                 let deadline = std::time::Instant::now() + Duration::from_secs(30);
                 loop {
-                    match child.try_wait() {
+                    match job.child.try_wait() {
                         Ok(Some(s)) => break Some(s),
                         Ok(None) if std::time::Instant::now() >= deadline => {
-                            let _ = child.kill();
+                            job.tree.terminate();
+                            let _ = job.child.kill();
                             break None;
                         }
                         Ok(None) => std::thread::sleep(Duration::from_millis(50)),
@@ -1268,6 +1506,143 @@ mod tests {
             .expect("spawn test child")
     }
 
+    /// A job around a test child, with temp paths that do not exist unless a
+    /// test made them (mirrors prores::tests::test_job).
+    fn test_job(child: Child) -> LyricsJob {
+        let tree = proc_tree::ProcessTree::adopt(&child);
+        LyricsJob {
+            child,
+            tree,
+            input_path: std::env::temp_dir().join("av-lyrics-test-absent-input.wav"),
+            lrc_path: None,
+        }
+    }
+
+    #[test]
+    fn app_shutdown_sweeps_the_staged_wav_and_the_reserved_lrc() {
+        // The job slot used to hold a bare Child, so shutdown could end the
+        // sidecar but had no idea which files it owned. The staged WAV is the
+        // WHOLE decoded track (~42 MB for four minutes, ~635 MB for an
+        // hour-long set) and the names are per-pid/per-seq, so nothing later
+        // ever reclaims them: close the app mid-generation and they stayed in
+        // %TEMP% forever.
+        let state = LyricsState::default();
+        let (f, input) = crate::prores::create_temp_new("test-shutdown-lyrics-in.wav").unwrap();
+        drop(f);
+        let (f, lrc) = crate::prores::create_temp_new("test-shutdown-lyrics-out.lrc").unwrap();
+        drop(f);
+
+        let mut child = spawn_wedged();
+        let tree = proc_tree::ProcessTree::adopt(&child);
+        *state.job_stdin.lock().unwrap() = child.stdin.take();
+        *state.job.lock().unwrap() = Some(LyricsJob {
+            child,
+            tree,
+            input_path: input.clone(),
+            lrc_path: Some(lrc.clone()),
+        });
+
+        kill_running_job(&state);
+
+        assert!(state.job.lock().unwrap().is_none(), "job slot cleared");
+        assert!(
+            state.job_stdin.lock().unwrap().is_none(),
+            "sidecar stdin released"
+        );
+        assert!(!input.exists(), "staged WAV must be swept from %TEMP%");
+        assert!(!lrc.exists(), "reserved LRC temp must be swept from %TEMP%");
+    }
+
+    #[test]
+    fn shutdown_with_no_job_still_sweeps_staged_audio() {
+        // Close the app between lyrics_audio_end and lyrics_generate — or
+        // after generation refused (model missing, bad language tag) without
+        // ever consuming the staging. No child to kill, but the WAV is on
+        // disk and this is its last exit.
+        let state = LyricsState::default();
+        let (f, staged) =
+            crate::prores::create_temp_new("test-shutdown-lyrics-staged.wav").unwrap();
+        drop(f);
+        *state.staged.lock().unwrap() = Some(staged.clone());
+        let (f, half) = crate::prores::create_temp_new("test-shutdown-lyrics-half.wav").unwrap();
+        *state.staging.lock().unwrap() = Some((f, half.clone()));
+
+        kill_running_job(&state);
+
+        assert!(!staged.exists(), "sealed staged WAV must be swept");
+        assert!(!half.exists(), "half-written staging must be swept too");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn killing_a_sidecar_takes_its_grandchildren_with_it() {
+        // Child::kill() is TerminateProcess on ONE process, and the sidecar is
+        // a process TREE (decode ffmpeg, then whisper-cli with -t 4). Before
+        // the job object, app shutdown and the cancel-kill fallback ended the
+        // sidecar and left whisper-cli running with no window and no parent:
+        // four cores pegged for the rest of the transcription, minutes after
+        // Beatform was gone.
+        //
+        // `cmd /c ping` is that shape — cmd is the process we hold, ping is
+        // the grandchild that must not survive.
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/c", "ping", "-n", "40", "127.0.0.1"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = cmd.spawn().expect("spawn test child");
+        let child_pid = Pid::from_u32(child.id());
+        let job = LyricsJob {
+            tree: proc_tree::ProcessTree::adopt(&child),
+            child,
+            input_path: std::env::temp_dir().join("av-lyrics-test-absent-input.wav"),
+            lrc_path: None,
+        };
+
+        let mut sys = System::new();
+        let mut grandchild: Option<Pid> = None;
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while grandchild.is_none() && std::time::Instant::now() < deadline {
+            sys.refresh_processes_specifics(
+                ProcessesToUpdate::All,
+                true,
+                ProcessRefreshKind::nothing(),
+            );
+            grandchild = sys
+                .processes()
+                .iter()
+                .find(|(_, p)| p.parent() == Some(child_pid))
+                .map(|(pid, _)| *pid);
+            if grandchild.is_none() {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+        let grandchild = grandchild.expect("the test child must have spawned a grandchild");
+
+        end_job(job);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        let mut alive = true;
+        while alive && std::time::Instant::now() < deadline {
+            sys.refresh_processes_specifics(
+                ProcessesToUpdate::All,
+                true,
+                ProcessRefreshKind::nothing(),
+            );
+            alive = sys.process(grandchild).is_some();
+            if alive {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+        assert!(
+            !alive,
+            "the grandchild outlived the sidecar kill — whisper-cli would keep \
+             running at full tilt after the app closed"
+        );
+    }
+
     #[test]
     fn the_job_slot_claim_is_exclusive_across_the_whole_spawn() {
         // The old scoped check-then-drop let two racing invokes both pass;
@@ -1281,11 +1656,11 @@ mod tests {
         let racer = std::thread::spawn(move || {
             // Blocks until the first claim stores and releases, then must be
             // REFUSED — never handed the slot a second time.
-            claim_job_slot(&racer_state).map(|mut g| g.take().map(|c| c.id()))
+            claim_job_slot(&racer_state).map(|mut g| g.take().map(|j| j.child.id()))
         });
         // Let the racer reach the lock while the spawn is "in progress".
         std::thread::sleep(Duration::from_millis(50));
-        *guard = Some(spawn_wedged());
+        *guard = Some(test_job(spawn_wedged()));
         drop(guard);
 
         let raced = racer.join().unwrap();
@@ -1301,7 +1676,7 @@ mod tests {
     #[test]
     fn a_claimed_slot_refuses_until_the_job_is_reaped() {
         let state = LyricsState::default();
-        *state.job.lock().unwrap() = Some(spawn_wedged());
+        *state.job.lock().unwrap() = Some(test_job(spawn_wedged()));
         assert!(claim_job_slot(&state).is_err(), "busy slot must refuse");
         kill_running_job(&state);
         assert!(
@@ -1316,9 +1691,9 @@ mod tests {
         // fires, the cancelled job may have exited and a NEW job claimed the
         // slot — the pid pin keeps the fallback from murdering the newcomer.
         let state = LyricsState::default();
-        let child = spawn_wedged();
-        let pid = child.id();
-        *state.job.lock().unwrap() = Some(child);
+        let job = test_job(spawn_wedged());
+        let pid = job.child.id();
+        *state.job.lock().unwrap() = Some(job);
 
         kill_job_if_pid(&state, pid.wrapping_add(1));
         assert!(

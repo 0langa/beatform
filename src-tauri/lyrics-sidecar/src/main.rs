@@ -721,25 +721,11 @@ fn transcribe(
 
     // Register for cancel-kill, then wait.
     *cancel.child.lock().expect("cancel mutex") = Some(child);
-    let status = loop {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        let mut guard = cancel.child.lock().expect("cancel mutex");
-        let Some(running) = guard.as_mut() else {
-            return Err(TranscribeError::Cancelled);
-        };
-        match running.try_wait() {
-            Ok(Some(status)) => {
-                guard.take();
-                break status;
-            }
-            Ok(None) => {}
-            Err(e) => {
-                guard.take();
-                let _ = std::fs::remove_file(&json_path);
-                return Err(TranscribeError::Failed(format!(
-                    "whisper-cli wait failed: {e}"
-                )));
-            }
+    let status = match wait_registered_child(cancel) {
+        Ok(status) => status,
+        Err(e) => {
+            let _ = std::fs::remove_file(&json_path);
+            return Err(e);
         }
     };
     let stderr_tail = reader.join().unwrap_or_default();
@@ -758,6 +744,47 @@ fn transcribe(
         .map_err(|e| TranscribeError::Failed(format!("whisper output missing: {e}")))?;
     let _ = std::fs::remove_file(&json_path);
     whisper::parse(&json).map_err(TranscribeError::Failed)
+}
+
+/// Wait for the child currently registered with the canceller, killing it the
+/// moment the cancel flag is set.
+///
+/// Polling the FLAG, not just the slot, is the point. The watcher kills
+/// whatever is registered when "cancel" arrives — but a cancel that lands
+/// between `spawn` and registration finds the slot EMPTY and kills nothing,
+/// and the whisper stage is the longest in the pipeline: minutes of a
+/// medium-model transcription would run to completion with the flag already
+/// set, and the user's cancel would only be noticed once it finished. (The
+/// app's 10 s kill fallback then terminated the sidecar and, before the job
+/// object, orphaned whisper-cli outright.) `decode` closes the same gap with
+/// a one-shot check after registering; this is the continuous form, so it
+/// also covers a `kill()` that failed the first time.
+fn wait_registered_child(cancel: &Canceller) -> Result<std::process::ExitStatus, TranscribeError> {
+    loop {
+        {
+            let mut guard = cancel.child.lock().expect("cancel mutex");
+            let Some(running) = guard.as_mut() else {
+                return Err(TranscribeError::Cancelled);
+            };
+            if cancel.cancelled() {
+                let _ = running.kill();
+            }
+            match running.try_wait() {
+                Ok(Some(status)) => {
+                    guard.take();
+                    return Ok(status);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    guard.take();
+                    return Err(TranscribeError::Failed(format!(
+                        "whisper-cli wait failed: {e}"
+                    )));
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
 
 /// "whisper_print_progress_callback: progress =   5%" -> 5.0
@@ -957,6 +984,90 @@ mod tests {
         };
         assert_eq!(ort_dylib, PathBuf::from("C:/onnxruntime.dll"));
         assert!(parse_args(&v(&["--probe-gpu"])).is_err());
+    }
+
+    /// A child that will not exit on its own — a stand-in for a whisper-cli
+    /// grinding through a medium-model transcription.
+    fn spawn_wedged() -> std::process::Child {
+        let mut cmd = if cfg!(windows) {
+            let mut c = Command::new("ping");
+            c.args(["-n", "30", "127.0.0.1"]);
+            c
+        } else {
+            let mut c = Command::new("sleep");
+            c.arg("30");
+            c
+        };
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn test child")
+    }
+
+    #[test]
+    fn a_cancel_that_lands_before_registration_still_stops_whisper() {
+        // The race: "cancel" arrives in the window between whisper's spawn
+        // and its registration with the canceller. The watcher found the slot
+        // empty and killed nothing, and the wait loop never looked at the
+        // flag again — so the whole transcribe stage ran to completion with
+        // the cancel already requested. Reproduce it by registering a child
+        // with the flag ALREADY set, which is exactly that state.
+        let cancel = Arc::new(Canceller {
+            flag: AtomicBool::new(true),
+            child: Mutex::new(None),
+        });
+        *cancel.child.lock().expect("cancel mutex") = Some(spawn_wedged());
+
+        let waiting = Arc::clone(&cancel);
+        let waiter = std::thread::spawn(move || wait_registered_child(&waiting).is_ok());
+
+        let deadline = Instant::now() + std::time::Duration::from_secs(12);
+        while !waiter.is_finished() && Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(
+            waiter.is_finished(),
+            "the wait ignored a cancel that was already set and sat on a live child \
+             for 12 s — a real run would burn the whole whisper stage first"
+        );
+        assert!(
+            waiter.join().unwrap(),
+            "the killed child must still be reaped into an exit status"
+        );
+        assert!(
+            cancel.child.lock().expect("cancel mutex").is_none(),
+            "the reaped child must be cleared from the slot"
+        );
+    }
+
+    #[test]
+    fn a_child_that_exits_on_its_own_is_reaped_without_a_cancel() {
+        // The happy path must be untouched: no flag, normal exit, real status.
+        let cancel = Canceller {
+            flag: AtomicBool::new(false),
+            child: Mutex::new(None),
+        };
+        let mut cmd = if cfg!(windows) {
+            let mut c = Command::new("cmd");
+            c.args(["/c", "exit", "0"]);
+            c
+        } else {
+            let mut c = Command::new("sh");
+            c.args(["-c", "exit 0"]);
+            c
+        };
+        let child = cmd
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn test child");
+        *cancel.child.lock().expect("cancel mutex") = Some(child);
+        let Ok(status) = wait_registered_child(&cancel) else {
+            panic!("a clean exit must not read as an error");
+        };
+        assert!(status.success());
     }
 
     #[test]
