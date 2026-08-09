@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.85.0] - 2026-08-09
+
 ### Fixed
 
 - **Importing a Shadertoy shader could crash the app.** A shader with a
@@ -24,6 +26,10 @@ Releases — there is no paid tier, cloud service, or telemetry.
   it to the compiler: a semicolon and a closing brace deleted, two statements
   run together. The import then failed with a compiler error pointing at the
   wrong line, for a shader that was fine.
+- **Shader import errors point at the right line again.** If a helper call or
+  a function signature wrapped across two lines — which is just how a long
+  argument list gets written — every error below it was reported one line too
+  high, and further off the more wraps there were.
 
 ### Changed
 
@@ -2370,7 +2376,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.84.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.85.0...HEAD
+[2.85.0]: https://github.com/0langa/beatform/compare/v2.84.0...v2.85.0
 [2.84.0]: https://github.com/0langa/beatform/compare/v2.83.0...v2.84.0
 [2.83.0]: https://github.com/0langa/beatform/compare/v2.82.0...v2.83.0
 [2.82.0]: https://github.com/0langa/beatform/compare/v2.81.0...v2.82.0
