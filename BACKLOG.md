@@ -1592,6 +1592,47 @@ Execution sequence around the running Track B program:
 7. **Fillers, any release:** P-3 first-run, P-8 export-format honesty,
    P-10 polish bundle. **Own release, after program:** P-11 boot-from-
    autosave.
+   **P-8 DONE 2026-08-09** (owner-approved filler). Format and Codec are a
+   capability grid now: everything the dialog used to HIDE it shows disabled with
+   the reason, so the machine's limits are legible instead of mysterious. Three of
+   the proposal's own premises were refuted from the code and are worth recording
+   so nobody re-derives them:
+   (a) **Transparent WebM was never gated on the background.** VP9+alpha is a
+   CODEC, not a format; its real gates were the probe, `format === "mp4"`,
+   `!canvasMode`, and — the actual culprit — `codecChoices.length > 1`, which
+   deleted the whole Codec row on a machine supporting exactly one codec. That is
+   precisely the user who most needs to be told why a README headline feature is
+   missing. Background only decides whether the alpha is MEANINGFUL.
+   (b) **"hardware HEVC not found" would have been a lie.**
+   `VideoEncoder.isConfigSupported` cannot distinguish hardware from software
+   (`codecProbe.ts:93-107`), so the reason says "not available on this machine",
+   and a test asserts the string never contains "hardware".
+   (c) **PNG in the browser was a live option that always failed** — enabled
+   outside Tauri, refused at `exportActions.ts:175` AFTER the folder picker.
+   Genuinely not knowable up front, and surfaced as an advisory rather than faked
+   into a disabled tile: the probe runs at 1080p60 while `exportCore` re-checks at
+   the job's real dimensions, so a 4K60 job can still be refused.
+   **Accessibility, and a defect that only a live tree showed.** `disabled` is
+   reserved for "an export is running"; an unavailable CHOICE gets
+   `aria-disabled` and stays a tab stop, because the reason is the entire payload
+   and `disabled` would remove the only control carrying it. Reading the RENDERED
+   accessibility tree then showed all four ffmpeg tiles sharing one name
+   ("Needs the desktop app…") while jsdom instead ran the spans together as
+   "ProResNeeds the desktop app…" — neither of which reasoning had predicted.
+   Fixed with an explicit `aria-label` of "<label> — <reason|hint>", which
+   outranks both sources and keeps WCAG 2.5.3.
+   **"Show in folder" DECLINED, and it is an owner security call, not an
+   oversight.** No opener/shell plugin exists, and `lib.rs:125-130` omits it
+   deliberately — its ACL expansion is described there as an exfiltration
+   primitive. Shipping it needs, in order: a narrowly scoped Rust command
+   (`explorer /select,<path>`, `fs_scope`-checked like the other file commands)
+   plus its capability entry — the owner should re-take that security decision —
+   then a `platform.ts` wrapper, then a new store field, because `exportDone` is a
+   SENTENCE with the path interpolated into prose and there is nothing
+   machine-readable to reveal. Only then is the button a two-line change.
+   Sixteen mutations, all red, including a renamed persisted format id caught by
+   the `loadStoredExportSettings` round-trip.
+
 8. **Post-program:** un-park FEAT-009 + P-4 together. Parked: P-19 list.
    Rejected for now: P-20 (lyrics runtime on demand).
 

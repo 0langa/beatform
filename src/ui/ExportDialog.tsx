@@ -6,7 +6,7 @@ import {
   SIMPLIFIED_EXPORT_REASON,
   useVizStore,
 } from "../state/store";
-import { CODEC_LABELS, type VideoCodecId } from "../export/codecProbe";
+import { exportCodecOptions, exportFormatOptions, type ExportOption } from "../state/exportConfig";
 import { BG_TRANSPARENT } from "../render/types";
 import { isTauri } from "../state/platform";
 import { Slider } from "./Slider";
@@ -15,7 +15,82 @@ import { useFocusTrap } from "./useFocusTrap";
 import { IconClose, IconExport } from "./Icons";
 import { Segmented } from "./kit";
 
-const CODEC_IDS: readonly VideoCodecId[] = ["h264", "hevc", "av1", "vp9a"];
+/**
+ * P-8 — the capability map. Every format and every codec is listed always;
+ * the ones this machine or this mode cannot produce are dimmed and print the
+ * one-line reason, so the dialog answers "why can't I pick that?" instead of
+ * silently omitting the row.
+ *
+ * ACCESSIBILITY, and why there are two kinds of "off" here:
+ *
+ *  - `disabled` (real, out of the tab order) is used ONLY for `frozen` — an
+ *    export is running and the whole form is inert. There is nothing to read
+ *    there that the progress bar beside it does not already say.
+ *  - `aria-disabled` is used for an unavailable CHOICE, and the tile stays a
+ *    real tab stop. The reason is the entire payload of this feature; a bare
+ *    `disabled` attribute would take the one control carrying it out of the
+ *    tab order, which is how you turn a lie into a mystery. So the reason
+ *    travels three routes: visible text in the tile, the pointer tooltip,
+ *    and the accessible name.
+ *
+ * The accessible name is set EXPLICITLY rather than left to name-from-content,
+ * which was measured wrong in the live app: with only content + `title`, one
+ * engine named the four ffmpeg tiles "Needs the desktop app — it runs the
+ * bundled ffmpeg" (four buttons, one name, no way to tell ProRes from GIF) and
+ * announced the transparent-WebM codec as "transparent WebM overlay"; the other
+ * ran the two spans together as "ProResNeeds the desktop app…". An aria-label
+ * outranks both, and starting it with the visible label keeps WCAG 2.5.3
+ * (label in name) satisfied.
+ *
+ * Re-selecting the active tile is a no-op rather than a same-value write:
+ * in canvas mode the Codec group displays the H.264 the export will actually
+ * use, and dispatching that would quietly overwrite the codec the user picked
+ * for their Video exports.
+ */
+function CapabilityGrid<T extends string>(props: {
+  label: string;
+  /** DOM id stem — the group's label is wired to the grid with it. */
+  name: string;
+  options: ExportOption<T>[];
+  value: T;
+  /** An export is running: freeze the whole group. */
+  frozen: boolean;
+  onChange: (v: T) => void;
+}) {
+  const labelId = `${props.name}-label`;
+  return (
+    <div className="field-block">
+      <span className="field-block-label" id={labelId}>
+        {props.label}
+      </span>
+      <div className="capability-grid" role="group" aria-labelledby={labelId}>
+        {props.options.map((o) => {
+          const off = o.reason !== null;
+          const active = props.value === o.id;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              className={`capability-tile${active ? " active" : ""}${off ? " is-unavailable" : ""}`}
+              disabled={props.frozen}
+              aria-disabled={off || undefined}
+              aria-pressed={active}
+              aria-label={`${o.label} — ${o.reason ?? o.hint}`}
+              title={o.reason ?? o.hint}
+              onClick={() => {
+                if (off || active) return;
+                props.onChange(o.id);
+              }}
+            >
+              <span className="capability-name">{o.label}</span>
+              {off && <span className="capability-reason">{o.reason}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /**
  * The Export modal, extracted whole from App.tsx (it was ~330 lines and five
@@ -37,9 +112,24 @@ export function ExportDialog() {
   const store = useVizStore.getState;
 
   const dialogRef = useFocusTrap(true);
-  const codecChoices = CODEC_IDS.filter((c) => codecSupport?.[c]);
 
   const canvasMode = exportSettings.mode === "canvas";
+  // Built in the render body, never inside a selector: these allocate, and an
+  // allocating zustand selector is "Maximum update depth exceeded" on mount.
+  const caps = { canvasMode, desktop: isTauri(), codecSupport };
+  const formatOptions = exportFormatOptions(caps);
+  const codecOptions = exportCodecOptions(caps);
+  // What the export will ACTUALLY encode with: runExport pins canvas loops to
+  // H.264 regardless of the stored codec, so every sentence below (and the
+  // Codec group's active tile) has to read this, not exportSettings.codec.
+  const effCodec = canvasMode ? "h264" : exportSettings.codec;
+  // Formats whose file carries an alpha channel at all. Only these can be
+  // let down by an opaque background — and only these can promise anything.
+  const keepsAlpha =
+    exportSettings.format === "png" ||
+    exportSettings.format === "prores" ||
+    exportSettings.format === "webp" ||
+    (exportSettings.format === "mp4" && effCodec === "vp9a");
   const res = canvasMode ? { w: 1080, h: 1920 } : RESOLUTIONS[exportSettings.resIdx];
   const effFps = canvasMode ? 30 : exportSettings.fps;
   const effectiveMbps = exportSettings.autoRate
@@ -93,60 +183,14 @@ export function ExportDialog() {
           />
         </div>
 
-        <div className="field">
-          <span>Format</span>
-          <Segmented
-            value={exportSettings.format}
-            disabled={!!exporting}
-            ariaLabel="Export format"
-            onChange={(format) => store().setExportSettings({ format })}
-            options={[
-              {
-                value: "mp4" as const,
-                label: "MP4",
-                hint: "One video file with audio: H.264/HEVC/AV1 (.mp4) or VP9 with alpha (.webm)",
-              },
-              {
-                value: "png" as const,
-                label: "PNG frames",
-                disabled: canvasMode,
-                hint: canvasMode
-                  ? "Not available for Canvas loops (they upload as MP4)"
-                  : "A folder of numbered PNG frames — keeps transparency (set Background to Transparent). No audio; for editors.",
-              },
-              ...(isTauri()
-                ? [
-                    {
-                      value: "prores" as const,
-                      label: "ProRes",
-                      disabled: canvasMode,
-                      hint: canvasMode
-                        ? "Not available for Canvas loops (they upload as MP4)"
-                        : "One .mov file: ProRes 4444 with alpha + PCM audio — drops straight into Premiere/Resolve/After Effects",
-                    },
-                    {
-                      value: "av1-10" as const,
-                      label: "AV1 10-bit",
-                      disabled: canvasMode,
-                      hint: canvasMode
-                        ? "Not available for Canvas loops (they upload as MP4)"
-                        : "One .mp4 file: genuine 10-bit AV1 + AAC audio — for grading and mastering; software-encoded, works on any machine",
-                    },
-                    {
-                      value: "gif" as const,
-                      label: "GIF",
-                      hint: "Animated .gif loop — no audio; pairs with Canvas loop mode for a seamless loop",
-                    },
-                    {
-                      value: "webp" as const,
-                      label: "WebP",
-                      hint: "Animated .webp loop — much smaller than GIF, keeps alpha; no audio",
-                    },
-                  ]
-                : []),
-            ]}
-          />
-        </div>
+        <CapabilityGrid
+          label="Format"
+          name="export-format"
+          options={formatOptions}
+          value={exportSettings.format}
+          frozen={!!exporting}
+          onChange={(format) => store().setExportSettings({ format })}
+        />
 
         {exportSettings.format === "png" && (
           <p className="section-hint">
@@ -233,26 +277,30 @@ export function ExportDialog() {
           </label>
         )}
 
-        {!canvasMode && exportSettings.format === "mp4" && codecChoices.length > 1 && (
-          <label className="field">
-            <span>Codec</span>
-            <select
-              className="select"
-              value={exportSettings.codec}
-              disabled={!!exporting}
-              title="Encode format. Pixels are identical — this only changes file size and player compatibility. VP9 + alpha writes a transparent .webm (set Background to Transparent)."
-              onChange={(e) => store().setExportSettings({ codec: e.target.value as VideoCodecId })}
-            >
-              {codecChoices.map((c) => (
-                <option key={c} value={c}>
-                  {CODEC_LABELS[c]}
-                </option>
-              ))}
-            </select>
-          </label>
+        {/* Shown whenever the format is MP4 — including canvas mode, where
+            every tile but H.264 says so, and including the single-codec
+            machine whose Codec row used to vanish entirely. That vanishing is
+            what made transparent WebM undiscoverable. */}
+        {exportSettings.format === "mp4" && (
+          <CapabilityGrid
+            label="Codec"
+            name="export-codec"
+            options={codecOptions}
+            value={effCodec}
+            frozen={!!exporting}
+            onChange={(codec) => store().setExportSettings({ codec })}
+          />
         )}
 
-        {!canvasMode && exportSettings.format === "mp4" && exportSettings.codec === "vp9a" && (
+        {exportSettings.format === "mp4" && (
+          <p className="section-hint">
+            Pixels are identical — the codec only changes file size and player compatibility. The
+            list above is what this machine&rsquo;s encoder accepted at 1080p60; a 4K job is checked
+            again at its own size, so a very large export can still be refused.
+          </p>
+        )}
+
+        {exportSettings.format === "mp4" && effCodec === "vp9a" && (
           <p className="section-hint">
             VP9 + alpha writes a transparent <strong>.webm</strong> — for OBS overlays, web embeds,
             and players that honor WebM transparency. Set Background to <strong>Transparent</strong>
@@ -349,8 +397,14 @@ export function ExportDialog() {
           Sync is sample-exact.
           {bg.mode === BG_TRANSPARENT &&
             exportSettings.format === "mp4" &&
-            exportSettings.codec !== "vp9a" &&
+            effCodec !== "vp9a" &&
             " Transparent background becomes black in MP4 — PNG frames, ProRes, WebP and VP9+alpha keep it."}
+          {/* The converse, which the dialog never said: an alpha-capable
+              deliverable over an opaque background writes a solid alpha, and
+              the user finds out in their compositor. */}
+          {keepsAlpha &&
+            bg.mode !== BG_TRANSPARENT &&
+            " This format carries an alpha channel, but Background is not Transparent — the alpha exports solid."}
         </p>
 
         {/* F2: the dialog stayed fully operable on the Canvas2D fallback and

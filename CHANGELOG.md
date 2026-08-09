@@ -11,6 +11,20 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- **The export dialog now shows every format and codec, with a reason when one
+  is unavailable.** It used to hide them, which made the choices look
+  unpredictable — the four ffmpeg formats simply did not appear in a browser,
+  and the Codec row vanished entirely on a machine that supports only one
+  codec, which is exactly the machine whose owner wonders where transparent
+  WebM went. Everything is listed now, and anything you cannot pick says why:
+  "Needs the desktop app", "Canvas loops always encode H.264", or that this
+  machine's encoder does not support it. Unavailable choices stay keyboard
+  reachable, so the reason is readable by a screen reader too.
+- **PNG frames no longer offered in the browser.** It was selectable and then
+  failed after you had already chosen a folder.
+
 ## [2.86.0] - 2026-08-09
 
 ### Fixed
