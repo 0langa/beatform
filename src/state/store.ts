@@ -202,7 +202,7 @@ interface DocumentSlice {
   /** Spline-connected spectrum sampling (no hard bin corners), all visuals. */
   smoothSpectrum: boolean;
   timeline: Timeline;
-  /** Builder Studio layer stack (renders when presetId === "builder2"). */
+  /** Builder layer stack (renders when presetId === "builder2"). */
   builderStack: BuilderStack;
   post: PostSettings;
   motion: MotionSettings;
@@ -228,7 +228,7 @@ interface SessionSlice {
    *
    * The fallback draws ONE look — spectrum bars — and its setPreset/setMotion/
    * setBuilderParams/setTransitionPreset/setPost are empty stubs, so every
-   * mode chip, the Motion masters, Builder Studio, the shader editor, scene
+   * mode chip, the Motion masters, Builder, the shader editor, scene
    * transitions, post-processing and video backgrounds are accepted and
    * discarded. Derived once here on every renderer swap and threaded to the
    * panels as a single flag, so "can this backend honour that control?" has
@@ -435,9 +435,9 @@ interface Actions {
   setAspect(aspect: Aspect): void;
   setSmoothSpectrum(v: boolean): void;
   setTimeline(timeline: Timeline): void;
-  /** Replace the Builder Studio stack (undoable; recompiles only on structural change). */
+  /** Replace the Builder stack (undoable; recompiles only on structural change). */
   setBuilderStack(stack: BuilderStack): void;
-  /** Save the current Builder Studio stack as a shareable .bfbuilder file. */
+  /** Save the current Builder stack as a shareable .bfbuilder file. */
   exportBuilderStack(): Promise<void>;
   /** Parse + apply a .bfbuilder file's text (import). */
   importBuilderStackText(text: string): void;
@@ -448,7 +448,7 @@ interface Actions {
   loadFile(file: File): Promise<void>;
   loadDemo(id: string): Promise<void>;
   setShowLibrary(open: boolean): void;
-  /** Apply a template's document (factory pack or parsed .bftheme). */
+  /** Apply a theme's document (factory pack or parsed .bftheme). */
   applyTheme(document: ProjectDocument, name: string): void;
   /** Parse + apply a .bftheme file's text (drag-import). */
   importThemeText(contents: string): void;
@@ -1258,7 +1258,7 @@ export const useVizStore = create<VizState>((set, get) => {
           getRenderer()?.setSmoothSpectrum(get().smoothSpectrum);
           getRenderer()?.setPost(get().post);
           getRenderer()?.setMotion(get().motion);
-          // Builder Studio: a fresh renderer's layer-param buffer is zeroed —
+          // Builder: a fresh renderer's layer-param buffer is zeroed —
           // every layer would render at opacity 0 until the first stack edit.
           rebuildBuilder2(get().builderStack);
           getRenderer()?.setBuilderParams(packBuilderParams(get().builderStack));
@@ -2171,7 +2171,7 @@ export const useVizStore = create<VizState>((set, get) => {
       saveStoredLyricStyle(doc.lyricStyle);
       saveStoredAudiogram(doc.audiogram);
       saveStoredBuilderStack(doc.builderStack);
-      // Builder Studio: the def was already regenerated above (before param
+      // Builder: the def was already regenerated above (before param
       // resolution); re-upload the value block here. setPreset below picks up
       // the new def when builder2 is the active preset.
       getRenderer()?.setBuilderParams(packBuilderParams(doc.builderStack));

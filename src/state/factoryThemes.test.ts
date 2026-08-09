@@ -8,16 +8,16 @@ import { allParams, POST_MOD_TARGETS } from "../render/types";
 import { builderLayerType, BUILDER_MAX_LAYERS } from "../render/builder2";
 
 /**
- * Contract tests for the shipped template pack.
+ * Contract tests for the shipped theme pack.
  *
  * The load-bearing one is "already canonical": a factory document must be
- * IDENTICAL to what validateDocument() produces from it. Every way a template
+ * IDENTICAL to what validateDocument() produces from it. Every way a theme
  * can be quietly wrong — a param outside its spec range (clamped), a sync mode
  * that does not exist (dropped), a route to a source the validator rejects
  * (dropped), an out-of-order timeline lane (re-sorted), a background pointing
  * at an asset the document does not carry (degraded to the preset background)
  * — shows up there as a diff, because that is exactly the transform an
- * .bftheme goes through on import. Without it, a broken template would still
+ * .bftheme goes through on import. Without it, a broken theme would still
  * "apply" and still "round-trip"; it would simply not be the look that was
  * authored.
  *
@@ -36,7 +36,7 @@ describe("factory template pack", () => {
     const names = FACTORY_THEMES.map((t) => t.meta.name);
     expect(new Set(names).size).toBe(names.length);
     // Route/layer ids are slug-derived, so a duplicate slug would collide two
-    // templates' ids without any other symptom.
+    // themes' ids without any other symptom.
     const ids = FACTORY_THEMES.flatMap((t) => Object.values(t.document.modsByPreset).flat()).map(
       (r) => r.id,
     );
@@ -62,7 +62,7 @@ describe("factory template pack", () => {
   it.each(FACTORY_THEMES.map((t) => [t.meta.name, t] as const))(
     "%s: is a complete composition, honestly described",
     (_name, t) => {
-      // A template is meant to be a whole look. These are the pieces that
+      // A theme is meant to be a whole look. These are the pieces that
       // separate one from a recolour — the old pack set only the first.
       expect(t.meta.description, "needs a user-facing description").toBeTruthy();
       expect(t.meta.description!.length).toBeGreaterThan(40);
@@ -112,7 +112,7 @@ describe("factory template pack", () => {
       const preset = presetById(t.document.presetId);
       const spec = new Map(allParams(preset).map((p) => [p.key, p]));
       for (const [presetId, routes] of Object.entries(t.document.modsByPreset)) {
-        // A route list filed under a preset the template never selects is
+        // A route list filed under a preset the theme never selects is
         // dead weight the user would never find in the UI.
         expect(presetId, "routes for an inactive preset").toBe(t.document.presetId);
         for (const r of routes) {
@@ -163,7 +163,7 @@ describe("factory template pack", () => {
         for (const p of type!.params) {
           // Every slot must be authored: packBuilderParams falls back to the
           // spec default for a missing key, so an omission renders as a look
-          // the template never declared.
+          // the theme never declared.
           expect(l.params[p.key], `${l.type}.${p.key} unset`).toBeTypeOf("number");
         }
       }
@@ -174,7 +174,7 @@ describe("factory template pack", () => {
     "%s: references no asset it does not carry",
     (_name, t) => {
       const d = t.document;
-      // Templates ship no binaries, so any asset reference is a dangling one —
+      // Themes ship no binaries, so any asset reference is a dangling one —
       // and validateDocument silently degrades those rather than failing.
       expect(d.assets).toEqual({});
       for (const l of d.overlayLayers) {
@@ -189,7 +189,7 @@ describe("factory template pack", () => {
   it("covers genuinely different visuals, aspects and moods", () => {
     const presetIds = FACTORY_THEMES.map((t) => t.document.presetId);
     // Near-duplicates are the failure mode the pack is meant to avoid: two
-    // templates on the same mode have to justify themselves, and none do yet.
+    // themes on the same mode have to justify themselves, and none do yet.
     expect(new Set(presetIds).size).toBe(presetIds.length);
     const aspects = new Set(FACTORY_THEMES.map((t) => t.document.aspect));
     expect(aspects.has("16:9")).toBe(true);

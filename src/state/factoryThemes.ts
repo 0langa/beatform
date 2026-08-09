@@ -19,16 +19,16 @@ import type { Timeline } from "./timeline";
 import type { OverlayLayer } from "../render/overlay";
 
 /**
- * Factory template packs — curated, genre-shaped starting points shipped
+ * Factory theme packs — curated, genre-shaped starting points shipped
  * with the app. Authored as TYPED data (not JSON files) so the compiler
  * checks every field against the real document schema; exporting one writes
- * the same .bftheme file a community template uses. Params are partial:
+ * the same .bftheme file a community theme uses. Params are partial:
  * anything unspecified resolves to the preset's defaults at apply time,
  * exactly like a saved project.
  *
- * A template is a COMPOSITION, not a recolour. Each one commits to all of:
+ * A theme is a COMPOSITION, not a recolour. Each one commits to all of:
  * visual + params, the sync feel that drives it, the post chain, the motion
- * masters, and — the piece the first generation of templates never used —
+ * masters, and — the piece the first generation of themes never used —
  * modulation routes, so the look breathes with the track instead of sitting
  * still. Several also carry the document-level features a "complete look"
  * really needs: frame aspect, background mode, timeline automation, an
@@ -36,8 +36,8 @@ import type { OverlayLayer } from "../render/overlay";
  *
  * Rules every entry follows:
  *  - Deterministic: plain serializable data only. Route and layer ids are
- *    derived from the template's slug (below), never Date.now()/random, so
- *    applying the same template produces the same project document every
+ *    derived from the theme's slug (below), never Date.now()/random, so
+ *    applying the same theme produces the same project document every
  *    launch — which is what makes the round-trip test meaningful.
  *  - Canonical: the authored document must already equal what
  *    validateDocument() would produce, so apply -> export -> re-import is a
@@ -53,7 +53,7 @@ export interface FactoryTheme {
 
 /** A modulation route without its id — the builder derives a stable one. */
 type ModSpec = Omit<ModRoute, "id">;
-/** A Builder Studio layer without its id — same reason. */
+/** A Builder layer without its id — same reason. */
 type LayerSpec = Omit<BuilderLayer, "id">;
 
 interface ThemeSpec {
@@ -98,9 +98,9 @@ function theme(spec: ThemeSpec): FactoryTheme {
     },
     document: {
       presetId: spec.preset,
-      // Keyed by the template's own preset: switching modes after applying
+      // Keyed by the theme's own preset: switching modes after applying
       // leaves the other modes at their defaults, which is what a user
-      // exploring from a template expects.
+      // exploring from a theme expects.
       paramsByPreset: spec.params ? { [spec.preset]: spec.params } : {},
       syncByPreset: spec.sync ? { [spec.preset]: spec.sync } : {},
       bgByPreset: {},
@@ -122,7 +122,7 @@ function theme(spec: ThemeSpec): FactoryTheme {
   };
 }
 
-/** Title/artist lockup for the release-post template. Uses the {title} /
+/** Title/artist lockup for the release-post theme. Uses the {title} /
  * {artist} tokens so it fills itself from the loaded track's tags — and
  * renders nothing at all until one is loaded (empty text is skipped). */
 const releaseLockup = (slug: string): OverlayLayer[] => [
@@ -161,7 +161,7 @@ const releaseLockup = (slug: string): OverlayLayer[] => [
 export const FACTORY_THEMES: FactoryTheme[] = [
   /* The default release visual: the artwork IS the centrepiece. coverHue
    * repaints the whole scene from the cover's palette on every track load, so
-   * one template gives every single a different, matching look. */
+   * one theme gives every single a different, matching look. */
   theme({
     slug: "cover-story",
     name: "Cover Story",
@@ -338,7 +338,7 @@ export const FACTORY_THEMES: FactoryTheme[] = [
     ],
   }),
 
-  /* The timeline template. A camera move is the one thing modulation cannot
+  /* The timeline theme. A camera move is the one thing modulation cannot
    * do — it has to be scripted against track time, not audio — so this is
    * where automation lanes earn their place instead of being a demo.
    *
@@ -375,7 +375,7 @@ export const FACTORY_THEMES: FactoryTheme[] = [
       hueRange: 85,
       heightScale: 10,
       // Both camera keys sit at the END of the scripted move, so deleting the
-      // lanes leaves the shot the template holds on rather than snapping.
+      // lanes leaves the shot the theme holds on rather than snapping.
       camPitch: 30,
       camDist: 25.5,
       camSpin: 6,
@@ -569,7 +569,7 @@ export const FACTORY_THEMES: FactoryTheme[] = [
 
   /* Long-form ambient: nothing here is allowed to snap. Every route is fed by
    * a SMOOTH source (energy/bass/rms), never an onset pulse, and the sync
-   * envelope is slow on both edges — this is the anti-strobe template. */
+   * envelope is slow on both edges — this is the anti-strobe theme. */
   theme({
     slug: "polar-night",
     name: "Polar Night",
@@ -667,7 +667,7 @@ export const FACTORY_THEMES: FactoryTheme[] = [
 
   /* Voice, not music: square frame, speech-band sync, and the audiogram
    * elements switched on — progress bar, clock, waveform strip. The one
-   * template that is a finished deliverable rather than a backdrop. */
+   * theme that is a finished deliverable rather than a backdrop. */
   theme({
     slug: "on-air",
     name: "On Air",
@@ -760,7 +760,7 @@ export const FACTORY_THEMES: FactoryTheme[] = [
     ],
   }),
 
-  /* Builder Studio, pre-assembled. Six blended layers show what the
+  /* Builder, pre-assembled. Six blended layers show what the
    * compositor is for — and because a Builder stack exposes no preset params,
    * its modulation necessarily targets the POST chain, which is the clearest
    * demonstration in the pack that post: routes are first-class. */
@@ -768,7 +768,7 @@ export const FACTORY_THEMES: FactoryTheme[] = [
     slug: "assembly",
     name: "Assembly",
     description:
-      "Six Builder Studio layers stacked and blended: wash, drifting bokeh, a waveform circle, a radial spectrum, beat rings and a low bar floor. Open Builder and pull it apart — every layer is editable.",
+      "Six Builder layers stacked and blended: wash, drifting bokeh, a waveform circle, a radial spectrum, beat rings and a low bar floor. Open Builder and pull it apart — every layer is editable.",
     bpmHint: [100, 140],
     preset: "builder2",
     sync: { mode: "kick", smooth: 0.35, attack: 0.05, release: 0.5 },

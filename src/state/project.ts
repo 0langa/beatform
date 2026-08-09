@@ -54,7 +54,7 @@ import { validTimeline, type Timeline } from "./timeline";
  *        anyone who hadn't separately imported the matching .bfshader.
  *        Older files simply lack the fields and the validators default them.
  *
- * v10 (+) builderStack — Builder Studio's ordered layer list. Older files
+ * v10 (+) builderStack — Builder's ordered layer list. Older files
  *        default to the starter stack; the classic `builder` preset is
  *        untouched and still renders identically.
  *
@@ -154,7 +154,7 @@ export interface ProjectDocument {
    * scenes) — embedded so the project renders identically on a machine that
    * never imported the matching .bfshader. NOT the user's whole library. */
   customDefs: PresetDef[];
-  /** Builder Studio layer stack (renders when presetId === "builder2"). */
+  /** Builder layer stack (renders when presetId === "builder2"). */
   builderStack: BuilderStack;
 }
 
@@ -376,7 +376,7 @@ function migrateRenamedPresetIds(doc: Partial<ProjectDocument>): Partial<Project
 /**
  * Field-by-field validation + defaulting of an untrusted document. This IS
  * the migration path: older schemas simply lack fields and the validators
- * default them. Shared by .bfproj projects and .bftheme templates.
+ * default them. Shared by .bfproj projects and .bftheme themes.
  */
 export function validateDocument(rawDoc: Partial<ProjectDocument>): ProjectDocument {
   const doc = migrateRenamedPresetIds(rawDoc);
@@ -473,7 +473,7 @@ function validPresetId(v: unknown): string {
   if (typeof v !== "string") return presets[0].id;
   // knownPresetId covers strip presets, HIDDEN built-ins (the classic
   // builder left the strip in v2.44 but old projects keep rendering it),
-  // Builder Studio and registered custom defs. A custom id whose def the
+  // Builder and registered custom defs. A custom id whose def the
   // user deleted falls back to the default mode.
   if (knownPresetId(v)) return v;
   return presets[0].id;

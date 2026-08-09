@@ -388,7 +388,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       // motion freezes when paused. Input sampling still follows the live
       // device, as documented in PREVIEW-EXPORT-CONTRACT.md.
       const trackTime = compensated;
-      // Live FPS cap (Settings ▸ Performance): draw-skip, transport-keep.
+      // Live FPS cap (Preferences ▸ Performance): draw-skip, transport-keep.
       // Preview-only by design — exports walk every frame deterministically
       // and never consult this.
       const fpsCap = getPrefs().fpsCap;

@@ -100,7 +100,7 @@ export function defaultImageLayer(assetId: string): ImageLayer {
 
 // Decoded-bitmap cache so re-rasterizing on resize doesn't re-decode assets.
 // Keyed by asset id AND the dataUrl that was decoded: a loaded project can
-// reuse an id with different image bytes (save-as + edit, templates), and an
+// reuse an id with different image bytes (save-as + edit, themes), and an
 // id-only cache would keep serving the stale bitmap — in exports too.
 type BitmapEntry = { url: string; bmp: Promise<ImageBitmap> };
 
@@ -110,7 +110,7 @@ const bitmapCache = new Map<string, BitmapEntry>();
  * Release an entry we are dropping. Every other ImageBitmap owner in this
  * codebase closes explicitly (disposeVideoBgFrames, the batch runner's overlay,
  * runExport's finally) — leaving a full-resolution logo decode to the GC is how
- * a long editing session, or a template gallery that swaps asset bytes under a
+ * a long editing session, or a theme gallery that swaps asset bytes under a
  * reused id, accumulates megabytes of detached-but-alive bitmaps.
  *
  * The decode may still be in flight, and may reject: close on settle and

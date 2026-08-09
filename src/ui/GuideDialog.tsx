@@ -223,8 +223,9 @@ const SECTIONS: GuideSection[] = [
         <p>
           Sources are the drums and bands (kick, snare, hats, bass, mids, treble, voice), the
           track-wide signals (loudness, energy, stereo width, section change, beat and bar phase),
-          the lyric line when one is loaded, and a set of beat-synced <strong>LFOs</strong> — sine,
-          saw or square over ¼ beat to 8 bars — for movement that does not wait on the music.
+          the lyric line when one is loaded, and eighteen beat-synced <strong>LFOs</strong> — sine,
+          saw or square, each at ¼, ½, 1, 2, 4 or 8 beats per cycle — for movement that does not
+          wait on the music.
         </p>
         <p>
           A <strong>Driven by</strong> row above the cards shows one live meter per source actually

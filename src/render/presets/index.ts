@@ -35,7 +35,7 @@ export const presets: PresetDef[] = [
   aurora,
   synthwave,
   bassCircle,
-  // ONE Builder on the strip (the Builder Studio layer compositor);
+  // ONE Builder on the strip (the layer compositor);
   // rendering resolves through presetById -> currentBuilder2Def().
   currentBuilder2Def(),
 ];

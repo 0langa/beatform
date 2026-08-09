@@ -1,11 +1,11 @@
 import { PROJECT_VERSION, validateDocument, type ProjectDocument } from "./project";
 
 /**
- * .bftheme — a shareable look/template. One JSON file: metadata (author,
- * license, tempo hint, optional thumbnail) + a full ProjectDocument
+ * .bftheme — a shareable theme: the whole document as one file. Metadata
+ * (author, license, tempo hint, optional thumbnail) + a full ProjectDocument
  * (preset/params/styles, background, overlay layers with embedded assets,
  * timeline scenes, post chain, motion masters). No code of any kind — a
- * template can only select and parameterize the app's own presets, so
+ * theme can only select and parameterize the app's own presets, so
  * importing one is exactly as safe as clicking around the UI.
  *
  * Versioning rides the project schema: document validation IS migration
@@ -16,7 +16,7 @@ import { PROJECT_VERSION, validateDocument, type ProjectDocument } from "./proje
 export const THEME_VERSION = 1;
 
 export interface ThemeMeta {
-  /** Display name of the template ("Midnight Phonk"). */
+  /** Display name of the theme ("Midnight Phonk"). */
   name: string;
   author: string;
   /** SPDX-ish string, e.g. "CC0-1.0", "CC-BY-4.0", "MIT". */

@@ -69,8 +69,9 @@ checksum-verified selection.
 
 ## Authoring tips
 
-- Tune a mode + styles, set Sync (mode/attack/release matter as much as
-  colors), add Post (bloom sells most looks), then _Save as theme…_.
+- Tune a mode + styles on _Mode_, set _Sync_ (mode/attack/release matter as
+  much as colors), add _Scene ▸ Post_ (bloom sells most looks), then
+  _Save as theme…_.
 - `bpmHint` tells users what tempo range you designed around; the app never
   blocks on it.
 - License defaults to CC0 on export so others can build on your look;
