@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.86.0] - 2026-08-09
+
 ### Fixed
 
 - **Closing the app during lyrics generation left the transcriber running.**
@@ -2407,7 +2409,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.85.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.86.0...HEAD
+[2.86.0]: https://github.com/0langa/beatform/compare/v2.85.0...v2.86.0
 [2.85.0]: https://github.com/0langa/beatform/compare/v2.84.0...v2.85.0
 [2.84.0]: https://github.com/0langa/beatform/compare/v2.83.0...v2.84.0
 [2.83.0]: https://github.com/0langa/beatform/compare/v2.82.0...v2.83.0
