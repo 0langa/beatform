@@ -11,6 +11,37 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Closing the app during lyrics generation left the transcriber running.**
+  Whisper is a separate program Beatform starts, and closing the window only
+  ever stopped its parent — so the transcription kept going with no window
+  attached to it, holding four cores for however long it had left. It is now
+  tied to the app's lifetime, including when the app crashes rather than
+  closes.
+- **Lyrics generation left the whole decoded track behind in your temp
+  folder.** Roughly 42 MB for a four-minute song, and around 635 MB for an
+  hour-long set, every time generation was interrupted or refused — on the
+  system drive, which is the one Beatform warns you about running out of.
+  Those files are cleaned up now, including the ones left by a rejected start.
+- **Cancel did nothing if you pressed it just as Transcribe began.** There was
+  a small window where the cancel arrived before the transcriber had finished
+  starting, and it was then ignored for the rest of the stage — so cancelling
+  appeared to hang for minutes. It stops promptly now, wherever it lands.
+- **The beat flash rang about twice as long in a 30 fps export as in the
+  preview.** The beat's fade was advancing once per exported frame instead of
+  once per analysis step, and the gap widened as the beat faded. Exports at
+  30 fps — which includes every Canvas-loop export, since those are always
+  30 fps — now match what you saw. Exports at 60 fps are unchanged, to the
+  pixel.
+
+### Changed
+
+- **The Visuals panel got noticeably lighter to use.** Dragging a slider used
+  to redraw the entire panel on every pixel of movement, and so did moving the
+  pointer across it — now a drag touches only the control you are dragging.
+  Nothing looks different; it just stops doing work it never needed to do.
+
 ## [2.85.0] - 2026-08-09
 
 ### Fixed
