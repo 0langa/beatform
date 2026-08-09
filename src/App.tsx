@@ -990,9 +990,9 @@ export default function App() {
                 {rendererWarning ??
                   "WebGPU is unavailable on this system, so Beatform is drawing a simplified preview."}{" "}
                 Every visual mode draws the same spectrum bars; post-processing, the Motion masters,
-                Builder Studio, the shader editor, scene transitions and video backgrounds are
-                switched off. Video export and batch render are disabled — your project is unharmed
-                and renders in full on a system with hardware rendering.
+                Builder, the shader editor, scene transitions and video backgrounds are switched
+                off. Video export and batch render are disabled — your project is unharmed and
+                renders in full on a system with hardware rendering.
               </span>
             </div>
             <button

@@ -1062,11 +1062,15 @@ export function ParamsPanel() {
         ]
       : []),
     {
-      // The id keeps the retired pre-vocabulary title (see SectionDef.id):
-      // collapse state persisted as "Templates" must keep applying to this
-      // section now that it reads LOOKS & THEMES. The rail id stays `themes`
-      // for the harder reason — it persists as `visualsPage` and prefs.ts has
-      // no page-id migration, so labels move and ids never do.
+      // The id keeps the retired pre-vocabulary spelling while the title
+      // reads LOOKS & THEMES. It is INERT, not load-bearing: validPrefs
+      // filters collapsedSections to "group:"-prefixed entries, so a bare
+      // "Templates" key is pruned on read and no collapse state depends on
+      // it. Left alone because renaming it buys nothing, not because a
+      // rename would cost anything.
+      // The RAIL id is the one that matters: `themes` persists as
+      // `visualsPage` and prefs.ts has no page-id migration, so labels move
+      // and ids never do.
       id: "Templates",
       title: "Looks & themes",
       page: "themes",
