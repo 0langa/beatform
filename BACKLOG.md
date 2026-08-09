@@ -673,8 +673,9 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       its successor, landing it AFTER the next line: `[0, 6.15, 5]`.
       `activeLyricIndex` binary-searches by start, so the half the user just
       split off never appeared in preview or export while still showing in the
-      editor list. Ceiling is now `min(window end, next line's start) -
-    MIN_GAP`, floored so a degenerate corridor still orders the two halves.
+      editor list. The ceiling is now the earlier of the window end and the
+      next line's start, less MIN_GAP, floored so that a degenerate corridor
+      still orders the two halves.
       **Vacuity, a fifth time, and this one is worth quoting:** the lane
       property test's first generator used continuous `fc.double`, which never
       produces duplicate `t` — so NEITHER tie-break mutation was caught. The
