@@ -581,8 +581,17 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       (the sidecar's two byte-index slices are at ASCII boundaries, so the
       2026-08-09 multi-byte precedent does not recur); `prores.rs` child
       lifecycle is already correct.
-      **Owed: `npm run test:lyrics` (GATES.md §3) — mandatory for the sidecar
-      supervision change and not yet run.**
+      **`npm run test:lyrics` RUN AND GREEN 2026-08-09**, with the dev server
+      up: download + cancel + resume + verify, corpus generation, the editor
+      leg (confidence transport, edits, undo walk, LRC round-trip, real
+      re-align), **mid-run cancel** — the exact path E2-P3 fixes — and the
+      dense-mix generation plus stem comparison (mix-pipeline 161 words against
+      stem-only 194, 96% shared-vocab overlap). After the run: **0 whisper /
+      sidecar / beatform processes alive and 0 `beatform-lyrics-*` files left
+      in `%TEMP%`**, which is E2-P1 and E2-P2 observed rather than argued.
+      Note the harness needs Vite already listening — it does NOT spawn one,
+      unlike the GPU matrix — and G9's new probe is what says so now instead of
+      failing with "Cannot find execution context".
       Wave 1 is PART done because "state" is bigger than persistence — the
       document model, `modMatrix`, `frameResolve` and the store slices have
       not had the same pass. Not started: waves 2–5.
