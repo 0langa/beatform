@@ -433,6 +433,36 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       unproven until a render-count assertion backs it.
 - [ ] E2 Severity-2 waves per domain (state → UI → audio/export →
       platform → render), each wave gated + released.
+      **REGISTER UNREACHABLE (2026-08-09).** The severity-2 list this item
+      was written against lives in the archived audit at
+      `beatform-archive\v3-acceptance-2026-07-27\`, and that drive is not
+      mounted — no drive under C:–H: carries it (F: is the only
+      devstorage-participating volume and holds no archive). It is also
+      2026-07-27 vintage, i.e. ~14 releases stale, and E1 already closed an
+      unknown number of its entries in passing. Waves therefore re-derive
+      against the CURRENT tree; if the archive comes back, reconcile rather
+      than assume either list is complete.
+      **Wave 1 (state) — PART DONE 2026-08-09.** Swept the persisted-session
+      surface, which is the state domain's whole untrusted-input story that
+      `parserFuzz` does not cover: file parsers read bytes the user chose to
+      open, these loaders read bytes a PREVIOUS INSTALL left behind, at boot,
+      before anything is on screen. `src/state/persistenceFuzz.test.ts` puts
+      arbitrary stored text under all 22 keys and asserts that no loader
+      throws and none returns a non-finite number anywhere in its result —
+      the second one matters because `JSON.stringify` writes NaN/Infinity
+      back as `null`, so a leak resets the setting one launch LATER, which is
+      about as hard to trace as a bug gets. Plus a prototype-pollution
+      assertion over the four per-preset maps.
+      **Found: nothing.** `readJson` already try/catches, `safeSetItem`
+      already degrades on quota with a throttled notice, and every loader
+      routes through a `valid*` validator. Read `history.ts` for the obvious
+      companion defect (unbounded redo stack — `popRedo` pushes onto
+      `undoStack` with no `MAX_DEPTH` check) and it is NOT one: entries only
+      move between the two stacks and `pushHistory` clears redo, so
+      undo+redo is conserved at ≤ 100.
+      Wave 1 is PART done because "state" is bigger than persistence — the
+      document model, `modMatrix`, `frameResolve` and the store slices have
+      not had the same pass. Not started: waves 2–5.
 - [ ] E3 Register the RP-4 determinism question as its own
       investigate-and-close item (measure, fix or document).
 - [x] E4 ALIGN-002 — **DONE, shipped v2.72.1 (2026-08-06), proven on the
@@ -508,6 +538,16 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       deep runs. It lives inside `cargo test --workspace` on purpose: a
       cargo-fuzz target needs nightly and therefore cannot be a gate, and this
       invariant is only worth anything if every commit checks it.
+      **The cargo-fuzz target was attempted and DECLINED, on a build log
+      rather than an opinion.** nightly and cargo-fuzz 0.13.2 were installed
+      and a `transpile` target authored; `cargo +nightly fuzz build` fails
+      because the target links the whole `beatform` lib, which runs
+      `tauri::generate_context!`, and that macro does not compile in the fuzz
+      build (E0063). Making it work needs the transpiler split into its own
+      crate — a real architectural change in service of a harness that can
+      never be a gate here (CI is stable-only). Revisit if the transpiler
+      ever moves out on its own merits. Cost of the attempt, both reverted: a
+      `pub mod shadertoy;` and a `fuzz/` directory.
       JS: `src/state/parserFuzz.test.ts` — fast-check over `parseProject`,
       `parseTheme`, `parseLrc`/`parseSrt`/`parseLyrics` and the three
       per-frame lyric readers. Five properties, each mutation-checked. One of
