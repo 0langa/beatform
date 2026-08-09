@@ -7,7 +7,7 @@
 // Prereq: Vite dev on 127.0.0.1:1420.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnApp, attach, killTree } from "./lib/app.mjs";
+import { spawnApp, attachWithRecovery, waitHooks, killTree } from "./lib/app.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -18,14 +18,16 @@ try {
     portBase: 9140, // see the map in lib/app.mjs
     profileName: "wv2-perf-family-profile",
   });
-  const cdp = await attach(app);
+  // Vite pushes one reload shortly after a cold boot (dep re-optimize / ws
+  // reconnect), which destroys the eval context mid-wait — attach, and on
+  // that specific failure re-attach once (the v2.68 lesson). The hook wait is
+  // the probe because it is the first thing that can hit the dead context;
+  // a bare attach() died here before reaching a single assertion (G8).
+  const cdp = await attachWithRecovery(app, (c) =>
+    waitHooks(c, ["__prefs"], { timeoutMs: 30_000 }),
+  );
 
   const out = await cdp.eval(`(async () => {
-    const deadline = Date.now() + 30000;
-    while (!window.__prefs) {
-      if (Date.now() > deadline) throw new Error("hooks unavailable");
-      await new Promise(r => setTimeout(r, 200));
-    }
     window.__prefs.set({ perfOverlay: true });
     // Two Rust polls minimum (family CPU needs a delta; scan is on poll 1).
     await new Promise(r => setTimeout(r, 3200));

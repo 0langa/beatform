@@ -406,7 +406,24 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       not the notes reconstructed. Verified 2026-08-09:
       `rg -n "^## \[2\.74\.0\]" CHANGELOG.md` → `388:## [2.74.0] - 2026-08-07`,
       and every heading from `[2.70.0]` to `[2.84.0]` is present and in order.
-- [ ] D5 **NEW, from the D3 sweep — naming residue outside the docs track's
+- [x] D5 **DONE 2026-08-09.** (a) fixed in `52721e9`, (b) and (c) fixed in
+      `75fab1d` — comment sweep over `themes.ts` / `factoryThemes.ts` + its
+      test / `project.ts` / `store.ts` / `overlay.ts`, plus two things the
+      sweep found that the entry did not name: the **Assembly** factory
+      theme's `meta.description` opened "Six Builder Studio layers" and IS
+      rendered (the theme chip's `title`, and the Gallery), making it the
+      last user-visible survivor of the retired name; and `services.ts`
+      carried a dead `Settings ▸ Performance` path. Correction to this
+      entry's own premise: `themes.ts` was assumed to keep "template" as
+      HISTORY, so it was scoped as untouchable — it did not. All three uses
+      were present-tense definitions of the live format and were corrected.
+      Left deliberately: "template" in its other senses (the batch
+      export-options template, the `{title}`/`{artist}` text expansion, the
+      GitHub PR template) and the "Essentials" mentions in `prefs.ts`, which
+      are correct history. Still open, one comment site: `webgpuRenderer.ts`
+      ~2109 says `Settings ▸ Performance`; held only because another change
+      was in flight in that file.
+      ORIGINAL ENTRY — **naming residue outside the docs track's
       write scope.** Three findings, all reported rather than changed:
       (a) `src/App.tsx` — the Canvas2D-fallback toast tells the user
       "Builder Studio … [is] switched off"; the mode is called **Builder**
@@ -481,8 +498,52 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       Wave 1 is PART done because "state" is bigger than persistence — the
       document model, `modMatrix`, `frameResolve` and the store slices have
       not had the same pass. Not started: waves 2–5.
-- [ ] E3 Register the RP-4 determinism question as its own
-      investigate-and-close item (measure, fix or document).
+- [x] E3 **DONE 2026-08-09 — RP-4 investigated and CLOSED as NOT A DEFECT.**
+      The mechanism the finding named does not exist in the code, and did not
+      exist when the measurement was taken. `WebGPURenderer.create()` requests
+      its OWN adapter and device every call and `dispose()` destroys it; all
+      particle state is instance-private (`particleBuf`, `particleCapacity`,
+      `simStepsDone`, `particleInitPending`); `setPreset` re-seeds from a pure
+      hash of the particle index while zeroing the step counter; and the only
+      module-level mutable binding in the 3,980-line `webgpuRenderer.ts` is a
+      memoized f16 LUT. `git show da068f5:src/render/webgpuRenderer.ts`
+      confirms the same structure at the time of the bisection, so the
+      original conclusion was unsupported even then.
+      The recorded evidence also contradicts itself: the sim is an INTEGRATOR,
+      so a perturbed buffer diverges at the frame it was perturbed and never
+      rejoins — "frame 9 alone, neighbours intact" is the opposite shape, and
+      the "crossfade tail" is just loop mode's head/tail blend
+      (`exportCore.ts:973-993`) echoing one changed head frame.
+      Pinned by `src/render/particleSimIsolation.test.ts`: a real renderer
+      against a recording stub device, capturing the whole particle GPU stream
+      (the 1,920,000-byte seed upload, every 144-byte uniform slot, every
+      dispatch), asserting that a thumbnail walk using the forbidden sim params
+      leaves a later export walk byte-identical — on a separate instance AND on
+      the same one. Five mutations, all red. **Methodological note worth
+      keeping: mutation 2 (a module-level `seededCount`, i.e. the literal RP-4
+      hypothesis) initially PASSED** — trace equality alone is blind to a leak
+      that skews every run identically. Fixed by asserting the recorded walk's
+      SHAPE as well. The comment at `thumbnails.ts:46` no longer asserts a bug
+      that is not there; the hard rule stays, as belt and braces.
+- [ ] E3a **NEW, from E3 — the residual, and it needs hardware.** What
+      actually moved frame 9 was never reproduced, and RP-4's explanation is
+      now ruled out. Leading hypothesis is a CAPTURE race, not a sim bug:
+      `exportCore.ts:968-976` awaits `renderer.gpuDone()` and then
+      `createImageBitmap(canvas)`, and `onSubmittedWorkDone` resolving is not a
+      guarantee the swapchain front buffer has flipped — which produces exactly
+      a one-off frame with intact neighbours, and is load-sensitive, so a
+      heavier preceding thumbnail sim changes the load. **The experiment that
+      settles it costs one run:** export the same Particle Flow loop twice back
+      to back with NO code change and hash the PNG frames. One differing frame
+      between two identical runs means the coupling never existed and the
+      bisection was chasing capture noise; two hash-identical runs mean the
+      original observation is real and deserves a fresh bisect.
+      Also recorded from the same sweep, NOT a defect: Particle Flow's sim
+      reads audio lanes per FRAME, not per STEP (`webgpuRenderer.ts:57-61`), so
+      at 30 fps two steps share one feature sample and a 60 fps preview
+      legitimately reaches a different particle state than a 30 fps export.
+      Documented behaviour, and the stated reason hash baselines are only ever
+      compared at equal fps.
 - [x] E4 ALIGN-002 — **DONE, shipped v2.72.1 (2026-08-06), proven on the
       live path.** Two-stage diagnosis: (1) the tauri-cli 2.11.4 NSIS
       template writes `DisplayVersion` UNCONDITIONALLY, and running the
@@ -697,7 +758,15 @@ nothing else from that release is outstanding.
       **Unblocked as of v2.81.0**: P-1 stage 1's only top-bar edit was
       turning the dock toggle into a labelled `.ghost-btn`; the export
       cluster is untouched and no later stage is scheduled to move it.
-- [ ] G8 **Device harnesses that attach without recovery.**
+- [x] G8 **DONE 2026-08-09.** `lyrics-e2e.mjs` and `perf-family-check.mjs`
+      both use `attachWithRecovery` now, following `gallery-e2e.mjs` rather
+      than inventing a second idiom. `lyrics-e2e` also pulled its FIRST
+      `__invoke` IPC call inside the probe — previously only the later IPC leg
+      was guarded — while keeping its `FAIL:` console contract. Unproven end to
+      end: that recovery actually absorbs a live Vite reload in these two. The
+      mechanism is `gallery-e2e`'s, unchanged, but the device harnesses have
+      not been run since.
+      ORIGINAL — **Device harnesses that attach without recovery.**
       `scripts/lyrics-e2e.mjs` wraps its FIRST IPC call in the re-attach
       dance but not the initial `attach()` + `waitHooks` eval, and
       `scripts/perf-family-check.mjs` uses bare `attach()` — both die on a
@@ -707,7 +776,33 @@ nothing else from that release is outstanding.
       v2.80.0 gate run, where `test:lyrics` could not be executed at all;
       the branch it guards (`lyricFileName` gating the lyrics panels, which
       W1 rewired) was verified directly in the running app instead.
-- [ ] G9 **A stale dev server silently poisons every e2e harness.** The
+- [x] G9 **DONE 2026-08-09 — and the bug was caught live while being fixed.**
+      `checkDevServer()` in `scripts/lib/app.mjs` reads `devUrl` from
+      `tauri.conf.json` (the same config the shell loads, so the probe cannot
+      check a different port than the app uses) and GETs `public/icon.svg` from
+      BOTH address families when the host is `localhost` — `127.0.0.1` and
+      `[::1]`, because the whole failure mode is two servers, one per family.
+      Response bytes prove the project; `Last-Modified` against
+      `statSync().mtime` proves the CHECKOUT. Anything else answering throws
+      loudly, naming `devUrl`, the offending origin, this harness's root and
+      the dual-stack fix; nothing answering fails fast instead of burning the
+      240s timeout. Best-effort culprit ID asks the offender for a path via
+      `/@fs/`, since Vite's 403 body lists its own serving roots — purely
+      diagnostic, the verdict never depends on it. `spawnApp` starts the probe
+      overlapping app boot and `waitForPage` awaits it before its first poll;
+      it cannot become async, because every harness does
+      `app = spawnApp(...)` and then `killTree(app)` in a `finally`.
+      Proven against a real Vite 8.1.5 server, 6/6 cases: right tree passes; a
+      sibling worktree with a BYTE-IDENTICAL `icon.svg` is rejected on mtime
+      and its root named; a foreign server on `[::1]` while ours holds
+      `127.0.0.1` is caught; killing it makes the case pass; foreign
+      `Last-Modified` with the same bytes is caught; a dead port reports "no
+      dev server answered". **And a real instance turned up during the
+      session:** the probe failed against an actual `:1420` server rooted at
+      the MAIN repo while the harness ran from a worktree — exactly this bug,
+      caught by the new code, with the culprit named. GATES.md section 3 now
+      documents `npm run dev -- --host` and `TAURI_DEV_HOST=127.0.0.1`.
+      ORIGINAL — **A stale dev server silently poisons every e2e harness.** The
       harnesses spawn the debug exe, which loads the configured `devUrl`
       on port 1420; a leftover Vite from an earlier run — bound
       IPv6-only, since `host: false` resolves to `[::1]` on this machine —
@@ -973,7 +1068,58 @@ buys and what it does not.
       its CSS and its two kit tests. Cost of the wrong claim, had it been
       believed: the whole "delete the collapse mechanism" decision (D4/G2)
       looks impossible instead of trivial.
-- [ ] H7 **Stale doc pointers left by the v2.81.0 mechanical rename, in
+- [x] H7 **CLOSED 2026-08-09 — the doc-pointer half needed no work, and the
+      guide-diff half produced a list (below) rather than edits.** Both named
+      defects were already gone, verified with `git blame` rather than
+      assumed: `docs/templates.md` lost its dead `▸ Visual ▸` path in
+      `a0473fc` (2026-08-08), and `GuideDialog.tsx` lost "across all tabs"
+      and "the Visuals does nothing" in `4310d93` (the Track D truth pass).
+      This entry was written at v2.81.0 and two rounds of doc work overtook
+      it. What the sweep DID find and fix (`75fab1d`): `docs/templates.md`
+      told authors to "add Post" without naming its page (now
+      `Scene ▸ Post`), `services.ts` carried a dead `Settings ▸ Performance`
+      path, and the in-app guide claimed the LFOs run "¼ beat to 8 **bars**"
+      — `modMatrix.ts:84` says the rates are BEATS per cycle and there are
+      **eighteen** of them (3 waves × 6 rates). `docs/guide.md` already had
+      that right; the in-app copy was the wrong side.
+      **The rail labels are `Mode · Global motion · Looks & themes · Sync ·
+Modulation · Scene · Text · Live`** — `ParamsPanel.tsx` `VISUALS_PAGES`,
+      not the bare page ids. Two earlier briefs (including one of mine) wrote
+      the ids as if they were labels; they are not interchangeable.
+- [ ] H7a **NEW — the in-app guide and `docs/guide.md` have diverged in 23
+      places.** Produced by the H7 sweep, deliberately unfixed: this is the
+      input to **P-21 (single-source guides)**, and hand-patching both copies
+      is exactly the maintenance P-21 exists to delete. Everything below was
+      checked against the code, not against the other document.
+      **One is FALSE, not merely missing** — the LFO range, fixed in
+      `75fab1d`. Everything else is a hole on one side.
+      **Misfiled:** `guide.md` files image/video framing and the
+      All-modes/This-mode scope switch under **Export**; they live on
+      **Scene** (`ParamsPanel.tsx:1500-1502`).
+      **Only in `docs/guide.md`** (12): the whole spectrum-analysis block
+      (Resolution ~85/170/340 ms, Axis, Sampling, Low/High edge, the
+      readout); onset pulses vs beat-grid pulses; the Global motion page —
+      the in-app guide names it once in a rail list and never says what is
+      on it; group folding survives while page folding does not; Canvas loop
+      disabling PNG/ProRes/AV1; MP4 2–60 Mbps and the −1 dBTP ceiling; the
+      named cover-art controls (Cover wall, Source shape); Learn note →
+      mode; lyrics attaching to the track like stems; the four-word summary
+      including Gallery; the preview/export truth-contract link; the ✕ that
+      clears A-B.
+      **Only in the in-app guide** (9): **the entire custom-shader editor** —
+      the `+` chip, `.bfshader`, single-pass Shadertoy import, Canvas2D
+      gating — which is the biggest hole on the `guide.md` side and its only
+      WGSL mention is Builder codegen; the post chain's actual contents and
+      that they are modulation targets; frame aspect Fill/16:9/9:16/1:1;
+      autosave + the crash Restore prompt; the timeline override rules; that
+      the dock remembers the PAGE as well as the width; the **More** group;
+      _Auto-play next_; and Gallery pinning described loosely as an
+      "immutable version" where `guide.md` correctly says "immutable commit".
+      **Missing from BOTH** (2, found in the code): **Drive** and **Drive
+      pulse**, the first two entries of `MOD_SOURCES`
+      (`modMatrix.ts:142-143`), and the **Edit lyrics** section on Text
+      (`ParamsPanel.tsx:1884-1886`).
+- [x] H7-ORIGINAL **Stale doc pointers left by the v2.81.0 mechanical rename, in
       files outside the docs unit's ownership.** Each is a path a user can
       follow and fail: `docs/templates.md` says
       _Visuals ▸ Visual ▸ Themes ▸ Save as theme…_ and
@@ -984,7 +1130,20 @@ buys and what it does not.
       so every `▸ Visual ▸` path is dead. Sweep both, and diff the in-app
       guide against `docs/guide.md`: they are hand-kept in sync today, which
       is exactly what P-21 (single-source guides, Track D) exists to fix.
-- [ ] H8 **`shotCanvas` still frames the canvas with the dock open — the
+- [x] H8 **DONE 2026-08-09.** `shotCanvas` (`scripts/lib/cdp.mjs`) reads
+      `showPanel`, calls `setShowPanel(false)` — the action, not a raw
+      `setState`, because it also writes the `panelOpen` pref — measures and
+      shoots inside a `try`, and restores in a `finally` whose restore eval is
+      `.catch`-swallowed so a dead socket cannot replace the original failure.
+      Proven a no-op for every caller today, by source rather than by
+      assertion: `prefs.ts:138` defaults `panelOpen: false`, `store.ts:1101`
+      seeds `showPanel` from it, every `spawnApp` harness uses an isolated
+      WebView2 profile so localStorage starts empty, and the only two
+      `shotCanvas` callers (`wave-shots.mjs`, `gallery-seed-shots.mjs`) never
+      touch the dock. `gpu-pixel-matrix.mjs` is the one script that opens it,
+      and it does not call `shotCanvas` at all. Unverified: that the restored
+      dock and the un-letterboxed clip look right in a real device screenshot.
+      ORIGINAL — **`shotCanvas` still frames the canvas with the dock open — the
       P-1 plan's R16 mitigation was specified and not implemented.**
       `scripts/lib/cdp.mjs:93` clips `Page.captureScreenshot` to the
       `<canvas>` bounding rect. Since P-1 that rect is the LETTERBOXED

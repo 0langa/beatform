@@ -71,6 +71,17 @@ The harnesses share `scripts/lib/` (isolated WebView2 profiles, per-harness
 debug ports, PID-tree-only kills) — see the port map in
 `scripts/lib/app.mjs`.
 
+Start that dev server **dual-stack**: `npm run dev -- --host` (Vite listens on
+every address, so both `127.0.0.1:1420` and `[::1]:1420` reach it), or
+`TAURI_DEV_HOST=127.0.0.1 npm run dev` to pin it to IPv4. Plain `npm run dev`
+is IPv6-only here — `host: false` makes Vite listen on `localhost`, which
+resolves to `[::1]` before `127.0.0.1` on this machine, so a leftover dev
+server can hold `[::1]:1420` while a fresh one binds `127.0.0.1:1420` and
+neither notices; the debug shell loads `http://localhost:1420` and silently
+gets the older tree. `spawnApp` now stamps whatever answers that URL against
+this checkout's `public/icon.svg` and fails with "a different dev server is
+already serving …" instead of the misleading "Cannot find execution context".
+
 **GPU-matrix re-bless protocol** (when `test:gpu` reports hash deltas):
 a shader change legitimately alters pixel hashes. Verify the change
 VISUALLY first (device screenshots / wave-shots evidence), confirm the

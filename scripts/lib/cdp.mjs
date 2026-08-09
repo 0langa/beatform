@@ -9,10 +9,11 @@
 //    only ONE of the twelve copies.
 //  - eval() surfaces exceptionDetails with the richest message available
 //    (description, then thrown value, then the bare text).
-//  - shotCanvas() dismisses the update prompt and the autosave toast and
-//    raises chromeIdle before framing: a stale debug exe sees the freshly
-//    published release and pops the update hero (with a backdrop blur) over
-//    everything.
+//  - shotCanvas() dismisses the update prompt and the autosave toast, raises
+//    chromeIdle, and closes the Visuals dock before framing: a stale debug
+//    exe sees the freshly published release and pops the update hero (with a
+//    backdrop blur) over everything, and an open dock letterboxes the canvas
+//    it clips to. Everything it changes, it changes back.
 import { writeFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -89,29 +90,54 @@ export class Cdp {
   }
 
   /** Screenshot clipped to the live canvas (the visual, no chrome), after
-   * dismissing anything that could sit on top of it. Returns the path. */
+   * dismissing anything that could sit on top of it OR reframe it. Returns
+   * the path. */
   async shotCanvas(file, { settleMs = 250 } = {}) {
-    await this.eval(
+    // Also closes the Visuals dock, remembering whether it was open (H8):
+    // since P-1 the dock LETTERBOXES the canvas, so its bounding rect — the
+    // clip below — is a different frame from every shot in the archive. GATES
+    // §3 makes wave-shot evidence the basis of the test:gpu re-bless, i.e.
+    // old and new shots would stop being comparable exactly when a re-bless
+    // needs them side by side.
+    const hadPanel = await this.eval(
       `(() => {
         document.querySelector(".update-hero-close")?.click();
         const st = window.__store.getState();
         if (st.recoveredDoc) st.dismissAutosave();
         window.__store.setState({ chromeIdle: true });
-        return true;
+        const was = st.showPanel;
+        // setShowPanel, not a raw setState: it also writes the panelOpen
+        // pref, so a raw write would leave prefs disagreeing with the store
+        // and the dock would come back on the next boot anyway.
+        if (was) st.setShowPanel(false);
+        return was === true;
       })()`,
       false,
-    ).catch(() => {});
-    await sleep(settleMs);
-    const rect = await this.eval(
-      `(() => { const c = document.querySelector("canvas"); const r = c.getBoundingClientRect();
-         return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
-      false,
-    );
-    const r = await this.send("Page.captureScreenshot", {
-      format: "png",
-      clip: { ...rect, scale: 1 },
-    });
-    writeFileSync(file, Buffer.from(r.data, "base64"));
-    return file;
+    ).catch(() => false);
+    try {
+      // The settle covers the dock's own reflow as well as the dismissals:
+      // the canvas is only full-bleed again after the layout commits.
+      await sleep(settleMs);
+      const rect = await this.eval(
+        `(() => { const c = document.querySelector("canvas"); const r = c.getBoundingClientRect();
+           return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
+        false,
+      );
+      const r = await this.send("Page.captureScreenshot", {
+        format: "png",
+        clip: { ...rect, scale: 1 },
+      });
+      writeFileSync(file, Buffer.from(r.data, "base64"));
+      return file;
+    } finally {
+      // The dock goes back where the user had it even if the shot threw. A
+      // dead socket can restore nothing, and that failure must not replace
+      // the one the harness is already reporting.
+      if (hadPanel) {
+        await this.eval(`window.__store.getState().setShowPanel(true); true`, false).catch(
+          () => {},
+        );
+      }
+    }
   }
 }

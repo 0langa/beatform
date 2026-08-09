@@ -46,15 +46,29 @@ const PARTICLE_WARM_FRAMES = 120;
  * ONE HARD RULE, for compute-particle presets (Particle Flow): recolour and
  * resize freely, but never touch a param the SIM reads — flowScale,
  * flowStrength, swirl, gravity, damping, audioFlow, beatBurst, spawnRadius.
- * Measured, not assumed: simulating the thumbnail with different sim params
- * shifted one frame of a later 90-frame export of that same mode (frame 9,
- * plus the crossfade tail that blends it). Frame 9 alone, with every frame
- * around it matching, so the sim itself stayed in step — but a thumbnail is
- * chrome and it has no business changing an exported frame at all. Restricted
- * to draw-side params the exports are hash-for-hash identical to the build
- * before this file changed. The underlying coupling (a particle buffer that
- * carries something across renderer instances) is a separate bug; this rule
- * keeps the previews out of its way.
+ * A thumbnail is chrome and has no business anywhere near a simulation the
+ * export also steps; restricted to draw-side params the exports are
+ * hash-for-hash identical to the build before this file changed.
+ *
+ * The rule arrived with a measurement attached: giving the thumbnail different
+ * sim params shifted ONE frame of a later 90-frame loop export of that mode
+ * (frame 9, plus the tail frame the loop crossfade blends it into), which was
+ * written up here as a particle buffer carrying state across renderer
+ * instances. RP-4 chased that mechanism down and the code does not do it:
+ * every WebGPURenderer owns a private adapter+device and destroys it in
+ * dispose(), all particle state is instance-private (particleBuf,
+ * particleCapacity, simStepsDone, particleInitPending), setPreset re-seeds
+ * from a pure hash of the particle index while zeroing the step counter, and
+ * the one module-level mutable binding in webgpuRenderer.ts is a memoized f16
+ * lookup table. The recorded evidence says the same thing: the sim is an
+ * integrator, so a perturbed buffer diverges at the frame it was perturbed and
+ * never rejoins — one frame moving with its neighbours intact is the opposite
+ * shape. particleSimIsolation.test.ts pins the isolation directly, in both
+ * directions the coupling could have run.
+ *
+ * What that one frame actually was is still unexplained; it was never
+ * reproduced, and reproducing it needs a real GPU and a real export. So the
+ * rule stays — as belt and braces, not as a workaround for a known bug.
  *
  * (This is also where a future "thumbnails reflect my current settings" would
  * hook in — it would read the user's params instead of defaults. Deliberately

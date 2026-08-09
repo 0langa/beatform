@@ -34,9 +34,9 @@
 // Env: BEATFORM_EXE overrides the app path (e.g. a CARGO_TARGET_DIR build).
 //
 // Boot stays LOCAL (built-app smoke family — media server, model prep,
-// BEATFORM_EXE override); page-poll + CDP client come from scripts/lib
-// (P-14-lite). The lib Cdp carries this harness's socket-death handling:
-// a dying app must REJECT every in-flight eval.
+// BEATFORM_EXE override); attach + page-poll + CDP client come from
+// scripts/lib (P-14-lite). The lib Cdp carries this harness's socket-death
+// handling: a dying app must REJECT every in-flight eval.
 import { spawn, spawnSync } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
 import {
@@ -52,8 +52,14 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Cdp } from "./lib/cdp.mjs";
-import { debugExe, harnessPort, waitForPage, killTree } from "./lib/app.mjs";
+import {
+  debugExe,
+  harnessPort,
+  attachWithRecovery,
+  waitHooks,
+  checkDevServer,
+  killTree,
+} from "./lib/app.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = new Set(process.argv.slice(2).filter((a) => !a.startsWith("--out=")));
@@ -362,11 +368,7 @@ function startMediaServer() {
   });
 }
 
-// --- CDP plumbing: lib Cdp + lib page-poll, fatal-wrapped -------------------
-async function page() {
-  return waitForPage(app).catch((e) => fatal(String(e?.message ?? e)));
-}
-
+// --- CDP plumbing: lib attach + lib Cdp, fatal-wrapped ----------------------
 /** Store snapshot the polls read — one shape for every leg. */
 const SNAPSHOT = `(() => {
   const s = window.__store.getState();
@@ -485,36 +487,24 @@ try {
   const keep = (c) => (log = (log + c.toString()).slice(-20_000));
   child.stdout.on("data", keep);
   child.stderr.on("data", keep);
-  app = { child, port, log: () => log };
+  // devServerCheck is what spawnApp() parks on its handle: waitForPage awaits
+  // it and fails loudly if a leftover Vite from another tree owns :1420 (G9).
+  app = { child, port, log: () => log, devServerCheck: checkDevServer({ root }) };
 
-  const attach = async () => {
-    const t = await page();
-    const c = new Cdp(t.webSocketDebuggerUrl);
-    await c.open();
-    return c;
-  };
-  let cdp = await attach();
-  const waitHooks = `(async () => {
-    const deadline = Date.now() + 60000;
-    while (!window.__store || !window.__loadFile || !window.__invoke) {
-      if (Date.now() > deadline) throw new Error("hooks unavailable");
-      await new Promise((r) => setTimeout(r, 200));
-    }
-    return true;
-  })()`;
-  await cdp.eval(waitHooks);
-  // First IPC call through the app graph: on a cold Vite dep cache the
-  // dynamic @tauri-apps import triggers "new dependencies optimized —
-  // reloading page", destroying the eval context. Absorb + re-attach
-  // (midi-e2e lesson; CDP itself cannot import bare specifiers, hence
-  // the __invoke dev hook).
-  try {
-    await cdp.eval(`window.__invoke("scratch_dir")`);
-  } catch {
-    await sleep(2000);
-    cdp = await attach();
-    await cdp.eval(waitHooks);
-  }
+  // EVERYTHING up to the first assertion rides inside the recovery probe (G8):
+  // the hook wait AND the first IPC call. On a cold Vite dep cache either can
+  // eat the "new dependencies optimized — reloading page" reload that destroys
+  // the eval context; only the IPC leg used to be guarded, so a reload during
+  // the hook wait killed the run before a single assertion (midi-e2e lesson;
+  // CDP itself cannot import bare specifiers, hence the __invoke dev hook).
+  const cdp = await attachWithRecovery(
+    app,
+    async (c) => {
+      await waitHooks(c, ["__store", "__loadFile", "__invoke"]);
+      await c.eval(`window.__invoke("scratch_dir")`);
+    },
+    { retrySleepMs: 2000 },
+  ).catch((e) => fatal(`attach: ${e?.message ?? e}\n${log}`));
 
   // Models-dir override + fresh state.
   await cdp.eval(`(async () => {
