@@ -745,7 +745,24 @@ nothing else from that release is outstanding.
       into an otherwise store-direct dialog; the machine is deliberately not
       in the store today, and touching it would have meant a third
       structural edit to App.tsx in one release.
-- [ ] G6 `gpuMatrix.ts` restores `rebuildBuilder2(defaultBuilderStack())`
+- [x] G6 **DONE 2026-08-09.** The leg reads `currentBuilderStack()` before it
+      runs and hands that back in its `finally`, so the harness borrows the
+      builder module global and returns what it took. No store import — the
+      boundary the deferral was protecting holds, because `builder2`'s own
+      module global IS the render layer's mirror of `s.builderStack`
+      (`store.ts` writes it at 682/1263/1733/2118, `services.ts:487` packs
+      against it every frame), and `builder2.ts` already exported the accessor.
+      The renderer's builder BUFFER is deliberately still restored to
+      `packBuilderParams(defaultBuilderStack())` rather than the borrowed pack:
+      the matrix seeds that buffer with the default pack before any case runs,
+      so handing back the default leaves the renderer exactly as the leg found
+      it. Hash stability is by construction — identical call sequence, identical
+      frame budget, identical case ids, and the only cases after this leg are
+      the post/motion probes on `spectrum-bars`/`oscilloscope`, whose WGSL has
+      no `LP()` accessor. Extracted as `runBuilderStackCases()` so the contract
+      is provable in Vitest with no GPU; mutation A (restore the default stack,
+      i.e. the original bug) goes red.
+      ORIGINAL — `gpuMatrix.ts` restores `rebuildBuilder2(defaultBuilderStack())`
       rather than the store's stack, so module state can diverge from
       `s.builderStack` after `window.__runGpuMatrix()`. Pre-existing and
       harness-only — observable only with the Visuals dock open in Builder
@@ -1184,7 +1201,26 @@ higher. Nothing else moved.)_
       the multiplicand. The card names the discrepancy in a hint while any
       rise/fall is set. **Blocked on evidence that anyone tunes lag enough to
       notice.**
-- [ ] H10 **Harden `addModRoute` at the action, not just at the UI.** It
+- [x] H10 **DONE 2026-08-09.** `addModRoute` rejects any `param` that is not
+      a routable target and no-ops on a duplicate `(source, param)`, both
+      before `ctx.record("mod-add")`, so a refused call costs no Ctrl+Z —
+      matching `autoRouteStem` and `applyModRouteRecipe`. Routability is
+      `postTargetKey(param) !== null || isModTarget(paramSpecMap(preset).get(param))`,
+      which is the same three things the create picker enumerates and the same
+      predicate `resolveTarget` in `modRoutePresets.ts` uses: no hand-written
+      key list, and `ModulationPage.tsx` untouched. `validModRoutes`, the
+      persisted shape and `schemaVersion` are unchanged, and a legacy document
+      carrying an off-param or duplicate route still loads unchanged.
+      **Correction to this entry's own premise:** it said the action is
+      "callable from recipes". It is not — `applyModRouteRecipe` appends
+      `recipeRoutes(...)` output directly and never calls `addModRoute`, and
+      MIDI learn writes `midiBindings`, not `ModRoute`s. Today's only callers
+      are `ModulationPage.tsx:407` and `gpu-pixel-matrix.mjs:314`, and the
+      harness seeds targets from the picker filtered on `!option.disabled`, so
+      it can never pass an unroutable or already-routed param. The
+      "Already routed — tweak the existing route's amount instead" flash is
+      structurally unaffected and is pinned by a test.
+      ORIGINAL — **Harden `addModRoute` at the action, not just at the UI.** It
       accepts `param: ""` (then `validModRoutes` drops the route on the next
       load — it silently vanishes from the saved file) and it does not dedupe
       on `(source, param)` (N calls stack N compounding routes on one knob).

@@ -1,6 +1,7 @@
 import {
   BUILDER_FACTORY_STACKS,
   builderStackValues,
+  currentBuilderStack,
   defaultBuilderStack,
   packBuilderParams,
   rebuildBuilder2,
@@ -169,6 +170,63 @@ async function renderCase(
 }
 
 /**
+ * The renderer surface the Builder leg drives. A `Pick` of the real class
+ * rather than a hand-written interface, so it cannot drift from it — and
+ * narrow enough that the borrow-and-hand-back contract below is provable in
+ * Vitest, where there is no GPU.
+ */
+type BuilderStackTarget = Pick<
+  WebGPURenderer,
+  "setPreset" | "setBuilderParams" | "render" | "gpuDone"
+>;
+
+/**
+ * Builder factory stacks (RP-20): one case per stack. The presets[] loop
+ * renders builder2 through the BOOT def the registry captured (default
+ * stack), so structural stacks must mint their own def via rebuildBuilder2
+ * and hand it to setPreset directly.
+ *
+ * That call writes a MODULE GLOBAL the live app reads every frame
+ * (services.ts packs against `currentBuilderStack()`), so this leg is
+ * BORROWING app state and has to hand back what it took (G6). It used to hand
+ * back a freshly minted `defaultBuilderStack()`, whose values match only when
+ * the user was already on the default stack — run the harness with an edited
+ * Builder and the render layer was left describing a stack the document no
+ * longer had. The pre-run stack is read back from builder2 itself, never from
+ * the store: src/render must not depend on the store, and builder2's own
+ * global IS the render layer's mirror of `s.builderStack`.
+ *
+ * The renderer's builder buffer, by contrast, goes back to the DEFAULT pack —
+ * that is what seeded it before the first case ran, so every later case in
+ * the run still sees exactly the state it always did and no hash moves.
+ */
+export async function runBuilderStackCases(
+  renderer: BuilderStackTarget,
+  readCase: () => Promise<Omit<GpuPixelCase, "id">>,
+): Promise<GpuPixelCase[]> {
+  const startStack = currentBuilderStack();
+  const cases: GpuPixelCase[] = [];
+  try {
+    for (const factory of BUILDER_FACTORY_STACKS) {
+      const def = rebuildBuilder2(factory.stack);
+      renderer.setPreset(def);
+      renderer.setBuilderParams(packBuilderParams(factory.stack));
+      const params = builderStackValues(factory.stack);
+      for (let frame = 0; frame <= 30; frame++) {
+        const t = frame / 60;
+        renderer.render(demoFeatures(t), t, params);
+      }
+      await renderer.gpuDone();
+      cases.push({ id: `builder2/stack/${factory.id}`, ...(await readCase()) });
+    }
+  } finally {
+    rebuildBuilder2(startStack);
+    renderer.setBuilderParams(packBuilderParams(defaultBuilderStack()));
+  }
+  return cases;
+}
+
+/**
  * Real-WebGPU compile + pixel matrix. Called only by DEV E2E tooling inside
  * Tauri WebView2; Node/Vitest source snapshots remain a separate fast gate.
  */
@@ -248,29 +306,7 @@ export async function runGpuPixelMatrix(width = 192, height = 108): Promise<GpuP
       }
     }
 
-    // Builder factory stacks (RP-20): one case per stack. The presets[] loop
-    // above rendered builder2 through the BOOT def it captured (default
-    // stack), so structural stacks must mint their def via rebuildBuilder2
-    // and hand it to setPreset directly. The default stack/def is restored
-    // afterwards so nothing later — in this run or a re-run in the same
-    // process — sees a non-default Builder.
-    try {
-      for (const factory of BUILDER_FACTORY_STACKS) {
-        const def = rebuildBuilder2(factory.stack);
-        renderer.setPreset(def);
-        renderer.setBuilderParams(packBuilderParams(factory.stack));
-        const params = builderStackValues(factory.stack);
-        for (let frame = 0; frame <= 30; frame++) {
-          const t = frame / 60;
-          renderer.render(demoFeatures(t), t, params);
-        }
-        await renderer.gpuDone();
-        cases.push({ id: `builder2/stack/${factory.id}`, ...(await readPixels(canvas)) });
-      }
-    } finally {
-      rebuildBuilder2(defaultBuilderStack());
-      renderer.setBuilderParams(packBuilderParams(defaultBuilderStack()));
-    }
+    cases.push(...(await runBuilderStackCases(renderer, () => readPixels(canvas))));
 
     // ---- Post-chain and motion-master probes (F4). ----------------------
     // Both blocks restore the neutral state in a finally, for the same

@@ -1,9 +1,9 @@
 import { pcmFromAudioBuffer } from "../../audio/offlineSource";
 import { decodeAudioLenient } from "../../audio/decodeLenient";
 import { analyzeStem, MAX_STEMS, STEM_SLOTS } from "../../audio/stems";
-import { allParams } from "../../render/types";
+import { allParams, isModTarget, paramSpecMap, type PresetDef } from "../../render/types";
 import { presetById } from "../../render/presets";
-import { newRouteId, type ModRoute, type ModSource } from "../modMatrix";
+import { newRouteId, postTargetKey, type ModRoute, type ModSource } from "../modMatrix";
 import { MOD_ROUTE_RECIPES, recipeRoutes } from "../modRoutePresets";
 import { saveStoredMods } from "../persistence";
 import { getEngine } from "../services";
@@ -11,6 +11,21 @@ import { stemRoutesFor } from "../stemRouting";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
 import { shared } from "./shared";
+
+/**
+ * Is `param` something a route may actually drive on this visual? The SAME
+ * question the Modulation create picker answers when it builds its option
+ * list — `allParams` filtered by `isModTarget`, plus the namespaced `post:`
+ * targets — asked here against the memoized key map rather than rebuilt from
+ * a literal list, so a re-tiered knob or a new post target can never leave the
+ * two disagreeing. Mirrors `resolveTarget` in modRoutePresets.ts, the recipe
+ * side of the same question.
+ */
+function isRoutableTarget(preset: PresetDef, param: string): boolean {
+  if (postTargetKey(param) !== null) return true;
+  const spec = paramSpecMap(preset).get(param);
+  return spec !== undefined && isModTarget(spec);
+}
 
 export function stemsModsActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
@@ -85,8 +100,19 @@ export function stemsModsActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     },
 
     addModRoute(source: ModSource, param: string) {
-      ctx.record("mod-add");
       const s = get();
+      // H10 — both guards belong to the ACTION, not only to the picker that
+      // renders them unreachable. This is a public store action; the create
+      // picker is merely today's caller, and both failure modes are silent.
+      // A route on `""` or on a param this visual has no modulatable spec for
+      // looks added and survives the session, then either vanishes from the
+      // saved file when validModRoutes reads it back or sits inert forever;
+      // a repeat (source, param) stacks a second route that COMPOUNDS on one
+      // knob. Recording only after the guards keeps a rejected call off the
+      // undo stack.
+      if (!isRoutableTarget(presetById(s.presetId), param)) return;
+      if (s.activeMods.some((r) => r.source === source && r.param === param)) return;
+      ctx.record("mod-add");
       const route: ModRoute = { id: newRouteId(), source, param, amount: 0.5 };
       const activeMods = [...s.activeMods, route];
       const modsByPreset = { ...s.modsByPreset, [s.presetId]: activeMods };
