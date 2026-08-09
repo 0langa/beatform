@@ -183,78 +183,95 @@ function seedRoute(param = "hue", extra: Record<string, unknown> = {}) {
   });
 }
 
-describe("selector granularity (P-12: the Visuals subscribes only what it reads)", () => {
-  it("T1: the 4 Hz LUFS meter tick does not reconcile the panel body", () => {
-    act(() => useVizStore.setState({ presetId: "spectrum-bars" }));
-    const probe = probePresetParams("spectrum-bars");
-    try {
-      const commits = mountProbed();
-      const bodyRenders = probe.reads();
-      const treeCommits = commits();
-      expect(bodyRenders).toBeGreaterThan(0); // both probes are live
-      expect(treeCommits).toBeGreaterThan(0);
+/**
+ * Every describe below carries an explicit 30s budget rather than vitest's
+ * 5s default. These render the whole Visuals panel under jsdom — the slowest
+ * single case measured 5.2s on an otherwise idle machine — so the default was
+ * close enough to trip on any loaded one, and did: a concurrent release build
+ * turned T9 red while the same test passed idle. Same root-fix the DSP
+ * characterization suite got (see CLAUDE.md); a failure here is real, and
+ * rerunning is not the protocol.
+ */
+describe(
+  "selector granularity (P-12: the Visuals subscribes only what it reads)",
+  { timeout: 30_000 },
+  () => {
+    it("T1: the 4 Hz LUFS meter tick does not reconcile the panel body", () => {
+      act(() => useVizStore.setState({ presetId: "spectrum-bars" }));
+      const probe = probePresetParams("spectrum-bars");
+      try {
+        const commits = mountProbed();
+        const bodyRenders = probe.reads();
+        const treeCommits = commits();
+        expect(bodyRenders).toBeGreaterThan(0); // both probes are live
+        expect(treeCommits).toBeGreaterThan(0);
 
-      act(() => useVizStore.setState({ lufs: -14.2 }));
+        act(() => useVizStore.setState({ lufs: -14.2 }));
 
-      // THE HEADLINE FIX. Before P-12 this read App's `lufs` selector, handed
-      // the panel a changed prop, and reconciled all ~2,000 lines four times
-      // a second for the whole of playback.
-      expect(probe.reads()).toBe(bodyRenders);
-      // The one commit that did happen is the four-badge footer — the only
-      // subscriber of lufs — and it landed the new value.
-      expect(commits()).toBe(treeCommits + 1);
-      expect(screen.getByText("-14.2 LUFS")).toBeTruthy();
-    } finally {
-      probe.restore();
-    }
-  });
-
-  it("T2: the playback time tick costs the panel nothing", () => {
-    const commits = mountProbed();
-    const before = commits();
-    act(() => useVizStore.setState({ playback: { ...useVizStore.getState().playback, time: 1 } }));
-    expect(commits()).toBe(before);
-  });
-
-  it("T3: the per-frame export progress tick costs the panel nothing", () => {
-    const commits = mountProbed();
-    const before = commits();
-    // Unthrottled: exportActions writes this once per encoded frame.
-    act(() => useVizStore.setState({ exporting: { done: 1, total: 10, speed: 1 } }));
-    expect(commits()).toBe(before);
-  });
-
-  it("T4: the stereo-width readout costs the panel nothing", () => {
-    const commits = mountProbed();
-    const before = commits();
-    act(() => useVizStore.setState({ stereoWidth: 0.7 }));
-    expect(commits()).toBe(before);
-  });
-
-  it("T5: a Post write it DOES read commits exactly once and shows up", () => {
-    const commits = mountProbed();
-    fireEvent.click(screen.getByRole("button", { name: "Scene" }));
-    const before = commits();
-
-    act(() => useVizStore.getState().setPost({ bloom: 0.5 }));
-
-    // Exactly one — proof the subscription is connected, not inert, and that
-    // the panel is not re-rendering more than once per store write.
-    expect(commits()).toBe(before + 1);
-    const bloomRow = [...document.querySelectorAll(".param-row")].find(
-      (r) => r.querySelector(".row-label")?.textContent === "Bloom",
-    );
-    expect((bloomRow?.querySelector('input[type="range"]') as HTMLInputElement).value).toBe("0.5");
-  });
-
-  it("T6: 200 sequential meter writes neither crash nor unmount it", () => {
-    mountProbed();
-    act(() => {
-      for (let i = 0; i < 200; i++) useVizStore.setState({ lufs: -20 + i * 0.01 });
+        // THE HEADLINE FIX. Before P-12 this read App's `lufs` selector, handed
+        // the panel a changed prop, and reconciled all ~2,000 lines four times
+        // a second for the whole of playback.
+        expect(probe.reads()).toBe(bodyRenders);
+        // The one commit that did happen is the four-badge footer — the only
+        // subscriber of lufs — and it landed the new value.
+        expect(commits()).toBe(treeCommits + 1);
+        expect(screen.getByText("-14.2 LUFS")).toBeTruthy();
+      } finally {
+        probe.restore();
+      }
     });
-    expect(screen.getByText("Visuals")).toBeTruthy();
-  });
-});
+
+    it("T2: the playback time tick costs the panel nothing", () => {
+      const commits = mountProbed();
+      const before = commits();
+      act(() =>
+        useVizStore.setState({ playback: { ...useVizStore.getState().playback, time: 1 } }),
+      );
+      expect(commits()).toBe(before);
+    });
+
+    it("T3: the per-frame export progress tick costs the panel nothing", () => {
+      const commits = mountProbed();
+      const before = commits();
+      // Unthrottled: exportActions writes this once per encoded frame.
+      act(() => useVizStore.setState({ exporting: { done: 1, total: 10, speed: 1 } }));
+      expect(commits()).toBe(before);
+    });
+
+    it("T4: the stereo-width readout costs the panel nothing", () => {
+      const commits = mountProbed();
+      const before = commits();
+      act(() => useVizStore.setState({ stereoWidth: 0.7 }));
+      expect(commits()).toBe(before);
+    });
+
+    it("T5: a Post write it DOES read commits exactly once and shows up", () => {
+      const commits = mountProbed();
+      fireEvent.click(screen.getByRole("button", { name: "Scene" }));
+      const before = commits();
+
+      act(() => useVizStore.getState().setPost({ bloom: 0.5 }));
+
+      // Exactly one — proof the subscription is connected, not inert, and that
+      // the panel is not re-rendering more than once per store write.
+      expect(commits()).toBe(before + 1);
+      const bloomRow = [...document.querySelectorAll(".param-row")].find(
+        (r) => r.querySelector(".row-label")?.textContent === "Bloom",
+      );
+      expect((bloomRow?.querySelector('input[type="range"]') as HTMLInputElement).value).toBe(
+        "0.5",
+      );
+    });
+
+    it("T6: 200 sequential meter writes neither crash nor unmount it", () => {
+      mountProbed();
+      act(() => {
+        for (let i = 0; i < 200; i++) useVizStore.setState({ lufs: -20 + i * 0.01 });
+      });
+      expect(screen.getByText("Visuals")).toBeTruthy();
+    });
+  },
+);
 
 /**
  * T7–T11 keep their subjects verbatim across P-1 stage 3; only the SELECTOR
@@ -283,7 +300,7 @@ function otherTarget(): string {
     .find((k) => k !== "hue")!;
 }
 
-describe("modulation & MIDI target lists (RP-2 / RP-14)", () => {
+describe("modulation & MIDI target lists (RP-2 / RP-14)", { timeout: 30_000 }, () => {
   it('T7: mod:"off" params are absent from the route-target picker', () => {
     // spectrum-bars: "mirror"/"peaks" are pure toggles (mod:"off"); "hue" is a
     // regular target. A route must exist for the picker to render at all.
@@ -334,7 +351,7 @@ describe("modulation & MIDI target lists (RP-2 / RP-14)", () => {
   });
 });
 
-describe("modulation v2 UI (P-16/P-7)", () => {
+describe("modulation v2 UI (P-16/P-7)", { timeout: 30_000 }, () => {
   it("T9: source picker offers the whole beat-synced LFO family", () => {
     seedRoute();
     render(<ParamsPanel />);
@@ -611,7 +628,7 @@ describe("modulation v2 UI (P-16/P-7)", () => {
   });
 });
 
-describe("the meter seam (P-1 stage 3)", () => {
+describe("the meter seam (P-1 stage 3)", { timeout: 30_000 }, () => {
   it("T27: meters register with the driver on this page only, and survive a depth drag", () => {
     seedRoute("hue");
     render(<ParamsPanel />);
@@ -652,7 +669,7 @@ describe("the meter seam (P-1 stage 3)", () => {
   });
 });
 
-describe("the driven mark reaches the post rows (P-1 stage 3)", () => {
+describe("the driven mark reaches the post rows (P-1 stage 3)", { timeout: 30_000 }, () => {
   /** The Post row whose label is `label`, and the `.param-slot` around it. */
   function postSlot(label: string): HTMLElement | undefined {
     return [...document.querySelectorAll<HTMLElement>(".param-slot")].find(
@@ -694,7 +711,7 @@ describe("the driven mark reaches the post rows (P-1 stage 3)", () => {
   });
 });
 
-describe("no external-store writes during render", () => {
+describe("no external-store writes during render", { timeout: 30_000 }, () => {
   /** Stand-in for App's prefs subscription (useSyncExternalStore(subscribePrefs,
    * getPrefs)): a setPrefs executed while the Visuals renders schedules an
    * update on this component mid-render — React dev logs "Cannot update a
@@ -789,7 +806,7 @@ describe("no external-store writes during render", () => {
  * dock geometry itself. Those classes are asserted as contracts here, not as
  * appearance.
  */
-describe("Visuals section rail", () => {
+describe("Visuals section rail", { timeout: 30_000 }, () => {
   const rail = () => document.querySelector(".visuals-rail")!;
   const railItems = () =>
     [
@@ -1136,7 +1153,7 @@ describe("Visuals section rail", () => {
  * curated, where the button sits, that search ignores the tier) is
  * ParamGroups' and is proven in ParamGroups.test.tsx.
  */
-describe("per-group expert tier wiring (P-9)", () => {
+describe("per-group expert tier wiring (P-9)", { timeout: 30_000 }, () => {
   /** The groups of a preset that actually RENDER a disclosure — read out of
    * the registry, not out of the panel, so this stays a contract rather than
    * a mirror of the implementation. spectrum-bars' Motion group has one
@@ -1288,7 +1305,7 @@ describe("per-group expert tier wiring (P-9)", () => {
   });
 });
 
-describe("destructive actions ask first (audit UI-3)", () => {
+describe("destructive actions ask first (audit UI-3)", { timeout: 30_000 }, () => {
   it("T13: declining the look-delete confirm leaves userPresets untouched", async () => {
     askConfirmMock.mockImplementation(async () => false);
     act(() =>

@@ -11,6 +11,29 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Importing a Shadertoy shader could crash the app.** A shader with a
+  non-breaking space in front of a helper function — which is exactly what
+  copying code out of a rendered web page produces — hit a crash in the
+  translator instead of an error message. Found by a new fuzzer, not by a
+  report; if you ever had an import take the app down with it, this was why.
+- **Shaders with an overloaded or duplicated channel helper now import.** If
+  the same helper function appeared twice — two overloads of it, or a shader
+  pasted in twice — the translator quietly mangled the source before handing
+  it to the compiler: a semicolon and a closing brace deleted, two statements
+  run together. The import then failed with a compiler error pointing at the
+  wrong line, for a shader that was fine.
+
+### Changed
+
+- **The in-app guide and the docs now describe the app you are running.** A
+  read-everything-against-the-code pass found 25 claims that had drifted:
+  Preferences was missing an entire tab, the export-format list was wrong
+  three ways (10-bit AV1 was missing outright), Sync was described as global
+  when it is per mode, and there was no Gallery section at all even though
+  Gallery is a button in the top bar. The guide is 13 sections now.
+
 ## [2.84.0] - 2026-08-09
 
 ### Fixed

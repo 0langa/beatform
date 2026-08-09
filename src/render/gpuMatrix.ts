@@ -7,7 +7,8 @@ import {
 } from "./builder2";
 import { demoFeatures } from "./thumbnails";
 import { presets } from "./presets";
-import { DEFAULT_MOTION, DEFAULT_POST, defaultParams } from "./types";
+import { allParams, DEFAULT_MOTION, DEFAULT_POST, defaultParams } from "./types";
+import type { MotionSettings, ParamValues, PostSettings, PresetDef } from "./types";
 import { WebGPURenderer } from "./webgpuRenderer";
 
 export interface GpuPixelCase {
@@ -84,6 +85,90 @@ async function readPixels(source: OffscreenCanvas): Promise<Omit<GpuPixelCase, "
 }
 
 /**
+ * Post-chain probes (F4). Until these existed the matrix rendered every one
+ * of its cases through `DEFAULT_POST` — all-neutral — and `runPost` skips the
+ * whole bright/blur/blur chain behind `if (this.post.bloom > 0)`. Bloom,
+ * vignette, grain, chromatic aberration and the ACES tonemap therefore had
+ * ZERO pixel coverage in the gate that exists to catch pixel drift.
+ *
+ * One probe per effect plus an everything-on case, so a regression names the
+ * effect that moved instead of pointing at a combined frame. Grain is in
+ * despite being noise: it is seeded from `fract(u.time)` and the matrix walks
+ * a fixed frame clock, so it is as deterministic as anything else here.
+ */
+const POST_PROBES: { id: string; post: PostSettings }[] = [
+  { id: "bloom", post: { ...DEFAULT_POST, bloom: 1, bloomThreshold: 0.4 } },
+  { id: "vignette", post: { ...DEFAULT_POST, vignette: 1 } },
+  { id: "grain", post: { ...DEFAULT_POST, grain: 0.3 } },
+  { id: "chromatic", post: { ...DEFAULT_POST, chromatic: 1 } },
+  { id: "tonemap", post: { ...DEFAULT_POST, tonemap: true, exposure: 3 } },
+  { id: "exposure-min", post: { ...DEFAULT_POST, exposure: 0.2 } },
+  {
+    id: "all",
+    post: {
+      bloom: 1,
+      bloomThreshold: 0.4,
+      exposure: 3,
+      tonemap: true,
+      vignette: 1,
+      grain: 0.3,
+      chromatic: 1,
+    },
+  },
+];
+
+/**
+ * Motion-master probes (F4), same hole as the post chain: every case above
+ * runs at `DEFAULT_MOTION`, so uniforms 28-31 were pinned at exactly one
+ * value each. Ranges mirror the panel's own sliders (rotation/pulse 0..2,
+ * detail and spectrum smoothing 0..1) — a probe outside what the user can
+ * dial would pin a state the app cannot reach.
+ */
+const MOTION_PROBES: { id: string; motion: MotionSettings }[] = [
+  { id: "still", motion: { ...DEFAULT_MOTION, rotation: 0, pulse: 0 } },
+  { id: "double", motion: { ...DEFAULT_MOTION, rotation: 2, pulse: 2 } },
+  { id: "detail-min", motion: { ...DEFAULT_MOTION, detail: 0 } },
+  { id: "smooth-max", motion: { ...DEFAULT_MOTION, spectrumSmooth: 1 } },
+  { id: "flat", motion: { rotation: 0, pulse: 0, detail: 0, spectrumSmooth: 1 } },
+];
+
+/**
+ * The two modes the post/motion probes render through. Post is a full-screen
+ * pass and is preset-independent, but motion is not: `spectrum-bars` is the
+ * only built-in that reads all three of spin/pulse/detail, and `oscilloscope`
+ * reads pulse and detail through entirely different arithmetic. Pinned BY ID,
+ * with a throw when one is missing — a silent fallback to some other mode
+ * would re-bless the probe under a name that no longer describes it.
+ */
+const PROBE_PRESET_IDS = ["spectrum-bars", "oscilloscope"] as const;
+
+function probePreset(id: string): PresetDef {
+  const found = presets.find((preset) => preset.id === id);
+  if (!found) throw new Error(`GPU matrix probe preset missing: ${id}`);
+  return found;
+}
+
+/**
+ * Walk one case's frames and read the canvas back. The frame budget is the
+ * same rule the original loop used: particle modes need the longer walk
+ * because their state integrates, everything else has settled by 30.
+ */
+async function renderCase(
+  renderer: WebGPURenderer,
+  canvas: OffscreenCanvas,
+  preset: PresetDef,
+  params: ParamValues,
+): Promise<Omit<GpuPixelCase, "id">> {
+  const frames = preset.particles ? 120 : 30;
+  for (let frame = 0; frame <= frames; frame++) {
+    const t = frame / 60;
+    renderer.render(demoFeatures(t), t, params);
+  }
+  await renderer.gpuDone();
+  return readPixels(canvas);
+}
+
+/**
  * Real-WebGPU compile + pixel matrix. Called only by DEV E2E tooling inside
  * Tauri WebView2; Node/Vitest source snapshots remain a separate fast gate.
  */
@@ -135,13 +220,31 @@ export async function runGpuPixelMatrix(width = 192, height = 108): Promise<GpuP
         for (const [key, value] of Object.entries(variant.values)) {
           if (typeof value === "number") params[key] = value;
         }
-        const frames = preset.particles ? 120 : 30;
-        for (let frame = 0; frame <= frames; frame++) {
-          const t = frame / 60;
-          renderer.render(demoFeatures(t), t, params);
-        }
-        await renderer.gpuDone();
-        cases.push({ id: variant.id, ...(await readPixels(canvas)) });
+        cases.push({ id: variant.id, ...(await renderCase(renderer, canvas, preset, params)) });
+      }
+    }
+
+    // ---- Param extremes (F4). -------------------------------------------
+    // Everything above renders at the DEFAULT value of every param — styles
+    // nudge a handful, the two color variants move exactly saturation and
+    // lightness. That pins the MIDDLE of param space and nothing else: a
+    // clamp that stopped holding at an edge, a divide that only vanishes at
+    // min, a count that only overflows at max — each of those renders
+    // identically at the default and was therefore invisible to this gate.
+    //
+    // Enum, toggle, hue and angle specs are all included with no special
+    // case, because there is no special case to make: every control type is
+    // one f32 whose legal span IS min..max (see the ParamSpec doc comment),
+    // so both edges are values the app can actually store.
+    for (const preset of presets) {
+      for (const edge of ["min", "max"] as const) {
+        renderer.setPreset(preset);
+        const params: ParamValues = {};
+        for (const spec of allParams(preset)) params[spec.key] = spec[edge];
+        cases.push({
+          id: `${preset.id}/extreme/${edge}`,
+          ...(await renderCase(renderer, canvas, preset, params)),
+        });
       }
     }
 
@@ -167,6 +270,44 @@ export async function runGpuPixelMatrix(width = 192, height = 108): Promise<GpuP
     } finally {
       rebuildBuilder2(defaultBuilderStack());
       renderer.setBuilderParams(packBuilderParams(defaultBuilderStack()));
+    }
+
+    // ---- Post-chain and motion-master probes (F4). ----------------------
+    // Both blocks restore the neutral state in a finally, for the same
+    // reason the builder block does: the renderer is reused by every later
+    // case, and a leaked bloom would silently re-tint the rest of the run.
+    try {
+      for (const id of PROBE_PRESET_IDS) {
+        const preset = probePreset(id);
+        renderer.setPreset(preset);
+        const params = defaultParams(preset);
+        for (const probe of POST_PROBES) {
+          renderer.setPost(probe.post);
+          cases.push({
+            id: `${id}/post/${probe.id}`,
+            ...(await renderCase(renderer, canvas, preset, params)),
+          });
+        }
+      }
+    } finally {
+      renderer.setPost(DEFAULT_POST);
+    }
+
+    try {
+      for (const id of PROBE_PRESET_IDS) {
+        const preset = probePreset(id);
+        renderer.setPreset(preset);
+        const params = defaultParams(preset);
+        for (const probe of MOTION_PROBES) {
+          renderer.setMotion(probe.motion);
+          cases.push({
+            id: `${id}/motion/${probe.id}`,
+            ...(await renderCase(renderer, canvas, preset, params)),
+          });
+        }
+      }
+    } finally {
+      renderer.setMotion(DEFAULT_MOTION);
     }
   } finally {
     renderer.dispose();

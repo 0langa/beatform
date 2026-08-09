@@ -111,9 +111,16 @@ function assertRuntime(matrix) {
     failures.push(`WGSL compile errors: ${JSON.stringify(matrix.compileErrors)}`);
   }
   if (matrix.gpuErrors !== 0) failures.push(`uncaptured WebGPU errors: ${matrix.gpuErrors}`);
+  // F4: the param-extreme cases are the one family where a black frame is a
+  // legitimate result — "brightness at min" and "count at min" are supposed
+  // to render nothing — so they are counted and printed instead of failed.
+  // Read the list: a mode that goes black at an edge is not automatically a
+  // defect, but it is always worth knowing which ones do.
+  const blackExtremes = [];
   for (const entry of matrix.cases) {
     if (entry.litFraction === 0 && entry.meanLuma === 0) {
-      failures.push(`${entry.id}: fully black frame`);
+      if (entry.id.includes("/extreme/")) blackExtremes.push(entry.id);
+      else failures.push(`${entry.id}: fully black frame`);
     }
     if (
       (entry.id.endsWith("/color/grayscale") || entry.id.endsWith("/color/bright-grayscale")) &&
@@ -141,6 +148,7 @@ function assertRuntime(matrix) {
   const dock = matrix.dockLayoutSmoke;
   if (!dock?.passed) failures.push(`dock layout audit failed: ${JSON.stringify(dock)}`);
   if (failures.length) throw new Error(failures.join("\n"));
+  return { blackExtremes };
 }
 
 async function compare(matrix) {
@@ -675,7 +683,7 @@ try {
   }
 
   const matrix = await evaluateMatrix();
-  assertRuntime(matrix);
+  const { blackExtremes } = assertRuntime(matrix);
 
   if (update) {
     const baseline = {
@@ -698,6 +706,11 @@ try {
         `${matrix.dockLayoutSmoke.wide.dockWidth}px`,
     );
   }
+  console.log(
+    blackExtremes.length
+      ? `param extremes rendering black (diagnostic, not a failure): ${blackExtremes.join(", ")}`
+      : "param extremes: every edge rendered something",
+  );
 } finally {
   socket?.close();
   if (child?.pid) {

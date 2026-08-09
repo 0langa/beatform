@@ -483,8 +483,68 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       against the SAME compose tuple), and the export walk proven identical
       across two runs under a moving wall clock, with `createModEvalState`
       counted per run and the 60 Hz feedback walk proven to hold its own lag
-      memory. Remaining: the GPU-matrix variants and the fuzzing.
-- [ ] F4a **DEFECT found by F4, UNFIXED** — a SEGMENT export (Canvas-loop
+      memory. **CLOSED 2026-08-09 — both remaining holes done.**
+      (1) **GPU matrix variants.** The matrix rendered every case through
+      `DEFAULT_POST` and `DEFAULT_MOTION` at default params, so it pinned the
+      MIDDLE of the space and nothing else: `runPost` skips the whole
+      bright/blur/blur chain behind `if (this.post.bloom > 0)`, which means
+      bloom, vignette, grain, chromatic aberration and the ACES tonemap had
+      ZERO pixel coverage in the gate whose job is pixel drift, and motion
+      uniforms 28–31 were pinned at one value each. Added: two param-extreme
+      cases per preset (every spec at `min`, then at `max` — no per-control
+      special case, because min..max IS the legal span of every control type),
+      seven post probes and five motion probes over `spectrum-bars` and
+      `oscilloscope` (the two built-ins that read spin/pulse/detail through
+      different arithmetic). Probe presets are pinned BY ID and throw when
+      missing — a silent fallback would re-bless the probe under a name that
+      no longer describes it. A black frame stays a hard failure everywhere
+      EXCEPT `/extreme/`, where "brightness at min renders nothing" is the
+      correct answer; those are counted and printed instead (same read-it-
+      never-wave-it-through rule as the dock audit's `overflow`).
+      (2) **Parser fuzzing.** Rust: `mod fuzz` in `shadertoy.rs` — a
+      deterministic xorshift mutator over a six-seed corpus, run on its own
+      thread so a hang fails instead of stalling CI, `catch_unwind` so a panic
+      reports as a panic and not as a timeout, and `BEATFORM_FUZZ_ITERS` for
+      deep runs. It lives inside `cargo test --workspace` on purpose: a
+      cargo-fuzz target needs nightly and therefore cannot be a gate, and this
+      invariant is only worth anything if every commit checks it.
+      JS: `src/state/parserFuzz.test.ts` — fast-check over `parseProject`,
+      `parseTheme`, `parseLrc`/`parseSrt`/`parseLyrics` and the three
+      per-frame lyric readers. Five properties, each mutation-checked. One of
+      them (the save/load round trip) was VACUOUS on first write and is
+      recorded as such in the file: junk input collapses to defaults, so
+      deleting `motion` from `serializeProject` left it green until a
+      realistic-document generator replaced the junk one.
+      **Three real defects, all found by the Rust fuzzer, all fixed here** —
+      see F4b/F4c below.
+- [x] F4b **DEFECT found by F4 fuzzing, FIXED 2026-08-09** — `transpile`
+      **panicked** on a shader with a multi-byte char in front of a channel
+      helper. `find_sampler_fns` walked back with
+      `rfind(|c: char| …).map(|p| p + 1)`, and `p + 1` lands INSIDE any
+      multi-byte char, so the next `&str` slice panicked. Reachable straight
+      from the import dialog: `transpile_shadertoy` is a Tauri command over
+      pasted text, and a non-breaking space is what copying code out of a
+      rendered web page gives you. Fixed with `after_char()` at all three
+      sites (two in `find_sampler_fns`, one in the prototype loop). Regression
+      test uses the NBSP shape a person would actually produce, plus the
+      literal brace-and-BOM soup the fuzzer generated.
+- [x] F4c **DEFECT found by F4 fuzzing, FIXED 2026-08-09** — duplicate or
+      OVERLOADED channel helpers corrupted the source instead of failing it.
+      Two definitions sharing a name each scanned the whole view for calls, so
+      one call site was queued for rewrite twice, and the second application
+      replaced the first replacement plus the bytes after it — on the fuzzer's
+      doubled shader, exactly `;\n}\n`, merging two statements and deleting a
+      brace. Only a `debug_assert` on line count caught it, so in a RELEASE
+      build it was silent: naga then rejected a shader that should have
+      imported and pointed at the wrong line. Two fixes: rewrites that overlap
+      one already applied on the same pass are dropped and re-scanned next
+      pass; and clone ownership is assigned to the earliest definition of a
+      name rather than filtered by name at embed time, which was emitting
+      every clone once per overload ("Function already defined"). Nested
+      `outer(iChannel0, inner(iChannel1, uv))` was the same overlap bug and is
+      covered by the same guard. Three named regression tests, each
+      mutation-checked against its own fix.
+- [x] F4a **DEFECT found by F4 — FIXED, shipped v2.83.0** — a SEGMENT export (Canvas-loop
       mode) does not shift lyric WORD timings, so the karaoke wipe diverges
       from the preview. `videoExporter.ts` (~line 347) rebuilds each line as
       `{ ...l, t: l.t - segment.start, end: l.end - segment.start }`; `words`
@@ -492,10 +552,13 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       it against CLIP time. Repro: line t=60..64 with word tags, segment
       start 58, `anim: "wipe"` — preview progress sweeps 0.159 → 0.966 across
       t=60.5..63.9 while the export resolves 0 at every one of those frames,
-      i.e. the whole line renders dim with no sung fill. Fix is to map
-      `words` (`t`, `end`) with the same offset; needs a regression test at
-      the videoExporter level. Compose-side contract already pinned by
-      "the karaoke wipe reads WORD times" in `overlayCompose.test.ts`.
+      i.e. the whole line renders dim with no sung fill. Fixed by
+      `shiftLyricsForSegment` (`src/state/lyrics.ts`), which maps `words`
+      (`t`, `end`) with the same offset and is called from
+      `videoExporter.ts:345`. Regression: `src/export/segmentLyricShift.test.ts`
+      — and note it IMPORTS the real helper rather than restating the shift,
+      because the first version of that test reimplemented it and stayed green
+      with the fix mutated out.
 - [x] F5 DONE 2026-08-06 (wave 0) — `src/render/wgslLib.ts`; ACES/hsl2rgb/
       color-controls/palette sites consolidated byte-identically
       (shaderGolden zero snapshot updates; device GPU matrix 137 cases
