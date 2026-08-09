@@ -123,6 +123,26 @@ export class OfflineAnalyzer {
   /** Starts one tick BEFORE zero so frame 0 sees a full ANALYSIS_DT, exactly
    * as it did when dt was the frame interval. */
   private lastUpdateTime = -1 / 60;
+  /**
+   * The pipeline's OWN `beatIntensity` at the end of the last frame that
+   * reported a LATCHED maximum instead of it — null when nothing is owed.
+   *
+   * `features.beatIntensity` is not a readout, it is the decaying STATE the
+   * pipeline multiplies down on each analysis tick. Writing the per-frame
+   * maximum into it (below) therefore did not merely report the peak, it FED
+   * the peak back in: at 30 fps a frame consumes two ticks, so the envelope
+   * decayed once per rendered frame instead of once per tick and the beat
+   * flash rang for twice as long as the 60 Hz preview showed. Measured on the
+   * kick fixture, 33 ms after the hit: 0.766 at 60 fps against 0.875 at 30.
+   *
+   * The latch itself is still required (a hit landing on the first of two
+   * ticks must not vanish because the second reported a lower value), so the
+   * true value is parked here and restored before the next step. At 60 fps and
+   * above a frame never consumes more than one tick, the maximum IS the true
+   * value, and both the save and the restore are exact no-ops — which is what
+   * keeps the golden trace and every 60 fps export bit-identical.
+   */
+  private trueBeatIntensity: number | null = null;
   private duration: number;
 
   private grid: BeatGrid | null;
@@ -324,6 +344,14 @@ export class OfflineAnalyzer {
    * a 30 fps export cannot drop a hit that happened between its frames.
    */
   nextFrameFeatures(): AudioFeatures {
+    // Hand the pipeline back its own envelope before stepping it. See
+    // `trueBeatIntensity`: the value the previous frame REPORTED is a maximum
+    // over that frame's ticks, and leaving it in place would make the decay
+    // advance once per frame rather than once per tick.
+    if (this.trueBeatIntensity !== null) {
+      this.pipeline.features.beatIntensity = this.trueBeatIntensity;
+      this.trueBeatIntensity = null;
+    }
     const n = this.nextFrame++;
     const t = n / this.fps;
     let beat = false;
@@ -356,6 +384,8 @@ export class OfflineAnalyzer {
     }
     const f = this.pipeline.features;
     f.beat = beat;
+    // Park the pipeline's real envelope, then report the frame's maximum.
+    this.trueBeatIntensity = f.beatIntensity;
     f.beatIntensity = beatIntensity;
     f.kick = kick;
     f.snare = snare;

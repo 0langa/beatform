@@ -495,6 +495,94 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       `undoStack` with no `MAX_DEPTH` check) and it is NOT one: entries only
       move between the two stacks and `pushHistory` clears redo, so
       undo+redo is conserved at ≤ 100.
+      **Wave 3 (audio) DONE 2026-08-09 — and it found a real shipped
+      preview≠export divergence, the same class as F4a.**
+      **E2-A1 (FIXED): `beatIntensity` decayed at the FRAME rate, not the
+      analysis rate, in every sub-60 fps export.** `features.beatIntensity` is
+      not a readout — it IS the decaying state the pipeline multiplies down on
+      each tick (`featurePipeline.ts:658`). `nextFrameFeatures` latched the
+      per-frame MAXIMUM over that frame's ticks and wrote it back into the same
+      field, feeding the peak back in; at 30 fps a frame consumes two ticks, so
+      the envelope advanced one decay step per FRAME. Measured on the kick
+      fixture at t=0.033: 0.766 at 60 fps against 0.875 at 30, and the error
+      COMPOUNDS (Δ 0.109 → 0.242 by t=0.133). The user sees the beat flash ring
+      for about twice as long in a 30 fps export as the preview showed. Canvas
+      loop is FORCED to 30 (`ExportDialog.tsx:44`), so it always hit this.
+      Sharpest form: a feedback preset builds a second `OfflineAnalyzer` pinned
+      at 60 Hz over the same audio (`exportCore.ts:799`), so one export
+      contained two disagreeing notions of how long a beat rings.
+      Fixed by parking the pipeline's true envelope and restoring it before the
+      next step; the latch stays, because a hit on the first of two ticks must
+      still report 1.0. At 60 fps and above both save and restore are exact
+      no-ops, which is why the golden trace is unchanged. `kick`/`snare`/`hat`/
+      `driveBeat` were never affected — their envelopes live in the detectors.
+      **This changes 30/24/15/12 fps export output. Nothing pinned it**: no
+      export snapshots exist, `exportCoreFeedbackGate.test.ts` only counts
+      constructor fps values, and `syncLatency.test.ts` (which does run at 30)
+      asserts `beat`/`kick`/`driveBeat`, never `beatIntensity`. Note WHY the
+      existing characterization suite missed it: it pins onset COUNTS across
+      30/60/90/120/144, never envelope VALUES.
+      Also added `featurePipelineFuzz.test.ts` (4 fast-check properties) and a
+      first-ever test for `sanitizeSync`'s `MIN_SPAN_RATIO` coercion, which is
+      load-bearing — without it a span pair the UI can produce by dragging one
+      slider into the other resolves to ZERO display bands, i.e. a black
+      spectrum. **Vacuity, again:** the first span generator was useless
+      because two unbiased `fc.double()`s never land within a factor of three
+      of each other, so deleting the coercion left every property green.
+      **Not fixed, reported:** a silent or DC track reports **200.9 BPM** in
+      the footer — `estimateTempo` starts `bestScore = -Infinity`, so an
+      all-zero ACF still "wins" at `minLag`, which is MAX_BPM. The fix touches
+      live tempo detection for real audio, and whether the badge should read
+      nothing or 0 is an owner call. `beatGrid.test.ts:98` cannot catch it: the
+      assertion is a tautology for any non-NaN bpm.
+      Dismissed with reasons (do not re-derive): `reset("source")` leaving
+      `width`/`lufs` behind self-heals within ~0.4s and never reaches a badge;
+      a NaN `width` or a NaN waveform sample is unreachable because every path
+      in is a decoder or an OfflineAudioContext render; zero-channel `PcmData`
+      cannot exist.
+      **Wave 4 (platform / Rust) DONE 2026-08-09 — four fixes.**
+      **E2-P1: killing the lyrics sidecar orphaned its grandchildren.**
+      `Child::kill()` is `TerminateProcess` on ONE process, and the sidecar is
+      a tree — it spawns a decode ffmpeg, then `whisper-cli -t 4`. Close the
+      app during Transcribe and whisper-cli kept running with
+      `CREATE_NO_WINDOW` and no parent: four cores pegged for the rest of a
+      medium-model transcription, minutes after Beatform was visibly gone.
+      Fixed with a Windows job object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`),
+      which also covers an app CRASH with no hook to run.
+      **E2-P2: the staged WAV — the whole decoded track — was never swept.**
+      `kill_running_job` held a bare `Child`, so shutdown could end the sidecar
+      but had no idea which files it owned, and unlike `prores::kill_running_job`
+      it never swept `staged`/`staging`. ~42 MB for a four-minute song, ~635 MB
+      for an hour-long set, left forever on the system drive — the exact drive
+      whose exhaustion `diskspace.rs` exists to catch. Two reaching paths: close
+      the app mid-run, or stage audio and have `lyrics_generate` reject before
+      `staged.take()`.
+      **E2-P3: a cancel landing between whisper's spawn and its registration
+      was lost for the whole stage** — `decode()` closes that gap, `transcribe()`
+      did not, and its wait loop never re-read the flag. Cancel appeared to do
+      nothing for minutes.
+      **E2-P4:** the GPU probe child was registered nowhere, so no shutdown
+      path could reach it.
+      **PL-4 is NOT REAL — close it.** `own_origin` (`midi_permission.rs:40`)
+      already does `strip_prefix` plus a delimiter check, not `starts_with`;
+      `http://localhost:1420.evil.com`, `:14205`, `tauri://localhost.evil.com`
+      and the userinfo trick `http://localhost:1420@evil.com` all fail closed,
+      and two existing tests pin exactly those.
+      Not fixed, owner decisions: `audio.rs:90` reads a whole decode into
+      memory (~1.27 GB/hour before deinterleave and the MDX stem), so a 2-hour
+      mix could OOM — the call is what track length the lyrics feature
+      supports. Recorded without a reaching input, so not claimed as findings:
+      `lyrics_gpu_probe` has no wait ceiling, and `loopback.rs` shares one
+      `dead` flag across sessions.
+      Checked line by line and clean — skip next sweep: FS scope gating is
+      complete (`check_out_path` rejects UNC, verbatim-UNC, device and relative
+      paths, pins the extension case-insensitively, and ADS and trailing-space
+      tricks fail closed); no over-broad capability; the panic class is clean
+      (the sidecar's two byte-index slices are at ASCII boundaries, so the
+      2026-08-09 multi-byte precedent does not recur); `prores.rs` child
+      lifecycle is already correct.
+      **Owed: `npm run test:lyrics` (GATES.md §3) — mandatory for the sidecar
+      supervision change and not yet run.**
       Wave 1 is PART done because "state" is bigger than persistence — the
       document model, `modMatrix`, `frameResolve` and the store slices have
       not had the same pass. Not started: waves 2–5.
