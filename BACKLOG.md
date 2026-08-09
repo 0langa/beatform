@@ -360,11 +360,29 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       gates when CI also runs cargo fmt/clippy/test and two audits.
       `docs/templates.md` advertised `projectSchemaVersion: 6`; the app
       writes **14**. `docs/presets.md` told new preset authors to write
-      "5–7 curated looks". Remaining: **the gallery-repo docs** (the
-      `beatform-app/gallery` repo is not checked out beside this one, so it
-      was not audited — do it from a clone). The `/templates` URL rename
-      stays filed and OUT OF SCOPE: it breaks every inbound link, including
-      external ones, and is the owner's call.
+      "5–7 curated looks". **Gallery-repo docs DONE 2026-08-09** (cloned,
+      audited against `src/state/gallery.ts`, pushed as `beatform-app/gallery`
+      `9e8a132`). Three real errors, two of them security-relevant because
+      they OVERSTATED the protection: (a) "before downloading, the app checks
+      the declared `sizeBytes` and enforces it as a hard limit" — it does not.
+      `verifiedFetch` awaits the whole body, then requires an EXACT match; what
+      genuinely runs pre-download is the index-parse rejection of any entry
+      declaring over `MAX_CONTENT_BYTES` (32 MB / 512 KB preview) plus the
+      `entryGate` minAppVersion+schemaVersion check, which `galleryActions`
+      does call before `fetchEntryContent`. (b) tombstones were described as
+      "optionally pointing at a successor via `replacedBy`" as if the app
+      followed it — `gallery.ts` never reads that field, and a tombstoned
+      entry returns `null` at parse before anything could. (c) the worked
+      example's theme `schemaVersion` said "currently 13"; `PROJECT_VERSION`
+      is **14**. Plus one retired-vocabulary hit ("full shareable templates")
+      in README and `themes/README.md`. Verified clean and unchanged:
+      `looks/README.md`, `SECURITY.md`, `CONTRIBUTING.md`, the 11-entry count,
+      the 2.72.0 Gallery-button claim, the licence list, the moderation
+      policy. Validator green on a FULL clone — note `--depth 1` makes
+      `scripts/validate.mjs` report every pin unreachable, which reads as 22
+      failures and is purely a shallow-clone artefact.
+      The `/templates` URL rename stays filed and OUT OF SCOPE: it breaks
+      every inbound link, including external ones, and is the owner's call.
 - [x] D3 **DONE (2026-08-09) — repo-wide string audit is clean in the
       surfaces this track owns.** No "Inspector" anywhere in `src/`,
       `docs/` or README. No "Template" in any rendered UI string, tooltip
