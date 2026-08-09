@@ -1,11 +1,17 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useVizStore } from "../state/store";
 import { getPrefs, setPrefs, type AppPrefs, type PerfOverlayStats } from "../state/prefs";
 import { isTauri } from "../state/platform";
 import { presets } from "../render/presets";
 import { isDefaultPresetOrder } from "../state/presetOrder";
 import { APP_VERSION } from "../version";
-import type { UpdatePhase } from "../state/updater";
+import {
+  getUpdatePhase,
+  installUpdate,
+  relaunchApp,
+  runUpdateCheck,
+  subscribeUpdate,
+} from "../state/updater";
 import { useFocusTrap } from "./useFocusTrap";
 import { IconClose } from "./Icons";
 import { PresetOrderEditor } from "./PresetOrderEditor";
@@ -16,14 +22,12 @@ import { SECONDS, Segmented, SelectRow, SliderRow, ToggleRow } from "./kit";
  * per-visual settings panel. Backed by the beatform.prefs.v1 object; nothing
  * here touches the project document or the deterministic export path (the
  * FPS cap is live-preview-only by design).
+ *
+ * Takes no props (G5, completing P-12's store-direct idiom): the strip order
+ * comes from the zustand store, the preferences from the prefs module, and
+ * the updater phase from state/updater.ts. The four update props it used to
+ * take made every download progress tick a re-render of App itself.
  */
-export interface SettingsDialogProps {
-  update: UpdatePhase;
-  onCheckUpdate: () => void;
-  onInstallUpdate: () => void;
-  onRelaunch: () => void;
-}
-
 type Tab = "general" | "modes" | "performance" | "updates";
 
 /** Built-in defs by id — the strip order is a list of ids, and this turns it
@@ -42,7 +46,7 @@ const PERF_STAT_TOGGLES: Array<{ key: keyof PerfOverlayStats; label: string }> =
   { key: "gpu", label: "GPU" },
 ];
 
-export function SettingsDialog(props: SettingsDialogProps) {
+export function SettingsDialog() {
   const store = useVizStore.getState;
   const dialogRef = useFocusTrap(true);
   const [tab, setTab] = useState<Tab>("general");
@@ -56,7 +60,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const presetThumbs = useVizStore((s) => s.presetThumbs);
   const orderIsDefault = useMemo(() => isDefaultPresetOrder(presetOrder), [presetOrder]);
   const desktop = isTauri();
-  const { update } = props;
+  // Module state like the prefs above, read through its own emitter. The
+  // getter returns the machine's current phase object, never a fresh one —
+  // see getUpdatePhase.
+  const update = useSyncExternalStore(subscribeUpdate, getUpdatePhase);
 
   return (
     <div className="modal-backdrop" onClick={() => store().setShowSettings(false)}>
@@ -311,7 +318,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   {update.state === "available" ? (
                     <>
                       <span>Version {update.version} is available</span>
-                      <button className="ghost-btn accent" onClick={props.onInstallUpdate}>
+                      <button className="ghost-btn accent" onClick={() => void installUpdate()}>
                         Update now
                       </button>
                     </>
@@ -325,7 +332,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   ) : update.state === "ready" ? (
                     <>
                       <span>Version {update.version} installed</span>
-                      <button className="ghost-btn accent" onClick={props.onRelaunch}>
+                      <button className="ghost-btn accent" onClick={() => void relaunchApp()}>
                         Restart now
                       </button>
                     </>
@@ -343,7 +350,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                       <button
                         className="ghost-btn"
                         disabled={update.state === "checking"}
-                        onClick={props.onCheckUpdate}
+                        onClick={() => void runUpdateCheck(true)}
                       >
                         Check for updates
                       </button>

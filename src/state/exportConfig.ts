@@ -82,11 +82,27 @@ export interface ExportSettings {
  * disabled buttons put in their tooltip AND what the actions set as their
  * error, so the promise the UI makes and the reason it gives cannot drift.
  *
+ * That sentence was aspirational until G7: the top bar's `exportBlocked`
+ * carried its own copy, and the copy had already drifted ("isn't available"
+ * against this one's "is unavailable") — the same button and the dialog it
+ * opens giving two different reasons. There is one literal now, and
+ * exportConfig.test.ts fails if a second one appears.
+ *
  * Lives here rather than in store.ts so the slices can import it as a value
  * without a cycle back through the store (same reason RESOLUTIONS does).
  */
-export const SIMPLIFIED_EXPORT_REASON =
-  "Video export needs hardware rendering (WebGPU), which is unavailable on this system";
+/**
+ * The half of that sentence that is not about video export specifically.
+ * Batch render refuses for the same reason but names itself and adds its own
+ * consequence, so it cannot share the whole string — it shares this clause
+ * instead. Before G7 it carried a third hand-written copy, drifted the same
+ * way ("isn't available"), which is how one machine managed to describe one
+ * missing capability in two voices across three surfaces.
+ */
+export const NO_HARDWARE_RENDERING_CLAUSE =
+  "needs hardware rendering (WebGPU), which is unavailable on this system";
+
+export const SIMPLIFIED_EXPORT_REASON = `Video export ${NO_HARDWARE_RENDERING_CLAUSE}`;
 
 /** Loudness targets people actually deliver to. */
 export const LOUDNESS_PRESETS: { label: string; hint: string; lufs: number }[] = [

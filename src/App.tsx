@@ -5,7 +5,7 @@ import { presetById } from "./render/presets";
 import { orderedPresets } from "./state/presetOrder";
 import { APP_VERSION } from "./version";
 import { BatchPanel, type BatchPanelProps } from "./ui/BatchPanel";
-import { RESOLUTIONS, useVizStore } from "./state/store";
+import { RESOLUTIONS, SIMPLIFIED_EXPORT_REASON, useVizStore } from "./state/store";
 import { selectEffectiveBg } from "./state/selectors";
 import { installDevHooks } from "./devHooks";
 import { getPrefs, setPrefs, subscribePrefs } from "./state/prefs";
@@ -13,10 +13,14 @@ import { PlayerBar, type PlayerBarProps } from "./ui/PlayerBar";
 import { LibraryPanel, type LibraryPanelProps } from "./ui/LibraryPanel";
 import { isTauri } from "./state/platform";
 import {
-  checkForUpdate,
-  downloadAndInstallUpdate,
+  dismissUpdatePrompt,
+  getUpdatePhase,
+  installUpdate,
+  isUpdatePromptOpen,
   relaunchApp,
-  type UpdatePhase,
+  scheduleStartupUpdateCheck,
+  setUpdatePhase,
+  subscribeUpdate,
 } from "./state/updater";
 import { TimelinePanel, type TimelinePanelProps } from "./ui/TimelinePanel";
 import { PresetStrip } from "./ui/PresetStrip";
@@ -276,41 +280,15 @@ export default function App() {
     [visualsW],
   );
 
-  // Auto-updater (desktop): silent check shortly after boot; manual check +
-  // install live in the Help modal. Local state on purpose — this is UI
-  // phase, not document/session state (it moves to the Settings page later).
-  const [update, setUpdate] = useState<UpdatePhase>({ state: "idle" });
-  // Startup-found updates open a one-per-boot prompt; manual checks report
-  // inside the Settings dialog instead, so the two flows never fight.
-  const [updatePromptOpen, setUpdatePromptOpen] = useState(false);
-  const runUpdateCheck = useCallback(async (manual: boolean) => {
-    setUpdate({ state: "checking" });
-    try {
-      const found = await checkForUpdate();
-      setUpdate(found ? { state: "available", ...found } : { state: "none" });
-      if (found && !manual) setUpdatePromptOpen(true);
-    } catch (e) {
-      // Offline at boot is normal — only a MANUAL check reports the failure.
-      setUpdate(manual ? { state: "error", message: (e as Error).message } : { state: "idle" });
-    }
-  }, []);
-  const installUpdate = useCallback(async () => {
-    const version = update.state === "available" ? update.version : "";
-    setUpdate({ state: "downloading", received: 0, total: null });
-    try {
-      await downloadAndInstallUpdate((received, total) =>
-        setUpdate({ state: "downloading", received, total }),
-      );
-      setUpdate({ state: "ready", version });
-    } catch (e) {
-      setUpdate({ state: "error", message: (e as Error).message });
-    }
-  }, [update]);
-  useEffect(() => {
-    if (!isTauri() || !getPrefs().updateAutoCheck) return;
-    const t = setTimeout(() => void runUpdateCheck(false), 5000);
-    return () => clearTimeout(t);
-  }, [runUpdateCheck]);
+  // Auto-updater (desktop): silent check shortly after boot; the manual check
+  // and both install buttons live in Preferences › Updates and the startup
+  // prompt. The machine itself is state/updater.ts (G5) — App only renders
+  // it. Two snapshots rather than one object: the getters must return stable
+  // references or useSyncExternalStore loops, and a download progress tick
+  // must not re-render whoever only asks whether the prompt is mounted.
+  const update = useSyncExternalStore(subscribeUpdate, getUpdatePhase);
+  const updatePromptOpen = useSyncExternalStore(subscribeUpdate, isUpdatePromptOpen);
+  useEffect(() => scheduleStartupUpdateCheck(), []);
 
   // Stable callback props for the memoized panels below (H13): memo() does
   // nothing if a component receives a FRESH function reference every render,
@@ -526,24 +504,20 @@ export default function App() {
 
   // Dev-only: drive the update prompt with a synthetic phase so the dialog
   // (which otherwise needs an installed build plus a newer release) can be
-  // exercised and visually verified in the browser harness.
+  // exercised and visually verified in the browser harness. Same signature as
+  // before G5 — it just points at the machine's own entry point now, so it
+  // drives Preferences › Updates as well as the prompt.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    (window as unknown as Record<string, unknown>).__setUpdatePhase = (
-      phase: UpdatePhase,
-      open = true,
-    ) => {
-      setUpdate(phase);
-      setUpdatePromptOpen(open);
-    };
+    (window as unknown as Record<string, unknown>).__setUpdatePhase = setUpdatePhase;
   }, []);
 
   // One sentence for every Export/Batch entry point in the shell, so the
   // top-bar tooltips, the dialog and the store guard all give the same reason
-  // (F2). Null on the normal path — nothing below changes there.
-  const exportBlocked = simplifiedRenderer
-    ? "Video export needs hardware rendering (WebGPU), which isn't available on this system"
-    : null;
+  // (F2). The sentence itself is NOT written here (G7): a second literal is
+  // how the button and the dialog it opens ended up wording the same refusal
+  // differently. Null on the normal path — nothing below changes there.
+  const exportBlocked = simplifiedRenderer ? SIMPLIFIED_EXPORT_REASON : null;
 
   // Idle-hide only when nothing interactive is open (audit U6): the library,
   // guide and settings are .chrome too, so holding the pointer still while
@@ -1124,7 +1098,7 @@ export default function App() {
           update={update}
           onInstall={() => void installUpdate()}
           onRelaunch={() => void relaunchApp()}
-          onDismiss={() => setUpdatePromptOpen(false)}
+          onDismiss={dismissUpdatePrompt}
         />
       )}
 
@@ -1153,14 +1127,7 @@ export default function App() {
 
       {showGuide && <GuideDialog onClose={() => store().setShowGuide(false)} />}
       {showExport && <ExportDialog />}
-      {showSettings && (
-        <SettingsDialog
-          update={update}
-          onCheckUpdate={() => void runUpdateCheck(true)}
-          onInstallUpdate={() => void installUpdate()}
-          onRelaunch={() => void relaunchApp()}
-        />
-      )}
+      {showSettings && <SettingsDialog />}
     </div>
   );
 }

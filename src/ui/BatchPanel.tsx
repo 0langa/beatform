@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { BatchRun, BatchTrack } from "../state/batch";
 import { runStats } from "../state/batch";
 import { EXPORT_RUNNING_REASON } from "../state/slices/batchActions";
+import { NO_HARDWARE_RENDERING_CLAUSE } from "../state/exportConfig";
 import type { OverlayLayer } from "../render/overlay";
 import { useFocusTrap } from "./useFocusTrap";
 
@@ -81,7 +82,7 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
   // status !== "running" because a running BATCH mirrors itself into
   // `exporting` (see batchActions.onJobUpdate) and must not self-block.
   const blocked = simplifiedRenderer
-    ? "Batch render needs hardware rendering (WebGPU), which isn't available on this system — every job would fail after decoding its track"
+    ? `Batch render ${NO_HARDWARE_RENDERING_CLAUSE} — every job would fail after decoding its track`
     : props.exporting && status !== "running"
       ? EXPORT_RUNNING_REASON
       : null;

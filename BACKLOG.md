@@ -740,7 +740,29 @@ nothing else from that release is outstanding.
       `kit.test.tsx`). Sequence **after** P-1's page model exists —
       **unblocked as of v2.81.0**, though the pages themselves are still
       un-curated until P-1 stage 2 (Track H).
-- [ ] G5 Move the `UpdatePhase` state machine out of `App.tsx` and finish
+- [x] G5 **DONE 2026-08-09 — into `state/updater.ts`, deliberately NOT into the
+      store.** Two reasons, both measured rather than asserted. The live
+      `Update` handle is already module-scoped and cannot be serialized, so
+      putting the phase in the store would split ONE machine across two owners
+      — the exact arrangement G7 exists to remove. And zustand runs every
+      subscriber's selector on every `set()`, so a per-chunk download counter
+      would sweep the whole app hundreds of times per install; mutation MU-C
+      (emit also writes the store) measures that directly at 20 store
+      notifications against 0. The prefs precedent won instead:
+      `subscribePrefs` + a stable snapshot + `useSyncExternalStore`.
+      `SettingsDialog` now takes NO props. `window.__setUpdatePhase` keeps its
+      `(phase, open = true)` signature and points at `setUpdatePhase`, so it
+      still drives both the prompt and Preferences ▸ Updates. Selector law
+      respected with two separate stable snapshots rather than one allocating
+      object — MU-E (return a fresh object) goes red with the real
+      "Maximum update depth exceeded".
+      **One drafted test was VACUOUS and was caught before landing:** the
+      "unmounting releases its subscription" case counted notifications on the
+      TEST's own listener, so it moved whether or not the dialog leaked —
+      proven by swapping the component for a `<div />` and watching it stay
+      green. Rewritten against a `__updateListenerCount()` seam, mirroring
+      `ModMeters.__meterCount`. Nine mutations, all red.
+      ORIGINAL — Move the `UpdatePhase` state machine out of `App.tsx` and finish
       SettingsDialog. Its four update props are the only prop-drilling left
       into an otherwise store-direct dialog; the machine is deliberately not
       in the store today, and touching it would have meant a third
@@ -769,7 +791,28 @@ nothing else from that release is outstanding.
       mode, and the gate's `spectrumSmoke` leg uses `spectrum-bars`. Left
       alone because the fix puts a store-shaped change inside the render
       layer; do it deliberately, not opportunistically.
-- [ ] G7 Deduplicate `exportBlocked` (`App.tsx`) against
+- [x] G7 **DONE 2026-08-09 — and the drift had ALREADY HAPPENED, which is why
+      zero behaviour change was not achievable.** `exportConfig.ts` said
+      "…which **is unavailable** on this system"; `App.tsx:545` said "…which
+      **isn't available** on this system" — the same button and the dialog it
+      opens giving two different reasons — and `BatchPanel.tsx:84` carried a
+      THIRD copy, drifted the same way. One machine, one missing capability,
+      three voices. The constant owns the sentence now and App consumes it (it
+      already had three other consumers and is re-exported through `store.ts`'s
+      frozen public surface, so a future edit reaches for it); Batch keeps its
+      own subject and consequence but shares the clause via a new
+      `NO_HARDWARE_RENDERING_CLAUSE`. **User-visible delta: the two top-bar
+      tooltips now read "is unavailable", on Canvas2D-fallback machines only.**
+      The guard is `exportConfig.test.ts`, and note WHY asserting the current
+      string would not have worked — both copies were individually correct. It
+      scans shipping source (vite `?raw` glob; `node:fs` is unavailable with no
+      `@types/node`) for an exact copy, for the distinctive opening
+      "Video export needs hardware rendering" — deliberately narrower than
+      "hardware rendering (WebGPU)", which eight unrelated surfaces legitimately
+      use — and for whoever derives `exportBlocked` referencing the constant.
+      Four mutations red, including one that inverts the test's own file filter
+      so it cannot pass by walking nothing. Costs ~7s of suite time.
+      ORIGINAL — Deduplicate `exportBlocked` (`App.tsx`) against
       `SIMPLIFIED_EXPORT_REASON` (`store.ts`) — a real F2-class drift risk.
       Deferred because it lives in the top bar that P-1 restructures.
       **Unblocked as of v2.81.0**: P-1 stage 1's only top-bar edit was
