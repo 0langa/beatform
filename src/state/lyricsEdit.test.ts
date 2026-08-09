@@ -23,7 +23,7 @@ import {
   splitLine,
   writeLrc,
 } from "./lyricsEdit";
-import { parseLrc, type LyricLine, type LyricWord } from "./lyrics";
+import { activeLyricIndex, parseLrc, type LyricLine, type LyricWord } from "./lyrics";
 
 const word = (t: number, text: string, end: number | null = null, conf?: number): LyricWord => ({
   t,
@@ -198,6 +198,62 @@ describe("split / merge / insert / delete", () => {
   it("delete removes exactly one line", () => {
     const out = deleteLine(fixture(), 1);
     expect(out.map((l) => l.text)).toEqual(["Out of my mind", "Third line here"]);
+  });
+
+  /**
+   * E2. The correction editor runs on whatever lyrics are loaded, including an
+   * imported .srt — and an SRT cue carries an EXPLICIT end that routinely
+   * overlaps the next cue (parseSrt keeps them; it only rejects end <= start).
+   * `splitLine` used to clamp the second half to the line's own WINDOW, which
+   * for such a cue reaches past its successor, so the split-off half landed
+   * AFTER the next line. `activeLyricIndex` binary-searches by start, so it
+   * then never selected that line: the half the user had just split off
+   * disappeared from the overlay — in the preview and in the export — while
+   * still showing in the editor list.
+   */
+  describe("splitLine keeps the line list monotonic (overlapping SRT cue)", () => {
+    const overlapping = (): LyricLine[] => [
+      { t: 0, end: 20, text: "one two three" }, // cue 1 runs past cue 2
+      { t: 5, end: 9, text: "later" },
+    ];
+
+    it("places the second half before the next line's start", () => {
+      const out = splitLine(overlapping(), 0, 4)!;
+      expect(out.map((l) => l.text)).toEqual(["one", "two three", "later"]);
+      expect(out[1].t).toBeGreaterThan(out[0].t);
+      expect(out[1].t).toBeLessThanOrEqual(out[2].t);
+      // Monotonic, which is the invariant every other op in this module holds.
+      for (let i = 1; i < out.length; i++) expect(out[i].t).toBeGreaterThanOrEqual(out[i - 1].t);
+    });
+
+    it("and the new line is reachable — the overlay can actually show it", () => {
+      const out = splitLine(overlapping(), 0, 4)!;
+      const seen = new Set<number>();
+      for (let t = 0; t <= 10; t += 0.05) seen.add(activeLyricIndex(out, t));
+      expect(seen.has(1)).toBe(true);
+      expect(seen.has(0)).toBe(true);
+      expect(seen.has(2)).toBe(true);
+    });
+
+    it("changes nothing for a line whose end does NOT overlap", () => {
+      // min(window end, next start) === window end here, so this is the exact
+      // pre-fix arithmetic — the guard only bites on the overlapping case.
+      const lines: LyricLine[] = [
+        { t: 10, end: 15, text: "one two three four" },
+        { t: 20, end: null, text: "next" },
+      ];
+      const out = splitLine(lines, 0, 8)!;
+      expect(out[1].t).toBeCloseTo(10 + ((15 - 10) * 8) / 18, 12);
+    });
+
+    it("a degenerate corridor still puts the second half AFTER the first", () => {
+      const lines: LyricLine[] = [
+        { t: 5, end: 30, text: "one two" },
+        { t: 5, end: 6, text: "same instant" },
+      ];
+      const out = splitLine(lines, 0, 4)!;
+      expect(out[1].t).toBeGreaterThan(out[0].t);
+    });
   });
 });
 

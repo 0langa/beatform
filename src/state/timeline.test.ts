@@ -1,5 +1,13 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { evalTimeline, laneValue, validTimeline, type Timeline } from "./timeline";
+import {
+  evalTimeline,
+  laneValue,
+  validTimeline,
+  type AutomationLane,
+  type Keyframe,
+  type Timeline,
+} from "./timeline";
 import { presets } from "../render/presets";
 
 const P0 = presets[0].id;
@@ -253,5 +261,159 @@ describe("prototype-key hygiene", () => {
     // Still a plain value map for every legitimate consumer.
     expect(params.hue).toBe(1);
     expect(JSON.parse(JSON.stringify(params))).toEqual({ hue: 1 });
+  });
+});
+
+/**
+ * E2. `laneValue` is read by the LIVE loop every frame straight off the store's
+ * timeline, and TimelinePanel publishes a dragged keyframe IN PLACE
+ * (moveDragged: "no re-sort while dragging, so drag.index keeps pointing at the
+ * same keyframe" — the sort happens in endDrag/onPointerCancel). So for the
+ * length of any drag that crosses a neighbour the evaluator is handed an
+ * out-of-order array, and the binary search it used to do could not read one:
+ * the `t >= ks[last].t` end-pad tested the last keyframe BY ARRAY POSITION, so
+ * the lane flat-lined on it for the whole tail of the track while the user was
+ * dragging against the preview.
+ *
+ * Two properties, and they carry the whole fix between them: order-independence
+ * (the new behaviour) and sorted-input identity (proof the fix cannot move a
+ * single shipped frame — every stored lane is sorted by validTimeline).
+ */
+describe("laneValue resolves by time, not by array position", () => {
+  /** Exactly the pre-fix implementation, kept as the identity oracle. */
+  function binarySearchLaneValue(lane: AutomationLane, t: number): number | null {
+    const ks = lane.keyframes;
+    if (ks.length === 0) return null;
+    if (t <= ks[0].t) return ks[0].value;
+    if (t >= ks[ks.length - 1].t) return ks[ks.length - 1].value;
+    let lo = 0;
+    let hi = ks.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (ks[mid].t <= t) lo = mid;
+      else hi = mid - 1;
+    }
+    const k0 = ks[lo];
+    const k1 = ks[lo + 1];
+    if (k0.curve === "hold") return k0.value;
+    const span = Math.max(1e-9, k1.t - k0.t);
+    let f = Math.min(1, Math.max(0, (t - k0.t) / span));
+    if (k0.curve === "smooth") f = f * f * (3 - 2 * f);
+    return k0.value + (k1.value - k0.value) * f;
+  }
+
+  const kf = (t: number, value: number, curve: Keyframe["curve"] = "linear"): Keyframe => ({
+    id: `k${t}-${value}`,
+    t,
+    value,
+    curve,
+  });
+  const sortedCopy = (lane: AutomationLane): AutomationLane => ({
+    ...lane,
+    keyframes: [...lane.keyframes].sort((a, b) => a.t - b.t),
+  });
+
+  it("the exact mid-drag array: a keyframe dragged from t=3 to t=8, not yet re-sorted", () => {
+    const dragging: AutomationLane = {
+      param: "hue",
+      keyframes: [kf(0, 0), kf(8, 1), kf(5, 0.5)],
+    };
+    // The tail is what broke: before the fix every t >= 5 read 0.5 (the value
+    // of whatever sat LAST in the array) instead of ramping toward 1.
+    expect(laneValue(dragging, 6)).toBeCloseTo(2 / 3, 12);
+    expect(laneValue(dragging, 7)).toBeCloseTo(5 / 6, 12);
+    expect(laneValue(dragging, 8)).toBe(1);
+    expect(laneValue(dragging, 99)).toBe(1);
+    // ...and the head, which read the wrong RIGHT neighbour (8 instead of 5).
+    expect(laneValue(dragging, 4)).toBeCloseTo(0.4, 12);
+    // Every reading equals the sorted array's, which is the whole contract.
+    for (const t of [0, 1, 4, 4.9, 5, 6, 8, 99]) {
+      expect(laneValue(dragging, t)).toBe(laneValue(sortedCopy(dragging), t));
+    }
+  });
+
+  it("the pre-fix implementation FAILS that array — the property is not vacuous", () => {
+    const dragging: AutomationLane = {
+      param: "hue",
+      keyframes: [kf(0, 0), kf(8, 1), kf(5, 0.5)],
+    };
+    expect(binarySearchLaneValue(dragging, 6)).toBe(0.5);
+    expect(binarySearchLaneValue(dragging, 6)).not.toBe(laneValue(dragging, 6));
+  });
+
+  it("the ends pad from the earliest/latest keyframe in TIME, whatever the order", () => {
+    const lane: AutomationLane = { param: "x", keyframes: [kf(9, 90), kf(1, 10), kf(5, 50)] };
+    expect(laneValue(lane, -1)).toBe(10);
+    expect(laneValue(lane, 1)).toBe(10);
+    expect(laneValue(lane, 9)).toBe(90);
+    expect(laneValue(lane, 1000)).toBe(90);
+  });
+
+  /**
+   * Times are drawn mostly from a TINY pool, so duplicate `t` is the common
+   * case rather than a measure-zero accident of `fc.double`. Ties are the only
+   * input that can tell the tie-breaking apart, and a continuous generator
+   * never produces one — the property would pass while testing nothing about
+   * it (mutation-checked below: flipping a tie-break makes both properties
+   * fail, and with a continuous generator neither did).
+   */
+  const tArb = fc.oneof(
+    { weight: 4, arbitrary: fc.constantFrom(0, 1, 1, 2, 2, 5, 5, 10) },
+    { weight: 1, arbitrary: fc.double({ min: 0, max: 12, noNaN: true }) },
+  );
+  const keyframesArb = fc.array(
+    fc.record({
+      t: tArb,
+      value: fc.double({ min: -1000, max: 1000, noNaN: true }),
+      curve: fc.constantFrom("linear" as const, "hold" as const, "smooth" as const),
+    }),
+    { minLength: 1, maxLength: 10 },
+  );
+  /** Probe times that land ON the pool values as well as between them. */
+  const probeArb = fc.oneof(
+    { weight: 3, arbitrary: fc.constantFrom(-1, 0, 0.5, 1, 1.5, 2, 5, 7, 10, 11) },
+    { weight: 1, arbitrary: fc.double({ min: -2, max: 14, noNaN: true }) },
+  );
+
+  it("PROPERTY: any permutation of a lane reads exactly like its sorted form", () => {
+    fc.assert(
+      fc.property(
+        keyframesArb.chain((ks) =>
+          fc.tuple(
+            fc.constant(ks),
+            // A real permutation, so equal times shuffle among themselves too.
+            fc.shuffledSubarray(
+              ks.map((_, i) => i),
+              { minLength: ks.length, maxLength: ks.length },
+            ),
+          ),
+        ),
+        probeArb,
+        ([ks, order], t) => {
+          const withIds = ks.map((k, i) => ({ ...k, id: `k${i}` }));
+          const permuted: AutomationLane = {
+            param: "x",
+            keyframes: order.map((i) => withIds[i]),
+          };
+          expect(laneValue(permuted, t)).toBe(laneValue(sortedCopy(permuted), t));
+        },
+      ),
+      { numRuns: 700, seed: 0x51ac_0f21 },
+    );
+  });
+
+  it("PROPERTY: on SORTED input it is bit-identical to the binary search it replaced", () => {
+    // The guard against this fix moving a shipped frame: validTimeline sorts
+    // every stored lane, so this is the only input a saved document can have.
+    fc.assert(
+      fc.property(keyframesArb, probeArb, (ks, t) => {
+        const lane: AutomationLane = {
+          param: "x",
+          keyframes: ks.map((k, i) => ({ ...k, id: `k${i}` })).sort((a, b) => a.t - b.t),
+        };
+        expect(laneValue(lane, t)).toBe(binarySearchLaneValue(lane, t));
+      }),
+      { numRuns: 700, seed: 0x51ac_0f22 },
+    );
   });
 });

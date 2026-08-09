@@ -644,6 +644,65 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       lane discards or `remove_file`s), so `diskPreflight`'s "a partial file
       has been removed" is true wherever it can appear; renderer resource
       lifetime and preset-identity caching are sound.
+      **Wave 1 REMAINDER (document model + pure evaluators) DONE 2026-08-10 —
+      three more real defects, all user-reachable.**
+      **E2-S1: a MIDI pad bound before v2.68 switches to the WRONG MODE.**
+      `midi.ts:157` kept the persisted `presetId` verbatim, so a pad bound to
+      Particles back when its id was `starfield` resolves through
+      `presetById("starfield")` → no entry → `presets[0]`, and the pad silently
+      switches the live set to **Spectrum Bars**. `presets/index.ts:44-50`
+      states the rule — every loader that reads a persisted preset id maps it
+      through `canonicalPresetId` — and `project.ts`, `userPresets.ts`,
+      `presetOrder.ts` and `persistence.ts` all do. `midi.ts` was the one miss.
+      Fixed as a RENAME, not a validity check, so an unregistered `custom-*`
+      id keeps its pad.
+      **E2-S2: `laneValue` bracketed keyframes by ARRAY POSITION, not time.**
+      `TimelinePanel.moveDragged` deliberately moves a keyframe in place (the
+      re-sort is in `endDrag`) and `setTimeline` publishes on every
+      pointermove, so the render loop reads an unsorted lane throughout the
+      gesture. For `[t0=0, t8=1, t5=0.5]` the old end-pad tested the last
+      keyframe BY INDEX, so every t ≥ 5 read a flat 0.5 instead of ramping —
+      **the preview lies for the whole drag, which is exactly when the user is
+      watching it.** Replaced with one allocation-free pass resolving by time,
+      tie-broken as a stable sort would. No shipped frame moves: a property
+      test asserts bit-identity against the OLD search on sorted input, and
+      `validTimeline` sorts everything stored.
+      **E2-S3: `splitLine` could make a lyric line vanish.** On an overlapping
+      SRT cue — routine in fade-overlap subtitles, and `parseSrt` keeps them —
+      the second half was clamped to the line's own window, which reaches past
+      its successor, landing it AFTER the next line: `[0, 6.15, 5]`.
+      `activeLyricIndex` binary-searches by start, so the half the user just
+      split off never appeared in preview or export while still showing in the
+      editor list. Ceiling is now `min(window end, next line's start) -
+    MIN_GAP`, floored so a degenerate corridor still orders the two halves.
+      **Vacuity, a fifth time, and this one is worth quoting:** the lane
+      property test's first generator used continuous `fc.double`, which never
+      produces duplicate `t` — so NEITHER tie-break mutation was caught. The
+      shipped generator draws times mostly from an 8-value pool so ties are the
+      common case. Also: a "call order cannot matter" test was DELETED after no
+      mutation could falsify it.
+      Per-migration verdict table for `project.ts` is now executable
+      (`project.test.ts` → "migration matrix", 29 cases): v1-v11 clean,
+      v12 a compatibility floor, v13 rename clean and version-independent,
+      v14 nebula clean and correctly gated. Ordering note recorded: v14 runs
+      BEFORE the rename pre-pass and keys on the literal `"nebula"`, which is
+      safe only because nebula was never renamed.
+      **OWNER PACKET — the v14 nebula migration does not reach the sibling
+      stores.** `parseTheme` holds a `projectSchemaVersion` but never threads
+      it into validation, and the localStorage session cache and `.bfpreset`
+      looks call `validateDocument`/`validUserPreset` with no version at all —
+      so a pre-RP-6 theme or session renders nebula at `satT = 0.5625` instead
+      of `0.75`. Already noted honestly at `project.ts:110-116`; the fix is
+      plumbing in `themes.ts`/`persistence.ts`.
+      Recorded, not reachable today (do not re-derive): `batch.retryFailed`
+      reserves only `done` paths, saved by `batchRunner`'s sweep converting
+      unreached `queued` jobs to `skipped` — but two comments still claim
+      otherwise, so the guard is one change from being live; `baseOf` and
+      `resolveParams` disagree for an id `presetById` cannot resolve, which is
+      an internal inconsistency and not a preview≠export split since both
+      loops use the same function; duplicate lanes for one param;
+      `history.ts`'s JSON round-trip losing `Object.create(null)` prototypes,
+      inert because those maps are only ever keyed from the registries.
       Wave 1 is PART done because "state" is bigger than persistence — the
       document model, `modMatrix`, `frameResolve` and the store slices have
       not had the same pass. Not started: waves 2–5.

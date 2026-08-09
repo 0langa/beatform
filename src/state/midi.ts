@@ -1,3 +1,5 @@
+import { canonicalPresetId } from "../render/presets";
+
 /**
  * Web MIDI mapping — the pure, testable core (Phase 9.3). The browser adapter
  * (requestMIDIAccess + input listeners) is a thin shell in the store that feeds
@@ -143,7 +145,16 @@ export function validMidiBindings(raw: unknown): MidiBinding[] {
       out.push({
         kind: "note",
         note: Math.min(127, Math.max(0, (o.note as number) | 0)),
-        presetId: o.presetId,
+        // Renamed built-in ids (v13: "starfield" -> "particles") are mapped on
+        // the way in, exactly like every other loader that reads a PERSISTED
+        // preset id — project.ts, userPresets.ts, presetOrder.ts and
+        // persistence.ts all do it, and this one was the miss. A binding saved
+        // before v2.68 kept the legacy id; presetById has no entry for it and
+        // falls back to presets[0], so hitting that pad silently switched to
+        // Spectrum Bars instead of Particles. Not a validity check: an id this
+        // build cannot render is still stored (a custom visual the user has
+        // not re-imported yet must keep its pad), it is only spelled current.
+        presetId: canonicalPresetId(o.presetId),
       });
     }
   }

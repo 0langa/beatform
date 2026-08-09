@@ -11,6 +11,23 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A MIDI pad bound to Particles before v2.68 switched to the wrong visual.**
+  The mode's internal name changed in that release, and the MIDI bindings were
+  the one place that kept the old one verbatim — so the pad quietly brought up
+  Spectrum Bars instead. Old bindings are read through the rename now, and
+  nothing needs re-learning.
+- **Dragging an automation keyframe past its neighbour made the preview lie.**
+  While the drag was in progress the preview read the lane in the order the
+  keyframes happened to be stored rather than in time order, so everything
+  after the moved point flattened out until you let go. It follows the drag
+  correctly now.
+- **Splitting a lyric line could make half of it disappear.** On subtitle files
+  whose cues overlap — common with fade-in/fade-out timing — the second half
+  landed after the following line, so it vanished from the preview and the
+  export while still sitting in the correction editor.
+
 ## [2.87.0] - 2026-08-09
 
 ### Added

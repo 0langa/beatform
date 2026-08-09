@@ -8,6 +8,7 @@ import {
   validMidiBindings,
   type MidiBinding,
 } from "./midi";
+import { knownPresetId, presetById, presets } from "../render/presets";
 
 // CC 74 on channel 1 = [0xB0, 74, value]; Note-on 60 = [0x90, 60, vel].
 const CC = (n: number, v: number) => [0xb0, n, v];
@@ -130,5 +131,47 @@ describe("validMidiBindings", () => {
     ]);
     expect((out.find((b) => b.kind === "cc") as { cc: number }).cc).toBe(127);
     expect((out.find((b) => b.kind === "note") as { note: number }).note).toBe(0);
+  });
+
+  /**
+   * E2. A note binding is a PERSISTED preset id (localStorage
+   * `viz.midiBindings.v1`), so it rides the same rename map every other
+   * persisted-id loader does. It did not: a pad bound to Particles before
+   * v2.68 stored "starfield", which `presetById` cannot resolve, so
+   * `queuePreset` -> `switchPreset` fell through to `presets[0]` and the pad
+   * switched the live set to Spectrum Bars.
+   */
+  describe("renamed preset ids on a persisted note binding", () => {
+    it("maps a legacy id to its current spelling", () => {
+      const out = validMidiBindings([{ kind: "note", note: 36, presetId: "starfield" }]);
+      expect(out).toEqual([{ kind: "note", note: 36, presetId: "particles" }]);
+    });
+
+    it("the mapped id is one presetById can actually render", () => {
+      const b = validMidiBindings([{ kind: "note", note: 36, presetId: "starfield" }])[0];
+      const id = (b as { presetId: string }).presetId;
+      expect(knownPresetId(id)).toBe(true);
+      // The pre-fix failure was silent: the WRONG mode, not a no-op.
+      expect(presetById(id).id).toBe(id);
+      expect(presetById(id).id).not.toBe(presets[0].id);
+    });
+
+    it("leaves current ids and unknown-but-current ids alone", () => {
+      const out = validMidiBindings([
+        { kind: "note", note: 1, presetId: "particles" },
+        // A custom visual the user has not re-imported yet still keeps its pad:
+        // canonicalPresetId is a rename map, not a validity check.
+        { kind: "note", note: 2, presetId: "custom-abc" },
+      ]);
+      expect(out.map((b) => (b as { presetId: string }).presetId)).toEqual([
+        "particles",
+        "custom-abc",
+      ]);
+    });
+
+    it("is idempotent — re-saving a migrated binding does not move it again", () => {
+      const once = validMidiBindings([{ kind: "note", note: 36, presetId: "starfield" }]);
+      expect(validMidiBindings(once)).toEqual(once);
+    });
   });
 });

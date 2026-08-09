@@ -524,6 +524,61 @@ describe("mod v2: per-route lag (attack/release EMA)", () => {
     };
     expect(walk()).toEqual(walk()); // exact float equality, not closeTo
   });
+
+  /**
+   * E2. The lag memo is CALLER-owned and SHARED between the two apply calls,
+   * and the contract that makes that safe is written on applyPostMods: "a route
+   * targets EITHER a preset param or a post key, never both, so one shared
+   * state advances each route exactly once per frame across the two calls".
+   * Nothing tested it.
+   *
+   * It holds only because both functions decide a route is theirs BEFORE they
+   * call routeValue — applyMods' `specs.get` miss and its `spec.mod === "off"`
+   * skip, applyPostMods' `postTargetKey` null. What that buys is checked here
+   * against the MEMO, not against the value: a second evaluation inside one
+   * frame happens to be a no-op today (dt === 0 holds), so a broken partition
+   * shows up first as memos allocated for routes nothing drives — one per
+   * inert route, in a Map the live loop only clears on a seek. The memo IS the
+   * observable, so it is what this asserts.
+   */
+  describe("the two apply calls partition the routes over one shared ModEvalState", () => {
+    const routes = validModRoutes([
+      { id: "param", source: "kick", param: spec.key, amount: 0.5, attack: 0.2, release: 0.2 },
+      { id: "post", source: "bass", param: "post:bloom", amount: 0.5, attack: 0.2, release: 0.2 },
+      // Inert in BOTH: no spec on this preset, and not a post key either.
+      { id: "inert", source: "bass", param: "notAKnobHere", amount: 1, attack: 0.2 },
+    ]);
+
+    it("each live route lands in exactly one memo; an inert route allocates none", () => {
+      const pair = createModEvalState();
+      const solo = createModEvalState();
+      for (let n = 0; n < 40; n++) {
+        const f = features({ time: n / 60, kick: 1, bass: 1 });
+        applyMods(preset, minBase(), routes, f, undefined, pair);
+        applyPostMods(DEFAULT_POST, routes, f, undefined, pair);
+        // Reference: each live route handed only to the call that owns it.
+        applyMods(preset, minBase(), [routes[0]], f, undefined, solo);
+        applyPostMods(DEFAULT_POST, [routes[1]], f, undefined, solo);
+      }
+      expect(pair.routes.get("param")).toEqual(solo.routes.get("param"));
+      expect(pair.routes.get("post")).toEqual(solo.routes.get("post"));
+      expect(pair.routes.has("inert")).toBe(false);
+      expect(pair.routes.size).toBe(2);
+    });
+
+    it('a route to a mod:"off" param is inert in the STATE too, not just in the value', () => {
+      const off = preset.params.find((p) => p.mod === "off");
+      expect(off, 'fixture: this preset must declare a mod:"off" param').toBeDefined();
+      const state = createModEvalState();
+      const r = validModRoutes([
+        { id: "offRoute", source: "kick", param: off!.key, amount: 1, attack: 0.2 },
+      ]);
+      const f = features({ time: 0, kick: 1 });
+      applyMods(preset, minBase(), r, f, undefined, state);
+      applyPostMods(DEFAULT_POST, r, f, undefined, state);
+      expect(state.routes.size).toBe(0);
+    });
+  });
 });
 
 describe("mod v2: beat-locked LFO sources", () => {

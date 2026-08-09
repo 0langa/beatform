@@ -34,7 +34,10 @@ export interface Keyframe {
 export interface AutomationLane {
   /** Target param key (of whatever preset is active at that time). */
   param: string;
-  /** Sorted ascending by t; evaluator tolerates unsorted input defensively. */
+  /** Normally sorted ascending by t, but that is NOT a precondition: the
+   * editor moves a dragged keyframe in place and only re-sorts on release,
+   * so the live loop reads unsorted arrays. `laneValue` resolves by time and
+   * returns what the sorted array would, order regardless. */
   keyframes: Keyframe[];
 }
 
@@ -109,21 +112,45 @@ function interpolate(k0: Keyframe, k1: Keyframe, t: number): number {
   return k0.value + (k1.value - k0.value) * f;
 }
 
-/** Value of one lane at time t (first/last keyframe values pad the ends). */
+/**
+ * Value of one lane at time t (first/last keyframe values pad the ends).
+ *
+ * Resolved by TIME, never by array position — the array order is an input the
+ * evaluator does not control. Every STORED lane is sorted (validTimeline sorts
+ * on load, and the editor re-sorts on pointer release / nudge / add), but
+ * TimelinePanel deliberately moves a dragged keyframe IN PLACE so `drag.index`
+ * survives it crossing a neighbour, and `setTimeline` publishes that array to
+ * the store on every pointermove. So for the length of any drag that crosses a
+ * neighbour the render loop reads an out-of-order lane, which the binary search
+ * this replaced could not handle: it bracketed the wrong pair, and its
+ * `t >= ks[last].t` end-pad tested whatever keyframe happened to sit LAST IN
+ * THE ARRAY rather than last in time — so the lane flat-lined on that value for
+ * the whole tail of the track while the user dragged, and the preview they were
+ * dragging against lied. One pass, no allocation, and provably identical on
+ * sorted input: `first`/`last`/`lo`/`hi` below are the sorted-order positions
+ * 0, n-1, "last at or before t" and its successor, tie-broken exactly the way a
+ * stable sort by `t` would order them.
+ */
 export function laneValue(lane: AutomationLane, t: number): number | null {
   const ks = lane.keyframes;
   if (ks.length === 0) return null;
-  if (t <= ks[0].t) return ks[0].value;
-  if (t >= ks[ks.length - 1].t) return ks[ks.length - 1].value;
-  // Binary search: last keyframe with t_k <= t
-  let lo = 0;
-  let hi = ks.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (ks[mid].t <= t) lo = mid;
-    else hi = mid - 1;
+  let first = 0; // min t, earliest index on a tie  -> sorted position 0
+  let last = 0; // max t, latest index on a tie    -> sorted position n-1
+  let lo = -1; // greatest t <= t, latest index on a tie
+  let hi = -1; // least t > t, earliest index on a tie
+  for (let i = 0; i < ks.length; i++) {
+    const kt = ks[i].t;
+    if (kt < ks[first].t) first = i;
+    if (kt >= ks[last].t) last = i;
+    if (kt <= t) {
+      if (lo < 0 || kt >= ks[lo].t) lo = i;
+    } else if (hi < 0 || kt < ks[hi].t) hi = i;
   }
-  return interpolate(ks[lo], ks[lo + 1], t);
+  if (t <= ks[first].t) return ks[first].value;
+  if (t >= ks[last].t) return ks[last].value;
+  // Both exist here: ks[first].t < t puts `first` in the lo set, and
+  // ks[last].t > t puts `last` in the hi set.
+  return interpolate(ks[lo], ks[hi], t);
 }
 
 /** Evaluate the whole timeline at time t. Pure and allocation-light. */

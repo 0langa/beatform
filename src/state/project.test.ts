@@ -941,3 +941,96 @@ describe("per-preset sync survives a save/load round trip", () => {
     expect(validSyncByPreset({ x: { mode: "not-a-mode", smooth: 0.5 } })).toEqual({});
   });
 });
+
+/**
+ * E2. Every migration that actually transforms data, run against a document
+ * from EVERY older schema version — not just the one it shipped next to.
+ *
+ * Only two of the fourteen versions carry a transform. v1–v11 are pure "field
+ * absent, the validator defaults it" steps, v12 is a compatibility gate with no
+ * transform at all, v13 is the version-INDEPENDENT preset-id rename pre-pass
+ * inside validateDocument, and v14 is the version-GATED nebula-saturation
+ * remap. The two live ones therefore have to be exercised as a matrix: v13's
+ * rename must fire for a file of ANY prior version (nothing gates it), and
+ * v14's remap must fire for exactly `schemaVersion < 14` and never twice.
+ *
+ * The property each row asserts is the one that makes a migration safe rather
+ * than merely present: parse -> serialize -> parse is a FIXPOINT. A migration
+ * that is not idempotent, or whose re-stamped version lets it run again on the
+ * next load, is silent data loss on the user's next save.
+ */
+describe("migration matrix: every transform against every older version", () => {
+  const asFile = (schemaVersion: number, document: unknown) =>
+    JSON.stringify({
+      schemaVersion,
+      kind: "bfproj",
+      appVersion: "2.0.0",
+      savedAt: "2020-01-01T00:00:00.000Z",
+      document,
+    });
+
+  /** Old-semantics nebula saturation at all three sites v14 remaps. */
+  const nebulaDoc = {
+    presetId: "nebula",
+    paramsByPreset: { nebula: { saturation: 0.75, hue: 10 } },
+    modsByPreset: { nebula: [{ id: "r1", source: "bass", param: "saturation", amount: 0.6 }] },
+    timeline: {
+      enabled: true,
+      scenes: [{ id: "s1", presetId: "nebula", start: 0, params: { saturation: 1 } }],
+      lanes: [],
+    },
+  };
+  /** The legacy preset id at every site v13 re-keys. */
+  const starfieldDoc = {
+    presetId: "starfield",
+    paramsByPreset: { starfield: { hue: 5 } },
+    syncByPreset: { starfield: { mode: "bass", smooth: 0.5 } },
+    modsByPreset: { starfield: [{ id: "r1", source: "bass", param: "hue", amount: 0.5 }] },
+    timeline: { enabled: true, scenes: [{ id: "s1", presetId: "starfield", start: 0 }], lanes: [] },
+  };
+
+  const versions = Array.from({ length: PROJECT_VERSION }, (_, i) => i + 1);
+
+  it.each(versions)("v%i -> nebula saturation: remapped iff pre-v14, and a fixpoint", (v) => {
+    const d = parseProject(asFile(v, nebulaDoc));
+    // 0.75 / NEBULA_SAT_AUTHORED lands exactly on 1; route amounts /1.5.
+    const want =
+      v < 14 ? { param: 1, scene: 4 / 3, amount: 0.4 } : { param: 0.75, scene: 1, amount: 0.6 };
+    expect(d.paramsByPreset.nebula.saturation).toBeCloseTo(want.param, 12);
+    expect(d.timeline.scenes[0].params!.saturation).toBeCloseTo(want.scene, 12);
+    expect(d.modsByPreset.nebula[0].amount).toBeCloseTo(want.amount, 12);
+    expect(d.paramsByPreset.nebula.hue).toBe(10); // innocent bystander
+    // Re-saving stamps v14 (the values now carry the new semantics), so the
+    // reload must NOT divide again — the fixpoint is what proves it.
+    const json = serializeProject(d, "2.0.0");
+    expect(JSON.parse(json).schemaVersion).toBe(14);
+    expect(parseProject(json)).toEqual(d);
+  });
+
+  it.each(versions)("v%i -> starfield rename: re-keyed everywhere, and a fixpoint", (v) => {
+    const d = parseProject(asFile(v, starfieldDoc));
+    expect(d.presetId).toBe("particles");
+    expect(Object.keys(d.paramsByPreset)).toEqual(["particles"]);
+    expect(Object.keys(d.syncByPreset)).toEqual(["particles"]);
+    expect(Object.keys(d.modsByPreset)).toEqual(["particles"]);
+    expect(d.timeline.scenes[0].presetId).toBe("particles");
+    const json = serializeProject(d, "2.0.0");
+    expect(JSON.parse(json).schemaVersion).toBe(13);
+    expect(parseProject(json)).toEqual(d);
+  });
+
+  it("a document with nothing migratable is a fixpoint from every version", () => {
+    const plain = {
+      presetId: presets[0].id,
+      paramsByPreset: { [presets[0].id]: { hue: 42 } },
+      bg: { mode: BG_SOLID, color: [1, 0, 0] },
+    };
+    for (const v of versions) {
+      const d = parseProject(asFile(v, plain));
+      const json = serializeProject(d, "2.0.0");
+      expect(parseProject(json)).toEqual(d);
+      // v11 is the floor: nothing here forces the v12/v13/v14 bumps.
+      expect(JSON.parse(json).schemaVersion).toBe(11);
+    }
+  });
+});

@@ -235,7 +235,19 @@ export function splitLine(lines: LyricLine[], i: number, charPos: number): Lyric
   const splitT = hasWords
     ? orig.words![m].t
     : start + ((end - start) * starts[m]) / Math.max(1, line.text.length);
-  const t2 = Math.min(Math.max(splitT, orig.t + MIN_GAP), end - MIN_GAP);
+  // Ceiling is the window end AND the next line's start. Those are the same
+  // number for an LRC line (its window IS "until the next one"), but an SRT
+  // cue carries an EXPLICIT end that routinely overlaps the following cue —
+  // overlapping subtitles are ordinary in .srt, and parseSrt keeps them.
+  // Clamping to the window alone then placed the second half AFTER its own
+  // successor: the list stopped being monotonic, activeLyricIndex's binary
+  // search never selected the new line, and the half the user had just split
+  // off vanished from the overlay (preview and export alike) while still
+  // showing in the editor. The floor wins on a degenerate corridor, so the
+  // second half is never placed at or before the first.
+  const nextT = i + 1 < out.length ? out[i + 1].t : Infinity;
+  const ceiling = Math.max(orig.t + MIN_GAP, Math.min(end, nextT) - MIN_GAP);
+  const t2 = Math.min(Math.max(splitT, orig.t + MIN_GAP), ceiling);
 
   const first: LyricLine = {
     t: orig.t,
