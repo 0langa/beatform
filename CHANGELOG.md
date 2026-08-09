@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.87.0] - 2026-08-09
+
 ### Added
 
 - **The "driven" dot now covers timeline automation, not just modulation.** A
@@ -2437,7 +2439,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.86.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.87.0...HEAD
+[2.87.0]: https://github.com/0langa/beatform/compare/v2.86.0...v2.87.0
 [2.86.0]: https://github.com/0langa/beatform/compare/v2.85.0...v2.86.0
 [2.85.0]: https://github.com/0langa/beatform/compare/v2.84.0...v2.85.0
 [2.84.0]: https://github.com/0langa/beatform/compare/v2.83.0...v2.84.0
