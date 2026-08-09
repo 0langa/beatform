@@ -592,6 +592,58 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       Note the harness needs Vite already listening — it does NOT spawn one,
       unlike the GPU matrix — and G9's new probe is what says so now instead of
       failing with "Cannot find execution context".
+      **Wave 5 (render/export) DONE 2026-08-09 — no production code changed,
+      and the deliverable is an EXECUTABLE segment-shift checklist.**
+      `src/export/segmentShiftMatrix.test.ts` (13 tests, 12 mutations all red)
+      censuses all **33 keys** `buildJob` emits — note the shifting lives in
+      `videoExporter.ts:308-388`, NOT in `buildExportOptions`, which never sees
+      the segment — classifies each as time-bearing or timeless, and FAILS ON
+      ANY NEW UNCLASSIFIED FIELD. Its sentinel-band sweep is generic enough to
+      catch a SUB-FIELD riding through unshifted, which is exactly the F4a
+      shape. All ten time-bearing fields verified shifted: `pcm`, `beatGrid`
+      (times only — `bpm`/`hopSec` correctly untouched), `sections`,
+      `vocalSpans`, scene `start` (but not `fadeSec`, a duration), lane
+      keyframes, lyrics lines AND words, stem analysis, audiogram waveform,
+      and `bgVideo.timeOffset` (deliberately ABSOLUTE — the live view loops on
+      track time). Downstream tolerance of negative values checked too.
+      **E2-R1 (NEW, NOT FIXED — a real preview≠export divergence, same class
+      as F4a):** beat-locked LFO mod sources shift phase in a segment export.
+      `lfoValue` (`modMatrix.ts:133`) anchors on `features.time`, which every
+      other structure rebases to CLIP time — so the LFO's anchor moves while
+      nothing else does. At 120 BPM with `lfo:sine:8` (a 4s cycle) and a
+      segment starting at 137s, the preview sits at phase 0.25 (sine 0.5) and
+      the export's first frame at phase 0 (sine 0.0) — **half the range, for
+      the whole clip**. Two candidate fixes, both owner-visible behaviour
+      changes: (a) carry the segment start so the LFO adds it back — surgical,
+      only segment exports move, and they move to MATCH the preview; (b) anchor
+      to the beat grid's first beat, which would also make the "beat-locked"
+      claim true for tracks whose first beat is not at t=0, but changes the
+      NON-segment path too. Will not move GPU hashes: `gpuMatrix.ts` calls
+      `renderer.render()` directly and never goes through `applyMods`.
+      **Cross-validation worth recording:** this wave independently re-found
+      the `beatIntensity` per-frame decay (E2-A1 above) and shipped a pin
+      asserting the WRONG behaviour so the fix could not land silently. The
+      fix had already landed hours earlier, so the pin went red on
+      integration — it is now folded into the positive sibling sweep, and
+      reverting the audio fix turns that sweep red. Two independent sweeps,
+      one fix, one guard written without knowledge of the other.
+      Dismissed with reasons (do not re-derive): `bins`/`peaks` differ above
+      60 fps but the dialog offers only 30 and 60; the audiogram frame key
+      quantizes ≤1px differently from what it draws; `deepColor` +
+      `streamToPath` would make a 0-byte file but no shipping caller sets
+      both; `exportCore`'s inline fallback writes the app's preset registry
+      (worker path is immune, and it needs an edit DURING an export on a
+      machine with no worker WebGPU); a WebGPU-init throw abandons a started
+      mediabunny `Output` on the inline path only.
+      Checked and clean: no wall clock, `Math.random()` or `performance.now()`
+      anywhere in the export walk (`Date.now()` appears only in the worker
+      silence watchdog); every accumulator in `src/render/**` and
+      `src/export/**` is per-second, sample-driven, integer-frame-indexed or
+      value-keyed — **nothing accumulates per frame**; sidecar death mid-export
+      unwinds correctly; **no path presents a partial file as success** (every
+      lane discards or `remove_file`s), so `diskPreflight`'s "a partial file
+      has been removed" is true wherever it can appear; renderer resource
+      lifetime and preset-identity caching are sound.
       Wave 1 is PART done because "state" is bigger than persistence — the
       document model, `modMatrix`, `frameResolve` and the store slices have
       not had the same pass. Not started: waves 2–5.
