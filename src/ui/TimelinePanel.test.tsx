@@ -1,63 +1,112 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { useState } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { presets } from "../render/presets";
-import { defaultParams } from "../render/types";
 import type { Timeline } from "../state/timeline";
 import { renderProbe } from "./testing/renderProbe";
-import { TimelinePanel, type TimelinePanelProps } from "./TimelinePanel";
-
-afterEach(cleanup);
+import { TimelinePanel } from "./TimelinePanel";
 
 /**
- * The H13 stable-props contract for the panel it matters most on, and the
- * safety net for the store-direct migration's second wave (P-12).
+ * The TimelinePanel contract after P-12 wave 2 — the panel the wave exists
+ * for.
  *
- * TimelinePanel is `memo()`d because at zoom 12 its track is 11,280px wide
- * with ~840 ruler/scene/keyframe elements, and App re-renders it on the 4 Hz
- * playback tick plus every pointermove that writes `activeParams`. That memo
- * only ever bails if EVERY prop keeps its identity across App renders — a
- * contract enforced by nothing but the `useCallback` block in App.tsx and a
- * comment. This file is the first coverage it has ever had, so wave 2 can tell
- * "the migration changed the render cost" from "it was always like that".
+ * What this file used to prove — "memo() bails when every prop keeps its
+ * identity" — no longer exists to be proven: the panel takes no props, so memo
+ * could never bail on anything and was removed. Eleven props became nine
+ * subscriptions, one CHILD subscription and two click-time reads.
  *
- * ── Instrumentation, and why it is not `renderProbe()` alone ──────────────
+ * ── The measurement, and why a commit count is the wrong instrument ────────
  *
- * `renderProbe()` counts COMMITS of the subtree under its `<Profiler>`. That
- * is the right instrument for a zero-prop store-direct panel, where the Probe
- * sits at the root and the only thing that can re-render underneath it is the
- * panel's own subscription firing.
+ * At zoom 12 this panel's track is 11,280 px wide with ~840 ruler / scene /
+ * keyframe elements, and it draws a playhead that must move at the 4 Hz
+ * playback tick. So "does the tick commit?" is the wrong question — it has to,
+ * and it did before the migration too. BOTH versions commit exactly once per
+ * tick. What changed is WHAT RUNS inside that commit: 840 elements before,
+ * one `<TimelinePlayhead />` div after. `renderProbe()` cannot tell those
+ * apart (React calls a Profiler's onRender once per commit of the whole
+ * subtree, whatever fraction of it re-rendered), so it is used here only to
+ * prove that a commit did or did not happen at all.
  *
- * It cannot see a `memo` bail-out. Verified empirically against this repo's
- * React 19.2.8: with the Probe inside a ticking parent, two parent ticks
- * produce THREE commits whether the child's props are stable or not. React
- * flags a Profiler for `onRender` when the Profiler element itself re-renders
- * (its child fiber is re-cloned, so `bubbleProperties` does not report a
- * bail-out) — and forcing the parent to re-render is exactly what a memo test
- * has to do. Any arrangement that keeps the Profiler from re-rendering also
- * keeps the panel's element reference-equal, which bails out ABOVE the memo
- * and proves nothing about it.
+ * The load-bearing instrument is a counting getter on `timeline.scenes` — a
+ * NESTED field the panel body reads unconditionally (the `sortedScenes` dep
+ * array and the empty-lane hint) and that no selector touches. `s.timeline`
+ * is selected by identity, so zustand re-running every subscriber's selector
+ * on every setState — the objection that kills getters planted on store state
+ * generally — cannot move this counter. It moves if and only if the body ran.
  *
- * So the assertion instrument is a counting getter on a NESTED prop field the
- * render body reads unconditionally (`timeline.scenes`, read by the
- * `sortedScenes` dep array and the empty-lane hint) — the same trick
- * `ParamsPanel.test.tsx` used on `preset.params`. `memo`'s shallow compare
- * only touches `props.timeline` by identity, never its fields, so every read
- * is one execution of the render body.
- *
- * `renderProbe()` still earns its place: it proves the parent tick actually
- * committed. Without it, "the body never ran" would be indistinguishable from
- * "nothing happened at all" — the vacuous version of this test.
+ * Mocks: the panel now drives REAL store actions. The ruler's click-to-seek
+ * reaches getEngine()/getAnalyzer(), which throw "services not initialized"
+ * outside the browser; every on* prop used to be a vi.fn(), which hid that.
  */
 
-/** Props whose `timeline.scenes` reads are counted. Every body execution reads
- * it exactly twice — the `sortedScenes` useMemo dep array and the
+const mocks = vi.hoisted(() => ({
+  engine: {
+    seek: vi.fn(),
+    audioBuffer: null,
+    currentTime: 0,
+    duration: 100,
+    playing: false,
+    setVolume: vi.fn(),
+    onEnded: null,
+    dispose: vi.fn(),
+    ctx: { decodeAudioData: vi.fn() },
+  },
+  analyzer: { reset: vi.fn(), setSync: vi.fn() },
+}));
+
+vi.mock("../state/services", () => ({
+  initServices: vi.fn(() => vi.fn()),
+  getEngine: () => mocks.engine,
+  getAnalyzer: () => mocks.analyzer,
+  peekAnalyzer: () => null,
+  getLiveStemValues: vi.fn(() => undefined),
+  getRenderer: vi.fn(() => null),
+  setLiveRenderPaused: vi.fn(),
+  remeasure: vi.fn(),
+}));
+
+vi.mock("../state/platform", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../state/platform")>();
+  return { ...actual, writeAutosave: vi.fn(async () => {}) };
+});
+
+const { useVizStore } = await import("../state/store");
+
+/** Captured at module load, actions included — restoring by MERGE keeps the
+ * action identities the panel's edit sites call through. */
+const PRISTINE = { ...useVizStore.getState() };
+
+let errorSpy: ReturnType<typeof vi.spyOn>;
+let consoleErrors: string[] = [];
+
+beforeEach(() => {
+  consoleErrors = [];
+  errorSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+    consoleErrors.push(args.map(String).join(" "));
+  });
+  mocks.engine.seek.mockClear();
+});
+
+afterEach(() => {
+  cleanup();
+  // Never setState(x, true): a full replace would drop the actions.
+  useVizStore.setState(PRISTINE);
+  errorSpy.mockRestore();
+  // The standing anti-allocation guard for the whole file: an allocating
+  // selector is a crash class, and the `.filter()` shape dies with no React
+  // warning at all — this is what notices it.
+  expect(consoleErrors.join("\n")).not.toMatch(/getSnapshot should be cached|Maximum update depth/);
+});
+
+/**
+ * A Timeline whose `scenes` reads are counted. Every body execution reads it
+ * exactly twice — the `sortedScenes` useMemo dep array and the
  * `scenes.length === 0` empty hint — plus once more on the first run, when
  * that useMemo's factory actually executes (3 at mount, +2 per re-render). The
- * counter is therefore proportional to body runs and independent of how much
- * data the panel is holding. */
-function probedProps(): { props: TimelinePanelProps; bodyReads: () => number } {
+ * counter is proportional to body runs and independent of how much data the
+ * panel holds.
+ */
+function probedTimeline(): { timeline: Timeline; bodyRuns: () => number } {
   let reads = 0;
   const scenes: Timeline["scenes"] = [];
   const timeline = {
@@ -68,91 +117,169 @@ function probedProps(): { props: TimelinePanelProps; bodyReads: () => number } {
       return scenes;
     },
   } as Timeline;
+  return { timeline, bodyRuns: () => reads };
+}
 
-  const preset = presets[0];
-  return {
-    props: {
+const PLAYBACK = {
+  playing: true,
+  time: 30,
+  duration: 100,
+  trackName: "drop.wav",
+  loop: false,
+  loopStart: null,
+  loopEnd: null,
+};
+
+/** Seed everything the panel reads, mount it under a commit probe. */
+function mountProbed(timeline: Timeline) {
+  act(() =>
+    useVizStore.setState({
       timeline,
-      duration: 100,
-      time: 30,
+      playback: PLAYBACK,
       beatGrid: null,
       sections: [],
-      // null: the waveform effect early-returns, so jsdom is never asked for
-      // a 2D canvas context it does not implement.
-      waveform: null,
-      activePreset: preset,
-      presets,
-      activeParams: defaultParams(preset),
-      onChange: vi.fn(),
-      onAutoArrange: vi.fn(),
-      onSeek: vi.fn(),
-      onClose: vi.fn(),
+      // null: the waveform effect early-returns, so jsdom is never asked for a
+      // 2D canvas context it does not implement.
+      waveformOverview: null,
+      presetId: presets[0].id,
       simplifiedRenderer: false,
-    },
-    bodyReads: () => reads,
-  };
-}
-
-/** Re-renders on demand, the way App does on the playback tick. `unstable`
- * rebuilds ONE callback prop per render — the defect shape (an inline arrow
- * in the JSX) that silently defeats the memo. */
-function Host({ props, unstable }: { props: TimelinePanelProps; unstable?: boolean }) {
-  const [, setN] = useState(0);
-  return (
-    <>
-      <button onClick={() => setN((n) => n + 1)}>parent tick</button>
-      {unstable ? (
-        <TimelinePanel {...props} onSeek={(t) => props.onSeek(t)} />
-      ) : (
-        <TimelinePanel {...props} />
-      )}
-    </>
+    }),
   );
+  const { Probe, commits } = renderProbe();
+  render(
+    <Probe>
+      <TimelinePanel />
+    </Probe>,
+  );
+  expect(screen.getByText("Timeline")).toBeTruthy(); // it mounted
+  return commits;
 }
 
-describe("TimelinePanel memo (H13 stable-props contract)", () => {
-  it("does not reconcile when the parent re-renders with stable prop identities", () => {
-    const { props, bodyReads } = probedProps();
-    const { Probe, commits } = renderProbe();
+const playheadLeft = () =>
+  document.querySelector<HTMLElement>(".tl-playhead")?.style.left ?? "(no playhead)";
 
-    render(
-      <Probe>
-        <Host props={props} />
-      </Probe>,
-    );
-    expect(screen.getByText("Timeline")).toBeTruthy(); // it mounted
-    const mountedCommits = commits();
-    const mountedReads = bodyReads();
-    expect(mountedReads).toBeGreaterThan(0); // the probe is live
+describe("TimelinePanel selector granularity (P-12 wave 2)", () => {
+  it("TL1: the 4 Hz playback tick moves the playhead WITHOUT running the panel body", () => {
+    const { timeline, bodyRuns } = probedTimeline();
+    const commits = mountProbed(timeline);
+    const runsAtMount = bodyRuns();
+    const commitsAtMount = commits();
+    expect(runsAtMount).toBeGreaterThan(0); // both probes are live
+    expect(commitsAtMount).toBeGreaterThan(0);
+    const startLeft = playheadLeft();
 
-    fireEvent.click(screen.getByText("parent tick"));
-    fireEvent.click(screen.getByText("parent tick"));
+    act(() => useVizStore.setState({ playback: { ...PLAYBACK, time: 60 } }));
+    act(() => useVizStore.setState({ playback: { ...PLAYBACK, time: 90 } }));
 
-    // The parent really did re-render twice...
-    expect(commits()).toBe(mountedCommits + 2);
-    // ...and the panel's ~840-element body did not run once.
-    expect(bodyReads()).toBe(mountedReads);
+    // Asserted in this order on purpose. Two commits happened and the
+    // playhead moved, so <TimelinePlayhead /> is subscribed and did its job —
+    // and these two assertions pass IDENTICALLY on the pre-migration panel,
+    // where `time` was read at the top and all ~840 elements re-rendered.
+    // A commit count cannot tell "one div re-rendered" from "the whole track
+    // re-rendered": both are one commit.
+    expect(commits()).toBe(commitsAtMount + 2);
+    expect(playheadLeft()).not.toBe(startLeft);
+    expect(playheadLeft()).toBe(`${(90 / 100) * 940}px`);
+    // THE HEADLINE FIX, and the only assertion here that can see it. Before
+    // the migration `time` was a prop, so each of those ticks reconciled the
+    // whole track — four times a second, for the whole of playback, to move
+    // one div.
+    expect(bodyRuns()).toBe(runsAtMount);
   });
 
-  it("control: one fresh callback identity per render defeats the memo", () => {
-    const { props, bodyReads } = probedProps();
-    const { Probe, commits } = renderProbe();
+  it("TL2: a slider drag's pointer-rate activeParams write costs the panel nothing at all", () => {
+    const { timeline, bodyRuns } = probedTimeline();
+    const commits = mountProbed(timeline);
+    const runsAtMount = bodyRuns();
+    const commitsAtMount = commits();
 
-    render(
-      <Probe>
-        <Host props={props} unstable />
-      </Probe>,
+    // setParam replaces the whole map on every pointermove — a fresh object,
+    // so this is the shape that WOULD re-render a subscriber.
+    act(() => useVizStore.setState({ activeParams: { hue: 0.5 } }));
+    act(() => useVizStore.setState({ activeParams: { hue: 0.6 } }));
+
+    // Not one body run and not one commit: unlike `time`, nothing rendered
+    // here reads activeParams, so the panel is off the pointer stream
+    // entirely.
+    expect(bodyRuns()).toBe(runsAtMount);
+    expect(commits()).toBe(commitsAtMount);
+  });
+
+  it("TL3: …and 'Automation lane' still seeds a keyframe from the LIVE param value", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    // A value written after mount: only a click-time read can see it, which
+    // is precisely what TL2 traded the subscription for.
+    act(() => useVizStore.setState({ activeParams: { hue: 0.77 }, playback: PLAYBACK }));
+
+    const add = screen.getByTitle("Add an automation lane for a parameter") as HTMLSelectElement;
+    fireEvent.change(add, { target: { value: "hue" } });
+
+    const lanes = useVizStore.getState().timeline.lanes;
+    expect(lanes).toHaveLength(1);
+    expect(lanes[0].param).toBe("hue");
+    expect(lanes[0].keyframes[0].value).toBe(0.77);
+    // …at the live playhead, the other click-time read.
+    expect(lanes[0].keyframes[0].t).toBe(30);
+  });
+
+  it("TL4: unrelated 4 Hz / per-frame meter ticks cost the panel nothing", () => {
+    const { timeline, bodyRuns } = probedTimeline();
+    const commits = mountProbed(timeline);
+    const runsAtMount = bodyRuns();
+    const commitsAtMount = commits();
+
+    act(() => useVizStore.setState({ lufs: -14.2 }));
+    act(() => useVizStore.setState({ stereoWidth: 0.7 }));
+    act(() => useVizStore.setState({ exporting: { done: 1, total: 10, speed: 1 } }));
+
+    expect(bodyRuns()).toBe(runsAtMount);
+    expect(commits()).toBe(commitsAtMount);
+  });
+
+  it("TL5: a timeline write it DOES read reconciles it exactly once and shows up", () => {
+    const { timeline } = probedTimeline();
+    const commits = mountProbed(timeline);
+    const commitsAtMount = commits();
+    expect(screen.getByText(/No scenes/)).toBeTruthy();
+
+    act(() =>
+      useVizStore.getState().setTimeline({
+        enabled: true,
+        lanes: [],
+        scenes: [{ id: "s1", name: "Nebula", presetId: "nebula", start: 12 }],
+      }),
     );
-    const mountedCommits = commits();
-    const mountedReads = bodyReads();
 
-    fireEvent.click(screen.getByText("parent tick"));
-    fireEvent.click(screen.getByText("parent tick"));
+    // Exactly one commit: the subscription is connected rather than inert, and
+    // a document write does not cost more than a single render. `bodyRuns()`
+    // is deliberately NOT the instrument here — this write REPLACES the
+    // probed object, so the counter measures the old one and stops. The DOM
+    // change below is what proves the body ran, and a write that changed
+    // nothing could not produce it.
+    expect(commits()).toBe(commitsAtMount + 1);
+    expect(screen.getByText("Nebula")).toBeTruthy();
+    expect(screen.queryByText(/No scenes/)).toBeNull();
+  });
 
-    expect(commits()).toBe(mountedCommits + 2);
-    // Same two ticks, same commit count — but now the whole panel reconciled
-    // with the parent, which is what proves the stable case above is a real
-    // bail-out and not a harness that never ticked.
-    expect(bodyReads()).toBeGreaterThan(mountedReads);
+  it("TL6: closing writes through the store, not a callback prop", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    act(() => useVizStore.setState({ showTimeline: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Close timeline" }));
+    expect(useVizStore.getState().showTimeline).toBe(false);
+  });
+
+  it("TL7: 200 sequential playback ticks neither crash nor unmount it", () => {
+    const { timeline, bodyRuns } = probedTimeline();
+    mountProbed(timeline);
+    const runsAtMount = bodyRuns();
+    act(() => {
+      for (let i = 0; i < 200; i++) {
+        useVizStore.setState({ playback: { ...PLAYBACK, time: i * 0.25 } });
+      }
+    });
+    expect(screen.getByText("Timeline")).toBeTruthy();
+    expect(bodyRuns()).toBe(runsAtMount);
   });
 });

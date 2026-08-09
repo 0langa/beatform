@@ -1,52 +1,10 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { BatchRun, BatchTrack } from "../state/batch";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { BatchTrack } from "../state/batch";
 import { runStats } from "../state/batch";
 import { EXPORT_RUNNING_REASON } from "../state/slices/batchActions";
 import { NO_HARDWARE_RENDERING_CLAUSE } from "../state/exportConfig";
-import type { OverlayLayer } from "../render/overlay";
+import { RESOLUTIONS, useVizStore } from "../state/store";
 import { useFocusTrap } from "./useFocusTrap";
-
-/**
- * Batch render panel — a table of tracks with editable, tag-filled titles.
- *
- * The product is "drop 20 MP3s in, get 20 titled videos out", so the surface is
- * the tracks and their titles; the job queue underneath is implementation.
- * Props-only, like every other component here — App.tsx does the wiring.
- */
-
-export interface BatchPanelProps {
-  run: BatchRun | null;
-  status: "idle" | "running" | "done";
-  /** Files still being tag-scanned (0 = idle) — the scan takes seconds/file. */
-  scanning: number;
-  /** Document layers, for the pre-flight checks. */
-  overlayLayers: OverlayLayer[];
-  aspect: string;
-  formatLabel: string;
-  /**
-   * True while the Canvas2D fallback is drawing (audit F2). Every job builds
-   * its own WebGPU device, so on that path a 20-track queue used to fail 20
-   * times — one full decode + analysis each — instead of saying so once, up
-   * front, before the output folder was even chosen.
-   */
-  simplifiedRenderer: boolean;
-  /** Batch refusal messages (SS-3) — they used to go to exportError, which
-   * only ExportDialog renders, so a refused Start looked like a dead click. */
-  batchError: string | null;
-  /** True while a SINGLE export is running: Start disables with the same
-   * sentence the store guard would answer with (F2 — one shared reason). */
-  exporting: boolean;
-  onAddTracks(files: File[]): void;
-  onRemoveTrack(id: string): void;
-  onRetitle(id: string, title: string): void;
-  onStart(): void;
-  onSkipJob(): void;
-  onCancel(): void;
-  onRetryFailed(): void;
-  /** Clear the finished run so another batch can be set up. */
-  onNewBatch(): void;
-  onClose(): void;
-}
 
 function fmtDuration(sec: number | null): string {
   if (sec == null) return "—";
@@ -72,10 +30,51 @@ function fmtEta(ms: number | null, now: number): string {
   return `${left} · finishes ~${time}`;
 }
 
-// Memoized (H13): requires every callback prop from App.tsx to stay
-// reference-stable (see the useCallback block there) or memo does nothing.
-export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
-  const { run, status, overlayLayers, aspect, formatLabel, simplifiedRenderer } = props;
+/**
+ * Batch render panel — a table of tracks with editable, tag-filled titles.
+ *
+ * The product is "drop 20 MP3s in, get 20 titled videos out", so the surface is
+ * the tracks and their titles; the job queue underneath is implementation.
+ *
+ * Store-direct (P-12 wave 2). Two things about the subscriptions below carry
+ * their weight:
+ *
+ *  - `formatLabel` is derived HERE, from `exportSettings.resIdx`. Deriving it
+ *    in App was the sole reason App subscribed to the whole `exportSettings`
+ *    object, so every codec/bitrate/fps edit in the export dialog re-rendered
+ *    the entire shell. `resIdx` is a number, so this panel only hears about
+ *    the one field the label is made of.
+ *  - `exporting` is selected as a BOOLEAN. The raw field is rewritten once per
+ *    encoded frame — and a running batch mirrors its own progress into it
+ *    (batchActions.onJobUpdate) — so selecting the object would put this panel
+ *    on the encoder's frame rate to answer a yes/no question.
+ *
+ * NOT memo()d: with zero props memo can never bail on anything.
+ */
+export function BatchPanel() {
+  const run = useVizStore((s) => s.batch);
+  const status = useVizStore((s) => s.batchStatus);
+  /** Files still being tag-scanned (0 = idle) — the scan takes seconds/file. */
+  const scanning = useVizStore((s) => s.batchScanning);
+  /** Batch refusal messages (SS-3) — they used to go to exportError, which
+   * only ExportDialog renders, so a refused Start looked like a dead click. */
+  const batchError = useVizStore((s) => s.batchError);
+  /** Document layers, for the pre-flight checks. */
+  const overlayLayers = useVizStore((s) => s.overlayLayers);
+  const aspect = useVizStore((s) => s.aspect);
+  const formatLabel = useVizStore((s) => RESOLUTIONS[s.exportSettings.resIdx].label);
+  /** True while a SINGLE export is running: Start disables with the same
+   * sentence the store guard would answer with (F2 — one shared reason). */
+  const exporting = useVizStore((s) => !!s.exporting);
+  /**
+   * True while the Canvas2D fallback is drawing (audit F2). Every job builds
+   * its own WebGPU device, so on that path a 20-track queue used to fail 20
+   * times — one full decode + analysis each — instead of saying so once, up
+   * front, before the output folder was even chosen.
+   */
+  const simplifiedRenderer = useVizStore((s) => s.simplifiedRenderer);
+  const store = useVizStore.getState;
+
   // Not a pre-flight WARNING (those advise and let you proceed) — these are
   // hard blocks, so they disable Start rather than sitting above it. The
   // running-export reason is the exact sentence startBatch would refuse with;
@@ -83,7 +82,7 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
   // `exporting` (see batchActions.onJobUpdate) and must not self-block.
   const blocked = simplifiedRenderer
     ? `Batch render ${NO_HARDWARE_RENDERING_CLAUSE} — every job would fail after decoding its track`
-    : props.exporting && status !== "running"
+    : exporting && status !== "running"
       ? EXPORT_RUNNING_REASON
       : null;
   const fileInput = useRef<HTMLInputElement>(null);
@@ -133,7 +132,7 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
   const jobFor = (t: BatchTrack) => run?.jobs.find((j) => j.trackId === t.id);
 
   return (
-    <div className="modal-backdrop" onClick={() => !running && props.onClose()}>
+    <div className="modal-backdrop" onClick={() => !running && store().setShowBatch(false)}>
       <div
         ref={dialogRef}
         className="modal wide"
@@ -147,7 +146,7 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
           <span className="panel-heading">Batch render</span>
           <button
             className="icon-btn subtle"
-            onClick={props.onClose}
+            onClick={() => store().setShowBatch(false)}
             disabled={running}
             title={running ? "Stop the queue first" : "Close"}
             aria-label="Close"
@@ -156,7 +155,7 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
           </button>
         </div>
 
-        {tracks.length === 0 && props.scanning === 0 && (
+        {tracks.length === 0 && scanning === 0 && (
           <p className="section-hint">
             Drop in a folder of tracks and render one video per track, unattended. Titles come from
             each file's own tags — no spreadsheet, no retyping. Everything else (preset, layers,
@@ -164,10 +163,10 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
           </p>
         )}
 
-        {props.scanning > 0 && (
+        {scanning > 0 && (
           <p className="section-hint">
-            Reading tags… {props.scanning} file{props.scanning === 1 ? "" : "s"} left. Titles and
-            durations appear when the scan finishes.
+            Reading tags… {scanning} file{scanning === 1 ? "" : "s"} left. Titles and durations
+            appear when the scan finishes.
           </p>
         )}
 
@@ -181,7 +180,7 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
               style={{ display: "none" }}
               onChange={(e) => {
                 const files = Array.from(e.target.files ?? []);
-                if (files.length) props.onAddTracks(files);
+                if (files.length) void store().addBatchTracks(files);
                 // Reset so re-picking the same file fires onChange again.
                 e.target.value = "";
               }}
@@ -229,7 +228,7 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
                   className="text-btn"
                   disabled={!!blocked}
                   title={blocked ?? undefined}
-                  onClick={props.onRetryFailed}
+                  onClick={() => void store().retryFailedBatch()}
                 >
                   {stats.failed > 0 && stats.queued > 0
                     ? `Retry ${stats.failed} failed + resume ${stats.queued} queued`
@@ -240,7 +239,7 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
               )}
               {/* Without this the panel is a dead end — the only way to run a
                   second batch was to restart the app. */}
-              <button className="text-btn" onClick={props.onNewBatch}>
+              <button className="text-btn" onClick={() => store().dismissBatch()}>
                 New batch
               </button>
             </span>
@@ -252,8 +251,8 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
         {/* Refusals from startBatch/retryFailedBatch (SS-3) — shown where the
             click happened. Skipped when `blocked` already states the same
             condition, so the panel never nags twice in a row. */}
-        {props.batchError && props.batchError !== blocked && (
-          <div className="toast-inline error">{props.batchError}</div>
+        {batchError && batchError !== blocked && (
+          <div className="toast-inline error">{batchError}</div>
         )}
 
         {warnings.map((w) => (
@@ -279,7 +278,7 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
                     // that need fixing are obvious at a glance among twenty.
                     style={t.metaFromTags ? undefined : { fontStyle: "italic", opacity: 0.65 }}
                     title={t.file.name}
-                    onChange={(e) => props.onRetitle(t.id, e.target.value)}
+                    onChange={(e) => store().setBatchTrackMeta(t.id, { title: e.target.value })}
                   />
                   <span className="batch-meta">{fmtDuration(t.duration)}</span>
                   {st?.k === "done" && <span className="renderer-badge ok">done</span>}
@@ -298,7 +297,7 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
                   {status === "idle" && (
                     <button
                       className="chip-x"
-                      onClick={() => props.onRemoveTrack(t.id)}
+                      onClick={() => store().removeBatchTrack(t.id)}
                       aria-label={`Remove ${t.meta.title}`}
                     >
                       ✕
@@ -324,17 +323,17 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
             className="btn-primary wide"
             disabled={!!blocked}
             title={blocked ?? undefined}
-            onClick={props.onStart}
+            onClick={() => void store().startBatch()}
           >
             Render {tracks.length} video{tracks.length === 1 ? "" : "s"}…
           </button>
         )}
         {running && (
           <div className="save-look-row">
-            <button className="text-btn" onClick={props.onSkipJob}>
+            <button className="text-btn" onClick={() => store().skipCurrentBatchJob()}>
               Skip this track
             </button>
-            <button className="text-btn danger" onClick={props.onCancel}>
+            <button className="text-btn danger" onClick={() => store().cancelBatch()}>
               Stop queue
             </button>
           </div>
@@ -342,4 +341,4 @@ export const BatchPanel = memo(function BatchPanel(props: BatchPanelProps) {
       </div>
     </div>
   );
-});
+}

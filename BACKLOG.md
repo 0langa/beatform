@@ -840,7 +840,46 @@ was zero behavior change and zero pixel change, so each of these was cut for
 a named reason rather than forgotten. G1–G7 are the whole deferral list;
 nothing else from that release is outstanding.
 
-- [ ] G1 **READY — P-12 wave 2: the other seven panels go store-direct.**
+- [x] G1 **DONE 2026-08-09 — all seven, every one zero-prop, `memo()` removed
+      from all seven rather than kept** (a zero-prop component can never bail,
+      so keeping it is a false contract — same call wave 1 made for
+      ParamsPanel). **36 `useCallback` forwarders deleted from `App.tsx`**; the
+      six that remain all serve App's own local state. App's store
+      subscriptions went **50 → 30**, and `src/state/selectors.ts` needed
+      **zero additions** — everything was a primitive, an existing selector, or
+      two selectors plus a `useMemo`.
+      Two narrowings fell out of the migration and are worth naming: App
+      subscribed all of `s.playback`, so it re-rendered the whole shell at 4 Hz
+      to read two fields that never move; and it subscribed `s.exporting`, so
+      it re-rendered once per ENCODED FRAME to answer a yes/no. Now
+      `s.playback.playing` + `s.playback.trackName` and `!!s.exporting`.
+      **App no longer subscribes `exportSettings`** — the named goal.
+      `formatLabel` was the only reason, and BatchPanel now selects
+      `s.exportSettings.resIdx`, a number, and derives the label itself.
+      **TimelinePanel, and the measurement that matters.** The panel genuinely
+      needs `time` — it draws a playhead — so "do not re-render on the tick"
+      was never on the table; the fix is to subscribe LOWER. `time` moved into
+      a `<TimelinePlayhead>` child, and `activeParams` lost its subscription
+      entirely because its only reader runs at click time and can read
+      `store().activeParams`. The counter is a getter on `timeline.scenes`, a
+      nested field the body reads unconditionally. **Mutation T-1 (playhead
+      rendered inline from a panel-level `time` subscription) leaves BOTH
+      commit assertions GREEN and fails only on the body counter, 7 against
+      3** — one div and ~840 elements are the same "1 commit", which is the
+      whole reason this wave did not trust a Profiler. A second test pins that
+      an `activeParams` write now costs zero commits AND zero body runs.
+      Thirteen mutations, all red. Every granularity write installs a FRESH
+      object, so the 60 Hz-no-op trap cannot leave one vacuously green, and
+      each has a paired DOM assertion a no-op could not produce.
+      New coverage where there was none: `panelsStoreDirect.test.tsx` for
+      PresetStrip / LibraryPanel / ShaderEditor / ShadertoyImport. The wave-1
+      memo tests on TimelinePanel and PlayerBar went red on contact as
+      intended and were rewritten to assert on the audio ENGINE rather than
+      `vi.fn()` props, which covers the store hop the migration added.
+      One assertion deliberately softened and flagged: the PresetStrip
+      not-inert leg asserts `commits() > before` rather than `+1`, because a
+      `presetId` write also re-runs the keep-the-active-chip-visible effect.
+      ORIGINAL — **P-12 wave 2: the other seven panels go store-direct.**
       PlayerBar, TimelinePanel, LibraryPanel, PresetStrip, BatchPanel,
       ShaderEditor, ShadertoyImport. Wave 1 covered ParamsPanel only,
       because the evidence mapped that panel exhaustively and the others'

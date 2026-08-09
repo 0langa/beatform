@@ -1,16 +1,68 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { useState } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PlaybackState } from "../audio/types";
 import { renderProbe } from "./testing/renderProbe";
-import { PlayerBar, type PlayerBarProps } from "./PlayerBar";
+import { PlayerBar } from "./PlayerBar";
 
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-});
+/**
+ * The PlayerBar contract after P-12 wave 2.
+ *
+ * What this file used to prove — "memo() bails when every prop keeps its
+ * identity" — no longer exists to be proven: the bar takes no props, so memo
+ * could never bail on anything and was removed. Its thirteen props became four
+ * subscriptions and nine store calls at the click site.
+ *
+ * Two things replace it. The transport tests below now assert on the AUDIO
+ * ENGINE rather than on a `vi.fn()` prop, so they cover the whole path the
+ * button actually walks (button → store action → engine) instead of the first
+ * hop of it. And a granularity describe pins the new contract: the bar is a
+ * clock, so the playback tick must reconcile it — and nothing else may.
+ *
+ * `renderProbe()` IS the right instrument here, unlike in the props-era file:
+ * these updates ORIGINATE INSIDE the probed subtree (a store write reaching a
+ * zero-prop component), which is exactly the case its scope note sanctions.
+ */
+
+const mocks = vi.hoisted(() => ({
+  engine: {
+    seek: vi.fn(),
+    setLoopStart: vi.fn(),
+    setLoopEnd: vi.fn(),
+    clearLoopRegion: vi.fn(),
+    setVolume: vi.fn(),
+    currentTime: 12,
+    loop: false,
+    duration: 100,
+    playing: false,
+    audioBuffer: null,
+    onEnded: null,
+    dispose: vi.fn(),
+    ctx: { decodeAudioData: vi.fn() },
+  },
+  analyzer: { reset: vi.fn(), setSync: vi.fn() },
+}));
+
+// The transport actions reach getEngine()/getAnalyzer(), which throw
+// "services not initialized" outside the browser. Every on* prop used to be a
+// vi.fn(), which hid this path entirely.
+vi.mock("../state/services", () => ({
+  initServices: vi.fn(() => vi.fn()),
+  getEngine: () => mocks.engine,
+  getAnalyzer: () => mocks.analyzer,
+  peekAnalyzer: () => null,
+  getLiveStemValues: vi.fn(() => undefined),
+  getRenderer: vi.fn(() => null),
+  setLiveRenderPaused: vi.fn(),
+  remeasure: vi.fn(),
+}));
+
+const { useVizStore } = await import("../state/store");
+
+/** Captured at module load, actions included — restoring by MERGE keeps the
+ * action identities the bar's click sites call through. */
+const PRISTINE = { ...useVizStore.getState() };
 
 const PLAYBACK: PlaybackState = {
   playing: true,
@@ -22,39 +74,41 @@ const PLAYBACK: PlaybackState = {
   loopEnd: 40,
 };
 
-function renderBar(playback: PlaybackState = PLAYBACK) {
-  const callbacks = {
-    onTogglePlay: vi.fn(),
-    onSeekStart: vi.fn(),
-    onSeekEnd: vi.fn(),
-    onToggleLoop: vi.fn(),
-    onSetLoopStart: vi.fn(),
-    onSetLoopEnd: vi.fn(),
-    onClearLoopRegion: vi.fn(),
-    onVolume: vi.fn(),
-    onToggleMute: vi.fn(),
-  } satisfies Pick<
-    PlayerBarProps,
-    | "onTogglePlay"
-    | "onSeekStart"
-    | "onSeekEnd"
-    | "onToggleLoop"
-    | "onSetLoopStart"
-    | "onSetLoopEnd"
-    | "onClearLoopRegion"
-    | "onVolume"
-    | "onToggleMute"
-  >;
+let errorSpy: ReturnType<typeof vi.spyOn>;
+let consoleErrors: string[] = [];
 
-  const view = render(
-    <PlayerBar playback={playback} sections={[]} volume={0.8} muted={false} {...callbacks} />,
-  );
-  return { ...view, callbacks };
+beforeEach(() => {
+  consoleErrors = [];
+  errorSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+    consoleErrors.push(args.map(String).join(" "));
+  });
+  mocks.engine.seek.mockClear();
+  mocks.engine.setLoopStart.mockClear();
+  mocks.engine.setLoopEnd.mockClear();
+  mocks.engine.clearLoopRegion.mockClear();
+  mocks.engine.setVolume.mockClear();
+});
+
+afterEach(() => {
+  cleanup();
+  // Never setState(x, true): a full replace would drop the actions.
+  useVizStore.setState(PRISTINE);
+  errorSpy.mockRestore();
+  // The standing anti-allocation guard for the whole file: an allocating
+  // selector is a crash class, and the `.filter()` shape dies with no React
+  // warning at all — this is what notices it.
+  expect(consoleErrors.join("\n")).not.toMatch(/getSnapshot should be cached|Maximum update depth/);
+});
+
+/** Seed the transport slices the bar reads, then mount it. */
+function renderBar(playback: PlaybackState = PLAYBACK) {
+  act(() => useVizStore.setState({ playback, sections: [], volume: 0.8, muted: false }));
+  return render(<PlayerBar />);
 }
 
 describe("PlayerBar A-B loop", () => {
-  it("shows the selected region and exposes direct marker actions", async () => {
-    const { container, callbacks } = renderBar();
+  it("shows the selected region and drives the engine from the marker buttons", async () => {
+    const { container } = renderBar();
 
     const region = container.querySelector<HTMLElement>(".seek-loop-region");
     expect(region?.className).toContain("active");
@@ -70,13 +124,16 @@ describe("PlayerBar A-B loop", () => {
     await userEvent.click(screen.getByRole("button", { name: "Set loop B" }));
     await userEvent.click(screen.getByRole("button", { name: "Clear A-B loop" }));
 
-    expect(callbacks.onSetLoopStart).toHaveBeenCalledWith();
-    expect(callbacks.onSetLoopEnd).toHaveBeenCalledWith();
-    expect(callbacks.onClearLoopRegion).toHaveBeenCalledOnce();
+    // No argument = "at the playhead", which the store action resolves against
+    // engine.currentTime. Asserting the engine (not a prop spy) is what makes
+    // this cover the store hop the migration introduced.
+    expect(mocks.engine.setLoopStart).toHaveBeenCalledWith(12);
+    expect(mocks.engine.setLoopEnd).toHaveBeenCalledWith(12);
+    expect(mocks.engine.clearLoopRegion).toHaveBeenCalledOnce();
   });
 
   it("drags a marker without starting a transport seek", () => {
-    const { container, callbacks } = renderBar();
+    const { container } = renderBar();
     const seek = screen.getByRole("slider", { name: "Seek" });
     vi.spyOn(seek, "getBoundingClientRect").mockReturnValue({
       x: 0,
@@ -98,9 +155,10 @@ describe("PlayerBar A-B loop", () => {
     fireEvent.pointerMove(seek, { pointerId: 1, clientX: 35 });
     fireEvent.pointerUp(seek, { pointerId: 1, clientX: 35 });
 
-    expect(callbacks.onSetLoopStart).toHaveBeenCalledWith(35);
-    expect(callbacks.onSeekStart).not.toHaveBeenCalled();
-    expect(callbacks.onSeekEnd).not.toHaveBeenCalled();
+    expect(mocks.engine.setLoopStart).toHaveBeenCalledWith(35);
+    expect(mocks.engine.seek).not.toHaveBeenCalled();
+    // seekStart() is the store's only trace of "a transport scrub began".
+    expect(useVizStore.getState().seeking).toBe(false);
   });
 
   it("keeps A-B controls disabled without a seekable track", () => {
@@ -124,106 +182,88 @@ describe("PlayerBar A-B loop", () => {
 });
 
 /**
- * The H13 stable-props contract. PlayerBar is always mounted, so before the
- * memo it reconciled on EVERY App re-render for any reason at all — an
- * Visuals edit, export progress, a notice toast. The memo only bails while
- * every prop keeps its identity across those renders, a contract held up by
- * App.tsx's `useCallback` block and nothing else.
+ * Selector granularity (P-12 wave 2). The bar is always mounted, so before the
+ * memo it reconciled on EVERY App re-render for any reason at all; the memo
+ * narrowed that to "when one of its four props changed", a line held up by
+ * nine `useCallback`s in App.tsx and nothing else. These assert the same line
+ * directly against the store, where nothing can quietly stop holding it.
  *
- * Instrument: a counting getter on `playback.time`, which the body reads once
- * (`seekDragT ?? playback.time`) and `memo`'s shallow compare never touches —
- * it compares `props.playback` by identity. So one read == one execution of
- * the render body.
- *
- * `renderProbe()` counts commits of the whole probed subtree, which is what
- * proves the parent tick landed; it deliberately is NOT the bail-out
- * assertion. A `<Profiler>` fires whenever it re-renders itself, so under a
- * ticking parent it reports the same count for stable and unstable props (see
- * the long note in TimelinePanel.test.tsx). Without it, "the body never ran"
- * would be indistinguishable from "the harness never ticked".
+ * Every write below installs a FRESH object/value. A write that preserves
+ * identity is absorbed by zustand before React hears about it, so it would
+ * leave these green even with the subscription re-added — it would prove
+ * nothing (the 60 Hz no-op trap).
  */
-const SECTIONS: number[] = [];
-const NOOP = () => {};
-
-function probedPlayback(): { playback: PlaybackState; bodyReads: () => number } {
-  let reads = 0;
-  return {
-    playback: {
-      ...PLAYBACK,
-      get time() {
-        reads += 1;
-        return 30;
-      },
-    },
-    bodyReads: () => reads,
-  };
-}
-
-/** Re-renders on demand, like App at the playback tick. `unstable` rebuilds
- * one callback prop per render — the inline-arrow shape that defeats memo. */
-function Host({ playback, unstable }: { playback: PlaybackState; unstable?: boolean }) {
-  const [, setN] = useState(0);
-  const props: PlayerBarProps = {
-    playback,
-    sections: SECTIONS,
-    volume: 0.8,
-    muted: false,
-    onTogglePlay: NOOP,
-    onSeekStart: NOOP,
-    onSeekEnd: NOOP,
-    onToggleLoop: NOOP,
-    onSetLoopStart: NOOP,
-    onSetLoopEnd: NOOP,
-    onClearLoopRegion: NOOP,
-    onVolume: NOOP,
-    onToggleMute: NOOP,
-  };
-  return (
-    <>
-      <button onClick={() => setN((n) => n + 1)}>parent tick</button>
-      {unstable ? <PlayerBar {...props} onTogglePlay={() => NOOP()} /> : <PlayerBar {...props} />}
-    </>
-  );
-}
-
-describe("PlayerBar memo (H13 stable-props contract)", () => {
-  it("does not reconcile when the parent re-renders with stable prop identities", () => {
-    const { playback, bodyReads } = probedPlayback();
+describe("PlayerBar selector granularity (P-12 wave 2)", () => {
+  function mountProbed() {
+    act(() =>
+      useVizStore.setState({ playback: PLAYBACK, sections: [], volume: 0.8, muted: false }),
+    );
     const { Probe, commits } = renderProbe();
-
     render(
       <Probe>
-        <Host playback={playback} />
+        <PlayerBar />
       </Probe>,
     );
-    expect(screen.getByRole("slider", { name: "Seek" })).toBeTruthy(); // it mounted
-    const mountedCommits = commits();
-    const mountedReads = bodyReads();
-    expect(mountedReads).toBeGreaterThan(0); // the probe is live
+    expect(commits()).toBeGreaterThan(0); // the probe is live
+    return commits;
+  }
 
-    fireEvent.click(screen.getByText("parent tick"));
-    fireEvent.click(screen.getByText("parent tick"));
-
-    expect(commits()).toBe(mountedCommits + 2); // the parent really ticked twice
-    expect(bodyReads()).toBe(mountedReads); // and the bar never re-rendered
+  it("P1: the 4 Hz LUFS meter tick costs the bar nothing", () => {
+    const commits = mountProbed();
+    const before = commits();
+    act(() => useVizStore.setState({ lufs: -14.2 }));
+    expect(commits()).toBe(before);
   });
 
-  it("control: one fresh callback identity per render defeats the memo", () => {
-    const { playback, bodyReads } = probedPlayback();
-    const { Probe, commits } = renderProbe();
+  it("P2: a slider drag's pointer-rate activeParams write costs the bar nothing", () => {
+    const commits = mountProbed();
+    const before = commits();
+    // setParam replaces the whole map on every pointermove — a fresh object,
+    // so this is the shape that WOULD re-render a subscriber.
+    act(() => useVizStore.setState({ activeParams: { hue: 0.5 } }));
+    act(() => useVizStore.setState({ activeParams: { hue: 0.6 } }));
+    expect(commits()).toBe(before);
+  });
 
-    render(
-      <Probe>
-        <Host playback={playback} unstable />
-      </Probe>,
-    );
-    const mountedCommits = commits();
-    const mountedReads = bodyReads();
+  it("P3: the per-frame export progress tick costs the bar nothing", () => {
+    const commits = mountProbed();
+    const before = commits();
+    act(() => useVizStore.setState({ exporting: { done: 1, total: 10, speed: 1 } }));
+    act(() => useVizStore.setState({ exporting: { done: 2, total: 10, speed: 1 } }));
+    expect(commits()).toBe(before);
+  });
 
-    fireEvent.click(screen.getByText("parent tick"));
-    fireEvent.click(screen.getByText("parent tick"));
+  it("P4: the playback tick reconciles it exactly once and moves the clock", () => {
+    const commits = mountProbed();
+    expect(screen.getByText("0:30")).toBeTruthy();
+    const before = commits();
 
-    expect(commits()).toBe(mountedCommits + 2);
-    expect(bodyReads()).toBeGreaterThan(mountedReads);
+    act(() => useVizStore.setState({ playback: { ...PLAYBACK, time: 44 } }));
+
+    // Exactly one: the subscription is connected, not inert, and the tick does
+    // not cost more than a single render. The rendered time is what a
+    // no-op-write version of this test could not produce.
+    expect(commits()).toBe(before + 1);
+    expect(screen.getByText("0:44")).toBeTruthy();
+  });
+
+  it("P5: a volume write reconciles it exactly once and reaches the slider", () => {
+    const commits = mountProbed();
+    const before = commits();
+
+    act(() => useVizStore.getState().applyVolume(0.25, false));
+
+    expect(commits()).toBe(before + 1);
+    const slider = document.querySelector<HTMLInputElement>("input.volume-slider");
+    expect(slider?.value).toBe("0.25");
+    expect(mocks.engine.setVolume).toHaveBeenCalledWith(0.25);
+  });
+
+  it("P6: 200 sequential meter writes neither crash nor unmount it", () => {
+    mountProbed();
+    act(() => {
+      for (let i = 0; i < 200; i++) useVizStore.setState({ lufs: -20 + i * 0.01 });
+    });
+    expect(screen.getByRole("slider", { name: "Seek" })).toBeTruthy();
   });
 });

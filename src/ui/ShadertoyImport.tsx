@@ -1,27 +1,8 @@
-import { memo, useState } from "react";
-import type { PresetDef } from "../render/types";
+import { useMemo, useState } from "react";
 import { askConfirm } from "../state/platform";
+import { useVizStore } from "../state/store";
 import { IconClose } from "./Icons";
 import { useFocusTrap } from "./useFocusTrap";
-
-/**
- * Shadertoy GLSL import (FEAT-001) — paste the Image tab of a Shadertoy
- * shader, name it, credit the author, and the Rust-side translator turns it
- * into a Beatform visual. Diagnostics come back with the user's own GLSL
- * line numbers. Re-opens with the original GLSL when editing an imported
- * visual, so the source (not the generated WGSL) stays the thing you edit.
- * Props-only, like every panel.
- */
-export interface ShadertoyImportProps {
-  /** Imported visual being re-edited, or null for a fresh import. */
-  editDef: PresetDef | null;
-  /** Transpile + compile-check + install. Resolves [] on success. */
-  onImport: (
-    glsl: string,
-    meta: { name: string; author?: string; source?: string; license?: string },
-  ) => Promise<string[]>;
-  onClose: () => void;
-}
 
 /** Shadertoy's default license, preselected — imports must not silently
  * strip the attribution the source site attaches by default. */
@@ -35,10 +16,33 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     fragColor = vec4(uv * fft, 0.5 + 0.5 * sin(iTime), 1.0);
 }`;
 
-export const ShadertoyImport = memo(function ShadertoyImport(props: ShadertoyImportProps) {
-  const st = props.editDef?.shadertoy;
+/**
+ * Shadertoy GLSL import (FEAT-001) — paste the Image tab of a Shadertoy
+ * shader, name it, credit the author, and the Rust-side translator turns it
+ * into a Beatform visual. Diagnostics come back with the user's own GLSL
+ * line numbers. Re-opens with the original GLSL when editing an imported
+ * visual, so the source (not the generated WGSL) stays the thing you edit.
+ *
+ * Store-direct (P-12 wave 2): the def being re-edited is resolved from the two
+ * fields it is made of rather than handed down. `customDefs.find(...)` returns
+ * a store-owned element, so it WOULD be selector-safe — but it goes through
+ * `useMemo` anyway, matching ParamsPanel's `looksForMode`, because the shape
+ * that is safe by accident and the shape that crashes on mount should not look
+ * identical at the call site. NOT memo()d: with zero props memo can never bail.
+ */
+export function ShadertoyImport() {
+  const customDefs = useVizStore((s) => s.customDefs);
+  const editId = useVizStore((s) => s.shadertoyImportEditId);
+  const store = useVizStore.getState;
+  /** Imported visual being re-edited, or null for a fresh import. */
+  const editDef = useMemo(
+    () => customDefs.find((d) => d.id === editId) ?? null,
+    [customDefs, editId],
+  );
+
+  const st = editDef?.shadertoy;
   const [glsl, setGlsl] = useState(st?.glsl ?? "");
-  const [name, setName] = useState(props.editDef?.name ?? "");
+  const [name, setName] = useState(editDef?.name ?? "");
   const [author, setAuthor] = useState(st?.author ?? "");
   const [source, setSource] = useState(st?.source ?? "");
   const [license, setLicense] = useState(st?.license ?? DEFAULT_LICENSE);
@@ -54,7 +58,7 @@ export const ShadertoyImport = memo(function ShadertoyImport(props: ShadertoyImp
   const requestClose = () => {
     void (async () => {
       if (dirty && !(await askConfirm("Discard this import?", "Import Shadertoy shader"))) return;
-      props.onClose();
+      store().closeShadertoyImport();
     })();
   };
 
@@ -64,10 +68,17 @@ export const ShadertoyImport = memo(function ShadertoyImport(props: ShadertoyImp
       return;
     }
     setBusy(true);
-    const result = await props.onImport(glsl, { name, author, source, license });
+    // The edit id is read off the live snapshot at call time, exactly as
+    // App's retired forwarder did.
+    const s = store();
+    const result = await s.importShadertoyGlsl(
+      glsl,
+      { name, author, source, license },
+      s.shadertoyImportEditId,
+    );
     setBusy(false);
     setErrors(result);
-    if (result.length === 0) props.onClose();
+    if (result.length === 0) store().closeShadertoyImport();
   };
 
   const edit = (fn: () => void) => {
@@ -93,7 +104,7 @@ export const ShadertoyImport = memo(function ShadertoyImport(props: ShadertoyImp
       >
         <div className="panel-header">
           <span className="panel-heading">
-            {props.editDef ? "Edit imported shader" : "Import Shadertoy shader"}
+            {editDef ? "Edit imported shader" : "Import Shadertoy shader"}
           </span>
           <button
             className="icon-btn subtle"
@@ -176,9 +187,9 @@ export const ShadertoyImport = memo(function ShadertoyImport(props: ShadertoyImp
         )}
 
         <button className="btn-primary wide" disabled={busy} onClick={() => void apply()}>
-          {busy ? "Translating…" : props.editDef ? "Translate + update" : "Translate + add visual"}
+          {busy ? "Translating…" : editDef ? "Translate + update" : "Translate + add visual"}
         </button>
       </div>
     </div>
   );
-});
+}

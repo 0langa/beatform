@@ -1,17 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { demos } from "./audio/demoTrack";
 import { BG_TRANSPARENT } from "./render/types";
 import { presetById } from "./render/presets";
-import { orderedPresets } from "./state/presetOrder";
 import { APP_VERSION } from "./version";
-import { BatchPanel, type BatchPanelProps } from "./ui/BatchPanel";
-import { RESOLUTIONS, SIMPLIFIED_EXPORT_REASON, useVizStore } from "./state/store";
+import { BatchPanel } from "./ui/BatchPanel";
+import { SIMPLIFIED_EXPORT_REASON, useVizStore } from "./state/store";
 import { selectEffectiveBg } from "./state/selectors";
 import { installDevHooks } from "./devHooks";
 import { getPrefs, setPrefs, subscribePrefs } from "./state/prefs";
-import { PlayerBar, type PlayerBarProps } from "./ui/PlayerBar";
-import { LibraryPanel, type LibraryPanelProps } from "./ui/LibraryPanel";
-import { isTauri } from "./state/platform";
+import { PlayerBar } from "./ui/PlayerBar";
+import { LibraryPanel } from "./ui/LibraryPanel";
 import {
   dismissUpdatePrompt,
   getUpdatePhase,
@@ -22,10 +20,10 @@ import {
   setUpdatePhase,
   subscribeUpdate,
 } from "./state/updater";
-import { TimelinePanel, type TimelinePanelProps } from "./ui/TimelinePanel";
+import { TimelinePanel } from "./ui/TimelinePanel";
 import { PresetStrip } from "./ui/PresetStrip";
-import { ShaderEditor, type ShaderEditorProps } from "./ui/ShaderEditor";
-import { ShadertoyImport, type ShadertoyImportProps } from "./ui/ShadertoyImport";
+import { ShaderEditor } from "./ui/ShaderEditor";
+import { ShadertoyImport } from "./ui/ShadertoyImport";
 import { ParamsPanel } from "./ui/ParamsPanel";
 import { EmptyState } from "./ui/EmptyState";
 import { useFocusTrap } from "./ui/useFocusTrap";
@@ -112,13 +110,18 @@ export default function App() {
   const dragDepthRef = useRef(0);
 
   const presetId = useVizStore((s) => s.presetId);
-  const pendingPresetId = useVizStore((s) => s.pendingPresetId);
   const preset = presetById(presetId);
-  const params = useVizStore((s) => s.activeParams);
   const bg = useVizStore(selectEffectiveBg);
-  const playback = useVizStore((s) => s.playback);
-  const volume = useVizStore((s) => s.volume);
-  const muted = useVizStore((s) => s.muted);
+  /**
+   * PRIMITIVES off `playback`, not the object (P-12 wave 2). App reads exactly
+   * these two fields, and `playback` is rewritten four times a second for the
+   * whole of playback — subscribing it re-rendered the top bar, the toast
+   * stack and every dialog gate at 4 Hz to change nothing. The clock lives in
+   * <PlayerBar /> and the playhead in <TimelinePanel />, which subscribe the
+   * moving fields themselves.
+   */
+  const playing = useVizStore((s) => s.playback.playing);
+  const trackName = useVizStore((s) => s.playback.trackName);
   const rendererKind = useVizStore((s) => s.rendererKind);
   const simplifiedRenderer = useVizStore((s) => s.simplifiedRenderer);
   const rendererWarning = useVizStore((s) => s.rendererWarning);
@@ -136,36 +139,17 @@ export default function App() {
   const error = useVizStore((s) => s.error);
   const notice = useVizStore((s) => s.notice);
   const recoveredDoc = useVizStore((s) => s.recoveredDoc);
-  const overlayLayers = useVizStore((s) => s.overlayLayers);
   const aspect = useVizStore((s) => s.aspect);
-  const beatGrid = useVizStore((s) => s.beatGrid);
-  const sections = useVizStore((s) => s.sections);
-  const timeline = useVizStore((s) => s.timeline);
   const showTimeline = useVizStore((s) => s.showTimeline);
-  const waveformOverview = useVizStore((s) => s.waveformOverview);
-  const exportSettings = useVizStore((s) => s.exportSettings);
-  const exporting = useVizStore((s) => s.exporting);
-  const batch = useVizStore((s) => s.batch);
+  /** A BOOLEAN, not the progress object: `exporting` is rewritten once per
+   * encoded frame, and all App asks is whether one is running. */
+  const exporting = useVizStore((s) => !!s.exporting);
   const batchStatus = useVizStore((s) => s.batchStatus);
-  const batchError = useVizStore((s) => s.batchError);
-  const batchScanning = useVizStore((s) => s.batchScanning);
   const showLibrary = useVizStore((s) => s.showLibrary);
-  const library = useVizStore((s) => s.library);
-  const libraryScanning = useVizStore((s) => s.libraryScanning);
-  const libraryActivePath = useVizStore((s) => s.libraryActivePath);
-  const libraryAutoAdvance = useVizStore((s) => s.libraryAutoAdvance);
   const liveInputActive = useVizStore((s) => s.liveInputActive);
-  const presetThumbs = useVizStore((s) => s.presetThumbs);
   const showBatch = useVizStore((s) => s.showBatch);
-  const customDefs = useVizStore((s) => s.customDefs);
   const showShaderEditor = useVizStore((s) => s.showShaderEditor);
   const showShadertoyImport = useVizStore((s) => s.showShadertoyImport);
-  const shadertoyImportEditId = useVizStore((s) => s.shadertoyImportEditId);
-  const presetOrder = useVizStore((s) => s.presetOrder);
-  const allPresets = useMemo(
-    () => orderedPresets(presetOrder, customDefs),
-    [presetOrder, customDefs],
-  );
 
   const store = useVizStore.getState; // stable accessor for actions/handlers
 
@@ -175,12 +159,6 @@ export default function App() {
   // prefs emitter. setPrefs replaces the whole object, so getPrefs is a
   // valid useSyncExternalStore snapshot.
   const appPrefs = useSyncExternalStore(subscribePrefs, getPrefs);
-
-  // Stable handlers for the always-mounted PresetStrip so it can stay memoized
-  // across playback ticks (store.getState is itself stable). Clicking a mode
-  // goes through queuePreset so it obeys the beat-quantize takeover.
-  const switchPreset = useCallback((id: string) => store().queuePreset(id), [store]);
-  const openShaderEditor = useCallback(() => store().setShowShaderEditor(true), [store]);
 
   // Focus trap + initial focus + focus restore for the two modals owned
   // directly by App (Help, Export) — BatchPanel and ShaderEditor manage their
@@ -290,162 +268,14 @@ export default function App() {
   const updatePromptOpen = useSyncExternalStore(subscribeUpdate, isUpdatePromptOpen);
   useEffect(() => scheduleStartupUpdateCheck(), []);
 
-  // Stable callback props for the memoized panels below (H13): memo() does
-  // nothing if a component receives a FRESH function reference every render,
-  // so every callback these panels take is created once here instead of as
-  // an inline arrow in JSX. Nearly all of them just forward to a store action
-  // through the stable `store` accessor, so `[store]` is the only real
-  // dependency — the one exception (toggleMute) is called out where it
-  // happens.
-  //
-  // The Visuals no longer appears here: it reads the store itself (P-12), so
-  // there is no prop identity to keep stable. The panels that remain are wave
-  // 2 — see the store-direct idiom in state/selectors.ts and ParamsPanel.
-
-  // LibraryPanel
-  const libraryPickFolder: LibraryPanelProps["onPickFolder"] = useCallback(
-    () => void store().pickLibraryFolder(),
-    [store],
-  );
-  const libraryPlay: LibraryPanelProps["onPlay"] = useCallback(
-    (path) => void store().playLibraryTrack(path),
-    [store],
-  );
-  const setLibraryAutoAdvance: LibraryPanelProps["onAutoAdvance"] = useCallback(
-    (v) => store().setLibraryAutoAdvance(v),
-    [store],
-  );
-  const closeLibrary: LibraryPanelProps["onClose"] = useCallback(
-    () => store().setShowLibrary(false),
-    [store],
-  );
-
-  // TimelinePanel
-  const autoArrangeTimeline: TimelinePanelProps["onAutoArrange"] = useCallback(
-    () => store().autoArrangeTimeline(),
-    [store],
-  );
-  const setTimelineData: TimelinePanelProps["onChange"] = useCallback(
-    (tl) => store().setTimeline(tl),
-    [store],
-  );
-  const timelineSeek: TimelinePanelProps["onSeek"] = useCallback(
-    (t) => store().seekEnd(t),
-    [store],
-  );
-  const closeTimeline: TimelinePanelProps["onClose"] = useCallback(
-    () => store().setShowTimeline(false),
-    [store],
-  );
-
-  // PlayerBar
-  const togglePlay: PlayerBarProps["onTogglePlay"] = useCallback(
-    () => void store().togglePlay(),
-    [store],
-  );
-  const seekStart: PlayerBarProps["onSeekStart"] = useCallback(() => store().seekStart(), [store]);
-  const seekEnd: PlayerBarProps["onSeekEnd"] = useCallback((t) => store().seekEnd(t), [store]);
-  const toggleLoop: PlayerBarProps["onToggleLoop"] = useCallback(
-    () => store().toggleLoop(),
-    [store],
-  );
-  const setLoopStart: PlayerBarProps["onSetLoopStart"] = useCallback(
-    (t) => store().setLoopStart(t),
-    [store],
-  );
-  const setLoopEnd: PlayerBarProps["onSetLoopEnd"] = useCallback(
-    (t) => store().setLoopEnd(t),
-    [store],
-  );
-  const clearLoopRegion: PlayerBarProps["onClearLoopRegion"] = useCallback(
-    () => store().clearLoopRegion(),
-    [store],
-  );
-  const setVolume: PlayerBarProps["onVolume"] = useCallback(
-    (v) => store().applyVolume(v, false),
-    [store],
-  );
-  // Reads volume/muted fresh off the store snapshot at call time rather than
-  // closing over the render-scope `volume`/`muted` selector values above, so
-  // this stays keyed on [store] alone — including volume/muted in the deps
-  // would recreate the callback (and re-render PlayerBar) on every volume
-  // change, exactly the reconciliation this fix is meant to remove.
-  const toggleMute: PlayerBarProps["onToggleMute"] = useCallback(() => {
-    const s = store();
-    s.applyVolume(s.volume, !s.muted);
-  }, [store]);
-
-  // ShaderEditor
-  const saveCustomPreset: ShaderEditorProps["onSave"] = useCallback(
-    (def) => store().saveCustomPreset(def),
-    [store],
-  );
-  const deleteCustomPreset: ShaderEditorProps["onDelete"] = useCallback(
-    (id) => store().deleteCustomPreset(id),
-    [store],
-  );
-  const exportCustomPreset: ShaderEditorProps["onExport"] = useCallback(
-    (id) => void store().exportCustomPreset(id),
-    [store],
-  );
-  const importCustomPresetFile: ShaderEditorProps["onImportFile"] = useCallback(
-    (f) => void f.text().then((t) => store().importCustomPresetText(t)),
-    [store],
-  );
-  const closeShaderEditor: ShaderEditorProps["onClose"] = useCallback(
-    () => store().setShowShaderEditor(false),
-    [store],
-  );
-  const openShadertoyImport: ShaderEditorProps["onOpenShadertoy"] = useCallback(
-    (id) => store().openShadertoyImport(id ?? undefined),
-    [store],
-  );
-  const importShadertoy: ShadertoyImportProps["onImport"] = useCallback(
-    (glsl, meta) => store().importShadertoyGlsl(glsl, meta, store().shadertoyImportEditId),
-    [store],
-  );
-  const closeShadertoyImport: ShadertoyImportProps["onClose"] = useCallback(
-    () => store().closeShadertoyImport(),
-    [store],
-  );
-
-  // BatchPanel
-  const addBatchTracks: BatchPanelProps["onAddTracks"] = useCallback(
-    (files) => void store().addBatchTracks(files),
-    [store],
-  );
-  const removeBatchTrack: BatchPanelProps["onRemoveTrack"] = useCallback(
-    (id) => store().removeBatchTrack(id),
-    [store],
-  );
-  const retitleBatchTrack: BatchPanelProps["onRetitle"] = useCallback(
-    (id, title) => store().setBatchTrackMeta(id, { title }),
-    [store],
-  );
-  const startBatch: BatchPanelProps["onStart"] = useCallback(
-    () => void store().startBatch(),
-    [store],
-  );
-  const skipBatchJob: BatchPanelProps["onSkipJob"] = useCallback(
-    () => store().skipCurrentBatchJob(),
-    [store],
-  );
-  const cancelBatch: BatchPanelProps["onCancel"] = useCallback(
-    () => store().cancelBatch(),
-    [store],
-  );
-  const retryFailedBatch: BatchPanelProps["onRetryFailed"] = useCallback(
-    () => void store().retryFailedBatch(),
-    [store],
-  );
-  const newBatch: BatchPanelProps["onNewBatch"] = useCallback(
-    () => store().dismissBatch(),
-    [store],
-  );
-  const closeBatch: BatchPanelProps["onClose"] = useCallback(
-    () => store().setShowBatch(false),
-    [store],
-  );
+  // The block of ~36 `useCallback` forwarders that used to sit here is gone
+  // (P-12 wave 2). Every panel below reads the store itself and calls actions
+  // at the click site, so there is no prop identity left for App to hold
+  // still, and no memo() left that would have depended on it. What App still
+  // owns is the MOUNT GATES (`{showX && <X />}`): moving one inside its panel
+  // would keep that panel mounted forever and persist its local UI state —
+  // TimelinePanel's zoom and scene selection, ShaderEditor's whole draft —
+  // across a close and reopen, which is a behaviour change, not a refactor.
 
   // One-time init: engine, renderer (with GPU-loss recovery), frame loop
   useEffect(() => {
@@ -454,8 +284,8 @@ export default function App() {
 
   // Re-arm the chrome idle timer when playback starts (e.g. via keyboard)
   useEffect(() => {
-    if (playback.playing) store().pokeChrome();
-  }, [playback.playing, store]);
+    if (playing) store().pokeChrome();
+  }, [playing, store]);
 
   // Did the last session end in a crash? Offer its autosave back. Runs once,
   // after the app has booted into its normal state — recovery is an offer, not
@@ -530,7 +360,7 @@ export default function App() {
   // `.app.idle .params-panel`), which is what lets the bars still fade around it.
   const idle =
     chromeIdle &&
-    playback.playing &&
+    playing &&
     !showExport &&
     !showHelp &&
     !showGuide &&
@@ -625,9 +455,7 @@ export default function App() {
           // affordances are the PlayerBar/top-bar buttons — so role="img"
           // plus a preset-aware label, not a button/application role.
           role="img"
-          aria-label={
-            playback.trackName ? `${preset.name} audio visualization` : "Audio visualization"
-          }
+          aria-label={trackName ? `${preset.name} audio visualization` : "Audio visualization"}
           className={`viz-canvas ${bg.mode === BG_TRANSPARENT ? "transparent" : ""} ${
             aspect !== "free" ? "fixed-aspect" : ""
           }`}
@@ -638,7 +466,7 @@ export default function App() {
                 } as React.CSSProperties)
               : undefined
           }
-          onClick={() => playback.trackName && void store().togglePlay()}
+          onClick={() => trackName && void store().togglePlay()}
           onDoubleClick={toggleFullscreen}
         />
       </div>
@@ -679,7 +507,7 @@ export default function App() {
         </div>
       )}
 
-      {!playback.trackName && !dragOver && (
+      {!trackName && !dragOver && (
         <EmptyState
           demos={demos}
           onOpenFile={() => fileInputRef.current?.click()}
@@ -747,12 +575,12 @@ export default function App() {
         <div className="top-right">
           <button
             className="ghost-btn accent"
-            disabled={!playback.trackName || batchStatus === "running" || !!exportBlocked}
+            disabled={!trackName || batchStatus === "running" || !!exportBlocked}
             title={
               exportBlocked ??
               (batchStatus === "running"
                 ? "Batch render in progress"
-                : playback.trackName
+                : trackName
                   ? "Export MP4 video"
                   : "Load a track first")
             }
@@ -791,7 +619,7 @@ export default function App() {
             }
             aria-label="Visualize system audio"
             aria-pressed={liveInputActive}
-            disabled={!!exporting || batchStatus === "running"}
+            disabled={exporting || batchStatus === "running"}
             onClick={() => void store().toggleLiveInput()}
           >
             <IconBroadcast size={18} />
@@ -846,33 +674,9 @@ export default function App() {
         </div>
       </header>
 
-      <PresetStrip
-        presets={allPresets}
-        activeId={presetId}
-        pendingId={pendingPresetId}
-        thumbs={presetThumbs}
-        onSwitch={switchPreset}
-        onNewVisual={openShaderEditor}
-        newVisualDisabledReason={
-          simplifiedRenderer
-            ? "The shader editor needs hardware rendering (WebGPU), which isn't available on this system"
-            : undefined
-        }
-      />
+      <PresetStrip />
 
-      {showLibrary && (
-        <LibraryPanel
-          library={library}
-          scanning={libraryScanning}
-          activePath={libraryActivePath}
-          autoAdvance={libraryAutoAdvance}
-          desktop={isTauri()}
-          onPickFolder={libraryPickFolder}
-          onPlay={libraryPlay}
-          onAutoAdvance={setLibraryAutoAdvance}
-          onClose={closeLibrary}
-        />
-      )}
+      {showLibrary && <LibraryPanel />}
 
       {/* The Library's own grip. Until P-1 the single resize handle mounted
           only alongside Visuals, so opening the Library on its own left
@@ -910,40 +714,9 @@ export default function App() {
       )}
       {showPanel && <ParamsPanel />}
 
-      {showTimeline && (
-        <TimelinePanel
-          timeline={timeline}
-          onAutoArrange={autoArrangeTimeline}
-          duration={playback.duration}
-          time={playback.time}
-          beatGrid={beatGrid}
-          sections={sections}
-          waveform={waveformOverview}
-          activePreset={preset}
-          presets={allPresets}
-          activeParams={params}
-          onChange={setTimelineData}
-          onSeek={timelineSeek}
-          onClose={closeTimeline}
-          simplifiedRenderer={simplifiedRenderer}
-        />
-      )}
+      {showTimeline && <TimelinePanel />}
 
-      <PlayerBar
-        playback={playback}
-        sections={sections}
-        volume={volume}
-        muted={muted}
-        onTogglePlay={togglePlay}
-        onSeekStart={seekStart}
-        onSeekEnd={seekEnd}
-        onToggleLoop={toggleLoop}
-        onSetLoopStart={setLoopStart}
-        onSetLoopEnd={setLoopEnd}
-        onClearLoopRegion={clearLoopRegion}
-        onVolume={setVolume}
-        onToggleMute={toggleMute}
-      />
+      <PlayerBar />
 
       {/* A column, not three absolutely-positioned siblings at the same
           bottom offset: recovery + error could already co-occur and drew on
@@ -1015,25 +788,9 @@ export default function App() {
         )}
       </div>
 
-      {showShaderEditor && (
-        <ShaderEditor
-          customDefs={customDefs}
-          onSave={saveCustomPreset}
-          onDelete={deleteCustomPreset}
-          onExport={exportCustomPreset}
-          onImportFile={importCustomPresetFile}
-          onOpenShadertoy={openShadertoyImport}
-          onClose={closeShaderEditor}
-        />
-      )}
+      {showShaderEditor && <ShaderEditor />}
 
-      {showShadertoyImport && (
-        <ShadertoyImport
-          editDef={customDefs.find((d) => d.id === shadertoyImportEditId) ?? null}
-          onImport={importShadertoy}
-          onClose={closeShadertoyImport}
-        />
-      )}
+      {showShadertoyImport && <ShadertoyImport />}
 
       {showHelp && (
         <div className="modal-backdrop" onClick={() => store().setShowHelp(false)}>
@@ -1102,28 +859,7 @@ export default function App() {
         />
       )}
 
-      {showBatch && (
-        <BatchPanel
-          run={batch}
-          status={batchStatus}
-          scanning={batchScanning}
-          batchError={batchError}
-          exporting={!!exporting}
-          overlayLayers={overlayLayers}
-          aspect={aspect}
-          formatLabel={RESOLUTIONS[exportSettings.resIdx].label}
-          simplifiedRenderer={simplifiedRenderer}
-          onAddTracks={addBatchTracks}
-          onRemoveTrack={removeBatchTrack}
-          onRetitle={retitleBatchTrack}
-          onStart={startBatch}
-          onSkipJob={skipBatchJob}
-          onCancel={cancelBatch}
-          onRetryFailed={retryFailedBatch}
-          onNewBatch={newBatch}
-          onClose={closeBatch}
-        />
-      )}
+      {showBatch && <BatchPanel />}
 
       {showGuide && <GuideDialog onClose={() => store().setShowGuide(false)} />}
       {showExport && <ExportDialog />}

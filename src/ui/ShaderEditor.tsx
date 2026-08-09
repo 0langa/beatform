@@ -1,31 +1,10 @@
-import { memo, useState } from "react";
+import { useState } from "react";
 import type { ParamSpec, PresetDef } from "../render/types";
 import { NEW_SHADER_TEMPLATE, newCustomPresetId } from "../render/presets/custom";
 import { askConfirm } from "../state/platform";
+import { useVizStore } from "../state/store";
 import { IconClose } from "./Icons";
 import { useFocusTrap } from "./useFocusTrap";
-
-/**
- * The WGSL preset editor — a modal that authors a custom PresetDef: name,
- * parameter schema (each row becomes a P_<key>() accessor and an auto-built
- * slider), and the fragment WGSL. Apply compile-checks against the full ABI
- * and either installs the visual or lists the compiler's errors with line
- * numbers relative to the user's code. Props-only, like every panel.
- */
-export interface ShaderEditorProps {
-  /** Existing custom presets (editable / deletable / exportable). */
-  customDefs: PresetDef[];
-  /** Compile-check + install; resolves with [] on success, else errors. */
-  onSave: (def: PresetDef) => Promise<string[]>;
-  onDelete: (id: string) => void;
-  onExport: (id: string) => void;
-  onImportFile: (file: File) => void;
-  /** Open the Shadertoy GLSL import dialog — null = fresh import, an id =
-   * re-edit that imported visual's GLSL. Imported defs carry a transpiled
-   * module, not a snippet, so THIS editor must never load them. */
-  onOpenShadertoy: (id: string | null) => void;
-  onClose: () => void;
-}
 
 interface ParamRow {
   /** Stable identity for React keys (audit U3): with index keys, removing a
@@ -99,9 +78,22 @@ function specsToRows(specs: ParamSpec[]): ParamRow[] {
   }));
 }
 
-// Memoized (H13): requires every callback prop from App.tsx to stay
-// reference-stable (see the useCallback block there) or memo does nothing.
-export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps) {
+/**
+ * The WGSL preset editor — a modal that authors a custom PresetDef: name,
+ * parameter schema (each row becomes a P_<key>() accessor and an auto-built
+ * slider), and the fragment WGSL. Apply compile-checks against the full ABI
+ * and either installs the visual or lists the compiler's errors with line
+ * numbers relative to the user's code.
+ *
+ * Store-direct (P-12 wave 2): one subscription (the existing custom presets,
+ * which are editable / deletable / exportable) and six actions called where
+ * they are clicked. NOT memo()d: with zero props memo can never bail on
+ * anything.
+ */
+export function ShaderEditor() {
+  const customDefs = useVizStore((s) => s.customDefs);
+  const store = useVizStore.getState;
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("My Visual");
   const [rows, setRows] = useState<ParamRow[]>(starterRows);
@@ -119,8 +111,10 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
   const loadExisting = (def: PresetDef) => {
     if (def.shadertoy) {
       // Imported visuals are edited as GLSL in the import dialog; their
-      // `wgsl` is generated output no one should hand-edit.
-      props.onOpenShadertoy(def.id);
+      // `wgsl` is generated output no one should hand-edit. (An imported def
+      // carries a transpiled module, not a snippet, so THIS editor must never
+      // load one.)
+      store().openShadertoyImport(def.id);
       return;
     }
     setEditingId(def.id);
@@ -140,7 +134,7 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
     void (async () => {
       if (dirty && !(await askConfirm("Discard unsaved changes to this shader?", "Shader editor")))
         return;
-      props.onClose();
+      store().setShowShaderEditor(false);
     })();
   };
 
@@ -157,7 +151,7 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
       params: specs,
       wgsl,
     };
-    const result = await props.onSave(def);
+    const result = await store().saveCustomPreset(def);
     setBusy(false);
     setErrors(result);
     if (result.length === 0) {
@@ -203,9 +197,9 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
           page for the reference. Custom visuals use the same preview and export paths as built-ins.
         </p>
 
-        {props.customDefs.length > 0 && (
+        {customDefs.length > 0 && (
           <div className="style-chips">
-            {props.customDefs.map((d) => (
+            {customDefs.map((d) => (
               <span key={d.id} className="user-chip-wrap">
                 <button
                   className={`style-chip user ${d.id === editingId ? "active" : ""}`}
@@ -218,7 +212,7 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
                   className="chip-x"
                   title="Delete"
                   aria-label={`Delete "${d.name}"`}
-                  onClick={() => props.onDelete(d.id)}
+                  onClick={() => store().deleteCustomPreset(d.id)}
                 >
                   ✕
                 </button>
@@ -226,7 +220,7 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
                   className="chip-x"
                   title="Export as .bfshader file"
                   aria-label={`Export "${d.name}" as .bfshader file`}
-                  onClick={() => props.onExport(d.id)}
+                  onClick={() => void store().exportCustomPreset(d.id)}
                 >
                   ↗
                 </button>
@@ -268,7 +262,7 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
               hidden
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) props.onImportFile(f);
+                if (f) void f.text().then((t) => store().importCustomPresetText(t));
                 e.target.value = "";
               }}
             />
@@ -276,7 +270,7 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
           <button
             className="text-btn"
             title="Paste a Shadertoy GLSL shader and translate it into a visual"
-            onClick={() => props.onOpenShadertoy(null)}
+            onClick={() => store().openShadertoyImport()}
           >
             Shadertoy…
           </button>
@@ -352,4 +346,4 @@ export const ShaderEditor = memo(function ShaderEditor(props: ShaderEditorProps)
       </div>
     </div>
   );
-});
+}

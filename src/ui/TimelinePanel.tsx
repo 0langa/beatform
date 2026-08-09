@@ -1,7 +1,5 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { BeatGrid } from "../audio/analysis/beatGrid";
-import type { PresetDef } from "../render/types";
-import { allParams, type ParamValues } from "../render/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { allParams } from "../render/types";
 import {
   newKeyframeId,
   newSceneId,
@@ -12,6 +10,9 @@ import {
   type Timeline,
 } from "../state/timeline";
 import { currentBuilder2Def, isBuilderVirtualKey } from "../render/builder2";
+import { orderedPresets } from "../state/presetOrder";
+import { useVizStore } from "../state/store";
+import { selectPreset } from "../state/selectors";
 import { Slider } from "./Slider";
 import { SliderField, type ValueUnit } from "./kit";
 import { Switch } from "./Switch";
@@ -30,21 +31,61 @@ const TRANSITION_LABELS: Record<(typeof TRANSITION_KINDS)[number], string> = {
   cut: "Hard cut",
 };
 
-export interface TimelinePanelProps {
-  timeline: Timeline;
-  duration: number;
-  time: number;
-  beatGrid: BeatGrid | null;
-  sections: number[];
-  waveform: Float32Array | null;
-  activePreset: PresetDef;
-  presets: PresetDef[];
-  activeParams: ParamValues;
-  onChange: (timeline: Timeline) => void;
-  /** Build scenes from the detected sections (energy-ranked visuals). */
-  onAutoArrange: () => void;
-  onSeek: (t: number) => void;
-  onClose: () => void;
+/**
+ * The one element that moves at the playback tick, in its own component so
+ * that the tick costs ONE div rather than the ~840 the panel around it draws.
+ *
+ * This is the point of P-12 wave 2 on this file. The panel used to take
+ * `time` as a prop, so 4 Hz of playhead movement reconciled every ruler tick,
+ * scene block and keyframe dot with it. The fix is not "subscribe more
+ * narrowly" — the panel genuinely needs the time, it draws a playhead — but
+ * "subscribe LOWER". Note that a COMMIT COUNT cannot see the difference:
+ * before and after, a tick commits exactly once. What changes is how much runs
+ * inside that commit, which is why TimelinePanel.test.tsx counts PANEL-BODY
+ * EXECUTIONS instead.
+ */
+function TimelinePlayhead({ pps }: { pps: number }) {
+  const time = useVizStore((s) => s.playback.time);
+  return <div className="tl-playhead" style={{ left: time * pps }} />;
+}
+
+/**
+ * Bottom timeline panel: beat/section ruler, waveform overview, a scene lane
+ * and one row per automation lane. Every edit writes a whole new Timeline
+ * through `setTimeline` — the store records history (gesture-grouped) and
+ * persists; drags snap to the beat grid when one exists.
+ *
+ * Store-direct (P-12 wave 2), and this panel is why the wave exists: at zoom
+ * 12 the track is 11,280px wide with ~840 ruler/scene/keyframe elements, and
+ * it used to reconcile all of that four times a second (the `time` prop) plus
+ * once per pointermove of any slider in the app (the `activeParams` prop).
+ * Both are gone:
+ *
+ *  - `time` moved DOWN into <TimelinePlayhead />, the only thing that reads it;
+ *  - `activeParams` is not subscribed at all — its single reader is `addLane`,
+ *    which runs at CLICK time and takes the live value off `store()`. A
+ *    subscription would have re-rendered the panel at pointer rate to serve a
+ *    value nothing renders.
+ *
+ * It is deliberately NOT memo()d — with zero props memo can never bail on
+ * anything, and leaving it would assert a contract nothing enforces. Never
+ * allocate inside a selector: zustand v5 hands it straight to
+ * useSyncExternalStore with no equality fn, so a fresh array per notification
+ * is "Maximum update depth exceeded" ON MOUNT (lint enforces the shapes; the
+ * `presets` derivation below is the sanctioned two-selectors + useMemo form).
+ */
+export function TimelinePanel() {
+  const timeline = useVizStore((s) => s.timeline);
+  /** A PRIMITIVE off `playback`, not the object: subscribing `s.playback`
+   * would put the panel straight back on the 4 Hz tick that
+   * <TimelinePlayhead /> exists to contain. */
+  const duration = useVizStore((s) => s.playback.duration);
+  const beatGrid = useVizStore((s) => s.beatGrid);
+  const sections = useVizStore((s) => s.sections);
+  const waveform = useVizStore((s) => s.waveformOverview);
+  const activePreset = useVizStore(selectPreset);
+  const presetOrder = useVizStore((s) => s.presetOrder);
+  const customDefs = useVizStore((s) => s.customDefs);
   /**
    * True while the Canvas2D fallback is drawing (audit F1). It hard-cuts
    * between scenes — setTransitionPreset is an empty stub — so the Transition
@@ -52,23 +93,18 @@ export interface TimelinePanelProps {
    * Scene fades stay editable: they are document data, and the timeline is
    * still worth building for a later render on capable hardware.
    */
-  simplifiedRenderer?: boolean;
-}
+  const simplifiedRenderer = useVizStore((s) => s.simplifiedRenderer);
 
-/**
- * Bottom timeline panel: beat/section ruler, waveform overview, a scene lane
- * and one row per automation lane. Everything edits through onChange with a
- * whole new Timeline — the store records history (gesture-grouped) and
- * persists; drags snap to the beat grid when one exists.
- *
- * Memoized (H13): at zoom 12 the track is 11,280px wide with ~840 ruler/
- * scene/keyframe elements — reconciling all of that 4x/second just because
- * some unrelated store field ticked (to move one playhead div) was the
- * worst offender the audit found. Requires every callback prop from
- * App.tsx to stay reference-stable — see the useCallback block there.
- */
-export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelProps) {
-  const { timeline, duration } = props;
+  // A DERIVATION THAT ALLOCATES: two selections + useMemo, never a selector.
+  // `orderedPresets(...)` inside one would hand useSyncExternalStore a fresh
+  // array on every store notification.
+  const presets = useMemo(() => orderedPresets(presetOrder, customDefs), [presetOrder, customDefs]);
+
+  // One stable accessor; actions are called at the edit site. They are built
+  // once inside create()'s initializer and every write is a partial merge, so
+  // their identity is permanently stable — no useCallback.
+  const store = useVizStore.getState;
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const waveRef = useRef<HTMLCanvasElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -108,7 +144,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
   const tOf = (x: number) => Math.min(duration, Math.max(0, x / pps));
 
   const snap = (t: number): number => {
-    const beats = props.beatGrid?.beatTimes;
+    const beats = beatGrid?.beatTimes;
     if (!beats || beats.length === 0) return t;
     // nearest beat within 12 px
     let best = t;
@@ -126,7 +162,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
   // Waveform overview: draw once per (track, width)
   useEffect(() => {
     const canvas = waveRef.current;
-    const wf = props.waveform;
+    const wf = waveform;
     if (!canvas || !wf || wf.length === 0) return;
     canvas.width = width;
     canvas.height = 36;
@@ -141,7 +177,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
       const h = Math.max(1, peak * 34);
       ctx.fillRect(x, 18 - h / 2, 1, h);
     }
-  }, [props.waveform, width]);
+  }, [waveform, width]);
 
   // Ruler ticks: seconds at low zoom, beats when they fit
   const ticks = useMemo(() => {
@@ -154,14 +190,14 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
         kind: "sec",
       });
     }
-    const beats = props.beatGrid?.beatTimes;
+    const beats = beatGrid?.beatTimes;
     if (beats && pps > 18) {
       for (let i = 0; i < beats.length; i++) {
         out.push({ t: beats[i], kind: i % 4 === 0 ? "bar" : "beat" });
       }
     }
     return out;
-  }, [duration, pps, props.beatGrid]);
+  }, [duration, pps, beatGrid]);
 
   const sortedScenes = useMemo(
     () => [...timeline.scenes].sort((a, b) => a.start - b.start),
@@ -169,14 +205,19 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
   );
 
   const update = (patch: Partial<Timeline>) =>
-    props.onChange({ ...timeline, enabled: true, ...patch });
+    store().setTimeline({ ...timeline, enabled: true, ...patch });
+
+  /** The playhead, read at CLICK time off the live snapshot. Subscribing to
+   * it here is what the migration removed: `time` moves 4x/second and is
+   * wanted by two click handlers and one child div, never by this body. */
+  const playheadTime = () => store().playback.time;
 
   const addSceneAtPlayhead = () => {
     const scene: Scene = {
       id: newSceneId(),
-      name: props.activePreset.name,
-      presetId: props.activePreset.id,
-      start: snap(props.time),
+      name: activePreset.name,
+      presetId: activePreset.id,
+      start: snap(playheadTime()),
     };
     update({ scenes: [...timeline.scenes, scene] });
     setSelectedScene(scene.id);
@@ -188,7 +229,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
   };
 
   const setScenePreset = (id: string, presetId: string) => {
-    const preset = props.presets.find((p) => p.id === presetId);
+    const preset = presets.find((p) => p.id === presetId);
     update({
       scenes: timeline.scenes.map((s) =>
         s.id === id ? { ...s, presetId, name: preset?.name ?? s.name } : s,
@@ -198,10 +239,12 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
 
   const addLane = (param: string) => {
     if (!param || timeline.lanes.some((l) => l.param === param)) return;
-    const value = props.activeParams[param] ?? 0;
+    // Also a click-time read: `activeParams` is rewritten on every
+    // pointermove of every slider, and this is its only reader here.
+    const value = store().activeParams[param] ?? 0;
     const lane: AutomationLane = {
       param,
-      keyframes: [{ id: newKeyframeId(), t: snap(props.time), value, curve: "linear" }],
+      keyframes: [{ id: newKeyframeId(), t: snap(playheadTime()), value, curve: "linear" }],
     };
     update({ lanes: [...timeline.lanes, lane] });
   };
@@ -218,16 +261,16 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
   // whose param is not on the ACTIVE preset must still find its spec — the
   // old {0,1} fallback silently rescaled (corrupted) keyframe values on drag.
   const laneSpec = (lane: AutomationLane) => {
-    const own = allParams(props.activePreset).find((p) => p.key === lane.param);
+    const own = allParams(activePreset).find((p) => p.key === lane.param);
     if (own) return own;
     // Builder virtual params (RP-20): resolve l<i>.* against the CURRENT
-    // builder2 def — props.presets carries the def captured at boot, whose
+    // builder2 def — `presets` carries the def captured at boot, whose
     // structure (and therefore virtual list) may be stale.
     if (isBuilderVirtualKey(lane.param)) {
       const spec = allParams(currentBuilder2Def()).find((p) => p.key === lane.param);
       if (spec) return spec;
     }
-    for (const p of props.presets) {
+    for (const p of presets) {
       const spec = allParams(p).find((s) => s.key === lane.param);
       if (spec) return spec;
     }
@@ -351,7 +394,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
     setLane(laneIndex, { ...lane, keyframes });
   };
 
-  const paramOptions = allParams(props.activePreset);
+  const paramOptions = allParams(activePreset);
 
   return (
     <div className="chrome timeline-panel">
@@ -360,7 +403,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
         <span className="inline tl-enable" title="Master switch — off plays the base setup">
           <Switch
             checked={timeline.enabled}
-            onChange={(enabled) => props.onChange({ ...timeline, enabled })}
+            onChange={(enabled) => store().setTimeline({ ...timeline, enabled })}
             label="Timeline enabled"
           />
           Enabled
@@ -375,7 +418,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
         <button
           className="text-btn"
           title="Build an arrangement from the song's detected sections — quiet parts get calm visuals, loud parts get hard ones. One Ctrl+Z undoes."
-          onClick={props.onAutoArrange}
+          onClick={() => store().autoArrangeTimeline()}
         >
           ✦ Auto-arrange
         </button>
@@ -412,7 +455,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
           className="icon-btn subtle"
           title="Close (T)"
           aria-label="Close timeline"
-          onClick={props.onClose}
+          onClick={() => store().setShowTimeline(false)}
         >
           <IconClose size={16} />
         </button>
@@ -432,7 +475,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
             title="Click to seek"
             onPointerDown={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
-              props.onSeek(tOf(e.clientX - rect.left));
+              store().seekEnd(tOf(e.clientX - rect.left));
             }}
           >
             {ticks.map((tick, i) => (
@@ -440,7 +483,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
                 {tick.label && <span>{tick.label}</span>}
               </div>
             ))}
-            {props.sections.map((t) => (
+            {sections.map((t) => (
               <div
                 key={`sec${t}`}
                 className="tl-section-mark"
@@ -577,7 +620,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
           })}
 
           {/* Playhead */}
-          {duration > 0 && <div className="tl-playhead" style={{ left: xOf(props.time) }} />}
+          {duration > 0 && <TimelinePlayhead pps={pps} />}
         </div>
       </div>
 
@@ -594,7 +637,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
                   title="Visual for this scene"
                   onChange={(e) => setScenePreset(s.id, e.target.value)}
                 >
-                  {props.presets.map((p) => (
+                  {presets.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
@@ -621,7 +664,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
                 <label
                   className="inline"
                   title={
-                    props.simplifiedRenderer
+                    simplifiedRenderer
                       ? "Transitions are GPU effects — hardware rendering (WebGPU) isn't available, so scenes hard-cut. The choice is kept for a render on capable hardware."
                       : "How this scene's incoming fade renders"
                   }
@@ -630,7 +673,7 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
                   <select
                     className="select"
                     value={s.transition ?? "crossfade"}
-                    disabled={props.simplifiedRenderer}
+                    disabled={simplifiedRenderer}
                     onChange={(e) => {
                       const transition = e.target.value as (typeof TRANSITION_KINDS)[number];
                       update({
@@ -662,4 +705,4 @@ export const TimelinePanel = memo(function TimelinePanel(props: TimelinePanelPro
       )}
     </div>
   );
-});
+}

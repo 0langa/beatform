@@ -1,25 +1,7 @@
-import { memo } from "react";
-import type { LibraryTrack } from "../state/platform";
+import { isTauri } from "../state/platform";
+import { useVizStore } from "../state/store";
 import { Switch } from "./Switch";
 import { IconClose } from "./Icons";
-
-/**
- * Music library sidebar: pick a folder once, get every audio file with its
- * real tags, click to play. Props-only, like every other panel — App.tsx
- * does the wiring.
- */
-export interface LibraryPanelProps {
-  library: { dir: string; tracks: LibraryTrack[] } | null;
-  scanning: boolean;
-  activePath: string | null;
-  autoAdvance: boolean;
-  /** False in browser dev — the scan needs the desktop app. */
-  desktop: boolean;
-  onPickFolder(): void;
-  onPlay(path: string): void;
-  onAutoAdvance(v: boolean): void;
-  onClose(): void;
-}
 
 function fmtDur(sec: number | null): string {
   if (sec == null || !Number.isFinite(sec)) return "";
@@ -33,11 +15,27 @@ function folderName(dir: string): string {
   return dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;
 }
 
-// Memoized (H13): can hold up to 5,000 track rows; requires every callback
-// prop from App.tsx to stay reference-stable (see the useCallback block
-// there) or memo does nothing.
-export const LibraryPanel = memo(function LibraryPanel(props: LibraryPanelProps) {
-  const { library, scanning, activePath } = props;
+/**
+ * Music library sidebar: pick a folder once, get every audio file with its
+ * real tags, click to play.
+ *
+ * Store-direct (P-12 wave 2): it can hold up to 5,000 track rows, and before
+ * the migration it was memo()d with four callback props whose identities App
+ * had to keep still or the memo did nothing. It now subscribes the four slices
+ * it renders and calls the actions at the click site. NOT memo()d: with zero
+ * props memo can never bail on anything.
+ */
+export function LibraryPanel() {
+  const library = useVizStore((s) => s.library);
+  const scanning = useVizStore((s) => s.libraryScanning);
+  const activePath = useVizStore((s) => s.libraryActivePath);
+  const autoAdvance = useVizStore((s) => s.libraryAutoAdvance);
+  const store = useVizStore.getState;
+  // False in browser dev — the scan needs the desktop app. The env probe
+  // reads fine in the body (LyricsGenPanel/ParamsPanel precedent); tests mock
+  // the module rather than injecting a boolean.
+  const desktop = isTauri();
+
   return (
     <aside className="chrome library-panel">
       <div className="panel-header">
@@ -46,7 +44,7 @@ export const LibraryPanel = memo(function LibraryPanel(props: LibraryPanelProps)
           className="icon-btn subtle"
           title="Close (Q)"
           aria-label="Close library"
-          onClick={props.onClose}
+          onClick={() => store().setShowLibrary(false)}
         >
           <IconClose size={16} />
         </button>
@@ -55,23 +53,23 @@ export const LibraryPanel = memo(function LibraryPanel(props: LibraryPanelProps)
       <div className="library-toolbar">
         <button
           className="text-btn"
-          disabled={scanning || !props.desktop}
-          title={props.desktop ? "Scan a folder for audio files" : "Needs the desktop app"}
-          onClick={props.onPickFolder}
+          disabled={scanning || !desktop}
+          title={desktop ? "Scan a folder for audio files" : "Needs the desktop app"}
+          onClick={() => void store().pickLibraryFolder()}
         >
           {library ? "Change folder…" : "Choose music folder…"}
         </button>
         <span className="inline" title="Play the next track when this one ends">
           <Switch
-            checked={props.autoAdvance}
-            onChange={props.onAutoAdvance}
+            checked={autoAdvance}
+            onChange={(v) => store().setLibraryAutoAdvance(v)}
             label="Auto-play next"
           />
           Auto-play next
         </span>
       </div>
 
-      {!props.desktop && (
+      {!desktop && (
         <p className="section-hint">
           The library scans a folder on disk, so it needs the desktop app. In the browser, drop
           files onto the window instead.
@@ -93,7 +91,7 @@ export const LibraryPanel = memo(function LibraryPanel(props: LibraryPanelProps)
                 key={t.path}
                 className={`library-row ${t.path === activePath ? "active" : ""}`}
                 title={t.path}
-                onClick={() => props.onPlay(t.path)}
+                onClick={() => void store().playLibraryTrack(t.path)}
               >
                 <span className="library-title">{t.title || t.fileName}</span>
                 <span className="library-artist">{t.artist ?? ""}</span>
@@ -107,7 +105,7 @@ export const LibraryPanel = memo(function LibraryPanel(props: LibraryPanelProps)
         </>
       )}
 
-      {!library && !scanning && props.desktop && (
+      {!library && !scanning && desktop && (
         <p className="section-hint">
           Pick your music folder once — every track shows up here with its real title and artist,
           one click to play. Finished tracks flow into the next automatically.
@@ -115,4 +113,4 @@ export const LibraryPanel = memo(function LibraryPanel(props: LibraryPanelProps)
       )}
     </aside>
   );
-});
+}
