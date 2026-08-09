@@ -6,7 +6,7 @@ import { DEFAULT_PREFS, getPrefs, setPrefs, subscribePrefs } from "../state/pref
 import { ParamsPanel } from "./ParamsPanel";
 import { cardHeading } from "./ModulationPage";
 import { __meterCount } from "./ModMeters";
-import { formatValue } from "./kit";
+import { __hintListenerCount, formatValue, getHint } from "./kit";
 import { renderProbe } from "./testing/renderProbe";
 import { presets } from "../render/presets";
 import {
@@ -116,6 +116,11 @@ afterEach(() => {
   // assertion about meter counts is measuring the previous test. Mirrors
   // ModMeters.test.tsx's own guard; `cleanup()` above is what makes it hold.
   expect(__meterCount()).toBe(0);
+  // Same hazard, same shape, for the hint channel (G3): its listener set is
+  // module-level too, so a <FooterHint /> that unmounted without unsubscribing
+  // would keep being notified for the rest of the suite.
+  expect(__hintListenerCount()).toBe(0);
+  expect(getHint()).toBeNull();
 });
 
 /** The panel wrapped in a commit counter. */
@@ -272,6 +277,193 @@ describe(
     });
   },
 );
+
+/**
+ * G3 + G4 — the two POINTER-RATE channels, measured the only way that proves
+ * anything about them.
+ *
+ * `commits()` alone cannot: React fires a Profiler's onRender whenever the
+ * Profiler subtree commits, so "the row re-rendered" and "all 2,000 lines
+ * re-rendered" are both exactly one commit. `probePresetParams` is the
+ * discriminator — it counts executions of the PANEL BODY (which reads
+ * `preset.params` unconditionally for centerImageExtras), and a body execution
+ * is what both of these defects actually were. It is also the assertion that a
+ * 60 Hz identity-preserving write cannot sneak past: if the panel re-rendered
+ * for any reason, the number moves.
+ *
+ * Both updates ORIGINATE INSIDE the probed subtree — a real `change` on the
+ * row's own range input, a real `pointerenter` on the row's own label — so
+ * neither is the arrangement renderProbe's docstring rules out.
+ *
+ * ParamGroups is covered transitively and deliberately: after G4 it holds no
+ * subscription of its own, so it can only re-render when this body does.
+ */
+describe("pointer-rate channels cost the panel nothing (G3/G4)", { timeout: 30_000 }, () => {
+  /** A plain curated slider of the active mode — taken from the registry, not
+   *  spelled out, so re-tiering or renaming a knob cannot quietly rot this. */
+  function dragTarget() {
+    const preset = spectrumBars();
+    const adv = advancedKeys(preset);
+    return allParams(preset).find(
+      (s) =>
+        !adv.has(s.key) &&
+        !s.taper &&
+        (s.control === undefined || s.control === "slider") &&
+        !(s.min === 0 && s.max === 1 && s.step === 1),
+    )!;
+  }
+
+  /** The `.param-slot` of one row, by its visible label. */
+  const slotOf = (label: string) =>
+    [...document.querySelectorAll<HTMLElement>(".param-slot")].find(
+      (s) => s.querySelector(".row-label")?.textContent === label,
+    )!;
+
+  const footer = () => document.querySelector<HTMLElement>(".footer-hint")!;
+
+  it("T29: a slider drag re-renders the row and NOT the panel body", () => {
+    act(() => useVizStore.setState({ presetId: "spectrum-bars" }));
+    const spec = dragTarget();
+    const probe = probePresetParams("spectrum-bars");
+    try {
+      const commits = mountProbed();
+      const input = slotOf(spec.label).querySelector<HTMLInputElement>('input[type="range"]')!;
+
+      // ONE settling write first, and it is honest that it costs a render: the
+      // document leaves the factory style, so the context header stops naming
+      // it and the chips row un-highlights. That is a change in what the panel
+      // DISPLAYS. The defect was the other ~100 writes of the same drag.
+      fireEvent.change(input, { target: { value: String(spec.min + spec.step) } });
+      const settledBody = probe.reads();
+      const settledCommits = commits();
+      expect(settledBody).toBeGreaterThan(0); // both probes are live
+      expect(settledCommits).toBeGreaterThan(0);
+
+      // The rest of the drag: 60 pointermove-rate writes.
+      let last = spec.min;
+      for (let i = 2; i <= 61; i++) {
+        last = Math.min(spec.max, spec.min + i * spec.step);
+        fireEvent.change(input, { target: { value: String(last) } });
+      }
+
+      // THE HEADLINE FIX. Before G4 the panel read `activeParams` at the top,
+      // so every one of those writes reconciled all ~2,000 lines to move one
+      // thumb.
+      expect(probe.reads()).toBe(settledBody);
+      // Something DID commit each time — the row — so this is not a dead
+      // harness reporting silence.
+      expect(commits()).toBeGreaterThan(settledCommits);
+      // ...and the value actually landed, in the store and on the thumb.
+      expect(useVizStore.getState().activeParams[spec.key]).toBeCloseTo(last, 6);
+      expect(Number(input.value)).toBeCloseTo(last, 6);
+    } finally {
+      probe.restore();
+    }
+  });
+
+  it("T30: moving the pointer across rows updates the hint and NOT the panel body", () => {
+    act(() => useVizStore.setState({ presetId: "spectrum-bars" }));
+    const preset = spectrumBars();
+    const adv = advancedKeys(preset);
+    const hinted = allParams(preset).filter((s) => !adv.has(s.key) && s.hint);
+    expect(hinted.length).toBeGreaterThan(1); // the fixture has something to cross
+    const probe = probePresetParams("spectrum-bars");
+    try {
+      const commits = mountProbed();
+      const before = probe.reads();
+      const treeCommits = commits();
+      expect(footer().textContent).toBe("Hover a control to see what it does");
+      expect(footer().className).not.toContain("is-hint");
+
+      // Cross five rows, enter and leave, the way a pointer actually travels.
+      for (const spec of hinted.slice(0, 5)) {
+        const row = slotOf(spec.label).querySelector<HTMLElement>(".row")!;
+        fireEvent.pointerEnter(row);
+        expect(footer().textContent).toBe(spec.hint);
+        expect(footer().className).toContain("is-hint");
+        fireEvent.pointerLeave(row);
+        expect(footer().textContent).toBe("Hover a control to see what it does");
+      }
+
+      // THE G3 FIX: ten hint writes, zero panel renders. Before this the hint
+      // was ParamsPanel useState and each row crossed cost a full body pass —
+      // a HIGHER rate than the 4 Hz lufs tick T1 covers.
+      expect(probe.reads()).toBe(before);
+      expect(commits()).toBeGreaterThan(treeCommits);
+    } finally {
+      probe.restore();
+    }
+  });
+
+  it("T31: the panel's OWN hint sites still reach the footer, hover and focus", () => {
+    // T30 covers the rows ParamGroups renders. This covers the ~40 sites in
+    // ParamsPanel itself that used to call its `setHint` useState directly —
+    // the rail is the one every user touches first. Focus mirrors hover (H17),
+    // and that pairing is the half a pointer-only test would miss.
+    act(() => useVizStore.setState({ presetId: "spectrum-bars" }));
+    const probe = probePresetParams("spectrum-bars");
+    try {
+      mountProbed();
+      const before = probe.reads();
+      const scene = screen.getByRole("button", { name: "Scene" });
+      // Read the expected text off the rendered title rather than re-declaring
+      // it, so this cannot drift from the VISUALS_PAGES table.
+      const railHint = scene.getAttribute("title")!;
+      expect(railHint).toBeTruthy();
+
+      fireEvent.pointerEnter(scene);
+      expect(footer().textContent).toBe(railHint);
+      fireEvent.pointerLeave(scene);
+      expect(footer().textContent).toBe("Hover a control to see what it does");
+
+      fireEvent.focus(scene);
+      expect(footer().textContent).toBe(railHint);
+      fireEvent.blur(scene);
+      expect(getHint()).toBeNull();
+
+      // Navigating is a render; hinting is not.
+      expect(probe.reads()).toBe(before);
+    } finally {
+      probe.restore();
+    }
+  });
+
+  it("T32: the derived scalars the panel kept still track the document", () => {
+    // G4 replaced two whole-object reads with subscribed SCALARS. Neither may
+    // have gone inert: the style readout and the expert-drift pill are the
+    // only two things in the body that depend on param values at all.
+    act(() => useVizStore.setState({ presetId: "spectrum-bars" }));
+    mountProbed();
+    const styleName = () => document.querySelector(".visuals-style")?.textContent ?? "";
+    const activeChip = () => document.querySelector(".style-chips .style-chip.active")?.textContent;
+    const drift = () =>
+      [...document.querySelectorAll(".section-head .advanced-count")].map((e) => e.textContent);
+
+    // At factory defaults the first style IS the defaults, and nothing has drifted.
+    expect(styleName()).toBe("Classic");
+    expect(activeChip()).toBe("Classic");
+    expect(drift()).toEqual([]);
+    expect(document.querySelector(".style-custom")).toBeNull();
+
+    // A curated knob off its default leaves the style but is not expert drift.
+    const spec = dragTarget();
+    act(() => useVizStore.getState().setParam(spec.key, spec.default + spec.step));
+    expect(styleName()).toBe("");
+    expect(activeChip()).toBeUndefined();
+    expect(document.querySelector(".style-custom")?.textContent).toBe("Custom");
+    expect(drift()).toEqual([]);
+
+    // An EXPERT knob off its default is, and the pill counts it.
+    const expert = allParams(spectrumBars()).find((s) => advancedKeys(spectrumBars()).has(s.key))!;
+    act(() => useVizStore.getState().setParam(expert.key, expert.default + expert.step));
+    expect(drift()).toEqual(["1 changed"]);
+
+    // Reset puts every one of them back.
+    act(() => useVizStore.getState().resetParams());
+    expect(styleName()).toBe("Classic");
+    expect(drift()).toEqual([]);
+  });
+});
 
 /**
  * T7–T11 keep their subjects verbatim across P-1 stage 3; only the SELECTOR

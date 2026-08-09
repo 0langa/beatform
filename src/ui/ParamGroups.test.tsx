@@ -1,16 +1,25 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ParamSpec, PresetDef } from "../render/types";
-import { GROUP_KEY, ParamGroups } from "./ParamGroups";
-
-afterEach(cleanup);
+import { GROUP_KEY, ParamGroups, countOffDefault } from "./ParamGroups";
+import { emitHint, getHint } from "./kit";
+import { useVizStore } from "../state/store";
 
 /**
  * The parameter area's behaviour: what is shown, in what order, and what
  * search is allowed to bypass. The old flat list had none of this — every
  * knob in ABI order, with the expert tier in a drawer search never looked in.
+ *
+ * REWRITTEN FOR G4. `params`, `onParam` and `onHint` are no longer props: a row
+ * subscribes to its OWN value and writes through `setParam`, and hints go to
+ * the kit's channel. Every subject below is the one it was before — the SETUP
+ * moved from a prop to a store seed, which is exactly the change under test.
+ * Two things follow that the old file never had to do:
+ *  - the store is a singleton, so `seed()` writes it and afterEach restores the
+ *    captured pristine state (the ParamsPanel.test.tsx discipline);
+ *  - the hint channel is module-level, so afterEach clears it too.
  *
  * TOMBSTONE (P-9, v2.82.0) — "essentials hides the expert tier; All reveals
  * it" is gone. It named the global Essentials/All Segmented, which no longer
@@ -52,16 +61,39 @@ const PRESET: PresetDef = {
  *  what it was about. */
 const NONE: ReadonlySet<string> = new Set<string>();
 
+/** Captured with actions, restored by MERGE — a full replace would drop them,
+ *  and `setParam` is what the rows now call. */
+const PRISTINE = { ...useVizStore.getState() };
+
+/**
+ * A CLEAN param set per test — the exact meaning the old `params={{}}` prop
+ * had. Without it every test inherits the shipping default mode's values, and
+ * since the fixture preset reuses real keys (`vignette`, `hueSpread`) those
+ * read as off-default drift against the fixture's own spec defaults. That is
+ * the one genuinely new hazard of sourcing values from a singleton store.
+ */
+beforeEach(() => {
+  useVizStore.setState({ presetId: "fx", activeParams: {} });
+});
+
+afterEach(() => {
+  cleanup();
+  useVizStore.setState(PRISTINE);
+  emitHint(null);
+});
+
+/** Param values now come from the STORE, not a prop — this is the G4 change
+ *  spelled out in one helper. */
+function seed(activeParams: Record<string, number>) {
+  act(() => useVizStore.setState({ presetId: "fx", activeParams }));
+}
+
 function view(over: Partial<React.ComponentProps<typeof ParamGroups>> = {}) {
   const onToggleGroup = vi.fn();
   const onToggleAdvanced = vi.fn();
-  const onParam = vi.fn();
   const utils = render(
     <ParamGroups
       preset={PRESET}
-      params={{}}
-      onParam={onParam}
-      onHint={() => undefined}
       query=""
       collapsed={[]}
       advancedGroups={[]}
@@ -71,7 +103,7 @@ function view(over: Partial<React.ComponentProps<typeof ParamGroups>> = {}) {
       {...over}
     />,
   );
-  return { onToggleGroup, onToggleAdvanced, onParam, ...utils };
+  return { onToggleGroup, onToggleAdvanced, ...utils };
 }
 
 /** The slot wrapping one param row, by param key — the element the tier mark
@@ -80,6 +112,12 @@ const slot = (key: string) =>
   [...document.querySelectorAll<HTMLElement>(".param-slot")].find(
     (s) => s.querySelector(".row-label")?.textContent === key,
   );
+
+/** The range input of one row. Addressed through the slot rather than by
+ *  accessible name: the wrapping `<label>` names the input with its whole text
+ *  content, readout included, so the name moves as the value does. */
+const sliderOf = (rowLabel: string) =>
+  slot(rowLabel)!.querySelector('input[type="range"]') as HTMLInputElement;
 
 const headings = () =>
   [...document.querySelectorAll(".group-name")].map((e) => e.textContent ?? "");
@@ -111,9 +149,6 @@ describe("ParamGroups", () => {
     rerender(
       <ParamGroups
         preset={PRESET}
-        params={{}}
-        onParam={() => undefined}
-        onHint={() => undefined}
         advancedGroups={["backdrop"]}
         driven={NONE}
         query=""
@@ -160,9 +195,6 @@ describe("ParamGroups", () => {
     rerender(
       <ParamGroups
         preset={PRESET}
-        params={{}}
-        onParam={() => undefined}
-        onHint={() => undefined}
         advancedGroups={["backdrop"]}
         driven={NONE}
         query=""
@@ -192,7 +224,8 @@ describe("ParamGroups", () => {
   });
 
   it("G8: the changed count reports only off-default expert knobs of that group", () => {
-    view({ params: { vignette: 0.5, size: 0.5 } });
+    seed({ vignette: 0.5, size: 0.5 });
+    view();
     // vignette is expert and off its default; size is curated, so it must not
     // be counted anywhere.
     expect(disclosure("Backdrop")?.textContent).toContain("1 changed");
@@ -253,6 +286,141 @@ describe("ParamGroups", () => {
       extras: [{ group: "image", search: "center image cover", node: <p>center-image-row</p> }],
     });
     expect(screen.queryByText("center-image-row")).toBeNull();
+  });
+});
+
+/**
+ * G4 — the row owns its own subscription.
+ *
+ * `setParam` writes a fresh `activeParams` object on every pointermove. While
+ * the values arrived as a prop, that object had to be read ABOVE this
+ * component, so one drag reconciled the whole dock ~100 times to move one
+ * thumb. These pin the three halves of the replacement: a row reads its own
+ * value, a row writes through the store, and a write reaches ONLY the row it
+ * belongs to.
+ */
+describe("ParamGroups: rows subscribe their own value (G4)", () => {
+  it("P1: a row renders the stored value, and falls back to the spec default", () => {
+    seed({ size: 0.42 });
+    view();
+    expect(sliderOf("size").value).toBe("0.42");
+    // `glow` was never written; the row must show the spec's own default, not
+    // a hardcoded zero and not an empty input.
+    expect(sliderOf("Bloom").value).toBe("0");
+  });
+
+  it("P2: dragging a row writes through setParam, and the row follows the store", () => {
+    seed({ size: 0.42 });
+    view();
+    fireEvent.change(sliderOf("size"), { target: { value: "0.75" } });
+    expect(useVizStore.getState().activeParams.size).toBe(0.75);
+    expect(sliderOf("size").value).toBe("0.75");
+  });
+
+  it("P3: a param write re-renders THAT row only — ParamGroups itself never runs", () => {
+    /**
+     * The render counter is `driven.has`, which ParamGroups calls once per
+     * rendered row plus once per param per group and NOTHING else calls at
+     * all. It is a count of ParamGroups BODY executions, which is what rule 3
+     * of this work asks for: a commit-count assertion would stay green while
+     * an identity-preserving setState fired at pointer rate, but this cannot —
+     * if ParamGroups re-rendered, the number moves.
+     *
+     * The write ORIGINATES INSIDE the subtree (a real `change` on the row's
+     * own range input), so this is not the arrangement renderProbe's docstring
+     * warns about.
+     */
+    class CountingSet extends Set<string> {
+      hits = 0;
+      override has(value: string): boolean {
+        this.hits += 1;
+        return super.has(value);
+      }
+    }
+    const driven = new CountingSet();
+    seed({ size: 0.1, glow: 0.1 });
+    view({ driven });
+    const afterMount = driven.hits;
+    expect(afterMount).toBeGreaterThan(0); // the counter is live
+
+    // A drag: 20 pointermove-rate writes on ONE row. Integer hundredths, so
+    // the fixture's own arithmetic cannot drift off the 0.01 step grid.
+    for (let i = 11; i <= 30; i++) {
+      fireEvent.change(sliderOf("size"), { target: { value: String(i / 100) } });
+    }
+
+    // The parent never ran again...
+    expect(driven.hits).toBe(afterMount);
+    // ...the dragged row tracked every write...
+    expect(Number(sliderOf("size").value)).toBe(0.3);
+    expect(useVizStore.getState().activeParams.size).toBe(0.3);
+    // ...and the row NEXT to it still shows its own untouched value.
+    expect(Number(sliderOf("Bloom").value)).toBe(0.1);
+  });
+
+  it("P4: the expert changed pill tracks the store without its group re-rendering", () => {
+    // The per-group count was `props.params`-derived; it is its own
+    // subscription now (<ExpertChanged>), and a NUMBER, so it re-renders when
+    // the digit changes rather than when a param moves.
+    view({ advancedGroups: ["backdrop"] });
+    expect(disclosure("Backdrop")?.textContent).not.toContain("changed");
+    act(() => useVizStore.getState().setParam("vignette", 0.5));
+    expect(disclosure("Backdrop")?.textContent).toContain("1 changed");
+    act(() => useVizStore.getState().setParam("vignette", 0));
+    expect(disclosure("Backdrop")?.textContent).not.toContain("changed");
+  });
+
+  it("P5: countOffDefault counts only knobs off their own declared default", () => {
+    const specs = [num("a", { default: 0.5 }), num("b", { default: 0 })];
+    expect(countOffDefault({}, specs)).toBe(0);
+    // An ABSENT key IS its default — the fallback the rows use, so the count
+    // must read it the same way or a fresh document shows phantom drift.
+    expect(countOffDefault({ a: 0.5 }, specs)).toBe(0);
+    expect(countOffDefault({ a: 0.4 }, specs)).toBe(1);
+    expect(countOffDefault({ a: 0.4, b: 1 }, specs)).toBe(2);
+  });
+});
+
+/**
+ * G3 — hints go to the kit's channel, not back up through a prop.
+ *
+ * `onHint` used to be threaded from ParamsPanel's `useState` through this
+ * component into every row, so moving the pointer across the dock re-rendered
+ * ~2,000 lines once per row crossed. The subject each of these keeps is the
+ * one the prop had: the right text reaches the footer sink on enter, and the
+ * sink is cleared on leave.
+ */
+describe("ParamGroups: the footer-hint channel (G3)", () => {
+  it("H1: a group header publishes its hint on hover and clears it on leave", async () => {
+    view();
+    const head = screen.getByRole("button", { name: /Backdrop/ });
+    await userEvent.hover(head);
+    // Whatever the registry declares for the group — asserted against the
+    // rendered title so this cannot drift from the group def.
+    expect(getHint()).toBe(head.getAttribute("title"));
+    expect(getHint()).toBeTruthy();
+    await userEvent.unhover(head);
+    expect(getHint()).toBeNull();
+  });
+
+  it("H2: a param row publishes its spec hint, and no row re-renders the group", async () => {
+    class CountingSet extends Set<string> {
+      hits = 0;
+      override has(value: string): boolean {
+        this.hits += 1;
+        return super.has(value);
+      }
+    }
+    const driven = new CountingSet();
+    view({ advancedGroups: ["backdrop"], driven });
+    const afterMount = driven.hits;
+    const row = slot("vignette")!.querySelector(".row")!;
+    await userEvent.hover(row);
+    expect(getHint()).toBe("Darkens the corners");
+    await userEvent.unhover(row);
+    expect(getHint()).toBeNull();
+    // The whole point of the channel: crossing rows costs the tree nothing.
+    expect(driven.hits).toBe(afterMount);
   });
 });
 

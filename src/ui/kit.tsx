@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Slider, decimalsOf, snapToStep, taperStep, useDoubleTap } from "./Slider";
 import { Switch } from "./Switch";
 import type { AngleParamSpec, EnumParamSpec, ParamSpec } from "../render/types";
@@ -14,6 +14,80 @@ import type { AngleParamSpec, EnumParamSpec, ParamSpec } from "../render/types";
  * safe inside memoized panels as long as callers keep handlers stable
  * (the H13 discipline).
  */
+
+/**
+ * ── THE FOOTER-HINT CHANNEL (G3) ───────────────────────────────────────────
+ *
+ * One string, one subscriber: the Visuals dock's footer line. It is written on
+ * every `pointerenter`/`pointerleave` of every row, header, segment and rail
+ * item — the HIGHEST-frequency UI signal the dock produces, above even the
+ * 4 Hz `lufs` tick v2.80.0 moved into <PanelFooterBadges />. As
+ * `useState` in ParamsPanel it reconciled all ~2,000 lines of dock once per
+ * row the pointer crossed.
+ *
+ * WHY NOT THE STORE (stated in BACKLOG G3, and binding): zustand notifies
+ * EVERY subscriber in the app on every `set`, so a `hint` field would broadcast
+ * pointer-rate churn to App, the player bar, the timeline and the render loop's
+ * readers — strictly worse than the problem.
+ *
+ * WHY THIS SHAPE: it is `prefs.ts`'s emitter, narrowed to one value. A module
+ * `Set` of listeners plus `useSyncExternalStore` means the only component React
+ * can possibly re-render on a hover is the one that called `useFooterHint()`.
+ * ModMeters' pull-only rAF is the other in-tree prior art and was considered:
+ * it writes a CSS custom property on a ref and never touches React at all,
+ * which is right for a value sampled every frame but wrong for one that is
+ * PUSHED at irregular times and rendered as text — a hint has no clock to hang
+ * a rAF on, and `textContent` written behind React's back would be clobbered
+ * by the next legitimate footer render.
+ *
+ * `emitHint` is a module function, so its identity is permanently stable: it
+ * can be handed to a memoized row without becoming the reason that row
+ * re-renders (G4 depends on this).
+ *
+ * SCOPE: module-level singleton, deliberately — there is exactly one dock, the
+ * same reasoning `prefs` and the ModMeters registry already use. The consumer
+ * clears the channel when it unmounts, so a hint can never outlive the dock
+ * that produced it (and cannot bleed between tests).
+ */
+let footerHint: string | null = null;
+const hintListeners = new Set<() => void>();
+
+/** Publish the footer hint. `null` restores the resting line. A write that
+ * changes nothing does not notify — hovering across the many rows that have no
+ * hint at all is `null → null`, and each one of those used to be a render. */
+export function emitHint(hint: string | null): void {
+  if (hint === footerHint) return;
+  footerHint = hint;
+  for (const listener of hintListeners) listener();
+}
+
+/** Current hint. Snapshot function for `useSyncExternalStore` — a plain
+ * string|null, so identity is never the question. */
+export function getHint(): string | null {
+  return footerHint;
+}
+
+export function subscribeHint(listener: () => void): () => void {
+  hintListeners.add(listener);
+  return () => {
+    hintListeners.delete(listener);
+  };
+}
+
+/** Subscribe a component to the hint. The ONLY thing that re-renders on hover. */
+export function useFooterHint(): string | null {
+  const hint = useSyncExternalStore(subscribeHint, getHint);
+  // Clear on unmount. The subscription's own cleanup runs first (it was
+  // registered by the hook above, i.e. earlier in this component's effect
+  // order), so this notifies a set that no longer contains us.
+  useEffect(() => () => emitHint(null), []);
+  return hint;
+}
+
+/** Test seam only — never called by the app. */
+export function __hintListenerCount(): number {
+  return hintListeners.size;
+}
 
 /** Pointer + keyboard hint wiring for a row (H17: focus mirrors hover). */
 function hintProps(hint: string | undefined, onHint?: (h: string | null) => void) {

@@ -1,10 +1,25 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ParamRow, PERCENT, Segmented, SelectRow, SliderRow, ToggleRow } from "./kit";
+import {
+  ParamRow,
+  PERCENT,
+  Segmented,
+  SelectRow,
+  SliderRow,
+  ToggleRow,
+  __hintListenerCount,
+  emitHint,
+  getHint,
+  subscribeHint,
+  useFooterHint,
+} from "./kit";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  emitHint(null);
+});
 
 describe("Segmented", () => {
   const OPTS = [
@@ -286,6 +301,95 @@ describe("SelectRow", () => {
     );
     await userEvent.selectOptions(screen.getByRole("combobox"), "60");
     expect(onChange).toHaveBeenCalledWith(60);
+  });
+});
+
+/**
+ * The footer-hint channel (G3).
+ *
+ * The kit has always OWNED the `onHint` contract (`hintProps`); what it now
+ * owns as well is the sink those hints go to. The properties below are the
+ * whole reason the channel exists rather than a `useState` in ParamsPanel:
+ * a write reaches exactly one subscriber, a write that changes nothing reaches
+ * nobody, and unmounting is complete. Every one of them is a render the dock
+ * used to pay per row the pointer crossed.
+ */
+describe("the footer-hint channel", () => {
+  it("C1: publishes to subscribers and reads back through getHint", () => {
+    const seen: Array<string | null> = [];
+    const off = subscribeHint(() => seen.push(getHint()));
+    emitHint("first");
+    emitHint("second");
+    emitHint(null);
+    off();
+    expect(seen).toEqual(["first", "second", null]);
+    expect(getHint()).toBeNull();
+  });
+
+  it("C2: a write that changes nothing notifies NOBODY", () => {
+    // The common case by a distance: crossing rows that carry no hint is
+    // null → null, and every one of those was a panel render before G3.
+    const listener = vi.fn();
+    const off = subscribeHint(listener);
+    emitHint(null); // already null
+    expect(listener).not.toHaveBeenCalled();
+    emitHint("x");
+    expect(listener).toHaveBeenCalledTimes(1);
+    emitHint("x"); // same value again
+    expect(listener).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it("C3: unsubscribing is complete — no listener left, no notifications", () => {
+    const listener = vi.fn();
+    const before = __hintListenerCount();
+    const off = subscribeHint(listener);
+    expect(__hintListenerCount()).toBe(before + 1);
+    off();
+    expect(__hintListenerCount()).toBe(before);
+    emitHint("after");
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("C4: useFooterHint re-renders ONLY its own component, and clears on unmount", () => {
+    // The claim the whole channel exists to make. `Sink` is the footer;
+    // `Bystander` is every other component in the dock. A hint moves one.
+    let sinkRenders = 0;
+    let bystanderRenders = 0;
+    function Sink() {
+      sinkRenders += 1;
+      return <span data-testid="sink">{useFooterHint() ?? "resting"}</span>;
+    }
+    function Bystander() {
+      bystanderRenders += 1;
+      return <span>bystander</span>;
+    }
+    const { unmount } = render(
+      <>
+        <Sink />
+        <Bystander />
+      </>,
+    );
+    const sinkAtMount = sinkRenders;
+    const bystanderAtMount = bystanderRenders;
+    expect(screen.getByTestId("sink").textContent).toBe("resting");
+
+    act(() => emitHint("Darkens the corners"));
+    expect(screen.getByTestId("sink").textContent).toBe("Darkens the corners");
+    expect(sinkRenders).toBeGreaterThan(sinkAtMount);
+    expect(bystanderRenders).toBe(bystanderAtMount);
+
+    // Ten more hints, and still nothing else in the tree has run.
+    act(() => {
+      for (let i = 0; i < 10; i++) emitHint(`hint ${i}`);
+    });
+    expect(bystanderRenders).toBe(bystanderAtMount);
+
+    // Unmount clears the channel, so a hint can never outlive the dock that
+    // produced it (and cannot bleed into the next test).
+    unmount();
+    expect(getHint()).toBeNull();
+    expect(__hintListenerCount()).toBe(0);
   });
 });
 

@@ -8,7 +8,7 @@ import {
   type BuilderLayer,
 } from "../render/builder2";
 import { useVizStore } from "../state/store";
-import { DEGREES, ParamRow, SliderRow, Segmented } from "./kit";
+import { DEGREES, emitHint, ParamRow, SliderRow, Segmented } from "./kit";
 
 const BLEND_OPTIONS: Array<{ value: BuilderBlend; label: string; hint: string }> = [
   {
@@ -33,20 +33,20 @@ const BLEND_OPTIONS: Array<{ value: BuilderBlend; label: string; hint: string }>
  * mutation rebuilds a NEW BuilderStack and hands it to setBuilderStack — the
  * store owns recompile/upload. Never mutates the subscribed stack.
  *
- * `onHint` stays a prop: the footer hint is the Visuals own React state,
- * not a store field, and putting it in the store would broadcast pointer-rate
- * churn to every subscriber in the app.
+ * TOMBSTONE (G3, this release) — an `onHint` prop threaded the footer hint back
+ * up to ParamsPanel's `useState`, which is what put every hover in this editor
+ * on the whole dock's reconciliation bill. The hint is a kit-level channel now
+ * (`emitHint`, kit.tsx) — still NOT a store field, for the reason the old
+ * comment here gave and BACKLOG G3 makes binding: zustand notifies every
+ * subscriber in the app, so pointer-rate churn there is worse than the problem.
+ * The prop is gone rather than re-pointed: this editor only ever had one
+ * caller, and one sink means one place to change it.
  */
-export interface BuilderPanelProps {
-  onHint?: (h: string | null) => void;
-}
-
-export function BuilderPanel(props: BuilderPanelProps) {
+export function BuilderPanel() {
   const stack = useVizStore((s) => s.builderStack);
   const store = useVizStore.getState;
   const layers = stack.layers;
   const [selectedId, setSelectedId] = useState<string | null>(layers[0]?.id ?? null);
-  const emitHint = props.onHint ?? (() => undefined);
 
   const commit = (next: BuilderLayer[]) => store().setBuilderStack({ layers: next });
   const patch = (id: string, p: Partial<BuilderLayer>) =>
@@ -180,7 +180,7 @@ export function BuilderPanel(props: BuilderPanelProps) {
                   <Segmented
                     value={l.blend}
                     onChange={(blend) => patch(l.id, { blend })}
-                    onHint={props.onHint}
+                    onHint={emitHint}
                     ariaLabel="Blend mode"
                     options={BLEND_OPTIONS.map((o) => ({
                       value: o.value,
@@ -197,7 +197,7 @@ export function BuilderPanel(props: BuilderPanelProps) {
                   step={0.01}
                   value={l.opacity}
                   onChange={(opacity) => patch(l.id, { opacity })}
-                  onHint={props.onHint}
+                  onHint={emitHint}
                 />
                 <SliderRow
                   label="Hue"
@@ -208,7 +208,7 @@ export function BuilderPanel(props: BuilderPanelProps) {
                   value={l.hue}
                   onChange={(hue) => patch(l.id, { hue })}
                   format={DEGREES}
-                  onHint={props.onHint}
+                  onHint={emitHint}
                 />
                 <SliderRow
                   label="Hue spread"
@@ -219,7 +219,7 @@ export function BuilderPanel(props: BuilderPanelProps) {
                   value={l.hueSpread}
                   onChange={(hueSpread) => patch(l.id, { hueSpread })}
                   format={DEGREES}
-                  onHint={props.onHint}
+                  onHint={emitHint}
                 />
                 {selectedType.params.map((spec) => (
                   <ParamRow

@@ -813,7 +813,21 @@ nothing else from that release is outstanding.
       dropped on the round-trip while the UI showed them applied. Dropping
       ~16 section ids plus one `preset.name` entry per mode restores the
       headroom P-9's per-group state will spend.
-- [ ] G3 **READY — extract the Visuals dock's footer `hint`.** Moving the
+- [x] G3 **DONE 2026-08-09 — a module-level emitter read through
+      `useSyncExternalStore`, the `prefs.ts` shape narrowed to one value.**
+      Measured against the two prior arts rather than picked: ModMeters' rAF +
+      CSS custom property is right for a value SAMPLED on a clock, and a hint
+      has no clock — worse, `textContent` written behind React's back gets
+      clobbered by the next legitimate footer render. A ref + stable-identity
+      context is legitimate but buys instance scoping nobody needs (there is
+      exactly one dock) at the cost of a Provider and a `useContext` per row.
+      The store stayed off the table, as the entry required.
+      Two properties that G4 then depended on: `emitHint` is a module function
+      so its identity is permanently stable and it can be handed to a memoized
+      row without being the reason that row re-renders; and it DE-DUPES, so
+      hovering across rows that share a hint state notifies nobody — each of
+      those used to be a full panel render.
+      ORIGINAL — **extract the Visuals dock's footer `hint`.** Moving the
       pointer across the dock re-renders the whole ~2,000-line panel
       once per row crossed — a _higher_ frequency than the 4 Hz `lufs` tick
       v2.80.0 fixed. Deferred because `onHint` is threaded through
@@ -821,7 +835,40 @@ nothing else from that release is outstanding.
       restructuring the hint channel. **Do not put `hint` in the zustand
       store**: that would broadcast pointer-rate churn to every subscriber
       in the app.
-- [ ] G4 Push subscriptions down to `ParamRow` — the real slider-drag fix
+- [x] G4 **DONE 2026-08-09, alongside G3.** The panel's
+      `useVizStore(s => s.activeParams)` is gone; a row subscribes a PRIMITIVE
+      (`s.activeParams[key] ?? spec.default`), and the two things in the panel
+      body that genuinely depend on values subscribe derived SCALARS
+      (`changedCount`, `activeStyleId`) — so the panel re-renders when what it
+      DISPLAYS changes, not when a number it merely passes through does.
+      **Measured, on a panel-BODY execution counter rather than a Profiler
+      commit count** — a commit count cannot tell "one row" from "2,000 lines",
+      both are one commit. 60 pointermove-rate writes on a real slider: body
+      renders **2**, and the mutation that re-subscribes the whole
+      `activeParams` puts it at **62**. Ten hint writes across five rows: **1**,
+      against **11** with the hint subscribed at the top. ParamGroups is
+      covered transitively by construction — after this it holds no
+      subscription at all, so it can only re-render when the body does.
+      `ParamRow` deliberately stayed dumb, because BuilderPanel drives it from
+      the builder stack rather than from `activeParams`; the store-aware
+      wrapper is `<ParamSlot>` in ParamGroups. **That is why `kit.test.tsx` was
+      NOT invalidated** — this entry predicted it would be, and it passes
+      unchanged. `ParamGroups.test.tsx` was rewritten with all 21 original
+      subjects kept verbatim; only the setup moved from a prop to a store seed.
+      Twelve mutations, all red.
+      One forced cross-boundary edit, flagged rather than smuggled: making
+      ParamGroups store-aware pulls `store.ts` — which reads `localStorage` at
+      module scope — into its module graph, which broke the NODE-environment
+      `prefs.test.ts` that imported `GROUP_KEY` from it. Both obvious fixes
+      were declined (moving that suite to jsdom; duplicating the literal, which
+      is the exact drift the test exists to catch); the constant got a
+      dependency-free home in `paramGroupKey.ts`, re-exported so every UI
+      import path is unchanged. The drift check is still live — mutation M12
+      turns it red.
+      Follow-up left open on purpose: `ModulationPage.tsx:247` still subscribes
+      whole `activeParams` for its cards' resting values. Not on the drag path
+      (that page and Mode are never mounted together).
+      ORIGINAL — Push subscriptions down to `ParamRow` — the real slider-drag fix
       (`setParam` writes `activeParams` on every pointermove). Requires
       `ParamGroups`/`paramControls` to become store-aware, which invalidates
       the two largest surviving unit suites (`ParamGroups.test.tsx`,

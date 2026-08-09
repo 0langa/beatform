@@ -336,7 +336,11 @@ describe("prefs: the Visuals dock's rail (P-1)", () => {
   it("uses the same group prefix ParamGroups writes", async () => {
     // state must not import UI, so the literal is duplicated. If that copy
     // ever drifts, every collapsed group is silently pruned on next launch.
-    const { GROUP_KEY } = await import("../ui/ParamGroups");
+    // Imported from the dependency-free declaration rather than from
+    // ParamGroups, which is store-aware since G4 — pulling that module into
+    // this NODE-environment suite loads store.ts, which reads localStorage at
+    // module scope. Same constant, same drift check, no React.
+    const { GROUP_KEY } = await import("../ui/paramGroupKey");
     seed(JSON.stringify({ collapsedSections: [`${GROUP_KEY}shape`] }));
     const { getPrefs } = await importFresh();
     expect(getPrefs().collapsedSections).toEqual([`${GROUP_KEY}shape`]);

@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, memo, type ReactNode } from "react";
 import type { ParamSpec, ParamValues, PresetDef } from "../render/types";
 import {
   advancedKeys,
@@ -7,7 +7,9 @@ import {
   paramSearchText,
   presetGroups,
 } from "../render/types";
-import { ParamRow } from "./kit";
+import { useVizStore } from "../state/store";
+import { emitHint, ParamRow } from "./kit";
+import { GROUP_KEY } from "./paramGroupKey";
 
 /**
  * The parameter area of the settings panel: every knob of the active visual,
@@ -28,10 +30,105 @@ import { ParamRow } from "./kit";
  * modes under the old global Essentials/All switch.
  */
 
-/** Prefix for group collapse state inside AppPrefs.collapsedSections. Groups
- * and sections share that one persisted list, so their keys must not collide —
- * no section is ever titled "group:…". */
-export const GROUP_KEY = "group:";
+/** Re-exported so every UI caller keeps importing it from here. It is DECLARED
+ * in a dependency-free module because this file is store-aware since G4, and
+ * `prefs.test.ts` (node environment) reads the constant to prove prefs' own
+ * copy has not drifted — see the note in paramGroupKey.ts. */
+export { GROUP_KEY };
+
+/**
+ * How many of `specs` sit off their factory value. A NUMBER, so it is safe as
+ * the whole body of a zustand selector: the count is what the UI shows, and
+ * subscribing it means a drag re-renders the pill only on the one write that
+ * actually flips it. Subscribing `activeParams` instead would re-render on
+ * every pointermove to display an unchanged digit.
+ *
+ * Allocation-free by construction (no `.filter`, no destructuring) — it runs
+ * once per notification per group, and zustand notifies on every store write
+ * in the app.
+ */
+export function countOffDefault(params: ParamValues, specs: readonly ParamSpec[]): number {
+  let n = 0;
+  for (const spec of specs) if ((params[spec.key] ?? spec.default) !== spec.default) n += 1;
+  return n;
+}
+
+/**
+ * ONE param row, subscribed to ONE param (G4).
+ *
+ * This is the whole slider-drag fix. `setParam` writes a fresh `activeParams`
+ * object on every pointermove; while the dock read that object at the top,
+ * every one of those writes reconciled ~2,000 lines to move one thumb. The
+ * subscription is now here and it is a NUMBER, so a drag re-renders the row
+ * being dragged and nothing else — not its group, not ParamGroups, not the
+ * panel.
+ *
+ * `memo` because the props are all stable: `spec` is a module-level object out
+ * of the preset registry, and the two marks are booleans. A ParamGroups render
+ * (page change, search, a collapse toggle) therefore bails on every row whose
+ * marks did not move.
+ *
+ * The slot DIV is inside the memo boundary on purpose — it is the element both
+ * marks live on, so keeping it out would re-render a parent to change a class
+ * on a child's wrapper.
+ *
+ * The `driven` mark is a CLASS on the existing slot and NOTHING ELSE — no
+ * fourth child, no badge element. `.param-row` is a THREE-track grid —
+ * `var(--row-label-w) minmax(0,1fr) 44px`, the label column being the one thing
+ * the dock's container query moves — so an extra child breaks the label column
+ * on every page that renders a param row, and any new leaf is one more
+ * `text-clip` candidate for `__auditUI` at the 380px dock floor. The tier mark
+ * beside it (`is-advanced`) is the same mechanism, for the same reason.
+ *
+ * The `title` is an attribute, not an element, so it costs nothing here. It
+ * only surfaces on the slot's own padding: a row whose spec has a hint puts
+ * that hint on the inner `<label>`, and the innermost title wins on hover.
+ */
+const ParamSlot = memo(function ParamSlot(props: {
+  spec: ParamSpec;
+  advanced: boolean;
+  driven: boolean;
+}) {
+  const { spec } = props;
+  // A PRIMITIVE selector: one number out of the params object. Returning
+  // `s.activeParams` and indexing outside would put this row back on every
+  // param write in the mode.
+  const value = useVizStore((s) => s.activeParams[spec.key] ?? spec.default);
+  return (
+    <div
+      className={`param-slot ${props.advanced ? "is-advanced" : ""} ${
+        props.driven ? "is-driven" : ""
+      }`}
+      title={
+        props.driven
+          ? "Driven — modulation is moving this while it plays. This slider is still the base value."
+          : undefined
+      }
+    >
+      <ParamRow
+        spec={spec}
+        value={value}
+        // getState(), never a subscribed action: actions are built once in
+        // create()'s initializer, so this reads a permanently stable function.
+        onChange={(v) => useVizStore.getState().setParam(spec.key, v)}
+        onHint={emitHint}
+      />
+    </div>
+  );
+});
+
+/** The "N changed" pill on a group's expert disclosure. Its own component so
+ * the SUBSCRIPTION is its own: see countOffDefault. Renders nothing at zero,
+ * exactly as the inline conditional it replaced did. */
+function ExpertChanged(props: { specs: readonly ParamSpec[] }) {
+  const changed = useVizStore((s) => countOffDefault(s.activeParams, props.specs));
+  if (changed === 0) return null;
+  return (
+    <span className="advanced-count" title="Expert knobs that no longer sit at their factory value">
+      {changed} changed
+    </span>
+  );
+}
 
 /** A non-param control that belongs inside a group (the centre-image picker
  * belongs with the Image knobs, not stranded under them). */
@@ -45,9 +142,14 @@ export interface ParamGroupExtra {
 
 export interface ParamGroupsProps {
   preset: PresetDef;
-  params: ParamValues;
-  onParam: (key: string, value: number) => void;
-  onHint: (hint: string | null) => void;
+  /* TOMBSTONE (G3/G4, this release) — `params: ParamValues`, `onParam` and
+   * `onHint` lived here. All three were pointer-rate channels routed through
+   * the caller, which is what made a drag (`onParam`) and a hover (`onHint`)
+   * reconcile the whole ~2,000-line dock. Values are now read per ROW straight
+   * off the store (see <ParamSlot> below) and hints go to the kit's hint
+   * channel, so neither passes through ParamsPanel at all. `driven` and
+   * `collapsed` stay props: both change at DOCUMENT rate, and keeping them
+   * here is what lets one subscription serve every row. */
   /**
    * Group ids whose expert tier is OPEN. Empty = every tier closed.
    *
@@ -203,39 +305,14 @@ export function ParamGroups(props: ParamGroupsProps) {
     return searching ? <p className="panel-empty">No knobs of {preset.name} match that.</p> : null;
   }
 
-  /**
-   * The `driven` mark is a CLASS on the existing slot and NOTHING ELSE — no
-   * fourth child, no badge element. `.param-row` is a THREE-track grid —
-   * `var(--row-label-w) minmax(0,1fr) 44px`, the label column being the one
-   * thing the dock's container query moves — so an extra child breaks the
-   * label column on every page that renders a param row, and any new leaf is
-   * one more `text-clip` candidate for `__auditUI` at the 380px dock floor.
-   * The tier mark beside it (`is-advanced`) is the same mechanism, for the
-   * same reason.
-   *
-   * The `title` is an attribute, not an element, so it costs nothing here. It
-   * only surfaces on the slot's own padding: a row whose spec has a hint puts
-   * that hint on the inner `<label>`, and the innermost title wins on hover.
-   */
+  /** One row. Everything about how it renders is documented on <ParamSlot>. */
   const row = (spec: ParamSpec) => (
-    <div
+    <ParamSlot
       key={spec.key}
-      className={`param-slot ${advanced.has(spec.key) ? "is-advanced" : ""} ${
-        props.driven.has(spec.key) ? "is-driven" : ""
-      }`}
-      title={
-        props.driven.has(spec.key)
-          ? "Driven — modulation is moving this while it plays. This slider is still the base value."
-          : undefined
-      }
-    >
-      <ParamRow
-        spec={spec}
-        value={props.params[spec.key] ?? spec.default}
-        onChange={(v) => props.onParam(spec.key, v)}
-        onHint={props.onHint}
-      />
-    </div>
+      spec={spec}
+      advanced={advanced.has(spec.key)}
+      driven={props.driven.has(spec.key)}
+    />
   );
 
   return (
@@ -251,9 +328,6 @@ export function ParamGroups(props: ParamGroupsProps) {
         const curated = searching ? params : params.filter((s) => !advanced.has(s.key));
         const expert = searching ? [] : params.filter((s) => advanced.has(s.key));
         const tierOpen = props.advancedGroups.includes(group.id);
-        const changed = expert.filter(
-          (s) => (props.params[s.key] ?? s.default) !== s.default,
-        ).length;
         /**
          * Driven knobs of THIS group, counted over its full membership — a
          * route lands on the best-matching knob regardless of tier (recipes,
@@ -276,10 +350,10 @@ export function ParamGroups(props: ParamGroupsProps) {
               aria-expanded={open}
               disabled={searching}
               title={group.hint}
-              onPointerEnter={() => props.onHint(group.hint ?? null)}
-              onPointerLeave={() => props.onHint(null)}
-              onFocus={() => props.onHint(group.hint ?? null)}
-              onBlur={() => props.onHint(null)}
+              onPointerEnter={() => emitHint(group.hint ?? null)}
+              onPointerLeave={() => emitHint(null)}
+              onFocus={() => emitHint(group.hint ?? null)}
+              onBlur={() => emitHint(null)}
               onClick={() => props.onToggleGroup(group.id, !open)}
             >
               <span className="group-chevron">▸</span>
@@ -323,14 +397,7 @@ export function ParamGroups(props: ParamGroupsProps) {
                     <span className="group-advanced-label">
                       {expert.length} expert {expert.length === 1 ? "control" : "controls"}
                     </span>
-                    {changed > 0 && (
-                      <span
-                        className="advanced-count"
-                        title="Expert knobs that no longer sit at their factory value"
-                      >
-                        {changed} changed
-                      </span>
-                    )}
+                    <ExpertChanged specs={expert} />
                   </button>
                 )}
                 {tierOpen && expert.map(row)}

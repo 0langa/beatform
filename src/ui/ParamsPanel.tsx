@@ -2,7 +2,14 @@ import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SpectrumResolution, SyncMode } from "../audio/types";
 import { MAX_FREQ, MIN_FREQ } from "../audio/featurePipeline";
 import { spectrumDiagnostics } from "../audio/dsp/displaySpectrum";
-import type { BgFit, BgMode, MotionSettings, PostSettings } from "../render/types";
+import type {
+  BgFit,
+  BgMode,
+  MotionSettings,
+  ParamValues,
+  PostSettings,
+  PresetDef,
+} from "../render/types";
 import {
   BG_IMAGE,
   BG_PRESET,
@@ -38,9 +45,11 @@ import {
   SliderRow,
   Segmented,
   ToggleRow,
+  emitHint,
+  useFooterHint,
   type ValueUnit,
 } from "./kit";
-import { GROUP_KEY, ParamGroups, type ParamGroupExtra } from "./ParamGroups";
+import { countOffDefault, GROUP_KEY, ParamGroups, type ParamGroupExtra } from "./ParamGroups";
 import { drivenParamKeys } from "../state/drivenTargets";
 import { postTargetKey } from "../state/modMatrix";
 import type { AppPrefs } from "../state/prefs";
@@ -433,6 +442,74 @@ function plural(n: number, one: string, many: string): string {
 }
 
 /**
+ * Which factory style the document currently sits on, or `null` for Custom.
+ *
+ * A style is active when the params equal `defaults + style.values` — the same
+ * rule `applyStyle` writes, spelled without building the merged object so it is
+ * safe to run inside a zustand selector on every store notification. It returns
+ * a STRING ID rather than the StyleDef so the subscription compares by value:
+ * the panel then re-renders when the answer changes, not when a param moves.
+ *
+ * `for…in` over a plain object literal, and `k in values` rather than a
+ * nullish test, so this stays bit-identical to the `{...defaults,
+ * ...s.values}` spread it replaced — presence, not definedness, is what a
+ * spread copies.
+ */
+function matchStyleId(
+  preset: PresetDef,
+  defaults: ParamValues,
+  params: ParamValues,
+): string | null {
+  for (const style of preset.styles ?? []) {
+    const values = style.values;
+    let match = true;
+    for (const k in defaults) {
+      const want = k in values ? values[k] : defaults[k];
+      if ((params[k] ?? defaults[k]) !== want) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      // Keys a style declares that no spec does. Vanishingly rare, but the
+      // spread covered them and dropping them would silently widen the match.
+      for (const k in values) {
+        if (k in defaults) continue;
+        if ((params[k] ?? defaults[k]) !== values[k]) {
+          match = false;
+          break;
+        }
+      }
+    }
+    if (match) return style.id;
+  }
+  return null;
+}
+
+/**
+ * The dock's hover line (G3).
+ *
+ * Own component purely for subscription granularity, exactly like
+ * <PanelFooterBadges /> beside it and for a worse offender: the hint is written
+ * on every pointerenter/pointerleave of every row, group header, segment and
+ * rail item. Held as `useState` in ParamsPanel it reconciled the whole panel
+ * once per row the pointer crossed — a higher rate than the 4 Hz `lufs` tick
+ * v2.80.0 fixed. It now reads the kit's hint channel, so a hover commits this
+ * one span and nothing else.
+ *
+ * The rendered DOM is byte-identical to what ParamsPanel emitted inline —
+ * test:gpu reads `.params-panel`'s textContent.
+ */
+function FooterHint() {
+  const hint = useFooterHint();
+  return (
+    <span className={`footer-hint ${hint ? "is-hint" : ""}`}>
+      {hint ?? "Hover a control to see what it does"}
+    </span>
+  );
+}
+
+/**
  * The Visuals — the right-hand dock: styles, preset parameters, background,
  * sync, scene, text and live mapping.
  *
@@ -461,7 +538,14 @@ export function ParamsPanel() {
   // render. The shared derivations live in state/selectors.ts; lint blocks
   // the allocating shapes at author time.
   const preset = useVizStore(selectPreset);
-  const params = useVizStore((s) => s.activeParams);
+  /* TOMBSTONE (G4, this release) — `const params = useVizStore(s =>
+   * s.activeParams)` lived here, and it is why dragging one slider reconciled
+   * the whole dock: setParam writes a fresh activeParams object on every
+   * pointermove. Rows read their own value now (<ParamSlot>, ParamGroups.tsx).
+   * The two things up HERE that genuinely depend on param values subscribe
+   * DERIVED SCALARS instead — see changedCount and activeStyleId below — so
+   * this panel re-renders when what it displays changes, not when a number it
+   * only passed through does. Never re-add a whole-object subscription here. */
   const bg = useVizStore(selectEffectiveBg);
   const bgPerMode = useVizStore(selectBgPerMode);
   const centerImageName = useVizStore(selectCenterImageName);
@@ -580,7 +664,6 @@ export function ParamsPanel() {
   /** Group ids whose expert tier is open (P-9). Global, not per-preset: the
    * old global Essentials/All switch seeded this once, in prefs. */
   const [advancedGroups, setAdvancedGroups] = useState<string[]>(() => getPrefs().advancedGroups);
-  const [hint, setHint] = useState<string | null>(null);
   const [savingLook, setSavingLook] = useState(false);
   const [lookName, setLookName] = useState("");
   const [savingTheme, setSavingTheme] = useState(false);
@@ -673,11 +756,18 @@ export function ParamsPanel() {
    * advancedKeys(), NEVER from `preset.advanced` membership: a spec carrying
    * `tier: "curated"` still lives in that array but renders above the
    * disclosure, so counting the raw array would bill 21 curated knobs across
-   * the registry as expert. This count is the sum of the per-group ones. */
+   * the registry as expert. This count is the sum of the per-group ones.
+   *
+   * The spec list is memoized on `preset` and the SELECTOR returns the count
+   * itself (G4): a number, so a drag re-renders the panel on the one write
+   * that flips the digit and on none of the ~100 that do not. Subscribing
+   * `activeParams` to compute it here is exactly the cost G4 removed. */
   const advKeys = advancedKeys(preset);
-  const changedCount = allParams(preset).filter(
-    (s) => advKeys.has(s.key) && (params[s.key] ?? s.default) !== s.default,
-  ).length;
+  const expertSpecs = useMemo(
+    () => allParams(preset).filter((s) => advancedKeys(preset).has(s.key)),
+    [preset],
+  );
+  const changedCount = useVizStore((s) => countOffDefault(s.activeParams, expertSpecs));
   const spectrumInfo = spectrumDiagnostics(sync, analysisSampleRate);
   const resolutionLabel = (resolution: SpectrumResolution) =>
     `${Math.round(
@@ -702,13 +792,19 @@ export function ParamsPanel() {
     ? "Unavailable right now: hardware rendering (WebGPU) isn't available on this system, and the simplified renderer can't draw this"
     : undefined;
 
-  // A style is "active" when current params exactly equal defaults + values
-  const defaults = defaultParams(preset);
-  const activeStyle = (preset.styles ?? []).find((s) => {
-    const merged = { ...defaults, ...s.values };
-    return Object.keys(merged).every((k) => (params[k] ?? defaults[k]) === merged[k]);
-  });
-  const activeStyleId = activeStyle?.id;
+  /**
+   * A style is "active" when current params exactly equal defaults + values.
+   *
+   * Subscribed as the ID — a STRING (G4), for the same reason `changedCount`
+   * above is a number: the answer changes at most once per drag (the first
+   * write off a style), so the panel re-renders once instead of per
+   * pointermove. `matchStyleId` is allocation-free and its `defaults` argument
+   * is memoized per preset, so the per-notification cost is a bounded scan of
+   * numbers with nothing for the GC to collect.
+   */
+  const defaults = useMemo(() => defaultParams(preset), [preset]);
+  const activeStyleId = useVizStore((s) => matchStyleId(preset, defaults, s.activeParams));
+  const activeStyle = (preset.styles ?? []).find((s) => s.id === activeStyleId);
 
   // ── RAIL DATA. Dimmed-not-hidden (F1): an unavailable destination stays
   // focusable and clickable, says why on hover, and explains itself again on
@@ -898,9 +994,6 @@ export function ParamsPanel() {
           {preset.id !== BUILDER2_ID && (
             <ParamGroups
               preset={preset}
-              params={params}
-              onParam={(key, value) => store().setParam(key, value)}
-              onHint={setHint}
               advancedGroups={advancedGroups}
               onToggleAdvanced={toggleAdvanced}
               driven={driven}
@@ -984,7 +1077,7 @@ export function ParamsPanel() {
                     ) && <span className="style-custom">Custom</span>}
                   </div>
                 </div>
-                <BuilderPanel onHint={setHint} />
+                <BuilderPanel />
               </>
             ),
           } satisfies SectionDef,
@@ -1019,7 +1112,7 @@ export function ParamsPanel() {
                     value={motion.rotation}
                     onChange={(v) => store().setMotion({ rotation: v })}
                     format={PERCENT}
-                    onHint={setHint}
+                    onHint={emitHint}
                     disabledReason={unavailable}
                   />
                 )}
@@ -1033,7 +1126,7 @@ export function ParamsPanel() {
                     value={motion.pulse}
                     onChange={(v) => store().setMotion({ pulse: v })}
                     format={PERCENT}
-                    onHint={setHint}
+                    onHint={emitHint}
                     disabledReason={unavailable}
                   />
                 )}
@@ -1047,7 +1140,7 @@ export function ParamsPanel() {
                     value={motion.detail}
                     onChange={(v) => store().setMotion({ detail: v })}
                     format={PERCENT}
-                    onHint={setHint}
+                    onHint={emitHint}
                     disabledReason={unavailable}
                   />
                 )}
@@ -1260,10 +1353,10 @@ export function ParamsPanel() {
                 key={o.mode}
                 className={`segment ${sync.mode === o.mode ? "active" : ""}`}
                 title={o.hint}
-                onPointerEnter={() => setHint(o.hint)}
-                onPointerLeave={() => setHint(null)}
-                onFocus={() => setHint(o.hint)}
-                onBlur={() => setHint(null)}
+                onPointerEnter={() => emitHint(o.hint)}
+                onPointerLeave={() => emitHint(null)}
+                onFocus={() => emitHint(o.hint)}
+                onBlur={() => emitHint(null)}
                 onClick={() => store().setSync({ ...sync, mode: o.mode })}
               >
                 {o.label}
@@ -1280,7 +1373,7 @@ export function ParamsPanel() {
             onChange={(v) =>
               store().setSync({ ...sync, smooth: v, attack: undefined, release: undefined })
             }
-            onHint={setHint}
+            onHint={emitHint}
           />
           <SliderRow
             label="Attack"
@@ -1290,7 +1383,7 @@ export function ParamsPanel() {
             step={0.01}
             value={sync.attack ?? sync.smooth}
             onChange={(v) => store().setSync({ ...sync, attack: v })}
-            onHint={setHint}
+            onHint={emitHint}
           />
           <SliderRow
             label="Release"
@@ -1300,7 +1393,7 @@ export function ParamsPanel() {
             step={0.01}
             value={sync.release ?? sync.smooth}
             onChange={(v) => store().setSync({ ...sync, release: v })}
-            onHint={setHint}
+            onHint={emitHint}
           />
           {caps.spectrumSmooth && (
             <>
@@ -1313,14 +1406,14 @@ export function ParamsPanel() {
                 value={motion.spectrumSmooth}
                 onChange={(v) => store().setMotion({ spectrumSmooth: v })}
                 format={PERCENT}
-                onHint={setHint}
+                onHint={emitHint}
               />
               <ToggleRow
                 label="Smooth curve"
                 hint="Spline-smoothed spectrum: curves instead of corners"
                 checked={smoothSpectrum}
                 onChange={(v) => store().setSmoothSpectrum(v)}
-                onHint={setHint}
+                onHint={emitHint}
               />
               <div className="row">
                 <span className="row-label">Resolution</span>
@@ -1330,7 +1423,7 @@ export function ParamsPanel() {
                     onChange={(spectrumResolution) =>
                       store().setSync({ ...sync, spectrumResolution })
                     }
-                    onHint={setHint}
+                    onHint={emitHint}
                     ariaLabel="Drawn spectrum resolution"
                     options={(["responsive", "detailed", "precise"] as const).map((value) => ({
                       value,
@@ -1352,7 +1445,7 @@ export function ParamsPanel() {
                     }
                     onChange={(spectrumAxis) => store().setSync({ ...sync, spectrumAxis })}
                     disabled={sync.spectrumSampling === "measured"}
-                    onHint={setHint}
+                    onHint={emitHint}
                     ariaLabel="Spectrum frequency axis"
                     options={[
                       {
@@ -1375,7 +1468,7 @@ export function ParamsPanel() {
                   <Segmented
                     value={sync.spectrumSampling ?? "interpolated"}
                     onChange={(spectrumSampling) => store().setSync({ ...sync, spectrumSampling })}
-                    onHint={setHint}
+                    onHint={emitHint}
                     ariaLabel="Spectrum sampling"
                     options={[
                       {
@@ -1411,7 +1504,7 @@ export function ParamsPanel() {
                 value={sync.shapeMerge ?? 0}
                 onChange={(v) => store().setSync({ ...sync, shapeMerge: v })}
                 format={PERCENT}
-                onHint={setHint}
+                onHint={emitHint}
               />
               <SliderRow
                 label="Rounding"
@@ -1422,7 +1515,7 @@ export function ParamsPanel() {
                 value={sync.shapeRound ?? 0}
                 onChange={(v) => store().setSync({ ...sync, shapeRound: v })}
                 format={PERCENT}
-                onHint={setHint}
+                onHint={emitHint}
               />
               <SliderRow
                 label="Contrast"
@@ -1433,7 +1526,7 @@ export function ParamsPanel() {
                 value={sync.contrast ?? 0.5}
                 onChange={(v) => store().setSync({ ...sync, contrast: v })}
                 format={PERCENT}
-                onHint={setHint}
+                onHint={emitHint}
               />
               <SliderRow
                 label="Low edge"
@@ -1450,7 +1543,7 @@ export function ParamsPanel() {
                   })
                 }
                 format={HERTZ}
-                onHint={setHint}
+                onHint={emitHint}
               />
               <SliderRow
                 label="High edge"
@@ -1467,7 +1560,7 @@ export function ParamsPanel() {
                   })
                 }
                 format={KILOHERTZ}
-                onHint={setHint}
+                onHint={emitHint}
               />
             </>
           )}
@@ -1506,7 +1599,7 @@ export function ParamsPanel() {
         <>
           <Segmented
             value={bgPerMode ? 1 : 0}
-            onHint={setHint}
+            onHint={emitHint}
             ariaLabel="Background scope"
             options={[
               {
@@ -1524,7 +1617,7 @@ export function ParamsPanel() {
           />
           <Segmented
             value={bg.mode}
-            onHint={setHint}
+            onHint={emitHint}
             ariaLabel="Background mode"
             options={(showVideoBg ? [...BG_OPTIONS_BASE, BG_OPTION_VIDEO] : BG_OPTIONS_BASE).map(
               (o) => ({
@@ -1598,7 +1691,7 @@ export function ParamsPanel() {
                 onChange={(patch) => store().setBg({ ...bg, image: { ...bg.image!, ...patch } })}
                 color={bg.color}
                 onColor={(color) => store().setBg({ ...bg, color })}
-                onHint={setHint}
+                onHint={emitHint}
               />
             </>
           )}
@@ -1645,7 +1738,7 @@ export function ParamsPanel() {
                   onChange={(patch) => store().setBg({ ...bg, video: { ...bg.video!, ...patch } })}
                   color={bg.color}
                   onColor={(color) => store().setBg({ ...bg, color })}
-                  onHint={setHint}
+                  onHint={emitHint}
                   disabledReason={unavailable}
                 />
               )}
@@ -1676,7 +1769,7 @@ export function ParamsPanel() {
           <Segmented
             value={aspect}
             onChange={(a) => store().setAspect(a)}
-            onHint={setHint}
+            onHint={emitHint}
             ariaLabel="Frame aspect"
             options={ASPECTS.map((a) => ({ value: a.id, label: a.label, hint: a.hint }))}
           />
@@ -1709,7 +1802,7 @@ export function ParamsPanel() {
             hint="Filmic (ACES) tonemap — cinematic contrast and highlight rolloff"
             checked={post.tonemap}
             onChange={(v) => store().setPost({ tonemap: v })}
-            onHint={setHint}
+            onHint={emitHint}
             disabledReason={unavailable}
           />
           {/* The `driven` mark reaches the post rows through a LOCAL wrapper,
@@ -1736,7 +1829,7 @@ export function ParamsPanel() {
                 step={r.step}
                 value={post[r.key]}
                 onChange={(v) => store().setPost({ [r.key]: v })}
-                onHint={setHint}
+                onHint={emitHint}
                 disabledReason={unavailable}
               />
             </div>
@@ -1807,14 +1900,14 @@ export function ParamsPanel() {
                 hint="Draw the active lyric line over the visual"
                 checked={lyricStyle.enabled}
                 onChange={(v) => store().setLyricStyle({ enabled: v })}
-                onHint={setHint}
+                onHint={emitHint}
               />
               <SelectRow
                 label="Position"
                 hint="Where the lines sit in the frame"
                 value={lyricStyle.position}
                 onChange={(position) => store().setLyricStyle({ position })}
-                onHint={setHint}
+                onHint={emitHint}
                 options={[
                   { value: "bottom" as const, label: "Bottom" },
                   { value: "center" as const, label: "Center" },
@@ -1826,7 +1919,7 @@ export function ParamsPanel() {
                 hint="How each line enters — plain fade, slide up, or a scale pop"
                 value={lyricStyle.anim ?? "plain"}
                 onChange={(anim) => store().setLyricStyle({ anim })}
-                onHint={setHint}
+                onHint={emitHint}
                 options={LYRIC_ANIMS.map((a) => ({
                   value: a,
                   label:
@@ -1847,7 +1940,7 @@ export function ParamsPanel() {
                 step={0.05}
                 value={lyricStyle.size}
                 onChange={(v) => store().setLyricStyle({ size: v })}
-                onHint={setHint}
+                onHint={emitHint}
               />
               <SliderRow
                 label="Fade"
@@ -1857,14 +1950,14 @@ export function ParamsPanel() {
                 step={0.05}
                 value={lyricStyle.fadeSec}
                 onChange={(v) => store().setLyricStyle({ fadeSec: v })}
-                onHint={setHint}
+                onHint={emitHint}
               />
               <ColorRow
                 label="Color"
                 hint="Lyric text color"
                 value={lyricStyle.color}
                 onChange={(color) => store().setLyricStyle({ color })}
-                onHint={setHint}
+                onHint={emitHint}
               />
             </>
           )}
@@ -1907,21 +2000,21 @@ export function ParamsPanel() {
             hint="A thin played/remaining bar driven by the track position"
             checked={audiogram.progressBar}
             onChange={(v) => store().setAudiogram({ progressBar: v })}
-            onHint={setHint}
+            onHint={emitHint}
           />
           <ToggleRow
             label="Time readout"
             hint="Elapsed / total time, drawn as text"
             checked={audiogram.timeReadout}
             onChange={(v) => store().setAudiogram({ timeReadout: v })}
-            onHint={setHint}
+            onHint={emitHint}
           />
           <ToggleRow
             label="Waveform strip"
             hint="A mini waveform overview with a moving playhead"
             checked={audiogram.waveformStrip}
             onChange={(v) => store().setAudiogram({ waveformStrip: v })}
-            onHint={setHint}
+            onHint={emitHint}
           />
           {(audiogram.progressBar || audiogram.timeReadout || audiogram.waveformStrip) && (
             <>
@@ -1930,7 +2023,7 @@ export function ParamsPanel() {
                 hint="Which edge of the frame the audiogram elements sit against"
                 value={audiogram.position}
                 onChange={(position) => store().setAudiogram({ position })}
-                onHint={setHint}
+                onHint={emitHint}
                 options={[
                   { value: "bottom" as const, label: "Bottom" },
                   { value: "top" as const, label: "Top" },
@@ -1941,7 +2034,7 @@ export function ParamsPanel() {
                 hint="Bar fill, playhead and played-waveform color"
                 value={audiogram.color}
                 onChange={(color) => store().setAudiogram({ color })}
-                onHint={setHint}
+                onHint={emitHint}
               />
             </>
           )}
@@ -1959,7 +2052,7 @@ export function ParamsPanel() {
           <Segmented
             value={switchQuantize}
             onChange={(m) => store().setSwitchQuantize(m)}
-            onHint={setHint}
+            onHint={emitHint}
             ariaLabel="Switch quantize"
             options={QUANTIZE_MODES.map((m) => ({
               value: m,
@@ -2166,10 +2259,10 @@ export function ParamsPanel() {
                   aria-current={active ? "true" : undefined}
                   tabIndex={p.id === page ? 0 : -1}
                   title={pageUnavailable[p.id] ?? pageBadgeTitle[p.id] ?? p.hint}
-                  onPointerEnter={() => setHint(p.hint)}
-                  onPointerLeave={() => setHint(null)}
-                  onFocus={() => setHint(p.hint)}
-                  onBlur={() => setHint(null)}
+                  onPointerEnter={() => emitHint(p.hint)}
+                  onPointerLeave={() => emitHint(null)}
+                  onFocus={() => emitHint(p.hint)}
+                  onBlur={() => emitHint(null)}
                   onKeyDown={onRailKeyDown}
                   onClick={() => changePage(p.id)}
                 >
@@ -2235,9 +2328,7 @@ export function ParamsPanel() {
             panel's ~2,000 lines back on that tick. The rendered DOM is
             unchanged — test:gpu reads .params-panel's textContent. */}
         <PanelFooterBadges />
-        <span className={`footer-hint ${hint ? "is-hint" : ""}`}>
-          {hint ?? "Hover a control to see what it does"}
-        </span>
+        <FooterHint />
       </div>
     </aside>
   );
