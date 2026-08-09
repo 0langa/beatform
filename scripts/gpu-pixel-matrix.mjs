@@ -262,6 +262,18 @@ async function evaluateMatrix() {
           const engine = window.__engine;
           const originalSync = { ...store.getState().sync };
           const originalPanel = store.getState().showPanel;
+          // PIN THE MODE for every UI leg below. They used to audit whatever
+          // preset the dev profile happened to hold, which is not a property
+          // any of them wants: a Shadertoy import declares no spectrum
+          // controls and no modulatable params, so running
+          // test:shadertoy:built first (it leaves the profile on a custom- id)
+          // made the Sync leg report axisLocked:false and the Modulation leg
+          // die on an empty create picker — neither naming the real cause. The
+          // dock leg already pinned radial-burst for exactly this reason and
+          // said so in its own comment; the other two now do the same.
+          // Restored in the outer finally, so an interrupted run does not
+          // leave the user on a mode they did not choose.
+          const originalPreset = store.getState().presetId;
           // The dock's own prefs. Both legs below navigate the rail and the
           // Modulation leg resizes the dock, and both of those PERSIST — so
           // an interrupted run must not leave the app booting on Sync at
@@ -277,6 +289,10 @@ async function evaluateMatrix() {
           // binding scoped to that try block is a ReferenceError every run.
           let dockLayoutSmoke;
           try {
+            // spectrum-bars for the analyzer leg: the readout it scrapes and
+            // the axis lock it asserts only exist on a mode that consumes the
+            // display spectrum.
+            store.getState().switchPreset("spectrum-bars");
             store.getState().setSync({
               ...originalSync,
               freqMin: 30,
@@ -336,7 +352,18 @@ async function evaluateMatrix() {
             // was designed against) and 760px is where a fixed-width child
             // would leave a hole.
             const seeded = [];
+            // PIN THE MODE, exactly as the dock leg below already does and for
+            // exactly the same reason. This leg used to audit whatever preset
+            // the dev profile happened to hold, and a Shadertoy import holds
+            // ZERO modulatable params — test:shadertoy:built leaves the
+            // profile on a custom- id, so running the two device gates in the
+            // obvious order killed this one with "create picker offered too
+            // little" and no hint that the previous harness was the cause. A
+            // thin preset is also how a layout audit records a false green,
+            // which is the lesson the dock leg's own comment records.
             try {
+              store.getState().switchPreset("radial-burst");
+              await settle();
               const modRail = [...document.querySelectorAll(".rail-item")]
                 .find(button => button.dataset.section === "modulation");
               if (!modRail) throw new Error("Visuals rail: no Modulation destination");
@@ -360,7 +387,28 @@ async function evaluateMatrix() {
               const paramTargets = options.filter(v => !v.startsWith("post:")).slice(0, 3);
               const postTarget = options.find(v => v.startsWith("post:"));
               if (paramTargets.length < 3 || !postTarget) {
-                throw new Error("Modulation page: create picker offered too little");
+                // Say WHY. This used to be four bare words, and the dev
+                // profile has three separate ways of causing it — the active
+                // mode having few targets, routes left behind by an
+                // interrupted run (routed targets are offered but DISABLED),
+                // or the picker not rendering at all. Guessing between them
+                // costs a full tauri-dev build per attempt.
+                // NO TEMPLATE LITERALS ANYWHERE BELOW: this whole block is
+                // itself inside the CDP evaluate payload's template string, so
+                // one backtick here silently truncates the entire harness.
+                const all = [...create.querySelectorAll("option")].filter(o => o.value);
+                throw new Error(
+                  "Modulation page: create picker offered too little — preset=" +
+                    store.getState().presetId +
+                    ", options=" + all.length +
+                    " (" + all.filter(o => o.disabled).length + " disabled)" +
+                    ", free params=" + options.filter(v => !v.startsWith("post:")).length +
+                    ", free post=" + options.filter(v => v.startsWith("post:")).length +
+                    ", existing routes=" + store.getState().activeMods.length +
+                    ". Routes left over from an interrupted run disable their targets; clear" +
+                    " them with window.__store.getState().activeMods.slice().forEach(" +
+                    "r => window.__store.getState().removeModRoute(r.id))",
+                );
               }
 
               // Four cards over three distinct sources, so the "Driven by"
@@ -481,7 +529,9 @@ async function evaluateMatrix() {
             // range thumb, is on screen with nothing opened. A baseline
             // taken on a preset that declares no angle param records a
             // FALSE GREEN, and that is exactly how this survived v2.81-2.83.
-            const originalPreset = store.getState().presetId;
+            // The mode is pinned and restored by the OUTER scope now (see
+            // originalPreset there); this leg only has to leave it on
+            // radial-burst for whatever runs after it, which is nothing.
             const originalCollapsed = [...window.__prefs.get().collapsedSections];
             try {
               store.getState().switchPreset("radial-burst");
@@ -677,7 +727,6 @@ async function evaluateMatrix() {
               // what they mutate. The group disclosures go back through prefs
               // for the same reason the dock width does — the next boot reads
               // the persisted set, not this session's React state.
-              store.getState().switchPreset(originalPreset);
               window.__prefs.set({ collapsedSections: originalCollapsed });
               // …and walk the LIVE width back off the 760 ceiling this leg
               // left it on, the same way the Modulation leg does: the outer
@@ -701,6 +750,7 @@ async function evaluateMatrix() {
               }
             }
           } finally {
+            store.getState().switchPreset(originalPreset);
             store.getState().setSync(originalSync);
             store.getState().setShowPanel(originalPanel);
             window.__prefs.set({ visualsPage: originalPage, visualsWidth: originalWidth });
