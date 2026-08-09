@@ -11,6 +11,14 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- **The "driven" dot now covers timeline automation, not just modulation.** A
+  control moved by an automation lane gets the same mark and the same group
+  count as one moved by a modulation route, so a knob you cannot find the
+  reason for is no longer invisible just because the reason lives on the
+  timeline. Hovering it says which kinds of thing can be moving it.
+
 ### Changed
 
 - **The export dialog now shows every format and codec, with a reason when one
@@ -24,6 +32,12 @@ Releases — there is no paid tier, cloud service, or telemetry.
   reachable, so the reason is readable by a screen reader too.
 - **PNG frames no longer offered in the browser.** It was selectable and then
   failed after you had already chosen a folder.
+- **The rest of the app got the same weight off it as the Visuals panel.** The
+  timeline, the player bar, the mode strip, the library and the batch panel no
+  longer redraw because something unrelated to them changed — the timeline in
+  particular used to redraw its whole ruler four times a second just to move
+  the playhead, and the window around it used to redraw once per encoded frame
+  during an export. Nothing looks or behaves differently.
 
 ## [2.86.0] - 2026-08-09
 
