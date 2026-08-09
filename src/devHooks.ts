@@ -71,6 +71,123 @@ function docFromState(s: VizState): ProjectDocument {
 }
 
 /**
+ * One box's scroll story on ONE axis, as plain numbers rather than an Element.
+ *
+ * The predicate below is the only genuinely load-bearing logic in `__auditUI`,
+ * and it is unreachable from a unit test through the DOM: jsdom answers 0 to
+ * every geometry question, so the only way to test it is to hand it the shapes
+ * a real layout engine would have produced.
+ */
+export type AxisScroll = {
+  /** Which axis is being walked. The predicate is NOT symmetric — see below. */
+  axis: "x" | "y";
+  /** Computed `overflow-x`/`overflow-y` on the axis being walked. */
+  overflow: string;
+  /** ...and on the other one, which is the whole reason this type exists. */
+  crossOverflow: string;
+  /** `scrollWidth`/`scrollHeight` and its `client*` twin, on the walked axis. */
+  scrollExtent: number;
+  clientExtent: number;
+  /** The same pair on the other axis. */
+  crossScrollExtent: number;
+  crossClientExtent: number;
+};
+
+/**
+ * Does this box GENUINELY scroll on the walked axis — can the user actually
+ * move it to reveal something sitting outside it?
+ *
+ * `getComputedStyle(el).overflowX === "auto"` is NOT that question, and
+ * believing it was is why a 0px-wide slider shipped for three releases. CSS
+ * computes `visible` to `auto` on one axis whenever the other axis is a
+ * scroller, and the computed value keeps no record of which axis the author
+ * asked for. Measured in the app's own engine: specified `visible/auto` and
+ * `visible/hidden` both compute to `auto/...`, i.e. `.panel-scroll`'s single
+ * `overflow-y: auto` makes it look like a horizontal scroller to the CSSOM.
+ * Every element in the dock has it as an ancestor, so the `outside-scope-x`
+ * walk found a "scrollable" ancestor for all of them and could never fire.
+ *
+ * Three clauses, each answering a different way of not-scrolling:
+ *
+ * 1. `visible` / `hidden` / `clip` — not a scroll container at all.
+ * 2. No scroll RANGE. `auto` means "a scrollbar only if one is needed"; with
+ *    `scrollExtent <= clientExtent` there is no scrollbar and nowhere to go, so
+ *    a child outside the box is CLIPPED, not scrolled to. Measured: an
+ *    `overflow: hidden` wrapper inside `.panel-scroll` holding a 400px child
+ *    leaves the scroller at scrollWidth === clientWidth while the child's rect
+ *    pokes 199px past the panel — invisible content that the old walk excused.
+ *    `scroll` gets the same treatment: a permanently drawn scrollbar with zero
+ *    range still scrolls nowhere.
+ * 3. The propagation trap itself, and this clause is HORIZONTAL-ONLY.
+ *    `scroll` is the one value the rule never mints, so it is proof of intent
+ *    and short-circuits first. A bare `auto` cannot be proven either way from
+ *    computed style, so it is read from what the box is DOING — but only on x,
+ *    because the two axes are not symmetric in authoring. Documents flow
+ *    downward: a box that scrolls vertically is doing the ordinary thing, while
+ *    horizontal scrolling is the exception an author has to ask for. So a box
+ *    that is ALSO an actively-scrolling vertical scroller is overwhelmingly
+ *    likely to have had its `overflow-x: auto` minted by the rule. That is
+ *    exactly `.panel-scroll` and exactly not `.chips` (`overflow-x: auto`, one
+ *    flex row, no vertical range — caught by clause 2) or `.tl-scroll`
+ *    (`overflow-y: hidden`, not a y scroller at all).
+ *
+ *    Applying it symmetrically was MEASURED to be wrong, on the live dock: with
+ *    a too-wide row present, `.panel-scroll` has range on both axes, so a
+ *    symmetric rule denied its VERTICAL excuse too and the auditor returned 50
+ *    findings for one defect — 41 of them `below-viewport-unscrollable` against
+ *    a scroller that scrolls down perfectly well. On y, clause 2 already covers
+ *    the mirror blind spot (`.chips` computes `overflow-y: auto` from its own
+ *    `overflow-x` and has no vertical range), so y needs nothing more.
+ *
+ * The residual over-report is a box that scrolls in BOTH axes on purpose
+ * (`overflow: auto` over content that is both tall and wide) with an element
+ * child poking outside the audited scope. In this tree that set is empty: the
+ * only two such boxes are `.crash-detail` and `.shader-src`, both hold text
+ * nodes rather than element children (so `querySelectorAll("*")` finds nothing
+ * inside them) and neither is inside an audited scope. Erring that way is also
+ * the right direction — inside a fixed-size panel, "content pokes out of a box
+ * scrolling in two directions" is a finding, not noise.
+ */
+export function scrollsOnAxis(m: AxisScroll): boolean {
+  if (m.overflow !== "auto" && m.overflow !== "scroll") return false;
+  // +1, matching the text-clip check below: sub-pixel layout rounds these two
+  // apart by fractions on perfectly fitting content.
+  if (m.scrollExtent <= m.clientExtent + 1) return false;
+  if (m.overflow === "scroll") return true;
+  if (m.axis === "y") return true;
+  const crossScrolls =
+    (m.crossOverflow === "auto" || m.crossOverflow === "scroll") &&
+    m.crossScrollExtent > m.crossClientExtent + 1;
+  return !crossScrolls;
+}
+
+/**
+ * Form controls that paint their own text and whose element children are not
+ * laid out in flow. Exactly one member, and the list is written as a set so the
+ * next one is an addition rather than a rewrite.
+ *
+ * A `<select>`'s `<option>`s never become boxes in the row: the closed control
+ * paints the selected option's label itself. Measured in the app's engine, an
+ * 80px select showing a 45-character option reports scrollWidth 257 against
+ * clientWidth 78 — a 179px clip — with `children.length === 2`.
+ */
+const SELF_RENDERED_TEXT_TAGS = new Set(["SELECT"]);
+
+/**
+ * Is this element a leaf for TEXT purposes — is the text we are about to
+ * measure its own, rather than a descendant's?
+ *
+ * `children.length === 0` alone was the test, and it is why no truncated
+ * dropdown in the tree was ever reported. Widening it to every element with
+ * children would be worse than the gap: a container's `scrollWidth` overflows
+ * whenever ANY descendant does, so every wrapper in the dock would report the
+ * same clip its child already reported, and the auditor would drown.
+ */
+export function rendersOwnText(tagName: string, childCount: number): boolean {
+  return childCount === 0 || SELF_RENDERED_TEXT_TAGS.has(tagName);
+}
+
+/**
  * FNV-1a over raw PNG bytes — a content fingerprint for the export harness.
  * Not cryptographic; it only has to make "these two frames differ" cheap to
  * see across thousands of frames.
@@ -159,12 +276,38 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
   // testing hand-off): walks a scope's visible DOM and reports horizontally
   // clipped text, elements poking outside the scope, and content below the
   // viewport with no scrollable ancestor. Pure inspection, DEV-only.
+  // Its two former blind spots — a computed-style-only scroll test, and a
+  // text-clip check that skipped anything with element children — are fixed in
+  // `scrollsOnAxis` / `rendersOwnText` above, where they are unit-testable.
   (window as unknown as { __auditUI: unknown }).__auditUI = (scopeSel: string) => {
     const scope = document.querySelector(scopeSel);
     if (!scope) return { error: "no scope " + scopeSel };
     const sr = scope.getBoundingClientRect();
     const issues: Array<{ kind: string; el: string; px: number }> = [];
     const seen = new Set<string>();
+    // Both walks below ask `scrollsOnAxis` the same question about a box, once
+    // per axis; this is the only place that knows which DOM property is which
+    // axis, so the predicate itself stays plain data and stays testable.
+    const axisOf = (el: Element, cs: CSSStyleDeclaration, horizontal: boolean): AxisScroll =>
+      horizontal
+        ? {
+            axis: "x",
+            overflow: cs.overflowX,
+            crossOverflow: cs.overflowY,
+            scrollExtent: el.scrollWidth,
+            clientExtent: el.clientWidth,
+            crossScrollExtent: el.scrollHeight,
+            crossClientExtent: el.clientHeight,
+          }
+        : {
+            axis: "y",
+            overflow: cs.overflowY,
+            crossOverflow: cs.overflowX,
+            scrollExtent: el.scrollHeight,
+            clientExtent: el.clientHeight,
+            crossScrollExtent: el.scrollWidth,
+            crossClientExtent: el.clientWidth,
+          };
     for (const el of Array.from(scope.querySelectorAll<HTMLElement>("*"))) {
       const cs = getComputedStyle(el);
       if (cs.display === "none" || cs.visibility === "hidden") continue;
@@ -173,11 +316,13 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
       const id =
         (el.className?.toString?.() || el.tagName) + "|" + (el.textContent ?? "").slice(0, 25);
       if (
-        el.children.length === 0 &&
+        rendersOwnText(el.tagName, el.children.length) &&
         el.scrollWidth > el.clientWidth + 1 &&
         cs.textOverflow !== "ellipsis" &&
-        cs.overflowX !== "auto" &&
-        cs.overflowX !== "scroll" &&
+        // The element's own horizontal scrollbar excuses its own clipped text —
+        // but only a REAL one. Same propagation trap as the walks below: a
+        // `overflow-y: auto` box reads as `overflow-x: auto` to the CSSOM.
+        !scrollsOnAxis(axisOf(el, cs, true)) &&
         !seen.has("clip|" + id)
       ) {
         seen.add("clip|" + id);
@@ -187,8 +332,7 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
         let p = el.parentElement;
         let scrollable = false;
         while (p && p !== scope.parentElement) {
-          const pcs = getComputedStyle(p);
-          if (/(auto|scroll)/.test(pcs.overflowX)) {
+          if (scrollsOnAxis(axisOf(p, getComputedStyle(p), true))) {
             scrollable = true;
             break;
           }
@@ -203,8 +347,7 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
         let p = el.parentElement;
         let scrollable = false;
         while (p && p !== document.body) {
-          const pcs = getComputedStyle(p);
-          if (/(auto|scroll)/.test(pcs.overflowY)) {
+          if (scrollsOnAxis(axisOf(p, getComputedStyle(p), false))) {
             scrollable = true;
             break;
           }

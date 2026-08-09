@@ -105,6 +105,52 @@ function signatureChroma(a64) {
   return max;
 }
 
+/**
+ * The dock's REPORT-ONLY overflow diagnostic, flattened into lines a human
+ * reads rather than a JSON blob nobody opens.
+ *
+ * Deliberately not a failure: turning it into an assertion is BACKLOG Q8, an
+ * owner decision, because it could light up pre-existing failures app-wide.
+ * "Not asserted" is not "not printed", though, and the two are exactly what
+ * this run used to confuse — the summary said `dock layout clean on 8 pages`
+ * whatever this array held, which is the sentence that lets a real overflow be
+ * waved through. Every caller below prints these lines, including the
+ * baseline-update path, so no run can quietly swallow one.
+ */
+function dockOverflowLines(dock) {
+  const lines = [];
+  for (const end of ["narrow", "wide"]) {
+    const leg = dock?.[end];
+    for (const page of leg?.pages ?? []) {
+      const at = `${end} ${leg.dockWidth}px / ${page.page}`;
+      if (page.scrollerOverflowPx > 0) {
+        lines.push(
+          `  ${at}: .panel-scroll grew ${page.scrollerOverflowPx}px of HORIZONTAL ` +
+            `scroll range — the dock is not supposed to scroll sideways at all`,
+        );
+      }
+      for (const entry of page.overflow ?? []) {
+        lines.push(`  ${at}: ${entry.el} +${entry.px}px  ${JSON.stringify(entry.text ?? "")}`);
+      }
+    }
+  }
+  return lines;
+}
+
+function printDockOverflow(dock) {
+  const lines = dockOverflowLines(dock);
+  if (!lines.length) {
+    console.log("dock overflow diagnostic: nothing overflowed at either dock end");
+    return 0;
+  }
+  console.log(
+    `DOCK OVERFLOW: ${lines.length} REPORT-ONLY finding(s) — not asserted ` +
+      `(BACKLOG Q8), and NOT "clean". Each line is a defect to fix or to file:`,
+  );
+  for (const line of lines) console.log(line);
+  return lines.length;
+}
+
 function assertRuntime(matrix) {
   const failures = [];
   if (Object.keys(matrix.compileErrors).length) {
@@ -146,9 +192,14 @@ function assertRuntime(matrix) {
   // all. Its `overflow` field is diagnostic, deliberately not asserted
   // (BACKLOG Q8): read it, never wave it through.
   const dock = matrix.dockLayoutSmoke;
+  // Printed BEFORE the throw below, and before the --update branch: a run that
+  // fails on a hash somewhere else, or one that re-blesses the baseline, must
+  // still surface the dock's overflow findings. The JSON in the failure message
+  // technically contains them and has never once been read.
+  const dockOverflow = printDockOverflow(dock);
   if (!dock?.passed) failures.push(`dock layout audit failed: ${JSON.stringify(dock)}`);
   if (failures.length) throw new Error(failures.join("\n"));
-  return { blackExtremes };
+  return { blackExtremes, dockOverflow };
 }
 
 async function compare(matrix) {
@@ -194,6 +245,11 @@ async function evaluateMatrix() {
       await cdp.open();
       await cdp.send("Runtime.enable");
       const evaluated = await cdp.send("Runtime.evaluate", {
+        // NO BACKTICKS ANYWHERE BELOW, comments included. Everything from here
+        // to the closing brace is one template literal, so a single backtick
+        // ends the expression early and the harness dies with a SyntaxError
+        // whose caret points at a comment. Quote identifiers with "double
+        // quotes" when a comment needs to name one.
         expression: `(async () => {
           const deadline = Date.now() + 60000;
           while (typeof window.__runGpuMatrix !== "function") {
@@ -509,26 +565,38 @@ async function evaluateMatrix() {
                     // assertion is anchored on the Mode page instead.
                     rows: scroller.querySelectorAll(".row, .field, .panel-section").length,
                     // REPORTED, NOT ASSERTED — owner decision (BACKLOG Q8).
-                    // .panel-scroll declares overflow-y:auto, which computes
-                    // overflow-x to auto as well, so __auditUI's
-                    // outside-scope-x walk always finds a scrollable ancestor
-                    // and can NEVER fire inside the dock: a too-wide row
-                    // grows a scrollbar instead of reporting. Its text-clip
-                    // check is no help either, because it skips any element
-                    // with children — a truncated <select> is invisible to
-                    // it. Both of those are why the two measured Layers
-                    // overflows were invisible to the gate. A non-empty entry
-                    // here is a finding to fix or file, NEVER something to
-                    // wave through as "auditor clean".
+                    // Both of __auditUI's blind spots are FIXED as of H16 (see
+                    // scrollsOnAxis / rendersOwnText in src/devHooks.ts), so
+                    // the audit field above can finally fire inside the dock.
+                    // This diagnostic stays anyway, because it answers a
+                    // different question: the auditor reports the ELEMENT that
+                    // pokes out, and this reports the BOX that swallowed it. A
+                    // non-empty entry here is a finding to fix or file, NEVER
+                    // something to wave through as "auditor clean" — and the
+                    // summary printed at the end of the run now says so out
+                    // loud instead of reporting the word "clean" regardless.
+                    //
+                    // The symptom the auditor structurally cannot name: a
+                    // VERTICAL scroller that has grown HORIZONTAL scroll range
+                    // is the scrollbar the dock is never supposed to have, and
+                    // it is one honest number per page.
+                    scrollerOverflowPx: scroller.scrollWidth - scroller.clientWidth,
                     overflow: [
                       ...scroller.querySelectorAll(
-                        ".row, .layer-editor, .layer-editor-grid, .param-group-body",
+                        ".row, .field, .mod-card, .layer-editor, .layer-editor-grid," +
+                          " .param-group-body",
                       ),
                     ]
                       .filter(el => el.scrollWidth > el.clientWidth + 1)
                       .map(el => ({
                         el: String(el.className),
                         px: el.scrollWidth - el.clientWidth,
+                        // Which row, not just which shape. "row param-row" is
+                        // 40 rows deep on the Mode page and the class list
+                        // alone cannot tell them apart; the same 25-character
+                        // slice __auditUI uses to name an element makes a
+                        // finding something you can go and look at.
+                        text: (el.textContent ?? "").trim().slice(0, 25),
                       })),
                   });
                 }
@@ -683,7 +751,7 @@ try {
   }
 
   const matrix = await evaluateMatrix();
-  const { blackExtremes } = assertRuntime(matrix);
+  const { blackExtremes, dockOverflow } = assertRuntime(matrix);
 
   if (update) {
     const baseline = {
@@ -702,8 +770,13 @@ try {
         `spectrum smoke ${matrix.spectrumSmoke.displayBins} measured bins; ` +
         `modulation audit clean at ${matrix.modulationSmoke.narrow.dockWidth}px and ` +
         `${matrix.modulationSmoke.wide.dockWidth}px; ` +
-        `dock layout clean on 8 pages at ${matrix.dockLayoutSmoke.narrow.dockWidth}px and ` +
-        `${matrix.dockLayoutSmoke.wide.dockWidth}px`,
+        // "audit clean", NOT "clean": the audit is one of two things this leg
+        // looks at, and the other one is report-only. Saying "clean" while the
+        // overflow diagnostic held entries is how a shipped defect reads as a
+        // pass, so the count rides along in the same sentence.
+        `dock layout audit clean on 8 pages at ${matrix.dockLayoutSmoke.narrow.dockWidth}px ` +
+        `and ${matrix.dockLayoutSmoke.wide.dockWidth}px` +
+        (dockOverflow ? ` — SEE THE ${dockOverflow} DOCK OVERFLOW FINDING(S) ABOVE` : ""),
     );
   }
   console.log(

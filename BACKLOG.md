@@ -1050,7 +1050,43 @@ buys and what it does not.
       commented-out at its insertion point in the H4 block** — enabling it is
       uncommenting one block, and the parsed CSSOM was verified to contain
       exactly two `@container` rules, so the frozen one is provably inert.
-- [ ] H16 **READY — two harness gaps that let a 0px slider ship for three
+- [x] H16 **DONE 2026-08-09 — both gaps closed, and the repaired auditor was
+      run against a real page.** Two exported, unit-testable predicates in
+      `devHooks.ts`, 13 cases, every number measured in the app's own Chromium
+      rather than invented.
+      **(a) The x-axis blind spot.** Computed style can NEVER prove authorship
+      of `auto` — measured propagation: specified `visible/auto` computes to
+      `auto/auto`, so computed `overflow-x: auto` never coexists with computed
+      `overflow-y: visible`. Only `scroll` is unforgeable. Geometry alone does
+      not fix it either: a 400px child pushes `.panel-scroll` from scrollWidth
+      204 to 428, so "has range" is true exactly in the failing case. The
+      predicate that works asks whether THIS axis's `auto` is an echo of the
+      cross axis's, and it is deliberately ASYMMETRIC — the first version
+      applied the rule to both axes and produced **50 findings for one defect,
+      41 of them `below-viewport-unscrollable` against a scroller that scrolls
+      down perfectly well.** After the asymmetry: 8 findings, 0 spurious.
+      Bounded residual, stated rather than hidden: a box that scrolls in both
+      axes on purpose, inside an audited scope. That set is empty today.
+      **(b) `<select>`** renders its own text despite having `<option>`
+      children — measured at `scrollWidth 257 / clientWidth 78` while
+      `children.length === 2`. Widening the check to all containers was
+      rejected and is pinned by a test: a wrapper's `scrollWidth` overflows
+      whenever any descendant does, so every clip would be reported once per
+      ancestor.
+      **Run against a real page**, from the agent's own worktree after the main
+      checkout's dev server died: all 8 dock pages at the 380px floor gave
+      shipped 0 / repaired 0 / horizontal range 0 — **so no `App.css` change
+      was warranted; H4 (v2.84.0) had already fixed the Layers case.** The acid
+      test re-injected the pre-H4 two-column grid plus a truncated `<select>`:
+      shipped auditor **0** (blind to both), repaired auditor **8**. Seven
+      mutations, all red. Not swept page-by-page at the 760px end — `test:gpu`
+      closes that and cannot run from a worktree.
+      **Q8 untouched: `dockLayoutSmoke` is still report-only.** What changed is
+      that it can no longer be mistaken for clean — `scrollerOverflowPx` per
+      page, a text snippet per finding, and `printDockOverflow()` called from
+      inside `assertRuntime` so it prints on EVERY path including `--update`.
+      The summary line no longer says "dock layout clean" unconditionally.
+      ORIGINAL — **two harness gaps that let a 0px slider ship for three
       releases.** (a) `.panel-scroll` declares `overflow-y: auto`, so the other
       axis computes to `auto` too and `__auditUI`'s `outside-scope-x` walk
       ALWAYS finds a scrollable ancestor — it can never fire inside the dock;
