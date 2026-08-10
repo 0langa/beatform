@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.89.0] - 2026-08-10
+
 ### Added
 
 - **The mode strip takes the keyboard now.** Tab reaches it once, then the
@@ -2485,7 +2487,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.88.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.89.0...HEAD
+[2.89.0]: https://github.com/0langa/beatform/compare/v2.88.0...v2.89.0
 [2.88.0]: https://github.com/0langa/beatform/compare/v2.87.0...v2.88.0
 [2.87.0]: https://github.com/0langa/beatform/compare/v2.86.0...v2.87.0
 [2.86.0]: https://github.com/0langa/beatform/compare/v2.85.0...v2.86.0
