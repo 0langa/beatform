@@ -116,8 +116,36 @@ try {
   // export in a process differs from later ones but 2 and 3 agree, that is a
   // warm-up effect and is deterministic given position; if 2 and 3 also differ,
   // it is genuine nondeterminism and a far more serious thing.
+  // Report the analysis state around each run. `analyzeTrack` is ASYNC and
+  // `beatGrid` is null until it resolves, so an export fired straight after a
+  // load can run with bpm 0 and no grid while later ones have the real thing —
+  // which would make "the first export differs" a RACE, not a warm-up.
+  const state = async (label) => {
+    const v = await cdp.eval(
+      `(() => { const s = window.__store.getState();
+        return { analyzing: s.analyzing, bpm: s.beatGrid ? s.beatGrid.bpm : null,
+                 beats: s.beatGrid ? s.beatGrid.beatTimes.length : 0,
+                 sections: s.sections.length }; })()`,
+    );
+    console.log(`STATE(${label}): ${JSON.stringify(v)}`);
+    return v;
+  };
+
+  if (process.env.PROBE_WAIT_ANALYSIS === "1") {
+    console.log("waiting for track analysis to settle before run 1…");
+    await cdp.eval(
+      `new Promise((res, rej) => { const t0 = Date.now();
+        const tick = () => { const s = window.__store.getState();
+          if (!s.analyzing && s.beatGrid) return res(true);
+          if (Date.now() - t0 > 60000) return rej(new Error("analysis did not settle"));
+          setTimeout(tick, 100); }; tick(); })`,
+    );
+  }
+
+  await state("before run 1");
   console.log("loop export, run 1 (first in this process)…");
   const a = await run();
+  await state("after run 1");
   console.log("loop export, run 2…");
   const b = await run();
   console.log("loop export, run 3…");

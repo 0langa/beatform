@@ -743,17 +743,39 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       entry's own criterion (two hash-identical runs) the original one-frame
       observation is real and wants a fresh bisect, not a dismissal as capture
       noise.
-      **NEW FINDING, and it may be the real explanation: the FIRST export in a
-      process can render differently from every later one.** On `tunnel-rings`,
-      run 1 vs run 2 differed on **120/120** frames while run 2 vs run 3
-      differed on **0/120** — so it is not nondeterminism, it is a warm-up that
-      is deterministic given position. It does NOT affect `particle-flow`,
-      which re-seeds its sim on `setPreset`, which points at **feedback-texture
-      state** rather than the particle sim. That also fits RP-4's original
-      bisection, where the variable was whether a thumbnail render had run
-      first. Next step is concrete: find what the first export leaves warm that
-      the second inherits — `releaseIdleTargets` and the feedback target pool
-      first — and decide whether an export should start from a clean renderer.
+      **THE CAUSE IS FOUND, AND MY FIRST HYPOTHESIS WAS WRONG.** I filed this
+      as pointing at "feedback-texture state". It does not: `tunnel-rings` is
+      not a feedback preset at all. The real mechanism, proven on device by
+      controlled experiment rather than argued:
+      **the first export was racing TRACK ANALYSIS.** `analyzeTrack` is async
+      (`store.ts:2297-2305`) — loading a track sets
+      `{beatGrid: null, sections: [], analyzing: true}` and fills them in when
+      the promise resolves — and the interactive export reads
+      `beatGrid: get().beatGrid` at `exportActions.ts:318`, whatever it happens
+      to be at that instant, INCLUDING `null`.
+      Measured: probe run 1 fired at `analyzing: true, bpm: null, beats: 0` and
+      differed from run 2 on **120/120** frames; runs 2 and 3, both at
+      `bpm: 120, beats: 40`, were identical. Re-run with analysis awaited
+      first: **0/120 across all three**. That is the whole effect.
+      So it is not a warm-up and not nondeterminism — it is a reachable
+      **preview≠export divergence**, same class as F4a: everything grid-derived
+      (`bpm`, `beatPhase`, `barPhase`, `beatIndex`, `barIndex`, `sectionIndex`,
+      `sectionPulse`, and since v2.90.0 the tempo-locked LFO sources, which
+      fall back to a 120-BPM-equivalent clock at `bpm` 0) renders differently
+      from what the preview shows moments later.
+      **`particle-flow` showed 0/120 on all three runs** because it reads none
+      of those lanes — which is why the first probe made this look like a
+      preset-specific warm-up.
+      **Batch render already gets this right** (`batchRunner.ts:181-262` awaits
+      `analyzeTrack` per track and passes the grid into the job, racing it
+      against a timeout because that promise cannot bound itself), so the
+      interactive path is INCONSISTENT with batch rather than designed. Nothing
+      anywhere reads `s.analyzing`, so the Export button is not gated either.
+      **Filed for fix as E3b.** RP-4's original frame-9 observation remains
+      unexplained and still wants its own bisect — but the instability this
+      entry set out to measure is now accounted for, and it was never a capture
+      race.
+
 - [x] E2-R1 **DONE 2026-08-10 — with option (f), on the owner's approval.**
       Designed by a workflow: four parallel investigations, a three-lens judge
       panel (determinism / blast radius / reversibility), one synthesis.
