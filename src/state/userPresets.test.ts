@@ -5,6 +5,7 @@ import {
   parseUserPreset,
   saveUserPresets,
   serializeUserPreset,
+  USER_PRESET_VERSION,
   UserPresetParseError,
   type UserPreset,
 } from "./userPresets";
@@ -131,5 +132,59 @@ describe("loadUserPresets (localStorage round-trip)", () => {
     expect(loaded[0]).not.toHaveProperty("extra");
     expect(loaded[0].sync).toEqual({ mode: "kick", smooth: 1 });
     vi.unstubAllGlobals();
+  });
+});
+
+/**
+ * The v14 gap in .bfpreset, pinned as CHOSEN rather than missed.
+ *
+ * Schema v14 changed Kaleido Nebula's `saturation` from a raw 0..1 palette mix
+ * to a 0..2 scaler. .bfproj (parseProject) and .bftheme (parseTheme) remap
+ * stored pre-v14 values; looks do not, and cannot without an owner decision:
+ * a look carries no document-schema number, and the envelope's `schemaVersion`
+ * tracks the LOOK format, so nothing distinguishes a pre-v14 value from a
+ * post-v14 one. See the note above loadUserPresets, and project.ts:112-116.
+ */
+describe("user looks do NOT ride the v14 nebula remap (a chosen gap)", () => {
+  function fakeLocalStorage() {
+    const map = new Map<string, string>();
+    return {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+    };
+  }
+
+  // E1. MUTATION: any content-keyed or key-bumped remap landing here without
+  // an owner decision. REACHABLE because 0.6 is not a fixed point of v / 0.75
+  // — it would load as 0.8 — and the look uses "nebula", the exact id every
+  // form of the migration keys on.
+  it("E1: a stored pre-v14 nebula look loads verbatim, saturation untouched", () => {
+    vi.stubGlobal("localStorage", fakeLocalStorage());
+    const nebulaLook: UserPreset = {
+      id: "up-nebula-1",
+      name: "Old Nebula",
+      presetId: "nebula",
+      params: { saturation: 0.6 },
+      createdAt: "2026-06-01T00:00:00.000Z",
+    };
+    saveUserPresets([nebulaLook]);
+    const loaded = loadUserPresets();
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].params.saturation).toBe(0.6);
+    expect(loaded[0]).toEqual(nebulaLook);
+    vi.unstubAllGlobals();
+  });
+
+  // E3. A TRIPWIRE, not a behaviour test.
+  //
+  // Bumping USER_PRESET_VERSION makes every newly written .bfpreset unreadable
+  // by every build shipped through 2.89.0 (parseUserPreset refuses
+  // schemaVersion > USER_PRESET_VERSION) and refused by the gallery's own
+  // entryGate. That is a public-file-format decision and the owner's call.
+  // This pin exists so the bump cannot happen without someone deleting it and
+  // reading why.
+  it("E3: USER_PRESET_VERSION is pinned at 1 — bumping it is the owner's call", () => {
+    expect(USER_PRESET_VERSION).toBe(1);
   });
 });

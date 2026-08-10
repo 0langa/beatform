@@ -1,4 +1,9 @@
-import { PROJECT_VERSION, validateDocument, type ProjectDocument } from "./project";
+import {
+  migrateNebulaSaturationV14,
+  PROJECT_VERSION,
+  validateDocument,
+  type ProjectDocument,
+} from "./project";
 
 /**
  * .bftheme — a shareable theme: the whole document as one file. Metadata
@@ -8,9 +13,13 @@ import { PROJECT_VERSION, validateDocument, type ProjectDocument } from "./proje
  * theme can only select and parameterize the app's own presets, so
  * importing one is exactly as safe as clicking around the UI.
  *
- * Versioning rides the project schema: document validation IS migration
- * (missing fields default), so an old theme opens in a new app forever, and
- * a newer theme is refused with a clear message rather than misread.
+ * Versioning rides the project schema: for SHAPE changes, document validation
+ * IS migration (missing fields default), so an old theme opens in a new app
+ * forever, and a newer theme is refused with a clear message rather than
+ * misread. VALUE-semantics changes cannot work that way — the same number
+ * means different things under different schemas — so those are gated on the
+ * file's own `projectSchemaVersion` in parseTheme below (v14 nebula
+ * saturation is the first and so far only one).
  */
 
 export const THEME_VERSION = 1;
@@ -117,5 +126,32 @@ export function parseTheme(json: string): { meta: ThemeMeta; document: ProjectDo
   if (typeof file.document !== "object" || file.document === null) {
     throw new ThemeParseError("Theme has no document");
   }
-  return { meta: validMeta(file.meta), document: validateDocument(file.document) };
+  // v14 (RP-6) nebula-saturation remap, threaded from the file's OWN
+  // projectSchemaVersion. Mirrors parseProject's gate verbatim — and the
+  // literal `14` is the load-bearing character here: `psv < PROJECT_VERSION`
+  // reads identically TODAY and would silently re-divide every already-correct
+  // theme by 0.75 the moment PROJECT_VERSION becomes 15. It is a fixed
+  // historical boundary, not "the current schema".
+  //
+  // An ABSENT projectSchemaVersion counts as pre-v14 and migrates:
+  // serializeTheme has always written the field unconditionally, so no
+  // Beatform build has ever produced a theme without one. The branch is
+  // reachable only from a hand-authored or third-party file, where the cost is
+  // a visibly wrong import that Ctrl+Z undoes (applyTheme opens with
+  // ctx.record("theme")) — cheaper than stranding every genuine pre-v14 theme.
+  //
+  // Ordering: this pre-pass runs BEFORE validateDocument, therefore before the
+  // version-independent v13 rename pre-pass inside it. Safe only because
+  // "nebula" was never renamed and the migration keys on that literal id.
+  //
+  // Deliberately NOT duplicated in galleryActions: keying on the file's own
+  // field covers drag-import and gallery install alike, and is immune to a
+  // registry index whose schemaVersion disagrees with the file it points at.
+  const psv = typeof file.projectSchemaVersion === "number" ? file.projectSchemaVersion : 0;
+  return {
+    meta: validMeta(file.meta),
+    document: validateDocument(
+      psv < 14 ? migrateNebulaSaturationV14(file.document) : file.document,
+    ),
+  };
 }

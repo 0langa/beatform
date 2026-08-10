@@ -98,6 +98,113 @@ describe("clean-exit marker", () => {
   });
 });
 
+/**
+ * The document-schema stamp — insurance for the NEXT semantics change.
+ *
+ * Nothing reads `cachedDocSchema` this release. It exists so that a future
+ * migration CAN, and the only property that makes it worth anything is the
+ * ORDER: the prior value is captured at module load, before this session's own
+ * stamp overwrites the key. A stamp read after it has been refreshed is
+ * worthless, and the failure is completely silent — hence these tests.
+ */
+describe("document-schema stamp (viz.docSchema.v1)", () => {
+  const SCHEMA_KEY = "viz.docSchema.v1";
+
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // D1. MUTATION: move the stampDocSchema() call ABOVE the cachedDocSchema
+  // read. REACHABLE because the seeded 13 differs from the stamped
+  // PROJECT_VERSION — a read-after-write reports 14 and the first assertion
+  // fails. (Seeding the CURRENT version instead would make this vacuous.)
+  it("D1: captures the PRIOR stamp before overwriting it with this app's version", async () => {
+    const store = installStorage();
+    store.setItem(SCHEMA_KEY, "13");
+    const { cachedDocSchema } = await importFresh();
+    const { PROJECT_VERSION } = await import("./project");
+    expect(cachedDocSchema).toBe(13);
+    expect(store.getItem(SCHEMA_KEY)).toBe(String(PROJECT_VERSION));
+    expect(store.getItem(SCHEMA_KEY)).toBe("14");
+  });
+
+  // D2. MUTATION: `?? PROJECT_VERSION` (or any other non-null default) on the
+  // absent branch. REACHABLE because null and 14 are distinguishable, and the
+  // distinction is the contract: null means UNKNOWN PROVENANCE — never
+  // migrate — because v14 shipped with no stamp at all. A default of
+  // PROJECT_VERSION would tell a future migration "already current" and skip
+  // it forever; a default of 0 would tell it "ancient" and migrate a cache
+  // that may already be correct. Only null is honest.
+  it("D2: an absent stamp reads as null, never as a version number", async () => {
+    const store = installStorage();
+    const { cachedDocSchema } = await importFresh();
+    expect(cachedDocSchema).toBeNull();
+    // ...and this session still stamps, so the NEXT boot has provenance.
+    expect(store.getItem(SCHEMA_KEY)).toBe("14");
+  });
+
+  it("D2b: a garbage stamp reads as null too — unknown, not 'very old'", async () => {
+    const store = installStorage();
+    store.setItem(SCHEMA_KEY, "not-a-number");
+    const { cachedDocSchema } = await importFresh();
+    expect(cachedDocSchema).toBeNull();
+  });
+
+  // D3. MUTATION: gate anything on stampDocSchema()'s return value, or let the
+  // write failure propagate out of module init. REACHABLE because the stub
+  // throws on every setItem, so a propagating failure kills the import (and
+  // with it every other persistence consumer) at boot.
+  it("D3: a failed stamp write is completely inert — no throw, no retry, no gate", async () => {
+    const seeded = new Map([[SCHEMA_KEY, "13"]]);
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => seeded.get(k) ?? null,
+      setItem() {
+        throw new Error("QuotaExceededError");
+      },
+      removeItem() {},
+    });
+    vi.stubGlobal("window", { addEventListener: () => {} });
+    vi.stubGlobal("document", { addEventListener: () => {}, visibilityState: "visible" });
+
+    // Importing the module runs stampDocSchema() at module scope.
+    const mod = await importFresh();
+    expect(mod.stampDocSchema()).toBe(false);
+    // The prior value is still what it was: nothing was written, so the next
+    // boot sees the same "13" and a future migration is merely postponed —
+    // identical to today's behaviour, never wrong behaviour.
+    expect(mod.cachedDocSchema).toBe(13);
+  });
+});
+
+/**
+ * D4. The DELIBERATE non-migration, pinned.
+ *
+ * This is a decision, not an oversight. Schema v14 changed the meaning of
+ * Kaleido Nebula's `saturation`, and .bfproj / .bftheme both remap stored
+ * pre-v14 values. This localStorage cache does NOT — and must not — because of
+ * TIMING: v14 shipped in 2.75.0 without any schema stamp, so an unstamped
+ * `viz.params.v1` may hold a pre-v14 value (which would want /0.75) or a value
+ * the user has re-tuned by hand since (which must be left alone), and nothing
+ * on disk tells them apart — the same stored 1.0 is a pre-v14 ceiling and a
+ * post-v14 neutral. Migrating now would turn a 21% desaturation into a 33%
+ * OVERsaturation for exactly the users who already fixed it themselves.
+ *
+ * MUTATION: add a nebula-saturation remap to loadStoredParams. REACHABLE
+ * because 0.75 is not a fixed point of v / 0.75 — it becomes 1.
+ */
+describe("the session cache deliberately does NOT ride the v14 remap", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("D4: a cached nebula saturation loads verbatim, whatever schema wrote it", async () => {
+    const store = installStorage();
+    store.setItem("viz.params.v1", JSON.stringify({ nebula: { saturation: 0.75 } }));
+    const { loadStoredParams } = await importFresh();
+    expect(loadStoredParams().nebula.saturation).toBe(0.75);
+  });
+});
+
 describe("legacy preset ids in the session cache", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();

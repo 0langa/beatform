@@ -30,6 +30,28 @@ interface UserPresetFile {
   preset: UserPreset;
 }
 
+/**
+ * KNOWN GAP, chosen deliberately: a look saved for Kaleido Nebula before
+ * schema v14 (app 2.75.0) still carries the OLD `saturation` semantics — a raw
+ * 0..1 palette mix — and is loaded verbatim, so it renders ~21% flatter than
+ * it did when it was saved. It does not ride the v14 remap that .bfproj
+ * (parseProject) and .bftheme (parseTheme) run, for two reasons that are not
+ * fixable inside this file:
+ *
+ *  - This list has no version stamp of any kind, and the .bfpreset envelope's
+ *    `schemaVersion` tracks the LOOK format (still 1), not the document
+ *    schema — so nothing here can tell a pre-v14 value from a post-v14 one.
+ *    The values are the same numbers under both readings.
+ *  - Bumping USER_PRESET_VERSION to carry the distinction would make every
+ *    newly written file unreadable by every build shipped through 2.89.0
+ *    (parseUserPreset refuses schemaVersion > USER_PRESET_VERSION), which is
+ *    an owner-level call about a public file format, not a migration detail.
+ *
+ * Recorded rather than papered over — see the v14 note in project.ts
+ * (lines 112-116), which names this store as one of the three that cannot ride
+ * the migration. userPresets.test.ts pins the current behaviour so the gap
+ * cannot close by accident.
+ */
 export function loadUserPresets(): UserPreset[] {
   try {
     const raw = JSON.parse(localStorage.getItem(LS_KEY) ?? "[]");

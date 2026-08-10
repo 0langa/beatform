@@ -1784,6 +1784,64 @@ Execution sequence around the running Track B program:
    Sixteen mutations, all red, including a renamed persisted format id caught by
    the `loadStoredExportSettings` round-trip.
 
+**THE v14 SIBLING-STORE PACKET — RESOLVED 2026-08-10, three different ways.**
+Designed by a workflow (four parallel investigations, a three-lens judge panel
+on determinism / blast radius / reversibility, then one synthesis). The three
+stores the v14 note at `project.ts:112-116` flagged do NOT get the same answer,
+and that is the finding.
+**`.bftheme` — MIGRATED.** `parseTheme` threads the file's OWN
+`projectSchemaVersion` into `migrateNebulaSaturationV14` before
+`validateDocument`. **The gate is the literal `14`, never `PROJECT_VERSION`** —
+identical today, and it would silently re-divide every already-correct theme by
+0.75 the moment the version becomes 15. Verified the hard way rather than by
+argument: setting `PROJECT_VERSION = 15` with a version-relative gate turns
+three tests red, B3's row 14 among them. An ABSENT `projectSchemaVersion`
+counts as pre-v14 because `serializeTheme` has always written it
+unconditionally, so no Beatform build has ever produced a theme without one;
+the branch is reachable only from a hand-authored file, where the cost is a
+visibly wrong import that Ctrl+Z undoes. Deliberately NOT duplicated in
+`galleryActions` — keying on the file's own field covers drag-import and
+gallery install alike and is immune to a registry index that disagrees with the
+file it points at.
+**The session cache — NOT migrated; a FORWARD-ONLY stamp instead.** All three
+judges refused the retroactive migration, and the reason is timing, not
+difficulty: **v14 shipped in v2.75.0 without a stamp**, so an unstamped
+`viz.params.v1` may hold pre-v14 values needing ÷0.75 or values re-tuned since
+the upgrade that must not be touched — and the same stored `1.0` is a pre-v14
+ceiling AND a post-v14 neutral, so no value heuristic separates them. Running
+it now would convert a 21% desaturation into a **33% oversaturation** for the
+cohort that already fixed it by hand. Ships instead: `viz.docSchema.v1`,
+`cachedDocSchema` captured at module load **before** the stamp overwrites it
+(a future migration that reads a stamp it has already refreshed is worthless),
+and `stampDocSchema()` returning `safeSetItem`'s boolean that nothing checks.
+Nothing reads it this release. `null` means UNKNOWN PROVENANCE — never migrate.
+**`.bfpreset` looks — NOTHING rewritten.** `USER_PRESET_VERSION` stays 1: a
+v2-stamped file is rejected by every build through 2.89.0 and refused by
+`entryGate`. The content-keyed remap was refused too, and its false-positive
+shape is not hypothetical — `devHooks.ts`, the hook used to author published
+gallery content, serialises a look from the SPARSE override map, which is
+exactly the input that defeats a marker test. Shipped: a pin that a stored
+pre-v14 nebula look loads verbatim (so the gap reads as CHOSEN, not missed), a
+truthful comment, a `USER_PRESET_VERSION` tripwire, and a docs-truth fix —
+`version.ts` claimed `APP_VERSION` "is stamped into every … .bfpreset the app
+writes" and that was **false**; `serializeUserPreset` writes only
+`schemaVersion`, `kind`, `preset`.
+**FOUR PLAN CORRECTIONS THE ENGINEER MADE, all worth keeping.** (1) The
+per-version matrix already includes row 14 today — what changes at 15 is that a
+version-relative gate starts migrating it; the comment was overstated and was
+fixed. (2) `0.6 / 0.75 !== 0.8` in f64, so assertions use `toBeCloseTo(…, 12)`.
+(3) "Deep-equal the whole document" needed a deterministic `builderStack`,
+because an absent one makes `validateDocument` mint a starter stack with
+`Math.random()` layer ids — the fixtures failed on ids, not saturation.
+(4) The stamp **cannot** live beside the other `LS_` constants:
+`safeSetItem`'s failure path reads `notifyWriteFailure`, declared further down,
+so calling it above them throws on TDZ the first time a write fails.
+**STILL THE OWNER'S CALL:** adding an `appVersion` field to the `.bfpreset`
+envelope. Forward-only, additive, older readers ignore unknown envelope keys,
+and it would give the NEXT semantics change the discriminator this one lacked —
+but it is a change to a public persisted file format. The comment was corrected
+instead of the format.
+
 **P-3 PART DONE 2026-08-10** (owner-approved filler; eager thumbnails were
 ranked first and are done, coach marks are deliberately NOT).
 **The proposal named one fault and there were two, the second bigger.**

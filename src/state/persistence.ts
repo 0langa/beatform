@@ -11,7 +11,7 @@ import {
   type Aspect,
 } from "./project";
 import { validBgByPreset, validCenterImages } from "./project";
-import { migratePresetIdKeys, migrateTimelinePresetIds } from "./project";
+import { migratePresetIdKeys, migrateTimelinePresetIds, PROJECT_VERSION } from "./project";
 import { canonicalPresetId } from "../render/presets";
 import { validModsByPreset, type ModRoute } from "./modMatrix";
 import { validPost, validMotion } from "./project";
@@ -38,6 +38,10 @@ const LS_BG = "viz.bg.v1";
 const LS_BG_BY_PRESET = "viz.bgByPreset.v1";
 const LS_CENTER_IMAGES = "viz.centerImages.v1";
 const LS_SYNC = "viz.sync.v1";
+/** See the cachedDocSchema block below — the read/stamp pair cannot live up
+ * here, because safeSetItem's failure path touches module `let`s declared
+ * further down and would hit their TDZ. */
+const LS_DOC_SCHEMA = "viz.docSchema.v1";
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -88,6 +92,61 @@ export function safeSetItem(key: string, value: string): boolean {
     return false;
   }
 }
+
+/**
+ * Document-schema stamp for the session cache — INSURANCE FOR THE NEXT
+ * semantics change, read by nothing in this release.
+ *
+ * WHAT IT MEANS, exactly: `cachedDocSchema` is the PROJECT_VERSION of the app
+ * that last WROTE this cache. It is NOT a statement about the semantics of the
+ * values in it, and it must never be read as one.
+ *
+ * `null` means UNKNOWN PROVENANCE — never migrate. v14 (the nebula-saturation
+ * change) shipped in 2.75.0 with no stamp at all, so an unstamped
+ * `viz.params.v1` may hold pre-v14 values (which would need /0.75) or values
+ * the user has since re-tuned by hand (which must not be touched), and nothing
+ * on disk separates the two: the same stored 1.0 is a pre-v14 ceiling and a
+ * post-v14 neutral. Retro-migrating that cohort would turn a 21% desaturation
+ * into a 33% OVERsaturation, so v14 is deliberately NOT migrated here.
+ *
+ * Its only legitimate use is a migration shipped in the SAME release as the
+ * schema bump that needs it, reading `cachedDocSchema < N` before this
+ * module's own stamp refreshes the key.
+ *
+ * ORDER IS THE ENTIRE POINT: the read is captured at module load, BEFORE the
+ * stamp overwrites it. A future migration that reads a stamp it has already
+ * overwritten is worthless. Module scope (like prefs.ts) because it must
+ * complete before any applyDocument can rewrite the cache keys.
+ *
+ * Placed here rather than beside the other LS_ constants on purpose:
+ * safeSetItem's failure path reads `notifyWriteFailure` /
+ * `lastWriteFailureNoticeAt`, so calling it above their declarations would
+ * throw on TDZ the first time a write failed.
+ *
+ * FAILURE BEHAVIOUR: safeSetItem returns false rather than throwing.
+ * stampDocSchema() returns that false; no caller checks it, nothing retries,
+ * nothing is gated on it, nothing throws. Since nothing READS the stamp this
+ * release, a failed write cannot cause wrong behaviour — only a skipped future
+ * migration on that install, which is exactly today's situation. Next boot
+ * tries again.
+ */
+export const cachedDocSchema: number | null = (() => {
+  try {
+    const raw = localStorage.getItem(LS_DOC_SCHEMA);
+    const n = raw === null ? NaN : Number.parseInt(raw, 10);
+    return Number.isInteger(n) ? n : null;
+  } catch {
+    // Blocked storage reads as "unknown provenance", same as absent.
+    return null;
+  }
+})();
+
+export function stampDocSchema(): boolean {
+  return safeSetItem(LS_DOC_SCHEMA, String(PROJECT_VERSION));
+}
+
+// ONCE, at module scope, immediately AFTER the read above — never before.
+stampDocSchema();
 
 /**
  * Trailing-debounced writes for the settings that change on a slider drag
@@ -216,6 +275,13 @@ export function saveStoredPresetId(id: string): void {
 export function loadStoredParams(): Record<string, ParamValues> {
   // Validate like the .bfproj path: a corrupt/format-shifted cache must not
   // put a non-finite value into a Float32 uniform (NaN corrupts the visual).
+  //
+  // NOT applied here: the v14 nebula-saturation remap that parseProject and
+  // parseTheme run. A CHOSEN gap, not an oversight — this cache carries no
+  // schema stamp from before 2.75.0, so a stored nebula saturation could be
+  // pre-v14 or a post-v14 re-tune and nothing distinguishes them. See the
+  // cachedDocSchema block above for the full reasoning and the forward-only
+  // stamp that makes the NEXT semantics change migratable.
   return validParamsByPreset(migratePresetIdKeys(readJson(LS_PARAMS, {})));
 }
 

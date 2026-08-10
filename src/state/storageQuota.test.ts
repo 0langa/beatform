@@ -61,10 +61,19 @@ describe("safeSetItem", { timeout: 30_000 }, () => {
     installGlobals();
   });
 
+  /**
+   * persistence.ts writes ONE key at module scope (stampDocSchema, the
+   * document-schema stamp), which under QuotaStorage fails and warns before
+   * any test body runs. These counts are about the explicit safeSetItem calls
+   * below, so the import-time warn is cleared rather than counted — the import
+   * is setup, not the behaviour under test. Note that no notifier is
+   * registered yet at module init, so the NOTICE counts are untouched.
+   */
   it("never throws on a full store; warns and reports the failure", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.resetModules();
     const { safeSetItem, setWriteFailureNotifier } = await import("./persistence");
+    warn.mockClear();
     const notify = vi.fn();
     setWriteFailureNotifier(notify);
 
@@ -78,6 +87,7 @@ describe("safeSetItem", { timeout: 30_000 }, () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.resetModules();
     const { safeSetItem, setWriteFailureNotifier } = await import("./persistence");
+    warn.mockClear(); // see above: the module-scope schema stamp warns at import
     const notify = vi.fn();
     setWriteFailureNotifier(notify);
 
