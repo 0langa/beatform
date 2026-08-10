@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { orderedPresets } from "../state/presetOrder";
 import { useVizStore } from "../state/store";
 import { IconChevronLeft, IconChevronRight } from "./Icons";
@@ -69,15 +69,86 @@ export function PresetStrip() {
     };
   }, [presets.length, thumbs]);
 
+  // THE strip's one scroller. Everything that moves the selection — a click, a
+  // MIDI pad, P/N, the digits, the arrow keys below — routes here rather than
+  // scrolling for itself, because two scroll authorities on one container is
+  // how you get a smooth animation fighting an instant jump.
+  const revealChip = useCallback((id: string) => {
+    chipsRef.current
+      ?.querySelector(`[data-preset-id="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  }, []);
+
   // Keep the active (or queued) chip visible: switching via keys/MIDI on a
   // narrow window used to move the selection somewhere off-screen with no
   // indication anything happened.
   useEffect(() => {
-    const target = pendingId ?? activeId;
-    chipsRef.current
-      ?.querySelector(`[data-preset-id="${CSS.escape(target)}"]`)
-      ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-  }, [activeId, pendingId]);
+    revealChip(pendingId ?? activeId);
+  }, [activeId, pendingId, revealChip]);
+
+  /**
+   * The chip that owns the strip's single tab stop — the queued switch if one
+   * is in flight, else the active mode, else the first chip.
+   *
+   * The fallback is not theoretical: `presetId` can be a HIDDEN built-in (the
+   * classic `builder`, kept resolvable forever for old projects) that the strip
+   * does not list, and a roving tabindex with no `0` in it removes the whole
+   * strip from the tab order.
+   */
+  const focusTarget = pendingId ?? activeId;
+  const tabId = (presets.find((p) => p.id === focusTarget) ?? presets[0])?.id;
+
+  /**
+   * Roving tabindex with follow-focus arrows — the model `ParamsPanel`'s rail
+   * already uses, deliberately not a second one. The strip is ONE tab stop,
+   * arrows move AND switch (wrapping at both ends), Home/End jump to the
+   * first/last mode.
+   *
+   * Two differences from the rail, both forced by where the strip lives:
+   *
+   *  - the strip is horizontal, so the axis is Left/Right rather than Up/Down;
+   *  - ← and → are GLOBAL shortcuts (seek ±5 s) and a focused `<button>` is not
+   *    one of the tags `useAppShortcuts` exempts, so without stopPropagation
+   *    every arrow press would also seek the track. `preventDefault` alone is
+   *    not enough — it stops the browser scrolling `.chips`, not the window
+   *    listener above us.
+   *
+   * `preventScroll` for the same single-scroller reason as `revealChip`: the
+   * browser's own focus scroll is instant and ancestor-wide, and it would land
+   * on top of the smooth scroll the switch is about to trigger.
+   */
+  const onChipKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End")
+      return;
+    e.preventDefault();
+    e.stopPropagation();
+    // Read the buttons from the DOM, like the rail does: the `+` chip shares
+    // the container, carries no `data-preset-id`, and must never be an arrow
+    // target — it is its own tab stop, exactly as the rail's search item is.
+    const items = chipsRef.current
+      ? [...chipsRef.current.querySelectorAll<HTMLButtonElement>("button.chip[data-preset-id]")]
+      : [];
+    if (items.length === 0) return;
+    const here = items.indexOf(e.currentTarget);
+    const at =
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+          ? items.length - 1
+          : e.key === "ArrowRight"
+            ? (here + 1 + items.length) % items.length
+            : (here - 1 + items.length) % items.length;
+    const next = items[at];
+    const id = next.dataset.presetId;
+    if (!id) return;
+    next.focus({ preventScroll: true });
+    store().queuePreset(id);
+    // Exactly ONE reveal per keypress. Moving to a different mode writes the
+    // store and the effect above does it; Home/End can land on the mode that is
+    // already selected, which changes no field and so re-runs no effect — that
+    // case, and only that case, reveals here.
+    if (id === focusTarget) revealChip(id);
+  };
 
   return (
     <div className="chrome preset-strip">
@@ -104,7 +175,13 @@ export function PresetStrip() {
               title={
                 queued ? `${p.name} — queued for the next boundary` : (p.description ?? p.name)
               }
+              // Same reasoning as the rail: NOT role="tab". These switch what
+              // the canvas draws, and aria-current is the honest word for
+              // "this is the one you are on" without renaming the button.
+              aria-current={p.id === activeId ? "true" : undefined}
               aria-busy={queued || undefined}
+              tabIndex={p.id === tabId ? 0 : -1}
+              onKeyDown={onChipKeyDown}
               onClick={() => store().queuePreset(p.id)}
             >
               {thumb && <img className="chip-thumb" src={thumb} alt="" draggable={false} />}

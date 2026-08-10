@@ -1970,8 +1970,20 @@ export const useVizStore = create<VizState>((set, get) => {
 
     loadPresetThumbnails() {
       if (get().presetThumbs) return;
-      void renderPresetThumbnails().then((presetThumbs) => {
-        if (Object.keys(presetThumbs).length > 0) set({ presetThumbs });
+      // Publishes PER BATCH, not once at the end. The eager slice — the ten
+      // chips that fill the strip at its widest — lands the moment it exists
+      // instead of waiting on the tail, and a device lost mid-run costs the
+      // tail rather than everything. `order` is the user's own strip order,
+      // so a reordered strip gets pictures on the modes THAT user sees first;
+      // renderPresetThumbnails appends anything the order omits, so a stale
+      // or hand-edited order can never cost a mode its thumbnail.
+      //
+      // WHEN to call this is the caller's problem, not the store's: it needs
+      // a real WebGPU device to exist first, and that is a component-lifecycle
+      // fact (see the scheduling comment in App.tsx).
+      void renderPresetThumbnails({
+        order: get().presetOrder,
+        onBatch: (presetThumbs) => set({ presetThumbs }),
       });
     },
 

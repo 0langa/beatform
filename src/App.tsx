@@ -294,24 +294,55 @@ export default function App() {
     void store().checkAutosaveRecovery();
   }, [store]);
 
-  // Preset thumbnails render lazily on idle — startup paint stays instant.
-  // Cleanup cancels whichever timer was armed: under StrictMode's dev-only
-  // mount→cleanup→remount, the FIRST mount's callback is cancelled before it
-  // ever fires, so only the second (real) mount's callback runs — without
-  // this, both survived and every preset thumbnail was GPU-rendered twice.
+  // Preset thumbnails (P-3). The GENERATION is what became eager, not the
+  // start of it: the run publishes its first ten chips as soon as they exist
+  // instead of holding all sixteen back until the last PNG is encoded, and it
+  // walks the strip's own order so those ten are the ten on screen
+  // (render/thumbnails.ts owns both rules).
+  //
+  // The START stays deferred, and on the app's OWN renderer rather than on a
+  // timer. Thumbnails render on a SECOND WebGPU device that competes with the
+  // live render loop for one GPU, so what must not be undercut is the app's
+  // first frames — and `rendererKind` settling to "webgpu" is exactly the
+  // moment the app's device exists and its loop is running. Waiting on it also
+  // means the Canvas2D fallback no longer makes a doomed adapter request and
+  // logs a warning for thumbnails it can never draw, and that a device-loss
+  // rebuild re-arms a run that died with the old device.
+  //
+  // Deliberately NOT gated on animation frames: rAF does not fire at all while
+  // the window is hidden, so a shell launched minimized (or occluded at boot)
+  // would sit with text chips until someone looked at it.
+  //
+  // The idle callback then carries a 300 ms DEADLINE. Plain
+  // `requestIdleCallback` — what this replaces — can be starved indefinitely
+  // by that same render loop, and its no-rIC fallback was a flat 1200 ms.
+  //
+  // The store action owns the render and the publishing; this effect owns
+  // only WHEN to start it, because "a WebGPU device exists" is a
+  // component-lifecycle fact and the store has no business watching for it.
+  // Cleanup cancels whatever is armed — under StrictMode's dev-only
+  // mount→cleanup→remount the first mount's callback never fires.
   useEffect(() => {
-    const kick = () => store().loadPresetThumbnails();
+    if (rendererKind !== "webgpu") return;
     const w = window as unknown as {
-      requestIdleCallback?: (cb: () => void) => number;
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
       cancelIdleCallback?: (handle: number) => void;
     };
-    if (w.requestIdleCallback) {
-      const handle = w.requestIdleCallback(kick);
-      return () => w.cancelIdleCallback?.(handle);
-    }
-    const timer = setTimeout(kick, 1200);
-    return () => clearTimeout(timer);
-  }, [store]);
+    let cancelled = false;
+    let idleHandle: number | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const kick = () => {
+      if (cancelled) return;
+      store().loadPresetThumbnails();
+    };
+    if (w.requestIdleCallback) idleHandle = w.requestIdleCallback(kick, { timeout: 300 });
+    else timer = setTimeout(kick, 300);
+    return () => {
+      cancelled = true;
+      if (idleHandle !== null) w.cancelIdleCallback?.(idleHandle);
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [rendererKind, store]);
 
   // Keyboard shortcuts — the whole global key map lives in useAppShortcuts.
   useAppShortcuts(store);
@@ -512,6 +543,7 @@ export default function App() {
           demos={demos}
           onOpenFile={() => fileInputRef.current?.click()}
           onDemo={(id) => void store().loadDemo(id)}
+          onGallery={() => store().setShowGallery(true)}
         />
       )}
 

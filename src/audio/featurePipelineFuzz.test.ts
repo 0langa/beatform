@@ -264,7 +264,16 @@ function tile(dst: Float32Array, pattern: number[]): void {
   for (let i = 0; i < dst.length; i++) dst[i] = pattern[i % pattern.length];
 }
 
-describe("FeaturePipeline property fuzz", () => {
+/**
+ * Both describes carry an explicit 30s budget rather than vitest's 5s default.
+ * A fast-check property here runs the whole OfflineAnalyzer over synthesized
+ * audio hundreds of times, so the real cost is seconds even on an idle
+ * machine, and it went red on a loaded one while passing alone and under
+ * `--maxWorkers=2`. Same root-fix the DSP characterization suite and the
+ * Visuals panel suite already carry (see CLAUDE.md): a failure here is real,
+ * and rerunning is not the protocol.
+ */
+describe("FeaturePipeline property fuzz", { timeout: 30_000 }, () => {
   /**
    * MUTATION-CHECKED, twice:
    *   - `clamp01`'s upper bound removed (`v > 0 ? v : 0`), which lets a
@@ -394,7 +403,7 @@ describe("FeaturePipeline property fuzz", () => {
   });
 });
 
-describe("sanitizeSync property fuzz", () => {
+describe("sanitizeSync property fuzz", { timeout: 30_000 }, () => {
   /**
    * MUTATION-CHECKED: dropping the MIN_SPAN_RATIO coercion went RED with
    * `expected 1 to be greater than or equal to 2.999999999`; dropping the

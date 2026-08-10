@@ -11,6 +11,33 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- **The mode strip takes the keyboard now.** Tab reaches it once, then the
+  arrow keys walk the modes and switch as they go, with Home and End for the
+  ends and a visible focus ring throughout — the same model the Visuals rail
+  already used.
+- **Hovering the seek bar tells you where you would land**, and the A–B loop
+  markers have a proper hit target instead of a 16-pixel one.
+- **The four status chips in the panel footer explain themselves.** Hover any
+  of them: what the graphics backend means, that tempo and key are detected
+  once from the file and are not available for live system audio, and that the
+  loudness figure is the momentary one — measured ahead of the volume control,
+  held while paused, and not the number export normalisation targets.
+- **Changing the volume with the chrome hidden now shows a brief readout**, so
+  you can tell the key press landed.
+- **The empty state offers the Gallery** as a fourth way in, which is the
+  shortest route to something worth looking at if you have no file to hand.
+
+### Changed
+
+- **The mode strip shows pictures almost immediately on a fresh start.** It
+  used to render every mode's thumbnail before showing any of them, and in an
+  order unrelated to the one on screen — so the first minutes of a new install
+  were the least impressive minutes the app ever showed. The modes you can
+  actually see are rendered first now, and they appear as soon as they are
+  ready rather than waiting for the whole set.
+
 ## [2.88.0] - 2026-08-10
 
 ### Fixed

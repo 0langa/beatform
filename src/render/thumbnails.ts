@@ -2,14 +2,26 @@ import { WebGPURenderer } from "./webgpuRenderer";
 import { presets } from "./presets";
 import { defaultBuilderStack, packBuilderParams } from "./builder2";
 import { defaultParams } from "./types";
+import type { PresetDef } from "./types";
 import type { AudioFeatures } from "../audio/types";
 
 /**
  * Preset thumbnails: render every mode once with canned "mid-song, energetic"
  * features on a small hidden WebGPU canvas and cache the PNGs for the strip.
- * Fully deterministic (fixed constants, fixed times) and generated lazily
- * after first paint so startup stays instant. Falls back to no thumbnails
- * when WebGPU is unavailable — the strip keeps its text chips.
+ * Fully deterministic (fixed constants, fixed times) and generated after first
+ * paint so startup stays instant. Falls back to no thumbnails when WebGPU is
+ * unavailable — the strip keeps its text chips.
+ *
+ * Two passes, not one (P-3). The run used to walk the REGISTRY array and
+ * publish a single map at the very end, which is the worst of both orders: the
+ * chips a new user is actually looking at (the strip's first few) are rendered
+ * near the END of registry order — `echo-trails` is 3rd on the strip and 10th
+ * in the registry, `bass-circle` 4th and 15th — and nothing at all appeared
+ * until all sixteen modes plus all sixteen PNG encodes had finished. So a
+ * brand-new user's first minute was a row of text chips no matter how fast the
+ * first thumbnail was ready. The run now walks the STRIP's order and publishes
+ * the first {@link EAGER_THUMB_COUNT} as soon as they exist; the tail follows
+ * on the next idle window.
  */
 
 const W = 144;
@@ -29,6 +41,64 @@ const WARM_FRAMES = 14;
  * time in small enough hops keeps every step inside the catch-up cap.
  */
 const PARTICLE_WARM_FRAMES = 120;
+
+/**
+ * How many thumbnails are rendered and published BEFORE the rest.
+ *
+ * Derived from what the user can actually see, not picked by feel: `.chips`
+ * lives inside a `.preset-strip` capped at 1040px, and a chip is 84px of
+ * thumbnail plus a 6px gap — so ten is a full strip at the widest the strip is
+ * ever allowed to be, and more than a full strip at every window narrower than
+ * that. Rendering more would be work spent on chips that are past the fold and
+ * behind an edge fade.
+ *
+ * WHICH ten is not decided here at all: it is the first ten of the order the
+ * strip itself renders (see {@link thumbnailSequence}), so a user who has
+ * reordered the strip in Preferences gets pictures on THEIR first ten chips.
+ */
+export const EAGER_THUMB_COUNT = 10;
+
+/**
+ * The render order: the strip's order first, then anything it did not mention.
+ *
+ * The tail matters as much as the head. `order` comes from the user's
+ * persisted strip order, which is reconciled against the registry at boot —
+ * but this function must not depend on that having happened, or a stale or
+ * hand-edited order would silently cost some mode its thumbnail forever.
+ * Every registry preset appears exactly once, whatever `order` contains.
+ */
+export function thumbnailSequence(order: readonly string[] = []): PresetDef[] {
+  const byId = new Map(presets.map((p) => [p.id, p]));
+  const seen = new Set<string>();
+  const out: PresetDef[] = [];
+  for (const id of order) {
+    const def = byId.get(id);
+    if (!def || seen.has(id)) continue;
+    seen.add(id);
+    out.push(def);
+  }
+  for (const p of presets) if (!seen.has(p.id)) out.push(p);
+  return out;
+}
+
+/**
+ * Hand the main thread back between the eager slice and the tail.
+ *
+ * Thumbnails run on a SECOND WebGPU device that competes with the live render
+ * loop for one GPU, so the tail — which nobody is waiting on — yields to an
+ * idle window first. The timeout is what keeps it from being starved forever
+ * by that same render loop; the `setTimeout` branch covers environments with
+ * no `requestIdleCallback` at all (Safari-derived webviews, jsdom).
+ */
+function idleYield(): Promise<void> {
+  return new Promise((resolve) => {
+    const w = globalThis as {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    };
+    if (w.requestIdleCallback) w.requestIdleCallback(() => resolve(), { timeout: 600 });
+    else setTimeout(resolve, 0);
+  });
+}
 
 /**
  * Param overrides applied ONLY to the thumbnail render.
@@ -199,19 +269,39 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 
 let inflight: Promise<Record<string, string>> | null = null;
 
+export interface ThumbnailRun {
+  /**
+   * Preset ids in the order the STRIP shows them. Anything the registry does
+   * not know is ignored and anything the list omits is appended, so this is
+   * safe to hand a persisted value straight from prefs.
+   */
+  order?: readonly string[];
+  /**
+   * Called with the accumulated presetId -> data-URL map when the eager slice
+   * lands, and again when the tail does. Copies, never the live object, so a
+   * consumer can hand it straight to a store without aliasing.
+   *
+   * This — not the returned promise — is the interesting result: the promise
+   * cannot resolve twice, and resolving only at the end is exactly the
+   * all-or-nothing publish P-3 is about.
+   */
+  onBatch?: (thumbs: Record<string, string>) => void;
+}
+
 /** Generate (once per session) a presetId -> PNG-dataURL map. */
-export function renderPresetThumbnails(): Promise<Record<string, string>> {
-  inflight ??= generate().catch((e) => {
+export function renderPresetThumbnails(run: ThumbnailRun = {}): Promise<Record<string, string>> {
+  inflight ??= generate(run).catch((e) => {
     console.warn("[thumbnails] generation failed:", e);
     return {};
   });
   return inflight;
 }
 
-async function generate(): Promise<Record<string, string>> {
+async function generate({ order, onBatch }: ThumbnailRun): Promise<Record<string, string>> {
   const canvas = new OffscreenCanvas(W, H);
   const renderer = await WebGPURenderer.create(canvas);
   const out: Record<string, string> = {};
+  const queue = thumbnailSequence(order);
   try {
     renderer.resize(W, H, 1);
     // Builder Studio keeps its per-layer values in a storage buffer, not in
@@ -219,7 +309,8 @@ async function generate(): Promise<Record<string, string>> {
     // reads opacity 0 and the mode rendered as a SOLID BLACK chip — worse than
     // the readable text chip an unthumbed mode gets. Seed the starter stack.
     renderer.setBuilderParams(packBuilderParams(defaultBuilderStack()));
-    for (const p of presets) {
+    for (let i = 0; i < queue.length; i++) {
+      const p = queue[i];
       renderer.setPreset(p);
       const params = { ...defaultParams(p), ...THUMB_PARAMS[p.id] };
       // Warm a few frames so feedback trails have content, then snapshot with
@@ -238,9 +329,19 @@ async function generate(): Promise<Record<string, string>> {
       }
       await renderer.gpuDone();
       out[p.id] = await blobToDataUrl(await canvas.convertToBlob({ type: "image/png" }));
+      // The eager slice is complete: publish it and let a frame land before
+      // the tail starts competing with the live renderer again. Publishing
+      // here rather than after the loop is also what makes a mid-run failure
+      // survivable — a device lost while rendering mode 12 now costs the user
+      // the tail, not the ten chips that were already on screen.
+      if (i === EAGER_THUMB_COUNT - 1 && i < queue.length - 1) {
+        onBatch?.({ ...out });
+        await idleYield();
+      }
     }
   } finally {
     renderer.dispose();
   }
+  onBatch?.({ ...out });
   return out;
 }

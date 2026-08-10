@@ -1784,6 +1784,61 @@ Execution sequence around the running Track B program:
    Sixteen mutations, all red, including a renamed persisted format id caught by
    the `loadStoredExportSettings` round-trip.
 
+**P-3 PART DONE 2026-08-10** (owner-approved filler; eager thumbnails were
+ranked first and are done, coach marks are deliberately NOT).
+**The proposal named one fault and there were two, the second bigger.**
+(a) The run walked the REGISTRY array while the user looks at the STRIP:
+`echo-trails` is 3rd on the strip and 10th in the registry, `bass-circle` 4th
+and 15th, so the chips a user sees first were rendered nearly last. (b) The
+publish was **all-or-nothing** — one `set({presetThumbs})` after all 16 modes
+AND all 16 PNG encodes — so a mode finished at 200 ms stayed a text label for
+the length of the entire run.
+Now: walk `thumbnailSequence(order)` (the user's strip order, then anything it
+omits, so a stale or hand-edited order can never cost a mode its thumbnail),
+publish the first ten through `onBatch` the moment they exist, yield, then
+finish the tail. A device lost mid-run costs the tail, not the ten already on
+screen. **Ten is derived, not picked:** `.preset-strip` caps at 1040px and a
+thumb chip is 84+6px, so ten fills the strip at its widest.
+**GPU contention — and a live-testing catch worth keeping.** Thumbnails run on
+a SECOND WebGPU device competing with the live loop. The first gating attempt
+used two `requestAnimationFrame`s; **rAF does not fire in a hidden window**, so
+a shell launched minimized would sit on text chips indefinitely. The real
+precondition is `rendererKind !== "webgpu" → return`: it is exactly when the
+app's own device exists, works hidden or visible, skips a doomed adapter
+request on the Canvas2D fallback, and re-arms after a device-loss rebuild. The
+idle callback carries a 300 ms deadline because plain `requestIdleCallback` can
+be starved indefinitely by that same loop.
+**Mode-strip keyboard (P-10's sixth item, done here because it lives in
+`PresetStrip`).** Copies the ParamsPanel rail verbatim in shape — roving
+tabindex, follow-focus arrows that move AND switch, wrap, Home/End. Two places
+it did not fit: the axis is horizontal, and **`stopPropagation` is required
+where the rail needs none** — ← and → are global seek shortcuts and
+`useAppShortcuts` exempts only `INPUT`/`SELECT`, so without it every arrow
+press would also seek ±5s (`preventDefault` stops the container scrolling, not
+the window listener). Also added `aria-current`, a `presets[0]` fallback for
+the tab stop (a hidden built-in like the classic `builder` can be `presetId`,
+and a roving tabindex with no `0` drops the strip out of the tab order), and
+the shared focus ring. `revealChip()` is the single scroller: arrows use
+`focus({preventScroll:true})`, and the explicit reveal fires only when Home/End
+lands on the already-selected mode (no store write ⇒ no effect ⇒ focus on an
+invisible chip). Exactly one `scrollIntoView` per keypress, asserted both ways.
+**Empty state** gains a Gallery path.
+**NOT DONE, deliberately: the three coach marks.** Placement, copy and
+treatment are unmade design decisions, and the proposal's own text names
+"③ Studio button" — a surface that has not existed since v2.81.0. Owner call.
+Seventeen mutations, all red. Device-verified on real hardware: two batches
+observed (10 ids, then all 16), and the live keyboard walk wraps past the `+`
+chip correctly. One badly-written test was rewritten by its own author after
+its title claimed a case it never exercised.
+Integration note: the store's `loadPresetThumbnails()` was left with zero
+callers by the wave (App drove `useVizStore.setState` directly, because the
+action published once by construction). Folded back in the main session — the
+action owns the render and the publishing, the effect owns only WHEN to start,
+because "a WebGPU device exists" is a component-lifecycle fact. Pinned by
+`presetThumbnails.test.ts`, whose first assertion is that the FIRST publish is
+partial; asserting only the final state would pass against the old
+all-or-nothing action.
+
 **P-10 DONE 2026-08-10** (owner-approved polish bundle). Six items; one was
 already closed and one is deliberately flagged.
 **Footer chip tooltips.** All four re-derived from the code, not from the

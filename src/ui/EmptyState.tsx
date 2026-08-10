@@ -1,11 +1,20 @@
 import type { DemoDef } from "../audio/demoTrack";
-import { IconDrop, IconFolder, IconPlay } from "./Icons";
+import { IconDrop, IconFolder, IconGallery, IconPlay } from "./Icons";
 
-/** Centered onboarding hero shown until a track is loaded. */
+/**
+ * Centered onboarding hero shown until a track is loaded.
+ *
+ * Three paths for someone who HAS a file (drop it, browse for it, or take a
+ * demo instead) and, since P-3, one for someone who does not: the Gallery is
+ * the shortest route from a cold start to something worth looking at, because
+ * a theme brings a whole look with it and the demos supply the audio. It sits
+ * last and at chip weight — the file paths are still the point of the screen.
+ */
 export function EmptyState(props: {
   demos: DemoDef[];
   onOpenFile: () => void;
   onDemo: (id: string) => void;
+  onGallery: () => void;
 }) {
   return (
     <div className="empty-state">
@@ -30,6 +39,17 @@ export function EmptyState(props: {
             </button>
           ))}
         </div>
+        <div className="empty-divider">
+          <span>or start from the Gallery</span>
+        </div>
+        <button
+          className="chip gallery-chip"
+          title="Community looks and themes — pair one with a demo above"
+          onClick={props.onGallery}
+        >
+          <IconGallery size={13} />
+          Browse looks and themes
+        </button>
       </div>
     </div>
   );
