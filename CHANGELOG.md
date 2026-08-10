@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.91.0] - 2026-08-11
+
 ### Fixed
 
 - **Exports no longer start before the track has been analysed.** Hitting
@@ -2537,7 +2539,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.90.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.91.0...HEAD
+[2.91.0]: https://github.com/0langa/beatform/compare/v2.90.0...v2.91.0
 [2.90.0]: https://github.com/0langa/beatform/compare/v2.89.0...v2.90.0
 [2.89.0]: https://github.com/0langa/beatform/compare/v2.88.0...v2.89.0
 [2.88.0]: https://github.com/0langa/beatform/compare/v2.87.0...v2.88.0
