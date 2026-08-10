@@ -328,6 +328,14 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     // slices the audio to 0, so carry the segment offset for the frame index to
     // match (otherwise the loop shows the track's opening, not the segment).
     bgVideo: o.bgVideo ? { ...o.bgVideo, timeOffset: o.segment?.start ?? 0 } : undefined,
+    // Where the clip's t=0 sits on the track. Absolute for exactly the reason
+    // bgVideo.timeOffset directly above is (that field is the precedent):
+    // everything else in this job is rebased ONTO the clip, so one number has
+    // to say where the clip starts, or absolute-time sources cannot be
+    // recovered. The core stamps it onto every analyzed frame as
+    // features.timeOrigin, which is what holds the tempo-locked LFO sources at
+    // the phase the preview shows (E2-R1).
+    timeOrigin: o.segment?.start ?? 0,
     // Segment exports (Canvas loops) slice the audio, so the stems' t=0 must
     // move with it — same treatment as beatGrid/timeline below. Unshifted
     // stems would modulate the loop with envelopes from the track's start.

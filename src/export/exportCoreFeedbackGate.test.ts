@@ -75,6 +75,10 @@ function job(overrides: Partial<ExportJob> = {}): ExportJob {
     width: 32,
     height: 32,
     fps: 30,
+    // A full-track job: the clip IS the track, so its origin is 0. Required
+    // rather than defaulted, so a job that forgets it cannot render silently at
+    // the wrong moment (E2-R1).
+    timeOrigin: 0,
     bitrate: 1_000_000,
     presetId: "spectrum-bars", // no feedbackSample() in its WGSL
     params: {},

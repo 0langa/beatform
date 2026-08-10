@@ -581,7 +581,7 @@ describe("mod v2: per-route lag (attack/release EMA)", () => {
   });
 });
 
-describe("mod v2: beat-locked LFO sources", () => {
+describe("mod v2: tempo-locked LFO sources", () => {
   it("phase math: sine/saw/square at documented points (bpm 120)", () => {
     // time 0.25 s @120 BPM → beatPos 0.5 → phase 0.5 for R=1
     const f = features({ time: 0.25, bpm: 120 });
@@ -625,6 +625,96 @@ describe("mod v2: beat-locked LFO sources", () => {
     ]);
     const out = applyMods(preset, minBase(), routes, features({ time: 0.5, bpm: 60 }));
     expect(out[spec.key]).toBeCloseTo(spec.min + 0.25 * range, 10);
+  });
+});
+
+/**
+ * E2-R1 — the LFO phase anchor.
+ *
+ * A segment export slices the audio so the clip starts at t=0, which rebases
+ * every other time-bearing structure in the job. The LFOs anchored on
+ * `features.time` moved with that rebase while nothing else about them did, so
+ * the exported clip ran the whole cycle from a different starting phase than
+ * the preview showed. `features.timeOrigin` carries the clip's t=0 back in
+ * track time; the LFO reads `time + (timeOrigin ?? 0)`.
+ */
+describe("mod v2: the LFO anchor is ABSOLUTE track time (E2-R1)", () => {
+  /**
+   * 120 BPM, a segment starting 137 s in, 8 beats per cycle:
+   *   274 beats / 8 = 34.25 cycles → phase 0.25 → sine 0.5.
+   *
+   * THE RATE IS LOAD-BEARING. At 0.25 / 0.5 / 1 / 2 beats per cycle this same
+   * start lands on a whole number of cycles, i.e. phase 0 — which is exactly
+   * what the defect produced. A test written at those rates passes against the
+   * broken code, so these use 8 and assert the VALUE rather than "the two
+   * differ".
+   */
+  const SEG_START = 137;
+  const BPM = 120;
+  const routes = validModRoutes([
+    { id: "lfo", source: "lfo:sine:8", param: spec.key, amount: 0.5 },
+  ]);
+  const at = (f: AudioFeatures) => applyMods(preset, minBase(), routes, f)[spec.key];
+
+  it("a segment export's frame 0 resolves what the preview shows at 137 s", () => {
+    const exported = at(features({ time: 0, bpm: BPM, timeOrigin: SEG_START }));
+    const preview = at(features({ time: SEG_START, bpm: BPM }));
+    expect(exported).toBe(preview);
+    // By VALUE too: sine at phase 0.25 is 0.5, halved by amount 0.5 → a
+    // quarter of the range above the base. The defect resolved phase 0 → 0 →
+    // exactly spec.min.
+    expect(exported).toBeCloseTo(spec.min + 0.25 * range, 10);
+    // Non-vacuity: both the correct value and the broken one are inside the
+    // spec range, so nothing here is a clamp saturating at an endpoint.
+    expect(exported).toBeGreaterThan(spec.min);
+    expect(exported).toBeLessThan(spec.max);
+  });
+
+  it("holds for every wave, not just the one the defect was found on", () => {
+    const exported = features({ time: 0, bpm: BPM, timeOrigin: SEG_START });
+    const preview = features({ time: SEG_START, bpm: BPM });
+    // Phase 0.25 → sine 0.5, saw 0.25, square 1 (the high half is phase < 0.5).
+    expect(sourceValue(exported, "lfo:sine:8")).toBeCloseTo(0.5, 10);
+    expect(sourceValue(exported, "lfo:saw:8")).toBeCloseTo(0.25, 10);
+    expect(sourceValue(exported, "lfo:square:8")).toBe(1);
+    for (const wave of ["sine", "saw", "square"] as const) {
+      const id = `lfo:${wave}:8` as ModSource;
+      expect(sourceValue(exported, id), wave).toBe(sourceValue(preview, id));
+    }
+  });
+
+  it("splits the clip's origin off `time`, so a mid-clip frame still advances", () => {
+    // The origin is a constant offset, not a replacement for clip time: frame
+    // N of the clip must resolve the preview's value at SEG_START + N/fps.
+    for (const dt of [0, 0.25, 1.5, 7.125]) {
+      expect(
+        at(features({ time: dt, bpm: BPM, timeOrigin: SEG_START })),
+        `clip time ${dt}`,
+      ).toBeCloseTo(at(features({ time: SEG_START + dt, bpm: BPM })), 10);
+    }
+  });
+
+  it("an ABSENT timeOrigin is EXACT identity with an explicit 0 (the live path)", () => {
+    // The live path never sets the field, so `?? 0` is what preserves today's
+    // arithmetic bit-for-bit. bpm 0 exercises the 120-BPM-equivalent fallback
+    // clock, which does its own multiply and would drift separately.
+    const times = [0, 0.37, 1.11, 2.5, 4.73, 137, 137.31];
+    const bpms = [0, 97, 120];
+    let compared = 0;
+    for (const s of LFO_SOURCES) {
+      for (const bpm of bpms) {
+        for (const t of times) {
+          const f = features({ time: t, bpm });
+          expect(sourceValue(f, s.id), `${s.id} @ ${t}s, bpm ${bpm}`).toBe(
+            sourceValue({ ...f, timeOrigin: 0 }, s.id),
+          );
+          compared++;
+        }
+      }
+    }
+    // Non-vacuity: the sweep really did run over the whole family.
+    expect(LFO_SOURCES.length).toBe(18);
+    expect(compared).toBe(LFO_SOURCES.length * bpms.length * times.length);
   });
 });
 

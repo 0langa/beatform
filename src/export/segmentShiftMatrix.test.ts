@@ -64,13 +64,27 @@ const BAND_LO = 137;
 const BAND_HI = 197;
 
 /**
- * The one legitimately-absolute number in a segment job: the video background
- * loops on ABSOLUTE track time in the live view, so the core is told where the
- * clip starts rather than having the loop rebased.
+ * The legitimately-absolute numbers in a segment job:
+ *  - bgVideo.timeOffset — the video background loops on ABSOLUTE track time in
+ *    the live view, so the core is told where the clip starts rather than
+ *    having the loop rebased;
+ *  - timeOrigin — the clip's own t=0 in track time, which the core stamps onto
+ *    every analyzed frame so absolute-time sources (the tempo-locked LFOs) can
+ *    recover the phase the preview shows (E2-R1).
  */
-const ABSOLUTE_BY_DESIGN = ["bgVideo.timeOffset"];
+const ABSOLUTE_BY_DESIGN = ["bgVideo.timeOffset", "timeOrigin"];
 
-/** Keys whose value carries at least one track timestamp. */
+/**
+ * Keys whose value carries at least one track timestamp.
+ *
+ * A key can be in BOTH this list and ABSOLUTE_BY_DESIGN, and `timeOrigin` is:
+ * the two lists answer different questions. TIME_BEARING says "this field
+ * holds a track timestamp, so a reviewer must decide what a rebase does to
+ * it"; ABSOLUTE_BY_DESIGN says "and the answer for this one is: nothing —
+ * leave it absolute". Without the first membership the census would let the
+ * field ride through unclassified; without the second the sentinel sweep would
+ * flag its (correct) absolute value as an unshifted leftover.
+ */
 const TIME_BEARING = [
   "pcm",
   "beatGrid",
@@ -81,6 +95,7 @@ const TIME_BEARING = [
   "stems",
   "audiogram",
   "bgVideo",
+  "timeOrigin",
 ] as const;
 
 /**
@@ -350,10 +365,21 @@ describe("segment-shift checklist: the sentinel-band sweep", () => {
   });
 
   it("keeps the video-background loop anchored to absolute track time", async () => {
-    // The one absolute the sweep whitelists — pinned by value so the whitelist
+    // The absolutes the sweep whitelists are pinned BY VALUE so the whitelist
     // can never quietly become a hiding place for an unshifted field.
     expect((await buildJob({ segment })).bgVideo?.timeOffset).toBe(SEG_START);
     expect((await buildJob()).bgVideo?.timeOffset).toBe(0);
+  });
+
+  it("carries the clip's own t=0 as UNSHIFTED track time (E2-R1)", async () => {
+    // The other whitelisted absolute. `timeOrigin` is what the core stamps
+    // onto every analyzed frame so the tempo-locked LFOs resolve the phase the
+    // preview shows; shifting it (or defaulting it to 0 under a segment) puts
+    // the export's first frame at cycle start while the preview sits
+    // mid-cycle. Pinned by value: subtracting the segment start here would
+    // give 0 and satisfy the band sweep perfectly.
+    expect((await buildJob({ segment })).timeOrigin).toBe(SEG_START);
+    expect((await buildJob()).timeOrigin).toBe(0);
   });
 });
 

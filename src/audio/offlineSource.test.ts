@@ -337,6 +337,55 @@ describe("OfflineAnalyzer", () => {
     expect(trace[119][5]).toBeGreaterThan(0.5);
   });
 
+  /**
+   * E2-R1. A segment export hands the analyzer PCM that is already sliced to
+   * the clip, so its frames run on CLIP time — and everything else in the job
+   * (timeline, lane keyframes, beat grid, lyrics, sections, vocal spans,
+   * stems) has been rebased to match. `timeOrigin` is the one number that says
+   * where the clip's t=0 sits on the track, for the sources that need an
+   * absolute anchor.
+   */
+  describe("clip origin (E2-R1)", () => {
+    const ORIGIN = 137;
+    const withOrigin = (fps: number) =>
+      new OfflineAnalyzer(makeTestBuffer(), fps, 96, undefined, null, null, null, ORIGIN);
+
+    it("stamps the origin WITHOUT moving clip time", () => {
+      const a = withOrigin(FPS);
+      const f0 = a.nextFrameFeatures();
+      // The guard against the tempting wrong implementation, `f.time = t +
+      // timeOrigin`. That would shift the timeline, grid, lyrics, sections,
+      // spans and stems a SECOND time — buildJob already moved them all.
+      expect(f0.time).toBe(0);
+      expect(f0.timeOrigin).toBe(ORIGIN);
+      const f1 = a.nextFrameFeatures();
+      expect(f1.time).toBeCloseTo(1 / FPS, 12);
+      expect(f1.timeOrigin).toBe(ORIGIN);
+    });
+
+    it("defaults to 0, so full-track exports and every other caller are unchanged", () => {
+      const a = new OfflineAnalyzer(makeTestBuffer(), FPS);
+      for (let n = 0; n < 5; n++) expect(a.nextFrameFeatures().timeOrigin).toBe(0);
+    });
+
+    it("stamps BOTH of nextFrameFeatures' return paths", () => {
+      // Rendering above the 60 Hz analysis clock, most frames find no tick due
+      // and return step()'s value directly instead of `pipeline.features`.
+      // Both are the same object — pipeline.update() mutates and returns its
+      // own `features` — which is what lets ONE write in step() cover both
+      // paths. Asserted structurally (identity) and then over a full 144 fps
+      // walk, where 288 frames share only 120 analysis ticks, so at least 168
+      // of them took the presentation-only path.
+      const a = withOrigin(144);
+      expect(a.nextFrameFeatures()).toBe(a.nextFrameFeatures());
+      const b = withOrigin(144);
+      expect(b.frameCount).toBe(288);
+      for (let n = 0; n < b.frameCount; n++) {
+        expect(b.nextFrameFeatures().timeOrigin, `frame ${n}`).toBe(ORIGIN);
+      }
+    });
+  });
+
   it("matches the golden feature trace (regression pin)", () => {
     const analyzer = new OfflineAnalyzer(makeTestBuffer(), FPS);
     const { beatFrames, trace } = collectTrace(analyzer);

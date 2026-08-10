@@ -186,7 +186,7 @@ to edit rather than a blank page.
 Sources are the drums and bands (kick, snare, hats, bass, mids, treble,
 voice), the track-wide signals (loudness, energy, stereo width, section
 change, beat phase, bar phase), the lyric line when one is loaded, any
-imported stem's bands, and eighteen beat-synced **LFOs** — sine, saw or
+imported stem's bands, and eighteen tempo-synced **LFOs** — sine, saw or
 square across ¼ beat to 8 beats — for movement that does not wait on the
 music.
 

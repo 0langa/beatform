@@ -70,8 +70,11 @@ export type ModSource =
   // Stem sources: envelope timelines of imported sidecar tracks, sampled at
   // track time ("stem1:kick"). Valid ids are produced by src/audio/stems.ts.
   | `stem${1 | 2 | 3 | 4}:${"energy" | "bass" | "mid" | "treble" | "kick" | "snare" | "hat"}`
-  // Beat-locked LFO sources ("lfo:sine:1"): pure functions of track time and
-  // the beat grid — zero state, seek-stable by construction. See lfoValue().
+  // Tempo-locked LFO sources ("lfo:sine:1"): pure functions of ABSOLUTE track
+  // time and the tempo — zero state, seek-stable by construction. "Tempo",
+  // not "beat": the only grid input is `bpm`, so the cycle length follows the
+  // tempo but the phase is not aligned to the grid's first beat. See
+  // lfoValue().
   | `lfo:${LfoWave}:${"0.25" | "0.5" | "1" | "2" | "4" | "8"}`;
 
 export type LfoWave = "sine" | "saw" | "square";
@@ -120,17 +123,35 @@ export const LFO_SOURCES: Array<{ id: ModSource; label: string }> = [...LFO_PARS
 );
 
 /**
- * Beat-locked LFO value, 0..1 — a PURE function of (track time, beat grid):
- *   beatPos = time × bpm / 60         (bpm === 0 → beatPos = time × 2,
+ * Tempo-locked LFO value, 0..1 — a PURE function of (absolute track time,
+ * tempo):
+ *   t       = time + (timeOrigin ?? 0)   — see below
+ *   beatPos = t × bpm / 60            (bpm === 0 → beatPos = t × 2,
  *                                      i.e. a 120-BPM-equivalent fallback)
  *   phase   = fract(beatPos / rate)   (rate = beats per cycle)
  *   sine    = 0.5 − 0.5·cos(2π·phase)   — starts at 0, peaks mid-cycle
  *   saw     = phase                      — ramp 0 → 1
  *   square  = phase < 0.5 ? 1 : 0        — high half first
  * Deterministic and seek-stable by construction; no state anywhere.
+ *
+ * "Tempo-locked", not "beat-locked": `bpm` is the only grid input, so a
+ * cycle lasts `rate` beats but its phase is anchored to track time zero, not
+ * to the beat grid's first beat.
+ *
+ * E2-R1 — why the anchor is ABSOLUTE track time: `features.time` is CLIP
+ * time in a segment export (the audio is sliced so the clip starts at 0),
+ * while the preview plays the same music at its real track time. Anchoring
+ * on `features.time` alone therefore moved the LFO's origin and nothing
+ * else's: at 120 BPM with `lfo:sine:8` and a segment starting at 137 s the
+ * preview sat at phase 0.25 and the export's first frame at phase 0 — half
+ * the range, for the whole clip. Same divergence class as F4a.
+ * `timeOrigin` is the clip's origin in track time; it is absent on the live
+ * path and 0 for a full-track export, so `?? 0` leaves both bit-identical to
+ * the pre-E2-R1 arithmetic.
  */
 function lfoValue(wave: LfoWave, rate: number, features: AudioFeatures): number {
-  const beatPos = features.bpm > 0 ? (features.time * features.bpm) / 60 : features.time * 2;
+  const t = features.time + (features.timeOrigin ?? 0);
+  const beatPos = features.bpm > 0 ? (t * features.bpm) / 60 : t * 2;
   const cycles = beatPos / rate;
   const phase = cycles - Math.floor(cycles);
   if (wave === "sine") return 0.5 - 0.5 * Math.cos(2 * Math.PI * phase);

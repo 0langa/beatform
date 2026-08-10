@@ -606,8 +606,8 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       keyframes, lyrics lines AND words, stem analysis, audiogram waveform,
       and `bgVideo.timeOffset` (deliberately ABSOLUTE — the live view loops on
       track time). Downstream tolerance of negative values checked too.
-      **E2-R1 (NEW, NOT FIXED — a real preview≠export divergence, same class
-      as F4a):** beat-locked LFO mod sources shift phase in a segment export.
+      **E2-R1 — FIXED 2026-08-10, together with option (f); see the E2-R1
+      entry below for what shipped. Original finding, kept as written:** beat-locked LFO mod sources shift phase in a segment export.
       `lfoValue` (`modMatrix.ts:133`) anchors on `features.time`, which every
       other structure rebases to CLIP time — so the LFO's anchor moves while
       nothing else does. At 120 BPM with `lfo:sine:8` (a 4s cycle) and a
@@ -734,25 +734,71 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       that skews every run identically. Fixed by asserting the recorded walk's
       SHAPE as well. The comment at `thumbnails.ts:46` no longer asserts a bug
       that is not there; the hard rule stays, as belt and braces.
-- [ ] E3a **NEW, from E3 — the residual, and it needs hardware.** What
-      actually moved frame 9 was never reproduced, and RP-4's explanation is
-      now ruled out. Leading hypothesis is a CAPTURE race, not a sim bug:
-      `exportCore.ts:968-976` awaits `renderer.gpuDone()` and then
-      `createImageBitmap(canvas)`, and `onSubmittedWorkDone` resolving is not a
-      guarantee the swapchain front buffer has flipped — which produces exactly
-      a one-off frame with intact neighbours, and is load-sensitive, so a
-      heavier preceding thumbnail sim changes the load. **The experiment that
-      settles it costs one run:** export the same Particle Flow loop twice back
-      to back with NO code change and hash the PNG frames. One differing frame
-      between two identical runs means the coupling never existed and the
-      bisection was chasing capture noise; two hash-identical runs mean the
-      original observation is real and deserves a fresh bisect.
-      Also recorded from the same sweep, NOT a defect: Particle Flow's sim
-      reads audio lanes per FRAME, not per STEP (`webgpuRenderer.ts:57-61`), so
-      at 30 fps two steps share one feature sample and a 60 fps preview
-      legitimately reaches a different particle state than a 30 fps export.
-      Documented behaviour, and the stated reason hash baselines are only ever
-      compared at equal fps.
+- [x] E3a **MEASURED 2026-08-10 — the capture-race hypothesis did NOT
+      reproduce, and a DIFFERENT effect did.** The experiment this entry
+      specified now exists as `scripts/segment-parity-probe.mjs`, which runs it
+      THREE times, because two runs cannot tell the two hypotheses apart.
+      **Particle Flow — the preset the original observation was about: 0/120
+      frames differ across ALL THREE runs**, first one included. By this
+      entry's own criterion (two hash-identical runs) the original one-frame
+      observation is real and wants a fresh bisect, not a dismissal as capture
+      noise.
+      **NEW FINDING, and it may be the real explanation: the FIRST export in a
+      process can render differently from every later one.** On `tunnel-rings`,
+      run 1 vs run 2 differed on **120/120** frames while run 2 vs run 3
+      differed on **0/120** — so it is not nondeterminism, it is a warm-up that
+      is deterministic given position. It does NOT affect `particle-flow`,
+      which re-seeds its sim on `setPreset`, which points at **feedback-texture
+      state** rather than the particle sim. That also fits RP-4's original
+      bisection, where the variable was whether a thumbnail render had run
+      first. Next step is concrete: find what the first export leaves warm that
+      the second inherits — `releaseIdleTargets` and the feedback target pool
+      first — and decide whether an export should start from a clean renderer.
+- [x] E2-R1 **DONE 2026-08-10 — with option (f), on the owner's approval.**
+      Designed by a workflow: four parallel investigations, a three-lens judge
+      panel (determinism / blast radius / reversibility), one synthesis.
+      **The fix (option a):** `lfoValue` anchors on
+      `features.time + (features.timeOrigin ?? 0)`.
+      `AudioFeatures.timeOrigin` is optional and runtime-only — it appears in
+      no persisted shape, so it is additive with no migration. `OfflineAnalyzer`
+      stamps it in `step()`; `buildJob` emits `ExportJob.timeOrigin` as
+      `o.segment?.start ?? 0`, beside `bgVideo.timeOffset`, the existing
+      absolute-by-design precedent. **`features.time` stays `n/fps`** —
+      `buildJob` has already rebased the timeline, lanes, grid, lyrics,
+      sections, vocal spans and stems onto it, so making it absolute would
+      double-shift every one of them.
+      **Option (f):** `exportCore` fed the renderer CLIP time while `services`
+      feeds absolute, both into `u.time`, so every `u.time`-reading preset AND
+      the post-chain grain resolved a different moment than the preview. All
+      renderer-facing times now pass through ONE chokepoint, `renderAt`, and
+      `renderer.render` appears nowhere else in the file. **There were TWO such
+      call sites, not the one the plan predicted** — the second is the 60 Hz
+      feedback advance walk, and offsetting only one would have put two
+      disagreeing clocks inside a single frame. Its test's mutation (offset the
+      presented frame but not the tick walk) is invisible to the obvious test.
+      **Also corrected: the LFOs were never "beat-locked".** `bpm` is the only
+      grid input, so they are TEMPO-locked; `modMatrix.ts`, the `lfoValue`
+      docblock and `docs/guide.md` all said otherwise.
+      **Integrator change on top of the wave:** `ExportJob.timeOrigin` landed
+      OPTIONAL because five fixtures outside the engineer's allowlist would not
+      typecheck. Made REQUIRED here, with the `?? 0` read-site fallback deleted
+      — a job that forgets the field is a compile error now instead of a silent
+      render at the wrong moment, which is the exact failure the field exists
+      to close.
+      **Device evidence:** the first-run digest of a real canvas-loop export
+      differs completely between this build and the same build with the
+      `renderAt` offset mutated away, so the change reaches real exported
+      pixels and is not a no-op. GPU matrix 269/269 zero movement, as
+      predicted — `gpuMatrix.ts` renders directly and never goes through
+      `exportCore`.
+      **A probe design that was WRONG, recorded so nobody repeats it:** the
+      obvious experiment — segment export against the same window of a
+      full-track export — does NOT isolate the time origin. Loop mode
+      crossfades the tail of the AUDIO into its head before the analyzer runs
+      (`exportCore.ts:653-669`), so every feature in the clip differs from a
+      straight walk whatever the origin is. That comparison produced a uniform
+      60/60 mismatch which was an artefact of the comparison, not a finding.
+
 - [x] E4 ALIGN-002 — **DONE, shipped v2.72.1 (2026-08-06), proven on the
       live path.** Two-stage diagnosis: (1) the tauri-cli 2.11.4 NSIS
       template writes `DisplayVersion` UNCONDITIONALLY, and running the

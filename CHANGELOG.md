@@ -11,6 +11,38 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Loop and segment exports now match the preview exactly.** Exporting a slice
+  of a track rebased the clip to zero, and both the tempo-synced LFOs and every
+  time-driven shader kept reading that rebased clock — so a Canvas loop starting
+  two minutes in rendered a different moment of the animation, and a different
+  LFO phase, than the preview had just shown you. Both resolve from real track
+  time now. **Loop and segment exports will therefore look different from
+  before this release** — they look like the preview did, which is what they
+  were always meant to do. Full-track exports are unchanged, to the pixel.
+- **Themes saved before the Kaleido Nebula saturation change import correctly
+  again.** A `.bftheme` written by 2.74.0 or earlier — including one installed
+  from the Gallery — carries the old meaning of Nebula's Saturation, so
+  importing it into a recent build rendered it noticeably flatter than its
+  author intended. Those files are remapped on import now, across the mode's
+  parameters, its timeline scene overrides and its modulation amounts alike.
+  Themes saved by 2.75.0 or later are untouched.
+  This corrects the theme file, not history. A project you saved out of a
+  wrongly-rendered import is **not** retro-corrected — its values were already
+  written under the new meaning, and nothing can tell them apart from values
+  you tuned on purpose. So the same theme can render one way from the
+  `.bftheme` and another from a `.bfproj` saved out of it. If a project looks
+  flatter than the theme it came from, raise Nebula's Saturation by about a
+  third and re-save.
+  Saved looks and the last-session cache are deliberately left alone for the
+  same reason: neither records which version wrote it, so "fixing" them would
+  over-brighten every look you had already corrected by hand. This release
+  starts recording that version, so the next such change can migrate cleanly.
+- **The LFO modulation sources are tempo-synced, not beat-locked.** They follow
+  the track's tempo rather than its detected beat positions. The app and the
+  docs both said otherwise.
+
 ## [2.89.0] - 2026-08-10
 
 ### Added

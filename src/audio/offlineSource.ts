@@ -148,6 +148,7 @@ export class OfflineAnalyzer {
   private grid: BeatGrid | null;
   private sections: number[] | null;
   private vocalSpans: VocalSpan[] | null;
+  private timeOrigin: number;
 
   constructor(
     pcm: PcmData,
@@ -162,10 +163,24 @@ export class OfflineAnalyzer {
     /** Timed-lyrics sung spans (vocalSpansFromLyrics) — drives
      * features.vocal exactly like the live path's setVocalSpans. */
     vocalSpans: VocalSpan[] | null = null,
+    /**
+     * Absolute track time of this clip's t=0 — a segment export's start, 0 for
+     * a full-track export (and for every non-export caller: stems, tests).
+     * Stamped onto every frame as `features.timeOrigin` so time-anchored
+     * sources — the tempo-locked LFOs — can recover absolute track time and
+     * resolve the phase the preview shows.
+     *
+     * `f.time` deliberately STAYS clip time (`n / fps`): videoExporter.buildJob
+     * has already rebased the timeline, lane keyframes, beat grid, lyrics,
+     * sections, vocal spans and stems onto the clip, so making `time` absolute
+     * here would double-shift every one of them.
+     */
+    timeOrigin = 0,
   ) {
     this.grid = grid;
     this.sections = sections;
     this.vocalSpans = vocalSpans;
+    this.timeOrigin = timeOrigin;
     this.fps = fps;
     this.sampleRate = pcm.sampleRate;
     this.duration = pcm.duration;
@@ -429,7 +444,7 @@ export class OfflineAnalyzer {
       this.meter.process(ch);
       this.meterFed = meterEnd;
     }
-    return this.pipeline.update({
+    const f = this.pipeline.update({
       magDb: this.magDb,
       ...(displayMagDb ? { displayMagDb } : {}),
       waveform: this.windowBuf,
@@ -450,5 +465,13 @@ export class OfflineAnalyzer {
       ...(this.sections ? sectionStateAt(this.sections, t) : {}),
       ...(this.vocalSpans ? { vocal: vocalPresenceAt(this.vocalSpans, t) } : {}),
     });
+    // Stamped HERE rather than in nextFrameFeatures() because both of that
+    // method's return paths hand back this same object: pipeline.update()
+    // returns `pipeline.features` and mutates it in place, so the ticked path
+    // (which returns `this.pipeline.features`) and the presentation-only path
+    // (which returns step()'s value directly) are the identical reference.
+    // One write covers both.
+    f.timeOrigin = this.timeOrigin;
+    return f;
   }
 }

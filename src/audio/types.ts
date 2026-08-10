@@ -60,6 +60,21 @@ export interface AudioFeatures {
   /** Track duration, seconds (0 when nothing loaded) */
   duration: number;
   /**
+   * Absolute track time corresponding to this frame's `time === 0`.
+   * Absent (or 0) on the live path and on full-track exports, where `time`
+   * ALREADY is track time. A SEGMENT export slices the audio so the clip
+   * starts at t=0, and this carries where that t=0 sits on the track, so a
+   * source that needs an absolute anchor — the tempo-locked LFOs — resolves
+   * it as `time + (timeOrigin ?? 0)`.
+   *
+   * `time` itself stays CLIP time on purpose: the timeline, lane keyframes,
+   * beat grid, lyrics, sections, vocal spans and stems are all rebased to the
+   * clip by videoExporter.buildJob, so an absolute `time` would double-shift
+   * every one of them. Runtime contract only — AudioFeatures is never
+   * serialized, so this needs no schema migration.
+   */
+  timeOrigin?: number;
+  /**
    * ---- Additive "reactivity fuel" fields (P-15) -------------------------
    * Optional AT THE TYPE LEVEL ONLY, so hand-built feature frames elsewhere
    * (tests, demo/thumbnail frames) stay valid without churn: the pipeline

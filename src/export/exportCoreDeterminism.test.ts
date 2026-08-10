@@ -175,6 +175,10 @@ function job(overrides: Partial<ExportJob> = {}): ExportJob {
     width: 96,
     height: 64,
     fps: 30,
+    // A full-track job: the clip IS the track, so its origin is 0. Required
+    // rather than defaulted, so a job that forgets it cannot render silently at
+    // the wrong moment (E2-R1).
+    timeOrigin: 0,
     bitrate: 1_000_000,
     // A feedback preset: the 60 Hz catch-up walk runs alongside the presented
     // frames, which is the second stateful walk this file pins.

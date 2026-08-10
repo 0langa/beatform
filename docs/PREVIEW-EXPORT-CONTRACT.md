@@ -18,6 +18,50 @@ tests measure, and what hardware timing prevents from being identical.
   independent of output fps. Frames between ticks present fresh content without
   mutating history.
 
+### Segment exports rebase the clip, not the creative result
+
+A segment export (“export this slice”, the Canvas-loop path) slices the decoded
+audio so the rendered clip starts at `t = 0`. Every time-bearing structure the
+exporter hands the core is rebased with it — timeline scenes and automation
+keyframes, the beat grid, section boundaries, vocal spans, lyric lines _and the
+words inside them_, stem envelopes, the audiogram waveform overview — so the
+clip resolves the same creative frame at the same musical moment as the preview
+does at absolute track time.
+
+Two values stay ABSOLUTE, deliberately, because they record where the clip sits
+on the track rather than describing something inside it:
+
+- `bgVideo.timeOffset`, so the video-background loop lands on the same frame the
+  preview shows;
+- `timeOrigin`, the clip's `t = 0` in track time. It anchors the two things that
+  are measured from track time zero rather than from the clip:
+  - **the tempo-locked LFO modulation sources** (`lfo:<wave>:<beats>`). The
+    offline analyzer stamps the origin onto every frame as
+    `AudioFeatures.timeOrigin`, and the LFO reads `time + (timeOrigin ?? 0)`.
+    Anchoring on clip time alone put the export's first frame at cycle start
+    while the preview sat mid-cycle — at 120 BPM with `lfo:sine:8` and a segment
+    starting at 137 s, phase 0 against the preview's 0.25, for the whole clip.
+  - **the renderer's clock**, `u.time` (uniform slot 0), which most presets read
+    and from which the post chain's film grain seeds (`fract(u.time)`). The
+    preview feeds it absolute track time, so the export adds the origin at a
+    single chokepoint covering both the presented frame and the 60 Hz
+    texture-feedback advance. Those two must translate together: a rigid shift
+    preserves the ordering and spacing the feedback simulation depends on, while
+    shifting only one would give a feedback preset two clocks inside one frame.
+
+`AudioFeatures.time` itself stays CLIP time on both halves of a segment export.
+It is `frame / fps` by definition, and everything listed above has already been
+rebased to match it; making it absolute would shift all of them twice. The
+renderer's clock is a separate value, derived from it — the two never merge.
+
+Deliberately clip-relative, and not part of the above: the audiogram's progress
+bar and clock (a 40 s segment reads `0:00 / 0:40`, with the waveform strip
+sliced to match), the lyric and overlay compose timings, and the fixed 60 Hz
+feedback state grid, which is anchored to the clip's first frame.
+
+On the live path and on full-track exports `timeOrigin` is absent or 0, so the
+arithmetic is exactly what it is without segments.
+
 ### Shared creative definition
 
 Preview and export use the same project document, preset WGSL, parameter

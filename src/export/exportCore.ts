@@ -20,7 +20,7 @@ import {
 } from "mediabunny";
 import { OfflineAnalyzer } from "../audio/offlineSource";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
-import type { PcmData, SyncSettings } from "../audio/types";
+import type { AudioFeatures, PcmData, SyncSettings } from "../audio/types";
 import { integratedLufs, normalizationGainDb } from "../audio/dsp/lufs";
 import { TruePeakLimiter } from "../audio/dsp/truepeak";
 import { WebGPURenderer } from "../render/webgpuRenderer";
@@ -34,6 +34,8 @@ import {
   type ParamValues,
   type PostSettings,
   type PresetDef,
+  type RenderOptions,
+  type TransitionState,
 } from "../render/types";
 import { applyMods, applyPostMods, createModEvalState, type ModRoute } from "../state/modMatrix";
 import type { Timeline } from "../state/timeline";
@@ -140,6 +142,25 @@ export interface ExportJob {
    * timeOffset (seconds) shifts the loop index for segment exports so it
    * matches the live view's absolute-track-time loop. */
   bgVideo?: { dataUrl: string; dim: number; blur?: number; timeOffset?: number };
+  /**
+   * Absolute track time of the exported clip's t=0 — the segment start, 0 for
+   * a full-track export. ABSOLUTE BY DESIGN, exactly like `bgVideo.timeOffset`
+   * above and for the same reason: a segment export rebases every OTHER
+   * time-bearing field onto the clip, and this is the one number that records
+   * where the clip sits on the track.
+   *
+   * The analyzer stamps it onto every frame as `features.timeOrigin`, which is
+   * what keeps the tempo-locked LFO sources at the phase the preview shows
+   * (E2-R1). `buildJob` always emits it — the segment-shift key census pins
+   * that, and segmentLfoPhase.test.ts pins the whole walk end to end.
+   *
+   * REQUIRED, deliberately. It landed optional because five test fixtures
+   * would not compile without it, and `?? 0` at the read site would have made
+   * a job that forgot the field render at the wrong moment SILENTLY — the
+   * exact failure mode this field exists to close. A missing value is a
+   * typecheck error now, and the five fixtures say `timeOrigin: 0` out loud.
+   */
+  timeOrigin: number;
   /** Imported stems' envelope timelines — mod-matrix stem sources. */
   stems?: StemEntry[];
   /** Timed lyrics (already segment-shifted) + style — composited onto the
@@ -759,6 +780,47 @@ export async function runExportJob(
       modsByPreset: job.modsByPreset ?? {},
     };
     const vocalSpans = job.vocalSpans ?? null;
+    // Where this clip's t=0 sits on the track (segment exports), stamped onto
+    // every frame so absolute-time sources resolve the preview's value.
+    const timeOrigin = job.timeOrigin;
+    /**
+     * CLIP time -> the RENDERER's clock, and THE ONE PLACE that conversion
+     * happens (E2-R1 / option f).
+     *
+     * `renderer.render`'s time argument is uniform slot 0, `u.time` — read by
+     * most presets and by the post chain's film grain, which seeds from
+     * `fract(u.time)` (runPost takes the same argument). The live preview
+     * feeds it ABSOLUTE track time (services.ts `trackTime`), for the
+     * presented frame and the texture-feedback advance alike. This walk counts
+     * frames from the clip's own zero, so without the offset a segment or
+     * Canvas-loop export drew a different moment of every time-driven shader
+     * than the preview showed.
+     *
+     * BOTH render call sites below go through this — the presented frame and
+     * the 60 Hz feedback advance walk — and both are handed CLIP time, so the
+     * translation is rigid: the tick times a frame drains (k/60 <= t) keep
+     * exactly their spacing and ordering relative to the frame's own t. The
+     * two clocks therefore cannot disagree inside one frame, which would be a
+     * worse bug than the one this fixes. `renderer.render` is called NOWHERE
+     * else in this file; a new render site must call this instead.
+     *
+     * Everything else in the walk deliberately stays on CLIP time, because
+     * buildJob already rebased the document onto the clip: `features.time`,
+     * resolveActiveFrame (timeline scenes + automation lanes), stemValuesAt,
+     * the overlay compose key and its lyric/audiogram timings (a segment's
+     * audiogram reads 0:00 / 0:40 by design), and isFeedbackTick /
+     * FixedFeedbackClock, whose 60 Hz state grid is anchored to the clip's
+     * first frame. The video background is the one other absolute, and it
+     * already carries its own copy of this number as `bgVideo.timeOffset` —
+     * the same `segment.start`, applied at its own call site.
+     */
+    const renderAt = (
+      clipTime: number,
+      f: AudioFeatures,
+      params: ParamValues,
+      transition: TransitionState | undefined,
+      options: RenderOptions,
+    ): void => renderer.render(f, clipTime + timeOrigin, params, transition, options);
     const analyzer = new OfflineAnalyzer(
       pcm,
       job.fps,
@@ -767,6 +829,7 @@ export async function runExportJob(
       job.beatGrid ?? null,
       job.sections ?? null,
       vocalSpans,
+      timeOrigin,
     );
     // Analyzer construction mixes the whole track down to mono and primes the
     // pipeline — seconds each on a long track, silently (AX-3).
@@ -804,6 +867,10 @@ export async function runExportJob(
           job.beatGrid ?? null,
           job.sections ?? null,
           vocalSpans,
+          // Same clip origin as the presented walk: this walk's features feed
+          // applyMods too (below), so an unstamped one would resolve a
+          // different LFO phase for the feedback history than for the pixels.
+          timeOrigin,
         )
       : null;
     const feedbackClock = anyPresetUsesFeedback ? new FixedFeedbackClock() : null;
@@ -874,7 +941,7 @@ export async function runExportJob(
                 lastBuilderPack = packed;
               }
             }
-            renderer.render(tickFeatures, tickTime, tickParams, undefined, {
+            renderAt(tickTime, tickFeatures, tickParams, undefined, {
               feedback: "advance-only",
             });
           }
@@ -961,7 +1028,10 @@ export async function runExportJob(
           lastBuilderPack = packed;
         }
       }
-      renderer.render(features, t, frameParams, transition, {
+      // isFeedbackTick stays on CLIP time: it classifies whether this
+      // presentation lands on the SAME fixed 60 Hz state grid FixedFeedbackClock
+      // drains above, and that grid is anchored to the clip's first frame.
+      renderAt(t, features, frameParams, transition, {
         feedback: isFeedbackTick(t) ? "present-history" : "present-only",
       });
       // Ensure the GPU finished before snapshotting the canvas
