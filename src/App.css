@@ -243,7 +243,8 @@ body,
   background: #000;
   z-index: 60;
 }
-.stage-hud {
+.stage-hud,
+.volume-flash {
   position: fixed;
   left: 50%;
   bottom: 8%;
@@ -273,6 +274,33 @@ body,
   100% {
     opacity: 0;
   }
+}
+
+/* Volume OSD (P-10). Volume is legitimately invisible when the player bar is
+   hidden — but ↑/↓/M keep working, and a shortcut with no feedback at all
+   reads as a dead key. So: the SAME pill as the stage HUD, one step above it
+   so a mode-switch HUD and a volume nudge never land on top of each other,
+   and shown ONLY while the bar itself is not on screen. When the bar is up,
+   the slider already answers the question and this stays out of the way.
+
+   VISIBILITY, NOT DISPLAY, and that is not a style preference: `display:none`
+   suppresses the animation and then STARTS it on the flip back, so every time
+   the chrome went idle the last volume change would replay itself as a flash
+   nobody asked for. Hidden-but-rendered lets the animation run and finish on
+   its own clock, so an unhidden element is one that has already faded to
+   nothing. It is out of the a11y tree either way. */
+.volume-flash {
+  bottom: calc(8% + 46px);
+  /* Same keyframes, shorter: this confirms a keypress, it does not announce
+     a scene. Ends at opacity 0, so no timer and no state — the re-mount on
+     PlayerBar's `key` is the whole replay mechanism. */
+  animation-duration: 1s;
+  visibility: hidden;
+}
+
+.app.idle .volume-flash,
+.app.stage-mode .volume-flash {
+  visibility: visible;
 }
 
 .app.idle .top-bar {
@@ -655,6 +683,25 @@ button:disabled {
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.55);
 }
 
+/* The A/B markers are 16px of visible chrome on a 4px track — WCAG 2.5.8 asks
+   for 24px, and on a trackpad the difference between "grabbed the marker" and
+   "seeked the track" was a pixel or two. The TARGET grows, the marker does not:
+   a transparent, centred 24px box keeps the seek bar visually light while
+   giving the grab something to land on. Pseudo-elements are not event targets,
+   so `closest("[data-loop-marker]")` in PlayerBar's pointerdown still resolves
+   to the marker itself and needs no change. It overhangs `.seek` (18px tall)
+   by 3px each way: above is bare canvas, and below is `.player-row`'s 2px of
+   padding, so it costs no existing control its own hit area. */
+.seek-loop-marker::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+}
+
 .seek-loop-marker.start {
   border-bottom-left-radius: 1px;
 }
@@ -679,9 +726,14 @@ button:disabled {
   transform: translate(-50%, -50%) scale(1);
 }
 
+/* Hover time bubble. It is mounted for the whole session and React never
+   touches it again: PlayerBar's pointer handler writes `--hover-x` and the
+   text on a ref, and these two rules decide visibility — a pointer-rate value
+   must not become a pointer-rate re-render of the transport. */
 .seek-tooltip {
   position: absolute;
   bottom: 22px;
+  left: var(--hover-x, 0px);
   transform: translateX(-50%);
   background: var(--glass-heavy);
   border: 1px solid var(--border);
@@ -690,6 +742,12 @@ button:disabled {
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.seek:hover:not(.disabled) .seek-tooltip {
+  opacity: 1;
 }
 
 .player-row {
@@ -943,8 +1001,9 @@ button:disabled {
 
 /* ---------- shader editor ---------- */
 
+/* Width comes from the `modal-lg` step in the modals section — this block only
+   owns what is peculiar to the shader editor. */
 .modal.shader-editor {
-  width: 720px;
   gap: 9px;
 }
 
@@ -1590,7 +1649,10 @@ button.row-value:focus-visible {
 /* The Gallery dialog (top-bar surface): a real room for a growing registry —
    wide grid, filter chips, search. */
 .modal.gallery-dialog {
-  /* Override .modal's 380px base — this surface is a grid, not a form. */
+  /* Override .modal's 380px base — this surface is a grid, not a form. It
+     deliberately takes no `modal-*` size variant: the width is viewport-
+     relative, and it constrains height, padding and layout as well, so a
+     variant would name a third of it and leave the rest here anyway. */
   width: min(1040px, 92vw);
   max-width: min(1040px, 92vw);
   max-height: 84vh;
@@ -2179,6 +2241,35 @@ button.row-value:focus-visible {
   flex-direction: column;
   gap: 11px;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+}
+
+/* Size variants (P-10). The 380px base is a one-column form, so every dialog
+   that was anything else had to escape it with a width of its own, and the
+   number got restated per dialog — `.wide` and `.shader-editor` BOTH said
+   720px, and ShaderEditor wears both at once. Three steps, declared once; new
+   dialogs pick one instead of inventing a fourth number.
+
+   `.wide` and `.shader-editor` are the pre-variant spellings of `modal-lg` and
+   select the same rule rather than repeating it. They keep their class names:
+   the markup lives in files this change does not own, and the rename buys
+   nothing the shared declaration has not already bought.
+
+   NOT every dialog belongs here. `.gallery-dialog` and `.guide-dialog` are
+   rooms, not forms — viewport-relative width AND height, their own padding and
+   an internal flex column — so a width variant would describe about a third of
+   what they are. They stay as they are; see their own blocks. */
+.modal.modal-sm {
+  width: 380px;
+}
+
+.modal.modal-md {
+  width: 560px;
+}
+
+.modal.modal-lg,
+.modal.wide,
+.modal.shader-editor {
+  width: 720px;
 }
 
 .modal .panel-header {
@@ -3673,11 +3764,9 @@ kbd {
 
 /* ---------- batch queue ---------- */
 
-/* Modifier, not a new modal: the base .modal is 380px and shared with Help,
-   but a track table with editable titles needs the room. */
-.modal.wide {
-  width: 720px;
-}
+/* The batch queue's modifier is `.wide`, which is now an alias of the
+   `modal-lg` size step (see the modals section) — a track table with editable
+   titles needs the room, and the number lives in one place. */
 
 .batch-list {
   max-height: 46vh;

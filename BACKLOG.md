@@ -1784,6 +1784,63 @@ Execution sequence around the running Track B program:
    Sixteen mutations, all red, including a renamed persisted format id caught by
    the `loadStoredExportSettings` round-trip.
 
+**P-10 DONE 2026-08-10** (owner-approved polish bundle). Six items; one was
+already closed and one is deliberately flagged.
+**Footer chip tooltips.** All four re-derived from the code, not from the
+label. WEBGPU names the backend and says it is re-read on every renderer swap
+INCLUDING the rebuild after a GPU reset. BPM says the grid is detected once per
+FILE and held for the whole track, and that live system audio has no grid at
+all (`store.ts:1945-1952`). KEY names the Krumhansl-Kessler match and that it
+is shown only when the track is tonal enough to call. **LUFS: the "momentary"
+claim checked out, and two facts nobody had written down came with it** — the
+meter taps the engine's UNITY-GAIN node upstream of the volume gain
+(`engine.ts:57-59`), so volume and mute never move it, and `onMeter` fires only
+while playing (`services.ts:520-523`), so it HOLDS its last reading when
+paused. It is also not the integrated figure export normalisation targets.
+Rendered textContent is byte-identical — only `title` moved — so the matrix's
+textContent scrape is unaffected, and a test pins that.
+**Seek bar.** The hover bubble already existed but in the naive shape: `hoverT`
+and `hoverX` in `useState`, set on every pointermove, re-rendering the whole
+transport at pointer rate. Now it writes `textContent` and a `--hover-x`
+custom property on a ref (the ModMeters precedent) with visibility in pure CSS:
+**6 pointer events cost 7 commits before and 1 after.** It also clamps to the
+bar, which fixes the bubble sliding off during a captured drag.
+**The A-B marker was 16×16, not the 12px the proposal claimed** — that number
+was the seek HANDLE. A transparent centred `::before` now gives a 24×24 target
+(WCAG 2.5.8) while the visible marker stays 16.
+**Modal size variants**: `modal-sm` 380 / `modal-md` 560 / `modal-lg` 720 added
+once. `.modal.wide` and `.modal.shader-editor` both said 720 — ShaderEditor
+wears BOTH — so they fold into the `modal-lg` selector and `width: 720px` now
+appears **exactly once** in the shipped CSS. Aliased in CSS rather than
+renaming classes, because those components were outside the wave's ownership.
+**Declined with reasons:** `.modal.gallery-dialog` and `.guide-dialog` both
+constrain viewport-relative width AND height, own padding and an internal flex
+column — a width variant would name about a third of what they are.
+**Toast stack: already closed.** `App.css`'s bottom-centred flex column fixed
+it, and all four toasts render inside the single `.toast-stack`. **One residual
+recorded, not fixed:** the stack has a `max-width` but no `max-height` and no
+overflow behaviour, so the persistent fallback banner plus an error plus a
+recovery toast at once can run off the top of the canvas from `bottom: 92px`.
+**Volume flash — THE ITEM MOST LIKELY TO WANT THE OWNER'S EYE.** A sibling of
+the footer reusing `.stage-hud`'s pill at 1s, offset one step up so a
+mode-switch HUD and a volume nudge cannot collide, keyed on
+`${muted}:${volume}` so a re-mount replays the animation and there is no timer
+to clean up. Verified ↑/↓/M do NOT call `pokeChrome`, so the chrome genuinely
+stays hidden when the key lands. One non-obvious call: it hides with
+**`visibility`, not `display`** — `display: none` suppresses a CSS animation
+and STARTS it on the flip back, so every idle transition would have replayed
+the last volume change as a flash nobody asked for.
+**A VACUOUS TEST WAS WRITTEN AND THEN DELETED, which is the right outcome:**
+vitest runs with `css: false`, and `App.css?raw`, `?inline` and
+`import.meta.glob(..., {query:"?raw"})` were all measured returning `""` — a
+CSS-text assertion would have passed while asserting nothing. Substitute
+evidence is direct inspection of the BUILT stylesheet, and unlocking such tests
+means `css: true` in `vitest.config.ts`, which changes behaviour for every test
+file. Also worth keeping: mutation M2 (tooltip child → `{""}`) came back GREEN
+because React skips an unchanged child — **a mutation that cannot reach the
+assertion proves nothing**, and it was replaced with one that could.
+Nine mutations, all red once M2 was corrected.
+
 8. **Post-program:** un-park FEAT-009 + P-4 together. Parked: P-19 list.
    Rejected for now: P-20 (lyrics runtime on demand).
 

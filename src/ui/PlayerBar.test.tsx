@@ -267,3 +267,161 @@ describe("PlayerBar selector granularity (P-12 wave 2)", () => {
     expect(screen.getByRole("slider", { name: "Seek" })).toBeTruthy();
   });
 });
+
+/**
+ * P-10 — the seek bar's hover time bubble.
+ *
+ * The claim is NOT "a bubble appears". It is that the bubble's state does not
+ * live in React: pointer moves arrive at screen rate, and this bar is a clock
+ * that already re-renders on the playback tick, so a `useState` per mousemove
+ * is the same cost the store-direct migration spent two waves removing — at
+ * roughly ten times the rate. So the first test counts commits, and the second
+ * pins the consequence of painting into a node React also owns.
+ *
+ * jsdom lays nothing out, so every `getBoundingClientRect` is 0x0 and the
+ * handler's `(clientX - left) / width` would be NaN. Each case installs a
+ * 200px-wide bar over the 100 s PLAYBACK track, so 1px = 0.5 s and the
+ * expected times are arithmetic, not a snapshot.
+ */
+describe("PlayerBar hover time bubble (P-10)", () => {
+  function mountHoverable() {
+    act(() =>
+      useVizStore.setState({ playback: PLAYBACK, sections: [], volume: 0.8, muted: false }),
+    );
+    const { Probe, commits } = renderProbe();
+    const { container } = render(
+      <Probe>
+        <PlayerBar />
+      </Probe>,
+    );
+    const seek = screen.getByRole("slider", { name: "Seek" });
+    vi.spyOn(seek, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 200,
+      bottom: 18,
+      width: 200,
+      height: 18,
+      toJSON: () => ({}),
+    });
+    const tip = () => container.querySelector<HTMLElement>(".seek-tooltip")!;
+    const clock = () => container.querySelector<HTMLElement>(".time-label")!.textContent;
+    expect(commits()).toBeGreaterThan(0); // the probe is live
+    return { commits, seek, tip, clock };
+  }
+
+  it("paints the time under the pointer and costs the bar zero renders", () => {
+    const { commits, seek, tip } = mountHoverable();
+    const before = commits();
+
+    // Entering paints too: `:hover` turns the bubble on at the edge, so
+    // without this the first frame of every hover is an empty pill.
+    fireEvent.pointerOver(seek, { clientX: 50 });
+    expect(tip().textContent).toBe("0:25");
+    expect(tip().style.getPropertyValue("--hover-x")).toBe("50px");
+
+    for (const clientX of [60, 70, 80, 90, 100]) fireEvent.pointerMove(seek, { clientX });
+    expect(tip().textContent).toBe("0:50");
+    expect(tip().style.getPropertyValue("--hover-x")).toBe("100px");
+
+    // THE POINT. Six pointer events moved the bubble a quarter of the way
+    // across the track and reconciled nothing. With the hover time back in
+    // useState this is `before + 6`.
+    expect(commits()).toBe(before);
+  });
+
+  it("clamps the bubble to the bar so a captured drag cannot drag it off the end", () => {
+    const { seek, tip } = mountHoverable();
+    // Pointer capture keeps delivering moves after the pointer leaves the bar.
+    // The old inline `left: clientX - rect.left` followed it into the void.
+    fireEvent.pointerMove(seek, { clientX: 640 });
+    expect(tip().style.getPropertyValue("--hover-x")).toBe("200px");
+    expect(tip().textContent).toBe("1:40");
+
+    fireEvent.pointerMove(seek, { clientX: -240 });
+    expect(tip().style.getPropertyValue("--hover-x")).toBe("0px");
+    expect(tip().textContent).toBe("0:00");
+  });
+
+  it("keeps the painted text through a playback tick", () => {
+    const { seek, tip, clock } = mountHoverable();
+    fireEvent.pointerMove(seek, { clientX: 100 });
+    expect(tip().textContent).toBe("0:50");
+
+    act(() => useVizStore.setState({ playback: { ...PLAYBACK, time: 44 } }));
+
+    // The bar really did reconcile — that is what makes this non-vacuous…
+    expect(clock()).toContain("0:44");
+    // …and the bubble kept the text the handler wrote. React owns this element
+    // but not its contents: it renders NO children into it, so the reconciler
+    // has nothing to write. Render the time from React instead — the obvious
+    // "simplification" — and every playback tick snaps the hover bubble back
+    // to the playhead while the pointer sits still somewhere else.
+    expect(tip().textContent).toBe("0:50");
+  });
+});
+
+/**
+ * P-10 — the volume OSD.
+ *
+ * Volume is invisible when the chrome auto-hides, and that is by design — but
+ * ↑/↓/M keep working and do NOT poke the chrome, so the keypress reads as a
+ * dead key. The flash is the confirmation. Whether it is on SCREEN is decided
+ * entirely in CSS (`.app.idle` / `.app.stage-mode`), which jsdom cannot see;
+ * what these pin is everything else, including the two structural facts the
+ * stylesheet depends on.
+ */
+describe("PlayerBar volume flash (P-10)", () => {
+  function mountBar() {
+    act(() =>
+      useVizStore.setState({ playback: PLAYBACK, sections: [], volume: 0.8, muted: false }),
+    );
+    const { container } = render(<PlayerBar />);
+    return { flash: () => container.querySelector<HTMLElement>(".volume-flash")! };
+  }
+
+  it("re-mounts on every volume change so the fade replays", () => {
+    const { flash } = mountBar();
+    expect(flash().textContent).toBe("Volume 80%");
+    const first = flash();
+
+    act(() => useVizStore.getState().applyVolume(0.25, false));
+    expect(flash().textContent).toBe("Volume 25%");
+
+    // Identity, not just text. The animation ends at opacity 0 and ONLY a
+    // fresh element replays it — that is what the `key` buys, and it is why
+    // this needs no timer and nothing to clean up. Drop the key and React
+    // updates this node in place: the flash fires once per session and never
+    // again, with the text assertion above still green.
+    expect(flash()).not.toBe(first);
+
+    // A change that is not a change must not re-mount it either, or a
+    // no-op write would strobe the OSD.
+    const second = flash();
+    act(() => useVizStore.getState().applyVolume(0.25, false));
+    expect(flash()).toBe(second);
+  });
+
+  it("says Muted rather than a percentage, for either way of reaching silence", () => {
+    const { flash } = mountBar();
+    act(() => useVizStore.getState().applyVolume(0.8, true));
+    expect(flash().textContent).toBe("Muted");
+    act(() => useVizStore.getState().applyVolume(0, false));
+    expect(flash().textContent).toBe("Muted");
+  });
+
+  it("lives outside the chrome it is compensating for", () => {
+    // THE STRUCTURAL GUARD. `.app.idle .chrome` is opacity 0 and
+    // `.app.stage-mode .chrome` is display:none — so an OSD nested inside the
+    // player bar would be hidden by exactly the two conditions that are its
+    // entire reason to exist, and would look correct in every other test.
+    const { flash } = mountBar();
+    expect(flash().closest("footer.player-bar")).toBeNull();
+    expect(flash().closest(".chrome")).toBeNull();
+    // Decorative: the slider is the accessible surface for volume, and a live
+    // region inserted together with its content does not reliably announce.
+    expect(flash().getAttribute("aria-hidden")).toBe("true");
+  });
+});
