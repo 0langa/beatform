@@ -610,6 +610,22 @@ interface Actions {
   refreshOverlay(): void;
   /** Run the offline analysis pass (beat grid) on the loaded track. */
   analyzeCurrentTrack(): void;
+  /**
+   * Resolves once the in-flight `analyzeCurrentTrack` has written its result
+   * into the store — or immediately when nothing is analysing.
+   *
+   * `analyzing` says a change is COMING; this is how another action group
+   * waits for it. Without it, anything that reads `beatGrid`/`sections` right
+   * after a load silently reads the pre-analysis `null` (E2-R2: an export
+   * fired in that window rendered with no grid at all while the preview a
+   * moment later had one — 120/120 frames differed).
+   *
+   * Never rejects and carries no bound of its own: `analyzeTrack`'s promise
+   * cannot be cancelled or timed out from here (batchRunner.ts:90-108 says the
+   * same thing about the same promise), so the WAIT is the caller's policy —
+   * it owns the timeout and the abort signal.
+   */
+  awaitAnalysis(): Promise<void>;
 }
 
 export type VizState = DocumentSlice & SessionSlice & Actions;
@@ -649,6 +665,13 @@ function overlayDynamics(s: VizState): OverlayDynamics {
 let overlayToken = 0;
 /** Latest analysis job id — stale results are dropped. */
 let analysisId = 0;
+/**
+ * The in-flight analysis, as a promise that settles AFTER `analyzeCurrentTrack`
+ * has written the grid into the store — not the raw `analyzeTrack` promise,
+ * which resolves one tick earlier and would let a waiter read the state it is
+ * waiting for before it exists. Read only through `awaitAnalysis()`.
+ */
+let analysisSettled: Promise<void> | null = null;
 /** toggleLiveInput spans two real awaits (worklet + Rust spawn); this stops a
  * second click from running a second start path whose failure cleanup would
  * tear down the first click's worklet. */
@@ -2297,16 +2320,47 @@ export const useVizStore = create<VizState>((set, get) => {
       set({ beatGrid: null, trackKey: null, sections: [], analyzing: true });
       getAnalyzer().setBeatGrid(null);
       getAnalyzer().setSections(null);
-      const { result } = analyzeTrack(buf);
-      void result.then(({ grid, key, sections }) => {
-        if (id !== analysisId) return; // a newer track superseded this job
-        set({ beatGrid: grid, trackKey: key, sections, analyzing: false });
-        getAnalyzer().setBeatGrid(grid);
-        // Sections travel with the grid, always: features.sectionIndex /
-        // sectionPulse resolve from these boundaries the same way the export
-        // path resolves them from the job's copy (P-15).
-        getAnalyzer().setSections(sections);
-      });
+      // `analyzing` is a GATE now, not a label — runExport waits on it — so
+      // every exit from here has to clear it. That includes the one exit this
+      // function never had: `analyzeTrack` copies the whole PCM before it
+      // returns a promise at all, so a long enough track can throw RangeError
+      // synchronously. Leaving the flag true there would make every later
+      // export sit out its full timeout waiting for a job that never started.
+      let started: ReturnType<typeof analyzeTrack>;
+      try {
+        started = analyzeTrack(buf);
+      } catch (e) {
+        set({ analyzing: false });
+        analysisSettled = null;
+        throw e; // same surface as before: loadFile's catch reports it
+      }
+      analysisSettled = started.result.then(
+        ({ grid, key, sections }) => {
+          if (id !== analysisId) return; // a newer track superseded this job
+          set({ beatGrid: grid, trackKey: key, sections, analyzing: false });
+          getAnalyzer().setBeatGrid(grid);
+          // Sections travel with the grid, always: features.sectionIndex /
+          // sectionPulse resolve from these boundaries the same way the export
+          // path resolves them from the job's copy (P-15).
+          getAnalyzer().setSections(sections);
+        },
+        // trackAnalysis resolves nulls for every failure it can SEE (worker
+        // error message, failed boot, inline throw), so the only way here is a
+        // structured-clone failure out of postMessage. No grid is coming —
+        // stop gating on one.
+        () => {
+          if (id === analysisId) set({ analyzing: false });
+        },
+      );
+    },
+
+    awaitAnalysis() {
+      // Gated on `analyzing`, not on the promise: after a live-input toggle
+      // (or a superseded load) `analysisSettled` can still point at a job
+      // whose result the store will never accept, and waiting on that is how
+      // a wait becomes a hang.
+      if (!get().analyzing || !analysisSettled) return Promise.resolve();
+      return analysisSettled;
     },
 
     refreshOverlay() {

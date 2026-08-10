@@ -11,6 +11,22 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Exports no longer start before the track has been analysed.** Hitting
+  Export in the moment right after loading a file could render the entire video
+  with no beat grid at all — no BPM, no beat or bar phase, no section pulses,
+  and the tempo-synced LFOs falling back to a fixed clock — while the preview a
+  second later showed the beat-synced version. The export now waits for the
+  same analysis the preview is using, so the two always agree. On desktop that
+  wait happens behind the save dialog and costs nothing, and Cancel works
+  throughout. Batch render already did this correctly and is unchanged.
+- **A very long track could leave the app thinking it was still analysing.**
+  Loading one large enough to exhaust memory during analysis left the
+  "analysing" flag stuck on for the rest of the session. Harmless on its own,
+  but it would have blocked every later export once exports started waiting on
+  it.
+
 ## [2.90.0] - 2026-08-10
 
 ### Fixed

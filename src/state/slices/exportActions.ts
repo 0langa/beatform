@@ -6,6 +6,7 @@ import { exportVideo } from "../../export/videoExporter";
 import { rasterizeOverlay } from "../../render/overlay";
 import { audiogramActive } from "../audiogram";
 import { safeName } from "../batch";
+import { ANALYSIS_TIMEOUT_MS } from "../batchRunner";
 import { autoBitrateMbps, RESOLUTIONS, SIMPLIFIED_EXPORT_REASON } from "../exportConfig";
 import {
   animBegin,
@@ -36,6 +37,55 @@ import type { GetFn, SetFn, SliceCtx } from "./ctx";
 import { shared } from "./shared";
 
 let exportStartedAt = 0;
+
+/** The refusal when analysis never lands — one sentence, one place. */
+export const ANALYSIS_TIMEOUT_REASON =
+  `The track's beat analysis did not finish within ${ANALYSIS_TIMEOUT_MS / 1000}s. ` +
+  `Export cancelled rather than render without the beat grid the preview is using — ` +
+  `reload the track and try again.`;
+
+/**
+ * Wait for `store.awaitAnalysis()`, bounded — the interactive half of the rule
+ * batchRunner has always enforced per track (batchRunner.ts:197-215).
+ *
+ * The bound is batch's own `ANALYSIS_TIMEOUT_MS`, deliberately: it is a
+ * LIVENESS net for the one case `trackAnalysis.ts` cannot bound itself (a
+ * worker that simply never replies), and that case does not become more or
+ * less likely because a human is watching. A tighter interactive number would
+ * be a second, unmeasured mechanism for the same problem — and it would
+ * false-refuse the slow-machine-plus-long-track case that this number was
+ * measured to survive. What makes the generous bound acceptable here is that
+ * the wait happens with `exporting` already set, so the panel's Cancel button
+ * is on screen for every second of it — hence the signal.
+ *
+ * Not a copy of `raceAgainstStop`: that helper is module-private to
+ * batchRunner and polls because it is handed a `shouldStop()` predicate. Here
+ * there is a real AbortSignal, so this listens instead of polling.
+ */
+async function awaitAnalysisBounded(wait: Promise<void>, signal: AbortSignal): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    await Promise.race([
+      wait,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(ANALYSIS_TIMEOUT_REASON)), ANALYSIS_TIMEOUT_MS);
+        onAbort = () => {
+          // AbortError: runExport's catch reads that as "the user cancelled"
+          // and shows nothing, which is exactly right for a Cancel click.
+          const e = new Error("Export cancelled");
+          e.name = "AbortError";
+          reject(e);
+        };
+        if (signal.aborted) onAbort();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
+}
 
 export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
@@ -260,6 +310,28 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // path leaked the rasterized ImageBitmap on the error path.
       let overlayBitmap: ImageBitmap | undefined;
       try {
+        // E2-R2, the divergence this whole guard exists for. `analyzeTrack` is
+        // async, so between loading a track and its analysis landing the store
+        // holds `beatGrid: null, sections: []` — and the export read whatever
+        // was there at that instant. An export fired in that window rendered
+        // with NO grid (bpm 0, no beatPhase/barPhase, no beatIndex/barIndex,
+        // no sectionIndex/sectionPulse, and tempo-locked LFOs on their
+        // 120-BPM-equivalent fallback clock) while the preview a moment later
+        // had the real one. Measured on device: 120/120 frames differed from
+        // the same export run after analysis; with analysis awaited first,
+        // 0/120. Nothing looked broken, which is why nobody would report it.
+        //
+        // Waited HERE, not before the save dialog: on desktop the dialog is
+        // seconds of user time and analysis is ~0.5 s for a normal track, so
+        // in the path that matters this costs exactly nothing. `exporting` is
+        // already set, so the panel shows progress and a working Cancel.
+        await awaitAnalysisBounded(get().awaitAnalysis(), ac.signal);
+        // A new track can land while we wait — same hazard the pre-dialog
+        // check above exists for, and the same answer: `buf` is the OLD
+        // track's audio, everything read below would be the NEW track's.
+        if (genAtStart !== shared.trackLoadGen) {
+          throw new Error("The track changed while it was being analyzed — export cancelled");
+        }
         if (proresMode && savePath) {
           // Original (un-normalized) audio: a mezzanine keeps source levels.
           await proresSetAudio(wavFromPcm(pcmFromAudioBuffer(buf)));

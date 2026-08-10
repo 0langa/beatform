@@ -402,6 +402,12 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
   ) => {
     const buf = getEngine().audioBuffer;
     if (!buf) throw new Error("no track loaded");
+    // Wait for track analysis, exactly as runExport now does (E3b). Without
+    // this the hook reads `s.beatGrid` mid-analysis and exports with NO grid —
+    // and because every device harness that exports goes through here, a gate
+    // could silently measure a gridless render and call it a baseline. Awaited
+    // BEFORE the store snapshot below, or the snapshot captures the nulls.
+    await store().awaitAnalysis();
     const s = store();
     const w = opts.width ?? 320;
     const h = opts.height ?? 180;

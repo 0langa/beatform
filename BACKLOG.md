@@ -776,6 +776,73 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       entry set out to measure is now accounted for, and it was never a capture
       race.
 
+- [x] E3b **DONE 2026-08-11 — an interactive export could render a whole video
+      with NO beat grid.** `analyzeCurrentTrack` (`store.ts:2320`) writes
+      `{beatGrid: null, sections: [], analyzing: true}` synchronously and fills
+      them in from a `.then`; every load path calls it LAST; `runExport` read
+      `get().beatGrid` with nothing between the click and that read. Hit Export
+      in that window and the export carried nulls while the preview showed the
+      beat-synced version a second later.
+      **Fixed by awaiting analysis inside the export path**, placed AFTER the
+      save dialog and disk pre-flight and BEFORE any sidecar session — on
+      desktop the dialog is seconds of user time and analysis is ~0.5s for a
+      normal track, so in the path that matters the wait costs nothing.
+      **A UI gate was considered and rejected on its FAILURE MODE, not its
+      cost:** on a wedged analysis worker `analyzing` never clears, so a
+      disabled Export button would be permanently disabled with no recourse —
+      a gate whose failure mode is "the app can no longer export" is worse than
+      the bug. The wait runs with `exporting` already set, so Cancel is on
+      screen throughout and reaches it via the same `AbortController`.
+      **Reused batch's `ANALYSIS_TIMEOUT_MS` rather than inventing a number**,
+      and on expiry the export is REFUSED rather than proceeding gridless: a
+      fired timeout means something is genuinely broken, and silently shipping
+      a beat-less video from a broken analyser is the same "nothing looks
+      broken" class as the bug being fixed.
+      **A SECOND DEFECT FOUND AND FIXED IN THE SAME CHANGE — and making
+      `analyzing` a gate would have CREATED it.** `analyzeTrack` copies the
+      whole PCM (`c.slice()` per channel) BEFORE returning a promise, so a long
+      enough track throws `RangeError` synchronously, after `analyzing: true`
+      is already written — leaving it stuck true forever. Untouched, that only
+      wasted a flag; behind a gate it would have made every later export wait
+      out its full timeout. Also established: `analyzeTrack` has NO rejection
+      path (`trackAnalysis.ts:44-55` resolves nulls on a worker error, and
+      `worker.onerror` resolves every pending job), so a never-replying worker
+      is the only unbounded case and the timeout is for exactly that.
+      **Also fixed here, in the main session:** `__runExport` (`devHooks.ts`)
+      read `s.beatGrid` the same way, so **every device harness that exports
+      could silently measure a gridless render and call it a baseline** — a
+      gate measuring the wrong thing, the same class as the GPU matrix
+      auditing whatever preset the dev profile held. It awaits
+      `store().awaitAnalysis()` now, before the snapshot.
+      **DEVICE PROOF, and it is the same experiment that found the bug.**
+      `segment-parity-probe.mjs` with the harness's own wait DISABLED, so run 1
+      still fires at `analyzing: true, bpm: null, beats: 0`: **RUN1 vs RUN2 =
+      0/120 differ.** Identical conditions before the fix gave **120/120**.
+      Eight mutations, all red, and the tests call the REAL
+      `analyzeCurrentTrack()` while holding the worker reply open — the store
+      is never hand-posed into "mid-analysis", so the failing input is
+      byte-for-byte what `loadFile` produces. One mutation was checked and
+      SURVIVES, stated rather than hidden: awaiting the raw `result` promise
+      instead of the derived `.then` still passes, because promise callbacks
+      run in registration order and the store's handler is registered first —
+      the derived promise is deliberate robustness, not something a test pins.
+      Confirmed unaffected: `runBatch` (already awaited per track), the
+      autosave (`docOf` carries no analysis output — no persisted shape, no
+      migration), and the audiogram (`waveformOverview` is computed
+      synchronously before `analyzing` is set).
+- [ ] E3c **NEW, from E3b — the adjacent window, reported rather than
+      half-fixed.** Between `getEngine().loadFile()` resolving and
+      `analyzeCurrentTrack()` being called there is an
+      `await readTrackMeta(...)` — `store.ts:1876` in `loadFile`, the same in
+      `loadDemo`, and `libraryActions.ts:78` in `advanceLibrary`. In that
+      window the NEW audio is loaded while `beatGrid`, `sections` AND
+      `waveformOverview` are still the PREVIOUS track's, and `analyzing` is
+      `false`, so E3b's gate does not cover it. Much narrower (a tag scan, not
+      an analysis pass) and it needs a click inside it, but it is the same
+      class. A clean fix clears or gates at the top of all three load paths;
+      one of them was outside the E3b engineer's ownership, which is why it is
+      its own item rather than a two-thirds fix.
+
 - [x] E2-R1 **DONE 2026-08-10 — with option (f), on the owner's approval.**
       Designed by a workflow: four parallel investigations, a three-lens judge
       panel (determinism / blast radius / reversibility), one synthesis.
