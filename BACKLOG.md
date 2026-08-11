@@ -1,6 +1,6 @@
 # Beatform Backlog and Alignment Ledger
 
-Last reconciled: **2026-08-06** (post v2.72.0 — Gallery live; quality consolidation program + full audit register active)
+Last reconciled: **2026-08-11** (post v2.92.0 completion-claim truth audit)
 
 This is Beatform's canonical current-work ledger. It records what is complete,
 what still needs evidence, what is ready to execute, and what remains only a
@@ -36,21 +36,22 @@ Listing a feature here does **not** approve implementation. Respect its status:
 
 ## Reconciled baseline
 
-Time-sensitive values below were checked on 2026-08-06:
+Time-sensitive values below were checked on 2026-08-11:
 
-| Fact                    | Verified state                                                                                                                                                                                                                                                              |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository              | `0langa/beatform`                                                                                                                                                                                                                                                           |
-| Branch                  | Clean `main`, aligned with `origin/main`                                                                                                                                                                                                                                    |
-| Source version          | `2.72.0` in all five version-bearing files                                                                                                                                                                                                                                  |
-| HEAD / latest tag       | `a6f511c` (docs commits after release) / `v2.72.0` on release commit `1fcf60e`                                                                                                                                                                                              |
-| Latest public release   | `v2.72.0`, published 2026-08-05 (Gallery top-bar surface; registry live with 11 seeds); setup-exe SHA-256 `1ce9bb83…` matches `SHA256SUMS.txt`, updater manifest signed, live latest endpoint serves `2.72.0`                                                               |
-| Open GitHub issues      | 0                                                                                                                                                                                                                                                                           |
-| Open pull requests      | 5 — all Dependabot (#11 npm minor/patch group; #12 rustls patch; #13 windows-core 0.62; #14 sha2 0.11; #15 webview2-com 0.39). #13/#15 track wry's pins (see `Cargo.toml` comment) — review before merging, not auto-merge                                                  |
-| Installed desktop app   | `2.72.0` (binary `ProductVersion` verified 2026-08-06) — auto-update chain 2.67→2.72 worked                                                                                                                                                                                 |
-| Uninstall registry      | `2.72.1`, matching the binary (verified 2026-08-06) — self-healing since v2.72.1: the app repairs `DisplayVersion` on every boot. The genuine updater path was caught skipping the write LIVE (2.72.0→2.72.1) and the heal corrected it on first launch. ALIGN-002 RESOLVED |
-| Running desktop app     | Not checked during this reconciliation                                                                                                                                                                                                                                      |
-| Explicit source markers | Re-verified 2026-08-06: no `TODO`, `FIXME`, `XXX`, or `HACK` markers in `src`, `src-tauri`, or `scripts`                                                                                                                                                                    |
+| Fact                    | Verified state                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository              | `0langa/beatform`                                                                                                                                                                                                                                                                                                                                 |
+| Branch                  | `main` at `0e036b2`, aligned with `origin/main` before this audit; the audit/fix worktree is now intentionally modified and uncommitted                                                                                                                                                                                                           |
+| Source version          | `2.92.0` in all five version-bearing files; `node scripts/bump-version.mjs --verify` passed                                                                                                                                                                                                                                                       |
+| HEAD / latest tag       | `0e036b2`; `v2.92.0` points at the same commit                                                                                                                                                                                                                                                                                                    |
+| Latest public release   | `v2.92.0`, published 2026-08-11; GitHub asset digest and `SHA256SUMS.txt` agree on setup SHA-256 `1acb33d20a58229882ea8afbc07dbc1979cdcabca08466faf529ab5fb6b58689`; downloaded and live `latest.json` both serve `2.92.0`, name the v2.92.0 setup asset, and carry a non-empty signature                                                         |
+| Open GitHub issues      | 0                                                                                                                                                                                                                                                                                                                                                 |
+| Open pull requests      | 5 Dependabot PRs: #12 rustls group, #13 windows-core 0.62, #14 sha2 0.11, #15 webview2-com 0.39, #18 npm minor/patch group. Review before merging; do not auto-merge                                                                                                                                                                              |
+| CI / release            | `Release installers` for `0e036b2` passed and published v2.92.0. Remote `main`'s separate `CI` run remains red only at dependency audit. The exact PR #18 npm graph is applied in this worktree and now passes `npm ci`, all local gates, and `npm audit` with 0 vulnerabilities; PR #18 remains unmerged and nothing here is shipped yet. See F6 |
+| Installed desktop app   | `2.92.0` (`Beatform.exe` `ProductVersion`, verified 2026-08-11). With the corrected worktree smoke harness, a new isolated WebView2 profile passed on its first run against the installed bundle: `http://tauri.localhost/`, title `Beatform`, one canvas, WebGPU available. Harness landing/shipment remains open as F7                          |
+| Uninstall registry      | `2.92.0`, matching the installed binary (verified 2026-08-11); ALIGN-002's boot-time self-heal remains effective                                                                                                                                                                                                                                  |
+| Running desktop app     | Not running during this reconciliation                                                                                                                                                                                                                                                                                                            |
+| Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers in `src`, `src-tauri`, or `scripts`                                                                                                                                                                                                                                                                  |
 
 Current product constraints remain:
 
@@ -60,7 +61,37 @@ Current product constraints remain:
 - Preview/export determinism and WYSIWYG remain hard contracts.
 - Windows is the currently shipped desktop platform.
 
-## QUALITY CONSOLIDATION PROGRAM — active 2026-08-06, feature queue PAUSED
+## Completion-claim truth audit — 2026-08-11
+
+Every explicit `DONE`, `SHIPPED`, `COMPLETE`, `RESOLVED`, `CLOSED`, `LIVE`
+and checked-box claim in this ledger, plus every P-1…P-21 execution status,
+was reconciled against current source, tests, Git history/tags, mounted
+evidence, GitHub, and the installed binary. The clean `0e036b2` baseline and
+the post-audit fix worktree were both gated; the final worktree rerun produced:
+
+- web: typecheck, lint, format check, external-destination production build,
+  `npm audit` with **0 vulnerabilities**, and **2,141/2,141** Vitest tests passed
+  (clean `0e036b2` baseline was 2,140/2,140 before the added regression);
+- Rust: fmt, clippy `--workspace --all-targets -D warnings`, and
+  **129/129** workspace tests passed (78 app + 51 lyrics sidecar; one
+  intentionally ignored corpus test);
+- device: GPU matrix passed **269/269**, zero compile errors, zero GPU errors,
+  zero tolerance-only hash movement; modulation and all eight dock pages
+  passed at both tested widths;
+- release/install: local tag and `origin/main` agree, v2.92.0 public assets +
+  live updater manifest agree, and installed binary + uninstall registry both
+  report 2.92.0; a fresh isolated profile served the bundled shell with one
+  visual canvas and WebGPU on the first attempt after the F7 harness fix.
+
+Historical long-soak, gallery, lyrics, loopback, MIDI, Shadertoy and NLE
+numbers were not all re-executed. Their commits/tags and mounted evidence were
+checked where available; they remain dated historical evidence, not fresh
+2026-08-11 measurements. One historical Shadertoy spike-2 directory still
+points at an unmounted former drive and is labeled accordingly in the archive.
+Completion labels below now reserve `DONE` for work whose stated acceptance
+boundary is met; implemented-but-unproven follow-ups are open checkboxes.
+
+## QUALITY CONSOLIDATION PROGRAM — active as of 2026-08-11 (started 2026-08-06), feature queue PAUSED
 
 Owner directive (2026-08-06, verbatim intent): stop pumping out new
 surfaces; bring the EXISTING feature surface to the bar first, because
@@ -189,11 +220,12 @@ Bring every mode to the customization class of Radial Burst/Tunnel so
 each can carry a publish-worthy look. Aurora's resistance to seed tuning
 was the canary.
 
-- [ ] B0 Audit matrix (agent sweep, no code): per mode — curated + advanced
+- [x] B0 **DONE 2026-08-06** — audit matrix (agent sweep, no code): per mode — curated + advanced
       param counts, param-group coverage (shape / color / motion / beat
       response / texture), style count + spread, modulation-target
       richness, hint quality, visual ceiling notes, gap list, effort class
-      (S/M/L). Output: ranked upgrade queue for owner sign-off.
+      (S/M/L). Output: ranked upgrade queue for owner sign-off. Full matrix:
+      `F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\quality-audit-2026-08\b0-mode-depth-matrix.md`.
       Current param-count tiers (from the registry dump, curated params):
       shallow — voice-orb 6, aurora 6, synthwave 6, spectrum-scape 6;
       mid — metaballs 7, nebula 7, echo-trails 7, particle-flow 7,
@@ -201,11 +233,8 @@ was the canary.
       developed — spectrum-bars 9, led-matrix 9, bass-circle 10,
       particles 11, radial-burst 12. Builder is its own world (out of
       scope here).
-- [x] B0 **DONE 2026-08-06** — full matrix at
-      `F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\quality-audit-2026-08\b0-mode-depth-matrix.md`.
-      Recommended queue in the table below (OWNER RESHUFFLES BEFORE WAVES
-      START); wave 0 = F5 WGSL consolidation + param-schema
-      taper/mod-metadata first.
+      Recommended queue appears below; owner locked it before waves started.
+      Wave 0 was F5 WGSL consolidation + param-schema taper/mod-metadata.
 
 #### B0 recommended queue
 
@@ -384,9 +413,10 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       The `/templates` URL rename stays filed and OUT OF SCOPE: it breaks
       every inbound link, including external ones, and is the owner's call.
 - [x] D3 **DONE (2026-08-09) — repo-wide string audit is clean in the
-      surfaces this track owns.** No "Inspector" anywhere in `src/`,
-      `docs/` or README. No "Template" in any rendered UI string, tooltip
-      or aria-label. The two legitimate survivors are intact and were not
+      surfaces this track owns.** No rendered "Inspector" label remains in
+      `src/`, `docs/` or README; the sole current `src/` hit is a negative
+      guard assertion in `EmptyState.test.tsx`. No "Template" remains in any
+      rendered UI string, tooltip or aria-label. The two legitimate survivors are intact and were not
       touched: `SectionDef.id: "Templates"` (title reads "Looks & themes")
       and the shader editor's `NEW_SHADER_TEMPLATE` starter shader.
       Deliberately left: the word `templates` inside the Looks & themes
@@ -406,7 +436,8 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       not the notes reconstructed. Verified 2026-08-09:
       `rg -n "^## \[2\.74\.0\]" CHANGELOG.md` → `388:## [2.74.0] - 2026-08-07`,
       and every heading from `[2.70.0]` to `[2.84.0]` is present and in order.
-- [x] D5 **DONE 2026-08-09.** (a) fixed in `52721e9`, (b) and (c) fixed in
+- [ ] D5 **FIXED IN WORKTREE 2026-08-11; landing/shipment pending.** Named
+      items (a)–(c) landed earlier: (a) fixed in `52721e9`, (b) and (c) fixed in
       `75fab1d` — comment sweep over `themes.ts` / `factoryThemes.ts` + its
       test / `project.ts` / `store.ts` / `overlay.ts`, plus two things the
       sweep found that the entry did not name: the **Assembly** factory
@@ -420,9 +451,14 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       Left deliberately: "template" in its other senses (the batch
       export-options template, the `{title}`/`{artist}` text expansion, the
       GitHub PR template) and the "Essentials" mentions in `prefs.ts`, which
-      are correct history. Still open, one comment site: `webgpuRenderer.ts`
-      ~2109 says `Settings ▸ Performance`; held only because another change
-      was in flight in that file.
+      are correct history. The truth audit found two more residues: (d)
+      `webgpuRenderer.ts` said `Settings ▸ Performance`; (e) the Canvas2D
+      fallback in `ParamsPanel.tsx` rendered "Builder Studio" even though the
+      user-facing mode is Builder. Both are corrected in this worktree:
+      `Preferences ▸ Performance` and "Builder" respectively. Regression R16b
+      renders the fallback and rejects "Builder Studio". The current source
+      string sweep is clean for these two residues. Checkbox stays open until
+      the fix lands and ships.
       ORIGINAL ENTRY — **naming residue outside the docs track's
       write scope.** Three findings, all reported rather than changed:
       (a) `src/App.tsx` — the Canvas2D-fallback toast tells the user
@@ -971,6 +1007,11 @@ buf` — immediately before the job is built, with nothing awaitable
       without exposing the server on the LAN (Vite listening on both loopback
       addresses, not `0.0.0.0`), and must be validated against
       `test:loopback:built` and `test:shadertoy:built`, not just `test:gpu`.
+      **2026-08-11 docs-truth correction:** `GATES.md` §3 also told users to
+      pre-start Vite for EVERY device gate. That is false for `test:gpu`: the
+      matrix starts `tauri dev`, whose `beforeDevCommand` owns Vite. Following
+      the old text produced immediate 1420/1421 collisions. The manifest now
+      distinguishes the matrix-owned server from attach-only harnesses.
 - [ ] E3g **NEW, from E3c's review — pre-existing, and the one surviving
       finding that was NOT fixed here.** `AudioEngine.loadFile` awaits
       `file.arrayBuffer()` (`engine.ts:253`) and only then `loadArrayBuffer`
@@ -1076,7 +1117,7 @@ buf` — immediately before the job is built, with nothing awaitable
       port bases, isolated WV2 profiles, PID-tree-only kills, socket-death
       rejection; two harnesses re-proven on device post-port. Full
       scenario-registry framework deliberately deferred.
-- [ ] F4 Close the invariant-coverage holes: ~~overlay-compose chokepoint
+- [x] F4 **CLOSED 2026-08-09; reverified 2026-08-11.** Close the invariant-coverage holes: ~~overlay-compose chokepoint
       direct tests~~, ~~exportCore determinism test~~, GPU matrix
       param-extreme + post/motion variants, parser fuzzing (fast-check +
       one cargo-fuzz target on the GLSL translator). DONE in v2.73.0:
@@ -1183,6 +1224,30 @@ buf` — immediately before the job is built, with nothing awaitable
       (shaderGolden zero snapshot updates; device GPU matrix 137 cases
       zero movement). Kaleido-fold rescales deliberately left private
       (genuinely different domains).
+- [ ] F6 **FIXED IN WORKTREE 2026-08-11; remote `main` and shipment pending.**
+      Released `main` still fails `npm audit --audit-level=high` because transitive
+      `nanoid <3.3.17` carries GHSA-2v37-7h3g-55p8 (custom generators can
+      loop indefinitely when size is zero). The v2.92.0 `CI` run
+      `31454830094` failed only this audit; `Release installers` passed because
+      `GATES.md` §5 intentionally excludes dependency audits from releases.
+      Dependabot PR #18 is mergeable and all three checks are green, including
+      `audit`, but it is not merged. This worktree applies its exact
+      `package.json`/`package-lock.json` graph; `npm ci`, 2,141 web tests,
+      typecheck, lint, format, production build, and `npm audit` all pass, with
+      **0 vulnerabilities**. Checkbox stays open until remote `main` is green
+      and the dependency update ships.
+- [ ] F7 **FIXED IN WORKTREE 2026-08-11; landing/shipment pending.** Against
+      installed v2.92.0 and a new isolated WebView2
+      profile, `waitForPage` returned the correctly titled bundled page while
+      `document.readyState` was still `interactive`; the script immediately
+      asserted `complete` and failed. Re-running the same binary/profile passed
+      with `http://tauri.localhost/`, title `Beatform`, one canvas, and WebGPU.
+      This proved the installed app booted but not that the clean-profile harness
+      was one-shot reliable. The worktree harness now waits for the load event
+      with a bounded 45-second timeout before shell assertions. A newly created
+      isolated profile then passed on its first run: bundled `tauri.localhost`
+      shell, title `Beatform`, one canvas, WebGPU available. Checkbox stays open
+      until the harness fix lands and ships.
 
 ### Track G — Store-direct + naming follow-ups (NEW, from the v2.80.0 refactor release)
 
@@ -1404,14 +1469,21 @@ nothing else from that release is outstanding.
       **Unblocked as of v2.81.0**: P-1 stage 1's only top-bar edit was
       turning the dock toggle into a labelled `.ghost-btn`; the export
       cluster is untouched and no later stage is scheduled to move it.
-- [x] G8 **DONE 2026-08-09.** `lyrics-e2e.mjs` and `perf-family-check.mjs`
+- [x] G8 **DONE AND DEVICE-PROVED 2026-08-11.**
+      `lyrics-e2e.mjs` and `perf-family-check.mjs`
       both use `attachWithRecovery` now, following `gallery-e2e.mjs` rather
       than inventing a second idiom. `lyrics-e2e` also pulled its FIRST
       `__invoke` IPC call inside the probe — previously only the later IPC leg
       was guarded — while keeping its `FAIL:` console contract. Unproven end to
-      end: that recovery actually absorbs a live Vite reload in these two. The
-      mechanism is `gallery-e2e`'s, unchanged, but the device harnesses have
-      not been run since.
+      end: forced-reload probes using the real shared `attachWithRecovery`
+      deliberately killed attempt 1 and reached each harness's exact first-hook
+      shape on attempt 2 (`__store`/`__loadFile`/`__invoke` for lyrics,
+      `__prefs` for perf). Full device runs also passed: the quick lyrics E2E
+      completed download/cancel/resume/hash verification, 7/7 word-timed lines,
+      editor undo/round-trip/re-align and cancellation; the performance family
+      check reported `family=699MB main=42MB`. That run exposed a separate fixed
+      sleep race in the perf harness; it now polls boundedly for populated CPU
+      and RAM rows instead of assuming 3.2 seconds is enough.
       ORIGINAL — **Device harnesses that attach without recovery.**
       `scripts/lyrics-e2e.mjs` wraps its FIRST IPC call in the re-attach
       dance but not the initial `attach()` + `waitHooks` eval, and
@@ -1471,7 +1543,7 @@ validated, never written again: its whole remaining job is seeding
 the seed on first boot), `collapsedSections` (**`group:`-prefixed keys
 only** since P-1 — bare section ids are pruned on read; the literal is
 duplicated into `prefs.ts` because state must not import UI, and
-`prefs.test.ts` asserts it equals `ParamGroups.GROUP_KEY`), `advancedOpen`,
+`prefs.test.ts` asserts it equals `ParamGroups.GROUP_KEY`), `advancedGroups`,
 the whole `LEGACY` map, and all 15 SectionDef ids (including `"Templates"`,
 titled "Themes") — now React keys only, no longer persisted identities.
 Tooling-coupled CSS: `.params-panel` (still the dock root — `gpu-pixel-matrix.mjs`
@@ -1485,7 +1557,10 @@ because rail labels are an iterated design surface and the page ids are
 frozen in prefs), `.panel-resize-handle`, `--panel-w`, and
 `.update-hero-close` — the shared
 CDP bootstrap clicks that last one, so every device harness hangs at startup
-if it changes. **Removed from this list by P-1:** `.section-toggle` and
+if it changes. `advancedOpen` is no longer a live or normalized preference in
+the current worktree; old consolidated blobs and `viz.advancedOpen` remain
+accepted strictly as migration input that seeds `advancedGroups`. **Removed
+from this list by P-1:** `.section-toggle` and
 `.panel-tabs` (both deleted with the collapse and tab machinery). Also
 corrected: the `.panel-*` family is **not** nine harness call sites — no
 harness selects `.panel-search`, `.panel-scroll`, `.panel-footer`,
@@ -1502,7 +1577,8 @@ the `useMemo` anyway.
 **P-1 IS COMPLETE as of v2.83.0.** Stage 1 shipped the dock and the rail
 (v2.81.0), stage 2 the per-group expert tiers (v2.82.0), stage 3 the
 Modulation showpiece and the page-independent `driven` mark (v2.83.0).
-H1/H2/H3/H5/H6 are closed. What remains under this track — H4, H7, H8, and
+H1/H2/H3/H5/H6/H8 are closed. H3a is fixed in the current worktree but awaits
+landing/shipment. What remains under this track — H3a's shipment, H4, H7, and
 H9–H13 opened by stage 3 — is follow-on work, not P-1.
 
 **Stage 1 shipped in v2.81.0** and is deliberately a SHELL: the floating
@@ -1547,11 +1623,10 @@ buys and what it does not.
       consumer is the `.builder-factory-chips` mistake.
 - [x] H3 **SHIPPED in v2.82.0 — P-9 done as written here.** Per-group expert
       disclosure keyed by group id in a new `advancedGroups` prefs field,
-      seeded once from `advancedOpen`, which stays declared and validated for
-      one release (delete in 2.83.0). **NOT done in 2.83.0 — that release was
-      P-1 stage 3 and touching the prefs schema in it would have put a
-      migration in the middle of a UI wave. Carry it: delete `advancedOpen`
-      and its `validPrefs` clause in the next prefs-touching release.** Two things the entry did not anticipate:
+      seeded once from `advancedOpen`. The legacy field remained live through
+      v2.92.0 because deleting it during P-1 stage 3 would have put a migration
+      in the middle of a UI wave; its cleanup is now implemented under H3a.
+      Two things the entry did not anticipate:
       the UI calls the tier **expert controls**, not "Advanced" — the retired
       drawer owned that word and reusing it would blur the distinction; and a
       bulk **Show every control** button was required, because per-group
@@ -1565,6 +1640,14 @@ buys and what it does not.
       accessor index. Guarded permanently by `abiOrder.test.ts` (baseline
       captured pre-change) and `curation.test.ts` (every group of every
       built-in has at least one control above its expert line).
+- [ ] H3a **FIXED IN WORKTREE 2026-08-11; landing/shipment pending.**
+      `advancedOpen` is removed from `AppPrefs`, defaults, validation,
+      normalization and equality. Old consolidated blobs and the scattered
+      `viz.advancedOpen` key remain migration-only input: when
+      `advancedGroups` is absent they seed the group ids once, then the
+      normalized blob omits `advancedOpen` and the scattered key is removed.
+      Direct upgrades that skipped v2.82 remain covered. P-A7 regressions prove
+      both paths and prove the retired field is not persisted or exposed live.
 - [x] H4 **SHIPPED in v2.84.0 — partly, and one third declined on evidence.**
       SHIPPED: the dock's first container context (named `visuals` on
       `.visuals-page`, tokens on `.panel-scroll` — a container is excluded
@@ -1801,18 +1884,20 @@ Modulation · Scene · Text · Live`** — `ParamsPanel.tsx` `VISUALS_PAGES`,
       pulse**, the first two entries of `MOD_SOURCES`
       (`modMatrix.ts:142-143`), and the **Edit lyrics** section on Text
       (`ParamsPanel.tsx:1884-1886`).
-- [x] H7-ORIGINAL **Stale doc pointers left by the v2.81.0 mechanical rename, in
-      files outside the docs unit's ownership.** Each is a path a user can
-      follow and fail: `docs/templates.md` says
-      _Visuals ▸ Visual ▸ Themes ▸ Save as theme…_ and
-      `src/ui/GuideDialog.tsx` says the search box "finds any control by
-      name, across all tabs" plus the ungrammatical "the Visuals does
-      nothing". **There is no `Visual` destination any more** — the rail
-      reads Mode · Motion · Themes · Sync · Modulation · Scene · Text · Live,
-      so every `▸ Visual ▸` path is dead. Sweep both, and diff the in-app
-      guide against `docs/guide.md`: they are hand-kept in sync today, which
-      is exactly what P-21 (single-source guides, Track D) exists to fix.
-- [x] H8 **DONE 2026-08-09.** `shotCanvas` (`scripts/lib/cdp.mjs`) reads
+- **H7 original entry (historical; superseded by the closed H7 result above).**
+  It originally reported stale doc pointers left by the v2.81.0 mechanical
+  rename in files outside the docs unit's ownership. Each is a path a user can
+  follow and fail: `docs/templates.md` says
+  _Visuals ▸ Visual ▸ Themes ▸ Save as theme…_ and
+  `src/ui/GuideDialog.tsx` says the search box "finds any control by
+  name, across all tabs" plus the ungrammatical "the Visuals does
+  nothing". **There is no `Visual` destination any more** — the rail
+  reads Mode · Motion · Themes · Sync · Modulation · Scene · Text · Live,
+  so every `▸ Visual ▸` path is dead. Sweep both, and diff the in-app
+  guide against `docs/guide.md`: they are hand-kept in sync today, which
+  is exactly what P-21 (single-source guides, Track D) exists to fix.
+- [x] H8 **DONE AND DEVICE-PROVED 2026-08-11.**
+      `shotCanvas` (`scripts/lib/cdp.mjs`) reads
       `showPanel`, calls `setShowPanel(false)` — the action, not a raw
       `setState`, because it also writes the `panelOpen` pref — measures and
       shoots inside a `try`, and restores in a `finally` whose restore eval is
@@ -1823,14 +1908,24 @@ Modulation · Scene · Text · Live`** — `ParamsPanel.tsx` `VISUALS_PAGES`,
       WebView2 profile so localStorage starts empty, and the only two
       `shotCanvas` callers (`wave-shots.mjs`, `gallery-seed-shots.mjs`) never
       touch the dock. `gpu-pixel-matrix.mjs` is the one script that opens it,
-      and it does not call `shotCanvas` at all. Unverified: that the restored
-      dock and the un-letterboxed clip look right in a real device screenshot.
+      and it does not call `shotCanvas` at all. Device proof opened the dock,
+      captured a raw composited screenshot, called `shotCanvas`, and verified
+      exact state + geometry restoration: `showPanel=true`, `panelOpen=true`,
+      canvas `1280x780`, dock `x=814 y=58 w=452 h=636`, DPR 1.5. Closing the
+      dock left the canvas at the same `1280x780`: P-1's shipped canvas is
+      full-bleed with the dock overlaid, not letterboxed or reframed. Both PNGs
+      are `1920x1170`; different hashes prove the overlay was removed from the
+      clean capture, and both were visually inspected. Evidence:
+      `h8-open-dock-composited.png` and `h8-shotCanvas-dock-cycle.png` under
+      `F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\2026-08-11_backlog-proposals-truth-audit-019ff1cf\`.
       ORIGINAL — **`shotCanvas` still frames the canvas with the dock open — the
       P-1 plan's R16 mitigation was specified and not implemented.**
       `scripts/lib/cdp.mjs:93` clips `Page.captureScreenshot` to the
-      `<canvas>` bounding rect. Since P-1 that rect is the LETTERBOXED
-      canvas, so any evidence shot taken with the dock open has a different
-      frame from every shot in the archive — and GATES.md makes wave-shot
+      `<canvas>` bounding rect. The original diagnosis called that rect
+      letterboxed; device proof corrected the premise. The canvas remains
+      full-bleed, but the overlaid dock is still composited into a screenshot
+      clipped to that rect, so evidence differs from clean archived shots — and
+      GATES.md makes wave-shot
       evidence the basis of the `test:gpu` re-bless protocol, i.e. old and
       new screenshots stop being comparable exactly when a re-bless needs
       them side by side. Not urgent today (`panelOpen` defaults to `false`
@@ -2250,26 +2345,20 @@ Nine mutations, all red once M2 was corrected.
 
 ### Decision points for the owner
 
-1. **Live themes now**: tombstone deep-current + sunset-circuit
+1. **OPEN — live themes now:** tombstone deep-current + sunset-circuit
    immediately (Gallery shows 9 looks until C1), or leave them until C1
-   replaces them? (Recommendation: pull them — they're the flagged
-   offenders and the userbase is small.)
-2. **B0 ranking**: after the audit matrix lands, priority order is yours
-   to reshuffle before waves start. Note from the render audit:
-   spectrum-scape and particle-flow are ABI-bound (renderer work, not
-   preset-file work) and must be planned as renderer waves; Builder's
-   ParamSpec bridge (RP-20) is the single biggest depth unlock.
-3. **Release cadence during the program**: keep shipping each track as
-   its own 2.x release (recommendation), or batch tracks?
-4. **Track order** (recommendation): E1 severity-1 shortlist → A
-   (gallery correctness + naming) → F1/F2 (gates + flake, tiny) → B0
-   audit matrix sign-off → F5 (WGSL consolidation) → B waves ∥ E2 →
-   D docs truth → C seed v2. Approve or reshuffle.
-5. **PROPOSALS.md verdict pass**: 10 product proposals (P-1 … P-10 polish
-   bundle) + the endorsed audit proposals appended there await your
-   approve/adjust/reject per item. Note that PROPOSALS.md titles P-1
-   "…a docked Inspector" — that document is quoted verbatim throughout and
-   predates both renames; the surface is **Visuals**.
+   replaces them? Registry `main` still carries both entries as of 2026-08-11.
+2. **RESOLVED 2026-08-06 — B0 ranking:** owner kept the ranked order;
+   renderer waves and Builder #16 all shipped in v2.74.0–v2.78.0.
+3. **RESOLVED 2026-08-06 — release cadence:** one 2.x release per 3–4-mode
+   batch, then separate renderer and Builder releases; executed as decided.
+4. **RESOLVED 2026-08-06 — track order:** owner approved the ranked program.
+   Implemented work and remaining Track C/D items are recorded in their
+   canonical sections above; this is no longer an approval request.
+5. **RESOLVED 2026-08-06 — PROPOSALS verdicts:** P-1…P-21 verdicts landed in
+   `2575652`. `PROPOSALS.md` now carries a current execution-status table.
+   Its original P-1 body predates both renames; the shipped surface is
+   **Visuals**, not Inspector.
 
 ### Parked (do not start)
 
@@ -2433,9 +2522,10 @@ This does not block current releases. Close when target software is available.
 
 **Status:** DONE 2026-08-04 — the transport was double-dead on every
 shipped build (unbound `requestMIDIAccess` + WebView2 permission denial);
-both fixed and E2E-proven against loopMIDI. NOTE: audit defect PL-4
-(origin prefix match in `midi_permission.rs`) touches this area — tracked
-in the audit register. Full record: ARCHIVE at the bottom of this file.
+both fixed and E2E-proven against loopMIDI. Audit defect PL-4 later found an
+origin prefix match in `midi_permission.rs`; v2.73.0 replaced it with exact
+origin validation, and current Rust tests cover accepted app origins plus
+rejected web/prefix cases. Full record: ARCHIVE at the bottom of this file.
 
 ## Behavior decisions and known limitations
 
@@ -2633,8 +2723,10 @@ When changing this file:
 
 Relocated verbatim on 2026-08-06 so the active half of the ledger reads
 without scrolling through finished work. Stubs remain at each entry's
-original position. Nothing was edited in the move; these records remain
-authoritative for evidence, gotchas and scope of the completed items.
+original position. These records are **dated historical snapshots**, not
+current-status authority: later active-ledger corrections win. Evidence,
+gotchas and completed scope remain useful; superseded conclusions are labeled
+instead of being silently rewritten.
 
 ### FEAT-003 — Gallery (public curated registry) — DONE, LIVE
 
@@ -2693,9 +2785,10 @@ sampler-param follow-up shipped in `v2.65.0` the same day.
 `DEP-001`, `DEP-002` and `DOC-001` completed 2026-07-30; `ALIGN-001` completed
 2026-08-01; `FEAT-001` **shipped in v2.64.0** and its ACL-confirm fix in
 **v2.64.1** (both 2026-08-02, both smoke-verified on the installed build);
-`ALIGN-002` resolved 2026-08-02 — registry now matches the binary, check
-folded into the release ritual. The stabilization block is EMPTY: every
-remaining item is a strategic candidate or research task.
+`ALIGN-002` was provisionally closed 2026-08-02, then **reopened and
+root-fixed 2026-08-06** after the genuine updater path reproduced the skip.
+Track E/E4 and the active ALIGN-002 stub are authoritative; the original
+experiment record below is retained and explicitly marked superseded.
 
 `VERIFY-002`, `VIS-001`, and `DSP-001` remain gated or decision-bound. They do
 not block work above.
@@ -2720,7 +2813,11 @@ not block work above.
 
 ### ALIGN-002 — Windows uninstall registry stuck at 2.39.0
 
-**Status:** DONE 2026-08-02 — resolved by observation across two updates.
+**Status (historical conclusion): SUPERSEDED 2026-08-06.** The 2026-08-02
+observation below was real but not durable: a later genuine in-app
+2.72.0→2.72.1 update reproduced the registry-write skip. Final fix is the
+v2.72.1 boot-time self-heal in Track E/E4; installed binary and registry both
+report 2.92.0 as of 2026-08-11.
 
 **Experiment 2 result (in-app update 2.64.0 → 2.64.1):** registry
 `DisplayVersion = 2.64.1`, matching the installed executable exactly. The
@@ -2847,6 +2944,8 @@ Spike record below is kept for the contract details and their evidence.
 Nijhoff's self-published GitHub backup — deliberately the HARD end: advanced
 raymarchers/pathtracers, one-author bias documented; fetched for analysis
 only, sources not archived). Results archived KEEP-marked at
+Historical location (its former devstorage drive is not mounted in the
+2026-08-11 audit, so this path was not freshly inspected):
 `E:\agent-devstorage\shared-cache\audio-visualizer\artifacts\2026-08-01_shadertoy-spike2\`:
 
 - **34/40 (85%) full naga pipeline** after three contract fixes real input
@@ -2934,7 +3033,8 @@ redistribution rights exist.
 
 ### FEAT-003 — Community preset index
 
-**Status:** IN PROGRESS — owner decisions locked 2026-08-04:
+**Status (historical planning snapshot): SUPERSEDED by the DONE/LIVE Gallery
+entry above.** At this point owner decisions had locked on 2026-08-04:
 
 - **Home:** GitHub org `beatform-app` (owner-created; 0langa auth has org
   admin — verified push/admin on repos). Public contact:

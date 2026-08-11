@@ -4,9 +4,8 @@ This file is deliberately separate from `BACKLOG.md`: the ledger holds
 confirmed defects, drift and program work; THIS file holds judgment calls —
 redesigns, additions, removals — written under the owner's directive that
 nothing is sacred and "user did it like this" is not an argument. Every
-item ends with a **Verdict:** line for the owner to fill in
-(approve / adjust / reject). Nothing here is implemented; approved items
-graduate into the BACKLOG program tracks.
+item ends with its recorded **Verdict:** line. Proposal bodies preserve the original design
+briefs; the execution table below and `BACKLOG.md` record current truth.
 
 Evidence referenced as `ux-shots/NN` lives in
 `F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\quality-audit-2026-08\ux-shots\`.
@@ -15,6 +14,35 @@ Evidence referenced as `ux-shots/NN` lives in
 > All 21 items carry their verdicts inline below; the execution sequence
 > lives in BACKLOG.md ("Approved program extension"). Rejected: P-20.
 > Parked: P-4 (with FEAT-009), P-19 (list only).
+
+## Execution status — verified against source, tests, and Git history 2026-08-11
+
+| Proposal | Current status                      | Verified result / remaining work                                                                                                                                                                                         |
+| -------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P-1      | **COMPLETE AS ADJUSTED**            | Shipped v2.81.0–v2.83.0. Persistent **Visuals** dock, one rail, section pages, and target-first Modulation page shipped; final canvas stays full-bleed behind the dock instead of using the proposed letterboxed shrink. |
+| P-2      | **COMPLETE AS ADJUSTED**            | **Preferences** shipped in v2.80.0; panel name moved Inspector → **Visuals** in v2.81.0. D5's last Canvas2D fallback/comment residues are fixed in the current worktree; landing/shipment remains.                       |
+| P-3      | **PARTIAL**                         | Eager first-ten thumbnails and Gallery empty-state path shipped v2.89.0. Coach marks remain an owner/design decision.                                                                                                    |
+| P-4      | **PARKED**                          | Un-park with FEAT-009; no Perform drawer shipped.                                                                                                                                                                        |
+| P-5      | **APPROVED, NOT STARTED**           | Timeline workstation redesign remains open.                                                                                                                                                                              |
+| P-6      | **APPROVED, NOT STARTED**           | Factory-themes-into-Gallery belongs to open Track C.                                                                                                                                                                     |
+| P-7      | **COMPLETE AS ADJUSTED**            | Modulation engine shipped v2.79.0; page shipped v2.83.0. LFOs are tempo-synced, not detected-beat-phase locked.                                                                                                          |
+| P-8      | **COMPLETE AS ADJUSTED**            | Capability grid shipped v2.87.0. “Show in folder” was explicitly declined pending a narrowly scoped native command/security decision.                                                                                    |
+| P-9      | **COMPLETE**                        | Per-group expert disclosure shipped v2.82.0. Old `advancedOpen` preference cleanup is fixed in the current worktree; BACKLOG H3a remains open only for landing/shipment.                                                 |
+| P-10     | **COMPLETE**                        | Polish bundle shipped v2.89.0. Residual toast-stack max-height case remains recorded, not hidden.                                                                                                                        |
+| P-11     | **APPROVED, NOT STARTED**           | Desktop boot-from-autosave remains a dedicated post-program release.                                                                                                                                                     |
+| P-12     | **COMPLETE**                        | ParamsPanel wave shipped v2.80.0; remaining seven panels shipped v2.87.0.                                                                                                                                                |
+| P-13     | **COMPLETE**                        | `GATES.md` and resumable `scripts/release.mjs` shipped. Current gate-policy wording was reverified and corrected in this audit.                                                                                          |
+| P-14     | **COMPLETE AT APPROVED LITE SCOPE** | Shared `scripts/lib/` harness primitives shipped; full scenario registry remains deliberately deferred.                                                                                                                  |
+| P-15     | **COMPLETE**                        | AudioFeatures fuel shipped v2.79.0.                                                                                                                                                                                      |
+| P-16     | **COMPLETE AS ADJUSTED**            | Merged into P-7; same v2.79.0 engine and v2.83.0 page.                                                                                                                                                                   |
+| P-17     | **COMPLETE**                        | Builder virtual ParamSpec bridge shipped v2.78.0.                                                                                                                                                                        |
+| P-18     | **COMPLETE**                        | `taper`/`mod` schema wave shipped with Track B wave 0; vec3/color refusal preserved.                                                                                                                                     |
+| P-19     | **PARKED**                          | Ranked roster only; no new archetype authorized here.                                                                                                                                                                    |
+| P-20     | **REJECTED**                        | Lyrics runtime remains bundled.                                                                                                                                                                                          |
+| P-21     | **APPROVED, NOT STARTED**           | Guides received manual truth passes, but one-source generation and submission helper remain open in Track D.                                                                                                             |
+
+Checked status means verified implementation, not merely an approved verdict.
+Open and partial rows stay canonical in `BACKLOG.md`.
 
 ---
 

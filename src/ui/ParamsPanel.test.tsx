@@ -1597,6 +1597,14 @@ describe("per-group expert tier wiring (P-9)", { timeout: 30_000 }, () => {
     expect(document.querySelector(".panel-empty")).toBeNull();
   });
 
+  it("R16b: the Canvas2D fallback uses the shipped Builder name", () => {
+    act(() => useVizStore.setState({ presetId: BUILDER2_ID, simplifiedRenderer: true }));
+    render(<ParamsPanel />);
+    const hint = screen.getByText(/compiles its layer stack to a GPU shader/);
+    expect(hint.textContent).toContain("Builder compiles");
+    expect(hint.textContent).not.toContain("Builder Studio");
+  });
+
   it("R17: the whole-preset changed pill counts the expert TIER, not preset.advanced", () => {
     const def = spectrumBars();
     // `vignette` is a curated spec that still LIVES in advanced[] (the tier

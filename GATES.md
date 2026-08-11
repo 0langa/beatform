@@ -65,22 +65,37 @@ at COMPILE time, so no cargo command works until they exist.
 | Shadertoy smoke  | `npm run test:shadertoy:built`                                     | Shadertoy import, transpiler, or compat pipeline changed                                                  |
 | Lyrics E2E       | `npm run test:lyrics` (`test:lyrics:quick` for the short leg)      | Lyrics sidecar, models, alignment, or correction editor changed                                           |
 
-Device-gate prerequisites: a debug build of the shell
-(`cargo build` in `src-tauri/`) and Vite dev serving 127.0.0.1:1420.
+The GPU matrix owns its full dev lifecycle: `npm run test:gpu` launches
+`tauri dev`, whose `beforeDevCommand` starts Vite. **Do not pre-start Vite for
+this gate**; doing so races the matrix for ports 1420/1421. On PowerShell, pin
+the spawned server to IPv4 when needed:
+
+```powershell
+$env:TAURI_DEV_HOST = "127.0.0.1"
+npm run test:gpu
+```
+
+The other device harnesses launch an already-built debug shell and attach CDP
+to it; they do not invoke `tauri dev`. Build the shell first (`cargo build` in
+`src-tauri/`), then start Vite separately. Start Vite dual-stack with
+`npm run dev -- --host` (both `127.0.0.1:1420` and `[::1]:1420`), or pin it on
+PowerShell with:
+
+```powershell
+$env:TAURI_DEV_HOST = "127.0.0.1"
+npm run dev
+```
+
 The harnesses share `scripts/lib/` (isolated WebView2 profiles, per-harness
 debug ports, PID-tree-only kills) — see the port map in
-`scripts/lib/app.mjs`.
-
-Start that dev server **dual-stack**: `npm run dev -- --host` (Vite listens on
-every address, so both `127.0.0.1:1420` and `[::1]:1420` reach it), or
-`TAURI_DEV_HOST=127.0.0.1 npm run dev` to pin it to IPv4. Plain `npm run dev`
-is IPv6-only here — `host: false` makes Vite listen on `localhost`, which
-resolves to `[::1]` before `127.0.0.1` on this machine, so a leftover dev
-server can hold `[::1]:1420` while a fresh one binds `127.0.0.1:1420` and
-neither notices; the debug shell loads `http://localhost:1420` and silently
-gets the older tree. `spawnApp` now stamps whatever answers that URL against
-this checkout's `public/icon.svg` and fails with "a different dev server is
-already serving …" instead of the misleading "Cannot find execution context".
+`scripts/lib/app.mjs`. Plain `npm run dev` is IPv6-only here when
+`TAURI_DEV_HOST` is unset: `host: false` makes Vite listen on `localhost`,
+which resolves to `[::1]` before `127.0.0.1` on this machine. A leftover dev
+server can otherwise hold `[::1]:1420` while a fresh one binds
+`127.0.0.1:1420`; the debug shell then silently loads the older tree.
+`spawnApp` stamps whatever answers that URL against this checkout's
+`public/icon.svg` and fails with "a different dev server is already serving
+…" instead of the misleading "Cannot find execution context".
 
 **GPU-matrix re-bless protocol** (when `test:gpu` reports hash deltas):
 a shader change legitimately alters pixel hashes. Verify the change
@@ -104,8 +119,9 @@ Before tagging:
 - `CHANGELOG.md` has a real section for the version (it is user-facing UI —
   the update dialog renders it).
 
-After the tag (the `Release installers` workflow runs the same gate set as
-`ci.yml`, then builds and uploads):
+After the tag (the `Release installers` workflow runs the same
+release-critical web and Rust gates, then builds and uploads; dependency
+audits remain CI/PR-only per section 5):
 
 - Workflow green; DRAFT release exists with assets.
 - Publish: `gh release edit vX.Y.Z --draft=false --title "Beatform vX.Y.Z" --latest`.
@@ -134,6 +150,7 @@ After the tag (the `Release installers` workflow runs the same gate set as
 | `npm audit` / `cargo audit`                             | `audit` job        | no (dependency hygiene, not a release blocker)   |
 | Device gates (section 3)                                | no — need hardware | no — run locally per touched area before tagging |
 
-If a gate is worth blocking a PR, it is worth blocking a release: the two
-workflows must keep running the same set. Change gates HERE first, then in
-both workflows in the same commit.
+Release-critical web and Rust gates must stay aligned between both workflows.
+Dependency audits are the intentional exception: they block CI/PR but not a
+tag build. Change gate policy HERE first, then update every affected workflow
+in the same commit.

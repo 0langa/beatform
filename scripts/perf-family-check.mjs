@@ -29,13 +29,25 @@ try {
 
   const out = await cdp.eval(`(async () => {
     window.__prefs.set({ perfOverlay: true });
-    // Two Rust polls minimum (family CPU needs a delta; scan is on poll 1).
-    await new Promise(r => setTimeout(r, 3200));
-    // Not '[role="status"]': the notice toast carries that role too, so the
-    // lookup used to depend on PerfOverlay coming first in App's JSX.
-    const el = document.querySelector('[data-testid="perf-overlay"]');
-    window.__prefs.set({ perfOverlay: false });
-    return el ? el.textContent : null;
+    try {
+      // Family CPU needs a delta and the process scan starts on the first
+      // Rust poll. A fixed 3.2 s sleep raced that startup under load and read
+      // the honest placeholders ("CPU…RAM…") as a failed aggregation. Poll
+      // the rendered contract instead; timeout remains a hard failure.
+      const deadline = Date.now() + 15000;
+      while (true) {
+        // Not '[role="status"]': the notice toast carries that role too, so
+        // the lookup used to depend on PerfOverlay coming first in App's JSX.
+        const el = document.querySelector('[data-testid="perf-overlay"]');
+        const text = el?.textContent ?? null;
+        if (text && /RAM\\d+ MB \\(main \\d+ MB\\)/.test(text) &&
+            /CPU\\d+% \\(main \\d+%\\) · sys \\d+%/.test(text)) return text;
+        if (Date.now() > deadline) return text;
+        await new Promise(r => setTimeout(r, 250));
+      }
+    } finally {
+      window.__prefs.set({ perfOverlay: false });
+    }
   })()`);
 
   console.log("OVERLAY:", out);

@@ -12,8 +12,8 @@
 //  - shotCanvas() dismisses the update prompt and the autosave toast, raises
 //    chromeIdle, and closes the Visuals dock before framing: a stale debug
 //    exe sees the freshly published release and pops the update hero (with a
-//    backdrop blur) over everything, and an open dock letterboxes the canvas
-//    it clips to. Everything it changes, it changes back.
+//    backdrop blur) over everything, and an open dock is composited over the
+//    full-bleed canvas it clips to. Everything it changes, it changes back.
 import { writeFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -90,15 +90,14 @@ export class Cdp {
   }
 
   /** Screenshot clipped to the live canvas (the visual, no chrome), after
-   * dismissing anything that could sit on top of it OR reframe it. Returns
+   * dismissing anything that could be composited on top of it. Returns
    * the path. */
   async shotCanvas(file, { settleMs = 250 } = {}) {
-    // Also closes the Visuals dock, remembering whether it was open (H8):
-    // since P-1 the dock LETTERBOXES the canvas, so its bounding rect — the
-    // clip below — is a different frame from every shot in the archive. GATES
-    // §3 makes wave-shot evidence the basis of the test:gpu re-bless, i.e.
-    // old and new shots would stop being comparable exactly when a re-bless
-    // needs them side by side.
+    // Also closes the Visuals dock, remembering whether it was open (H8).
+    // The dock overlays the full-bleed canvas: its bounding rect stays the
+    // same, but Page.captureScreenshot composites the dock over the clip.
+    // GATES §3 makes canvas-only wave shots the basis of a test:gpu re-bless,
+    // so UI chrome in one side of the comparison would make the evidence lie.
     const hadPanel = await this.eval(
       `(() => {
         document.querySelector(".update-hero-close")?.click();
@@ -115,8 +114,8 @@ export class Cdp {
       false,
     ).catch(() => false);
     try {
-      // The settle covers the dock's own reflow as well as the dismissals:
-      // the canvas is only full-bleed again after the layout commits.
+      // The settle covers the dock disappearing from the composited page as
+      // well as the other dismissals.
       await sleep(settleMs);
       const rect = await this.eval(
         `(() => { const c = document.querySelector("canvas"); const r = c.getBoundingClientRect();

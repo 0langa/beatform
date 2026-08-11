@@ -1078,9 +1078,9 @@ export function ParamsPanel() {
               // that change the picture not at all (F1).
               <div className="panel-section" title={unavailable}>
                 <p className="section-hint">
-                  Builder Studio compiles its layer stack to a GPU shader, so it needs hardware
-                  rendering (WebGPU). Your saved stack is untouched and will render again on a
-                  system that has it.
+                  Builder compiles its layer stack to a GPU shader, so it needs hardware rendering
+                  (WebGPU). Your saved stack is untouched and will render again on a system that has
+                  it.
                 </p>
               </div>
             ) : (

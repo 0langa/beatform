@@ -2106,7 +2106,7 @@ export class WebGPURenderer implements Renderer {
 
   static async create(canvas: HTMLCanvasElement | OffscreenCanvas): Promise<WebGPURenderer> {
     if (!navigator.gpu) throw new Error("WebGPU not available");
-    // GPU preference (Settings ▸ Performance) — a hint for dual-GPU machines.
+    // GPU preference (Preferences ▸ Performance) — a hint for dual-GPU machines.
     // In the export worker localStorage is absent, so prefs resolve to
     // "default" there; the live choice is what matters.
     const pref = getPrefs().powerPreference;

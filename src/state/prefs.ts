@@ -23,7 +23,7 @@ export interface PerfOverlayStats {
  * `beatform.prefs.v1`, replacing the scatter of small ad-hoc localStorage
  * keys (viz.volume, viz.panelOpen, viz.timelineOpen, viz.advancedOpen,
  * viz.switchQuantize.v1, viz.panelWidth.v1, viz.lastSaveDir.v1) and hosting
- * every new Settings-page preference.
+ * every new Preferences-page preference.
  *
  * Deliberately NOT merged here: the heavy per-document caches
  * (params/sync/mods/overlay/timeline/custom presets/post/motion/bg). They
@@ -39,22 +39,13 @@ export interface PerfOverlayStats {
 export interface AppPrefs {
   /** Player volume 0..1. */
   volume: number;
-  /** Settings panel open at boot. */
+  /** Library panel open at boot. */
   panelOpen: boolean;
   /** Timeline panel open at boot. */
   timelineOpen: boolean;
-  /**
-   * FROZEN (P-9, v2.82.0). The global Essentials/All switch is gone, so
-   * nothing writes this any more -- but it is still validated and still read
-   * ONCE, in validPrefs, to seed `advancedGroups` for an upgrading install.
-   * Deleting it in this release would forfeit the seed: prefs are rewritten
-   * at module import, before React mounts, so the value would be destroyed on
-   * the first boot after upgrade with no recovery path. Delete in 2.83.0.
-   */
-  advancedOpen: boolean;
   /** Live switch quantize (off/beat/bar). */
   switchQuantize: QuantizeMode;
-  /** Settings/library panel width, px (240..440). */
+  /** Library panel width, px (240..440). */
   panelWidth: number;
   /** Folder of the last save dialog, or null. */
   lastSaveDir: string | null;
@@ -137,7 +128,6 @@ export const DEFAULT_PREFS: AppPrefs = {
   volume: 0.9,
   panelOpen: false,
   timelineOpen: false,
-  advancedOpen: false,
   switchQuantize: "off",
   panelWidth: 280,
   lastSaveDir: null,
@@ -183,6 +173,12 @@ const LEGACY = {
   lastSaveDir: "viz.lastSaveDir.v1",
 } as const;
 
+/** Read-only migration input removed from the live AppPrefs shape in H3a.
+ * Keeping it here preserves direct upgrades from builds predating v2.82.0;
+ * validPrefs consumes it once to seed advancedGroups, then omits it from the
+ * normalized blob written back to storage. */
+type RawAppPrefs = Partial<AppPrefs> & { advancedOpen?: unknown };
+
 function num(v: unknown, def: number, lo: number, hi: number): number {
   return typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def;
 }
@@ -225,7 +221,7 @@ function validOverlayStats(raw: unknown): PerfOverlayStats {
 }
 
 /**
- * What `advancedOpen: true` expands to. The eight shared PARAM_GROUPS ids plus
+ * What legacy `advancedOpen: true` expands to. The eight shared PARAM_GROUPS ids plus
  * the "more" fallback, DUPLICATED here on purpose -- state must not import the
  * render layer (the rule that already forced the "group:" literal to be copied
  * below). prefs.test.ts asserts this list equals PARAM_GROUPS + FALLBACK_GROUP.
@@ -243,13 +239,12 @@ export const ADVANCED_SEED_GROUPS = [
 ] as const;
 
 function validPrefs(raw: unknown): AppPrefs {
-  const p = (typeof raw === "object" && raw !== null ? raw : {}) as Partial<AppPrefs>;
+  const p = (typeof raw === "object" && raw !== null ? raw : {}) as RawAppPrefs;
   const d = DEFAULT_PREFS;
   return {
     volume: num(p.volume, d.volume, 0, 1),
     panelOpen: typeof p.panelOpen === "boolean" ? p.panelOpen : d.panelOpen,
     timelineOpen: typeof p.timelineOpen === "boolean" ? p.timelineOpen : d.timelineOpen,
-    advancedOpen: typeof p.advancedOpen === "boolean" ? p.advancedOpen : d.advancedOpen,
     switchQuantize: isQuantizeMode(p.switchQuantize) ? p.switchQuantize : d.switchQuantize,
     panelWidth: num(p.panelWidth, d.panelWidth, 240, 440),
     lastSaveDir: typeof p.lastSaveDir === "string" && p.lastSaveDir ? p.lastSaveDir : null,
@@ -333,7 +328,7 @@ function validPrefs(raw: unknown): AppPrefs {
 
 /** One-time migration from the legacy scattered keys. Only fields absent
  * from the stored blob are taken from legacy (a written blob always wins). */
-function migrateLegacy(base: Partial<AppPrefs>): Partial<AppPrefs> {
+function migrateLegacy(base: RawAppPrefs): RawAppPrefs {
   const out = { ...base };
   try {
     if (out.volume === undefined) {
@@ -375,10 +370,10 @@ function migrateLegacy(base: Partial<AppPrefs>): Partial<AppPrefs> {
 }
 
 let prefs: AppPrefs = (() => {
-  let stored: Partial<AppPrefs> = {};
+  let stored: RawAppPrefs = {};
   try {
     const raw = localStorage.getItem(LS_PREFS);
-    if (raw) stored = JSON.parse(raw) as Partial<AppPrefs>;
+    if (raw) stored = JSON.parse(raw) as RawAppPrefs;
   } catch {
     // corrupted/blocked — treated as empty
   }
@@ -470,7 +465,6 @@ function samePrefs(a: AppPrefs, b: AppPrefs): boolean {
     a.volume === b.volume &&
     a.panelOpen === b.panelOpen &&
     a.timelineOpen === b.timelineOpen &&
-    a.advancedOpen === b.advancedOpen &&
     a.switchQuantize === b.switchQuantize &&
     a.panelWidth === b.panelWidth &&
     a.lastSaveDir === b.lastSaveDir &&

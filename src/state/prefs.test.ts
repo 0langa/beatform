@@ -351,10 +351,9 @@ describe("prefs: the Visuals dock's rail (P-1)", () => {
  * Per-group Advanced disclosure (P-9).
  *
  * The global Essentials/All switch is retired, so `advancedGroups` replaces
- * `advancedOpen` as the live field. `advancedOpen` is FROZEN but still read —
- * exactly once, here, to seed the new field for an upgrading install. Prefs
- * are rewritten at module import before React mounts, so a deletion in this
- * release would destroy that record on the first boot after upgrade.
+ * `advancedOpen` as the live field. Old blobs and the older scattered key are
+ * still consumed for direct upgrades, but the normalized blob must not keep
+ * round-tripping the retired field.
  */
 describe("prefs: per-group Advanced (P-9)", () => {
   beforeEach(() => {
@@ -438,17 +437,20 @@ describe("prefs: per-group Advanced (P-9)", () => {
     ]);
   });
 
-  it("P-A7 keeps advancedOpen round-tripping while it is frozen", async () => {
-    // Frozen, not deleted: it is the ONLY record that a user chose "All", and
-    // the seed above is its one reader. Delete in 2.83.0 (BACKLOG H9).
-    seed(JSON.stringify({ advancedOpen: true }));
-    const { getPrefs } = await importFresh();
-    expect(getPrefs().advancedOpen).toBe(true);
+  it("P-A7 consumes advancedOpen migration input without persisting the retired field", async () => {
+    const storedBlob = seed(JSON.stringify({ advancedOpen: true }));
+    const { getPrefs, ADVANCED_SEED_GROUPS } = await importFresh();
+    expect(getPrefs().advancedGroups).toEqual([...ADVANCED_SEED_GROUPS]);
+    expect("advancedOpen" in getPrefs()).toBe(false);
+    expect(JSON.parse(storedBlob.getItem(KEY)!)).not.toHaveProperty("advancedOpen");
 
-    seed(undefined);
-    const fresh = await importFresh();
-    expect(fresh.getPrefs().advancedOpen).toBe(false);
-    fresh.setPrefs({ advancedOpen: true });
-    expect(fresh.getPrefs().advancedOpen).toBe(true);
+    // A user may jump directly from the old scattered-key build; update
+    // installs are not guaranteed to visit v2.82.0 first.
+    const legacy = seed(undefined);
+    legacy.setItem("viz.advancedOpen", "1");
+    const directUpgrade = await importFresh();
+    expect(directUpgrade.getPrefs().advancedGroups).toEqual([...ADVANCED_SEED_GROUPS]);
+    expect(legacy.getItem("viz.advancedOpen")).toBeNull();
+    expect(JSON.parse(legacy.getItem(KEY)!)).not.toHaveProperty("advancedOpen");
   });
 });

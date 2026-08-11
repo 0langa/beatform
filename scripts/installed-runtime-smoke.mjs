@@ -47,6 +47,20 @@ try {
   });
   cdp = new Cdp(page.webSocketDebuggerUrl);
   await cdp.open();
+  // A fresh WebView2 profile exposes the titled page while its document is
+  // still `interactive`. waitForPage therefore proves target identity, not
+  // readiness; wait for the real load boundary before asserting the shell.
+  await cdp.eval(`new Promise((resolve, reject) => {
+    if (document.readyState === "complete") return resolve(true);
+    const timer = setTimeout(
+      () => reject(new Error("document did not reach complete within 45000ms")),
+      45000,
+    );
+    window.addEventListener("load", () => {
+      clearTimeout(timer);
+      resolve(true);
+    }, { once: true });
+  })`);
   const result = await cdp.eval(
     `({
       title: document.title,
