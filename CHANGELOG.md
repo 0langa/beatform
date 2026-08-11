@@ -11,6 +11,32 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.92.0] - 2026-08-11
+
+### Fixed
+
+- **An export started right after a track change no longer uses the previous
+  song's beat grid.** The last release made exports wait for analysis, but
+  there was still a gap: when a new track loaded, the new audio started playing
+  while the beat grid, key, sections and waveform from the _previous_ song were
+  still in place — so an export fired in that moment rendered one song's
+  visuals over another song's audio, with nothing on screen to suggest anything
+  was wrong. Everything derived from the audio is now cleared the instant the
+  new track starts, which also means an export started there simply waits for
+  the real analysis. This mattered most during automatic library advance, which
+  reaches that moment with no click at all.
+- **An export can no longer be finished against a track you have since
+  replaced.** If you changed tracks while an export was still setting up, it
+  could encode the audio it started with but describe it using the new track's
+  grid, sections, cover and title. Exports now confirm the audio is still the
+  audio they began with, and stop with a clear message if it is not. The same
+  check was added to the internal path the project's own test harnesses use, so
+  they cannot quietly measure the wrong thing either.
+- **The audiogram no longer jumps on every track change.** With the waveform
+  strip enabled, the progress bar and time readout shifted upward for a moment
+  at the start of each new track and then dropped back. The strip now keeps its
+  place while its waveform is being computed, so nothing below it moves.
+
 ## [2.91.0] - 2026-08-11
 
 ### Fixed
@@ -2539,7 +2565,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.91.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.92.0...HEAD
+[2.92.0]: https://github.com/0langa/beatform/compare/v2.91.0...v2.92.0
 [2.91.0]: https://github.com/0langa/beatform/compare/v2.90.0...v2.91.0
 [2.90.0]: https://github.com/0langa/beatform/compare/v2.89.0...v2.90.0
 [2.89.0]: https://github.com/0langa/beatform/compare/v2.88.0...v2.89.0
