@@ -11,6 +11,31 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.92.1] - 2026-08-12
+
+### Fixed
+
+- **The Canvas2D fallback now calls Builder by its current name.** The message
+  shown when Builder cannot run without WebGPU still used the retired
+  "Builder Studio" name.
+- **Release validation no longer mistakes a slow first launch for a broken
+  install.** A brand-new WebView2 profile can expose the correctly titled app
+  while its document is still loading. The installed-app smoke now waits for
+  that real load boundary before checking the shell.
+- **The performance-family diagnostic no longer races its first CPU and RAM
+  sample.** Loaded machines could still show honest placeholders after the
+  old fixed delay; the check now waits boundedly for populated readings and
+  always turns the overlay back off.
+
+### Changed
+
+- **The retired global Advanced preference is now migration-only.** Direct
+  upgrades from older builds still carry that choice into the per-group expert
+  controls, then stop storing the obsolete field.
+- **The npm dependency audit is clean again.** The reviewed minor/patch update
+  removes the high-severity `nanoid` advisory that left main's CI red after
+  2.92.0, with no new runtime service or dependency.
+
 ## [2.92.0] - 2026-08-11
 
 ### Fixed
@@ -2565,7 +2590,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.92.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.92.1...HEAD
+[2.92.1]: https://github.com/0langa/beatform/compare/v2.92.0...v2.92.1
 [2.92.0]: https://github.com/0langa/beatform/compare/v2.91.0...v2.92.0
 [2.91.0]: https://github.com/0langa/beatform/compare/v2.90.0...v2.91.0
 [2.90.0]: https://github.com/0langa/beatform/compare/v2.89.0...v2.90.0

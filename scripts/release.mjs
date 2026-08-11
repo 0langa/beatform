@@ -22,8 +22,8 @@
  *                  already has content
  *   4. commit      commit "chore(release): X.Y.Z — <title>" + tag vX.Y.Z +
  *                  push main + push the tag
- *   5. watch       wait for the "Release installers" workflow run on the tag
- *                  and stream it (gh run watch --exit-status)
+ *   5. watch       wait for the "Release installers" workflow run on the tag,
+ *                  stream it, then verify its recorded conclusion directly
  *   6. publish     gh release edit vX.Y.Z --draft=false
  *                  --title "Beatform vX.Y.Z" --latest
  *   7. verify      download live latest.json + SHA256SUMS.txt + the setup
@@ -335,6 +335,20 @@ const steps = {
     if (!runId) throw new Error(`watch: no "Release installers" run appeared for ${tag}`);
     console.log(`watch: streaming run ${runId} (env -u GITHUB_TOKEN gh run watch)`);
     gh(["run", "watch", String(runId), "--exit-status"]);
+    // `gh run watch --exit-status` has returned zero for a failed run on this
+    // machine before. Publishing is irreversible enough that the workflow's
+    // recorded conclusion, not the watch process, is the release gate.
+    const outcome = JSON.parse(
+      gh(["run", "view", String(runId), "--json", "status,conclusion,url"], {
+        capture: true,
+      }),
+    );
+    if (outcome.status !== "completed" || outcome.conclusion !== "success") {
+      throw new Error(
+        `watch: release workflow ${runId} was ${outcome.status}/${outcome.conclusion}: ${outcome.url}`,
+      );
+    }
+    console.log(`watch: confirmed run ${runId} completed/success`);
     return true;
   },
 
