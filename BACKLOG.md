@@ -1,6 +1,6 @@
 # Beatform Backlog and Alignment Ledger
 
-Last reconciled: **2026-08-11** (post v2.92.0 completion-claim truth audit)
+Last reconciled: **2026-08-12** (post v2.92.1 shipment and installed-runtime verification)
 
 This is Beatform's canonical current-work ledger. It records what is complete,
 what still needs evidence, what is ready to execute, and what remains only a
@@ -36,22 +36,22 @@ Listing a feature here does **not** approve implementation. Respect its status:
 
 ## Reconciled baseline
 
-Time-sensitive values below were checked on 2026-08-11:
+Time-sensitive values below were checked on 2026-08-12:
 
-| Fact                    | Verified state                                                                                                                                                                                                                                                                                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository              | `0langa/beatform`                                                                                                                                                                                                                                                                                                                                 |
-| Branch                  | `main` at `0e036b2`, aligned with `origin/main` before this audit; the audit/fix worktree is now intentionally modified and uncommitted                                                                                                                                                                                                           |
-| Source version          | `2.92.0` in all five version-bearing files; `node scripts/bump-version.mjs --verify` passed                                                                                                                                                                                                                                                       |
-| HEAD / latest tag       | `0e036b2`; `v2.92.0` points at the same commit                                                                                                                                                                                                                                                                                                    |
-| Latest public release   | `v2.92.0`, published 2026-08-11; GitHub asset digest and `SHA256SUMS.txt` agree on setup SHA-256 `1acb33d20a58229882ea8afbc07dbc1979cdcabca08466faf529ab5fb6b58689`; downloaded and live `latest.json` both serve `2.92.0`, name the v2.92.0 setup asset, and carry a non-empty signature                                                         |
-| Open GitHub issues      | 0                                                                                                                                                                                                                                                                                                                                                 |
-| Open pull requests      | 5 Dependabot PRs: #12 rustls group, #13 windows-core 0.62, #14 sha2 0.11, #15 webview2-com 0.39, #18 npm minor/patch group. Review before merging; do not auto-merge                                                                                                                                                                              |
-| CI / release            | `Release installers` for `0e036b2` passed and published v2.92.0. Remote `main`'s separate `CI` run remains red only at dependency audit. The exact PR #18 npm graph is applied in this worktree and now passes `npm ci`, all local gates, and `npm audit` with 0 vulnerabilities; PR #18 remains unmerged and nothing here is shipped yet. See F6 |
-| Installed desktop app   | `2.92.0` (`Beatform.exe` `ProductVersion`, verified 2026-08-11). With the corrected worktree smoke harness, a new isolated WebView2 profile passed on its first run against the installed bundle: `http://tauri.localhost/`, title `Beatform`, one canvas, WebGPU available. Harness landing/shipment remains open as F7                          |
-| Uninstall registry      | `2.92.0`, matching the installed binary (verified 2026-08-11); ALIGN-002's boot-time self-heal remains effective                                                                                                                                                                                                                                  |
-| Running desktop app     | Not running during this reconciliation                                                                                                                                                                                                                                                                                                            |
-| Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers in `src`, `src-tauri`, or `scripts`                                                                                                                                                                                                                                                                  |
+| Fact                    | Verified state                                                                                                                                                                                                                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository              | `0langa/beatform`                                                                                                                                                                                                                                                                                                                           |
+| Branch                  | `main`; release tag `v2.92.1` points at `418d72c`; only this post-release ledger reconciliation follows the tag                                                                                                                                                                                                                             |
+| Source version          | `2.92.1` in all five version-bearing files; `node scripts/bump-version.mjs --verify` passed                                                                                                                                                                                                                                                 |
+| Release commit / tag    | `v2.92.1` points at release commit `418d72c`                                                                                                                                                                                                                                                                                                |
+| Latest public release   | `v2.92.1`, published 2026-08-11T22:59:56Z (2026-08-12 Europe/Berlin); GitHub's setup-asset digest, downloaded installer, and `SHA256SUMS.txt` agree on SHA-256 `249a6774e66058002c5f2c720bd6a4886d117d15b9a322aaefadd115cd8f01f9`; live `latest.json` serves `2.92.1`, names the v2.92.1 setup asset, and carries a 420-character signature |
+| Open GitHub issues      | 0                                                                                                                                                                                                                                                                                                                                           |
+| Open pull requests      | 5 Dependabot PRs: #12 rustls group, #13 windows-core 0.62, #14 sha2 0.11, #15 webview2-com 0.39, #19 npm minor/patch group. Review before merging; do not auto-merge. Superseded PR #18 closed unmerged after its exact graph shipped on `main`                                                                                             |
+| CI / release            | `CI` run `31543999429` passed on `main` at `418d72c`; `Release installers` run `31544001326` completed `success` and published v2.92.1. Release automation independently re-read the completed run's `status` and `conclusion` after `gh run watch`; `npm audit` reports 0 vulnerabilities                                                  |
+| Installed desktop app   | `2.92.1` (`Beatform.exe` `ProductVersion` and `FileVersion`, verified after the user's manual `Install now` action on 2026-08-12). A new isolated WebView2 profile passed on its first run against this installed bundle: `http://tauri.localhost/`, title `Beatform`, one canvas, WebGPU available                                         |
+| Uninstall registry      | `2.92.1`, matching the installed binary (verified 2026-08-12); ALIGN-002's boot-time self-heal remains effective                                                                                                                                                                                                                            |
+| Running desktop app     | Installed v2.92.1 process running from `%LOCALAPPDATA%\Beatform\Beatform.exe` during reconciliation                                                                                                                                                                                                                                         |
+| Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers in `src`, `src-tauri`, or `scripts`                                                                                                                                                                                                                                                            |
 
 Current product constraints remain:
 
@@ -61,7 +61,7 @@ Current product constraints remain:
 - Preview/export determinism and WYSIWYG remain hard contracts.
 - Windows is the currently shipped desktop platform.
 
-## Completion-claim truth audit — 2026-08-11
+## Completion-claim truth audit — 2026-08-11; shipment reconciliation — 2026-08-12
 
 Every explicit `DONE`, `SHIPPED`, `COMPLETE`, `RESOLVED`, `CLOSED`, `LIVE`
 and checked-box claim in this ledger, plus every P-1…P-21 execution status,
@@ -78,10 +78,11 @@ the post-audit fix worktree were both gated; the final worktree rerun produced:
 - device: GPU matrix passed **269/269**, zero compile errors, zero GPU errors,
   zero tolerance-only hash movement; modulation and all eight dock pages
   passed at both tested widths;
-- release/install: local tag and `origin/main` agree, v2.92.0 public assets +
-  live updater manifest agree, and installed binary + uninstall registry both
-  report 2.92.0; a fresh isolated profile served the bundled shell with one
-  visual canvas and WebGPU on the first attempt after the F7 harness fix.
+- release/install: v2.92.1 tag `418d72c`, public assets, downloaded installer,
+  checksums, and signed live updater manifest agree; `CI` and `Release installers`
+  passed; installed binary + uninstall registry both report 2.92.1 after the
+  user applied the in-app update; a fresh isolated profile served the bundled
+  shell with one visual canvas and WebGPU on the first attempt.
 
 Historical long-soak, gallery, lyrics, loopback, MIDI, Shadertoy and NLE
 numbers were not all re-executed. Their commits/tags and mounted evidence were
@@ -436,7 +437,7 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       not the notes reconstructed. Verified 2026-08-09:
       `rg -n "^## \[2\.74\.0\]" CHANGELOG.md` → `388:## [2.74.0] - 2026-08-07`,
       and every heading from `[2.70.0]` to `[2.84.0]` is present and in order.
-- [ ] D5 **FIXED IN WORKTREE 2026-08-11; landing/shipment pending.** Named
+- [x] D5 **SHIPPED in v2.92.1.** Named
       items (a)–(c) landed earlier: (a) fixed in `52721e9`, (b) and (c) fixed in
       `75fab1d` — comment sweep over `themes.ts` / `factoryThemes.ts` + its
       test / `project.ts` / `store.ts` / `overlay.ts`, plus two things the
@@ -454,11 +455,10 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       are correct history. The truth audit found two more residues: (d)
       `webgpuRenderer.ts` said `Settings ▸ Performance`; (e) the Canvas2D
       fallback in `ParamsPanel.tsx` rendered "Builder Studio" even though the
-      user-facing mode is Builder. Both are corrected in this worktree:
+      user-facing mode is Builder. Both shipped in v2.92.1:
       `Preferences ▸ Performance` and "Builder" respectively. Regression R16b
-      renders the fallback and rejects "Builder Studio". The current source
-      string sweep is clean for these two residues. Checkbox stays open until
-      the fix lands and ships.
+      renders the fallback and rejects "Builder Studio". The shipped source
+      string sweep is clean for these two residues.
       ORIGINAL ENTRY — **naming residue outside the docs track's
       write scope.** Three findings, all reported rather than changed:
       (a) `src/App.tsx` — the Canvas2D-fallback toast tells the user
@@ -1224,30 +1224,27 @@ buf` — immediately before the job is built, with nothing awaitable
       (shaderGolden zero snapshot updates; device GPU matrix 137 cases
       zero movement). Kaleido-fold rescales deliberately left private
       (genuinely different domains).
-- [ ] F6 **FIXED IN WORKTREE 2026-08-11; remote `main` and shipment pending.**
-      Released `main` still fails `npm audit --audit-level=high` because transitive
-      `nanoid <3.3.17` carries GHSA-2v37-7h3g-55p8 (custom generators can
-      loop indefinitely when size is zero). The v2.92.0 `CI` run
-      `31454830094` failed only this audit; `Release installers` passed because
-      `GATES.md` §5 intentionally excludes dependency audits from releases.
-      Dependabot PR #18 is mergeable and all three checks are green, including
-      `audit`, but it is not merged. This worktree applies its exact
-      `package.json`/`package-lock.json` graph; `npm ci`, 2,141 web tests,
-      typecheck, lint, format, production build, and `npm audit` all pass, with
-      **0 vulnerabilities**. Checkbox stays open until remote `main` is green
-      and the dependency update ships.
-- [ ] F7 **FIXED IN WORKTREE 2026-08-11; landing/shipment pending.** Against
-      installed v2.92.0 and a new isolated WebView2
+- [x] F6 **SHIPPED in v2.92.1; remote `main` green.** The v2.92.0 `CI` run
+      `31454830094` failed only `npm audit --audit-level=high` because transitive
+      `nanoid <3.3.17` carried GHSA-2v37-7h3g-55p8. v2.92.1 shipped the exact
+      Dependabot PR #18 `package.json`/`package-lock.json` graph; PR #18 then
+      closed unmerged as superseded. `npm ci`, 2,141 web tests, typecheck, lint,
+      format, production build, and `npm audit` pass with **0 vulnerabilities**;
+      remote `CI` run `31543999429` completed successfully at release commit
+      `418d72c`.
+- [x] F7 **SHIPPED AND INSTALLED-PROVED in v2.92.1.** Against installed v2.92.0
+      and a new isolated WebView2
       profile, `waitForPage` returned the correctly titled bundled page while
       `document.readyState` was still `interactive`; the script immediately
       asserted `complete` and failed. Re-running the same binary/profile passed
       with `http://tauri.localhost/`, title `Beatform`, one canvas, and WebGPU.
       This proved the installed app booted but not that the clean-profile harness
-      was one-shot reliable. The worktree harness now waits for the load event
+      was one-shot reliable. The shipped harness now waits for the load event
       with a bounded 45-second timeout before shell assertions. A newly created
-      isolated profile then passed on its first run: bundled `tauri.localhost`
-      shell, title `Beatform`, one canvas, WebGPU available. Checkbox stays open
-      until the harness fix lands and ships.
+      isolated profile then passed on its first run. After the user applied the
+      v2.92.1 in-app update, another new isolated profile passed on its first run:
+      bundled `tauri.localhost` shell, title `Beatform`, one canvas, WebGPU
+      available.
 
 ### Track G — Store-direct + naming follow-ups (NEW, from the v2.80.0 refactor release)
 
@@ -1558,7 +1555,7 @@ frozen in prefs), `.panel-resize-handle`, `--panel-w`, and
 `.update-hero-close` — the shared
 CDP bootstrap clicks that last one, so every device harness hangs at startup
 if it changes. `advancedOpen` is no longer a live or normalized preference in
-the current worktree; old consolidated blobs and `viz.advancedOpen` remain
+the shipped v2.92.1 source; old consolidated blobs and `viz.advancedOpen` remain
 accepted strictly as migration input that seeds `advancedGroups`. **Removed
 from this list by P-1:** `.section-toggle` and
 `.panel-tabs` (both deleted with the collapse and tab machinery). Also
@@ -1577,8 +1574,7 @@ the `useMemo` anyway.
 **P-1 IS COMPLETE as of v2.83.0.** Stage 1 shipped the dock and the rail
 (v2.81.0), stage 2 the per-group expert tiers (v2.82.0), stage 3 the
 Modulation showpiece and the page-independent `driven` mark (v2.83.0).
-H1/H2/H3/H5/H6/H8 are closed. H3a is fixed in the current worktree but awaits
-landing/shipment. What remains under this track — H3a's shipment, H4, H7, and
+H1/H2/H3/H3a/H5/H6/H8 are closed. What remains under this track — H4, H7, and
 H9–H13 opened by stage 3 — is follow-on work, not P-1.
 
 **Stage 1 shipped in v2.81.0** and is deliberately a SHELL: the floating
@@ -1640,7 +1636,7 @@ buys and what it does not.
       accessor index. Guarded permanently by `abiOrder.test.ts` (baseline
       captured pre-change) and `curation.test.ts` (every group of every
       built-in has at least one control above its expert line).
-- [ ] H3a **FIXED IN WORKTREE 2026-08-11; landing/shipment pending.**
+- [x] H3a **SHIPPED in v2.92.1.**
       `advancedOpen` is removed from `AppPrefs`, defaults, validation,
       normalization and equality. Old consolidated blobs and the scattered
       `viz.advancedOpen` key remain migration-only input: when
@@ -2817,7 +2813,7 @@ not block work above.
 observation below was real but not durable: a later genuine in-app
 2.72.0→2.72.1 update reproduced the registry-write skip. Final fix is the
 v2.72.1 boot-time self-heal in Track E/E4; installed binary and registry both
-report 2.92.0 as of 2026-08-11.
+report 2.92.1 as of 2026-08-12 after the in-app update.
 
 **Experiment 2 result (in-app update 2.64.0 → 2.64.1):** registry
 `DisplayVersion = 2.64.1`, matching the installed executable exactly. The
