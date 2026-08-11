@@ -48,29 +48,55 @@ vi.stubGlobal("localStorage", {
 vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
 vi.stubGlobal("document", { addEventListener: () => {}, visibilityState: "visible" });
 
-const audioBuffer = {
-  duration: 30,
-  sampleRate: 48_000,
-  numberOfChannels: 2,
-  length: 30 * 48_000,
-  getChannelData: () => new Float32Array(4096),
-} as unknown as AudioBuffer;
+/** A decoded track. Distinct OBJECTS matter here: the E3d guard below is an
+ * identity comparison, so two tracks must never be two references to one. */
+function decoded(duration: number): AudioBuffer {
+  return {
+    duration,
+    sampleRate: 48_000,
+    numberOfChannels: 2,
+    length: duration * 48_000,
+    getChannelData: () => new Float32Array(4096),
+  } as unknown as AudioBuffer;
+}
+
+const TRACK_A = decoded(30);
+const TRACK_B = decoded(45);
+
+/** What the engine currently holds. `AudioEngine.loadArrayBuffer` commits the
+ * decoded buffer by assigning this field (engine.ts), so a test that wants to
+ * model "the decode landed" assigns it too. */
+let engineBuffer: AudioBuffer | null = TRACK_A;
+/** `startLiveInput` renames the track without touching the buffer — the one
+ * engine-visible difference live mode makes to this action. */
+let engineTrackName = "probe.wav";
 
 const analyzer = { setSync: vi.fn(), setBeatGrid: vi.fn(), setSections: vi.fn(), reset: vi.fn() };
 
+/** ONE engine object with LIVE accessors, because that is what production has:
+ * `getEngine()` returns a module singleton (services.ts) and `audioBuffer` is a
+ * getter over its private `buffer` field (engine.ts). A stub that handed out a
+ * fresh object per call with a snapshotted buffer would make every re-read of
+ * `audioBuffer` stale, which is precisely the thing under test. */
+const engineStub = {
+  ctx: { decodeAudioData: vi.fn() },
+  get audioBuffer() {
+    return engineBuffer;
+  },
+  get state() {
+    return { trackName: engineTrackName };
+  },
+  currentTime: 0,
+  duration: 30,
+  playing: false,
+  setVolume: vi.fn(),
+  onEnded: null,
+  dispose: vi.fn(),
+};
+
 vi.mock("../services", () => ({
   initServices: vi.fn(() => vi.fn()),
-  getEngine: vi.fn(() => ({
-    ctx: { decodeAudioData: vi.fn() },
-    audioBuffer,
-    state: { trackName: "probe.wav" },
-    currentTime: 0,
-    duration: 30,
-    playing: false,
-    setVolume: vi.fn(),
-    onEnded: null,
-    dispose: vi.fn(),
-  })),
+  getEngine: vi.fn(() => engineStub),
   getAnalyzer: vi.fn(() => analyzer),
   peekAnalyzer: vi.fn(() => null),
   getRenderer: vi.fn(() => null),
@@ -100,6 +126,7 @@ vi.mock("../../audio/analysis/trackAnalysis", () => ({ analyzeTrack: vi.fn() }))
 
 const { useVizStore } = await import("../store");
 const { exportVideo } = await import("../../export/videoExporter");
+const { rasterizeOverlay } = await import("../../render/overlay");
 const { analyzeTrack } = await import("../../audio/analysis/trackAnalysis");
 const { ANALYSIS_TIMEOUT_MS } = await import("../batchRunner");
 const { ANALYSIS_TIMEOUT_REASON } = await import("./exportActions");
@@ -141,6 +168,11 @@ function startAnalysis() {
 beforeEach(() => {
   vi.mocked(exportVideo).mockClear();
   vi.mocked(analyzeTrack).mockReset();
+  // Back to "track A is loaded and playing".
+  engineBuffer = TRACK_A;
+  engineTrackName = "probe.wav";
+  vi.mocked(rasterizeOverlay).mockReset();
+  vi.mocked(rasterizeOverlay).mockImplementation(async () => null);
   // Every "no job was built" assertion below would pass VACUOUSLY if runExport
   // bailed at its re-entrancy guard instead of at the thing under test, and a
   // test that left an export in flight would arm exactly that. Clear the claim
@@ -159,6 +191,8 @@ beforeEach(() => {
     analyzing: false,
     trackKey: null,
     lyrics: null,
+    liveInputActive: false,
+    trackMeta: { title: "Track A", artist: "A" },
     exportSettings: { ...s().exportSettings, mode: "video", format: "mp4", codec: "h264" },
   });
 });
@@ -276,6 +310,140 @@ describe("the wait is bounded and interruptible", () => {
 
     expect(exportVideo).not.toHaveBeenCalled();
     expect(s().exportError).toContain("track changed");
+  });
+});
+
+/**
+ * E3d — the export must encode the audio the store is describing.
+ *
+ * E3b made the export WAIT for analysis; E3c voids the previous track's
+ * grid/key/sections/waveform the instant new audio reaches the engine. Both
+ * enforce their rule with `shared.trackLoadGen`, and both leave the same hole.
+ *
+ *  - DISTANCE: the last generation check sits right after the analysis wait,
+ *    but the reads that BUILD the job (trackMeta, coverArt, beatGrid, sections,
+ *    stems, lyrics, waveformOverview) happen several awaits later — the sidecar
+ *    audio handshake, the sidecar session, the overlay raster. A track landing
+ *    in that gap was invisible.
+ *
+ *  - INVERSION: `loadFile` bumps `shared.trackLoadGen` on its FIRST line
+ *    (store.ts) and only then parks on the decode, while the engine commits the
+ *    new buffer only after that decode resolves (engine.ts). Between those two
+ *    moments the generation is ALREADY the new load's while `audioBuffer` is
+ *    still the old one — so an export starting there captures old audio under a
+ *    new generation, and every later `genAtStart !== shared.trackLoadGen`
+ *    compares two equal numbers. No counter check can ever fire.
+ *
+ * WHY THE FAILURE IS REACHABLE IN BOTH CASES BELOW: the swap is staged from
+ * INSIDE `rasterizeOverlay`, which is a real await sitting downstream of the
+ * last generation check and upstream of every store read that builds the job.
+ * Nothing between those two points re-checks anything, so an unguarded
+ * implementation genuinely proceeds and genuinely builds a mixed job — deleting
+ * the identity guard turns both tests red rather than merely un-asserted.
+ */
+describe("the export encodes the audio the store describes (E3d)", () => {
+  /** The moment a decode lands: new audio in the engine, and the store writes
+   * the load path performs around it. */
+  function newAudioLands() {
+    engineBuffer = TRACK_B;
+    useVizStore.setState({
+      beatGrid: { ...GRID, bpm: 90 },
+      sections: [0, 5],
+      trackMeta: { title: "Track B", artist: "B" },
+    });
+  }
+
+  it("refuses when new audio lands between the analysis gate and the job build", async () => {
+    // Track A, fully analysed: the export sails past the E3b wait and the
+    // generation check that follows it, which is exactly the case where the
+    // remaining window is all there is.
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    vi.mocked(rasterizeOverlay).mockImplementationOnce(async () => {
+      shared.trackLoadGen++; // the drop
+      newAudioLands(); //      its decode
+      return null;
+    });
+
+    await s().runExport();
+
+    // Not "it exported the wrong thing" — it exported NOTHING.
+    expect(exportVideo).not.toHaveBeenCalled();
+    // Proof the run really reached the guard rather than bailing earlier (the
+    // re-entrancy guard and the simplified-renderer guard both return before
+    // the overlay raster, and neither writes this sentence).
+    expect(rasterizeOverlay).toHaveBeenCalledTimes(1);
+    expect(s().exportError).toContain("while the export was starting");
+    // The slot is released, so the next export is not permanently blocked.
+    expect(s().exporting).toBeNull();
+    expect(shared.exportStarting).toBe(false);
+  });
+
+  it("refuses the counter-inversion case, where both generations are equal and only the audio differs", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    // The inversion, staged exactly as loadFile produces it: the new load has
+    // ALREADY claimed its generation (store.ts's first line) and is parked on
+    // its decode, so the engine still holds track A. The export starts HERE.
+    shared.trackLoadGen++;
+    const genAtStart = shared.trackLoadGen;
+    // …and the decode resolves mid-export. No second generation bump: the load
+    // that owns this audio bumped the counter before the export ever sampled
+    // it, which is why no `trackLoadGen` comparison can see this.
+    vi.mocked(rasterizeOverlay).mockImplementationOnce(async () => {
+      newAudioLands();
+      return null;
+    });
+
+    await s().runExport();
+
+    // The predicate a generation check would have evaluated — both sides equal
+    // for the whole run. This is the assertion that makes the mutation
+    // "re-check `genAtStart !== shared.trackLoadGen` instead" provably green
+    // on its own terms and still wrong.
+    expect(shared.trackLoadGen).toBe(genAtStart);
+    expect(exportVideo).not.toHaveBeenCalled();
+    expect(rasterizeOverlay).toHaveBeenCalledTimes(1);
+    expect(s().exportError).toContain("while the export was starting");
+  });
+
+  it("does not refuse when the document changes but the audio does not", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    // Ordinary churn in the same window — a title edit, a theme tweak. The
+    // predicate is audio identity, not "nothing moved"; a guard that refused
+    // here would break every export made while the user is still editing.
+    vi.mocked(rasterizeOverlay).mockImplementationOnce(async () => {
+      useVizStore.setState({ trackMeta: { title: "renamed", artist: "A" } });
+      return null;
+    });
+
+    await s().runExport();
+
+    expect(exportVideo).toHaveBeenCalledTimes(1);
+    expect(jobOptions().beatGrid).toEqual(GRID);
+    expect(s().exportError).toBeNull();
+    expect(s().exportDone).toContain("MP4");
+  });
+
+  it("does not refuse a live-input export — live mode never swaps the engine's buffer", async () => {
+    // What live mode really is, from this action's point of view. `startLiveInput`
+    // re-points the analysis graph at the loopback worklet and renames the track
+    // to "System audio" (engine.ts); `stopLiveInput` renames it back. NEITHER
+    // touches `buffer`, so `audioBuffer` — the export's input — stays the track
+    // that was loaded before live mode began, and identity holds trivially.
+    // `toggleLiveInput` itself cannot run in this environment (it needs Tauri and
+    // a loopback device), so its two effects on this action are staged directly:
+    // the renamed track, and the store's live-mode analysis state (no grid, not
+    // analysing — store.ts's settleAnalysis call in toggleLiveInput).
+    engineTrackName = "System audio";
+    useVizStore.setState({ liveInputActive: true, beatGrid: null, sections: [], analyzing: false });
+
+    await s().runExport();
+
+    // The export panel has no live-mode gate (its only `disabled` is
+    // `simplifiedRenderer`), so this path is reachable by one click and a
+    // false refusal here would be a worse regression than the bug above.
+    expect(exportVideo).toHaveBeenCalledTimes(1);
+    expect(s().exportError).toBeNull();
+    expect(s().exportDone).toContain("MP4");
   });
 });
 

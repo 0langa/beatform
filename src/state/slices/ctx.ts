@@ -37,4 +37,18 @@ export interface SliceCtx {
   fileNamesInDir: (dir: string) => Promise<Set<string>>;
   /** Read + decode the NEXT library track while the current one plays. */
   prefetchNextLibraryTrack: () => Promise<void>;
+  /**
+   * Void every value derived from the PREVIOUS track's audio (beat grid, key,
+   * sections, waveform overview) and declare an analysis outstanding. Called at
+   * the moment the NEW audio reaches the engine — see store.ts for why that
+   * moment and not the one where the analysis job starts (E3c).
+   */
+  invalidateAnalysis: () => void;
+  /**
+   * Clear an invalidation that no analysis job ever claimed. Every load-path
+   * exit that will not reach `analyzeCurrentTrack()` must call this: since E3b
+   * `analyzing` is a gate, and a stuck one costs every later export its full
+   * analysis timeout.
+   */
+  settleUnclaimedAnalysis: () => void;
 }

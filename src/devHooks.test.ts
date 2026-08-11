@@ -5,8 +5,46 @@
 // `localStorage` at import time (persistence.loadStoredPresetId), so the
 // default `node` environment cannot even load the file. The vitest config
 // documents this per-file opt-in; it costs one environment, not a suite.
-import { describe, it, expect } from "vitest";
-import { scrollsOnAxis, rendersOwnText, type AxisScroll } from "./devHooks";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { scrollsOnAxis, rendersOwnText, installDevHooks, type AxisScroll } from "./devHooks";
+import { useVizStore, type VizState } from "./state/store";
+import { shared } from "./state/slices/shared";
+
+/**
+ * The three seams `__runExport` cannot be tested through: the audio engine
+ * singleton (its buffer identity IS the thing under test), the overlay
+ * rasterizer (an await the probe takes before it builds the job — the only
+ * place a test can land a track change in the right window) and the exporter
+ * itself (real WebGPU, and the assertion is precisely that it is NOT reached).
+ */
+const fake = vi.hoisted(() => ({
+  engine: { audioBuffer: null as AudioBuffer | null, state: { trackName: "probe" } },
+  rasterize: vi.fn(async () => null),
+  // Params spelled out (unused as they are): the first one is the assertion —
+  // the probe must hand the exporter the buffer it captured, not a live read.
+  exportVideo: vi.fn(async (_audio: AudioBuffer, _o: unknown) => ({
+    bytes: 1,
+    seconds: 1,
+    audioCodec: "aac" as const,
+  })),
+}));
+
+vi.mock("./state/services", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./state/services")>();
+  return {
+    ...actual,
+    getEngine: () => fake.engine as unknown as ReturnType<typeof actual.getEngine>,
+    getAnalyzer: () => ({}) as ReturnType<typeof actual.getAnalyzer>,
+  };
+});
+vi.mock("./render/overlay", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./render/overlay")>()),
+  rasterizeOverlay: fake.rasterize,
+}));
+vi.mock("./export/videoExporter", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./export/videoExporter")>()),
+  exportVideo: fake.exportVideo,
+}));
 
 /**
  * `__auditUI` is the only gate in the tree that can look at a rendered dock row
@@ -170,6 +208,90 @@ describe("scrollsOnAxis", () => {
         crossClientExtent: 292,
       }),
     ).toBe(false);
+  });
+});
+
+/**
+ * `__runExport` is a PARALLEL implementation of the export path, not a caller
+ * of `store.runExport` — so it needs its own copy of that path's track-change
+ * contract, and its own copy of the proof. It matters more than its line count:
+ * every device harness that exports (av1-e2e, heap-soak, shadertoy-smoke,
+ * segment-parity-probe) goes through here, and a mixed-track or gridless render
+ * that returns a number is a gate measuring the wrong thing while reporting a
+ * baseline. Both refusals below must be LOUD — a rejection, never a result.
+ */
+describe("__runExport track-change guards", () => {
+  const track = (id: string) => ({ id }) as unknown as AudioBuffer;
+  type RunExport = (o?: Record<string, unknown>) => Promise<{ bytes: number }>;
+  const probe = () => (window as unknown as { __runExport: RunExport }).__runExport;
+  /** Install with the real document, and only `awaitAnalysis` under test control
+   * — the wait is where the store's own barrier can be released by a NEW load
+   * rather than by analysis finishing (store.ts:1097-1101). */
+  const install = (awaitAnalysis: () => Promise<void> = () => Promise.resolve()) =>
+    installDevHooks((): VizState => ({ ...useVizStore.getState(), awaitAnalysis }));
+
+  let gen = 0;
+  beforeEach(() => {
+    gen = shared.trackLoadGen;
+    fake.rasterize.mockClear();
+    fake.exportVideo.mockClear();
+    fake.engine.audioBuffer = track("A");
+  });
+  afterEach(() => {
+    shared.trackLoadGen = gen; // module-level ephemera: leave it as we found it
+  });
+
+  it("exports the buffer it captured when nothing moved", async () => {
+    install();
+    const info = await probe()({ width: 32, height: 18, fps: 10 });
+    expect(info.bytes).toBe(1);
+    // The SAME object, not merely a truthy buffer: identity is the whole
+    // predicate the guard below asserts, so the happy path has to pin it too.
+    expect(fake.exportVideo.mock.calls[0]?.[0]).toBe(fake.engine.audioBuffer);
+  });
+
+  it("refuses a track that landed after the analysis wait — the E3d window", async () => {
+    // The rasterizer is the last await before the job is built; a track landing
+    // there used to be invisible, and the export would have described track B
+    // (grid, meta, cover, waveform) over track A's captured audio.
+    fake.rasterize.mockImplementationOnce(async () => {
+      fake.engine.audioBuffer = track("B");
+      return null;
+    });
+    install();
+    await expect(probe()()).rejects.toThrow(/track changed while the export was starting/);
+    expect(fake.exportVideo).not.toHaveBeenCalled();
+  });
+
+  it("refuses a load that has STARTED but not yet committed its buffer", async () => {
+    // Identity is blind here by construction: `loadFile` bumps the counter on
+    // its first line while the engine commits the new buffer only after the
+    // decode resolves, so the buffer is still A and always will be to this
+    // check. Without the counter the probe would render track A perfectly —
+    // and report it as a baseline for the track the harness just replaced.
+    install(async () => {
+      shared.trackLoadGen++;
+    });
+    await expect(probe()()).rejects.toThrow(/track changed while it was being analyzed/);
+    expect(fake.exportVideo).not.toHaveBeenCalled();
+    expect(fake.rasterize).not.toHaveBeenCalled(); // refused before any work
+  });
+
+  it("leaves no result behind when it refuses", async () => {
+    // The side channel a console session reads after the call (docs/presets.md).
+    // A refusal that left the PREVIOUS run's frames standing here would be a
+    // wrong number that looks right — the exact failure class these guards are
+    // for, arriving through the one path that does not return anything.
+    install();
+    const info = await probe()({ width: 32, height: 18, fps: 10 });
+    const w = window as unknown as { __lastExport?: unknown };
+    expect(w.__lastExport).toEqual(info);
+    fake.rasterize.mockImplementationOnce(async () => {
+      fake.engine.audioBuffer = track("B");
+      return null;
+    });
+    await expect(probe()()).rejects.toThrow(/export cancelled/);
+    expect(w.__lastExport).toBeUndefined();
   });
 });
 

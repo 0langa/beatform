@@ -73,23 +73,44 @@ export function libraryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         // Near-gapless: disk read + decode already happened during playback.
         const gen = ++shared.trackLoadGen;
         const engine = getEngine();
-        engine.loadBuffer(pre.buffer, pre.file.name);
-        await engine.play();
-        const { meta, coverArt } = await readTrackMeta(pre.file, pre.file.name);
-        if (gen !== shared.trackLoadGen) return;
-        set({
-          trackMeta: meta,
-          coverArt,
-          stems: [],
-          lyrics: null,
-          lyricFileName: null,
-          libraryActivePath: next.path,
-          error: null,
-        });
-        ctx.applyCoverArt();
-        get().refreshOverlay();
-        get().analyzeCurrentTrack();
-        void ctx.prefetchNextLibraryTrack();
+        try {
+          engine.loadBuffer(pre.buffer, pre.file.name);
+          // E3c, and this is the path that reaches the window without a click:
+          // auto-advance installs the next song's audio here and plays it,
+          // while the beat grid, key, sections and waveform overview below are
+          // still the song that just ended. Void them at the buffer, not after
+          // the tag scan — `analyzing` goes true with them, so an export fired
+          // during an advance waits for this track's grid instead of baking in
+          // the last one's.
+          ctx.invalidateAnalysis();
+          await engine.play();
+          const { meta, coverArt } = await readTrackMeta(pre.file, pre.file.name);
+          if (gen !== shared.trackLoadGen) return;
+          set({
+            trackMeta: meta,
+            coverArt,
+            stems: [],
+            lyrics: null,
+            lyricFileName: null,
+            libraryActivePath: next.path,
+            error: null,
+          });
+          ctx.applyCoverArt();
+          get().refreshOverlay();
+          get().analyzeCurrentTrack();
+          void ctx.prefetchNextLibraryTrack();
+        } catch (e) {
+          // Unlike loadFile this path had no catch at all: it is called from
+          // `engine.onEnded` as a floating promise, so a rejection was an
+          // unhandled one AND — now that this path opens the analysis gate —
+          // would leave that gate shut forever.
+          if (gen !== shared.trackLoadGen) return;
+          set({ error: `Could not play "${next.fileName}" (${(e as Error).message})` });
+        } finally {
+          // Same rule as loadFile's: close a gate this advance opened that no
+          // analysis job will close, and leave a NEWER load's gate alone.
+          if (gen === shared.trackLoadGen) ctx.settleUnclaimedAnalysis();
+        }
       } else {
         await get().playLibraryTrack(next.path);
       }

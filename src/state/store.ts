@@ -666,12 +666,33 @@ let overlayToken = 0;
 /** Latest analysis job id — stale results are dropped. */
 let analysisId = 0;
 /**
- * The in-flight analysis, as a promise that settles AFTER `analyzeCurrentTrack`
- * has written the grid into the store — not the raw `analyzeTrack` promise,
- * which resolves one tick earlier and would let a waiter read the state it is
- * waiting for before it exists. Read only through `awaitAnalysis()`.
+ * The outstanding analysis, as a promise that settles AFTER the store has been
+ * written — not the raw `analyzeTrack` promise, which resolves one tick earlier
+ * and would let a waiter read the state it is waiting for before it exists.
+ * Read only through `awaitAnalysis()`.
+ *
+ * Since E3c it is opened by `invalidateAnalysis()`, at the moment the NEW audio
+ * reaches the engine — which is several awaits BEFORE the job that fills it
+ * exists. That is the point: `analyzing` and this promise have to become true
+ * together, or `awaitAnalysis()` would hand a waiter the PREVIOUS track's
+ * already-resolved promise and it would sail straight through onto the nulls
+ * the invalidation just wrote (E3b's bug, in E3b's own window).
  */
 let analysisSettled: Promise<void> | null = null;
+/** Resolves `analysisSettled`. Non-null exactly while an analysis is
+ * outstanding — i.e. while `analyzing` is this module's to clear. */
+let releaseAnalysis: (() => void) | null = null;
+/**
+ * The id of an invalidation that no analysis job has claimed yet: the state is
+ * void and `analyzing` is true, but nothing is computing.
+ *
+ * It is the predicate for "the gate is closed and nothing will open it", which
+ * is what every load-path exit needs to know. Non-null means the only job that
+ * could have filled this hole was never started, so the exiting load must clear
+ * the flag; null means a job is running (or none is outstanding) and clearing
+ * would re-open E3b's null-grid window on a track that is still analysing.
+ */
+let unclaimedAnalysisId: number | null = null;
 /** toggleLiveInput spans two real awaits (worklet + Rust spawn); this stops a
  * second click from running a second start path whose failure cleanup would
  * tear down the first click's worklet. */
@@ -1053,6 +1074,79 @@ export const useVizStore = create<VizState>((set, get) => {
     }, getPrefs().autosaveIntervalSec * 1000);
   };
 
+  /**
+   * E3c — void everything derived from the PREVIOUS track's audio, and declare
+   * an analysis outstanding.
+   *
+   * Called by every load path at the moment the NEW audio reaches the engine,
+   * which is one `play()` and one tag scan BEFORE `analyzeCurrentTrack()` runs.
+   * In that window the beat grid, key, sections and waveform overview are not
+   * merely missing — they describe the song that just stopped — and `analyzing`
+   * was false, so E3b's export gate saw nothing to wait for and rendered the
+   * previous song's grid over this song's audio.
+   *
+   * Returns the analysis id it claimed, so the job that eventually starts can
+   * check it against `analysisId` and drop its result if superseded.
+   */
+  const invalidateAnalysis = (): number => {
+    // An invalidation no job has claimed yet IS the current one: a load path
+    // invalidates and then calls analyzeCurrentTrack, and opening a second
+    // barrier there would release the very waiter the first one exists to hold.
+    if (unclaimedAnalysisId != null) return unclaimedAnalysisId;
+    const id = ++analysisId;
+    // A SUPERSEDING load frees the previous barrier's waiters rather than
+    // stranding them behind a job that will never be accepted: runExport
+    // re-reads `shared.trackLoadGen` the instant its wait resolves and refuses
+    // the mixed-track export there (exportActions.ts:332).
+    releaseAnalysis?.();
+    analysisSettled = new Promise<void>((resolve) => {
+      releaseAnalysis = resolve;
+    });
+    unclaimedAnalysisId = id;
+    // waveformOverview goes too: it is the previous track's PCM drawn as a
+    // picture, and the audiogram's waveform strip renders it — into the
+    // preview AND into an export's overlay. A missing strip for the length of
+    // a tag scan is a smaller lie than the wrong song's.
+    set({
+      beatGrid: null,
+      trackKey: null,
+      sections: [],
+      waveformOverview: null,
+      analyzing: true,
+    });
+    getAnalyzer().setBeatGrid(null);
+    getAnalyzer().setSections(null);
+    return id;
+  };
+
+  /**
+   * Close the outstanding analysis: `analyzing` false, waiters released, with
+   * `patch` (the grid, when there is one) written in the SAME set so a released
+   * waiter cannot observe the flag without the result.
+   */
+  const settleAnalysis = (patch?: Partial<VizState>): void => {
+    unclaimedAnalysisId = null;
+    analysisSettled = null;
+    set({ ...patch, analyzing: false });
+    releaseAnalysis?.();
+    releaseAnalysis = null;
+  };
+
+  /**
+   * Settle an invalidation that no analysis job ever claimed — the gate is
+   * closed and nothing is coming to open it.
+   *
+   * Every load-path exit that will not reach `analyzeCurrentTrack` calls this,
+   * because `analyzing` is a GATE (E3b) and a stuck one makes every later
+   * export sit out its full ANALYSIS_TIMEOUT_MS. The `unclaimed` predicate is
+   * what keeps it from over-clearing: a load whose decode fails while the
+   * CURRENT track is still being analysed must leave that analysis alone.
+   */
+  const settleUnclaimedAnalysis = (): void => {
+    if (unclaimedAnalysisId == null) return;
+    settleAnalysis();
+  };
+
   // The shared closure surface handed to every slice factory.
   const ctx: SliceCtx = {
     docOf,
@@ -1066,6 +1160,8 @@ export const useVizStore = create<VizState>((set, get) => {
     scheduleAutosave,
     fileNamesInDir,
     prefetchNextLibraryTrack,
+    invalidateAnalysis,
+    settleUnclaimedAnalysis,
   };
 
   return {
@@ -1867,6 +1963,14 @@ export const useVizStore = create<VizState>((set, get) => {
         set({ error: null, libraryActivePath: null });
         await getEngine().loadFile(file);
         if (gen !== shared.trackLoadGen) return;
+        // E3c: the NEW audio is the engine's buffer as of the line above, and
+        // it starts playing two lines below — so the beat grid, key, sections
+        // and waveform overview still in the store are the PREVIOUS song's,
+        // and an export fired here rendered that grid over this audio. Void
+        // them HERE rather than at `analyzeCurrentTrack()` below, which is a
+        // whole tag scan away: `analyzing` goes true with them, so E3b's gate
+        // makes an export in this window WAIT for the real grid.
+        invalidateAnalysis();
         // Different audio entirely: detector history, peak caps and the drive
         // envelope all describe the previous track and must not carry over.
         getAnalyzer().reset("source");
@@ -1885,6 +1989,19 @@ export const useVizStore = create<VizState>((set, get) => {
       } catch (e) {
         if (gen !== shared.trackLoadGen) return;
         set({ error: `Could not decode "${file.name}" (${(e as Error).message})` });
+      } finally {
+        // Every exit between the invalidation above and the job that fills it:
+        // an AudioContext that refuses to resume, a tag scan that throws, the
+        // early return above. A no-op on the happy path (the job claimed the
+        // invalidation) and on a decode that failed before any audio landed
+        // (nothing to claim) — see settleUnclaimedAnalysis.
+        //
+        // Skipped when a NEWER load has claimed the generation: that load owns
+        // the flag now. It either invalidated already (reusing this one — the
+        // state is void either way) or will, and clearing here would open a
+        // gap in which an export sees `analyzing: false` over null grids,
+        // which is the bug E3b fixed.
+        if (gen === shared.trackLoadGen) settleUnclaimedAnalysis();
       }
     },
 
@@ -1899,6 +2016,9 @@ export const useVizStore = create<VizState>((set, get) => {
         const buf = await demo.render(engine.ctx.sampleRate);
         if (gen !== shared.trackLoadGen) return;
         engine.loadBuffer(buf, `Demo: ${demo.name}`);
+        // Same window, same reason as loadFile: new audio in the engine, the
+        // previous track's grid still in the store (E3c).
+        invalidateAnalysis();
         getAnalyzer().reset("source");
         await engine.play();
         set({
@@ -1915,6 +2035,11 @@ export const useVizStore = create<VizState>((set, get) => {
       } catch (e) {
         if (gen !== shared.trackLoadGen) return;
         set({ error: `Demo failed: ${(e as Error).message}` });
+      } finally {
+        // Same contract as loadFile's: close a gate this load opened and no
+        // job will close. Also covers the `!demo` early return above, which
+        // exits before any audio is installed.
+        if (gen === shared.trackLoadGen) settleUnclaimedAnalysis();
       }
     },
 
@@ -1968,12 +2093,17 @@ export const useVizStore = create<VizState>((set, get) => {
           analysisId++;
           getAnalyzer().setBeatGrid(null);
           getAnalyzer().setSections(null);
-          set({
+          // Through settleAnalysis, not a bare `analyzing: false`: this is the
+          // one place outside a load path that stops expecting a grid, and it
+          // has to release the barrier and drop the unclaimed-invalidation
+          // bookkeeping with it. A bare write would leave an invalidation
+          // "unclaimed" forever, and the NEXT track load would then find one
+          // and skip its own — reopening the E3c window it exists to close.
+          settleAnalysis({
             liveInputActive: true,
             beatGrid: null,
             trackKey: null,
             sections: [],
-            analyzing: false,
             libraryActivePath: null,
             error: null,
           });
@@ -2298,7 +2428,20 @@ export const useVizStore = create<VizState>((set, get) => {
 
     analyzeCurrentTrack() {
       const buf = getEngine().audioBuffer;
-      if (!buf) return;
+      if (!buf) {
+        // A load path may have invalidated on our behalf, and there is nothing
+        // to analyse. The gate must not stay closed on a job that will never
+        // exist. (Today's three callers all install audio first, so this is
+        // belt — but every exit past `analyzing: true` has to be one.)
+        settleUnclaimedAnalysis();
+        return;
+      }
+      // Claim the invalidation the load path already performed at the moment
+      // the audio landed (E3c) — or perform it now, for a caller that reaches
+      // here without one. BEFORE the overview below: invalidation clears
+      // `waveformOverview`, and doing it after would wipe the fresh one.
+      const id = invalidateAnalysis();
+      unclaimedAnalysisId = null; // claimed: from here a job is responsible
       // Peak-envelope overview for the timeline (cheap; ~4k buckets)
       {
         const data = buf.getChannelData(0);
@@ -2316,10 +2459,6 @@ export const useVizStore = create<VizState>((set, get) => {
         }
         set({ waveformOverview: overview });
       }
-      const id = ++analysisId;
-      set({ beatGrid: null, trackKey: null, sections: [], analyzing: true });
-      getAnalyzer().setBeatGrid(null);
-      getAnalyzer().setSections(null);
       // `analyzing` is a GATE now, not a label — runExport waits on it — so
       // every exit from here has to clear it. That includes the one exit this
       // function never had: `analyzeTrack` copies the whole PCM before it
@@ -2330,35 +2469,40 @@ export const useVizStore = create<VizState>((set, get) => {
       try {
         started = analyzeTrack(buf);
       } catch (e) {
-        set({ analyzing: false });
-        analysisSettled = null;
+        settleAnalysis();
         throw e; // same surface as before: loadFile's catch reports it
       }
-      analysisSettled = started.result.then(
+      void started.result.then(
         ({ grid, key, sections }) => {
           if (id !== analysisId) return; // a newer track superseded this job
-          set({ beatGrid: grid, trackKey: key, sections, analyzing: false });
           getAnalyzer().setBeatGrid(grid);
           // Sections travel with the grid, always: features.sectionIndex /
           // sectionPulse resolve from these boundaries the same way the export
           // path resolves them from the job's copy (P-15).
           getAnalyzer().setSections(sections);
+          // Grid and flag in one write, then the waiters — `awaitAnalysis`
+          // promises that whoever it resolves reads the result, not the
+          // instant before it.
+          settleAnalysis({ beatGrid: grid, trackKey: key, sections });
         },
         // trackAnalysis resolves nulls for every failure it can SEE (worker
         // error message, failed boot, inline throw), so the only way here is a
         // structured-clone failure out of postMessage. No grid is coming —
         // stop gating on one.
         () => {
-          if (id === analysisId) set({ analyzing: false });
+          if (id === analysisId) settleAnalysis();
         },
       );
     },
 
     awaitAnalysis() {
-      // Gated on `analyzing`, not on the promise: after a live-input toggle
-      // (or a superseded load) `analysisSettled` can still point at a job
-      // whose result the store will never accept, and waiting on that is how
-      // a wait becomes a hang.
+      // Gated on `analyzing` FIRST, and only then on the promise. `analyzing`
+      // is the store's own statement that a grid is coming; the barrier is
+      // opened and closed with it (invalidateAnalysis / settleAnalysis), so
+      // the two normally agree. The flag stays the authority for the case they
+      // cannot: anything that writes `analyzing: false` from outside this
+      // module leaves a promise nobody will ever settle, and waiting on that
+      // is how a wait becomes a hang.
       if (!get().analyzing || !analysisSettled) return Promise.resolve();
       return analysisSettled;
     },

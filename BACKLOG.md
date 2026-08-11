@@ -830,18 +830,174 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       autosave (`docOf` carries no analysis output — no persisted shape, no
       migration), and the audiogram (`waveformOverview` is computed
       synchronously before `analyzing` is set).
-- [ ] E3c **NEW, from E3b — the adjacent window, reported rather than
-      half-fixed.** Between `getEngine().loadFile()` resolving and
-      `analyzeCurrentTrack()` being called there is an
-      `await readTrackMeta(...)` — `store.ts:1876` in `loadFile`, the same in
-      `loadDemo`, and `libraryActions.ts:78` in `advanceLibrary`. In that
-      window the NEW audio is loaded while `beatGrid`, `sections` AND
-      `waveformOverview` are still the PREVIOUS track's, and `analyzing` is
-      `false`, so E3b's gate does not cover it. Much narrower (a tag scan, not
-      an analysis pass) and it needs a click inside it, but it is the same
-      class. A clean fix clears or gates at the top of all three load paths;
-      one of them was outside the E3b engineer's ownership, which is why it is
-      its own item rather than a two-thirds fix.
+- [x] E3c **DONE 2026-08-11 — and the window was WORSE than this entry filed
+      it.** Two claims above were wrong. (1) "it needs a click": the
+      near-gapless auto-advance (`libraryActions.ts`) reaches the window with
+      NO interaction at all — the app moves to the next track by itself. (2)
+      "the previous track's values are still there" undersold it: `loadFile`
+      does `await getEngine().play()` BEFORE `await readTrackMeta(...)`, so the
+      new song is audibly PLAYING while `beatGrid`/`trackKey`/`sections`/
+      `waveformOverview` describe the old one. An export fired there did not
+      render gridless — it rendered **the previous song's beat grid over this
+      song's audio**, and E3b's gate could not see it because `analyzing` was
+      still `false`.
+      **The fix:** `invalidateAnalysis()` voids the four fields, sets
+      `analyzing: true`, mirrors the nulls into the analyzer and OPENS A
+      BARRIER PROMISE, called the instant new audio reaches the engine in all
+      three load paths (`playLibraryTrack` delegates to `loadFile`, so three is
+      all of them). `analyzeCurrentTrack` now CLAIMS that pending invalidation
+      instead of performing its own.
+      **The barrier is the load-bearing piece and it is not obvious.** Without
+      it, setting `analyzing: true` earlier is worse than useless:
+      `awaitAnalysis()` would hand the waiter the PREVIOUS track's
+      already-resolved promise, it would sail through, and it would read the
+      nulls the invalidation had just written — E3b's exact bug, inside E3b's
+      own window. Deleting it reddens 2 tests here AND 5 of E3b's 9.
+      **The hazard this fix CREATES was the real work.** `analyzing` is a gate
+      now, so a stuck-true flag costs every later export its full 300 s timeout
+      — "exporting is broken", not a stuck spinner. Every exit past
+      `analyzing: true` is closed by `settleUnclaimedAnalysis()` under two
+      guards: `unclaimedAnalysisId != null` ("an invalidation exists that no
+      job will fill", so a decode that fails while the CURRENT track is
+      genuinely analysing leaves it alone) and `gen === shared.trackLoadGen`
+      ("a newer load owns the flag"). The generation guards deliberately do NOT
+      clear — the successor either already invalidated or will, and clearing
+      would strand it mid-window at `analyzing: false` over null grids.
+      **A bypass found while doing it:** `toggleLiveInput` wrote
+      `analyzing: false` and bumped `analysisId` directly. That would have
+      stranded `unclaimedAnalysisId`, and the NEXT load's `invalidateAnalysis()`
+      would have found one, returned early, and skipped its own invalidation —
+      silently reopening E3c. Routed through `settleAnalysis()` as one atomic
+      write.
+      **`waveformOverview` is cleared too**, decided by reading the consumers
+      rather than by principle: it is the previous track's PCM drawn as a
+      picture and `exportActions.ts` bakes it into an export's audiogram. Cost
+      is the waveform strip missing for the length of a tag scan (see E3e,
+      which that exposed).
+      **REVIEWED ADVERSARIALLY BEFORE SHIPPING, and it did not come back
+      clean.** Six lenses over the diff, every finding then put to two skeptics
+      told to refute by default: **18 filed, 6 survived, 12 refuted, every
+      verdict unanimous.** Three of the survivors were coverage holes in this
+      change's own tests and are closed (`loadDemo`'s entire participation was
+      untested — both halves deletable with the suite green; the
+      supersede-release had no test; `expect(trackKey).toBeNull()` could not
+      fail because the fixture never produced a non-null key, proven by
+      reverting the fixture and watching a mutated build go green). The other
+      three became E3d, E3e and E3g.
+      **One test in the new file was FLAKY and was root-caused, not rerun.**
+      It assumed the export was already parked on the barrier, which held only
+      because `runExport`'s browser lane happens to have no await before the
+      analysis wait today; any real-async step ahead of it (or an in-flight
+      edit to `runExport`, which is what was happening) let the export take the
+      NEXT barrier instead. Now enforced with a named wait on the observed
+      condition, and the assertion pins WHICH refusal fired so "woken by the
+      release" cannot be confused with "rescued by the 300 s timeout".
+- [x] E3d **DONE 2026-08-11 — found by E3c's review; the generation counter
+      could never have closed it.** `runExport` captures `buf` and samples
+      `genAtStart` in one synchronous block, and its last generation check sits
+      several awaits before the reads that actually describe the track
+      (`beatGrid`, `sections`, `waveformOverview`, `trackMeta`, `coverArt`,
+      `stems`, `lyrics`). Worse, the counter is structurally blind here:
+      `store.loadFile` bumps `shared.trackLoadGen` on its FIRST line while
+      `AudioEngine.loadArrayBuffer` commits the buffer only after the decode
+      resolves (`engine.ts:265`), so an export starting in that interval holds
+      OLD audio with the NEW generation and every later comparison is two equal
+      numbers forever.
+      **Fixed by re-asserting AUDIO IDENTITY** — `getEngine().audioBuffer !==
+buf` — immediately before the job is built, with nothing awaitable
+      between the check and the reads (`buildExportOptions` is pure and its
+      arguments evaluate synchronously). The generation check is KEPT: it is
+      the only one that can see a load which has started but not committed,
+      where identity is blind by construction and the export would otherwise be
+      perfectly coherent about the track the user just replaced.
+      **The mutation that proves identity was the right predicate:** replacing
+      it with another `genAtStart !== shared.trackLoadGen` re-check leaves the
+      counter-inversion test RED.
+      **`devHooks.__runExport` had the same hole with no guard at all**, and it
+      is a parallel implementation rather than a caller — so every device probe
+      could have measured a mixed-track render and reported it as a baseline,
+      the same class as E3b's gridless "baselines". Guarded identically. All
+      four callers (`av1-e2e`, `heap-soak`, `shadertoy-smoke`,
+      `segment-parity-probe`) surface a rejection rather than swallowing it,
+      and the stale `window.__lastExport*` side channel is cleared up front so
+      a refusal cannot leave the previous run's frames looking current.
+      **Corrected while checking this:** `gpu-pixel-matrix.mjs` drives
+      `__runGpuMatrix`, NOT `__runExport` — the GPU matrix was never exposed.
+- [x] E3e **DONE 2026-08-11 — a regression E3c introduced, caught by its own
+      review.** `drawAudiogram` kept the stack advance INSIDE the strip's data
+      branch, so once E3c started nulling `waveformOverview` the progress bar
+      and clock did not merely lose the strip — they JUMPED into its slot,
+      ~11% of frame height, on every track change and back again when analysis
+      landed (permanently, on a load that fails after the audio lands). The
+      slot is now reserved on `settings.waveformStrip`, the document state,
+      rather than on whether a session artifact happens to have arrived — which
+      makes the audiogram's geometry a pure function of the document and leaves
+      only the bars' content data-dependent.
+      **Evidence:** full op traces (draw calls and style assignments) for 48
+      configurations, before and after — **32 byte-identical** (every strip-OFF
+      trace, every strip-ON-with-waveform trace), 16 changed, exactly the
+      strip-ON-with-no-waveform cases. Three mutations red, including
+      "reserve unconditionally", so a future refactor cannot invent a gap for
+      users who never enabled the strip.
+      **Exported pixels DO change, deliberately, in one reachable state:** a
+      load that fails after the audio reached the engine leaves the overview
+      null with `analyzing: false`, and an export there reaches the audiogram
+      with no waveform. Preview and export still agree with each other in every
+      case; what is removed is a same-document export whose bar and clock
+      geometry depended on whether a transient artifact had landed.
+- [ ] E3f **NEW — the dev-server bind is a documented trap, and I walked into
+      it and then nearly "fixed" it wrongly. Recorded because the wrong turn is
+      the useful part.** `npm run test:gpu` failed twice with tauri printing
+      "Waiting for your frontend dev server to start on http://localhost:1420/"
+      while Vite sat there READY on that exact URL. Cause: `vite.config.ts` has
+      `host: host || false`, and `false` makes Vite bind whatever Node resolves
+      "localhost" to — now `::1` — while tauri probes its `devUrl` as
+      127.0.0.1. `netstat` showed `[::1]:1420` and nothing on 127.0.0.1.
+      **GATES.md §3 already documents all of this**, with two supported
+      workarounds (`npm run dev -- --host` for dual-stack, or
+      `TAURI_DEV_HOST=127.0.0.1` to pin IPv4) and a `spawnApp` guard that
+      stamps whatever answers the URL against this checkout's
+      `public/icon.svg`. I read it only when `release.mjs` printed the
+      checklist — after having changed `host` to `127.0.0.1` and re-run the
+      matrix to "prove" the fix. **That change was reverted**: pinning to IPv4
+      removes the `[::1]` half that the built-app harnesses may need when they
+      load `http://localhost:1420`, and I had no way to check that without the
+      loopback and shadertoy smokes, which need a debug build. The matrix
+      evidence for v2.92.0 therefore stands on the DOCUMENTED path
+      (`TAURI_DEV_HOST=127.0.0.1`), not on the reverted change.
+      Still worth doing properly: plain `npm run dev` failing this way is a
+      trap for anyone who has not read §3, and the failure message blames the
+      component that is working. A real fix makes the default dual-stack
+      without exposing the server on the LAN (Vite listening on both loopback
+      addresses, not `0.0.0.0`), and must be validated against
+      `test:loopback:built` and `test:shadertoy:built`, not just `test:gpu`.
+- [ ] E3g **NEW, from E3c's review — pre-existing, and the one surviving
+      finding that was NOT fixed here.** `AudioEngine.loadFile` awaits
+      `file.arrayBuffer()` (`engine.ts:253`) and only then `loadArrayBuffer`
+      claims `++this.loadGen` (`engine.ts:258`), while `store.loadFile` claims
+      `shared.trackLoadGen` synchronously at entry. So the engine orders loads
+      by READ COMPLETION and the store orders them by CALL TIME, and the two
+      can disagree: a large file dropped first can finish its read last, claim
+      the higher engine generation, and commit AFTER a small library track
+      requested later. The store load that actually installed the audio is then
+      the one that returns at its `gen !== shared.trackLoadGen` guard — before
+      `invalidateAnalysis()` — so there is no invalidation, no analysis and no
+      error, and the preview pulses track B's grid over track A's audio
+      **permanently**, not for a window. The engine's own comment
+      ("Only the newest load may commit") is true only if "newest" means newest
+      by read completion, which is not what the store means.
+      The export half is already neutralized by E3d's identity check; this item
+      is the preview half. Fix direction: claim the generation BEFORE the read
+      — in `loadFile`, passed into `loadArrayBuffer` — so both counters order
+      by call time. Wants its own tests for overlapping large/small loads.
+- [ ] E3h **NEW, from E3d — the device harnesses render a different frame than
+      the app ships.** `__runExport`'s `TrackInput` omits two fields
+      `runExport` passes: `sections` and `vocalLines`. So every probe baseline
+      renders with no section data (`sectionIndex`/`sectionPulse` dead) and no
+      vocal-presence spans. Not fixed here because closing it SHIFTS EXISTING
+      PIXEL BASELINES and therefore wants a deliberate re-bless with
+      justification, per GATES.md §3, rather than a quiet edit inside an
+      unrelated release.
 
 - [x] E2-R1 **DONE 2026-08-10 — with option (f), on the owner's approval.**
       Designed by a workflow: four parallel investigations, a three-lens judge

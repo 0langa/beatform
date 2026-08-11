@@ -21,6 +21,10 @@ import { APP_VERSION } from "./version";
 import { pcmFromAudioBuffer } from "./audio/offlineSource";
 import { wavFromPcm } from "./audio/dsp/wav";
 import { proresSetAudio, av1Begin, proresWrite, proresFinish, proresAbort } from "./state/platform";
+// The track-load counter itself, not a store field — it lives outside the
+// state object on purpose (slices/shared.ts), so `store()` cannot hand it over
+// and __runExport's guard below has to read it where runExport reads it.
+import { shared } from "./state/slices/shared";
 
 /**
  * Dev-only E2E probes, extracted whole from App.tsx (they were ~240 lines and
@@ -400,14 +404,51 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
       verifyAudio: boolean;
     }> = {},
   ) => {
+    // Nothing this hook produces may outlive a run that did not finish: these
+    // are the side channel a console session (docs/presets.md) and any future
+    // harness read AFTER the call, and a refusal that left the PREVIOUS run's
+    // frames standing here would be a wrong number that looks right.
+    const win = window as unknown as {
+      __lastExport?: unknown;
+      __lastExportBlob?: Blob;
+      __lastPngFrame?: Blob;
+      __lastPngFrameEnd?: Blob;
+    };
+    win.__lastExport = undefined;
+    win.__lastExportBlob = undefined;
+    win.__lastPngFrame = undefined;
+    win.__lastPngFrameEnd = undefined;
     const buf = getEngine().audioBuffer;
     if (!buf) throw new Error("no track loaded");
+    // Sampled with `buf`, and read twice below — the same pair runExport keeps
+    // (E3d), because the counter and the buffer answer different halves of the
+    // same question and neither answers both.
+    const genAtStart = shared.trackLoadGen;
     // Wait for track analysis, exactly as runExport now does (E3b). Without
     // this the hook reads `s.beatGrid` mid-analysis and exports with NO grid —
     // and because every device harness that exports goes through here, a gate
     // could silently measure a gridless render and call it a baseline. Awaited
     // BEFORE the store snapshot below, or the snapshot captures the nulls.
     await store().awaitAnalysis();
+    // Re-read the counter the instant that wait resolves, where runExport reads
+    // it (exportActions.ts:332). The barrier is not released only by analysis
+    // FINISHING: a superseding load frees the previous barrier's waiters on
+    // purpose (store.ts:1097-1101), so this wait can resolve straight onto the
+    // nulls that load just wrote — E3b's gridless export, arriving through
+    // E3c's door.
+    //
+    // The identity check further down subsumes this one for a track that has
+    // already LANDED, but not for one still in flight: `loadFile` bumps the
+    // counter on its first line while the engine commits the new buffer only
+    // after the decode resolves (engine.ts:265), so in that window `buf` is
+    // unchanged and identity sees nothing at all. For a harness that window is
+    // the whole point — the export would be perfectly coherent and about the
+    // track the harness just REPLACED, i.e. a baseline measuring the wrong
+    // song. Refused here, which is also before the overlay raster and before
+    // any ffmpeg session exists to have to abort.
+    if (genAtStart !== shared.trackLoadGen) {
+      throw new Error("The track changed while it was being analyzed — export cancelled");
+    }
     const s = store();
     const w = opts.width ?? 320;
     const h = opts.height ?? 180;
@@ -446,6 +487,33 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
       await invoke("debug_allow_path", { path: opts.av1Path });
       await proresSetAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
       await av1Begin(opts.fps ?? 30, w, h, opts.av1Path);
+    }
+    // E3d, and the LAST word before the snapshot and the live engine are read
+    // into the job below. The counter above cannot be that word on two counts.
+    // Distance: it is several awaits back by now (the overlay raster, the av1
+    // sidecar handshake), and a track landing in that gap was invisible.
+    // And principle: `loadFile` bumps the counter on its first line while the
+    // engine commits the new buffer only after the decode resolves, so a run
+    // that STARTED inside that window captured OLD audio under a NEW
+    // generation and every later comparison is two equal numbers forever — it
+    // would encode track A's audio under track B's grid and report success.
+    //
+    // So re-assert IDENTITY: the audio we are about to describe must still be
+    // the audio we captured. Nothing awaits between here and those reads —
+    // `buildExportOptions`' arguments (the `s.*` reads, `getEngine().state`)
+    // are evaluated synchronously, and the only await is on the promise
+    // `exportVideo` returns.
+    //
+    // This THROWS, and a harness must never be able to read a refusal as a
+    // result: every caller surfaces the rejection (av1-e2e and heap-soak stash
+    // it via `.catch` and rethrow, shadertoy-smoke's page-side IIFE rejects
+    // into exceptionDetails, segment-parity-probe leaves `failed` undefined and
+    // exits non-zero).
+    if (getEngine().audioBuffer !== buf) {
+      // The av1 lane already has a live ffmpeg session; a refusal that walked
+      // away from its stdin would hang the sidecar and the next run with it.
+      if (opts.av1Path) await proresAbort().catch(() => undefined);
+      throw new Error("The track changed while the export was starting — export cancelled");
     }
     // Everything the document contributes goes through the SAME builder the
     // app's export path and the batch runner use. This probe used to re-derive
@@ -495,20 +563,14 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
                 pngHashes.push(fnv1a(data));
                 // Keep frame 0 around so tooling can decode + inspect it.
                 if (index === 0) {
-                  (window as unknown as { __lastPngFrame: Blob }).__lastPngFrame = new Blob(
-                    [data.slice()],
-                    { type: "image/png" },
-                  );
+                  win.__lastPngFrame = new Blob([data.slice()], { type: "image/png" });
                 }
                 // ...and the FINAL frame, which is the only useful one for
                 // anything that accumulates. Frame 0 of the particle sim is
                 // the initial seeded disc (uniform noise) and frame 0 of a
                 // feedback preset has no trail at all, so a frame-0-only probe
                 // makes those two look broken when they are working perfectly.
-                (window as unknown as { __lastPngFrameEnd: Blob }).__lastPngFrameEnd = new Blob(
-                  [data.slice()],
-                  { type: "image/png" },
-                );
+                win.__lastPngFrameEnd = new Blob([data.slice()], { type: "image/png" });
               }
             : undefined,
           deepColor: opts.av1Path ? true : undefined,
@@ -575,8 +637,9 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
       ...(opts.png ? { pngFrames: pngFrames.length, pngBytes: pngFrames, pngHashes } : {}),
       ...(opts.av1Path ? { rawFrames, rawDistinct } : {}),
     };
-    (window as unknown as { __lastExport: unknown }).__lastExport = info;
-    (window as unknown as { __lastExportBlob: Blob | undefined }).__lastExportBlob = result.blob;
+    // Published only now, on the ONE path that produced a real export.
+    win.__lastExport = info;
+    win.__lastExportBlob = result.blob;
     return info;
   };
 

@@ -365,6 +365,44 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
             get().trackMeta,
           )) ?? undefined;
         const overlay = overlayBitmap;
+        // E3d — the LAST word before the store is read, and the only check that
+        // can be. Both checks above compare generations, which is necessary but
+        // not sufficient on two separate counts.
+        //
+        // (a) Distance. The generation check sits immediately after the
+        // analysis wait, but everything that actually DESCRIBES the track —
+        // meta, cover, grid, sections, stems, lyrics, waveform — is read below,
+        // several awaits later (the sidecar audio handshake, the sidecar
+        // session, the overlay raster). A track landing in that gap was
+        // invisible: nothing re-checked.
+        //
+        // (b) The counter cannot close it even in principle. `loadFile` bumps
+        // `shared.trackLoadGen` on its FIRST line (store.ts) and only then
+        // parks on the decode, while the engine commits the new buffer only
+        // AFTER that decode resolves (engine.ts). So there is a real interval
+        // where the generation is already the NEW load's while
+        // `engine.audioBuffer` is still the OLD one. An export starting there
+        // captures OLD audio under a NEW generation, and every later
+        // `genAtStart !== shared.trackLoadGen` compares two equal numbers —
+        // forever. It would encode track A's audio against track B's grid,
+        // sections and waveform, and report success.
+        //
+        // So re-assert IDENTITY, not generation: the audio we are about to
+        // describe must still be the audio we captured. That is the predicate
+        // that matters — `buf` is the PCM being encoded, everything read below
+        // describes whatever the engine holds NOW — and it subsumes the
+        // counter, because a track change always ends with a different buffer
+        // in the engine no matter which order the two events happened in.
+        //
+        // Live input is deliberately untouched by this and needs no special
+        // case: `startLiveInput`/`stopLiveInput` never write `engine.buffer`
+        // (the track stays loaded, only the analysis graph is re-pointed), so a
+        // live-mode export of the still-loaded track compares a buffer against
+        // itself. Scoping the check to "file tracks only" would have been the
+        // wrong fix for a hazard that does not exist.
+        if (getEngine().audioBuffer !== buf) {
+          throw new Error("The track changed while the export was starting — export cancelled");
+        }
         // Everything the document contributes is resolved by the shared
         // builder, so the batch runner and this path cannot drift apart.
         const result = await exportVideo(

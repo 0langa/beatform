@@ -201,18 +201,27 @@ function drawAudiogram(
   let edgeY = top ? Math.round(h * 0.05) : Math.round(h * 0.95);
   const dir = top ? 1 : -1;
 
-  if (settings.waveformStrip && waveform && waveform.length > 0) {
+  // The SETTING reserves the slot; the data only fills it. `waveformOverview`
+  // is null for the length of a track load (voided with the rest of the
+  // analysis, and left null for good by a load that fails after the audio
+  // landed), and advancing the stack only when bars existed made the bar and
+  // the clock hop stripH + 2% of the frame on every track change, then hop
+  // back when the analysis landed. An empty slot is honest; a moving stack is
+  // not — and this way the layout is a pure function of the document.
+  if (settings.waveformStrip) {
     const stripH = Math.round(h * 0.09);
-    const y0 = top ? edgeY : edgeY - stripH;
-    const mid = y0 + stripH / 2;
-    const bars = Math.min(innerW, 200);
-    const bw = innerW / bars;
-    for (let i = 0; i < bars; i++) {
-      const wi = Math.floor((i / bars) * waveform.length);
-      const amp = Math.min(1, waveform[wi] ?? 0) * (stripH / 2) * 0.95;
-      const played = i / bars <= frac;
-      ctx.fillStyle = played ? settings.color : "rgba(255,255,255,0.35)";
-      ctx.fillRect(pad + i * bw, mid - amp, Math.max(1, bw - 1), amp * 2);
+    if (waveform && waveform.length > 0) {
+      const y0 = top ? edgeY : edgeY - stripH;
+      const mid = y0 + stripH / 2;
+      const bars = Math.min(innerW, 200);
+      const bw = innerW / bars;
+      for (let i = 0; i < bars; i++) {
+        const wi = Math.floor((i / bars) * waveform.length);
+        const amp = Math.min(1, waveform[wi] ?? 0) * (stripH / 2) * 0.95;
+        const played = i / bars <= frac;
+        ctx.fillStyle = played ? settings.color : "rgba(255,255,255,0.35)";
+        ctx.fillRect(pad + i * bw, mid - amp, Math.max(1, bw - 1), amp * 2);
+      }
     }
     edgeY += dir * (stripH + Math.round(h * 0.02));
   }
