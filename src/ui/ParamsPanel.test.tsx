@@ -12,6 +12,8 @@ import { presets } from "../render/presets";
 import {
   advancedKeys,
   allParams,
+  DEFAULT_MOTION,
+  DEFAULT_POST,
   groupParams,
   isModTarget,
   POST_MOD_TARGETS,
@@ -1403,12 +1405,14 @@ describe("Visuals section rail", { timeout: 30_000 }, () => {
     // …and none of the save/manage chrome (~70px off the tallest page).
     expect(document.querySelector(".user-presets")).toBeNull();
     expect(screen.queryByRole("button", { name: 'Delete "Evening"' })).toBeNull();
-    expect(screen.queryByRole("button", { name: "+ Save look" })).toBeNull();
+    // H14 note: the CONTEXT HEADER carries a "Save look" jump on every page,
+    // so the page-level absence is asserted on the row, not the button name.
+    expect(document.querySelector(".save-look-row")).toBeNull();
     expect(screen.queryByRole("button", { name: "Import…" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Looks & themes" }));
     expect(screen.getByRole("button", { name: 'Delete "Evening"' })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "+ Save look" })).toBeTruthy();
+    expect(document.querySelector(".save-look-row")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Import…" })).toBeTruthy();
     expect(screen.getByText("Browse looks in the Gallery…")).toBeTruthy();
     // The factory chips did NOT follow.
@@ -1457,7 +1461,9 @@ describe("Visuals section rail", { timeout: 30_000 }, () => {
     // user chose themselves.
     for (const q of ["bfpreset", "gallery", "evening"]) {
       fireEvent.change(search, { target: { value: q } });
-      expect(screen.getByRole("button", { name: "+ Save look" })).toBeTruthy();
+      // Unambiguous while searching: H14 hides the header actions there, so
+      // the one "Save look" on screen is the page row's own.
+      expect(screen.getByRole("button", { name: "Save look" })).toBeTruthy();
       // …and no longer at the old one: the Mode section did not match.
       expect(document.querySelector(".preset-desc")).toBeNull();
     }
@@ -1632,11 +1638,11 @@ describe("per-group expert tier wiring (P-9)", { timeout: 30_000 }, () => {
       }),
     );
     render(<ParamsPanel />);
-    // The pill lives in the Mode section's header, beside Reset — the old one
-    // sat inside the density switch that no longer exists.
+    // The pill lives in the Mode section's header (Q4: it measured 28px too
+    // wide for the context header) — while Reset itself moved up there (H14).
     const pill = document.querySelector(".section-head .advanced-count")!;
     expect(pill.textContent).toBe("1 changed");
-    expect(pill.parentElement?.querySelector(".text-btn")?.textContent).toBe("Reset");
+    expect(document.querySelector(".visuals-context-actions .text-btn")?.textContent).toBe("Reset");
   });
 });
 
@@ -1689,5 +1695,84 @@ describe("destructive actions ask first (audit UI-3)", { timeout: 30_000 }, () =
     expect(askConfirmMock).toHaveBeenCalledTimes(1);
     expect(String(askConfirmMock.mock.calls[0][0])).toContain("Remove the loaded lyrics (2 lines)");
     expect(useVizStore.getState().lyrics).toHaveLength(2);
+  });
+});
+
+/**
+ * H14 — the context header carries page-aware actions (owner verdicts,
+ * 2026-08-13). Reset resets what the CURRENT page shows and vanishes on pages
+ * with nothing to reset; Save look jumps to Looks & themes with the form open
+ * WITHOUT persisting `visualsPage`; the header title truncates through a
+ * header-scoped class, never through the shared `.section-title`.
+ */
+describe("H14 — context-header actions", { timeout: 30_000 }, () => {
+  const header = () => {
+    const el = document.querySelector(".visuals-context");
+    expect(el).not.toBeNull();
+    return within(el as HTMLElement);
+  };
+
+  it("Mode: header Reset restores factory params", () => {
+    render(<ParamsPanel />);
+    const spec = allParams(presets[1])[0];
+    act(() => {
+      useVizStore.setState({ presetId: presets[1].id });
+      useVizStore.getState().setParam(spec.key, spec.default + 0.25);
+    });
+    expect(useVizStore.getState().activeParams[spec.key]).not.toBe(spec.default);
+    fireEvent.click(header().getByRole("button", { name: "Reset" }));
+    expect(useVizStore.getState().activeParams[spec.key] ?? spec.default).toBe(spec.default);
+  });
+
+  it("Global motion: header Reset appears only once motion drifts, and restores it", () => {
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Global motion" }));
+    expect(header().queryByRole("button", { name: "Reset" })).toBeNull();
+    act(() => useVizStore.getState().setMotion({ rotation: 0.4 }));
+    fireEvent.click(header().getByRole("button", { name: "Reset" }));
+    expect(useVizStore.getState().motion).toEqual(DEFAULT_MOTION);
+  });
+
+  it("Scene: header Reset post appears only once post drifts, and restores neutral", () => {
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Scene" }));
+    expect(header().queryByRole("button", { name: "Reset post" })).toBeNull();
+    act(() => useVizStore.getState().setPost({ bloom: 0.7 }));
+    fireEvent.click(header().getByRole("button", { name: "Reset post" }));
+    expect(useVizStore.getState().post).toEqual(DEFAULT_POST);
+  });
+
+  it("no header Reset on pages with nothing to reset", () => {
+    render(<ParamsPanel />);
+    for (const label of ["Looks & themes", "Sync", "Modulation", "Text", "Live"]) {
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      expect(header().queryByRole("button", { name: /Reset/ })).toBeNull();
+    }
+  });
+
+  it("header Save look jumps to Looks & themes with the form open — without persisting the page", () => {
+    render(<ParamsPanel />);
+    expect(getPrefs().visualsPage).toBe("mode");
+    fireEvent.click(header().getByRole("button", { name: "Save look" }));
+    // The jump happened AND the form is already open: the open form REPLACES
+    // the row (so "Import…" is deliberately not asserted here — it only
+    // renders while the row is closed).
+    expect(document.querySelector("form.save-look-row")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
+    // …and the jump did NOT persist (Q3): next session still opens on the
+    // page the user actually chose last.
+    expect(getPrefs().visualsPage).toBe("mode");
+    // The rail follows the jump visually all the same.
+    expect(
+      screen.getByRole("button", { name: "Looks & themes" }).getAttribute("aria-current"),
+    ).toBe("true");
+  });
+
+  it("the header title truncates through a header-scoped class with the full name on hover", () => {
+    render(<ParamsPanel />);
+    const title = document.querySelector(".visuals-context .visuals-context-title");
+    expect(title).not.toBeNull();
+    // The hover carries the FULL name — the ellipsis's escape hatch.
+    expect(title?.getAttribute("title")).toBe(title?.textContent);
   });
 });

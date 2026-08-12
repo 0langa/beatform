@@ -13,6 +13,16 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ### Added
 
+- **The Visuals header now carries the two actions you reach for most.** A
+  page-aware **Reset** sits beside the mode's name — on Mode it restores
+  factory controls, on Global motion and Scene it appears only once something
+  drifted (labeled "Reset post" on Scene, since that's all it touches), and
+  it stays out of the way on pages with nothing to reset. **Save look** is
+  now always one click away: it opens Looks & themes with the save form
+  ready, and going there this way doesn't change which page the panel opens
+  on next time. On very narrow docks the actions wrap onto their own row so
+  they stay clickable.
+
 - **Saved look files now record which app version wrote them.** A `.bfpreset`
   saved from now on carries an `appVersion` note inside the file. It changes
   nothing about how looks load — older files and newer files both open

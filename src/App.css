@@ -1367,6 +1367,34 @@ button:disabled {
   border-bottom: 1px solid var(--border);
 }
 
+/* H14: mode name + style on the left, the page-aware actions on the right.
+   The names half yields (min-width: 0 lets the title ellipse); the actions
+   never shrink. Below container 332 the actions wrap to their own row — see
+   the container-contract block at the end of this file. */
+.visuals-context-names {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Q7: truncation scoped HERE, never on the shared .section-title — preset
+   names are unbounded (Shadertoy imports) and the other three panels keep
+   their own overflow behavior. The full name rides the `title` attr. */
+.visuals-context-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visuals-context-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .visuals-style {
   font-size: 11.5px;
   color: var(--text-faint);
@@ -4275,6 +4303,22 @@ kbd {
 @container visuals (min-width: 300px) {
   .panel-scroll {
     --row-label-w: 104px;
+  }
+}
+
+/* H14 (Q5, owner-approved): below container 332 the header's action buttons
+ * cannot share the name row without eating the ellipsis budget, so they wrap
+ * to a second right-aligned row. Measured cost: +18.6px of permanent
+ * non-scrolling header at those widths — accepted in the click-round.
+ * `.visuals-context` is a DESCENDANT of the query container (.visuals-page),
+ * so the rule fires; same 0,1,0 specificity as the base rule. */
+@container visuals (max-width: 331.98px) {
+  .visuals-context {
+    flex-wrap: wrap;
+  }
+  .visuals-context-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
   }
 }
 

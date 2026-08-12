@@ -505,10 +505,10 @@ const SECTIONS: GuideSection[] = [
             creation.
           </li>
           <li>
-            <strong>Your looks</strong> — <em>+ Save look</em> on <em>Looks &amp; themes</em> stores
-            the current control values for one mode, locally, and exports as a{" "}
-            <code>.bfpreset</code>. The visual&rsquo;s factory style chips stay on Mode, beside the
-            header that names the active one.
+            <strong>Your looks</strong> — <em>Save look</em> (in the page header, or on{" "}
+            <em>Looks &amp; themes</em>) stores the current control values for one mode, locally,
+            and exports as a <code>.bfpreset</code>. The visual&rsquo;s factory style chips stay on
+            Mode, beside the header that names the active one.
           </li>
         </ul>
         <p>

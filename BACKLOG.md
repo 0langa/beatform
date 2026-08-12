@@ -1708,8 +1708,31 @@ buys and what it does not.
       Scene uses zero `PARAM_GROUPS` machinery, so every sub-structure is new
       hand-built DOM and new leaves to audit. **ITEM 1 (context-header
       actions) NOT SHIPPED — it is product judgement, see H14.**
-- [ ] H14 **DECIDED 2026-08-13 (owner click-round) — implementation now open;
-      the decision packet below is kept for its measurements.** Verdicts:
+- [x] H14 **DONE 2026-08-13 — decided by owner click-round, built and
+      device-verified the same day.** The context header now carries a
+      PAGE-AWARE Reset (mode: factory params, unconditional, as its section
+      button was; Global motion / Scene: the same drift-gated resets their
+      section heads carried, Scene's labeled **Reset post** because the page
+      shows more than the button touches; absent on themes/sync/modulation/
+      text/live and while searching) and a **Save look** jump that opens
+      Looks & themes with the form already open **without persisting
+      `visualsPage`** (`setPage` alone, never `changePage`). The three
+      section-head Resets were removed as moved, the "n changed" pill stayed
+      in the section head (Q4), "+ Save look" lost its "+" everywhere
+      (page row + GuideDialog), and the header title truncates through a new
+      header-scoped `visuals-context-title` class with the full name on
+      hover — the shared `.section-title` untouched. Below container 332 the
+      actions wrap to a second right-aligned row (`@container visuals`).
+      **Evidence:** six new jsdom cases in `ParamsPanel.test.tsx` (each red
+      before the build: missing buttons/class, then green), R17 repointed to
+      the header Reset, the two label pins rescoped to the page row; live
+      pass in the running dev app (Vite + browser pane — every verified
+      behavior is DOM/CSS, shell-agnostic) — actions render both single-row
+      (wide) and two-row (narrow container), the Save-look jump lands with
+      the form open, **a reload after the jump reopens on Mode** (the Q3
+      pin, proven live), computed `text-overflow: ellipsis` + full-name
+      `title` on the header class only, zero console errors.
+      ORIGINAL VERDICTS:
       (Q2) **page-aware Reset** — the header resets what the current page
       shows; a small feature, not a button move. (Q3) **Save look jumps to
       Looks & themes WITHOUT persisting `visualsPage`** — the jump must not

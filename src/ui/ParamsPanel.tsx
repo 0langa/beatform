@@ -710,6 +710,14 @@ export function ParamsPanel() {
     setPage(p);
     setPrefs({ visualsPage: p });
   };
+  /** H14 (Q3): the header's Save look JUMPS to Looks & themes with the form
+   * already open — but the jump must not persist. `setPage` alone, never
+   * `changePage`: next session still opens on the page the user last CHOSE,
+   * not on wherever a save happened to land them. */
+  const jumpToSaveLook = () => {
+    setPage("themes");
+    setSavingLook(true);
+  };
   /** Collapse state for one param group, persisted as GROUP_KEY + id — since
    * P-1 retired section collapse, that prefix is the whole meaning of
    * `collapsedSections` (prefs prunes anything else on read). */
@@ -872,6 +880,33 @@ export function ParamsPanel() {
 
   const q = query.trim().toLowerCase();
   const searching = q.length > 0;
+  /** H14 (Q2): the header Reset is PAGE-AWARE — it resets what the current
+   * page shows and is absent on pages with nothing to reset. Drift gates
+   * mirror the section Resets this replaced (motion/post appear only once
+   * changed); Mode's is unconditional, exactly as its section button was.
+   * Hidden while searching: results cross pages, so "the current page" is
+   * not what the user is looking at. */
+  const headerReset = searching
+    ? null
+    : page === "mode"
+      ? {
+          label: "Reset",
+          hint: "Back to factory defaults (all controls incl. advanced)",
+          run: () => store().resetParams(),
+        }
+      : page === "motion" && motionChanged && !simplifiedRenderer
+        ? {
+            label: "Reset",
+            hint: "Back to normal motion (100% everywhere)",
+            run: () => store().setMotion({ ...DEFAULT_MOTION }),
+          }
+        : page === "scene" && postChanged && !simplifiedRenderer
+          ? {
+              label: "Reset post",
+              hint: "Turn off all post-processing (neutral)",
+              run: () => store().setPost({ ...DEFAULT_POST }),
+            }
+          : null;
   // Every word of every knob — label, hint, key and enum choices — plus the
   // names of the groups they sit in. The old blob carried labels only, so
   // searching a hint's wording ("monstercat", "letterbox") found nothing even
@@ -972,25 +1007,18 @@ export function ParamsPanel() {
       // rows, so dropping it would hide the row its own search text advertises.
       search:
         `${preset.name} ${preset.description ?? ""} preset style custom expert reset center image cover ${presetGroupText} ${presetParamText}`.toLowerCase(),
-      headerExtra: (
-        <>
-          {changedCount > 0 && (
-            <span
-              className="advanced-count"
-              title="Expert knobs that no longer sit at their factory value"
-            >
-              {changedCount} changed
-            </span>
-          )}
-          <button
-            className="text-btn"
-            onClick={() => store().resetParams()}
-            title="Back to factory defaults (all controls incl. advanced)"
+      headerExtra:
+        // H14: Reset moved up into the page-aware context header. The pill
+        // stays HERE (Q4) — it describes the page body's groups and measured
+        // 28px too wide for the header at the 380 floor.
+        changedCount > 0 ? (
+          <span
+            className="advanced-count"
+            title="Expert knobs that no longer sit at their factory value"
           >
-            Reset
-          </button>
-        </>
-      ),
+            {changedCount} changed
+          </span>
+        ) : undefined,
       body: (
         <>
           {preset.description && <p className="preset-desc">{preset.description}</p>}
@@ -1122,16 +1150,8 @@ export function ParamsPanel() {
             title: "Global motion",
             page: "motion" as const,
             search: "motion rotation pulse detail spin global",
-            headerExtra:
-              motionChanged && !simplifiedRenderer ? (
-                <button
-                  className="text-btn"
-                  title="Back to normal motion (100% everywhere)"
-                  onClick={() => store().setMotion({ ...DEFAULT_MOTION })}
-                >
-                  Reset
-                </button>
-              ) : undefined,
+            // H14: the conditional Reset moved into the context header, same
+            // drift gate — the section head now carries nothing.
             body: (
               <>
                 {caps.rotation && (
@@ -1287,7 +1307,7 @@ export function ParamsPanel() {
                   title="Save the current values as a named look for this visual"
                   onClick={() => setSavingLook(true)}
                 >
-                  + Save look
+                  Save look
                 </button>
                 <button
                   className="text-btn"
@@ -1817,16 +1837,9 @@ export function ParamsPanel() {
       page: "scene",
       search:
         `post processing finishing filmic tonemap aces ${POST_SLIDERS.map((r) => r.label).join(" ")}`.toLowerCase(),
-      headerExtra:
-        postChanged && !simplifiedRenderer ? (
-          <button
-            className="text-btn"
-            title="Turn off all post-processing (neutral)"
-            onClick={() => store().setPost({ ...DEFAULT_POST })}
-          >
-            Reset
-          </button>
-        ) : undefined,
+      // H14: the conditional Reset moved into the context header as
+      // "Reset post" (the page shows more than post, so the label narrows
+      // to what the button actually touches), same drift gate.
       body: (
         <>
           <ToggleRow
@@ -2319,11 +2332,35 @@ export function ParamsPanel() {
               a trailing row past the viewport with nothing the UI auditor can
               credit as a scrollable ancestor. */}
           <div className="visuals-context">
-            <span className="section-title">{preset.name}</span>
-            {/* Only a real style is named here. "Custom" is the ABSENCE of one,
-                and the chips row inside the page already says so — printing it
-                in both places put the same word twice on one screen. */}
-            <span className="visuals-style">{activeStyle?.name ?? null}</span>
+            <div className="visuals-context-names">
+              {/* H14 (Q7): truncation is scoped to this header-local class —
+                  `.section-title` is shared with Layers/Builder/Timeline and
+                  stays untouched. The `title` attr carries the full name,
+                  because Shadertoy imports make preset names unbounded. */}
+              <span className="section-title visuals-context-title" title={preset.name}>
+                {preset.name}
+              </span>
+              {/* Only a real style is named here. "Custom" is the ABSENCE of one,
+                  and the chips row inside the page already says so — printing it
+                  in both places put the same word twice on one screen. */}
+              <span className="visuals-style">{activeStyle?.name ?? null}</span>
+            </div>
+            {!searching && (
+              <div className="visuals-context-actions">
+                {headerReset && (
+                  <button className="text-btn" title={headerReset.hint} onClick={headerReset.run}>
+                    {headerReset.label}
+                  </button>
+                )}
+                <button
+                  className="text-btn"
+                  title="Save the current values as a named look for this visual"
+                  onClick={jumpToSaveLook}
+                >
+                  Save look
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="panel-scroll">
