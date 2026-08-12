@@ -740,9 +740,20 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       loops use the same function; duplicate lanes for one param;
       `history.ts`'s JSON round-trip losing `Object.create(null)` prototypes,
       inert because those maps are only ever keyed from the registries.
-      Wave 1 is PART done because "state" is bigger than persistence — the
-      document model, `modMatrix`, `frameResolve` and the store slices have
-      not had the same pass. Not started: waves 2–5.
+      **ACCOUNTING CORRECTED 2026-08-13 — the line that used to close this
+      entry ("Not started: waves 2–5") contradicted the entry's own body and
+      is retired.** Recorded above in THIS entry: wave 1 persistence sweep +
+      wave 1 REMAINDER (document model + pure evaluators) DONE 2026-08-10;
+      wave 3 (audio) DONE 2026-08-09; wave 4 (platform/Rust) DONE
+      2026-08-09; wave 5 (render/export) DONE 2026-08-09. What actually
+      remains open in E2: **(a) wave 2 (UI-adjacent) has no findings record
+      here** — the roadmap log claims all five waves ran by v2.88.0 (the G1
+      store-direct sweep was its vehicle), but a claim without a recorded
+      findings block is a lead, not evidence; either recover that record or
+      re-derive the wave against the current tree; **(b) the deep-state
+      remainder** wave 1 named and did not cover: `modMatrix`,
+      `frameResolve` and the store slices have not had the adversarial
+      pass persistence and the document model got.
 - [x] E3 **DONE 2026-08-09 — RP-4 investigated and CLOSED as NOT A DEFECT.**
       The mechanism the finding named does not exist in the code, and did not
       exist when the measurement was taken. `WebGPURenderer.create()` requests
