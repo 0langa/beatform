@@ -1068,14 +1068,26 @@ buf` — immediately before the job is built, with nothing awaitable
       replacing it. Mutation red: `loadFile` passing no generation down
       (equivalent to claiming after the read again) reddens (1) and (2);
       reverted, all three green.
-- [ ] E3h **NEW, from E3d — the device harnesses render a different frame than
-      the app ships.** `__runExport`'s `TrackInput` omits two fields
-      `runExport` passes: `sections` and `vocalLines`. So every probe baseline
-      renders with no section data (`sectionIndex`/`sectionPulse` dead) and no
-      vocal-presence spans. Not fixed here because closing it SHIFTS EXISTING
-      PIXEL BASELINES and therefore wants a deliberate re-bless with
-      justification, per GATES.md §3, rather than a quiet edit inside an
-      unrelated release.
+- [x] E3h **DONE 2026-08-13, owner-approved.** `__runExport` now passes
+      `sections: s.sections` and `vocalLines: s.lyrics ?? undefined`,
+      mirroring `runExport` (exportActions.ts:429/436) including the
+      "ungated on lyricStyle" semantics — device probes render the frame
+      the shipped app produces, `sectionIndex`/`sectionPulse` and
+      vocal-presence spans included. Red-first test in `devHooks.test.ts`
+      pins both fields on the built options (`sections` verbatim,
+      `vocalSpans` derived and non-empty with the lyric OVERLAY disabled).
+      **The filing's re-bless fear resolved to nothing to re-bless:** no
+      STORED baseline consumes `__runExport` — the GPU matrix drives
+      `__runGpuMatrix` (E3c's correction) and its 269 hashes moved ZERO on
+      this tree; the built-shell smokes assert determinism/distinctness,
+      not pinned hashes, and `test:shadertoy:built` passed green through
+      the widened probe (60 frames, 60 distinct, deterministic across two
+      export runs). What changes is forward-looking: future probe digests
+      now describe the app's real frame.
+      ORIGINAL ENTRY — from E3d: the device harnesses render a different
+      frame than the app ships; `__runExport`'s `TrackInput` omitted
+      `sections` and `vocalLines`, so every probe baseline rendered with no
+      section data and no vocal-presence spans.
 
 - [x] E2-R1 **DONE 2026-08-10 — with option (f), on the owner's approval.**
       Designed by a workflow: four parallel investigations, a three-lens judge
@@ -1789,7 +1801,17 @@ buys and what it does not.
       (Shadertoy imports), so the header has no truncation strategy today.
       **`__auditUI` cannot gate any of this** — see H16. Fit thresholds
       measured: dock ≥ 498 for text buttons, C 332 for the two-row collapse.
-- [ ] H15 **READY — the general stacked row below `C 300` (dock < 466).** The
+- [x] H15 **DONE 2026-08-13 — shipped on the owner's explicit "ship H15",
+      taken off the evidence pack below.** The frozen block went live
+      verbatim at its insertion point in the H4 container-contract
+      (comment now records the shipping decision instead of the offer).
+      Device evidence: GPU matrix **269/269 zero hash movement** with the
+      dock-layout leg green on all 8 pages at both widths — the narrow leg
+      (container 215) now measures the STACKED geometry and every bound
+      holds (angle 161px, param tracks ≥80... the leg's own floor
+      assertions, previously satisfied at 23px only by the `> 0` clause,
+      now pass with real headroom). ORIGINAL ENTRY — the general stacked
+      row below `C 300` (dock < 466). The
       only layout that gives a non-angle slider more than 35px at the floor:
       track 23 → 161px (7×), enum select 76 → 161px, wrapped labels → 0. Price:
       row 16 → 22px, Mode-page scroll +9.9% at the floor, and a different-

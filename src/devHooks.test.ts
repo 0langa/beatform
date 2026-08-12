@@ -250,6 +250,30 @@ describe("__runExport track-change guards", () => {
     expect(fake.exportVideo.mock.calls[0]?.[0]).toBe(fake.engine.audioBuffer);
   });
 
+  it("forwards sections and vocal lines like the app's own export — E3h", async () => {
+    // The probe omitted the two TrackInput fields runExport passes
+    // (exportActions.ts:429/436), so every device baseline rendered with
+    // sectionIndex/sectionPulse dead and no vocal-presence spans — a frame
+    // the shipped app never produces. `vocalLines` is ungated on lyricStyle
+    // by design, mirroring runExport's "Ungated on purpose".
+    useVizStore.setState({
+      sections: [0, 12.5, 25],
+      lyrics: [{ t: 1, end: 2.5, text: "la" }],
+      lyricStyle: { ...useVizStore.getState().lyricStyle, enabled: false },
+    });
+    install();
+    await probe()({ width: 32, height: 18, fps: 10 });
+    const opts = fake.exportVideo.mock.calls[0]?.[1] as {
+      sections?: number[];
+      vocalSpans?: unknown[];
+    };
+    expect(opts.sections).toEqual([0, 12.5, 25]);
+    // Derived by buildExportOptions from vocalLines — present even though the
+    // lyric OVERLAY is disabled, exactly as in the app.
+    expect(Array.isArray(opts.vocalSpans)).toBe(true);
+    expect(opts.vocalSpans!.length).toBeGreaterThan(0);
+  });
+
   it("refuses a track that landed after the analysis wait — the E3d window", async () => {
     // The rasterizer is the last await before the job is built; a track landing
     // there used to be invisible, and the export would have described track B

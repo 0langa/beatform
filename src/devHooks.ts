@@ -547,9 +547,17 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
           meta: s.trackMeta,
           coverArt: s.coverArt,
           beatGrid: s.beatGrid,
+          // E3h: the two fields this probe used to OMIT while runExport passed
+          // them (exportActions.ts:429/436) — every device baseline rendered
+          // with sectionIndex/sectionPulse dead and no vocal-presence spans, a
+          // frame the shipped app never produces.
+          sections: s.sections,
           stems: s.stems,
           lyrics:
             s.lyrics && s.lyricStyle.enabled ? { lines: s.lyrics, style: s.lyricStyle } : undefined,
+          // Ungated on lyricStyle by design, mirroring runExport's own
+          // "Ungated on purpose — see TrackInput.vocalLines".
+          vocalLines: s.lyrics ?? undefined,
           audiogram: audiogramActive(s.audiogram)
             ? { settings: s.audiogram, waveform: s.waveformOverview }
             : undefined,

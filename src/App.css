@@ -4388,19 +4388,31 @@ kbd {
  * +9.9% of Mode-page scroll on radial-burst (1577 -> 1733); above the step it
  * REVERSES (dock 480: 1531 -> 1489, -2.7%).
  *
- * It is not shipped because 23px is ugly but is not an auditor failure, and
- * changing the row idiom for the whole 380-465 band is a taste call, not a
- * defect fix. If the owner says yes, this is the entire change:
- *
- *   @container visuals (max-width: 299.98px) {
- *     .panel-scroll .param-row { grid-template-columns: minmax(0,1fr) auto; row-gap: 2px; }
- *     .panel-scroll .param-row > .row-value,
- *     .panel-scroll .param-row > .row-value-input { grid-column: 2; grid-row: 1; }
- *     .panel-scroll .param-row > .slider { grid-column: 1 / -1; grid-row: 2; }
- *     .panel-scroll .select-row,
- *     .panel-scroll .field { grid-template-columns: minmax(0,1fr); row-gap: 2px; }
- *   }
+ * H15, SHIPPED 2026-08-13 on the owner's explicit yes (it sat frozen here
+ * because 23px was ugly but not an auditor failure — a taste call, and the
+ * owner took it after the before/after evidence pack: at container 284.7 a
+ * track goes 93 -> 231px, a select 146 -> 231, rows 16 -> 22px).
  */
+@container visuals (max-width: 299.98px) {
+  .panel-scroll .param-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 2px;
+  }
+  .panel-scroll .param-row > .row-value,
+  .panel-scroll .param-row > .row-value-input {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .panel-scroll .param-row > .slider {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .panel-scroll .select-row,
+  .panel-scroll .field {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 2px;
+  }
+}
 
 /* ---------- P-8 · export dialog capability map ---------- */
 

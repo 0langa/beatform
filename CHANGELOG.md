@@ -13,6 +13,12 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ### Added
 
+- **Narrow docks get full-width sliders.** When the Visuals dock is squeezed
+  below ~466px, control rows now stack — the label and value on one line,
+  the slider full-width underneath — so a track that had shrunk to a sliver
+  becomes seven times wider and dropdowns stop truncating their longest
+  options. Above that width nothing changes.
+
 - **The Visuals header now carries the two actions you reach for most.** A
   page-aware **Reset** sits beside the mode's name — on Mode it restores
   factory controls, on Global motion and Scene it appears only once something
