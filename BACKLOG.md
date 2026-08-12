@@ -2366,9 +2366,11 @@ Nine mutations, all red once M2 was corrected.
 
 ### Decision points for the owner
 
-1. **OPEN — live themes now:** tombstone deep-current + sunset-circuit
-   immediately (Gallery shows 9 looks until C1), or leave them until C1
-   replaces them? Registry `main` still carries both entries as of 2026-08-11.
+1. **RESOLVED 2026-08-12 — live themes stay until C1.** Owner call: do NOT
+   tombstone deep-current + sunset-circuit now; they remain live until C1's
+   flagship themes replace them (registry `replacedBy` or in-place update,
+   IDs stay — as the C1 entry already specifies). No registry change before
+   C1 lands.
 2. **RESOLVED 2026-08-06 — B0 ranking:** owner kept the ranked order;
    renderer waves and Builder #16 all shipped in v2.74.0–v2.78.0.
 3. **RESOLVED 2026-08-06 — release cadence:** one 2.x release per 3–4-mode
