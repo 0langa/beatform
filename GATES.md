@@ -76,35 +76,33 @@ at COMPILE time, so no cargo command works until they exist.
 
 The GPU matrix owns its full dev lifecycle: `npm run test:gpu` launches
 `tauri dev`, whose `beforeDevCommand` starts Vite. **Do not pre-start Vite for
-this gate**; doing so races the matrix for ports 1420/1421. On PowerShell, pin
-the spawned server to IPv4 when needed:
-
-```powershell
-$env:TAURI_DEV_HOST = "127.0.0.1"
-npm run test:gpu
-```
+this gate**; doing so races the matrix for ports 1420/1421. No environment
+pin is needed: the bare command is the supported form.
 
 The other device harnesses launch an already-built debug shell and attach CDP
 to it; they do not invoke `tauri dev`. Build the shell first (`cargo build` in
-`src-tauri/`), then start Vite separately. Start Vite dual-stack with
-`npm run dev -- --host` (both `127.0.0.1:1420` and `[::1]:1420`), or pin it on
-PowerShell with:
+`src-tauri/`), then start Vite separately — plain `npm run dev` is the
+supported form for these too.
 
-```powershell
-$env:TAURI_DEV_HOST = "127.0.0.1"
-npm run dev
-```
+**The bind (E3f, resolved 2026-08-13).** Vite's default is `127.0.0.1`, set
+in `vite.config.ts` — never `host: false`, which bound whatever Node
+resolves "localhost" to (`[::1]` on this machine) while tauri probed its
+devUrl as 127.0.0.1 and waited forever, blaming the server that was READY.
+The server stays off the LAN; consumers that dial `http://localhost:1420`
+(the built-shell harnesses' WebView2, browsers) reach it through address
+fallback — `[::1]` refuses fast, `127.0.0.1` answers. Proven on device
+against this exact default: bare `test:gpu` (matrix 269/269),
+`test:shadertoy:built` (60 deterministic frames) and `test:loopback:built`
+all green with no `TAURI_DEV_HOST` set. `TAURI_DEV_HOST` remains an
+OVERRIDE for LAN/device work, not a prerequisite.
 
 The harnesses share `scripts/lib/` (isolated WebView2 profiles, per-harness
 debug ports, PID-tree-only kills) — see the port map in
-`scripts/lib/app.mjs`. Plain `npm run dev` is IPv6-only here when
-`TAURI_DEV_HOST` is unset: `host: false` makes Vite listen on `localhost`,
-which resolves to `[::1]` before `127.0.0.1` on this machine. A leftover dev
-server can otherwise hold `[::1]:1420` while a fresh one binds
-`127.0.0.1:1420`; the debug shell then silently loads the older tree.
-`spawnApp` stamps whatever answers that URL against this checkout's
-`public/icon.svg` and fails with "a different dev server is already serving
-…" instead of the misleading "Cannot find execution context".
+`scripts/lib/app.mjs`. A leftover dev server from an older checkout can
+still hold the port; `spawnApp` stamps whatever answers the URL against
+this checkout's `public/icon.svg` and fails with "a different dev server is
+already serving …" instead of the misleading "Cannot find execution
+context".
 
 **GPU-matrix re-bless protocol** (when `test:gpu` reports hash deltas):
 a shader change legitimately alters pixel hashes. Verify the change

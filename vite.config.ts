@@ -16,7 +16,15 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // E3f: default to IPv4 loopback, never `false`. `host: false` makes Vite
+    // bind whatever Node resolves "localhost" to — `[::1]` on modern Windows —
+    // while tauri probes its devUrl as 127.0.0.1 and waits forever, blaming
+    // the server that is actually READY. 127.0.0.1 keeps the server off the
+    // LAN; WebView2 consumers loading http://localhost:1420 reach it through
+    // address fallback (::1 refuses fast, 127.0.0.1 answers — proven by the
+    // built-app loopback and Shadertoy smokes against this exact default).
+    // TAURI_DEV_HOST still overrides for LAN/device work.
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

@@ -710,13 +710,17 @@ async function evaluateMatrix() {
                   // wide half is the one that catches it.
                   narrow.labelColumn === "76px" &&
                   wide.labelColumn === "104px" &&
-                  // The precondition any future context-header work must
-                  // clear. __auditUI is blind to a wrapped .section-title
-                  // (it wraps, it does not clip, and the auditor only sees
-                  // clipping), so height is the only signal that a fourth
-                  // leaf pushed the header onto two lines. One line measures
-                  // ~26px: 12.5px type plus 2+8 padding and a 1px rule.
-                  seen.every(p => p.header <= 36),
+                  // Header height is the only wrap signal __auditUI can see
+                  // (wrapping is not clipping, and the auditor only sees
+                  // clipping). H14 (owner Q5, 2026-08-13) made TWO rows the
+                  // approved shape below container 332 — the actions wrap to
+                  // their own line, measured 57px — so the bound is
+                  // per-width now: the wide leg must stay ONE line (~26-33px,
+                  // bound 36), and the narrow leg may carry the second row
+                  // but not a third (one action row adds ~24px; a third line
+                  // lands ~80, so 62 catches it).
+                  wide.pages.every(p => p.header <= 36) &&
+                  narrow.pages.every(p => p.header <= 62),
                 openedGroups,
                 narrow,
                 wide,

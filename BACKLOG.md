@@ -981,9 +981,34 @@ buf` — immediately before the job is built, with nothing awaitable
       with no waveform. Preview and export still agree with each other in every
       case; what is removed is a same-document export whose bar and clock
       geometry depended on whether a transient artifact had landed.
-- [ ] E3f **NEW — the dev-server bind is a documented trap, and I walked into
-      it and then nearly "fixed" it wrongly. Recorded because the wrong turn is
-      the useful part.** `npm run test:gpu` failed twice with tauri printing
+- [x] E3f **DONE 2026-08-13 — the fix the entry asked for, validated the way
+      the entry demanded.** `vite.config.ts` now defaults
+      `host: host || "127.0.0.1"` (never `false`), so tauri's 127.0.0.1
+      devUrl probe always finds the server and plain `npm run dev` stops
+      being a trap. The "dual-stack without LAN" idea the entry sketched is
+      NOT what shipped, deliberately: Vite cannot bind two loopback sockets
+      without `0.0.0.0` (LAN, forbidden), and it turned out dual-stack is
+      unnecessary — consumers dialing `http://localhost:1420` reach a
+      127.0.0.1-only server through address-list fallback (`[::1]` refuses
+      fast, `127.0.0.1` answers). The unverified fear that reverted the
+      first attempt ("the built-app harnesses may need the `[::1]` half")
+      was tested and is FALSE.
+      **Validated against all three demanded gates, on device, with no
+      `TAURI_DEV_HOST` set:** bare `npm run test:gpu` started `tauri dev`
+      against the new default and passed **269/269, zero hash movement**
+      (dock/modulation/spectrum legs clean); socket-shape probe: 127.0.0.1
+      → 200, `[::1]` → ECONNREFUSED, `localhost` fetch → 200 via fallback;
+      `test:shadertoy:built` **green** (60 frames, 60 distinct hashes,
+      deterministic across two export runs) and `test:loopback:built`
+      **green** (48 kHz, 504 ms response, depth 80 ms, visible 100%) — both
+      with the built WebView2 shell loading `http://localhost:1420` against
+      the 127.0.0.1-only server. `TAURI_DEV_HOST` stays as a LAN/device
+      OVERRIDE. GATES.md §3 rewritten: bare commands are the supported form
+      for every leg; the trap paragraph replaced by the resolved-bind
+      contract; the leftover-server `spawnApp` stamp note kept.
+      ORIGINAL ENTRY — the dev-server bind is a documented trap, and I walked
+      into it and then nearly "fixed" it wrongly. Recorded because the wrong
+      turn is the useful part. `npm run test:gpu` failed twice with tauri printing
       "Waiting for your frontend dev server to start on http://localhost:1420/"
       while Vite sat there READY on that exact URL. Cause: `vite.config.ts` has
       `host: host || false`, and `false` makes Vite bind whatever Node resolves
@@ -1774,6 +1799,14 @@ buys and what it does not.
       commented-out at its insertion point in the H4 block** — enabling it is
       uncommenting one block, and the parsed CSSOM was verified to contain
       exactly two `@container` rules, so the frozen one is provably inert.
+      **EVIDENCE PACK CAPTURED 2026-08-13 (probe applied via HMR, then
+      reverted — nothing shipped, per this entry's own "not unattended"
+      rule):** at container 284.7 (dock 422), BEFORE: row 16px, slider track
+      93px, label 76px, select 146px; AFTER: row 22px, track 231px (2.5×),
+      select 231px, label full-width. Before/after screenshots live in the
+      2026-08-13 session transcript (Core size cramped side-by-side vs. the
+      Color group with full-width gradient track, value top-right). The
+      taste call is now a ten-second look at two screenshots.
 - [x] H16 **DONE 2026-08-09 — both gaps closed, and the repaired auditor was
       run against a real page.** Two exported, unit-testable predicates in
       `devHooks.ts`, 13 cases, every number measured in the app's own Chromium
