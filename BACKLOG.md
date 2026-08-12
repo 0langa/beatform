@@ -1012,25 +1012,37 @@ buf` — immediately before the job is built, with nothing awaitable
       matrix starts `tauri dev`, whose `beforeDevCommand` owns Vite. Following
       the old text produced immediate 1420/1421 collisions. The manifest now
       distinguishes the matrix-owned server from attach-only harnesses.
-- [ ] E3g **NEW, from E3c's review — pre-existing, and the one surviving
-      finding that was NOT fixed here.** `AudioEngine.loadFile` awaits
-      `file.arrayBuffer()` (`engine.ts:253`) and only then `loadArrayBuffer`
-      claims `++this.loadGen` (`engine.ts:258`), while `store.loadFile` claims
-      `shared.trackLoadGen` synchronously at entry. So the engine orders loads
-      by READ COMPLETION and the store orders them by CALL TIME, and the two
-      can disagree: a large file dropped first can finish its read last, claim
-      the higher engine generation, and commit AFTER a small library track
-      requested later. The store load that actually installed the audio is then
-      the one that returns at its `gen !== shared.trackLoadGen` guard — before
-      `invalidateAnalysis()` — so there is no invalidation, no analysis and no
-      error, and the preview pulses track B's grid over track A's audio
-      **permanently**, not for a window. The engine's own comment
-      ("Only the newest load may commit") is true only if "newest" means newest
-      by read completion, which is not what the store means.
-      The export half is already neutralized by E3d's identity check; this item
-      is the preview half. Fix direction: claim the generation BEFORE the read
-      — in `loadFile`, passed into `loadArrayBuffer` — so both counters order
-      by call time. Wants its own tests for overlapping large/small loads.
+- [x] E3g **DONE 2026-08-12 — from E3c's review; pre-existing, the one
+      surviving finding E3c did not fix.** `AudioEngine.loadFile` awaited
+      `file.arrayBuffer()` and only then let `loadArrayBuffer` claim
+      `++this.loadGen`, while `store.loadFile` claims `shared.trackLoadGen`
+      synchronously at entry. So the engine ordered loads by READ COMPLETION
+      and the store by CALL TIME, and the two could disagree: a large file
+      dropped first could finish its read last, claim the higher engine
+      generation, and commit AFTER a small library track requested later. The
+      store load that actually installed the audio was then the one that
+      returned at its `gen !== shared.trackLoadGen` guard — before
+      `invalidateAnalysis()` — so there was no invalidation, no analysis and
+      no error, and the preview pulsed track B's grid over track A's audio
+      **permanently**, not for a window. The export half was already
+      neutralized by E3d's identity check; this was the preview half.
+      **Fixed exactly as filed: the generation is claimed BEFORE the read.**
+      `loadFile` claims at entry and passes it down; `loadArrayBuffer` keeps a
+      default claim (`gen = ++this.loadGen`) so a direct call still supersedes
+      anything in flight; the "only the newest load may commit" guard now
+      means newest BY CALL — the same thing the store means.
+      **Evidence: `src/audio/engineLoadRace.test.ts`** drives the REAL
+      AudioEngine with reads whose completion order the tests own: (1) the
+      inversion — B called second commits, A's slow read lands last and must
+      not clobber. RED before the fix with `trackName` coming back
+      `"a-large.mp3"`, the literal clobber; (2) a demo (`loadBuffer`)
+      installed while a dropped file is still reading survives that read
+      landing — same class, no store involved; (3) the pre-existing
+      pure-DECODE race pin (later-called load wins, default-param path) —
+      green before AND after, so the fix subsumed the old guard rather than
+      replacing it. Mutation red: `loadFile` passing no generation down
+      (equivalent to claiming after the read again) reddens (1) and (2);
+      reverted, all three green.
 - [ ] E3h **NEW, from E3d — the device harnesses render a different frame than
       the app ships.** `__runExport`'s `TrackInput` omits two fields
       `runExport` passes: `sections` and `vocalLines`. So every probe baseline

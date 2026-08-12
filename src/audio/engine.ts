@@ -250,16 +250,22 @@ export class AudioEngine {
   }
 
   async loadFile(file: File): Promise<void> {
+    // Claim the generation BEFORE the read, not after it. The store orders
+    // loads by CALL time (`trackLoadGen` at entry); claiming at decode entry
+    // ordered the engine by READ COMPLETION, so a large file's slow read could
+    // outlive a smaller load requested after it, claim the higher generation,
+    // and clobber the newer track's audio while the store kept the newer
+    // track's grid — permanently (E3g).
+    const gen = ++this.loadGen;
     const data = await file.arrayBuffer();
-    await this.loadArrayBuffer(data, file.name);
+    await this.loadArrayBuffer(data, file.name, gen);
   }
 
-  async loadArrayBuffer(data: ArrayBuffer, name: string): Promise<void> {
-    const gen = ++this.loadGen;
+  async loadArrayBuffer(data: ArrayBuffer, name: string, gen = ++this.loadGen): Promise<void> {
     const buffer = await decodeAudioLenient(this.ctx, data);
-    // Two overlapping loads race their decodes: whichever resolves LAST used
-    // to win, so a slow first drop could clobber a quick second one. Only the
-    // newest load may commit.
+    // Overlapping loads race their reads and decodes: whichever settled LAST
+    // used to win. Only the newest CALLED load may commit — "newest" must mean
+    // the same thing here as it does in the store.
     if (gen !== this.loadGen) return;
     this.stopSource();
     this.buffer = buffer;

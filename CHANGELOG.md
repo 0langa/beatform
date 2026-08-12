@@ -11,6 +11,16 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two overlapping track loads can no longer end up with one track's audio
+  under the other track's beat grid.** If a large file was still being read
+  when a smaller track was loaded after it — a drop followed by a quick
+  library or demo pick — the slow read could finish last and put the first
+  track's audio back while the beat grid, key, sections and metadata stayed
+  the second track's, permanently and with no error. Loads now commit
+  strictly in the order they were requested, on every path.
+
 ## [2.92.1] - 2026-08-12
 
 ### Fixed
