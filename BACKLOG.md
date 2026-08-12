@@ -38,20 +38,20 @@ Listing a feature here does **not** approve implementation. Respect its status:
 
 Time-sensitive values below were checked on 2026-08-12:
 
-| Fact                    | Verified state                                                                                                                                                                                                                                                                                                                                     |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository              | `0langa/beatform`                                                                                                                                                                                                                                                                                                                                  |
-| Branch                  | `main`; release tag `v2.92.1` points at `418d72c`; after the tag: the post-release ledger reconciliation and the 2026-08-12 baseline pass (recovered F2 timeout sweep; stale `claude/*`+`pulse/*` worktrees/branches removed, diffs archived to devstorage `artifacts\2026-08-12_worktree-salvage`)                                                |
-| Source version          | `2.92.1` in all five version-bearing files; `node scripts/bump-version.mjs --verify` passed                                                                                                                                                                                                                                                        |
-| Release commit / tag    | `v2.92.1` points at release commit `418d72c`                                                                                                                                                                                                                                                                                                       |
-| Latest public release   | `v2.92.1`, published 2026-08-11T22:59:56Z (2026-08-12 Europe/Berlin); GitHub's setup-asset digest, downloaded installer, and `SHA256SUMS.txt` agree on SHA-256 `249a6774e66058002c5f2c720bd6a4886d117d15b9a322aaefadd115cd8f01f9`; live `latest.json` serves `2.92.1`, names the v2.92.1 setup asset, and carries a 420-character signature        |
-| Open GitHub issues      | 0                                                                                                                                                                                                                                                                                                                                                  |
-| Open pull requests      | 6 Dependabot PRs (2026-08-12 evening): #13 windows-core 0.62, #14 sha2 0.11, #15 webview2-com 0.39, #19 npm minor/patch group, #20 actions group (rust-cache), #21 cargo minor/patch group (2 updates; supersedes closed #12). Review before merging; do not auto-merge. Superseded PR #18 closed unmerged after its exact graph shipped on `main` |
-| CI / release            | `CI` run `31543999429` passed on `main` at `418d72c`; `Release installers` run `31544001326` completed `success` and published v2.92.1. Release automation independently re-read the completed run's `status` and `conclusion` after `gh run watch`; `npm audit` reports 0 vulnerabilities                                                         |
-| Installed desktop app   | `2.92.1` (`Beatform.exe` `ProductVersion` and `FileVersion`, verified after the user's manual `Install now` action on 2026-08-12). A new isolated WebView2 profile passed on its first run against this installed bundle: `http://tauri.localhost/`, title `Beatform`, one canvas, WebGPU available                                                |
-| Uninstall registry      | `2.92.1`, matching the installed binary (verified 2026-08-12); ALIGN-002's boot-time self-heal remains effective                                                                                                                                                                                                                                   |
-| Running desktop app     | Installed v2.92.1 process running from `%LOCALAPPDATA%\Beatform\Beatform.exe` during reconciliation                                                                                                                                                                                                                                                |
-| Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers in `src`, `src-tauri`, or `scripts`                                                                                                                                                                                                                                                                   |
+| Fact                    | Verified state                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository              | `0langa/beatform`                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Branch                  | `main`; release tag `v2.92.1` points at `418d72c`; after the tag: the post-release ledger reconciliation and the 2026-08-12 baseline pass (recovered F2 timeout sweep; stale `claude/*`+`pulse/*` worktrees/branches removed, diffs archived to devstorage `artifacts\2026-08-12_worktree-salvage`)                                                                                                                                                                                           |
+| Source version          | `2.92.1` in all five version-bearing files; `node scripts/bump-version.mjs --verify` passed                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Release commit / tag    | `v2.92.1` points at release commit `418d72c`                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Latest public release   | `v2.92.1`, published 2026-08-11T22:59:56Z (2026-08-12 Europe/Berlin); GitHub's setup-asset digest, downloaded installer, and `SHA256SUMS.txt` agree on SHA-256 `249a6774e66058002c5f2c720bd6a4886d117d15b9a322aaefadd115cd8f01f9`; live `latest.json` serves `2.92.1`, names the v2.92.1 setup asset, and carries a 420-character signature                                                                                                                                                   |
+| Open GitHub issues      | 0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Open pull requests      | 2 Dependabot PRs, both BLOCKED UPSTREAM (2026-08-13): #13 windows-core 0.62 and #15 webview2-com 0.39 cannot merge until the tauri stack (wry pins `webview2-com ^0.38`) moves — an app-side bump alone splits the graph into two incompatible type copies (their CI's E0308/`Param` failures). Merge BOTH together when wry/tauri align. Merged 2026-08-12/13 after review: #19 mediabunny, #20 actions, #21 cargo group, #14 sha2 0.11 (needed the `sha256_file` hex compat fix, `b511f41`) |
+| CI / release            | `CI` run `31543999429` passed on `main` at `418d72c`; `Release installers` run `31544001326` completed `success` and published v2.92.1. Release automation independently re-read the completed run's `status` and `conclusion` after `gh run watch`; `npm audit` reports 0 vulnerabilities                                                                                                                                                                                                    |
+| Installed desktop app   | `2.92.1` (`Beatform.exe` `ProductVersion` and `FileVersion`, verified after the user's manual `Install now` action on 2026-08-12). A new isolated WebView2 profile passed on its first run against this installed bundle: `http://tauri.localhost/`, title `Beatform`, one canvas, WebGPU available                                                                                                                                                                                           |
+| Uninstall registry      | `2.92.1`, matching the installed binary (verified 2026-08-12); ALIGN-002's boot-time self-heal remains effective                                                                                                                                                                                                                                                                                                                                                                              |
+| Running desktop app     | Installed v2.92.1 process running from `%LOCALAPPDATA%\Beatform\Beatform.exe` during reconciliation                                                                                                                                                                                                                                                                                                                                                                                           |
+| Explicit source markers | No `TODO`, `FIXME`, `XXX`, or `HACK` markers in `src`, `src-tauri`, or `scripts`                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 Current product constraints remain:
 
@@ -1708,8 +1708,19 @@ buys and what it does not.
       Scene uses zero `PARAM_GROUPS` machinery, so every sub-structure is new
       hand-built DOM and new leaves to audit. **ITEM 1 (context-header
       actions) NOT SHIPPED — it is product judgement, see H14.**
-- [ ] H14 **READY — the context-header actions (H4 item 1), an owner decision
-      packet, not an implementation task.** Six questions, each with its
+- [ ] H14 **DECIDED 2026-08-13 (owner click-round) — implementation now open;
+      the decision packet below is kept for its measurements.** Verdicts:
+      (Q2) **page-aware Reset** — the header resets what the current page
+      shows; a small feature, not a button move. (Q3) **Save look jumps to
+      Looks & themes WITHOUT persisting `visualsPage`** — the jump must not
+      change which page next session opens on. (Q4) **the "n changed" pill
+      stays in the page body**; the header carries no counts. (Q5) **two-row
+      header allowed below C 332** (+18.6px permanent at those widths).
+      (Q6) **"+ Save look" → "Save look"**. (Q7) **scoped ellipsis in the
+      header only** — a header-local class with full name on hover; the
+      shared `.section-title` and the other three panels stay untouched.
+      Verification stays manual per H16 (`__auditUI` cannot gate this).
+      ORIGINAL PACKET — six questions, each with its
       measurement: (Q2) which Reset does a header carry — params-only with an
       honest label, or page-aware? `resetParams()` touches only the active
       preset's params; Motion's and Post's Resets call `setMotion`/`setPost`,
@@ -2243,11 +2254,16 @@ because an absent one makes `validateDocument` mint a starter stack with
 (4) The stamp **cannot** live beside the other `LS_` constants:
 `safeSetItem`'s failure path reads `notifyWriteFailure`, declared further down,
 so calling it above them throws on TDZ the first time a write fails.
-**STILL THE OWNER'S CALL:** adding an `appVersion` field to the `.bfpreset`
-envelope. Forward-only, additive, older readers ignore unknown envelope keys,
-and it would give the NEXT semantics change the discriminator this one lacked —
-but it is a change to a public persisted file format. The comment was corrected
-instead of the format.
+**RESOLVED 2026-08-13 — owner said add it, and it shipped the same day:**
+`serializeUserPreset` stamps `appVersion` into the `.bfpreset` envelope.
+Forward-only, additive, older readers ignore unknown envelope keys, and the
+NEXT semantics change now has the discriminator this one lacked. Deliberately
+NEVER a parse gate — refusal stays `schemaVersion`'s job, and
+`userPresets.test.ts` pins three sides of it: the stamp equals `APP_VERSION`,
+a stamp-less 2.92.x file still parses, and a file stamped `9.9.9` with
+schemaVersion 1 still opens (provenance, not a gate). `version.ts`'s comment
+now states the stamp truthfully; the v14 gap itself stays closed-as-chosen
+(pre-2.93 files carry no stamp, so nothing can reopen it).
 
 **P-3 PART DONE 2026-08-10** (owner-approved filler; eager thumbnails were
 ranked first and are done, coach marks are deliberately NOT).

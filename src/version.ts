@@ -9,12 +9,12 @@
  * reports) and is stamped into every autosave, .bfproj and .bftheme the app
  * writes, so a stale value corrupts provenance and support triage.
  *
- * NOT .bfpreset — this comment used to list it, wrongly:
- * serializeUserPreset writes exactly three fields — schemaVersion, kind,
- * preset — and no app version at all, so a shared look carries no provenance
- * to be stale. Adding one is a change to a public persisted file format and
- * is the owner's call; the comment was corrected to match the code rather
- * than the code changed to match the comment.
+ * .bfpreset joined that list on 2026-08-13 (owner call closing the v14
+ * packet's open question): serializeUserPreset stamps `appVersion` into the
+ * file envelope — provenance for future semantics changes, deliberately
+ * never a parse gate. Files from 2.92.x and earlier carry no stamp. This
+ * comment once claimed the stamp existed when it did not; the claim became
+ * true only when the code changed, and userPresets.test.ts pins it.
  *
  * This file drifted ten releases stale once (shipped 2.28.1 through 2.36.1
  * while claiming 2.28.1). `version.test.ts` now asserts this constant equals

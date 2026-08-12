@@ -11,6 +11,15 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- **Saved look files now record which app version wrote them.** A `.bfpreset`
+  saved from now on carries an `appVersion` note inside the file. It changes
+  nothing about how looks load — older files and newer files both open
+  exactly as before — but if a future update ever changes what a setting
+  means, the app will be able to tell old files from new ones and adjust
+  them correctly instead of guessing.
+
 ### Fixed
 
 - **Two overlapping track loads can no longer end up with one track's audio

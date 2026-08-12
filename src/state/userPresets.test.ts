@@ -10,6 +10,7 @@ import {
   type UserPreset,
 } from "./userPresets";
 import { presets } from "../render/presets";
+import { APP_VERSION } from "../version";
 
 const look: UserPreset = {
   id: "up-test-1",
@@ -94,6 +95,31 @@ describe("user presets (.bfpreset)", () => {
     delete file.preset.sync;
     const parsed = parseUserPreset(JSON.stringify(file));
     expect(parsed.sync).toBeUndefined();
+  });
+
+  // Owner call, 2026-08-13, closing the v14 packet's open question: the
+  // envelope now records WHICH app wrote the file, so the NEXT semantics
+  // change has the discriminator the v14 nebula remap lacked.
+  it("stamps the writing app's version into the envelope", () => {
+    const file = JSON.parse(serializeUserPreset(look));
+    expect(file.appVersion).toBe(APP_VERSION);
+  });
+
+  it("accepts an envelope with no appVersion — every file from 2.92.x and earlier", () => {
+    const file = JSON.parse(serializeUserPreset(look));
+    delete file.appVersion;
+    const parsed = parseUserPreset(JSON.stringify(file));
+    expect(parsed.name).toBe(look.name);
+  });
+
+  it("accepts an appVersion newer than this build — provenance, never a gate", () => {
+    // Refusal belongs to schemaVersion ALONE. A future build that widens the
+    // look format must bump USER_PRESET_VERSION; turning appVersion into a
+    // refusal would break forward-sharing of files whose shape is identical.
+    const file = JSON.parse(serializeUserPreset(look));
+    file.appVersion = "9.9.9";
+    const parsed = parseUserPreset(JSON.stringify(file));
+    expect(parsed.name).toBe(look.name);
   });
 });
 

@@ -2,6 +2,7 @@ import { sanitizeSync, type SyncSettings } from "../audio/types";
 import type { ParamValues } from "../render/types";
 import { canonicalPresetId, presets } from "../render/presets";
 import { safeSetItem } from "./persistence";
+import { APP_VERSION } from "../version";
 
 /**
  * User presets ("my looks"): a named snapshot of one visual mode's params
@@ -27,6 +28,14 @@ export interface UserPreset {
 interface UserPresetFile {
   schemaVersion: number;
   kind: "bfpreset";
+  /**
+   * App that WROTE the file (owner call 2026-08-13, closing the v14 packet's
+   * open question). Absent in every file from 2.92.x and earlier. Provenance
+   * for future semantics changes — the discriminator the v14 nebula remap
+   * lacked — and deliberately NEVER a parse gate: refusal belongs to
+   * `schemaVersion` alone, and userPresets.test.ts pins a 9.9.9 file open.
+   */
+  appVersion?: string;
   preset: UserPreset;
 }
 
@@ -41,7 +50,10 @@ interface UserPresetFile {
  *  - This list has no version stamp of any kind, and the .bfpreset envelope's
  *    `schemaVersion` tracks the LOOK format (still 1), not the document
  *    schema — so nothing here can tell a pre-v14 value from a post-v14 one.
- *    The values are the same numbers under both readings.
+ *    The values are the same numbers under both readings. (Since 2026-08-13
+ *    the FILE envelope stamps `appVersion` — provenance for the NEXT such
+ *    change. It cannot reopen this one: every pre-2.93 file lacks the stamp,
+ *    and this localStorage list still carries no stamp at all.)
  *  - Bumping USER_PRESET_VERSION to carry the distinction would make every
  *    newly written file unreadable by every build shipped through 2.89.0
  *    (parseUserPreset refuses schemaVersion > USER_PRESET_VERSION), which is
@@ -79,6 +91,7 @@ export function serializeUserPreset(preset: UserPreset): string {
   const file: UserPresetFile = {
     schemaVersion: USER_PRESET_VERSION,
     kind: "bfpreset",
+    appVersion: APP_VERSION,
     preset,
   };
   return JSON.stringify(file, null, 2);
