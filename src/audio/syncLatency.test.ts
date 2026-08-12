@@ -10,7 +10,17 @@ import type { PcmData } from "./types";
  * (beat grid ~30 ms early from window-start timestamps; offline pulses
  * exactly one frame late from the zero-weight Hann edge) — these tests pin
  * the corrected behaviour.
+ *
+ * TIMEOUTS: both describes carry an explicit 30 s budget rather than vitest's
+ * 5 s default. Every case here synthesizes 12 s of audio and runs the whole
+ * beat grid or a full `OfflineAnalyzer` pass over it, so the cost is seconds of
+ * real work; the heaviest measured 1.0 s in a normal full-suite run and 1.7 s
+ * with the pool oversubscribed 2:1. The assertions are on OFFSETS in track
+ * time, never on wall clock, so the default timeout was the file's only
+ * load-sensitive failure mode. Same remedy as `dspCharacterization.test.ts`;
+ * see GATES.md §1.
  */
+const SUITE = { timeout: 30_000 };
 
 const SR = 48000;
 
@@ -44,7 +54,7 @@ function mean(xs: number[]): number {
   return xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
 }
 
-describe("beat grid latency", () => {
+describe("beat grid latency", SUITE, () => {
   it.each([90, 120, 174])("%i BPM: beats land within 8 ms of the transients", (bpm) => {
     const grid = analyzeBeatGrid(clickTrack(bpm, 12));
     const off = offsets(Array.from(grid.beatTimes), bpm);
@@ -54,7 +64,7 @@ describe("beat grid latency", () => {
   });
 });
 
-describe("offline analyzer pulse latency", () => {
+describe("offline analyzer pulse latency", SUITE, () => {
   it.each([30, 60])("%i fps: beat/driveBeat/kick fire in the transient's frame", (fps) => {
     const bpm = 120; // beats every 0.5 s — frame-aligned at 30 and 60 fps
     const pcm = clickTrack(bpm, 12);

@@ -90,17 +90,30 @@ function runAtRefresh(hz: number, seconds: number) {
 }
 
 /**
- * These drive a real 4096-point FFT for every simulated frame — the 144 Hz case
- * alone is ~1700 transforms — so they are seconds of genuine work, not a hang.
- * Vitest's 5 s default left the heaviest one at ~80% of budget on an idle
- * machine and timing out on a busy one, which is a flaky suite rather than a
- * real signal. Shortening the fixtures is not an option: their whole point is
+ * TIMEOUTS: every describe here carries an explicit 30 s budget rather than
+ * vitest's 5 s default.
+ *
+ * These tests drive a real 4096-point FFT for every simulated frame — the
+ * 144 Hz case alone is ~1700 transforms — so they are seconds of genuine work,
+ * not a hang. Nothing in this file asserts wall-clock timing; the analyser's
+ * clock is the `setNow` fixture. So the 5 s default was the only load-sensitive
+ * failure mode, and it is the file's worst: the heaviest test measured 2.3 s in
+ * a normal full-suite run and 4.2 s with the pool oversubscribed 2:1, i.e. one
+ * loaded machine away from a red run that means nothing.
+ *
+ * The budget lives on the DESCRIBES, not on individual `it`s, which is the
+ * point of this shape. The per-test form it replaced covered the four tests
+ * that were measured as heaviest and left three others in the same class
+ * (~1.5 s oversubscribed) on the default — the same gap that made
+ * `featurePipelineFuzz.test.ts` tip over long after the suites around it were
+ * fixed. Same remedy as `dspCharacterization.test.ts` and `store.test.ts`; see
+ * GATES.md §1. Shortening the fixtures is not an option: their whole point is
  * that the detector stays BUSY for long enough that the count is decided by the
  * cadence rather than by the refractory.
  */
-const SLOW = 30_000;
+const SUITE = { timeout: 30_000 };
 
-describe("RealtimeAnalyzer analysis cadence", () => {
+describe("RealtimeAnalyzer analysis cadence", SUITE, () => {
   it("does no second transform work on the legacy/default path", () => {
     const { engine, setNow, getDisplayReads } = fakeEngine(dense);
     const ana = new RealtimeAnalyzer(engine);
@@ -156,35 +169,26 @@ describe("RealtimeAnalyzer analysis cadence", () => {
    * at their own rate and are excluded here; that ceiling is inherent, not a
    * bug this can fix.
    */
-  it(
-    "fires within one beat of the 60 Hz count at 120 and 144 Hz refresh",
-    () => {
-      const at60 = runAtRefresh(60, 4);
-      // Fixture sanity: the detector must be BUSY, not just non-zero. Under ~15
-      // beats in 4 s the refractory pins the count and the test proves nothing.
-      expect(at60).toBeGreaterThan(12);
-      // Within one, not exact, and that limit is structural. A live tap can only
-      // be read on animation-frame boundaries, so on a 144 Hz display the ticks
-      // land ~1/60 s apart but never exactly on the 60 Hz grid the export uses;
-      // the windows differ slightly and the count can wobble by one. Before this
-      // change the same comparison was 2.4x, not one beat.
-      for (const hz of [120, 144]) {
-        expect(
-          Math.abs(runAtRefresh(hz, 4) - at60),
-          `beats at ${hz} Hz refresh`,
-        ).toBeLessThanOrEqual(1);
-      }
-    },
-    SLOW,
-  );
+  it("fires within one beat of the 60 Hz count at 120 and 144 Hz refresh", () => {
+    const at60 = runAtRefresh(60, 4);
+    // Fixture sanity: the detector must be BUSY, not just non-zero. Under ~15
+    // beats in 4 s the refractory pins the count and the test proves nothing.
+    expect(at60).toBeGreaterThan(12);
+    // Within one, not exact, and that limit is structural. A live tap can only
+    // be read on animation-frame boundaries, so on a 144 Hz display the ticks
+    // land ~1/60 s apart but never exactly on the 60 Hz grid the export uses;
+    // the windows differ slightly and the count can wobble by one. Before this
+    // change the same comparison was 2.4x, not one beat.
+    for (const hz of [120, 144]) {
+      expect(Math.abs(runAtRefresh(hz, 4) - at60), `beats at ${hz} Hz refresh`).toBeLessThanOrEqual(
+        1,
+      );
+    }
+  });
 
-  it(
-    "a 90 Hz refresh does not fire meaningfully more than a 60 Hz one",
-    () => {
-      expect(Math.abs(runAtRefresh(90, 4) - runAtRefresh(60, 4))).toBeLessThanOrEqual(1);
-    },
-    SLOW,
-  );
+  it("a 90 Hz refresh does not fire meaningfully more than a 60 Hz one", () => {
+    expect(Math.abs(runAtRefresh(90, 4) - runAtRefresh(60, 4))).toBeLessThanOrEqual(1);
+  });
 
   /**
    * A stall — hidden window, GC pause, a dragged window — leaves the analysis
@@ -193,46 +197,42 @@ describe("RealtimeAnalyzer analysis cadence", () => {
    * repeatedly over a spectrum it has already seen, firing a burst of beats
    * that are not in the music.
    */
-  it(
-    "does not fire a burst of beats after a long stall",
-    () => {
-      // Measured over a full second, not a handful of frames: the refractory
-      // allows only one beat per 0.14 s, so a short window cannot tell a healthy
-      // analyser from one ticking every frame to work off a backlog.
-      // Driven at 144 Hz on purpose. At a 60 Hz refresh a backlog is invisible,
-      // because ticking every frame IS the correct rate there — the cap only
-      // matters when the display is faster than the analysis clock, which is
-      // exactly the case this whole change exists for.
-      const HZ = 144;
-      const afterStall = (stallSec: number) => {
-        const { engine, setNow } = fakeEngine(dense);
-        const ana = new RealtimeAnalyzer(engine);
-        let t = 0;
-        for (let n = 0; n < 2 * HZ; n++, t = n / HZ) {
-          setNow(t);
-          ana.update(t, t);
-        }
-        t += stallSec; // one hitch: hidden window, GC pause, a dragged window
-        let beats = 0;
-        for (let n = 0; n < HZ; n++) {
-          setNow(t);
-          if (ana.update(t, t).beat) beats++;
-          t += 1 / HZ;
-        }
-        return beats;
-      };
-      const healthy = afterStall(1 / 60);
-      const stalled = afterStall(0.5); // thirty ticks' worth owed at once
-      expect(healthy).toBeGreaterThan(3); // fixture sanity
-      // Exactly equal, not within one: without the cap this measures healthy 5,
-      // stalled 6, and a tolerance of one is precisely wide enough to miss it.
-      expect(stalled).toBe(healthy);
-    },
-    SLOW,
-  );
+  it("does not fire a burst of beats after a long stall", () => {
+    // Measured over a full second, not a handful of frames: the refractory
+    // allows only one beat per 0.14 s, so a short window cannot tell a healthy
+    // analyser from one ticking every frame to work off a backlog.
+    // Driven at 144 Hz on purpose. At a 60 Hz refresh a backlog is invisible,
+    // because ticking every frame IS the correct rate there — the cap only
+    // matters when the display is faster than the analysis clock, which is
+    // exactly the case this whole change exists for.
+    const HZ = 144;
+    const afterStall = (stallSec: number) => {
+      const { engine, setNow } = fakeEngine(dense);
+      const ana = new RealtimeAnalyzer(engine);
+      let t = 0;
+      for (let n = 0; n < 2 * HZ; n++, t = n / HZ) {
+        setNow(t);
+        ana.update(t, t);
+      }
+      t += stallSec; // one hitch: hidden window, GC pause, a dragged window
+      let beats = 0;
+      for (let n = 0; n < HZ; n++) {
+        setNow(t);
+        if (ana.update(t, t).beat) beats++;
+        t += 1 / HZ;
+      }
+      return beats;
+    };
+    const healthy = afterStall(1 / 60);
+    const stalled = afterStall(0.5); // thirty ticks' worth owed at once
+    expect(healthy).toBeGreaterThan(3); // fixture sanity
+    // Exactly equal, not within one: without the cap this measures healthy 5,
+    // stalled 6, and a tolerance of one is precisely wide enough to miss it.
+    expect(stalled).toBe(healthy);
+  });
 });
 
-describe("RealtimeAnalyzer P-15 fuel fields", () => {
+describe("RealtimeAnalyzer P-15 fuel fields", SUITE, () => {
   it("resolves grid, section and vocal fuel from track time via the shared helpers", () => {
     const { engine, setNow } = fakeEngine(dense);
     const ana = new RealtimeAnalyzer(engine);
@@ -331,7 +331,7 @@ function runLive(
   return { beats, maxDrive, maxBin, maxBeatIntensity };
 }
 
-describe("RealtimeAnalyzer live-input silence gate", () => {
+describe("RealtimeAnalyzer live-input silence gate", SUITE, () => {
   /**
    * BUG-002: system-audio visualization "pumps" and throws beat spikes with
    * nothing playing. Exact digital zeros already render flat, so the report
@@ -364,17 +364,13 @@ describe("RealtimeAnalyzer live-input silence gate", () => {
     expect(r.maxBin, "track preview must be unchanged").toBeGreaterThan(0.05);
   });
 
-  it(
-    "passes real programme material through untouched",
-    () => {
-      const live = runLive(dense, 4, true);
-      const track = runLive(dense, 4, false);
-      expect(live.beats).toBe(track.beats);
-      expect(live.maxBin).toBeCloseTo(track.maxBin, 6);
-      expect(live.maxDrive).toBeCloseTo(track.maxDrive, 6);
-    },
-    SLOW,
-  );
+  it("passes real programme material through untouched", () => {
+    const live = runLive(dense, 4, true);
+    const track = runLive(dense, 4, false);
+    expect(live.beats).toBe(track.beats);
+    expect(live.maxBin).toBeCloseTo(track.maxBin, 6);
+    expect(live.maxDrive).toBeCloseTo(track.maxDrive, 6);
+  });
 
   /** Music that ducks to nothing and comes back must not lose the return —
    * a gate that needs re-arming would eat the first hit after every break. */

@@ -23,10 +23,19 @@ Notes:
 - `npm test` is vitest over the whole web suite (DSP, schemas, golden
   traces). `-- --maxWorkers=2` is an allowed local variation under thermal
   load; it changes scheduling, not coverage.
-- `src/audio/dspCharacterization.test.ts` is not flaky: its former failure
-  mode (vitest's 5 s default timeout under thermal load) is root-fixed with
-  explicit 30 s describe budgets. A failure there is real; reruns are not
-  the protocol.
+- No suite in `src/audio/` is flaky, and none of them needs a rerun. Their
+  one former failure mode was vitest's 5 s per-test DEFAULT timeout under
+  full-suite parallelism, root-fixed with explicit `{ timeout: 30_000 }`
+  **describe** budgets in every suite that spends seconds on real work:
+  `dspCharacterization`, `featurePipelineFuzz`, `realtimeSource`,
+  `syncLatency`, `offlineSource`, `engineGraph` and `dsp/truepeak`. A
+  failure in any of them is a logic failure. Rerunning, `--maxWorkers=2`
+  and shrinking a fixture are all non-answers — if a NEW suite starts
+  timing out, give it a describe budget and say why in the file.
+  The budget belongs on the `describe`, not on individual `it`s: the
+  per-test form leaves every test nobody measured on the 5 s default, which
+  is exactly how `featurePipelineFuzz` stayed red long after the suites
+  around it were fixed.
 
 ## 2. Rust gates — every change touching `src-tauri/`, and always before release
 

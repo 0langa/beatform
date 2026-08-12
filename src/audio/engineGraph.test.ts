@@ -97,7 +97,17 @@ function findByKind(kind: string): FakeNode[] {
   return created.filter((n) => n.kind === kind);
 }
 
-describe("audio graph", () => {
+/**
+ * TIMEOUTS: an explicit 30 s budget rather than vitest's 5 s default. Every
+ * case here calls `vi.resetModules()` and re-imports `./engine`, so its cost is
+ * a module graph rebuilt per test — the one cost in this suite that scales with
+ * how many workers are competing for the transform pipeline, and it showed:
+ * 0.3 s in a normal full-suite run against 1.3 s with the pool oversubscribed
+ * 2:1. Nothing here awaits a real clock (`FakeAudioContext` resolves
+ * immediately), so the default timeout was the only load-sensitive failure
+ * mode. Same remedy as `dspCharacterization.test.ts`; see GATES.md §1.
+ */
+describe("audio graph", { timeout: 30_000 }, () => {
   afterEach(() => {
     created.length = 0;
     vi.unstubAllGlobals();

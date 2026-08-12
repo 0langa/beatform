@@ -58,7 +58,19 @@ function limitAll(
   return { out, limiter };
 }
 
-describe("true-peak measurement", () => {
+/**
+ * TIMEOUTS: both describes carry an explicit 30 s budget rather than vitest's
+ * 5 s default. The limiter cases run a 4x-oversampled filter over half a second
+ * of audio and then assert sample-by-sample alignment — ~24000 `expect` calls
+ * in one `it`, which is the actual cost — and the heaviest measured 0.6 s in a
+ * normal full-suite run against 1.3 s with the pool oversubscribed 2:1. The
+ * per-sample form is the point (a limiter that shifts the signal by one sample
+ * has to fail here), so the budget is what gives way. Same remedy as
+ * `dspCharacterization.test.ts`; see GATES.md §1.
+ */
+const SUITE = { timeout: 30_000 };
+
+describe("true-peak measurement", SUITE, () => {
   it("reads DC at its own level — no phantom inter-sample peak", () => {
     // Each polyphase branch is normalised to unit DC gain; if it weren't, a
     // constant signal would reconstruct as a ripple and read hot. Faded, since
@@ -109,7 +121,7 @@ describe("true-peak measurement", () => {
   });
 });
 
-describe("true-peak limiter", () => {
+describe("true-peak limiter", SUITE, () => {
   it("holds the ceiling when gained well past it", () => {
     const { out, limiter } = limitAll([sine(220, 1, 0.5), sine(220, 1, 0.5)], 4, -1);
     // Tolerance covers the interpolator's own measurement ripple, not slop in

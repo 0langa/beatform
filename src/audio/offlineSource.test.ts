@@ -62,7 +62,16 @@ function finalLufs(pcm: PcmData): number {
   return lufs;
 }
 
-describe("OfflineAnalyzer", () => {
+/**
+ * TIMEOUTS: an explicit 30 s budget rather than vitest's 5 s default. A single
+ * case here runs several full `OfflineAnalyzer` passes over synthesized audio —
+ * seconds of genuine FFT work, and the heaviest measured 0.8 s in a normal
+ * full-suite run but 1.6 s with the pool oversubscribed 2:1. Nothing in the
+ * file asserts wall-clock timing (the analyzer's clock is its frame index), so
+ * the default timeout was its only load-sensitive failure mode. Same remedy as
+ * `dspCharacterization.test.ts`; see GATES.md §1.
+ */
+describe("OfflineAnalyzer", { timeout: 30_000 }, () => {
   it("computes the expected frame count", () => {
     const analyzer = new OfflineAnalyzer(makeTestBuffer(), FPS);
     expect(analyzer.frameCount).toBe(DURATION * FPS);

@@ -45,7 +45,7 @@ Device/E2E gates (need hardware; GATES.md §3 says when each is mandatory, and c
 - `npm run test:loopback:built`, `npm run test:shadertoy:built`, `npm run test:lyrics` — built-app smokes (loopback capture, Shadertoy import, lyrics pipeline).
 - `node scripts/gallery-e2e.mjs` — gallery/store-install surfaces.
 
-`src/audio/dspCharacterization.test.ts` is no longer flaky: its only failure mode was vitest's 5 s default timeout under thermal load, root-fixed with explicit 30 s describe budgets — a failure there is real; reruns are not the protocol.
+No `src/audio/` suite is flaky: their only failure mode was vitest's 5 s per-test default timeout under full-suite parallelism, root-fixed with explicit 30 s **describe** budgets in every suite that does seconds of real work (`dspCharacterization`, `featurePipelineFuzz`, `realtimeSource`, `syncLatency`, `offlineSource`, `engineGraph`, `dsp/truepeak`). A failure there is real; reruns, `--maxWorkers=2` and smaller fixtures are not the protocol — GATES.md §1 has the rule for new suites.
 
 ## Architecture
 
