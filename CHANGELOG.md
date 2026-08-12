@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.93.0] - 2026-08-12
+
 ### Added
 
 - **Narrow docks get full-width sliders.** When the Visuals dock is squeezed
@@ -2625,7 +2627,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.92.1...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.93.0...HEAD
+[2.93.0]: https://github.com/0langa/beatform/compare/v2.92.1...v2.93.0
 [2.92.1]: https://github.com/0langa/beatform/compare/v2.92.0...v2.92.1
 [2.92.0]: https://github.com/0langa/beatform/compare/v2.91.0...v2.92.0
 [2.91.0]: https://github.com/0langa/beatform/compare/v2.90.0...v2.91.0
