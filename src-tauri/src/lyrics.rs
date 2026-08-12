@@ -301,7 +301,17 @@ fn sha256_file(path: &Path) -> Result<String, String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    // Hex by hand rather than `{:x}` on the digest: sha2 0.11's output array
+    // no longer implements `LowerHex`, and this string is compared `==`
+    // against the manifest pins — 64-char lowercase hex, forever. The tests
+    // hold it to the FIPS 180-2 vector.
+    use std::fmt::Write as _;
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    Ok(hex)
 }
 
 /// Re-hash an installed model against the manifest. The E2E harness drives
@@ -1671,6 +1681,24 @@ mod tests {
         // The first child kept its kill handle; the normal teardown reaches it.
         kill_running_job(&state);
         assert!(state.job.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn sha256_file_emits_the_manifest_hex_shape_exactly() {
+        // The manifest pins 64-char lowercase hex (see MODELS above) and
+        // `lyrics_model_verify` compares with `==` — this string IS the
+        // download-verification boundary, so its shape is pinned against the
+        // FIPS 180-2 test vector SHA-256("abc"). Uppercase, truncation, or a
+        // stray prefix must all land here as a red test.
+        let path =
+            std::env::temp_dir().join(format!("av-lyrics-test-sha-{}.bin", std::process::id()));
+        std::fs::write(&path, b"abc").unwrap();
+        let hex = sha256_file(&path);
+        std::fs::remove_file(&path).ok();
+        assert_eq!(
+            hex.unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]
