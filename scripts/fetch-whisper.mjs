@@ -8,19 +8,12 @@
 // BSD-3-Clause (OpenBLAS) — see src-tauri/binaries/WHISPER-LICENSE.txt.
 // The OpenBLAS build is the exact artifact the FEAT-004 phase-1 spike
 // benchmarked on the reference machine (whisper small RTF 0.24–0.42).
-import {
-  createWriteStream,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-} from "node:fs";
-import { pipeline } from "node:stream/promises";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { downloadToFile } from "./lib/download.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEST_DIR = path.join(ROOT, "src-tauri", "binaries", "whisper");
@@ -65,12 +58,13 @@ if (WANTED.every((f) => existsSync(path.join(DEST_DIR, f)))) {
 }
 
 console.log(`Downloading ${ASSET} (~72 MB)…`);
-const res = await fetch(URL, { redirect: "follow" });
-if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
 const binDir = path.join(ROOT, "src-tauri", "binaries");
 mkdirSync(binDir, { recursive: true });
 const tmpZip = path.join(binDir, "_whisper.zip");
-await pipeline(res.body, createWriteStream(tmpZip));
+// Bounded retry for transient host failures (5xx/429/network drops); a 404
+// or the zip-checksum mismatch below stays immediately fatal — see
+// lib/download.mjs.
+await downloadToFile(URL, tmpZip);
 
 // Verify the ZIP before extracting anything — the zip hash pins every file
 // inside it, so per-file pins would be redundant.

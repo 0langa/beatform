@@ -8,19 +8,12 @@
 // encoder, so nothing GPL is required. The binary ships as a SEPARATE
 // sidecar executable next to the app, keeping the MIT app itself clean —
 // see src-tauri/binaries/FFMPEG-LICENSE.txt.
-import {
-  createWriteStream,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-} from "node:fs";
-import { pipeline } from "node:stream/promises";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { downloadToFile } from "./lib/download.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEST = path.join(ROOT, "src-tauri", "binaries", "ffmpeg-x86_64-pc-windows-msvc.exe");
@@ -53,11 +46,11 @@ if (existsSync(DEST)) {
 }
 
 console.log(`Downloading ${ASSET} (~140 MB)…`);
-const res = await fetch(URL, { redirect: "follow" });
-if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
 const tmpZip = path.join(ROOT, "src-tauri", "binaries", "_ffmpeg.zip");
 mkdirSync(path.dirname(tmpZip), { recursive: true });
-await pipeline(res.body, createWriteStream(tmpZip));
+// Bounded retry for transient host failures (5xx/429/network drops); a 404
+// or the checksum mismatch below stays immediately fatal — see lib/download.mjs.
+await downloadToFile(URL, tmpZip);
 
 console.log("Extracting ffmpeg.exe…");
 const binDir = path.join(ROOT, "src-tauri", "binaries");

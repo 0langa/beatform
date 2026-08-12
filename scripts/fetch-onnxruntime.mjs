@@ -18,20 +18,12 @@
 // The spike measured DirectML 4-5x faster than sustained CPU for MDX on the
 // reference Iris Xe (REPORT.md adjustment 2) — this pair is what makes the
 // default GPU path real.
-import {
-  createWriteStream,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-} from "node:fs";
-import { pipeline } from "node:stream/promises";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { downloadToFile } from "./lib/download.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEST_DIR = path.join(ROOT, "src-tauri", "binaries", "onnxruntime");
@@ -87,12 +79,13 @@ mkdirSync(DEST_DIR, { recursive: true });
 
 for (const pkg of PACKAGES) {
   console.log(`Downloading ${pkg.name} ${pkg.version} (~${pkg.approxMb} MB)…`);
-  const res = await fetch(pkg.url, { redirect: "follow" });
-  if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
   // Expand-Archive refuses the .nupkg extension — it only speaks .zip
   // (a nupkg IS a zip), so the temp file is named accordingly.
   const tmpZip = path.join(binDir, `_${pkg.name}.zip`);
-  await pipeline(res.body, createWriteStream(tmpZip));
+  // Bounded retry for transient host failures (5xx/429/network drops); a 404
+  // or a checksum mismatch below stays immediately fatal — see
+  // lib/download.mjs.
+  await downloadToFile(pkg.url, tmpZip);
 
   const actual = sha256Of(tmpZip);
   if (actual !== pkg.sha256) {
