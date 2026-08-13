@@ -44,3 +44,6 @@ src-tauri/binaries/ffmpeg-*.exe
 src-tauri/binaries/whisper/
 src-tauri/binaries/onnxruntime/
 src-tauri/binaries/lyrics-sidecar-*.exe
+
+# superpowers SDD plan workspaces (local orchestration artifacts)
+/.superpowers/

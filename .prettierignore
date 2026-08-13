@@ -9,3 +9,4 @@ src-tauri/gen/
 src-tauri/Cargo.lock
 package-lock.json
 ROADMAP.md
+.superpowers/
