@@ -1146,6 +1146,17 @@ buf` — immediately before the job is built, with nothing awaitable
       owner's H.264 control run on the same settings on the INSTALLED
       2.93.0 reached 16% without a watchdog kill at rates the AV1 lane
       never sustains, consistent with the AV1-specific starvation.
+      **SECOND HIT, SAME FAMILY, DIFFERENT WINDOW (owner, later the same
+      day): H.264 1080p60 auto-bitrate died at 99% with the same error on
+      the installed 2.93.0** — a 12,942-frame job killed in its last
+      percent. That is the FINALIZE window: after the last frame,
+      `output.finalize()` flushes both quality-mode encoder queues and the
+      muxer tail with zero messages flowing, and the final `onProgress`
+      posts only afterwards. The pulse spans it BY POSITION — its stop
+      lives in the function's one `finally`, after the finalize await — and
+      a third test now pins exactly that: a mocked-mediabunny run parks
+      `finalize()` on a gate and asserts the pulse keeps beating; moving
+      `stopLivenessPulse()` above the finalize await turns it red.
 - [ ] E4b **Export performance — findings filed, measure before touching.**
       Owner reports (Surface Pro 8, Iris Xe): exports 3-10 fps; ~3× faster
       after a reboot (3-day-uptime degradation is real and external to the

@@ -13,13 +13,16 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ### Fixed
 
-- **A slow AV1 export is no longer killed as "stopped responding" while it's
-  working.** Software AV1 encoding — the only kind most machines have — can
-  legitimately go more than half a minute without producing output at the
-  start of a 1080p60 export, and the safety watchdog misread that silence as
-  a dead export and stopped it. The export now signals it's alive the whole
-  way through, so the watchdog only fires when something has genuinely
-  crashed. Nothing about the encoded video changes.
+- **A slow export is no longer killed as "stopped responding" while it's
+  working — mid-render or at 99%.** Two real cases: software AV1 encoding
+  can legitimately go more than half a minute without output at the start
+  of a 1080p60 export, and any long export goes quiet at the very end while
+  the encoder flushes and the file is finalized. The safety watchdog
+  misread both silences as a dead export and stopped it — on long jobs
+  sometimes in the last percent, after twenty minutes of work. The export
+  now signals it's alive the whole way through, finalization included, so
+  the watchdog only fires when something has genuinely crashed. Nothing
+  about the encoded video changes.
 
 ### Changed
 

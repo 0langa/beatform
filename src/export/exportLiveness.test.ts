@@ -57,6 +57,58 @@ vi.mock("../render/webgpuRenderer", async (importOriginal) => {
   return { ...mod, WebGPURenderer: FakeRenderer };
 });
 
+/** Finalize gate the mediabunny mock parks on when a test arms it. */
+const finalizeCtl: { gate: Promise<void> | null; started: boolean } = {
+  gate: null,
+  started: false,
+};
+
+vi.mock("mediabunny", () => {
+  class Output {
+    state = "started";
+    addVideoTrack() {}
+    addAudioTrack() {}
+    async start() {}
+    async finalize() {
+      finalizeCtl.started = true;
+      if (finalizeCtl.gate) await finalizeCtl.gate;
+      this.state = "finalized";
+    }
+    async cancel() {
+      this.state = "canceled";
+    }
+  }
+  class VideoSampleSource {
+    async add() {}
+  }
+  class AudioSampleSource {
+    async add() {}
+  }
+  class VideoSample {
+    close() {}
+  }
+  class AudioSample {
+    close() {}
+  }
+  class BufferTarget {
+    buffer = new ArrayBuffer(8);
+  }
+  class StreamTarget {}
+  class Mp4OutputFormat {}
+  class WebMOutputFormat {}
+  return {
+    Output,
+    VideoSampleSource,
+    AudioSampleSource,
+    VideoSample,
+    AudioSample,
+    BufferTarget,
+    StreamTarget,
+    Mp4OutputFormat,
+    WebMOutputFormat,
+  };
+});
+
 import { runExportJob, type ExportJob } from "./exportCore";
 
 function makePcm(seconds: number): PcmData {
@@ -167,5 +219,78 @@ describe("export liveness pulse (E4a)", { timeout: 30_000 }, () => {
     const atEnd = beats;
     await sleep(120);
     expect(beats).toBe(atEnd);
+  });
+});
+
+/**
+ * The FINALIZE window — the owner's SECOND hit, H.264 dying at 99% on the
+ * installed 2.93.0. After the last frame, `output.finalize()` flushes both
+ * quality-mode encoder queues and the muxer tail with ZERO messages flowing
+ * (the final onProgress posts only AFTERWARDS), so a long job's flush on a
+ * throttled machine starves the watchdog exactly like the AV1 lookahead did
+ * mid-loop. The pulse must span finalize: its stop lives in the function's
+ * `finally`, AFTER finalize — this test pins that position (green since the
+ * E4a fix landed with the stop placed there; moving `stopLivenessPulse()`
+ * above the finalize await turns it red, which is the binding check).
+ */
+describe("export liveness pulse spans finalize (E4a, the 99% window)", { timeout: 30_000 }, () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        constructor(
+          public width: number,
+          public height: number,
+        ) {}
+        getContext() {
+          return null;
+        }
+        async convertToBlob() {
+          return new Blob([new Uint8Array([0x89, 0x50])]);
+        }
+      },
+    );
+    vi.stubGlobal("VideoEncoder", { isConfigSupported: async () => ({ supported: true }) });
+    vi.stubGlobal("AudioEncoder", { isConfigSupported: async () => ({ supported: true }) });
+    // The audio pump constructs real WebCodecs AudioData before handing it to
+    // the (mocked) AudioSample; node has no WebCodecs, so stub the shell.
+    vi.stubGlobal(
+      "AudioData",
+      class {
+        constructor(public init: unknown) {}
+        close() {}
+      },
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    finalizeCtl.gate = null;
+    finalizeCtl.started = false;
+  });
+
+  it("keeps beating while finalize() is parked on the encoder flush", async () => {
+    let release!: () => void;
+    finalizeCtl.gate = new Promise<void>((r) => (release = r));
+    let beats = 0;
+    const run = runExportJob(
+      { ...job(makePcm(0.2)), mode: "buffer", codec: "h264" },
+      {
+        livenessPulseMs: 40,
+        onHeartbeat: () => {
+          beats++;
+        },
+      },
+    );
+
+    await waitUntil(() => finalizeCtl.started);
+    const beatsAtFinalize = beats;
+    await sleep(250);
+    // On the installed 2.93.0 this window carried NOTHING — six pulse
+    // intervals fit here; requiring two keeps it loose under pool load.
+    expect(beats).toBeGreaterThanOrEqual(beatsAtFinalize + 2);
+
+    release();
+    const result = await run;
+    expect(result.buffer).toBeDefined();
   });
 });
