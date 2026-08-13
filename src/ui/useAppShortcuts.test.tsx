@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { useVizStore } from "../state/store";
 import { useAppShortcuts } from "./useAppShortcuts";
 import shortcutsSource from "./useAppShortcuts.ts?raw"; // precedent: loopbackWorklet.test.ts
-import { SHORTCUT_SHEET } from "./useAppShortcuts";
+import { SHORTCUT_SHEET, groupShortcutRows } from "./useAppShortcuts";
 
 afterEach(cleanup);
 
@@ -153,5 +153,59 @@ describe("SHORTCUT_SHEET covers the handler, both directions", () => {
       expect(r.keys.length).toBeGreaterThan(0);
       expect(r.action.length).toBeGreaterThan(4);
     }
+  });
+});
+
+/**
+ * groupShortcutRows is the help dialog's (App.tsx) row-building helper —
+ * P-21 Task 6. It groups SHORTCUT_SHEET by `group`, preserving first-seen
+ * order, the same small algorithm guideDerived.ts's private groupShortcuts()
+ * and GuideBlocks.tsx's private groupShortcuts() each carry for their own
+ * data shape (see GuideBlocks.tsx's comment for why it isn't shared one more
+ * time here) — this copy stays on the raw ShortcutRow type so App.tsx can
+ * consume SHORTCUT_SHEET directly, with no dependency on the guide's
+ * DerivedTables abstraction.
+ *
+ * Tested at the data level, not by rendering App.tsx: App.tsx pulls in the
+ * whole zustand store, audio engine and canvas wiring, so there is no cheap
+ * way to mount it in a test (no existing suite does). The dialog's actual
+ * JSX just maps this function's output onto the existing shortcut-row/kbd
+ * markup — a mechanical step verified visually in the dev preview instead
+ * (task-6-report.md).
+ */
+describe("groupShortcutRows", () => {
+  it("produces exactly one row per SHORTCUT_SHEET entry — the help dialog's count assertion", () => {
+    const total = groupShortcutRows().reduce((n, g) => n + g.rows.length, 0);
+    expect(total).toBe(SHORTCUT_SHEET.length);
+  });
+
+  it("groups in first-seen order — Playback, Performance, Panels & dialogs, Editing", () => {
+    // "Modes" is a declared group (useAppShortcuts.ts's ShortcutRow union)
+    // with zero rows today (guideDerived.test.ts's finding) — it must not
+    // manufacture an empty heading.
+    const groups = groupShortcutRows().map((g) => g.group);
+    expect(groups).toEqual(["Playback", "Performance", "Panels & dialogs", "Editing"]);
+  });
+
+  it("carries a known row's own action text — Space plays or pauses", () => {
+    const playback = groupShortcutRows().find((g) => g.group === "Playback");
+    const space = playback?.rows.find((r) => r.keys.includes("Space"));
+    expect(space?.action).toBe("Play or pause");
+  });
+
+  it("mutation check: dropping a row from the input drops the total by exactly one", () => {
+    // Proves the count is actually LIVE off the argument, not a hardcoded
+    // or memoized number that happens to equal SHORTCUT_SHEET.length today —
+    // the brief's "delete-a-row mutation goes red" requirement. Regressing
+    // groupShortcutRows to ignore its parameter (e.g. always closing over
+    // the module-level SHORTCUT_SHEET) turns this red while the count-only
+    // assertion above would stay green, since both sides would shrink together.
+    const withoutFirstRow = SHORTCUT_SHEET.slice(1);
+    const total = groupShortcutRows(withoutFirstRow).reduce((n, g) => n + g.rows.length, 0);
+    expect(total).toBe(SHORTCUT_SHEET.length - 1);
+  });
+
+  it("defaults to SHORTCUT_SHEET when called with no argument", () => {
+    expect(groupShortcutRows()).toEqual(groupShortcutRows(SHORTCUT_SHEET));
   });
 });

@@ -2415,6 +2415,24 @@ button.row-value:focus-visible {
   color: var(--text-dim);
 }
 
+/* One heading per SHORTCUT_SHEET group (plus the trailing hand-written
+   "Always available" row) — a sibling of .shortcut-row inside the same flex
+   column, so the list's own 7px gap already spaces it; no margin needed. */
+.shortcut-group-heading {
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+/* Wraps a row's <kbd> chips (possibly several, joined by " / ") in ONE flex
+   child so .shortcut-row's own gap stays a clean 2-column rhythm — without
+   this wrapper, the " / " text nodes become their own flex items too. */
+.shortcut-keys {
+  white-space: nowrap;
+}
+
 kbd {
   min-width: 58px;
   text-align: center;

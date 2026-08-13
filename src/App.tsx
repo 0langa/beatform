@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { demos } from "./audio/demoTrack";
 import { BG_TRANSPARENT } from "./render/types";
 import { presetById } from "./render/presets";
@@ -27,7 +27,7 @@ import { ShadertoyImport } from "./ui/ShadertoyImport";
 import { ParamsPanel } from "./ui/ParamsPanel";
 import { EmptyState } from "./ui/EmptyState";
 import { useFocusTrap } from "./ui/useFocusTrap";
-import { useAppShortcuts, toggleFullscreen } from "./ui/useAppShortcuts";
+import { useAppShortcuts, toggleFullscreen, groupShortcutRows } from "./ui/useAppShortcuts";
 import { ExportDialog } from "./ui/ExportDialog";
 import { SettingsDialog } from "./ui/SettingsDialog";
 import { GalleryDialog } from "./ui/GalleryDialog";
@@ -49,28 +49,6 @@ import {
   IconStage,
 } from "./ui/Icons";
 import "./App.css";
-
-const SHORTCUTS: Array<[string, string]> = [
-  ["Space", "Play / pause"],
-  ["← / →", "Seek 5 s"],
-  ["↑ / ↓", "Volume"],
-  ["M", "Mute"],
-  ["L", "Loop whole track / selected A-B region"],
-  ["I / O", "Set A / B loop markers at playhead"],
-  ["P / N", "Previous / next preset (also [ / ])"],
-  ["1 – 9", "Jump to mode (beat-quantized when Live › Quantize is on)"],
-  ["S", "Stage mode (chrome-free output) · 0 blackout · Esc exits (also \\ and .)"],
-  ["G", "Visuals"],
-  ["F", "Fullscreen"],
-  ["Ctrl+S", "Save project"],
-  ["Ctrl+O", "Open project"],
-  ["Ctrl+Z / Ctrl+Y", "Undo / redo"],
-  ["T", "Timeline"],
-  ["B", "Batch render"],
-  ["Q", "Music library"],
-  ["Ctrl+,", "Preferences"],
-  ["H or ?", "This shortcut list"],
-];
 
 /**
  * Keyboard resize for the two drag handles (P-1 §4). Arrows move the
@@ -846,12 +824,39 @@ export default function App() {
               </button>
             </div>
             <div className="shortcut-list">
-              {SHORTCUTS.map(([key, desc]) => (
-                <div key={key} className="shortcut-row">
-                  <kbd>{key}</kbd>
-                  <span>{desc}</span>
-                </div>
+              {groupShortcutRows().map(({ group, rows }) => (
+                <Fragment key={group}>
+                  <div className="shortcut-group-heading">{group}</div>
+                  {rows.map((row) => (
+                    <div key={row.keys.join("+")} className="shortcut-row">
+                      <span className="shortcut-keys">
+                        {row.keys.flatMap((k, i) =>
+                          i === 0 ? [<kbd key={k}>{k}</kbd>] : [" / ", <kbd key={k}>{k}</kbd>],
+                        )}
+                      </span>
+                      <span>
+                        {row.action}
+                        {row.note ? ` (${row.note})` : ""}
+                      </span>
+                    </div>
+                  ))}
+                </Fragment>
               ))}
+              {/* Not literal-key-driven, so SHORTCUT_SHEET carries no row for
+                  it (useAppShortcuts.test.tsx's coverage test deliberately
+                  excludes Escape — "the universal dismiss cascade, documented
+                  in prose, not a binding a user learns"): stays hand-written,
+                  trailing the sheet-driven rows above. */}
+              <div className="shortcut-group-heading">Always available</div>
+              <div className="shortcut-row">
+                <span className="shortcut-keys">
+                  <kbd>Esc</kbd>
+                </span>
+                <span>
+                  Close dialogs and panels, or exit Stage mode (while typing, just cancels the
+                  field)
+                </span>
+              </div>
             </div>
             <div className="about-line">Beatform v{APP_VERSION}</div>
             <div className="update-line">

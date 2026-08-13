@@ -368,3 +368,34 @@ export const SHORTCUT_SHEET: readonly ShortcutRow[] = [
     group: "Editing",
   },
 ];
+
+/**
+ * Groups SHORTCUT_SHEET rows by `group`, preserving first-seen order — the
+ * help dialog's (App.tsx, P-21 Task 6) row-building helper. The guide's own
+ * renderers, guideDerived.ts's groupShortcuts() (markdown) and
+ * GuideBlocks.tsx's groupShortcuts() (JSX over the DerivedTables shape),
+ * each carry their own copy of this same small algorithm — see
+ * GuideBlocks.tsx's comment for why; this one stays on the raw ShortcutRow
+ * type so App.tsx can consume SHORTCUT_SHEET directly, per this task's
+ * interface, with no dependency on the guide's abstraction.
+ *
+ * Takes `sheet` as a parameter (default SHORTCUT_SHEET) rather than closing
+ * over the module constant, so a test can feed a mutated fixture and prove
+ * the grouping is actually driven by its argument.
+ */
+export function groupShortcutRows(
+  sheet: readonly ShortcutRow[] = SHORTCUT_SHEET,
+): Array<{ group: ShortcutRow["group"]; rows: ShortcutRow[] }> {
+  const order: ShortcutRow["group"][] = [];
+  const byGroup = new Map<ShortcutRow["group"], ShortcutRow[]>();
+  for (const row of sheet) {
+    let rows = byGroup.get(row.group);
+    if (!rows) {
+      rows = [];
+      byGroup.set(row.group, rows);
+      order.push(row.group);
+    }
+    rows.push(row);
+  }
+  return order.map((group) => ({ group, rows: byGroup.get(group)! }));
+}
