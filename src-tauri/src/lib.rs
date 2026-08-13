@@ -120,6 +120,48 @@ fn scan_dir(root: &std::path::Path) -> Result<Vec<LibraryTrack>, String> {
     Ok(tracks)
 }
 
+/// Reveal an exported file in Explorer with it pre-selected — the narrowly
+/// scoped alternative to the opener/shell plugin that `run()`, below,
+/// documents removing.
+///
+/// Gated on the fs plugin scope exactly like `scan_audio_library`: the save
+/// dialog's flow calls `allow_file` on whatever path the user chose, so a
+/// path that came from a real save passes while an arbitrary path a
+/// compromised renderer invents on its own does not — the error names the
+/// path.
+#[tauri::command]
+fn show_in_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    if !app.fs_scope().is_allowed(std::path::Path::new(&path)) {
+        return Err(format!("Path not permitted: {path}"));
+    }
+    #[cfg(windows)]
+    {
+        let arg = explorer_select_arg(&path)?;
+        std::process::Command::new("explorer.exe")
+            .arg(arg)
+            .spawn()
+            .map_err(|e| format!("Failed to launch Explorer: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    Err("desktop only".into())
+}
+
+/// The pure part, split from the command so it is unit-testable without an
+/// AppHandle or a spawned process: rejects a path that does not exist as a
+/// file — `explorer /select,` on a path that is missing silently opens a
+/// default window instead of erroring, which would look identical to success
+/// — and builds the ONE argument explorer requires. The comma must stay
+/// attached to the path with no space in between: a second, separate
+/// argument (or a space before the path) makes explorer open a default
+/// window instead of selecting anything.
+fn explorer_select_arg(path: &str) -> Result<String, String> {
+    if !std::path::Path::new(path).is_file() {
+        return Err(format!("Not a file: {path}"));
+    }
+    Ok(format!("/select,{path}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // No opener plugin. It was registered but never called from the frontend,
@@ -178,6 +220,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             debug_allow_path,
             scan_audio_library,
+            show_in_folder,
             loopback::start_loopback,
             loopback::stop_loopback,
             loopback::loopback_died,
@@ -238,5 +281,39 @@ mod tests {
     #[test]
     fn scan_rejects_non_directories() {
         assert!(scan_dir(std::path::Path::new("Z:/definitely/not/a/dir")).is_err());
+    }
+
+    #[test]
+    fn explorer_arg_rejects_a_missing_file() {
+        let missing =
+            std::env::temp_dir().join(format!("av-showfolder-missing-{}.mp4", std::process::id()));
+        assert!(explorer_select_arg(&missing.to_string_lossy()).is_err());
+    }
+
+    #[test]
+    fn explorer_arg_rejects_a_directory() {
+        // is_file() is false for a directory too — the same refusal as a
+        // missing path, not a special case.
+        let dir = std::env::temp_dir().join(format!("av-showfolder-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        assert!(explorer_select_arg(&dir.to_string_lossy()).is_err());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn explorer_arg_is_one_argument_with_no_space_before_the_path() {
+        let dir = std::env::temp_dir().join(format!("av-showfolder-ok-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("out.mp4");
+        std::fs::write(&file, b"junk").unwrap();
+
+        let arg = explorer_select_arg(&file.to_string_lossy()).unwrap();
+        assert_eq!(arg, format!("/select,{}", file.display()));
+        // The whole point of the one-argument form: no space after the comma.
+        assert!(!arg.contains(", "));
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
