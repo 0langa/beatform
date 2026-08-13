@@ -1,385 +1,334 @@
+<!-- GENERATED from src/ui/guideContent.ts — edit that, then `npm run build:guide`. -->
+
 # User guide
 
-Everything the app does, panel by panel — all of it also lives in the app
-itself: the **User guide** button in the shortcut overlay (press `H`) opens
-a 13-section in-app walkthrough. Keyboard shortcuts: press `H` (or
-`?`) in the app (Space play/pause, P/N switch mode, G Visuals, T timeline,
-B batch, Q library, L loop, I/O set A-B markers, F fullscreen, S stage,
-Ctrl+Z undo, Esc close). Every performance shortcut has a letter or digit as
-its primary binding, so it sits on the same labeled key on every keyboard
-layout — QWERTZ, AZERTY and friends included. The punctuation aliases a few
-of them also answer to (`[`, `]`, `\`, `.`) are bound by physical key
-position rather than by the printed character, for the same reason.
+<a id="start"></a>
 
-## Playback and A-B loops
+## Getting started
 
-The player seek bar supports a session-only loop region for tuning a look
-against one drop or phrase:
+Beatform turns music into visuals — live on your screen, and rendered to video files that look exactly like the preview. Everything runs locally on your machine: no account, no uploads, no telemetry.
 
-1. Press **I** at the start and **O** at the end, or click the **A** and **B**
-   buttons beside the loop control.
-2. Drag either labeled marker on the seek bar for precise adjustment.
-3. Press **L** (or the loop icon). With both markers set, only that region
-   loops; without them, the same control loops the whole track.
-4. Click **×** beside A/B to clear the region without turning whole-track loop
-   off.
+### Your first minute
 
-Markers reset when a different track loads. They are preview workflow state,
-not project or export data.
+1. **Load music.** Drop an audio file anywhere on the window (MP3, FLAC, WAV, OGG or M4A), click _Browse files_, or try one of the built-in demo tracks. Beatform analyzes the track for tempo, key and loudness in the background.
+2. **Press Space.** The visual reacts to the music immediately.
+3. **Try the modes.** The strip at the top holds every visual mode — click one, or walk through them with <kbd>N</kbd> and <kbd>P</kbd>.
+4. **Open Visuals** with <kbd>G</kbd> (or the sliders icon, top right) to shape the look of the current mode. The rail down its left side holds eight pages: Mode, Global motion, Looks & themes, Sync, Modulation, Scene, Text and Live.
+
+Visuals is a dock, not an overlay: the picture keeps the whole window and the dock floats over it, so you can watch a slider land while you drag it. Drag its left edge to resize (or focus that edge and use the arrow keys — Shift for bigger steps, Home/End for the extremes); the width and the page you were last on are both remembered. Pages themselves never fold away — it's the control groups within a page, like Mode's Shape and Color, that fold, and each one remembers whether you left it open.
+
+When something looks wrong or you get lost, _Project ▸ New project_ resets the whole document to clean defaults — one <kbd>Ctrl+Z</kbd> undoes even that.
+
+### Loop a section while you tune
+
+Press <kbd>I</kbd> at the start of a drop and <kbd>O</kbd> at the end, or use the **A**/**B** buttons beside the player. The selected region appears on the seek bar; drag either marker to adjust it, then press <kbd>L</kbd> to loop it. Click **×** beside A/B to clear the markers without turning the loop off — <kbd>L</kbd> then covers the whole track again. A-B markers are session-only and reset when another track loads.
+
+One bit of vocabulary that comes up throughout the rest of this guide: a **Style** is a chip a visual ships with, a **Look** is a control set you save for one mode, a **Theme** is a whole document in one file, and the **Gallery** is where other people's looks and themes live.
+
+<a id="modes"></a>
 
 ## Visual modes
 
-Sixteen modes on the strip: Spectrum Bars, Radial Burst, Oscilloscope,
-Particles, Tunnel, Kaleido Nebula, Metaballs, LED Matrix, Voice Orb, Echo
-Trails, Particle Flow (120k GPU particles), Spectrum Scape (3D), Aurora,
-Synthwave, Bass Circle, and **Builder** (the layer compositor, below).
-Every mode but Builder has curated **styles** (one-click looks — six to
-fourteen of them, depending on the mode) and sorts its controls into groups.
-A group leads with the few controls that change the look, then a line
-reading **3 expert controls** folding away that group's internal constants —
-closed until you click it, and marked **_n_ changed** once you move one of
-them. **Show every control**, below the groups, opens every expert line at
-once; it then reads **Hide expert controls**. Search reaches expert controls
-whether their line is open or not.
+Sixteen modes live on the strip — from classic spectrum bars to 120k-particle flow fields and a full 3D bar city. Every mode except Builder, which stacks its own layers instead, has:
 
-Bass Circle and Radial Burst show artwork in their center: the track's
-**embedded cover art** by default, or any image you choose via the
-**Center image** row (saved per mode). Both also carry a **Match cover
-colors** toggle, which analyzes whichever image is displayed and sets Hue +
-Hue spread to fit it — automatically again on every new track. Two other
-modes use cover art differently: Tunnel can paper the tunnel wall with it
-(**Cover wall**), and Echo Trails offers it as a **Source shape**. Hover
-any control for a plain-language hint, which appears at the bottom of the
-Visuals dock.
+- **Styles** — six to fourteen curated one-click looks, in a row of chips at the top of the Mode page. The header above the page names the style you are on; the chip row reads _Custom_ once you move a control away from it.
+- **Grouped controls** — Shape, Color, Motion, Reaction, Glow, Image, Camera, Backdrop, and _More_ for anything that fits none of them. Every group a visual uses is on the page, and each one leads with the handful of controls that change the look.
+- **An expert line per group** — a row reading _3 expert controls_ folds that group's internal constants away until you click it, and reads _n changed_ once you move one of them. _Show every control_, below the groups, opens all of them at once and then reads _Hide expert controls_.
 
-## The Visuals dock
+Hover any control to see a plain-language hint in the Visuals footer. The search box at the top of Visuals finds any control by name, across every page of the dock — expert controls included, whether their line is open or not.
 
-**G** opens **Visuals**, the panel on the right that holds every control for
-the visual you are building. It is a dock, not an overlay: the picture
-runs full width behind it, so you can watch a slider
-land while you are dragging it. Drag its left edge to resize (or focus the
-edge and use the arrow keys — Shift for larger steps, Home/End for the
-extremes); the width is remembered. **Stage mode** (**S**) hides it entirely.
+### Center images
 
-Down its left side is the **section rail** — eight destinations, one page
-each:
+Bass Circle and Radial Burst can display artwork in their center: by default the track's embedded cover art, or any image you choose (look for _Center image_ in the Image group on the Mode page). Both also carry a _Match cover colors_ toggle, which reads the dominant color of that artwork and sets Hue and Hue spread to fit — automatically again for every new track. Two more modes use cover art their own way: Tunnel can paper the tunnel wall with it (the **Cover wall** control), and Echo Trails can use it as the shape it echoes (**Source shape**).
 
-| Destination        | What is on it                                                |
-| ------------------ | ------------------------------------------------------------ |
-| **Mode**           | The active visual: its styles and every one of its controls  |
-| **Global motion**  | The rotation / pulse / detail masters every visual obeys     |
-| **Looks & themes** | Your saved looks, whole-project themes, the Gallery shortcut |
-| **Sync**           | What the visual reacts to, and how hard                      |
-| **Modulation**     | Routes and stems — audio and LFOs onto individual controls   |
-| **Scene**          | Background, frame, post-processing, overlay layers           |
-| **Text**           | Lyrics and the audiogram strip                               |
-| **Live**           | Beat-quantized mode switching and MIDI                       |
+### Your own shaders
 
-Click a destination to go there; the arrow keys walk the rail (the whole
-rail is one Tab stop). Modulation, Scene and Live show a small count when
-you have routes, overlay layers or MIDI bindings. A destination the current
-visual cannot use — Global motion on a visual that has nothing to rotate or
-pulse — is dimmed and says why on hover, pointing you at that visual's own
-Motion group on Mode. A header above the page always names the
-mode you are editing, plus its style when one is exactly applied. The page
-you were last on is remembered.
+The _+_ chip at the end of the strip opens the shader editor, where you can write a WGSL fragment of your own — it becomes a first-class mode, saved into your projects and shareable as a `.bfshader` file. Its _Shadertoy…_ button takes the Image tab of a single-pass Shadertoy shader and translates it to WGSL on the spot, keeping the author and license with the visual. Both need hardware rendering: on the simplified Canvas2D fallback the _+_ chip is switched off.
 
-Pages do not fold. The **control groups** on the Mode page (Shape, Color,
-Motion, Reaction, Glow, Image, Camera, Backdrop) still do, and remember it.
-Every group a visual declares appears, each showing at least one control
-above its expert line. The **search box** spans the top of the dock and
-ignores the rail entirely — it finds a control by name wherever it lives,
-including behind a closed expert line or a collapsed group.
+### Global motion
+
+Visuals ▸ Global motion holds three masters that scale a mode's own motion up or down: **Rotation** (spin) and **Pulse** (beat pumping) each run 0–200%, and **Detail** (how many bars, points or segments it draws) runs 0–100% — dial a look calmer or wilder from one place. A slider only appears when the current mode can actually move that way, and exports match whatever you set.
+
+There's a fourth master too: spectrum smoothing is a motion setting, but its slider lives on Sync beside the other spectrum controls rather than here — the page's name says which of the two kinds of motion control this is, since a visual's own motion controls sit in the Motion group on Mode instead. On a visual that has nothing to rotate or pulse, the Global motion destination itself is dimmed and says so.
+
+<a id="builder"></a>
 
 ## Builder
 
-A real layer compositor: stack up to twelve layers from nine types
-(background wash, particles, spectrum bars, radial ring, pulse rings,
-waveform circle, orb core, wave line, vignette) — the same type as often as
-you like. Every layer has its own on/off, opacity, **blend mode**
-(Normal / Add / Screen), color (hue + spread) and controls; reorder with
-▲▼, duplicate with ⧉. Stacks save inside your project, and
-**Export .bfbuilder** shares a stack as a single file anyone can import.
+Builder is a layer compositor: stack up to twelve layers from nine types — background wash, particles, spectrum bars, radial ring, pulse rings, waveform circle, orb core, wave line and vignette. Use the same type as often as you like.
 
-Builder has no style chips. In their place it ships six whole-stack starting
-points — Classic, Neon club, Sunset drive, Deep space, Cathedral, Phosphor.
-It renders through WGSL codegen, so it is WebGPU-only and switched off on the
-Canvas2D fallback.
+Builder has no style chips. Instead it ships six whole-stack starting points — Classic, Neon club, Sunset drive, Deep space, Cathedral and Phosphor — at the top of its panel. Pick one, then take it apart. Builder renders through WGSL codegen, so it needs hardware rendering and is switched off on the simplified Canvas2D fallback.
 
-## Sync — what drives the motion
+Every layer has:
 
-_Visuals ▸ Sync_ routes ONE source to the current mode: **Kicks** (default),
-Energy, Bass, Melody, Voice, Treble, Snare, or Hats. The choice is saved per
-mode, so a vocal-heavy mode can sit on Voice while the rest stay on Kicks.
-Smoothing has a macro slider plus independent **Attack**/**Release** for
-punchy-in, ease-out reactions.
+- its own on/off toggle and opacity,
+- a **blend mode** (Normal, Add, Screen),
+- color (hue + spread) and its own controls,
+- reorder arrows and a duplicate button.
 
-Everything below the source buttons except Smoothing/Attack/Release only
-appears on modes that draw a spectrum. On the others, Sync is the eight
-source buttons and the response feel, and nothing else.
+Stacks are saved inside your project like any other setting. _Export .bfbuilder_ writes a stack as a single small file anyone can import — a good way to share looks.
 
-Modes that draw the spectrum also get three **shape** controls (saved per
-mode and included in exports): **Merge** melts isolated spikes into
-one connected silhouette (each bar props up its neighbors, Monstercat-style),
-**Rounding** averages neighboring bars — real smoothing, unlike the _Smooth
-curve_ spline which only rounds corners between still-spiky values — and
-**Contrast** flattens (below 50%) or exaggerates (above 50%) the peaks. They
-shape the drawn bars only; the sync feel (attack/release, beat pulses) is
-untouched.
+<a id="sync"></a>
 
-**Resolution** controls only the spectrum that is drawn. Its three buttons are
-labelled with the window they actually produce at your device's sample rate —
-roughly **85 ms**, **170 ms** and **340 ms** — rather than with adjectives; the
-second doubles the first and the third quadruples it, subject to the
-32768-point Web Audio ceiling. A longer window separates closer low tones but
-necessarily carries more audio history, and each button spells out the visual
-latency that costs. It never changes kicks, beats, band energies, or sync
-timing: those stay on the responsive detector FFT.
+## Sync & reactivity
 
-**Axis** chooses Musical (logarithmic, equal width per octave) or Linear
-(equal hertz per horizontal step). **Sampling** chooses **96 bands**, which
-resamples the transform into the authored 96-bar budget, or **FFT bins**,
-which reads integer transform bins only. FFT-bin mode is linear and uses fewer
-bars when the selected range physically contains fewer than 96 bins. The
-readout below the controls reports the actual device-rate window, hertz per
-bin, native bin count, and rendered count rather than implying detail that the
-transform does not contain.
+The Sync page routes **one source** to the current mode: **Kicks** (default), Energy, Bass, Melody, Voice, Treble, Snare or Hats. Pick what should drive the motion — a vocal-heavy track often looks better on Voice than on Kicks — and the choice is saved per mode, so one mode can sit on Voice while the rest stay on Kicks.
 
-**Low edge** and **High edge** set the frequency span the bars cover. Raising
-the low edge (10–500 Hz) stops spending bars on sub-bass the track does not
-have; lowering the high edge gives a narrow musical range more of the width.
-High edge runs from 22 kHz all the way down to 200 Hz, so the bars can cover
-nothing but the low end for an analyzer-style view.
+### Response feel
 
-Two kinds of beat reaction work together:
+**Smoothing** sets the overall response: 0 is punchy, 1 glides. For asymmetric feel, set **Attack** (how fast the reaction rises) and **Release** (how slowly it falls) separately.
 
-- **Onset pulses** fire on actual hits in the selected band.
-- **Beat-grid pulses** ride the track's detected tempo grid (BPM shown in the
-  Visuals footer), landing on every metronome beat — Synthwave's grid scrolls
-  exactly one line per beat, Tunnel launches a light ring per beat that
-  arrives as the next one lands, Bass Circle pumps on the grid. Tracks
-  without a detectable grid fall back to onset pulses automatically.
+### Shaping the drawn spectrum
 
-_Visuals ▸ Global motion_ holds three **motion masters**: **Rotation**,
-**Pulse** and **Detail** (element count), each scaled globally — dial the
-whole app calmer or wilder from one place. Each slider only appears on modes
-it can actually move. The fourth master, spectrum smoothing, is a motion
-setting but its slider lives on Sync beside the other spectrum controls. The
-name says which of the two kinds this page is: a visual's own motion controls
-sit in the Motion group on Mode. On a visual that has nothing to rotate or
-pulse the destination is dimmed and tells you so.
+In modes that draw the spectrum, a cluster of controls governs how much detail it shows and how the bars themselves look.
 
-_Visuals ▸ Modulation_ aims one signal at one knob. It is **target-first**:
-pick a control from **+ Modulate a control…** and you get a card for it, then
-add the sources that should move it. The target list covers this visual's own
-controls **and the post-processing chain** (Exposure, Bloom, Bloom threshold,
-Vignette, Chromatic, Film grain) — so the kick can drive Chromatic, bass can
-breathe the Bloom, and the whole look moves with the track.
+**Resolution** controls only the spectrum that's drawn: its three buttons are labeled with the actual window they produce at your device's sample rate — roughly 85 ms, 170 ms and 340 ms — rather than with adjectives, each one doubling the last, up to the 32768-point ceiling Web Audio itself imposes. A longer window resolves closer low tones but carries more audio history, so each button also states the visual latency that costs.
 
-Each route has a **Depth** — the share of the knob's own range added at full
-signal, negative to pull the other way — and, behind the card's chevron, a
-response curve (**Linear** / **Exp** / **Smooth**) with **Rise** and **Fall**
-so it punches or eases. Six one-click **recipes** (Kick punch, Bass swell,
-Beat sway, Bar sweep, Drop brightness, Hat sparkle) give you a working route
-to edit rather than a blank page.
+**Axis** chooses Musical — a log axis, equal width per octave — or Linear, equal hertz per horizontal step. **Sampling** chooses 96 bands, which resamples the transform to keep the usual 96-bar layout, or FFT bins, which reads the transform's own integer bins directly: linear only, and fewer than 96 bars wherever the selected range physically contains fewer.
 
-Sources are the drums and bands (kick, snare, hats, bass, mids, treble,
-voice), the track-wide signals (loudness, energy, stereo width, section
-change, beat phase, bar phase), the lyric line when one is loaded, any
-imported stem's bands, and eighteen tempo-synced **LFOs** — sine, saw or
-square across ¼ beat to 8 beats — for movement that does not wait on the
-music.
+Three more controls shape the bars themselves:
 
-A **Driven by** row above the cards carries one live meter per source in
-use; click a chip to filter the cards down to what that source moves. And
-wherever the knob itself lives — Mode, or Post on Scene — the slider takes a
-**driven** mark while it plays, and its group header counts how many of its
-controls are driven. The slider keeps showing your base value; modulation
-moves around it. Exports resolve routes from the same track-time functions.
+- **Merge** — bars prop up their neighbors, melting lone spikes into one connected silhouette (the "Monstercat" look).
+- **Rounding** — averages neighboring bars: real smoothing that removes hard spikes rather than just curving between them.
+- **Contrast** — below 50% flattens toward fuller, calmer bars; above 50% exaggerates peaks. 50% is neutral.
 
-## Layers
+**Low edge** and **High edge** set the frequency span the bars cover: raise the low edge (10–500 Hz) to stop spending bars on sub-bass a track doesn't have, or lower the high edge — it runs from 22 kHz all the way down to 200 Hz — to give a narrow musical range more of the width.
 
-Text (with `{title}` / `{artist}` filled from the track's tags), logo
-images, or the track's embedded album art. Nine-point anchoring and fractional
-sizing use one layout model in preview and export; raster pixels vary with
-target resolution.
+A live readout below the controls spells out exactly what you're looking at: the real window and visual latency at your device's sample rate, hertz per bin, how many native bins fall in range, and how many bars or bands are actually drawn — so nothing here implies more detail than the transform contains. None of it touches what the visual reacts to, though: kicks, beats, band energies and sync timing all stay on the fast, fixed-resolution detector, and everything here is saved per mode and applies identically in exports.
+
+### Beat reaction
+
+Two kinds of beat reaction work together: **onset pulses** fire on an actual hit in the selected band, and **beat-grid pulses** ride the track's detected tempo grid instead, landing on every metronome beat (the BPM is shown in the Visuals footer).
+
+Synthwave's grid scrolls exactly one line per beat, Tunnel launches a light ring that arrives just as the next one lands, and Bass Circle pumps on the grid. A track with no detectable grid falls back to onset pulses automatically.
+
+### Modulation
+
+Sync gives the whole visual one feeling. Modulation aims a specific signal at a specific knob — kick pumps the zoom, hats flicker the glow.
+
+The page is target-first: start from _+ Modulate a control…_ and pick the knob you want moved, and you get a card for it. Every knob of the current visual is offered, plus the whole post-processing chain — exposure, bloom, bloom threshold, vignette, chromatic and film grain — so the kick can drive Chromatic and the bass can breathe the Bloom. Each route on a card picks what drives it and a **Depth**: the share of that knob's own range added at full signal, negative to pull the other way. Open the card's chevron for the response _shape_ — Linear, Exp or Smooth — plus **Rise** and **Fall**, so a route punches or eases. Six one-click **recipes** (Kick punch, Bass swell, Beat sway, Bar sweep, Drop brightness, Hat sparkle) give you a working route to edit instead of a blank page.
+
+Sources cover the drums and bands, the track-wide signals, the lyric line when one is loaded, and any imported stem's bands:
+
+- **Drive**
+- **Drive pulse**
+- **Kick**
+- **Snare**
+- **Hats**
+- **Bass**
+- **Mids**
+- **Treble**
+- **Voice**
+- **Vocals (lyrics)**
+- **Section change**
+- **Loudness**
+- **Energy**
+- **Stereo width**
+- **Beat phase**
+- **Bar phase**
+
+Eighteen tempo-synced **LFOs** — sine, saw or square across ¼ beat to 8 beats — for movement that does not wait on the music.
+
+A **Driven by** row above the cards shows one live meter per source actually in use; click one to see only the controls it moves. And wherever the knob itself lives — on Mode, or in the Post section on Scene — the slider picks up a _driven_ mark while it plays, and its group header counts how many of its controls are driven. The slider still shows your base value; modulation moves around it.
+
+Import a stem (a drums/bass/vocals bounce starting at 0:00) with _+ Add stem…_ — up to four. It is analyzed once and never played, and its bands become extra sources; the ✦ button on a stem chip auto-wires its kick/bass/snare/hats/mids to the best-matching knobs of the current mode.
+
+<a id="scene"></a>
+
+## Backgrounds & scene
+
+### Backgrounds
+
+The Scene page picks what sits behind the visualization:
+
+- **Animated** — the mode's own moving background.
+- **Solid** — a flat color, including chroma green/magenta for keying.
+- **Transparent** — see-through (checkerboard in the preview); pair with the alpha export formats.
+- **Image** — your own picture or the track's album art, with blur and dim.
+- **Video** (desktop) — a short local clip looped behind the visual, deterministic so exports match the preview.
+
+Image and video both get the same framing row: a fit of _Fill_, _Fit_ or _Stretch_, plus Zoom and X/Y pan when you want a particular part of the picture in shot.
+
+Backgrounds can be scoped with the switch at the top of the Background section: **All modes** or **This mode**. A per-mode background wins over the shared one, so Spectrum Bars can sit on your video loop while Bass Circle keeps its animated backdrop.
+
+### Post effects
+
+The Post section holds a _Filmic tonemap_ toggle and six sliders — Exposure, Bloom, Bloom threshold, Vignette, Chromatic and Film grain (deterministic, so it renders the same every time). All of it is in the Scene page and all of it renders identically in exports. Bloom plus a dark background is the fastest way to make any mode look "produced". These six sliders are also modulation targets, so the post chain can move with the track.
+
+### Aspect
+
+The frame aspect (Fill, 16:9, 9:16, 1:1) is a project setting — visuals compose into the frame, so vertical exports for Shorts/Reels look designed, not cropped.
+
+<a id="overlays"></a>
+
+## Text, lyrics & audiogram
+
+### Text and images
+
+The Scene page's Layers section adds text and image overlays. Text supports `{title}` and `{artist}` placeholders filled from the track's tags; images can be your logo or the embedded album art. Layers anchor to nine positions and scale fractionally — they render identically in exports.
+
+### Lyrics
+
+Drop an `.lrc` or `.srt` file onto the window — the current line follows the music karaoke-style, live and in every export. Position, size, color, fade timing and an _Animation_ (Plain, Slide up, Pop, or Karaoke — the line fills bright left to right as it is sung) live on the Text page. Drop the lyrics alongside the track or after it — they attach to the loaded track just like an imported stem does.
+
+### Generate lyrics (desktop)
+
+No .lrc at hand? The Text page can generate timed lyrics from the loaded track, entirely on your PC. The mix is transcribed by OpenAI's Whisper running on whisper.cpp; in parallel, an Ultimate Vocal Remover (UVR) MDX-Net model isolates the vocal, and each word is then timed against that isolated vocal by a wav2vec2 forced aligner — so the karaoke fill follows the singer word by word. (Enhanced .lrc files with word tags from other tools get the same per-word fill when imported.) The AI models download once (size and a time estimate are shown first, and each one is checksum-verified) and nothing ever leaves your machine. Sung words are hard even for good models — expect to fix a few lines, and thanks to the UVR and whisper.cpp projects for making local isolation and transcription possible.
+
+### Edit lyrics
+
+Once a track has lyrics — imported or generated — the Text page's **Edit lyrics** section turns every line into something you can fix by hand: click a line to select it, click its time to jump the track there, or double-click the time to type an exact one.
+
+A selected line's toolbar can nudge it earlier or later, split it at the text cursor, merge it into the next line, insert an empty line above or below, delete it (<kbd>Ctrl+Z</kbd> brings it straight back), or re-align it — re-running the word aligner against the isolated vocal for that line's text (desktop only, once the lyrics models are downloaded and a track is loaded). Lines the aligner wasn't confident about are flagged red or amber, and a **⚑ next** button jumps to the next one.
+
+Opening a line's word view breaks the karaoke timing down word by word: edit a word's text, nudge its start time, or reset the whole line with **⇤⇥ even** to space every word out evenly when the alignment came out scrambled. Editing here has its own undo/redo (<kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>), separate from the rest of the app, and **Save .lrc** writes the corrected lyrics back out, word timing included.
+
+### Audiogram
+
+The audiogram adds podcast/reel-style track-driven elements, each its own toggle: a _Progress bar_, a _Time readout_ (elapsed / total) and a _Waveform strip_ with a moving playhead. Once any of them is on, you also get an accent color and a Position of Top or Bottom.
+
+<a id="timeline"></a>
 
 ## Timeline
 
-Press **T**: scenes switch visual modes at beats (drag snaps to the grid),
-automation lanes keyframe any parameter, and each scene picks a **Transition**
-for its incoming fade — Crossfade, Wipe →, Wipe ↑, Iris, Zoom, Glitch, or
-Hard cut. Click a keyframe dot to cycle its curve (linear/smooth/hold);
-right-click removes it, and a selected keyframe can be nudged with the arrow
-keys or removed with Delete. **✦ Auto-arrange** builds a scene arrangement
-from the song's detected sections in one click.
+Press <kbd>T</kbd>. Scenes switch visual modes at chosen beats (drags snap to the detected grid), and automation lanes keyframe any control over time. Each scene picks a transition for its incoming edge: Crossfade, Wipe →, Wipe ↑, Iris, Zoom, Glitch or Hard cut.
 
-## Library and live input (desktop)
+- Click a keyframe dot to cycle its curve: linear → smooth → hold.
+- Right-click a keyframe to remove it — or select it and press <kbd>Del</kbd>. The arrow keys nudge a selected keyframe.
+- **✦ Auto-arrange** builds a scene arrangement from the song's detected sections in one click.
 
-- **Q** opens the music library: pick your folder once, every track appears
-  with real tags; click to play; finished tracks flow into the next
-  near-gaplessly.
-- The **broadcast icon** visualizes whatever Windows is playing — Spotify, a
-  browser, a DAW — via native loopback. Analysis-only: nothing echoes back
-  out. Play/pause stops listening.
+**Good to know:** while the timeline is enabled, scenes override the mode strip and keyframes override the controls — that's the point, but it can look like the Visuals dock has stopped responding if you forget it's on. Turn the timeline off (or use _Project ▸ New project_) to get direct control back.
+
+<a id="library"></a>
+
+## Library & live input
+
+Both of these are desktop-only — they need the installed app, not the browser build.
+
+### Music library
+
+Press <kbd>Q</kbd> and point Beatform at your music folder once — every track appears with its real tags. Click to play; with _Auto-play next_ on, finished tracks flow into the next one near-gaplessly (the next file is decoded while the current one plays).
+
+### Visualize the whole system
+
+The broadcast icon in the top bar visualizes whatever Windows is playing — Spotify, a browser, a DAW — through native loopback capture. It's analysis-only: nothing is echoed back out, and pressing play on a file stops the capture.
+
+<a id="live"></a>
 
 ## Live performance
 
-Beatform doubles as a live/VJ tool. Everything here is preview-only — it never
-changes an export.
+- **Switch hands-free.** Number keys <kbd>1</kbd>–<kbd>9</kbd> jump to a mode. With _Live ▸ Quantize_ set to Beat or Bar, the switch waits and lands exactly on the grid — the queued chip pulses until it takes over.
+- **Stage mode** (<kbd>S</kbd>) hides every piece of chrome and the cursor for a clean full-bleed output — project it, capture it, or screen-share it. The mode name flashes briefly on each switch so you can drive blind.
+- **Blackout** (<kbd>0</kbd> in Stage mode) cuts to black — the classic VJ cut. <kbd>Esc</kbd> exits everything.
+- **MIDI** (the Live page): map a controller's knobs to any parameter and pads to modes. _Learn CC_, then move a knob, binds it to the selected parameter. The _Learn note →_ button always names whichever mode you currently have open — switch to that mode first, click it, then play a pad to bind that note to switching there (note switches obey the beat-quantize too). Bindings are remembered.
 
-- **Jump between modes hands-free.** Number keys **1–9** (or clicking a mode
-  chip) switch the visual. With **Visuals ▸ Live ▸ Quantize** set to **Beat**
-  or **Bar**, the switch doesn't happen instantly — it waits and lands exactly
-  on the next beat/bar of the detected grid, Ableton-session-launch style. The
-  queued mode's chip pulses until it takes over. Off = instant.
-- **Stage mode** (the monitor icon, or **S**) hides all the chrome and the
-  cursor for a clean, full-bleed output — for a projector, a capture card, or
-  screen-share. The mode name flashes briefly on each switch so you can drive
-  blind. **0** blacks out (the VJ cut — 1–9 pick modes, 0 cuts to black);
-  **Esc** exits.
-- **MIDI** (Visuals ▸ Live ▸ MIDI ▸ Enable, on Chromium-based builds): map a
-  controller's knobs and pads. **Learn CC** then move a knob to bind it to the
-  selected parameter; **Learn note → &lt;mode&gt;** then play a note to switch to
-  that mode (it obeys the beat-quantize too). Bindings are remembered. Local
-  only, no drivers.
-- Pair Stage mode with the **broadcast icon** (loopback, below) and you have a
-  live rig: visualize whatever the PC is playing, switch on the beat by hand or
-  MIDI, output clean and full-screen.
+Everything here is preview-only — a live session never changes what an export renders.
 
-## Lyrics
+<a id="export"></a>
 
-Drop an `.lrc` file (any lyrics site exports them) or `.srt` subtitles onto
-the window — the current line follows the music, karaoke-style, live and in
-every export. Position/size/color, an **Animation** (**Plain** / **Slide up**
-/ **Pop**, or **Karaoke** — the line fills bright left-to-right as it's sung)
-and fade live on _Visuals ▸ Text_. Drop the lyrics together with
-the track or after it; they attach to the loaded track like stems do.
+## Export & batch
 
-**Generating them (desktop):** with no .lrc at hand, _Visuals ▸ Text_ can
-build timed lyrics from the loaded track without anything leaving the
-machine. Whisper (on whisper.cpp) transcribes the mix; a UVR MDX-Net model
-isolates the vocal; a wav2vec2 forced aligner then times each word against
-that isolated vocal, which is what makes the per-word karaoke fill possible.
-The models download once — sizes and a time estimate first, each one
-SHA-256-verified and discarded on mismatch.
+Exports render every frame off-screen from deterministic track time. Preview and export share project, DSP, and shader code; live device timing and cross-GPU pixels are measured, not claimed identical — the exact scope and tolerances are in the [preview/export truth contract](https://0langa.github.io/beatform/PREVIEW-EXPORT-CONTRACT). Formats:
 
-## Stems
+The dialog asks for a **Type** first — a normal _Video_ render, or a _Canvas loop_ — and then a **Format**:
 
-Import a stem (drums/bass/vocals bounced from 0:00) on
-_Visuals ▸ Modulation_ — it's analyzed once, never played, and its bands
-become modulation sources. Hit the **✦** on a stem chip to auto-wire its
-kick/bass/snare/hats/mids to the best-matching knobs of the current visual;
-tweak the amounts from there.
+- **MP4** — H.264 everywhere; HEVC and AV1 appear as codec choices where your GPU encodes them. Auto or manual bitrate (2–60 Mbps), and optional loudness normalization to −14/−16/−23 LUFS with a −1 dBTP ceiling (audio only — pixels unchanged).
+- **WebM VP9 + alpha** — not a separate format but the _VP9 + alpha_ codec under MP4, which writes a transparent `.webm` for OBS overlays and web embeds (set Background to Transparent).
+- **PNG frames** — numbered stills with alpha for compositing.
+- **ProRes** (desktop) — a 4444 .mov with alpha and untouched PCM audio, straight into Premiere, Resolve or After Effects.
+- **AV1 10-bit** (desktop) — a genuine 10-bit MP4 tapped before the 8-bit swapchain, so wide gradients keep their levels instead of banding.
+- **GIF / animated WebP** (desktop) — loop files; WebP keeps alpha.
 
-## Audiogram
+Resolutions follow the project's frame aspect — 720p through 4K on 16:9, 1080×1920 and 2160×3840 on 9:16, 1080×1080 on square — at 30 or 60 fps. **Canvas loop** is the Type, not a format: a 3–8 s seamless 1080×1920 loop at 30 fps whose tail crossfades into its head, made for Spotify Canvas — which only accepts MP4, so choosing it turns off PNG, ProRes and AV1 (GIF and WebP stay available, since a seamless loop is what they're for too).
 
-_Visuals ▸ Text_ also carries the **Audiogram** section: three track-driven
-overlay elements, each its own toggle — **Progress bar**, **Time readout**
-(elapsed / total), and **Waveform strip**, a mini overview with a moving
-playhead (the podcast/reel look). Turn any of them on and you also get an
-**Accent** color and a **Position** of Top or Bottom; exports use the same
-timed overlay definition.
+### Batch
 
-## Export
+Press <kbd>B</kbd>, drop a folder of tracks, and Beatform renders one video per track, titled from each file's own tags (anything untagged falls back to the filename and is flagged). A failed file costs that one video, never the whole night — and if you cancel a run, the jobs it never reached stay queued so you can resume or retry them. That queue lives in the session: closing the app clears it.
 
-The dialog asks for a **Type** — _Video_ or _Canvas loop_ — and then a
-**Format**. MP4, PNG frames and (desktop only) ProRes, AV1 10-bit, GIF and
-WebP are the formats; VP9 + alpha is a **codec** inside MP4, and Canvas loop
-is a Type rather than a format.
+<a id="projects"></a>
 
-- **MP4** — H.264 everywhere; **HEVC/AV1** appear as codec choices where your
-  GPU supports them (probed automatically; codec choice leaves the raw render
-  unchanged). 30/60 fps, auto or manual bitrate (2–60 Mbps). Optional
-  **loudness normalization** to −14 / −16 / −23 LUFS with a −1 dBTP true-peak
-  ceiling (audio only — pixels unchanged).
-- **Resolutions follow the frame aspect**: 720p / 1080p / 1440p / 4K on 16:9,
-  1080×1920 and 2160×3840 on 9:16, 1080×1080 on 1:1. A vertical project is
-  never offered a landscape size.
-- **AV1 10-bit** (desktop) — a real 10-bit MP4 (yuv420p10le, BT.709) tapped at
-  16-bit float before the 8-bit swapchain, so wide gradients keep their levels
-  instead of banding.
-- **Video** — pick a short local clip to loop behind the visualization
-  (desktop): Fill / Fit / Stretch with zoom and pan, dimmable, deterministic
-  (the frame for each moment is a
-  pure function of track time in both paths). Decoded to a fixed loop of the
-  first seconds; raster output still follows the truth-contract tolerances.
-- **Per-mode backgrounds** — the Background section's scope switch ("All
-  modes" / "This mode") gives any mode its own background, image and video
-  included: Spectrum Bars can sit on your video loop while Bass Circle keeps
-  its animated backdrop. Modes without an override follow the shared one.
-- **WebM VP9 + alpha** — pick the _VP9 + alpha_ codec to write a transparent
-  `.webm` (color + alpha planes, Opus audio) for OBS overlays and web embeds.
-  Set Background to Transparent.
-- **PNG frames** — numbered stills with alpha (set Background to
-  Transparent) for compositing.
-- **ProRes 4444** (the _ProRes_ format) — one `.mov` with alpha + untouched
-  PCM audio, straight into Premiere/Resolve/AE. Encoded by the bundled LGPL
-  ffmpeg.
-- **GIF / animated WebP** — loop files via the bundled ffmpeg, no audio.
-  Pair with Canvas loop mode for a seamless loop; WebP keeps alpha.
-- **Canvas loop** — a 3–8 s seamless loop at 1080×1920/30 for Spotify
-  Canvas; the tail crossfades into the head. Selecting it disables PNG,
-  ProRes and AV1.
-- **Batch** (**B**) — one video per dropped track, titled from each file's
-  own tags (untagged files fall back to the filename and are flagged). A
-  failed file costs that one video, never the night; cancel a run and the
-  jobs it never reached stay queued for a resume or retry. That queue is
-  session state — it does not survive closing the app.
+## Projects & sharing
 
-Exports render offline in a worker: the UI stays live, indexed audio/video
-timestamps prevent accumulated drift, and on desktop the file streams to disk
-so hour-long renders hold flat memory. Preview parity scope and tolerances:
-[preview/export truth contract](PREVIEW-EXPORT-CONTRACT.md).
+- **Projects** (<kbd>Ctrl+S</kbd> / <kbd>Ctrl+O</kbd>) — a single `.bfproj` file holds everything: mode, controls, sync, backgrounds, overlays, timeline, Builder stacks, lyrics style, audiogram, even embedded images. Opening it on another machine restores the exact setup.
+- **Themes** — _Visuals ▸ Looks & themes_ exports the whole current look as a `.bftheme` anyone can drop onto their Beatform window.
+- **Builder stacks** — `.bfbuilder` files share a single Builder creation.
+- **Your looks** — _Save look_ (in the page header, or on _Looks & themes_) stores the current control values for one mode, locally, and exports as a `.bfpreset`. The visual's factory style chips stay on Mode, beside the header that names the active one.
 
-## Preferences & updates
+### Never lose work
 
-The **gear icon** in the top bar (or **Ctrl+,**) opens **Preferences** — the
-choices that follow the app rather than the project, so nothing here is saved
-into a `.bfproj`. Four sections: **General** (autosave delay on desktop, the
-remembered save-dialog folder), **Modes** (drag the mode strip into your own
-order — which is also the order **1**–**9** jump to), **Performance** (a
-**live-preview frame cap** of Display / 60 / 30 and a **preview resolution**
-of Native / 75% / 50% — exports always render every frame at full size; a
-**GPU preference** for dual-GPU laptops, applied on the next launch; and
-**Performance display**, a live FPS / CPU / memory readout drawn over the
-preview with its own corner, size, colour and stat selection — drawn over
-the picture, never into it, so it cannot reach an export), and **Updates**.
-Beatform **updates itself**: it checks GitHub Releases shortly after launch
-(a plain fetch of a static file — no telemetry, ever). When a new version is
-found, a dialog offers it right away — release notes, **Install now** or
-Later — and installs with one click and a restart. Turn the automatic check
-off in Preferences ▸ Updates if you prefer manual.
+On desktop, Beatform autosaves the project in the background (the delay is yours to set in Preferences). After a crash or force-kill, the next launch offers _Restore_ — your unsaved tweaks come back.
 
-## Projects, looks, themes
-
-- **Ctrl+S / Ctrl+O** — `.bfproj` project files (everything, portable).
-- **Save look** — a named control set for one mode (`.bfpreset`). Save,
-  delete, import and export your looks on _Visuals ▸ Looks & themes_; the
-  factory style chips stay on Mode, beside the header that names the active
-  one.
-- **Themes** — a complete setup as one shareable `.bftheme` file, saved from
-  the same page; see [Themes](templates).
-
-The four words, in one place: a **Style** is a chip a visual ships with, a
-**Look** is a control set you saved for one mode, a **Theme** is a whole
-document in one file, and the **Gallery** is where other people's looks and
-themes live.
+<a id="gallery"></a>
 
 ## Gallery
 
-The **Gallery** button in the top bar browses a curated public collection of
-looks and themes without leaving the app. Filter by **All** / **Looks** /
-**Themes**, or search by name. **+ Add look** files an entry into your own
-saved looks for its mode and applies it; **Apply theme** replaces the whole
-document (Ctrl+Z undoes it, as with any theme). _Visuals ▸ Looks & themes_
-carries two shortcuts into it, each pre-filtered to the kind you were
-looking at.
+The _Gallery_ button in the top bar opens a curated, public collection of looks and themes you can use without leaving the app. Filter it by _All_, _Looks_ or _Themes_, or search it by name.
 
-Entries carry **no code** — a look or theme can only select and parameterize
-visuals Beatform already ships. Every file is pinned to an immutable commit,
-fetched only from the one allowed location, size-capped and SHA-256-verified
-before it is parsed at all; an entry that needs a newer Beatform reads
-**Needs app update** instead of half-loading. The collection is
-[beatform-app/gallery](https://github.com/beatform-app/gallery) and
-submissions are reviewed there.
+- **+ Add look** puts that entry into your own saved looks for the mode it belongs to, and applies it straight away.
+- **Apply theme** replaces your whole setup with that entry — mode, controls, background, layers, post, the lot. As with any theme, <kbd>Ctrl+Z</kbd> undoes it.
+
+_Looks & themes_ in the Visuals dock has its own two shortcuts into the Gallery, pre-filtered to whichever of the two you were looking at.
+
+### Why it is safe to click
+
+Entries carry no code — a look or a theme can only select and parameterize visuals Beatform already ships, so applying one is exactly as safe as clicking around the UI. Every file is pinned to an immutable commit, downloaded only from the one allowed location, and checksum-verified before Beatform will even parse it. An entry that needs a newer Beatform than you have says _Needs app update_ rather than half-loading.
+
+The collection lives on GitHub as `beatform-app/gallery` and submissions are reviewed there — the dialog links you to it.
+
+<a id="preferences"></a>
+
+## Preferences, updates & shortcuts
+
+The gear icon in the top bar (or <kbd>Ctrl+,</kbd>) collects the choices that follow the app rather than the project — nothing here is saved into a `.bfproj`. Four tabs:
+
+- **General** · **Modes** · **Performance** · **Updates**
+
+### Updates
+
+Beatform updates itself from GitHub Releases: shortly after launch it checks a static file (no telemetry, ever) and offers new versions in a dialog — install now, restart once, done. Every download is verified against Beatform's signing key before it installs. The automatic check can be turned off in Preferences ▸ Updates.
+
+### Shortcuts
+
+Press <kbd>H</kbd> for the full list — that overlay is also where the button to this guide lives.
+
+### Playback
+
+<kbd>Space</kbd> — Play or pause
+<kbd>←</kbd> — Seek back 5 seconds
+<kbd>→</kbd> — Seek forward 5 seconds
+<kbd>↑</kbd> — Raise the volume
+<kbd>↓</kbd> — Lower the volume
+<kbd>M</kbd> — Mute or unmute
+<kbd>L</kbd> — Toggle A/B loop
+<kbd>I</kbd> — Set the loop start (in point)
+<kbd>O</kbd> — Set the loop end (out point)
+
+### Performance
+
+<kbd>N</kbd> / <kbd>P</kbd> — Step to the next or previous visual mode
+<kbd>[</kbd> / <kbd>]</kbd> — Step to the next or previous visual mode (physical key — layout-independent)
+<kbd>1–9</kbd> — Jump straight to the mode at that strip position
+<kbd>S</kbd> — Toggle Stage mode
+<kbd>\</kbd> — Toggle Stage mode (physical key — layout-independent)
+<kbd>0</kbd> — Cut to black (Stage mode only)
+<kbd>.</kbd> — Cut to black (Stage mode only — legacy alias for 0)
+
+### Panels & dialogs
+
+<kbd>G</kbd> — Toggle the Visuals panel
+<kbd>Q</kbd> — Toggle the Library
+<kbd>T</kbd> — Toggle the Timeline
+<kbd>B</kbd> — Toggle the batch export queue
+<kbd>H</kbd> / <kbd>?</kbd> — Toggle this shortcuts sheet (H is layout-independent; ? kept for muscle memory)
+<kbd>Ctrl/Cmd+,</kbd> — Toggle Preferences
+<kbd>F</kbd> — Toggle fullscreen
+
+### Editing
+
+<kbd>Ctrl/Cmd+S</kbd> — Save the project
+<kbd>Ctrl/Cmd+O</kbd> — Open a project
+<kbd>Ctrl/Cmd+Z</kbd> — Undo the last change
+<kbd>Ctrl/Cmd+Shift+Z</kbd> — Redo the last undone change (same key as Undo, plus Shift)
+<kbd>Ctrl/Cmd+Y</kbd> — Redo the last undone change
+
+Every performance shortcut has a letter or digit as its main binding, so it sits on the same labeled key on every keyboard layout — QWERTZ and AZERTY included. The punctuation keys some of them also answer to (<kbd>[</kbd>, <kbd>]</kbd>, <kbd>\</kbd>, <kbd>.</kbd>) are kept for US-layout muscle memory and are bound by physical position, not by the character printed on them. And <kbd>Esc</kbd>, wherever you are, closes whatever's open.

@@ -7,7 +7,10 @@ export interface DerivedMarkdown {
 function inline(i: Inline): string {
   if (typeof i === "string") return i;
   if ("kbd" in i) return `<kbd>${i.kbd}</kbd>`;
-  if ("em" in i) return `*${i.em}*`;
+  // Underscore, not asterisk: prettier normalizes single-emphasis markdown
+  // to `_..._` (it leaves `**strong**` alone) — matching its convention here
+  // keeps the generated docs/guide.md prettier-stable on the first pass.
+  if ("em" in i) return `_${i.em}_`;
   if ("strong" in i) return `**${i.strong}**`;
   if ("code" in i) return `\`${i.code}\``;
   return `[${i.link.text}](${i.link.href})`;

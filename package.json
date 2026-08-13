@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:gpu": "node scripts/gpu-pixel-matrix.mjs",
     "test:gpu:update": "node scripts/gpu-pixel-matrix.mjs --update",
+    "build:guide": "vitest run src/ui/guideSync.test.ts -u",
     "test:loopback": "node scripts/loopback-smoke.mjs",
     "test:loopback:built": "node scripts/loopback-smoke.mjs --built",
     "test:loopback:built:30": "node scripts/loopback-smoke.mjs --built --fps=30",

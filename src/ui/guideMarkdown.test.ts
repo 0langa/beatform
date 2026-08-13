@@ -15,7 +15,9 @@ describe("guideToMarkdown", () => {
     expect(md).toContain("# User guide");
     // kbd renders as inline HTML (Pages renders it; no md pipeline needed)
     expect(md).toContain("<kbd>Space</kbd>");
-    expect(md).toContain("*emphasis*");
+    // Underscore, not asterisk: prettier's markdown default (matches
+    // guideMarkdown.ts's inline() comment on the em case).
+    expect(md).toContain("_emphasis_");
     expect(md).toContain("**strong**");
     expect(md).toContain("`code`");
     expect(md).toContain("[link text](https://example.invalid)");
