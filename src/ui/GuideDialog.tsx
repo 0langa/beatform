@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useFocusTrap } from "./useFocusTrap";
 import { IconClose } from "./Icons";
+import { K } from "./GuideBlocks";
 
 /**
  * The in-app user guide (v2.46.0): a table of contents on the left, one
@@ -17,11 +18,6 @@ interface GuideSection {
   id: string;
   title: string;
   body: ReactNode;
-}
-
-/** Inline keyboard-key chip. */
-function K({ k }: { k: string }) {
-  return <kbd className="guide-key">{k}</kbd>;
 }
 
 const SECTIONS: GuideSection[] = [
