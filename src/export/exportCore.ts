@@ -261,6 +261,18 @@ export interface ExportCoreHooks {
    * hook here) has zero effect on rendered output.
    */
   onHeartbeat?: () => void;
+  /**
+   * E4a: cadence of the frame-loop liveness pulse, a TEST SEAM — production
+   * callers leave it unset (5 s; six beats per 30 s watchdog window). The
+   * pulse exists because the loop's organic messages can all legitimately
+   * starve: software AV1 at quality latency holds a ~20+ frame lookahead
+   * before its FIRST chunk, and progress posts only every 10 frames AFTER
+   * the encoder's backpressure await — so a slow encode parked a perfectly
+   * healthy worker in >30 s of silence and the watchdog killed it
+   * ("stopped responding mid-render", owner-hit on 2.93.0). With the pulse,
+   * the watchdog means exactly what its docs say: event-loop death.
+   */
+  livenessPulseMs?: number;
   /** "stream" mode: sequential-position file chunks (fragmented MP4). */
   /** Stream-mode sink. MAY return a promise; the core awaits it, so a writer
    * that reports completion applies real backpressure to the encoders instead
@@ -591,6 +603,9 @@ export async function runExportJob(
     progressPx: -2,
     clockSec: -2,
   };
+  // E4a: declared OUTSIDE the try so the finally can always stop it; armed
+  // only once setup completes (setup has its own staged heartbeats, AX-3).
+  let stopLivenessPulse: () => void = () => {};
   try {
     // Deep lane: flip the renderer into deep capture BEFORE the first frame —
     // every presented frame then runs the full post graph into the rgba16float
@@ -879,8 +894,16 @@ export async function runExportJob(
     // with the presented walk would make presented-frame smoothing depend on
     // whether a feedback preset happens to be in the job.
     const feedbackModEval = anyPresetUsesFeedback ? createModEvalState() : undefined;
-    // Setup is complete; the frame loop's own progress messages take over.
+    // Setup is complete; the frame loop's own progress messages take over —
+    // and the E4a pulse below guarantees they are never the only liveness
+    // signal (see livenessPulseMs). Worker timers do not get the hidden-tab
+    // throttling that bans timers from the frame loop's YIELD strategy: this
+    // interval only has to beat once per 30 s window, not pace frames.
     hooks.onHeartbeat?.();
+    if (hooks.onHeartbeat) {
+      const pulse = setInterval(hooks.onHeartbeat, hooks.livenessPulseMs ?? 5000);
+      stopLivenessPulse = () => clearInterval(pulse);
+    }
     const total = analyzer.frameCount;
     // Loop mode: keep the first K rendered frames; blend them into the last K
     const xfadeFrames = job.loopCrossfadeSec
@@ -1145,6 +1168,9 @@ export async function runExportJob(
     }
     return { bytes: bytesOut, seconds: pcm.duration, audioCodec, loudness: loudnessResult };
   } finally {
+    // E4a first: success, abort and failure paths all end the pulse here, so
+    // a settled job can never beat again (the no-leak test pins this).
+    stopLivenessPulse();
     // Abort/failure path: release mediabunny's encoders and writer — it owns
     // every WebCodecs encoder this file creates, so this IS the encoder
     // cleanup. cancel() throws if the output already finalized — the success
