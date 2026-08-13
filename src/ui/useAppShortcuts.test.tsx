@@ -170,8 +170,8 @@ describe("SHORTCUT_SHEET covers the handler, both directions", () => {
  * whole zustand store, audio engine and canvas wiring, so there is no cheap
  * way to mount it in a test (no existing suite does). The dialog's actual
  * JSX just maps this function's output onto the existing shortcut-row/kbd
- * markup — a mechanical step verified visually in the dev preview instead
- * (task-6-report.md).
+ * markup — a mechanical step, so it was verified visually in the dev
+ * preview instead.
  */
 describe("groupShortcutRows", () => {
   it("produces exactly one row per SHORTCUT_SHEET entry — the help dialog's count assertion", () => {
