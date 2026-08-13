@@ -239,3 +239,132 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
     return () => window.removeEventListener("keydown", onKey);
   }, [store]);
 }
+
+export interface ShortcutRow {
+  /** Display labels, e.g. ["Space"], ["N","P"], ["[","]"] */
+  keys: string[];
+  /** The e.key / e.code literals the handler matches for this row —
+   *  the coverage test's join column. */
+  literals: string[];
+  action: string; // user-facing, friendly voice
+  group: "Playback" | "Modes" | "Panels & dialogs" | "Performance" | "Editing";
+  note?: string; // e.g. "physical key — layout-independent"
+}
+
+// One row per binding, transcribed from the red coverage listing above plus
+// the handler's own comments. Groups follow the app's own vocabulary:
+// README.md's "Live performance / VJ" bullet and the handler's repeated
+// "every performance shortcut has a letter/digit PRIMARY binding" comment
+// both use "performance" for mode-stepping, the digit strip, Stage mode and
+// blackout together — so that's the "Performance" bucket here, distinct from
+// the Preferences dialog's "Modes" tab (preset order), which has no
+// keyboard shortcut of its own.
+export const SHORTCUT_SHEET: readonly ShortcutRow[] = [
+  // Playback
+  { keys: ["Space"], literals: [" "], action: "Play or pause", group: "Playback" },
+  { keys: ["←"], literals: ["ArrowLeft"], action: "Seek back 5 seconds", group: "Playback" },
+  { keys: ["→"], literals: ["ArrowRight"], action: "Seek forward 5 seconds", group: "Playback" },
+  { keys: ["↑"], literals: ["ArrowUp"], action: "Raise the volume", group: "Playback" },
+  { keys: ["↓"], literals: ["ArrowDown"], action: "Lower the volume", group: "Playback" },
+  { keys: ["M"], literals: ["m", "M"], action: "Mute or unmute", group: "Playback" },
+  { keys: ["L"], literals: ["l", "L"], action: "Toggle A/B loop", group: "Playback" },
+  { keys: ["I"], literals: ["i", "I"], action: "Set the loop start (in point)", group: "Playback" },
+  { keys: ["O"], literals: ["o", "O"], action: "Set the loop end (out point)", group: "Playback" },
+
+  // Performance — everything the README's "Live performance / VJ" bullet
+  // and the handler's own comments call out as performance shortcuts.
+  {
+    keys: ["N", "P"],
+    literals: ["n", "N", "p", "P"],
+    action: "Step to the next or previous visual mode",
+    group: "Performance",
+  },
+  {
+    keys: ["[", "]"],
+    literals: ["BracketLeft", "BracketRight"],
+    action: "Step to the next or previous visual mode",
+    group: "Performance",
+    note: "physical key — layout-independent",
+  },
+  {
+    keys: ["1", "–", "9"],
+    literals: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+    action: "Jump straight to the mode at that strip position",
+    group: "Performance",
+  },
+  {
+    keys: ["S"],
+    literals: ["s", "S"],
+    action: "Toggle Stage mode",
+    group: "Performance",
+  },
+  {
+    keys: ["\\"],
+    literals: ["Backslash"],
+    action: "Toggle Stage mode",
+    group: "Performance",
+    note: "physical key — layout-independent",
+  },
+  {
+    keys: ["0"],
+    literals: ["0"],
+    action: "Cut to black",
+    group: "Performance",
+    note: "Stage mode only",
+  },
+  {
+    keys: ["."],
+    literals: ["."],
+    action: "Cut to black",
+    group: "Performance",
+    note: "Stage mode only — legacy alias for 0",
+  },
+
+  // Panels & dialogs
+  {
+    keys: ["G"],
+    literals: ["g", "G"],
+    action: "Toggle the Visuals panel",
+    group: "Panels & dialogs",
+  },
+  { keys: ["Q"], literals: ["q", "Q"], action: "Toggle the Library", group: "Panels & dialogs" },
+  { keys: ["T"], literals: ["t", "T"], action: "Toggle the Timeline", group: "Panels & dialogs" },
+  {
+    keys: ["B"],
+    literals: ["b", "B"],
+    action: "Toggle the batch export queue",
+    group: "Panels & dialogs",
+  },
+  {
+    keys: ["H", "?"],
+    literals: ["h", "H", "?"],
+    action: "Toggle this shortcuts sheet",
+    group: "Panels & dialogs",
+    note: "H is layout-independent; ? kept for muscle memory",
+  },
+  {
+    keys: ["Ctrl/Cmd+,"],
+    literals: [","],
+    action: "Toggle Preferences",
+    group: "Panels & dialogs",
+  },
+  { keys: ["F"], literals: ["f", "F"], action: "Toggle fullscreen", group: "Panels & dialogs" },
+
+  // Editing
+  { keys: ["Ctrl/Cmd+S"], literals: ["s", "S"], action: "Save the project", group: "Editing" },
+  { keys: ["Ctrl/Cmd+O"], literals: ["o", "O"], action: "Open a project", group: "Editing" },
+  { keys: ["Ctrl/Cmd+Z"], literals: ["z", "Z"], action: "Undo the last change", group: "Editing" },
+  {
+    keys: ["Ctrl/Cmd+Shift+Z"],
+    literals: ["z", "Z"],
+    action: "Redo the last undone change",
+    group: "Editing",
+    note: "same key as Undo, plus Shift",
+  },
+  {
+    keys: ["Ctrl/Cmd+Y"],
+    literals: ["y", "Y"],
+    action: "Redo the last undone change",
+    group: "Editing",
+  },
+];

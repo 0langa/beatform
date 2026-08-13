@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { useVizStore } from "../state/store";
 import { useAppShortcuts } from "./useAppShortcuts";
+import shortcutsSource from "./useAppShortcuts.ts?raw"; // precedent: loopbackWorklet.test.ts
+import { SHORTCUT_SHEET } from "./useAppShortcuts";
 
 afterEach(cleanup);
 
@@ -110,5 +112,46 @@ describe("Escape", () => {
 
     expect(state.setShowPanel).toHaveBeenCalledTimes(1);
     expect(state.setShowPanel).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("SHORTCUT_SHEET covers the handler, both directions", () => {
+  // Every quoted literal the handler compares e.key / e.code against.
+  // Matches `e.key === "X"` / `e.code === "KeyX"`, and the `case "X":` lines
+  // of the plain-key switch (the brief's starting regex only covered
+  // `===`; this handler also has a `switch (e.key)` block, so its NOTE says
+  // to extend the regex to match — read the file first).
+  const handlerLiterals = new Set(
+    [
+      ...shortcutsSource.matchAll(/e\.(?:key|code)\s*===\s*"([^"]+)"/g),
+      ...shortcutsSource.matchAll(/case\s+"([^"]+)"\s*:/g),
+    ]
+      .map((m) => m[1])
+      // Escape is deliberately NOT a sheet row: it is the universal
+      // dismiss cascade, documented in prose, not a binding a user learns.
+      .filter((k) => k !== "Escape"),
+  );
+  // The digit-strip shortcuts (jump to a mode by position) are matched with
+  // a static range check — `e.key >= "1" && e.key <= "9"` — not a per-key
+  // `===`/`case` literal, so neither regex above can see them. The range is
+  // fixed and fully known at read time (unlike a truly dynamic key), so
+  // expand it explicitly rather than leaving nine real, user-facing
+  // bindings invisible to the coverage test.
+  if (/e\.key\s*>=\s*"1"\s*&&\s*e\.key\s*<=\s*"9"/.test(shortcutsSource)) {
+    for (let d = 1; d <= 9; d++) handlerLiterals.add(String(d));
+  }
+  const sheetLiterals = new Set(SHORTCUT_SHEET.flatMap((r) => r.literals));
+
+  it("every handled key has a sheet row", () => {
+    expect([...handlerLiterals].filter((k) => !sheetLiterals.has(k))).toEqual([]);
+  });
+  it("every sheet row exists in the handler", () => {
+    expect([...sheetLiterals].filter((k) => !handlerLiterals.has(k))).toEqual([]);
+  });
+  it("rows carry friendly copy", () => {
+    for (const r of SHORTCUT_SHEET) {
+      expect(r.keys.length).toBeGreaterThan(0);
+      expect(r.action.length).toBeGreaterThan(4);
+    }
   });
 });
