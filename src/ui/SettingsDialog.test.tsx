@@ -84,7 +84,15 @@ function stagedUpdate(version: string): Update {
   } as unknown as Update;
 }
 
-describe("Preferences › Updates drives the machine itself (G5)", () => {
+/**
+ * TIMEOUTS: an explicit 30 s budget rather than vitest's 5 s default. Every
+ * describe below mounts the real dialog against the real store and updater
+ * machine (openUpdatesTab/renderProbe both call `render()`), one driving
+ * async `waitFor` on top — the whole-branch review saw exactly this suite
+ * time out under parallel-worker contention. Same remedy as
+ * `engineGraph.test.ts`; see GATES.md §1.
+ */
+describe("Preferences › Updates drives the machine itself (G5)", { timeout: 30_000 }, () => {
   it("the check button runs the real check and the result lands in the DOM", async () => {
     env.check.mockResolvedValue(stagedUpdate("9.9.9"));
     openUpdatesTab();
@@ -113,7 +121,7 @@ describe("Preferences › Updates drives the machine itself (G5)", () => {
   });
 });
 
-describe("what an update tick costs (G5)", () => {
+describe("what an update tick costs (G5)", { timeout: 30_000 }, () => {
   it("a download progress tick reconciles the dialog and nothing else", () => {
     const bystander = renderProbe();
     const dialog = renderProbe();

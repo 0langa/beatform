@@ -63,7 +63,15 @@ const kaleidoSrc = /fn kaleido\(p: vec2f, segments: f32\) -> vec2f \{([\s\S]*?)\
   SHADER_SOURCES.header,
 )?.[1];
 
-describe("the shared fold this file composes against", () => {
+/**
+ * TIMEOUTS: an explicit 30 s budget rather than vitest's 5 s default. Every
+ * case below lifts a `let` chain out of the shipped WGSL and compiles it with
+ * `new Function()`, several sweeping it across a whole spectrum or waveform
+ * range — the whole-branch review saw exactly this suite time out under
+ * parallel-worker contention. Same remedy as `engineGraph.test.ts`; see
+ * GATES.md §1.
+ */
+describe("the shared fold this file composes against", { timeout: 30_000 }, () => {
   it("still has the shape the shims below reconstruct", () => {
     // Guards every transcription in this file: if kaleido()'s branch structure
     // or its reconstruction changes, this fails instead of the suites quietly
@@ -140,7 +148,7 @@ const refinementRatio = (at: (t: number) => number, n: number) => {
  * abs(fract(a / TAU + 0.5) * 2 - 1), is a triangle over the FULL circle, so on a
  * folded angle it only ever climbed the first 1/N of its own ramp.
  */
-describe("tunnel club mirror spectrum coverage", () => {
+describe("tunnel club mirror spectrum coverage", { timeout: 30_000 }, () => {
   const body = tunnelRings.wgsl;
 
   it("keys its branch off the same two thresholds the fold does", () => {
@@ -232,7 +240,7 @@ describe("tunnel club mirror spectrum coverage", () => {
  * it. The fix gives the spectrum its own coordinate; the geometry keeps the
  * folded one, which is what the Symmetric switch is for.
  */
-describe("aurora symmetric fold spectrum coverage", () => {
+describe("aurora symmetric fold spectrum coverage", { timeout: 30_000 }, () => {
   const body = aurora.wgsl;
   const ASPECT = 16 / 9;
 
@@ -326,7 +334,7 @@ describe("aurora symmetric fold spectrum coverage", () => {
  * folded scope drew half the sweep in the same screen area as the unfolded one
  * drew all of it.
  */
-describe("oscilloscope kaleido fold waveform sweep", () => {
+describe("oscilloscope kaleido fold waveform sweep", { timeout: 30_000 }, () => {
   const body = oscilloscope.wgsl;
   const WAVE = 512; // webgpuRenderer's WAVE_POINTS
   const ASPECT = 16 / 9;

@@ -106,7 +106,15 @@ function renderBar(playback: PlaybackState = PLAYBACK) {
   return render(<PlayerBar />);
 }
 
-describe("PlayerBar A-B loop", () => {
+/**
+ * TIMEOUTS: an explicit 30 s budget rather than vitest's 5 s default. Every
+ * describe below mounts the real PlayerBar against the real store
+ * (renderBar/mountProbed/mountHoverable/mountBar all call `render()`), several
+ * driving it through real `userEvent` interactions on top — the whole-branch
+ * review saw exactly this suite time out under parallel-worker contention.
+ * Same remedy as `engineGraph.test.ts`; see GATES.md §1.
+ */
+describe("PlayerBar A-B loop", { timeout: 30_000 }, () => {
   it("shows the selected region and drives the engine from the marker buttons", async () => {
     const { container } = renderBar();
 
@@ -193,7 +201,7 @@ describe("PlayerBar A-B loop", () => {
  * leave these green even with the subscription re-added — it would prove
  * nothing (the 60 Hz no-op trap).
  */
-describe("PlayerBar selector granularity (P-12 wave 2)", () => {
+describe("PlayerBar selector granularity (P-12 wave 2)", { timeout: 30_000 }, () => {
   function mountProbed() {
     act(() =>
       useVizStore.setState({ playback: PLAYBACK, sections: [], volume: 0.8, muted: false }),
@@ -283,7 +291,7 @@ describe("PlayerBar selector granularity (P-12 wave 2)", () => {
  * 200px-wide bar over the 100 s PLAYBACK track, so 1px = 0.5 s and the
  * expected times are arithmetic, not a snapshot.
  */
-describe("PlayerBar hover time bubble (P-10)", () => {
+describe("PlayerBar hover time bubble (P-10)", { timeout: 30_000 }, () => {
   function mountHoverable() {
     act(() =>
       useVizStore.setState({ playback: PLAYBACK, sections: [], volume: 0.8, muted: false }),
@@ -373,7 +381,7 @@ describe("PlayerBar hover time bubble (P-10)", () => {
  * what these pin is everything else, including the two structural facts the
  * stylesheet depends on.
  */
-describe("PlayerBar volume flash (P-10)", () => {
+describe("PlayerBar volume flash (P-10)", { timeout: 30_000 }, () => {
   function mountBar() {
     act(() =>
       useVizStore.setState({ playback: PLAYBACK, sections: [], volume: 0.8, muted: false }),
