@@ -30,6 +30,16 @@ import { SECONDS, Segmented, SelectRow, SliderRow, ToggleRow } from "./kit";
  */
 type Tab = "general" | "modes" | "performance" | "updates";
 
+/** The dialog's four sections. Also the guide's single source for the
+ * "Preferences tab inventory" derived block (`guideDerived.ts`) — the guide
+ * reads this export instead of restating the tab list by hand. */
+export const PREFS_TABS: ReadonlyArray<{ value: Tab; label: string }> = [
+  { value: "general", label: "General" },
+  { value: "modes", label: "Modes" },
+  { value: "performance", label: "Performance" },
+  { value: "updates", label: "Updates" },
+];
+
 /** Built-in defs by id — the strip order is a list of ids, and this turns it
  * back into names/thumbs. Module-level: the registry cannot change at runtime. */
 const PRESETS_BY_ID = new Map(presets.map((p) => [p.id, p]));
@@ -91,12 +101,10 @@ export function SettingsDialog() {
           value={tab}
           onChange={setTab}
           ariaLabel="Preferences section"
-          options={[
-            { value: "general", label: "General" },
-            { value: "modes", label: "Modes" },
-            { value: "performance", label: "Performance" },
-            { value: "updates", label: "Updates" },
-          ]}
+          // Segmented's options prop predates this const and wants a mutable
+          // array; PREFS_TABS stays ReadonlyArray (the guide reads it too),
+          // so a shallow copy bridges the two without touching kit.tsx.
+          options={[...PREFS_TABS]}
         />
 
         {tab === "general" && (
