@@ -482,6 +482,18 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       justification is the wrong one. **The id itself must still not be
       renamed** — it is a React key whose churn buys nothing — but the
       stated reason should be corrected to match `prefs.ts`.
+- [ ] D6 **P-21 stage 2 remains open.** H7a (Track H) closed stage 1 —
+      single-source generation. Unbuilt: the FAQ section, and the gallery
+      submission helper (validate + hash + PR body from a local file, so
+      a first submission is one command instead of seven manual steps —
+      the original P-21 brief's own framing). Also noticed while merging
+      the guides and deliberately not restored: the old hand-written
+      Projects section linked "Themes" to the site's own
+      `docs/templates.md` (`[Themes](templates)`, still live and linked
+      from `docs/index.md` and `README.md`); the merged `guideContent.ts`
+      carries no equivalent link. Not one of H7a's 23 items and not a
+      product-fact divergence, so it was flagged rather than fixed — left
+      for whoever picks up stage 2 to restore or consciously drop.
 
 ### Track E — Hardening burn-down (NEW, from the audit register)
 
@@ -1972,39 +1984,105 @@ buys and what it does not.
 Modulation · Scene · Text · Live`** — `ParamsPanel.tsx` `VISUALS_PAGES`,
       not the bare page ids. Two earlier briefs (including one of mine) wrote
       the ids as if they were labels; they are not interchangeable.
-- [ ] H7a **NEW — the in-app guide and `docs/guide.md` have diverged in 23
-      places.** Produced by the H7 sweep, deliberately unfixed: this is the
-      input to **P-21 (single-source guides)**, and hand-patching both copies
-      is exactly the maintenance P-21 exists to delete. Everything below was
-      checked against the code, not against the other document.
-      **One is FALSE, not merely missing** — the LFO range, fixed in
-      `75fab1d`. Everything else is a hole on one side.
-      **Misfiled:** `guide.md` files image/video framing and the
-      All-modes/This-mode scope switch under **Export**; they live on
-      **Scene** (`ParamsPanel.tsx:1500-1502`).
-      **Only in `docs/guide.md`** (12): the whole spectrum-analysis block
-      (Resolution ~85/170/340 ms, Axis, Sampling, Low/High edge, the
-      readout); onset pulses vs beat-grid pulses; the Global motion page —
-      the in-app guide names it once in a rail list and never says what is
-      on it; group folding survives while page folding does not; Canvas loop
-      disabling PNG/ProRes/AV1; MP4 2–60 Mbps and the −1 dBTP ceiling; the
-      named cover-art controls (Cover wall, Source shape); Learn note →
-      mode; lyrics attaching to the track like stems; the four-word summary
-      including Gallery; the preview/export truth-contract link; the ✕ that
-      clears A-B.
-      **Only in the in-app guide** (9): **the entire custom-shader editor** —
-      the `+` chip, `.bfshader`, single-pass Shadertoy import, Canvas2D
-      gating — which is the biggest hole on the `guide.md` side and its only
-      WGSL mention is Builder codegen; the post chain's actual contents and
-      that they are modulation targets; frame aspect Fill/16:9/9:16/1:1;
-      autosave + the crash Restore prompt; the timeline override rules; that
-      the dock remembers the PAGE as well as the width; the **More** group;
-      _Auto-play next_; and Gallery pinning described loosely as an
-      "immutable version" where `guide.md` correctly says "immutable commit".
-      **Missing from BOTH** (2, found in the code): **Drive** and **Drive
-      pulse**, the first two entries of `MOD_SOURCES`
-      (`modMatrix.ts:142-143`), and the **Edit lyrics** section on Text
-      (`ParamsPanel.tsx:1884-1886`).
+- [x] H7a **DONE 2026-08-13 — all 23 divergences closed, and the
+      mechanism that produced them deleted, not patched.** Both guides now
+      render from one typed content module, `src/ui/guideContent.ts` (13
+      sections — the app's real count): the in-app dialog renders it
+      through `GuideBlocks`, and `guideToMarkdown` emits `docs/guide.md`
+      from the same data. The committed file is a vitest FILE SNAPSHOT
+      (`guideSync.test.ts`, jsdom — `derivedMarkdown()` reaches
+      `PREFS_TABS` through the store, which touches `localStorage` at
+      module scope), and `npm run build:guide` is its `-u` bless idiom, so
+      the two copies now fail CI by construction the moment they would
+      otherwise drift, instead of waiting for the next hand audit like the
+      one that filed this entry.
+      **Three more facts became derived tables instead of hand-kept
+      prose, so none of them can go stale the way this entry's 23 did:**
+      `SHORTCUT_SHEET` in `useAppShortcuts.ts` (28 rows) is proven
+      complete against the handler's own key literals by a TWO-DIRECTION
+      coverage test — the first red run printed the 51-literal inventory
+      the sheet was transcribed from — and the Help dialog now renders
+      that same sheet instead of a second, independently-drifting hand
+      list; `MOD_SOURCES` renders directly into Sync's source list, which
+      is how **Drive** and **Drive pulse** — the two facts this entry
+      found missing from BOTH guides — were written in for good;
+      Preferences' tab enumeration renders from the extracted
+      `PREFS_TABS`.
+      **All three registries, plus the snapshot gate itself, were
+      mutation-tested, not merely covered:** deleting a real shortcut
+      binding (not commenting it out — the coverage check is text-based
+      and provably blind to a comment, an accepted, documented
+      trade-off) and, separately, adding an unused one each turned the
+      two-direction coverage test red, independently, in the expected
+      direction; editing `groupShortcutRows` to ignore its own argument
+      and close over the module constant instead turned its row-count
+      mutation check red while the plain count assertion stayed green —
+      proof the mutation check catches what the count alone would not;
+      and hand-editing one word in `docs/guide.md`, then separately
+      deleting a whole `GUIDE` section, each turned `guideSync.test.ts`
+      red with a diff pointing at exactly the damage. All reverted, all
+      green again.
+      **All 23 items landed**, each in a named section, code-verified
+      rather than copied from either stale source: the misfiled framing/
+      scope-switch block moved from Export to Scene, where the code
+      actually puts it; Gallery's "immutable version" is now "immutable
+      commit"; the LFO-family sentence — this entry's one FALSE, not
+      merely missing, fact, already fixed in `75fab1d` — carries forward
+      verbatim as prose content immediately after the derived source
+      list; and the two facts missing from both guides, Drive/Drive pulse
+      and the **Edit lyrics** section on Text, were written in fresh,
+      grounded directly in `modMatrix.ts` and `LyricsEditPanel.tsx`, not
+      invented.
+      **One deliberate non-mirror between the two renderers, pinned by
+      test:** `GuideBlocks.tsx` renders a `{link}` block as a
+      non-navigating `<span>` in-app — no opener plugin and no navigation
+      guard exist in the installed WebView, so a real click would strand
+      the user with no way back — while `guideMarkdown.ts` keeps it a
+      real markdown link for the generated site, where a browser's own
+      back/forward makes that safe.
+      **Caught by review, not by any test that existed at the time:** an
+      opus content-accuracy pass over the merged copy found a dropped
+      Sync section opening paragraph (Critical — which source routes to
+      which mode, restored), surfaced the link split above for
+      adjudication, and four smaller content misses; all fixed and
+      re-verified. The suite grew from 2154 to 2182 tests over the full
+      effort. `guideMarkdown.ts`'s emphasis marker also changed, `*em*` →
+      `_em_`, so the generated file is prettier-stable — proven by three
+      successive `build:guide` runs converging on a byte-identical file.
+- **H7a original entry (historical; superseded by the closed H7a result
+  above).** The in-app guide and `docs/guide.md` had diverged in 23
+  places. Produced by the H7 sweep, deliberately unfixed: this is the
+  input to **P-21 (single-source guides)**, and hand-patching both copies
+  is exactly the maintenance P-21 exists to delete. Everything below was
+  checked against the code, not against the other document.
+  **One is FALSE, not merely missing** — the LFO range, fixed in
+  `75fab1d`. Everything else is a hole on one side.
+  **Misfiled:** `guide.md` files image/video framing and the
+  All-modes/This-mode scope switch under **Export**; they live on
+  **Scene** (`ParamsPanel.tsx:1500-1502`).
+  **Only in `docs/guide.md`** (12): the whole spectrum-analysis block
+  (Resolution ~85/170/340 ms, Axis, Sampling, Low/High edge, the
+  readout); onset pulses vs beat-grid pulses; the Global motion page —
+  the in-app guide names it once in a rail list and never says what is on
+  it; group folding survives while page folding does not; Canvas loop
+  disabling PNG/ProRes/AV1; MP4 2–60 Mbps and the −1 dBTP ceiling; the
+  named cover-art controls (Cover wall, Source shape); Learn note →
+  mode; lyrics attaching to the track like stems; the four-word summary
+  including Gallery; the preview/export truth-contract link; the ✕ that
+  clears A-B.
+  **Only in the in-app guide** (9): **the entire custom-shader editor** —
+  the `+` chip, `.bfshader`, single-pass Shadertoy import, Canvas2D
+  gating — which is the biggest hole on the `guide.md` side and its only
+  WGSL mention is Builder codegen; the post chain's actual contents and
+  that they are modulation targets; frame aspect Fill/16:9/9:16/1:1;
+  autosave + the crash Restore prompt; the timeline override rules; that
+  the dock remembers the PAGE as well as the width; the **More** group;
+  _Auto-play next_; and Gallery pinning described loosely as an
+  "immutable version" where `guide.md` correctly says "immutable commit".
+  **Missing from BOTH** (2, found in the code): **Drive** and **Drive
+  pulse**, the first two entries of `MOD_SOURCES`
+  (`modMatrix.ts:142-143`), and the **Edit lyrics** section on Text
+  (`ParamsPanel.tsx:1884-1886`).
 - **H7 original entry (historical; superseded by the closed H7 result above).**
   It originally reported stale doc pointers left by the v2.81.0 mechanical
   rename in files outside the docs unit's ownership. Each is a path a user can

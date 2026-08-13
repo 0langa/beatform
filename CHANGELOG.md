@@ -11,6 +11,17 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- **The user guide is one guide now.** The in-app guide and the website
+  guide used to be maintained separately and had drifted apart in 23
+  places; they are now generated from one source, so they always say the
+  same thing. The merged guide gains the pieces each copy was missing —
+  the full spectrum-analysis explainer and export limits on one side, the
+  custom-shader editor on the other — and the keyboard-shortcut sheet,
+  modulation-source list and Preferences overview are now generated
+  straight from the app's own definitions, so they can never go stale.
+
 ## [2.93.0] - 2026-08-12
 
 ### Added
