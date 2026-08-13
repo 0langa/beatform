@@ -2792,6 +2792,13 @@ kbd {
   background: var(--glass);
   border: 1px solid var(--border);
 }
+.guide-link {
+  /* Non-navigating by design (GuideBlocks.tsx) — styled to read as a link
+     without inviting a click that goes nowhere; the real URL is the title
+     tooltip. */
+  text-decoration: underline;
+  color: var(--text-faint);
+}
 .guide-key {
   display: inline-block;
   min-width: 20px;

@@ -188,6 +188,11 @@ export const GUIDE: readonly GuideSection[] = [
           " (how many bars, points or segments it draws) runs 0–100% — dial a look calmer or wilder from one place. A slider only appears when the current mode can actually move that way, and exports match whatever you set.",
         ],
       },
+      {
+        p: [
+          "There's a fourth master too: spectrum smoothing is a motion setting, but its slider lives on Sync beside the other spectrum controls rather than here — the page's name says which of the two kinds of motion control this is, since a visual's own motion controls sit in the Motion group on Mode instead. On a visual that has nothing to rotate or pulse, the Global motion destination itself is dimmed and says so.",
+        ],
+      },
     ],
   },
   {
@@ -226,6 +231,15 @@ export const GUIDE: readonly GuideSection[] = [
     id: "sync",
     title: "Sync & reactivity",
     blocks: [
+      {
+        p: [
+          "The Sync page routes ",
+          { strong: "one source" },
+          " to the current mode: ",
+          { strong: "Kicks" },
+          " (default), Energy, Bass, Melody, Voice, Treble, Snare or Hats. Pick what should drive the motion — a vocal-heavy track often looks better on Voice than on Kicks — and the choice is saved per mode, so one mode can sit on Voice while the rest stay on Kicks.",
+        ],
+      },
       { h4: "Response feel" },
       {
         p: [
@@ -448,9 +462,9 @@ export const GUIDE: readonly GuideSection[] = [
       { h4: "Edit lyrics" },
       {
         p: [
-          "Once a track has lyrics — imported or generated — the ",
+          "Once a track has lyrics — imported or generated — the Text page's ",
           { strong: "Edit lyrics" },
-          " page turns every line into something you can fix by hand: click a line to select it, click its time to jump the track there, or double-click the time to type an exact one.",
+          " section turns every line into something you can fix by hand: click a line to select it, click its time to jump the track there, or double-click the time to type an exact one.",
         ],
       },
       {
@@ -629,7 +643,7 @@ export const GUIDE: readonly GuideSection[] = [
         ul: [
           [
             { strong: "MP4" },
-            " — H.264 everywhere; HEVC and AV1 appear as codec choices where your GPU encodes them. Auto or manual bitrate (2–60 Mbps), and optional loudness normalization to −14/−16/−23 LUFS, holding peaks under a −1 dBTP ceiling so nothing clips when a streaming service re-encodes it.",
+            " — H.264 everywhere; HEVC and AV1 appear as codec choices where your GPU encodes them. Auto or manual bitrate (2–60 Mbps), and optional loudness normalization to −14/−16/−23 LUFS with a −1 dBTP ceiling (audio only — pixels unchanged).",
           ],
           [
             { strong: "WebM VP9 + alpha" },
@@ -784,37 +798,10 @@ export const GUIDE: readonly GuideSection[] = [
           { kbd: "Ctrl+," },
           ") collects the choices that follow the app rather than the project — nothing here is saved into a ",
           { code: ".bfproj" },
-          ".",
+          ". Four tabs:",
         ],
       },
       { derived: "preferences-tabs" },
-      {
-        ul: [
-          [
-            { strong: "General" },
-            " — the autosave delay (desktop) and the folder your save dialogs open in, with a ",
-            { em: "Forget" },
-            " button.",
-          ],
-          [
-            { strong: "Modes" },
-            " — drag the mode strip into the order you actually use, or reset it. This is also the order ",
-            { kbd: "1" },
-            "–",
-            { kbd: "9" },
-            " jump to.",
-          ],
-          [
-            { strong: "Performance" },
-            " — a live-preview frame cap (Display / 60 / 30) and a preview resolution (Native / 75% / 50%), neither of which touches an export: those always render every frame at full size. Also a ",
-            { em: "GPU preference" },
-            " for dual-GPU laptops (it applies on the next launch), and ",
-            { em: "Performance display" },
-            " — a live FPS / CPU / memory readout drawn over the preview, with its own corner, size, color and choice of stats. It is drawn over the picture, never into it, so it cannot reach an export.",
-          ],
-          [{ strong: "Updates" }, " — below."],
-        ],
-      },
       { h4: "Updates" },
       {
         p: [

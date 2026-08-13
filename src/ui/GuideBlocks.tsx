@@ -13,6 +13,11 @@ import type { DerivedTables } from "./guideDerived";
  * straight from the real DerivedTables data (Task 3) so a derived block
  * shows up as actual DOM elements — a <kbd> chip is a <kbd> chip here, not
  * an opaque string.
+ *
+ * One deliberate non-mirror: `link` renders as a non-navigating
+ * `<span title>`, never an `<a href>` — see the comment on that case below.
+ * guideMarkdown.ts's `link` case is untouched and still emits a real
+ * markdown link for the site.
  */
 
 /** Inline keyboard-key chip. Moved here from GuideDialog.tsx (P-21 Task 4)
@@ -30,10 +35,16 @@ function inline(part: Inline, key: number): ReactNode {
   if ("em" in part) return <em key={key}>{part.em}</em>;
   if ("strong" in part) return <strong key={key}>{part.strong}</strong>;
   if ("code" in part) return <code key={key}>{part.code}</code>;
+  // NOT an <a>: the installed WebView has no opener plugin and no navigation
+  // guard, so a real href would navigate the whole app away from itself with
+  // no way back. guideMarkdown.ts's twin renders a real markdown link — the
+  // site has a browser around it — this is the in-app-only divergence that
+  // makes that safe: same data, a non-navigating span here, the href kept
+  // only as a title tooltip.
   return (
-    <a key={key} href={part.link.href}>
+    <span key={key} className="guide-link" title={part.link.href}>
       {part.link.text}
-    </a>
+    </span>
   );
 }
 

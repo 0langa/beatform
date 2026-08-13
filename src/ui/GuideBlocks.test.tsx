@@ -72,8 +72,19 @@ describe("GuideBlocks", () => {
     expect(screen.getByText("strong").tagName).toBe("STRONG");
     expect(screen.getByText("code").tagName).toBe("CODE");
 
-    const link = screen.getByRole("link", { name: "link text" });
-    expect(link.getAttribute("href")).toBe("https://example.invalid");
+    // `link` renders as a non-navigating <span title>, never an <a href>:
+    // the installed WebView has no opener plugin or navigation guard, so a
+    // real href would carry the whole app away with no way back.
+    // guideMarkdown.ts's twin still emits a real markdown link for the site
+    // (a browser, with back/forward, sits around that one) — this is the
+    // in-app-only divergence. No "link" accessibility role should exist at
+    // all; the href survives only as the title tooltip.
+    expect(screen.queryByRole("link", { name: "link text" })).toBeNull();
+    const link = screen.getByText("link text");
+    expect(link.tagName).toBe("SPAN");
+    expect(link.classList.contains("guide-link")).toBe(true);
+    expect(link.getAttribute("href")).toBeNull();
+    expect(link.getAttribute("title")).toBe("https://example.invalid");
 
     const list = screen.getByRole("list");
     expect(within(list).getAllByRole("listitem")).toHaveLength(3);
