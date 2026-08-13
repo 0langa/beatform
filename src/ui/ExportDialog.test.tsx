@@ -52,11 +52,13 @@ vi.mock("../state/platform", async (importOriginal) => {
     isTauri: () => h.tauri,
     writeAutosave: vi.fn(async () => {}),
     askConfirm: vi.fn(async () => true),
+    showInFolder: vi.fn(async () => {}),
   };
 });
 
 const { ExportDialog } = await import("./ExportDialog");
 const { useVizStore } = await import("../state/store");
+const { showInFolder } = await import("../state/platform");
 
 /** Restoring by MERGE keeps the action identities the click sites call. */
 const PRISTINE = { ...useVizStore.getState() };
@@ -98,6 +100,7 @@ function withSettings(over: Partial<ReturnType<typeof useVizStore.getState>["exp
 
 beforeEach(() => {
   h.tauri = true;
+  vi.mocked(showInFolder).mockClear();
 });
 
 afterEach(() => {
@@ -290,5 +293,33 @@ describe("alpha promises match the background", () => {
     // BG_TRANSPARENT === 2 (render/types.ts).
     mount({ ...withSettings({ format: "prores" }), bg: { ...PRISTINE.bg, mode: 2 } });
     expect(screen.queryByText(/the alpha exports solid/)).toBeNull();
+  });
+});
+
+describe("Show in folder", () => {
+  function showInFolderButton(): HTMLElement | null {
+    return screen.queryByRole("button", { name: "Show in folder" });
+  }
+
+  it("does not render without a path, even when the export succeeded", () => {
+    mount({ exportDone: "MP4 saved", exportDonePath: null });
+    expect(showInFolderButton()).toBeNull();
+  });
+
+  it("does not render outside the desktop app, even with a path", () => {
+    h.tauri = false;
+    mount({ exportDone: "MP4 saved to C:\\out\\video.mp4", exportDonePath: "C:\\out\\video.mp4" });
+    expect(showInFolderButton()).toBeNull();
+  });
+
+  it("renders with a path on desktop, and invokes the wrapper with exactly that path", async () => {
+    mount({ exportDone: "MP4 saved to C:\\out\\video.mp4", exportDonePath: "C:\\out\\video.mp4" });
+
+    const button = showInFolderButton();
+    expect(button).not.toBeNull();
+    await userEvent.click(button!);
+
+    expect(showInFolder).toHaveBeenCalledTimes(1);
+    expect(showInFolder).toHaveBeenCalledWith("C:\\out\\video.mp4");
   });
 });

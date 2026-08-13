@@ -106,7 +106,21 @@ vi.mock("../services", () => ({
 
 vi.mock("../platform", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../platform")>();
-  return { ...actual, writeAutosave: vi.fn(async () => {}) };
+  return {
+    ...actual,
+    writeAutosave: vi.fn(async () => {}),
+    // The desktop (isTauri() true) lane is opt-in per test via
+    // mockReturnValueOnce/mockResolvedValueOnce — every other test never
+    // touches these, so it keeps running the browser lane these defaults
+    // describe, unchanged.
+    isTauri: vi.fn(() => false),
+    pickSavePath: vi.fn(async () => null),
+    pickFolder: vi.fn(async () => null),
+    diskSpace: vi.fn(async () => null),
+    scratchDir: vi.fn(async () => null),
+    animBegin: vi.fn(async () => {}),
+    proresFinish: vi.fn(async () => {}),
+  };
 });
 
 vi.mock("../../render/overlay", async (importOriginal) => {
@@ -131,6 +145,7 @@ const { analyzeTrack } = await import("../../audio/analysis/trackAnalysis");
 const { ANALYSIS_TIMEOUT_MS } = await import("../batchRunner");
 const { ANALYSIS_TIMEOUT_REASON } = await import("./exportActions");
 const { shared } = await import("./shared");
+const { isTauri, pickSavePath, pickFolder } = await import("../platform");
 
 const s = () => useVizStore.getState();
 
@@ -485,5 +500,93 @@ describe("`analyzing` can never stick true (the gate must not become a hang)", (
     expect(() => s().analyzeCurrentTrack()).toThrow(RangeError);
     expect(s().analyzing).toBe(false);
     await expect(s().awaitAnalysis()).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * `exportDonePath` is the machine-readable companion to the prose
+ * `exportDone` sentence — the path "Show in folder" invokes the Rust command
+ * with. It has to carry the SAME path the sentence names (not a derived or
+ * re-parsed one), and it has to go stale the instant a new export starts, not
+ * merely when the new one finishes — a button sitting on a completed toast
+ * must not still open the PREVIOUS export's file once a new run is under way.
+ */
+describe("exportDonePath — the machine-readable companion to exportDone", () => {
+  it("carries the exact save path for a desktop MP4 export", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\video.mp4");
+
+    await s().runExport();
+
+    expect(s().exportDonePath).toBe("C:\\exports\\video.mp4");
+    expect(s().exportDone).toContain("C:\\exports\\video.mp4");
+  });
+
+  it("carries the PNG sequence folder, not the (null) save path", async () => {
+    const dir = "C:\\exports";
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format: "png", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickFolder).mockResolvedValueOnce(dir);
+
+    await s().runExport();
+
+    // Exactly runExport's own `${dir}/${baseName}_frames` construction —
+    // engineTrackName is "probe.wav", and safeName strips the extension.
+    expect(s().exportDonePath).toBe(`${dir}/probe_frames`);
+    expect(s().exportDone).toContain("PNG sequence");
+  });
+
+  it("carries the save path for a sidecar (ffmpeg) export too", async () => {
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format: "webp", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\loop.webp");
+
+    await s().runExport();
+
+    expect(s().exportDonePath).toBe("C:\\exports\\loop.webp");
+    expect(s().exportDone).toContain("WebP loop saved to C:\\exports\\loop.webp");
+  });
+
+  it("is null for a browser download, which has no path", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+
+    await s().runExport();
+
+    expect(s().exportDonePath).toBeNull();
+    expect(s().exportDone).toContain("MP4");
+  });
+
+  it("clears a stale value the moment a new export starts, before the new result lands", async () => {
+    useVizStore.setState({ exportDonePath: "C:\\old\\video.mp4" });
+    const gate = startAnalysis();
+
+    const run = s().runExport();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    // Still mid-flight (analysis gate held open) — proves the clear happens
+    // at the START of the run, not merely as a side effect of it finishing.
+    expect(s().exporting).not.toBeNull();
+    expect(s().exportDonePath).toBeNull();
+
+    gate.resolve({ grid: GRID, key: null, sections: SECTIONS });
+    await run;
+  });
+
+  it("clears a stale value when the renderer is too simplified to export", async () => {
+    useVizStore.setState({ simplifiedRenderer: true, exportDonePath: "C:\\old\\video.mp4" });
+
+    await s().runExport();
+
+    expect(s().exportDonePath).toBeNull();
   });
 });

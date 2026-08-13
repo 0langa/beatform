@@ -2399,6 +2399,13 @@ button.row-value:focus-visible {
   background: rgba(100, 255, 150, 0.09);
 }
 
+.export-done-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 /* shortcuts */
 .shortcut-list {
   display: flex;

@@ -374,6 +374,15 @@ export async function scratchDir(): Promise<string | null> {
   }
 }
 
+/** Tauri only: reveal a file in Explorer with it pre-selected (Rust side —
+ * fs-scope-checked the same way scanAudioLibrary is: `path` must be one the
+ * dialog already granted, such as an export's own save path). Rejects when
+ * the path is outside the granted scope or is not an existing file. */
+export async function showInFolder(path: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("show_in_folder", { path });
+}
+
 /** Yes/no prompt. Native on desktop; `window.confirm` in the browser build
  * (the same fallback ShaderEditor's discard prompt uses). */
 export async function askConfirm(message: string, title: string): Promise<boolean> {

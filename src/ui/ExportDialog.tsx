@@ -8,7 +8,7 @@ import {
 } from "../state/store";
 import { exportCodecOptions, exportFormatOptions, type ExportOption } from "../state/exportConfig";
 import { BG_TRANSPARENT } from "../render/types";
-import { isTauri } from "../state/platform";
+import { isTauri, showInFolder } from "../state/platform";
 import { Slider } from "./Slider";
 import { Switch } from "./Switch";
 import { useFocusTrap } from "./useFocusTrap";
@@ -104,6 +104,7 @@ export function ExportDialog() {
   const exporting = useVizStore((s) => s.exporting);
   const exportError = useVizStore((s) => s.exportError);
   const exportDone = useVizStore((s) => s.exportDone);
+  const exportDonePath = useVizStore((s) => s.exportDonePath);
   const aspect = useVizStore((s) => s.aspect);
   const bg = useVizStore((s) => s.bg);
   const codecSupport = useVizStore((s) => s.codecSupport);
@@ -445,7 +446,30 @@ export function ExportDialog() {
           </button>
         )}
         {exportError && <div className="toast-inline error">{exportError}</div>}
-        {exportDone && <div className="toast-inline success">{exportDone}</div>}
+        {exportDone && (
+          <div className="toast-inline success export-done-toast">
+            <span>{exportDone}</span>
+            {exportDonePath && caps.desktop && (
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => {
+                  void showInFolder(exportDonePath).catch((e: unknown) => {
+                    // Never a silent swallow: the path was valid a moment ago
+                    // (it came from this very export), so a failure here — the
+                    // file was moved, the drive unmounted — is worth saying.
+                    console.error("[export]", e);
+                    store().setError(
+                      e instanceof Error ? e.message : typeof e === "string" ? e : String(e),
+                    );
+                  });
+                }}
+              >
+                Show in folder
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -318,6 +318,11 @@ interface SessionSlice {
   exporting: ExportProgress | null;
   exportError: string | null;
   exportDone: string | null;
+  /** The machine-readable counterpart to `exportDone`: the same save path or
+   * PNG-sequence folder that sentence interpolates into prose, or null when
+   * there is nothing to reveal (a browser download, or no export yet). Feeds
+   * "Show in folder"; cleared everywhere `exportDone` is. */
+  exportDonePath: string | null;
   /** What the hardware can encode; null until the probe runs (panel open). */
   codecSupport: CodecSupport | null;
   /** Batch render: setup + in-flight run. Null until the panel is opened. */
@@ -1308,6 +1313,7 @@ export const useVizStore = create<VizState>((set, get) => {
     exporting: null,
     exportError: null,
     exportDone: null,
+    exportDonePath: null,
 
     // --- actions ---
     // Per-domain action groups (behavior-identical to the inline versions they

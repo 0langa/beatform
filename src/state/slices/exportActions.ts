@@ -128,7 +128,7 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // tooltip, so the user never picks a destination for a file that was
       // never going to be written.
       if (get().simplifiedRenderer) {
-        set({ exportError: SIMPLIFIED_EXPORT_REASON, exportDone: null });
+        set({ exportError: SIMPLIFIED_EXPORT_REASON, exportDone: null, exportDonePath: null });
         return;
       }
       const engine = getEngine();
@@ -285,6 +285,7 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       set({
         exportError: null,
         exportDone: null,
+        exportDonePath: null,
         exporting: { done: 0, total: 1, speed: null },
       });
       // ProRes: frames stream to the ffmpeg sidecar as they render; writes
@@ -519,6 +520,7 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
               : av1Mode
                 ? `AV1 10-bit MP4 (AAC audio) saved to ${savePath}`
                 : `${animFormat === "gif" ? "GIF" : "WebP"} loop saved to ${savePath}`,
+            exportDonePath: savePath,
           });
         } else {
           if (result.blob) downloadBlob(result.blob, fileName);
@@ -530,6 +532,8 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                     ? "WebM (VP9 + alpha"
                     : `MP4 (${CODEC_LABELS[canvasMode ? "h264" : settings.codec].split(" ")[0]}`
                 } + ${result.audioCodec.toUpperCase()}) saved${savePath ? ` to ${savePath}` : ""}`,
+            // Browser downloads set neither: there is no path to reveal.
+            exportDonePath: pngDir ?? savePath ?? null,
           });
         }
       } catch (e) {
