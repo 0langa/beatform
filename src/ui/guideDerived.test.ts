@@ -88,9 +88,9 @@ describe("derivedMarkdown().render", () => {
     expect(headingsInMd.length).toBe(groupsInData.size);
   });
 
-  it("renders exactly one row line per SHORTCUT_SHEET entry", () => {
+  it("renders exactly one row line per SHORTCUT_SHEET entry, each a list item", () => {
     const md = derivedMarkdown().render("shortcut-sheet");
-    const rowLines = md.split("\n").filter((l) => l.startsWith("<kbd>"));
+    const rowLines = md.split("\n").filter((l) => l.startsWith("- <kbd>"));
     expect(rowLines.length).toBe(SHORTCUT_SHEET.length);
   });
 
@@ -98,9 +98,9 @@ describe("derivedMarkdown().render", () => {
     const md = derivedMarkdown().render("mod-sources");
     const expected = MOD_SOURCES.map((s) => `- **${s.label}**`).join("\n");
     expect(md).toBe(expected);
-    // The LFO-family sentence is Task 5's migration to add via the data —
-    // this renderer emits only the list (this task's scope note, not the
-    // brief's literal text — see task-3-report.md).
+    // The LFO-family sentence is content, not registry data — it lives in
+    // guideContent.ts as prose right after this derived block, so this
+    // renderer emits only the list.
     expect(md).not.toMatch(/LFO/i);
   });
 

@@ -49,7 +49,11 @@ function groupShortcuts(): Array<[ShortcutRow["group"], ShortcutRow[]]> {
 function renderShortcutSheetRow(row: ShortcutRow): string {
   const keys = row.keys.map((k) => `<kbd>${k}</kbd>`).join(" / ");
   const note = row.note ? ` (${row.note})` : "";
-  return `${keys} — ${row.action}${note}`;
+  // A markdown list item, not a bare line: kramdown (GitHub Pages) collapses
+  // consecutive plain lines into one soft-wrapped paragraph, which read as a
+  // run-on sentence on the generated site. Each row starting with "- " makes
+  // every row its own list item instead.
+  return `- ${keys} — ${row.action}${note}`;
 }
 
 function renderShortcutSheet(): string {
@@ -59,8 +63,9 @@ function renderShortcutSheet(): string {
 }
 
 function renderModSources(): string {
-  // Just the list — the fixed LFO-family sentence is Task 5's migration to
-  // append via the data (see task-3-report.md's scope note).
+  // Just the list — the LFO-family sentence is content, not registry data: it
+  // lives in guideContent.ts as prose right after this derived block, so this
+  // renderer only ever emits MOD_SOURCES itself.
   return MOD_SOURCES.map((s) => `- **${s.label}**`).join("\n");
 }
 

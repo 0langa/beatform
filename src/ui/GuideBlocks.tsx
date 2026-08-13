@@ -22,7 +22,8 @@ import type { DerivedTables } from "./guideDerived";
 
 /** Inline keyboard-key chip. Moved here from GuideDialog.tsx (P-21 Task 4)
  * so both the still-JSX dialog content and Block-driven content share one
- * definition; GuideDialog re-imports it. */
+ * definition; only GuideBlocks.test.tsx imports it directly — GuideDialog
+ * itself only ever reaches keyboard-key chips through <GuideBlocks>. */
 export function K({ k }: { k: string }) {
   return <kbd className="guide-key">{k}</kbd>;
 }

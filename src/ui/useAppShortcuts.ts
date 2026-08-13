@@ -267,7 +267,12 @@ export const SHORTCUT_SHEET: readonly ShortcutRow[] = [
   { keys: ["↑"], literals: ["ArrowUp"], action: "Raise the volume", group: "Playback" },
   { keys: ["↓"], literals: ["ArrowDown"], action: "Lower the volume", group: "Playback" },
   { keys: ["M"], literals: ["m", "M"], action: "Mute or unmute", group: "Playback" },
-  { keys: ["L"], literals: ["l", "L"], action: "Toggle A/B loop", group: "Playback" },
+  {
+    keys: ["L"],
+    literals: ["l", "L"],
+    action: "Loop the whole track, or the A-B region when one is set",
+    group: "Playback",
+  },
   { keys: ["I"], literals: ["i", "I"], action: "Set the loop start (in point)", group: "Playback" },
   { keys: ["O"], literals: ["o", "O"], action: "Set the loop end (out point)", group: "Playback" },
 
@@ -291,12 +296,14 @@ export const SHORTCUT_SHEET: readonly ShortcutRow[] = [
     literals: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
     action: "Jump straight to the mode at that strip position",
     group: "Performance",
+    note: "jumps are beat-quantized when quantize is on",
   },
   {
     keys: ["S"],
     literals: ["s", "S"],
     action: "Toggle Stage mode",
     group: "Performance",
+    note: "chrome-free output",
   },
   {
     keys: ["\\"],

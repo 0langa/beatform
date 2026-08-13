@@ -293,42 +293,42 @@ Press <kbd>H</kbd> for the full list — that overlay is also where the button t
 
 ### Playback
 
-<kbd>Space</kbd> — Play or pause
-<kbd>←</kbd> — Seek back 5 seconds
-<kbd>→</kbd> — Seek forward 5 seconds
-<kbd>↑</kbd> — Raise the volume
-<kbd>↓</kbd> — Lower the volume
-<kbd>M</kbd> — Mute or unmute
-<kbd>L</kbd> — Toggle A/B loop
-<kbd>I</kbd> — Set the loop start (in point)
-<kbd>O</kbd> — Set the loop end (out point)
+- <kbd>Space</kbd> — Play or pause
+- <kbd>←</kbd> — Seek back 5 seconds
+- <kbd>→</kbd> — Seek forward 5 seconds
+- <kbd>↑</kbd> — Raise the volume
+- <kbd>↓</kbd> — Lower the volume
+- <kbd>M</kbd> — Mute or unmute
+- <kbd>L</kbd> — Loop the whole track, or the A-B region when one is set
+- <kbd>I</kbd> — Set the loop start (in point)
+- <kbd>O</kbd> — Set the loop end (out point)
 
 ### Performance
 
-<kbd>N</kbd> / <kbd>P</kbd> — Step to the next or previous visual mode
-<kbd>[</kbd> / <kbd>]</kbd> — Step to the next or previous visual mode (physical key — layout-independent)
-<kbd>1–9</kbd> — Jump straight to the mode at that strip position
-<kbd>S</kbd> — Toggle Stage mode
-<kbd>\</kbd> — Toggle Stage mode (physical key — layout-independent)
-<kbd>0</kbd> — Cut to black (Stage mode only)
-<kbd>.</kbd> — Cut to black (Stage mode only — legacy alias for 0)
+- <kbd>N</kbd> / <kbd>P</kbd> — Step to the next or previous visual mode
+- <kbd>[</kbd> / <kbd>]</kbd> — Step to the next or previous visual mode (physical key — layout-independent)
+- <kbd>1–9</kbd> — Jump straight to the mode at that strip position (jumps are beat-quantized when quantize is on)
+- <kbd>S</kbd> — Toggle Stage mode (chrome-free output)
+- <kbd>\</kbd> — Toggle Stage mode (physical key — layout-independent)
+- <kbd>0</kbd> — Cut to black (Stage mode only)
+- <kbd>.</kbd> — Cut to black (Stage mode only — legacy alias for 0)
 
 ### Panels & dialogs
 
-<kbd>G</kbd> — Toggle the Visuals panel
-<kbd>Q</kbd> — Toggle the Library
-<kbd>T</kbd> — Toggle the Timeline
-<kbd>B</kbd> — Toggle the batch export queue
-<kbd>H</kbd> / <kbd>?</kbd> — Toggle this shortcuts sheet (H is layout-independent; ? kept for muscle memory)
-<kbd>Ctrl/Cmd+,</kbd> — Toggle Preferences
-<kbd>F</kbd> — Toggle fullscreen
+- <kbd>G</kbd> — Toggle the Visuals panel
+- <kbd>Q</kbd> — Toggle the Library
+- <kbd>T</kbd> — Toggle the Timeline
+- <kbd>B</kbd> — Toggle the batch export queue
+- <kbd>H</kbd> / <kbd>?</kbd> — Toggle this shortcuts sheet (H is layout-independent; ? kept for muscle memory)
+- <kbd>Ctrl/Cmd+,</kbd> — Toggle Preferences
+- <kbd>F</kbd> — Toggle fullscreen
 
 ### Editing
 
-<kbd>Ctrl/Cmd+S</kbd> — Save the project
-<kbd>Ctrl/Cmd+O</kbd> — Open a project
-<kbd>Ctrl/Cmd+Z</kbd> — Undo the last change
-<kbd>Ctrl/Cmd+Shift+Z</kbd> — Redo the last undone change (same key as Undo, plus Shift)
-<kbd>Ctrl/Cmd+Y</kbd> — Redo the last undone change
+- <kbd>Ctrl/Cmd+S</kbd> — Save the project
+- <kbd>Ctrl/Cmd+O</kbd> — Open a project
+- <kbd>Ctrl/Cmd+Z</kbd> — Undo the last change
+- <kbd>Ctrl/Cmd+Shift+Z</kbd> — Redo the last undone change (same key as Undo, plus Shift)
+- <kbd>Ctrl/Cmd+Y</kbd> — Redo the last undone change
 
 Every performance shortcut has a letter or digit as its main binding, so it sits on the same labeled key on every keyboard layout — QWERTZ and AZERTY included. The punctuation keys some of them also answer to (<kbd>[</kbd>, <kbd>]</kbd>, <kbd>\</kbd>, <kbd>.</kbd>) are kept for US-layout muscle memory and are bound by physical position, not by the character printed on them. And <kbd>Esc</kbd>, wherever you are, closes whatever's open.
