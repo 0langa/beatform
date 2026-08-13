@@ -287,7 +287,7 @@ export const SHORTCUT_SHEET: readonly ShortcutRow[] = [
     note: "physical key — layout-independent",
   },
   {
-    keys: ["1", "–", "9"],
+    keys: ["1–9"],
     literals: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
     action: "Jump straight to the mode at that strip position",
     group: "Performance",
