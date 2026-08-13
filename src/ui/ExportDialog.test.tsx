@@ -332,15 +332,20 @@ describe("Show in folder", () => {
     const boom = new Error("boom");
     vi.mocked(showInFolder).mockRejectedValueOnce(boom);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mount({ exportDone: "MP4 saved to C:\\out\\video.mp4", exportDonePath: "C:\\out\\video.mp4" });
+    // finally, not a trailing call: vitest.config.ts sets no restoreMocks, so
+    // an assertion failure above would otherwise leave console.error silenced
+    // for every later test in this file.
+    try {
+      mount({ exportDone: "MP4 saved to C:\\out\\video.mp4", exportDonePath: "C:\\out\\video.mp4" });
 
-    const button = showInFolderButton();
-    expect(button).not.toBeNull();
-    await userEvent.click(button!);
+      const button = showInFolderButton();
+      expect(button).not.toBeNull();
+      await userEvent.click(button!);
 
-    await waitFor(() => expect(useVizStore.getState().error).toBe("boom"));
-    expect(errorSpy).toHaveBeenCalledWith("[export]", boom);
-
-    errorSpy.mockRestore();
+      await waitFor(() => expect(useVizStore.getState().error).toBe("boom"));
+      expect(errorSpy).toHaveBeenCalledWith("[export]", boom);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
