@@ -200,6 +200,7 @@ beforeEach(() => {
     exporting: null,
     exportError: null,
     exportDone: null,
+    exportDonePath: null,
     batchStatus: "idle",
     beatGrid: null,
     sections: [],

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { CodecSupport } from "../export/codecProbe";
 import {
@@ -321,5 +321,26 @@ describe("Show in folder", () => {
 
     expect(showInFolder).toHaveBeenCalledTimes(1);
     expect(showInFolder).toHaveBeenCalledWith("C:\\out\\video.mp4");
+  });
+
+  it("never swallows a failed reveal — logs it and surfaces it in the store's error slot", async () => {
+    // The click handler doesn't await showInFolder — it fires-and-catches —
+    // so this is the one test that pins the .catch() actually exists rather
+    // than the invoke call alone. Delete the .catch() and the rejection goes
+    // unhandled: console.error never fires, `error` never leaves null, and
+    // the waitFor below times out instead of passing.
+    const boom = new Error("boom");
+    vi.mocked(showInFolder).mockRejectedValueOnce(boom);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mount({ exportDone: "MP4 saved to C:\\out\\video.mp4", exportDonePath: "C:\\out\\video.mp4" });
+
+    const button = showInFolderButton();
+    expect(button).not.toBeNull();
+    await userEvent.click(button!);
+
+    await waitFor(() => expect(useVizStore.getState().error).toBe("boom"));
+    expect(errorSpy).toHaveBeenCalledWith("[export]", boom);
+
+    errorSpy.mockRestore();
   });
 });
