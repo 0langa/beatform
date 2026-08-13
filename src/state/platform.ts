@@ -374,10 +374,11 @@ export async function scratchDir(): Promise<string | null> {
   }
 }
 
-/** Tauri only: reveal a file in Explorer with it pre-selected (Rust side —
- * fs-scope-checked the same way scanAudioLibrary is: `path` must be one the
- * dialog already granted, such as an export's own save path). Rejects when
- * the path is outside the granted scope or is not an existing file. */
+/** Tauri only: reveal a file or folder in Explorer with it pre-selected
+ * (Rust side — fs-scope-checked the same way scanAudioLibrary is: `path`
+ * must be one the dialog already granted, such as an export's own save path
+ * or a PNG-sequence export's destination folder). Rejects when the path is
+ * outside the granted scope or does not exist. */
 export async function showInFolder(path: string): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("show_in_folder", { path });

@@ -457,7 +457,8 @@ export function ExportDialog() {
                   void showInFolder(exportDonePath).catch((e: unknown) => {
                     // Never a silent swallow: the path was valid a moment ago
                     // (it came from this very export), so a failure here — the
-                    // file was moved, the drive unmounted — is worth saying.
+                    // file or folder was moved, the drive unmounted — is
+                    // worth saying.
                     console.error("[export]", e);
                     store().setError(
                       e instanceof Error ? e.message : typeof e === "string" ? e : String(e),

@@ -120,9 +120,9 @@ fn scan_dir(root: &std::path::Path) -> Result<Vec<LibraryTrack>, String> {
     Ok(tracks)
 }
 
-/// Reveal an exported file in Explorer with it pre-selected — the narrowly
-/// scoped alternative to the opener/shell plugin that `run()`, below,
-/// documents removing.
+/// Reveal an exported file or folder in Explorer with it pre-selected — the
+/// narrowly scoped alternative to the opener/shell plugin that `run()`,
+/// below, documents removing.
 ///
 /// Gated on the fs plugin scope exactly like `scan_audio_library`: the save
 /// dialog's flow calls `allow_file` on whatever path the user chose, so a
@@ -148,16 +148,19 @@ fn show_in_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
 }
 
 /// The pure part, split from the command so it is unit-testable without an
-/// AppHandle or a spawned process: rejects a path that does not exist as a
-/// file — `explorer /select,` on a path that is missing silently opens a
-/// default window instead of erroring, which would look identical to success
-/// — and builds the ONE argument explorer requires. The comma must stay
-/// attached to the path with no space in between: a second, separate
+/// AppHandle or a spawned process: rejects a path that does not exist —
+/// `explorer /select,` on a path that is missing silently opens a default
+/// window instead of erroring, which would look identical to success — and
+/// builds the ONE argument explorer requires. A FOLDER is a legitimate
+/// target, not a special case to refuse: a PNG-sequence export's path is
+/// one, and `explorer /select,<folder>` opens the folder's PARENT with the
+/// folder itself selected, exactly as it does for a file. The comma must
+/// stay attached to the path with no space in between: a second, separate
 /// argument (or a space before the path) makes explorer open a default
 /// window instead of selecting anything.
 fn explorer_select_arg(path: &str) -> Result<String, String> {
-    if !std::path::Path::new(path).is_file() {
-        return Err(format!("Not a file: {path}"));
+    if !std::path::Path::new(path).exists() {
+        return Err(format!("Path does not exist: {path}"));
     }
     Ok(format!("/select,{path}"))
 }
@@ -284,20 +287,22 @@ mod tests {
     }
 
     #[test]
-    fn explorer_arg_rejects_a_missing_file() {
+    fn explorer_arg_rejects_a_missing_path() {
         let missing =
             std::env::temp_dir().join(format!("av-showfolder-missing-{}.mp4", std::process::id()));
         assert!(explorer_select_arg(&missing.to_string_lossy()).is_err());
     }
 
     #[test]
-    fn explorer_arg_rejects_a_directory() {
-        // is_file() is false for a directory too — the same refusal as a
-        // missing path, not a special case.
+    fn explorer_arg_accepts_a_directory() {
+        // A PNG-sequence export's path IS a folder — explorer /select,<dir>
+        // opens the folder's parent with the folder itself selected, so this
+        // is a legitimate target, not a special case to refuse.
         let dir = std::env::temp_dir().join(format!("av-showfolder-dir-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
-        assert!(explorer_select_arg(&dir.to_string_lossy()).is_err());
+        let arg = explorer_select_arg(&dir.to_string_lossy()).unwrap();
+        assert_eq!(arg, format!("/select,{}", dir.display()));
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
