@@ -411,8 +411,9 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       policy. Validator green on a FULL clone — note `--depth 1` makes
       `scripts/validate.mjs` report every pin unreachable, which reads as 22
       failures and is purely a shallow-clone artefact.
-      The `/templates` URL rename stays filed and OUT OF SCOPE: it breaks
-      every inbound link, including external ones, and is the owner's call.
+      The `/templates` URL rename is RESOLVED (owner, 2026-08-13): the URL is
+      KEPT FOREVER as a deliberate survivor — external links win, and the
+      page's content already speaks current vocabulary. Never rename it.
 - [x] D3 **DONE (2026-08-09) — repo-wide string audit is clean in the
       surfaces this track owns.** No rendered "Inspector" label remains in
       `src/`, `docs/` or README; the sole current `src/` hit is a negative
@@ -580,7 +581,10 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       **Not fixed, reported:** a silent or DC track reports **200.9 BPM** in
       the footer — `estimateTempo` starts `bestScore = -Infinity`, so an
       all-zero ACF still "wins" at `minLag`, which is MAX_BPM. The fix touches
-      live tempo detection for real audio, and whether the badge should read
+      live tempo detection for real audio, and the owner CALLED the display
+      half on 2026-08-13: the badge HIDES when the track has no usable pulse
+      — no grid confidence, no claim; detection for real audio untouched.
+      Ships with the approved bundle. The original question — whether it read
       nothing or 0 is an owner call. `beatGrid.test.ts:98` cannot catch it: the
       assertion is a tautology for any non-NaN bpm.
       Dismissed with reasons (do not re-derive): `reset("source")` leaving
@@ -618,8 +622,10 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       and two existing tests pin exactly those.
       Not fixed, owner decisions: `audio.rs:90` reads a whole decode into
       memory (~1.27 GB/hour before deinterleave and the MDX stem), so a 2-hour
-      mix could OOM — the call is what track length the lyrics feature
-      supports. Recorded without a reaching input, so not claimed as findings:
+      mix could OOM — the call was what track length the lyrics feature
+      supports, and the owner took it on 2026-08-13: **90 minutes, enforced
+      with a friendly refusal** before staging; the streaming rework stays a
+      someday item. Ships with the approved bundle. Recorded without a reaching input, so not claimed as findings:
       `lyrics_gpu_probe` has no wait ceiling, and `loopback.rs` shares one
       `dead` flag across sessions.
       Checked line by line and clean — skip next sweep: FS scope gating is
@@ -1111,6 +1117,57 @@ buf` — immediately before the job is built, with nothing awaitable
       frame than the app ships; `__runExport`'s `TrackInput` omitted
       `sections` and `vocalLines`, so every probe baseline rendered with no
       section data and no vocal-presence spans.
+- [x] E4a **DONE 2026-08-13 — the watchdog can no longer kill a healthy
+      slow export.** Owner-hit on installed 2.93.0: "Export worker stopped
+      responding mid-render" on MP4/AV1/1080p60/25 Mbps/Particle Flow. Root
+      cause is a STARVED false positive, the same family as the watchdog's
+      own sink-busy exemption: heartbeats covered only setup (AX-3), and the
+      frame loop's remaining food — encoder chunks, progress every 10 frames
+      posted only AFTER `add()`'s backpressure await — can all legitimately
+      go silent for >30 s under software AV1's `latencyMode:"quality"`
+      lookahead (~20+ frames before the FIRST chunk) fed at a slow render
+      rate. Fix: `exportCore` beats `onHeartbeat` on a 5 s interval for the
+      frame loop's whole life (armed after setup, stopped in the function's
+      one `finally`), so the watchdog means exactly its documented purpose —
+      event-loop death. A genuinely wedged encoder now hangs honestly with
+      Cancel available instead of being falsely killed. `livenessPulseMs` is
+      a documented test seam. Evidence: `src/export/exportLiveness.test.ts`
+      parks the loop on a stalled sink await (the PNG lane's `onFrame`, the
+      same backpressure position as the MP4 lane's `add()`) — RED before the
+      fix with exactly ZERO beats during the stall, green after; a no-leak
+      test pins the pulse stopping at settle; dropping the stop wiring
+      reddens it. Device validation on the affected machine: a real AV1
+      1080p60 browser export (960 frames at ~4-5 fps — minutes inside
+      exactly the silence regime that died) ran past the starvation windows
+      with the pulse live and ended clean; a second run was WATCHED to its
+      terminal state — 98%, frame 940/960, then the idle dialog with no
+      error state and zero console errors across both runs. Four minutes at
+      ~4 fps inside exactly the regime 2.93.0 killed at the first window. The
+      owner's H.264 control run on the same settings on the INSTALLED
+      2.93.0 reached 16% without a watchdog kill at rates the AV1 lane
+      never sustains, consistent with the AV1-specific starvation.
+- [ ] E4b **Export performance — findings filed, measure before touching.**
+      Owner reports (Surface Pro 8, Iris Xe): exports 3-10 fps; ~3× faster
+      after a reboot (3-day-uptime degradation is real and external to the
+      app); an H.264 1080p60 run showed "16 fps → 7 fps at 16%". Findings
+      from the 2026-08-13 code read: (1) the dialog's fps readout is
+      `done/elapsed` — a CUMULATIVE average (exportActions.ts), so the early
+      number rides the encoder-queue fill at render speed and then decays
+      toward the steady pipeline rate; the slide is largely a measurement
+      artifact plus Surface thermal settle, NOT a leak (E2's render wave
+      verified nothing accumulates per frame). Small honest fix: a windowed
+      rate. (2) The structural lever: the frame loop SERIALIZES render
+      (`gpuDone()`) and encode (`add()`) per frame — render 60 ms + encode
+      80 ms = 140 ms/frame where a ONE-frame pipeline overlap yields
+      max(render, encode). Potentially ~2× on encoder-bound machines, zero
+      pixel change BY CONSTRUCTION (scheduling, not content) — but the
+      loop's awaits are documented load-bearing backpressure, so this ships
+      only with: per-phase timing instrumentation FIRST (prove the split),
+      a bounded single-frame in-flight design that preserves backpressure,
+      and the full determinism suite + golden traces green. (3) Encoder
+      configs are clean — no `hardwareAcceleration` override (Chromium may
+      pick hardware H.264), `latencyMode:"quality"` stays (pixels are
+      sacred; the owner's rule: never trade quality for speed).
 
 - [x] E2-R1 **DONE 2026-08-10 — with option (f), on the owner's approval.**
       Designed by a workflow: four parallel investigations, a three-lens judge
@@ -2142,7 +2199,13 @@ read as scope decisions rather than leaks. _(The plan numbered them H8–H12;
 H8 was already taken by the `shotCanvas` entry above, so they are filed one
 higher. Nothing else moved.)_
 
-- [ ] H9 **Exact post-lag route meters.** The v2.83.0 indicator is the RAW
+- [ ] H9 **APPROVED-BUILD (owner click-round 2026-08-13) — the owner chose to
+      build the exact publisher rather than close this as a limitation.** The
+      evidence gate below is retired by that verdict; the design constraints
+      stand: a module-level slot filled only where the evaluator already runs
+      (PerfOverlay-style), published OUT of the live loop, never reaching
+      `exportCore`. Original entry: **Exact post-lag route meters.** The
+      v2.83.0 indicator is the RAW
       source through the CURVE — the shipping `sourceValue` fed through the
       shipping `shapedValue` — and deliberately **not** post-attack/release.
       It could not be: the per-route lag evaluator MUTATES the caller's memo
@@ -2227,7 +2290,11 @@ higher. Nothing else moved.)_
       key, and `drivenParamKeys(preset, mods)` is a pure function with one
       call site — widening it to `(preset, mods, lanes)` is the whole change,
       plus the same treatment for Scene's post rows.
-- [ ] H12 **Per-route solo/mute and route reordering on a stacked card.**
+- [ ] H12 **APPROVED BOTH (owner click-round 2026-08-13):** mute ships as an
+      optional validated `ModRoute` field (a v1 route must round-trip
+      unchanged — `validModRoutes` OMITS rather than defaults), reorder ships
+      with a NEW grouped-undo label for the drag gesture. Original entry:
+      **Per-route solo/mute and route reordering on a stacked card.**
       `applyMods` sums in **array order** and clamps per route, so order is
       genuinely user-visible when two routes share one knob — and a card is
       where that finally became legible. Both need document-shape decisions
@@ -2237,7 +2304,10 @@ higher. Nothing else moved.)_
       also needs a coalescing decision for the drag gesture: `"mod-add"` is
       in history's UNGROUPABLE set while `updateModRoute` coalesces by
       `mod:${id}:${keys}`.
-- [ ] H13 **Bulk actions on the Modulation page** — "clear every route for
+- [ ] H13 **APPROVED (owner click-round 2026-08-13):** ships with the new
+      grouped undo label its entry demands, `askConfirm`, and a T13-shaped
+      declined-confirm test. Original entry: **Bulk actions on the
+      Modulation page** — "clear every route for
       this source", "set depth on N routes". Deliberately absent from
       v2.83.0: a bulk destructive action crosses audit UI-3 (needs
       `askConfirm` plus a T13-shaped test) and needs a history decision
@@ -2362,7 +2432,9 @@ Execution sequence around the running Track B program:
    deliberately — its ACL expansion is described there as an exfiltration
    primitive. Shipping it needs, in order: a narrowly scoped Rust command
    (`explorer /select,<path>`, `fs_scope`-checked like the other file commands)
-   plus its capability entry — the owner should re-take that security decision —
+   plus its capability entry — the owner RE-TOOK that security decision on
+   2026-08-13 and APPROVED the narrowly scoped command (see the approved
+   bundle under Decision points) —
    then a `platform.ts` wrapper, then a new store field, because `exportDone` is a
    SENTENCE with the path interpolated into prose and there is nothing
    machine-readable to reveal. Only then is the button a two-line change.
@@ -2546,6 +2618,34 @@ Nine mutations, all red once M2 was corrected.
 
 8. **Post-program:** un-park FEAT-009 + P-4 together. Parked: P-19 list.
    Rejected for now: P-20 (lyrics runtime on demand).
+
+### Approved work bundle — owner click-round 2026-08-13
+
+Every open owner decision in this ledger and PROPOSALS.md was put to the
+owner as click-questions and answered; RECALL card #76 carries the raw
+verdicts. Approved for execution, in this order after the E4 items:
+
+1. **Show in folder** (P-8's declined tail, security decision re-taken):
+   narrowly scoped Rust command (`explorer /select,<path>`,
+   `fs_scope`-checked) + capability entry + `platform.ts` wrapper + a
+   machine-readable path field beside `exportDone` + capability-scoped test.
+2. **BPM badge honesty**: hide the footer BPM badge when the track has no
+   usable pulse (silent/DC 200.9 BPM case); detection untouched.
+3. **Lyrics track-length ceiling**: 90 minutes, friendly refusal before
+   staging; streaming rework stays someday.
+4. **H9** exact post-lag meters (owner chose BUILD over close — see entry).
+5. **H12** route mute + drag reorder (document shapes as decided in entry).
+6. **H13** bulk Modulation actions (grouped undo + confirm + test).
+
+Program decisions, same round: **Track C starts now that P-21 landed**
+(merged 2026-08-13; C4's per-entry owner veto governs every registry
+merge). **FEAT-009 + P-4 auto-unpark** when C completes (P-21 already
+landed). **The feature queue auto-reopens** at the same moment, P-19's
+ranked roster (spectrogram waterfall first) at its head unless reordered.
+**P-14 closed at lite scope** and **P-3 closed with coach marks dropped**
+(PROPOSALS rows updated). The `/templates` URL is kept forever; the
+`.bfpreset` `appVersion` and Gallery-tombstone decisions were taken and
+shipped earlier in the same day's sessions.
 
 ### Decision points for the owner
 
