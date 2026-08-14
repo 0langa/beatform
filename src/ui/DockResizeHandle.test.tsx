@@ -5,8 +5,26 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { useVizStore } from "../state/store";
 import { useAppShortcuts } from "./useAppShortcuts";
 import { DockResizeHandle } from "./DockResizeHandle";
+import { commitVisualsWidth, resizeKeyValue } from "../App";
 
 afterEach(cleanup);
+
+describe("commitVisualsWidth (whole-lane review, IMPORTANT on top of E2-U1)", () => {
+  it("resets visualsDragW to null before (or unconditionally alongside) committing the new width", () => {
+    const calls: string[] = [];
+    const setVisualsDragW = (v: number | null) => calls.push(`setVisualsDragW(${v})`);
+    const setVisualsW = (v: number) => calls.push(`setVisualsW(${v})`);
+    const persist = (v: number) => calls.push(`persist(${v})`);
+
+    commitVisualsWidth(620, setVisualsDragW, setVisualsW, persist);
+
+    // Exact order pinned, not just "was called": a version that resets
+    // AFTER persisting would still pass a looser "all three called" check
+    // while a render sandwiched between the two calls could still catch
+    // the stale value for one frame.
+    expect(calls).toEqual(["setVisualsDragW(null)", "setVisualsW(620)", "persist(620)"]);
+  });
+});
 
 /** Same fake-state idiom as useAppShortcuts.test.tsx: a plain object cast as
  *  the store's getState, so this suite never touches the real store, its
@@ -175,6 +193,62 @@ describe("DockResizeHandle — Escape mid-drag (E2-U1)", () => {
 
     expect(state.setShowPanel).not.toHaveBeenCalled(); // panel survives
     expect(handle.getAttribute("aria-valuenow")).toBe("500"); // back to committed visualsW
+  });
+
+  it("IMPORTANT (whole-lane review) — a drag-commit followed by a keyboard resize keeps the box and aria-valuenow in sync", () => {
+    // Uses the REAL commitVisualsWidth (App.tsx) as the handle's onCommit —
+    // not a hand-written copy of its logic — so a regression in the actual
+    // fix (dropping the setVisualsDragW(null) reset) turns this test red,
+    // the same way it would if this harness rendered <App/> directly.
+    // Visuals splits committed (visualsW) from drag-ephemeral (visualsDragW)
+    // state; onCommit must reset the latter back to null, or a keyboard
+    // resize right after a pointer-drag commit — visualsResizeKey only
+    // ever touches visualsW, never visualsDragW — leaves --visuals-w-drag
+    // and aria-valuenow both stuck reading the STALE dragged pixel value.
+    function VisualsCommitHarness() {
+      const [visualsW, setVisualsW] = useState(500);
+      const [visualsDragW, setVisualsDragW] = useState<number | null>(null);
+      return (
+        <DockResizeHandle
+          className="panel-resize-handle chrome"
+          ariaLabel="Resize Visuals"
+          title="Drag to resize Visuals"
+          value={visualsW}
+          ariaValueNow={visualsDragW ?? visualsW}
+          min={380}
+          max={760}
+          compute={(ev) => Math.min(760, Math.max(380, 1000 - ev.clientX))}
+          onDrag={setVisualsDragW}
+          onCommit={(v) => commitVisualsWidth(v, setVisualsDragW, setVisualsW, () => undefined)}
+          onCancel={() => setVisualsDragW(null)}
+          // The real visualsResizeKey (App.tsx) commits straight to
+          // visualsW/setPrefs on every keypress — no drag state, and no
+          // reason to touch visualsDragW either. resizeKeyValue is the
+          // exact function it calls; sign=-1 matches App.tsx's own Visuals
+          // wiring (moving the separator right NARROWS the right-hand dock).
+          onKeyDown={(e) => {
+            const next = resizeKeyValue(e, visualsW, 380, 760, -1);
+            if (next === null || next === visualsW) return;
+            setVisualsW(next);
+          }}
+        />
+      );
+    }
+    render(<VisualsCommitHarness />);
+    const handle = screen.getByRole("separator", { name: /Resize Visuals/i });
+    stubCapture(handle);
+
+    // Drag-commit: 1000 - 400 = 600.
+    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 500 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 400 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 400 });
+    expect(handle.getAttribute("aria-valuenow")).toBe("600");
+
+    // A keyboard resize right afterward: sign=-1, so ArrowRight subtracts
+    // the 16px step -> 584. Box + aria must track the NEW value, not the
+    // drag-committed one the bug would leave visualsDragW pinned at.
+    fireEvent.keyDown(handle, { key: "ArrowRight" });
+    expect(handle.getAttribute("aria-valuenow")).toBe("584");
   });
 
   it("a pointercancel (drop outside / OS interruption) still commits — Escape is the only reverter (audit U7)", () => {

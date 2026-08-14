@@ -63,7 +63,41 @@ import "./App.css";
  * Returns null for keys it does not own, so the handler can bail without
  * swallowing Tab or Escape.
  */
-function resizeKeyValue(
+/**
+ * The Visuals dock's DockResizeHandle onCommit — pulled out of the JSX and
+ * exported (whole-lane review, IMPORTANT on top of E2-U1) so it is a real,
+ * independently-testable unit rather than an inline closure only a full
+ * `<App />` mount could exercise. Takes its setters as parameters instead
+ * of closing over component state, so a test can call the ACTUAL function
+ * App.tsx uses with its own local state/spies, rather than a hand-written
+ * copy of the logic that would go on passing even if this one regressed.
+ *
+ * Order matters: `setVisualsDragW(null)` must run BEFORE (or otherwise
+ * unconditionally alongside) the commit, not be skipped — the pre-P-1
+ * two-value split's own onUp always cleared it here first. Left out (as
+ * the initial DockResizeHandle extraction did), visualsDragW stays pinned
+ * at the last dragged pixel value; --visuals-w-drag and aria-valuenow both
+ * read `visualsDragW ?? visualsW`, so a LATER action that sets visualsW
+ * WITHOUT touching visualsDragW (visualsResizeKey, the keyboard path,
+ * being the one that actually reaches this) leaves the dock's own box
+ * silently stuck showing the stale dragged width forever.
+ */
+export function commitVisualsWidth(
+  v: number,
+  setVisualsDragW: (value: number | null) => void,
+  setVisualsW: (value: number) => void,
+  persist: (value: number) => void,
+): void {
+  setVisualsDragW(null);
+  // … and the canvas commits ONCE. Persisting is release-only for the same
+  // reason: subscribePrefs(() => measure()) turns every prefs write into a
+  // full re-measure, so a per-move persist would run a second resize storm
+  // alongside the first.
+  setVisualsW(v);
+  persist(v);
+}
+
+export function resizeKeyValue(
   e: React.KeyboardEvent<HTMLDivElement>,
   current: number,
   lo: number,
@@ -681,14 +715,9 @@ export default function App() {
           // The dock is flush to the right edge — no gutter term, unlike the Library.
           compute={(ev) => Math.min(760, Math.max(380, window.innerWidth - ev.clientX))}
           onDrag={setVisualsDragW}
-          onCommit={(v) => {
-            // … the canvas commits ONCE. Persisting is release-only for the
-            // same reason: subscribePrefs(() => measure()) turns every prefs
-            // write into a full re-measure, so a per-move persist would run
-            // a second resize storm alongside the first.
-            setVisualsW(v);
-            setPrefs({ visualsWidth: v });
-          }}
+          onCommit={(v) =>
+            commitVisualsWidth(v, setVisualsDragW, setVisualsW, (w) => setPrefs({ visualsWidth: w }))
+          }
           onCancel={() => setVisualsDragW(null)}
           onKeyDown={visualsResizeKey}
         />
