@@ -301,3 +301,69 @@ describe("whole-lane-review fix I1 — a manual project open racing the read win
     expect(useVizStore.getState().docEpoch).toBeGreaterThan(before);
   });
 });
+
+describe("whole-lane-review round 2, item 3 — boot reentrancy guard (React StrictMode double-invoke)", () => {
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  it("two concurrent calls: one actually reads and applies, the other no-ops immediately", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    const read = deferred<string | null>();
+    vi.mocked(readAutosave).mockReturnValue(read.promise);
+    expect(useVizStore.getState().presetId).not.toBe(OTHER_PRESET); // sanity: a real change
+
+    // StrictMode's double-invoke: the SAME effect body runs twice, so this
+    // is two back-to-back calls with no await between them — not two
+    // independently-scheduled boots.
+    const first = useVizStore.getState().bootDesktopDocument();
+    const second = useVizStore.getState().bootDesktopDocument();
+
+    // The second call must not have started its own read — readAutosave
+    // was invoked exactly once, by the first call.
+    expect(readAutosave).toHaveBeenCalledTimes(1);
+
+    read.resolve(autosaveTextWithPreset(OTHER_PRESET));
+    await Promise.all([first, second]);
+
+    // The document was applied exactly once, correctly — not skipped
+    // entirely (the guard must not just silently drop the boot) and not
+    // corrupted by two overlapping applies.
+    expect(useVizStore.getState().presetId).toBe(OTHER_PRESET);
+    expect(readAutosave).toHaveBeenCalledTimes(1);
+  });
+
+  it("the guard resets once the in-flight call finishes — a LATER, genuinely sequential boot call still runs (not a run-once-ever latch)", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(OTHER_PRESET));
+
+    await useVizStore.getState().bootDesktopDocument();
+    expect(readAutosave).toHaveBeenCalledTimes(1);
+
+    // A second call, well after the first has fully settled — must be a
+    // real, independent boot attempt, not silently absorbed by a stale
+    // "already started" flag.
+    await useVizStore.getState().bootDesktopDocument();
+    expect(readAutosave).toHaveBeenCalledTimes(2);
+  });
+
+  it("the guard resets even when the in-flight call throws, via the finally — a later call is never permanently locked out by one failure", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(readAutosave).mockRejectedValueOnce(new Error("disk error"));
+
+    // bootDesktopDocument itself has no top-level try/catch around the
+    // `await readAutosave()` call — a rejection there propagates out of
+    // the action. This test only cares that doing so does not leave
+    // `bootStarted` stuck true.
+    await expect(useVizStore.getState().bootDesktopDocument()).rejects.toThrow("disk error");
+
+    vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(OTHER_PRESET));
+    await useVizStore.getState().bootDesktopDocument();
+    expect(readAutosave).toHaveBeenCalledTimes(2);
+    expect(useVizStore.getState().presetId).toBe(OTHER_PRESET);
+  });
+});

@@ -22,6 +22,22 @@ import { parseTheme, serializeTheme, ThemeParseError } from "../themes";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
 
+/**
+ * Second whole-lane-review round, item 3: React StrictMode (dev only)
+ * double-invokes a plain (non-cleanup) effect, so App.tsx's boot
+ * useEffect can call `bootDesktopDocument` twice in quick succession
+ * while the first call's read is still in flight — same guard-flag shape
+ * as `initApp`'s `onCloseRequested` install (store.ts). Reset in a
+ * `finally` once a call actually finishes, so this guards CONCURRENT
+ * re-entrancy specifically, not repeat calls in general — a later,
+ * genuinely sequential call (every test in projectIOActions.test.ts calls
+ * this action many times across many `it()` blocks) is never blocked.
+ * Module-scoped rather than a VizState field on purpose: it is boot
+ * plumbing, not document or session state, and has no reason to be
+ * readable from outside this file.
+ */
+let bootStarted = false;
+
 export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
     applyTheme(document, name) {
@@ -212,62 +228,70 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
      */
     async bootDesktopDocument() {
       if (!isTauri()) return;
-      const epochAtReadStart = get().docEpoch;
-      const contents = await readAutosave();
-      if (contents !== null) {
-        let doc: ProjectDocument | null = null;
-        try {
-          doc = parseProject(contents);
-        } catch (e) {
-          // Whole-lane-review fix C2(c): move the bad file aside rather than
-          // let the fallback write-back below silently overwrite it — it
-          // might still be forensically recoverable, and destroying what
-          // might be the user's only copy over a parse bug is worse than a
-          // leftover file. Surfaced as the persistent error toast, not a
-          // transient notice: this is a real, if rare, event worth a click
-          // to dismiss rather than 4 seconds of visibility.
-          console.warn("[autosave] unusable — quarantining and falling back", e);
-          await quarantineCorruptAutosave();
-          set({
-            error:
-              "Your autosave file couldn't be read and was moved aside — starting from your last session",
-          });
-        }
-        if (doc !== null) {
-          // Whole-lane-review fix C2(a): parsing succeeded. Everything past
-          // this point is a SEPARATE failure domain from the parse above —
-          // an apply-time exception is caught and logged here, but must
-          // NEVER fall through to the write-back below. Before this fix a
-          // single try wrapped both parseProject AND applyDocument, so an
-          // apply-time hiccup on a perfectly GOOD file fell into the same
-          // catch as a corrupt one and the write-back then serialized
-          // STALE (pre-apply) state over a file that was actually fine.
+      // Whole-lane-review round 2, item 3 — see bootStarted's own comment
+      // above. Checked AFTER isTauri() so a browser no-op never touches it.
+      if (bootStarted) return;
+      bootStarted = true;
+      try {
+        const epochAtReadStart = get().docEpoch;
+        const contents = await readAutosave();
+        if (contents !== null) {
+          let doc: ProjectDocument | null = null;
           try {
-            if (get().undoDepth === 0 && get().docEpoch === epochAtReadStart) {
-              const recovering = !wasPreviousExitClean();
-              // alreadyOnDisk (M2): this is byte-for-byte what was just read
-              // from the file — applying it must not dirty the clean-exit
-              // marker or queue a redundant identical rewrite before the
-              // user has touched anything.
-              get().applyDocument(doc, { alreadyOnDisk: true });
-              if (recovering) ctx.flashNotice("Recovered your work from the last session");
-            } else {
-              console.warn(
-                "[autosave] the document already changed (an edit, or a manual open) before boot resolved — keeping it",
-              );
-            }
+            doc = parseProject(contents);
           } catch (e) {
-            console.error("[autosave] applying the recovered document failed", e);
+            // Whole-lane-review fix C2(c): move the bad file aside rather than
+            // let the fallback write-back below silently overwrite it — it
+            // might still be forensically recoverable, and destroying what
+            // might be the user's only copy over a parse bug is worse than a
+            // leftover file. Surfaced as the persistent error toast, not a
+            // transient notice: this is a real, if rare, event worth a click
+            // to dismiss rather than 4 seconds of visibility.
+            console.warn("[autosave] unusable — quarantining and falling back", e);
+            await quarantineCorruptAutosave();
+            set({
+              error:
+                "Your autosave file couldn't be read and was moved aside — starting from your last session",
+            });
           }
-          return;
+          if (doc !== null) {
+            // Whole-lane-review fix C2(a): parsing succeeded. Everything past
+            // this point is a SEPARATE failure domain from the parse above —
+            // an apply-time exception is caught and logged here, but must
+            // NEVER fall through to the write-back below. Before this fix a
+            // single try wrapped both parseProject AND applyDocument, so an
+            // apply-time hiccup on a perfectly GOOD file fell into the same
+            // catch as a corrupt one and the write-back then serialized
+            // STALE (pre-apply) state over a file that was actually fine.
+            try {
+              if (get().undoDepth === 0 && get().docEpoch === epochAtReadStart) {
+                const recovering = !wasPreviousExitClean();
+                // alreadyOnDisk (M2): this is byte-for-byte what was just read
+                // from the file — applying it must not dirty the clean-exit
+                // marker or queue a redundant identical rewrite before the
+                // user has touched anything.
+                get().applyDocument(doc, { alreadyOnDisk: true });
+                if (recovering) ctx.flashNotice("Recovered your work from the last session");
+              } else {
+                console.warn(
+                  "[autosave] the document already changed (an edit, or a manual open) before boot resolved — keeping it",
+                );
+              }
+            } catch (e) {
+              console.error("[autosave] applying the recovered document failed", e);
+            }
+            return;
+          }
         }
+        // Missing, or corrupt (quarantined above): docOf(get()) is already
+        // the localStorage fallback (nothing to apply) — just make sure a
+        // file exists for next time, immediately rather than debounced.
+        void writeAutosave(serializeProject(ctx.docOf(get()), APP_VERSION)).catch((e) => {
+          console.warn("[autosave] initial write failed", e);
+        });
+      } finally {
+        bootStarted = false;
       }
-      // Missing, or corrupt (quarantined above): docOf(get()) is already the
-      // localStorage fallback (nothing to apply) — just make sure a file
-      // exists for next time, immediately rather than debounced.
-      void writeAutosave(serializeProject(ctx.docOf(get()), APP_VERSION)).catch((e) => {
-        console.warn("[autosave] initial write failed", e);
-      });
     },
   } satisfies Partial<VizState>;
 }
