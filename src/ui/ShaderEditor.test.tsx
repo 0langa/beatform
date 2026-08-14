@@ -48,6 +48,7 @@ vi.mock("../state/platform", async (importOriginal) => {
 
 const { ShaderEditor } = await import("./ShaderEditor");
 const { useVizStore } = await import("../state/store");
+const { SHADER_APPLY_TIMEOUT_MS } = await import("./asyncTimeout");
 
 /** Captured at module load, actions included — restoring by MERGE keeps the
  * action identities the panel's click sites call through. */
@@ -193,5 +194,98 @@ describe("E2-U4 — ShaderEditor discard during an in-flight compile", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close shader editor" }));
     expect(askConfirmMock).not.toHaveBeenCalled();
     expect(setShowShaderEditorMock).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * CRITICAL, whole-lane review — the busy-gate above has no escape hatch on
+ * its own: `apply()` had no try/catch or timeout around the awaited
+ * compile, so a REJECTED promise left `busy` stuck exactly like a hang
+ * would, and a compile that never settles at all — structurally possible;
+ * see asyncTimeout.ts's own doc comment — left the dialog permanently
+ * unclosable with no way out. raceTimeout (asyncTimeout.ts) is what makes
+ * `busy` always settle; these tests pin that guarantee at the component
+ * level, on top of asyncTimeout.test.ts (the helper in isolation) and
+ * customShaderActions.test.ts (the store-side abort contract).
+ */
+describe("CRITICAL (whole-lane review) — apply() always settles busy, even on rejection or a hang", () => {
+  it("a rejected compile clears busy, surfaces the error, and close works again", async () => {
+    const boom = new Error("GPU device lost");
+    const saveCustomPresetMock = vi.fn(async () => {
+      throw boom;
+    });
+    const setShowShaderEditorMock = vi.fn();
+    act(() =>
+      useVizStore.setState({
+        saveCustomPreset: saveCustomPresetMock,
+        setShowShaderEditor: setShowShaderEditorMock,
+      }),
+    );
+    render(<ShaderEditor />);
+    dirtyAndCompile();
+    await act(async () => {});
+
+    const closeBtn = screen.getByRole("button", { name: "Close shader editor" });
+    expect(isDisabled(closeBtn)).toBe(false);
+    expect(screen.getByText(/Compile failed: GPU device lost/)).toBeTruthy();
+
+    fireEvent.click(closeBtn);
+    await act(async () => {});
+    expect(askConfirmMock).toHaveBeenCalledTimes(1); // still dirty — nothing succeeded
+    expect(setShowShaderEditorMock).toHaveBeenCalledOnce();
+  });
+
+  it("a compile that never settles trips the timeout — busy clears, close works, and a LATE resolve does not apply", async () => {
+    vi.useFakeTimers();
+    try {
+      const gate = deferred<string[]>();
+      let capturedSignal: AbortSignal | undefined;
+      const saveCustomPresetMock = vi.fn((_def: unknown, signal?: AbortSignal) => {
+        capturedSignal = signal;
+        return gate.promise;
+      });
+      const setShowShaderEditorMock = vi.fn();
+      act(() =>
+        useVizStore.setState({
+          saveCustomPreset: saveCustomPresetMock,
+          setShowShaderEditor: setShowShaderEditorMock,
+        }),
+      );
+      render(<ShaderEditor />);
+      dirtyAndCompile();
+      await act(async () => {});
+      expect(screen.getByRole("button", { name: /Compiling…/ })).toBeTruthy();
+      const closeBtn = screen.getByRole("button", { name: "Close shader editor" });
+      expect(isDisabled(closeBtn)).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SHADER_APPLY_TIMEOUT_MS);
+      });
+
+      expect(isDisabled(closeBtn)).toBe(false);
+      expect(screen.getByText(/Compile timed out/)).toBeTruthy();
+      expect(capturedSignal?.aborted).toBe(true); // saveCustomPreset can now refuse to apply
+
+      // Close works again — the whole point of this fix.
+      fireEvent.click(closeBtn);
+      await act(async () => {});
+      expect(askConfirmMock).toHaveBeenCalledTimes(1); // still dirty
+      expect(setShowShaderEditorMock).toHaveBeenCalledOnce();
+
+      // The compile "succeeds" NOW — arriving after the user already closed
+      // the dialog on a timeout. Nothing in the component reacts a second
+      // time: raceTimeout already resolved via the timeout branch, so this
+      // resolution has no continuation left to run.
+      await act(async () => {
+        gate.resolve([]);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(setShowShaderEditorMock).toHaveBeenCalledOnce(); // not called again
+      expect(screen.getByText(/Compile timed out/)).toBeTruthy(); // unchanged
+      expect(saveCustomPresetMock).toHaveBeenCalledOnce(); // no retry, no second call
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

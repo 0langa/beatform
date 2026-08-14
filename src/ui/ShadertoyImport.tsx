@@ -3,6 +3,7 @@ import { askConfirm } from "../state/platform";
 import { useVizStore } from "../state/store";
 import { IconClose } from "./Icons";
 import { useFocusTrap } from "./useFocusTrap";
+import { raceTimeout, SHADER_APPLY_TIMEOUT_MS } from "./asyncTimeout";
 
 /** Shadertoy's default license, preselected — imports must not silently
  * strip the attribution the source site attaches by default. */
@@ -70,6 +71,13 @@ export function ShadertoyImport() {
     })();
   };
 
+  /**
+   * Whole-lane review, CRITICAL on top of E2-U4: same fix and same reasoning
+   * as ShaderEditor.tsx's apply() — `busy` now hard-gates every dismissal
+   * path, and neither the Rust-side (naga) transpile nor the on-device
+   * compile check that follows it has a timeout of its own, so a genuine
+   * hang used to leave this dialog permanently unclosable too.
+   */
   const apply = async () => {
     if (!glsl.trim()) {
       setErrors(["Paste the shader's GLSL first"]);
@@ -79,14 +87,22 @@ export function ShadertoyImport() {
     // The edit id is read off the live snapshot at call time, exactly as
     // App's retired forwarder did.
     const s = store();
-    const result = await s.importShadertoyGlsl(
-      glsl,
-      { name, author, source, license },
-      s.shadertoyImportEditId,
+    const outcome = await raceTimeout(
+      (signal) =>
+        s.importShadertoyGlsl(glsl, { name, author, source, license }, s.shadertoyImportEditId, signal),
+      SHADER_APPLY_TIMEOUT_MS,
     );
     setBusy(false);
-    setErrors(result);
-    if (result.length === 0) store().closeShadertoyImport();
+    if (!outcome.ok) {
+      setErrors([
+        outcome.timedOut
+          ? `Translation timed out after ${SHADER_APPLY_TIMEOUT_MS / 1000}s — the shader may be too complex, or the translator hung. Try again.`
+          : `Translation failed: ${outcome.error instanceof Error ? outcome.error.message : String(outcome.error)}`,
+      ]);
+      return;
+    }
+    setErrors(outcome.value);
+    if (outcome.value.length === 0) store().closeShadertoyImport();
   };
 
   const edit = (fn: () => void) => {

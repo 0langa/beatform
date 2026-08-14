@@ -494,16 +494,23 @@ interface Actions {
   openShadertoyImport(editId?: string): void;
   closeShadertoyImport(): void;
   /** Transpile pasted Shadertoy GLSL (Rust/naga), device-check the module,
-   * register + persist + switch. [] = success, else display-ready errors. */
+   * register + persist + switch. [] = success, else display-ready errors.
+   * `signal` (whole-lane review, CRITICAL on top of E2-U4): aborted by the
+   * caller's own timeout if neither the transpile nor the compile check
+   * ever settles — checked at the next resumption point so a LATE
+   * resolution skips applying rather than switching the live visual out
+   * from under a caller that already gave up and told the user it failed. */
   importShadertoyGlsl(
     glsl: string,
     meta: { name: string; author?: string; source?: string; license?: string },
     editId: string | null,
+    signal?: AbortSignal,
   ): Promise<string[]>;
   /** Compile-check a custom preset; [] = clean, else error strings. */
   checkCustomPreset(def: PresetDef): Promise<string[]>;
-  /** Compile-check, register, persist and switch to a custom preset. */
-  saveCustomPreset(def: PresetDef): Promise<string[]>;
+  /** Compile-check, register, persist and switch to a custom preset.
+   * `signal`: see importShadertoyGlsl's doc comment — same contract. */
+  saveCustomPreset(def: PresetDef, signal?: AbortSignal): Promise<string[]>;
   deleteCustomPreset(id: string): void;
   exportCustomPreset(id: string): Promise<void>;
   importCustomPresetText(contents: string): Promise<void>;

@@ -33,7 +33,7 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       set({ showShadertoyImport: false, shadertoyImportEditId: null });
     },
 
-    async importShadertoyGlsl(glsl, meta, editId) {
+    async importShadertoyGlsl(glsl, meta, editId, signal) {
       if (!isTauri()) {
         return ["Importing Shadertoy shaders needs the desktop app (the translator runs there)"];
       }
@@ -43,6 +43,14 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       } catch (e) {
         return [`Shader translator unavailable: ${(e as Error).message}`];
       }
+      // Whole-lane review, CRITICAL on top of E2-U4: transpileShadertoy is
+      // one opaque Rust invoke() with no cancellation path — a genuine
+      // hang there cannot be interrupted, only outlasted. If the caller's
+      // own timeout already fired while this was in flight, the RESULT is
+      // still real GLSL->WGSL output, but applying it now would switch the
+      // live visual to something the user was already told had failed —
+      // stop here, before even building `def`.
+      if (signal?.aborted) return [];
       if (!result.ok || !result.wgsl) {
         return result.errors.map((e) => (e.line ? `line ${e.line}: ${e.message}` : e.message));
       }
@@ -64,7 +72,9 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       };
       // saveCustomPreset runs the on-device compile check (the tint gate the
       // Rust-side validator cannot replace), registers, persists, switches.
-      return get().saveCustomPreset(def);
+      // `signal` forwarded: its OWN await (checkCustomPreset) is the other
+      // hang risk in this whole chain, and needs the identical guard.
+      return get().saveCustomPreset(def, signal);
     },
 
     async checkCustomPreset(def) {
@@ -75,10 +85,16 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       return r.compilePresetCheck(def);
     },
 
-    async saveCustomPreset(defIn) {
+    async saveCustomPreset(defIn, signal) {
       const def = validCustomPreset(defIn);
       if (!def) return ["Preset failed validation (id/name/params/wgsl shape)"];
       const errors = await get().checkCustomPreset(def);
+      // Whole-lane review, CRITICAL on top of E2-U4: checkCustomPreset's
+      // on-device WebGPU compile has no cancellation path of its own either
+      // — same reasoning as importShadertoyGlsl's check above. A caller
+      // that timed out and already told the user "compile timed out" must
+      // not have this arrive five seconds later and silently apply anyway.
+      if (signal?.aborted) return [];
       if (errors.length > 0) return errors;
       registerCustomPreset(def);
       const customDefs = [...get().customDefs.filter((d) => d.id !== def.id), def];

@@ -5,6 +5,7 @@ import { askConfirm } from "../state/platform";
 import { useVizStore } from "../state/store";
 import { IconClose } from "./Icons";
 import { useFocusTrap } from "./useFocusTrap";
+import { raceTimeout, SHADER_APPLY_TIMEOUT_MS } from "./asyncTimeout";
 
 interface ParamRow {
   /** Stable identity for React keys (audit U3): with index keys, removing a
@@ -152,6 +153,17 @@ export function ShaderEditor() {
     })();
   };
 
+  /**
+   * Whole-lane review, CRITICAL on top of E2-U4: `busy` now hard-gates every
+   * dismissal path (requestClose above), so an awaited compile that never
+   * settles — a genuine hang, not just a slow one; see asyncTimeout.ts's own
+   * comment for why one is structurally possible here — used to leave the
+   * dialog permanently unclosable with no escape hatch. `raceTimeout` always
+   * settles `busy` back to false within SHADER_APPLY_TIMEOUT_MS, on success,
+   * on a thrown/rejected compile, or on a timeout; the AbortSignal it hands
+   * `saveCustomPreset` is what stops a compile that finishes AFTER the
+   * timeout from silently switching the live visual on its way out.
+   */
   const apply = async () => {
     const { specs, errors: rowErrors } = rowsToSpecs(rows);
     if (rowErrors.length > 0) {
@@ -165,10 +177,21 @@ export function ShaderEditor() {
       params: specs,
       wgsl,
     };
-    const result = await store().saveCustomPreset(def);
+    const outcome = await raceTimeout(
+      (signal) => store().saveCustomPreset(def, signal),
+      SHADER_APPLY_TIMEOUT_MS,
+    );
     setBusy(false);
-    setErrors(result);
-    if (result.length === 0) {
+    if (!outcome.ok) {
+      setErrors([
+        outcome.timedOut
+          ? `Compile timed out after ${SHADER_APPLY_TIMEOUT_MS / 1000}s — check the WGSL for an infinite loop and try again.`
+          : `Compile failed: ${outcome.error instanceof Error ? outcome.error.message : String(outcome.error)}`,
+      ]);
+      return;
+    }
+    setErrors(outcome.value);
+    if (outcome.value.length === 0) {
       setEditingId(def.id);
       setDirty(false);
     }
