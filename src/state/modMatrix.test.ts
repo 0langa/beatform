@@ -6,8 +6,10 @@ import {
   LFO_SOURCES,
   MOD_SOURCES,
   postTargetKey,
+  reorderRoutes,
   sourceValue,
   validModRoutes,
+  type ModRoute,
   type ModSource,
 } from "./modMatrix";
 import { presets } from "../render/presets";
@@ -793,5 +795,144 @@ describe("mod v2: validator", () => {
       },
     ]);
     expect(validModRoutes(routes)).toEqual(routes);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H12: per-route mute + route reordering.
+// ---------------------------------------------------------------------------
+
+describe("H12: mute — validator", () => {
+  it("keeps a boolean muted, strips a non-boolean one", () => {
+    const routes = validModRoutes([
+      { id: "a", source: "kick", param: "x", amount: 0.5, muted: true },
+      { id: "b", source: "kick", param: "x", amount: 0.5, muted: false },
+      { id: "c", source: "kick", param: "x", amount: 0.5, muted: "yes" },
+      { id: "d", source: "kick", param: "x", amount: 0.5, muted: 1 },
+      { id: "e", source: "kick", param: "x", amount: 0.5, muted: null },
+    ]);
+    expect(routes.map((r) => r.muted)).toEqual([true, false, undefined, undefined, undefined]);
+    expect("muted" in routes[2]).toBe(false); // stripped, not set-to-undefined
+  });
+
+  it("a v1 route (muted absent) round-trips with exactly its v1 keys", () => {
+    const [r] = validModRoutes([{ id: "a", source: "kick", param: "x", amount: 0.5 }]);
+    expect(Object.keys(r).sort()).toEqual(["amount", "id", "param", "source"]);
+  });
+
+  it("muted survives alongside curve/attack, same as any other v2 field", () => {
+    const routes = validModRoutes([
+      { id: "a", source: "kick", param: "x", amount: 0.5, curve: "exp", attack: 0.1, muted: true },
+    ]);
+    expect(routes).toEqual([
+      { id: "a", source: "kick", param: "x", amount: 0.5, curve: "exp", attack: 0.1, muted: true },
+    ]);
+    expect(validModRoutes(routes)).toEqual(routes);
+  });
+});
+
+describe("H12: mute — evaluation", () => {
+  it("applyMods skips a muted route — value equals base", () => {
+    const base = defaultParams(preset);
+    const routes = validModRoutes([
+      { id: "r", source: "kick", param: spec.key, amount: 1, muted: true },
+    ]);
+    expect(applyMods(preset, base, routes, features({ kick: 1 }))).toEqual(base);
+  });
+
+  it("applyPostMods skips a muted route — value equals base", () => {
+    const post = { ...DEFAULT_POST };
+    const routes = validModRoutes([
+      { id: "r", source: "bass", param: "post:chromatic", amount: 1, muted: true },
+    ]);
+    expect(applyPostMods(post, routes, features({ bass: 1 }))).toEqual(post);
+  });
+
+  it("identity fast path holds when EVERY route is muted (params and post)", () => {
+    // The all-muted case matters as much as the all-off one (modMatrix's own
+    // "applyMods lazy clone" describe block): callers use `out === base` to
+    // skip a redundant GPU upload, so a project the user muted entirely must
+    // not pay for a per-frame clone it no longer needs.
+    const base = defaultParams(preset);
+    const routes = validModRoutes([
+      { id: "a", source: "kick", param: spec.key, amount: 1, muted: true },
+      { id: "b", source: "bass", param: "post:chromatic", amount: 1, muted: true },
+    ]);
+    expect(applyMods(preset, base, routes, features({ kick: 1, bass: 1 }))).toBe(base);
+    expect(applyPostMods(DEFAULT_POST, routes, features({ kick: 1, bass: 1 }))).toBe(DEFAULT_POST);
+  });
+
+  it("a mixed list applies only the live route — muting one leaves the other exactly as before", () => {
+    const base = defaultParams(preset);
+    const mixed = validModRoutes([
+      { id: "a", source: "kick", param: spec.key, amount: 1, muted: true },
+      { id: "b", source: "kick", param: spec.key, amount: 1 },
+    ]);
+    const liveOnly = validModRoutes([{ id: "b", source: "kick", param: spec.key, amount: 1 }]);
+    const out = applyMods(preset, base, mixed, features({ kick: 1 }));
+    expect(out).toEqual(applyMods(preset, base, liveOnly, features({ kick: 1 })));
+  });
+
+  it("a muted route's lag memo is never touched — no state entry, not just no value change", () => {
+    // Mirrors "a route to a mod:'off' param is inert in the STATE too" above:
+    // mute has to be inert in the STATE too, or an attack/release route would
+    // keep gliding toward a target nobody sees while muted, and the memo
+    // would desync from what the (also-frozen) publisher expects.
+    const state = createModEvalState();
+    const routes = validModRoutes([
+      { id: "r", source: "kick", param: spec.key, amount: 1, attack: 0.2, muted: true },
+    ]);
+    applyMods(
+      preset,
+      defaultParams(preset),
+      routes,
+      features({ kick: 1, time: 0 }),
+      undefined,
+      state,
+    );
+    applyMods(
+      preset,
+      defaultParams(preset),
+      routes,
+      features({ kick: 1, time: 5 }),
+      undefined,
+      state,
+    );
+    expect(state.routes.size).toBe(0);
+  });
+});
+
+describe("H12: reorderRoutes", () => {
+  const r = (id: string, param: string): ModRoute => ({ id, source: "kick", param, amount: 0.5 });
+
+  it("moves within-card order; routes of other params keep their exact index (identity)", () => {
+    const a = r("a", "hue");
+    const b = r("b", "size"); // a DIFFERENT param, interleaved on purpose
+    const c = r("c", "hue");
+    const d = r("d", "hue");
+    const routes = [a, b, c, d];
+    // "hue"'s own subsequence is [a, c, d] at full-array indices [0, 2, 3].
+    // Move a (subsequence index 0) to the end of that subsequence (index 2).
+    const out = reorderRoutes(routes, "hue", 0, 2);
+    expect(out.map((x) => x.id)).toEqual(["c", "b", "d", "a"]);
+    // Not just equal VALUES — the untouched route is the SAME object, at the
+    // SAME index, and the moved ones are the same objects too (no clone).
+    expect(out[1]).toBe(b);
+    expect(out[0]).toBe(c);
+    expect(out[2]).toBe(d);
+    expect(out[3]).toBe(a);
+  });
+
+  it("out-of-range or equal indices return the array BY IDENTITY", () => {
+    const routes = [r("a", "hue"), r("b", "hue")];
+    expect(reorderRoutes(routes, "hue", 0, 0)).toBe(routes);
+    expect(reorderRoutes(routes, "hue", -1, 1)).toBe(routes);
+    expect(reorderRoutes(routes, "hue", 0, 2)).toBe(routes);
+    expect(reorderRoutes(routes, "nope", 0, 1)).toBe(routes); // no route has this param
+  });
+
+  it("a lone route on the param is always a no-op", () => {
+    const routes = [r("a", "hue"), r("b", "size")];
+    expect(reorderRoutes(routes, "hue", 0, 0)).toBe(routes);
   });
 });

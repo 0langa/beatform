@@ -137,6 +137,68 @@ describe("addModRoute — the dedupe", () => {
   });
 });
 
+describe("updateModRoute — muted (H12)", () => {
+  it("passes the muted patch through and records history under the route's own key", () => {
+    s().addModRoute("kick", liveParam);
+    const id = s().activeMods[0].id;
+    const depth = s().undoDepth;
+
+    s().updateModRoute(id, { muted: true });
+
+    expect(s().activeMods[0].muted).toBe(true);
+    expect(s().modsByPreset[subject.id][0].muted).toBe(true);
+    // updateModRoute's existing per-route key ("mod:<id>:muted") — no new
+    // history mechanism needed for a plain patch.
+    expect(s().undoDepth).toBe(depth + 1);
+  });
+});
+
+describe("reorderModRoutes (H12)", () => {
+  it("moves within-card order and leaves another param's route at its own index", () => {
+    s().addModRoute("kick", liveParam);
+    s().addModRoute("bass", liveParam); // second route on the SAME target
+    s().addModRoute("kick", postParam); // a DIFFERENT target, interleaved
+    const [first, second, other] = s().activeMods;
+    expect(first.param).toBe(liveParam);
+    expect(second.param).toBe(liveParam);
+    expect(other.param).toBe(postParam);
+
+    s().reorderModRoutes(liveParam, 0, 1); // swap the two liveParam routes
+
+    const mods = s().activeMods;
+    expect(mods.map((r) => r.id)).toEqual([second.id, first.id, other.id]);
+    // Not just re-sorted the same way — the untouched route is the SAME
+    // object at the SAME index (identity, not merely equal value).
+    expect(mods[2]).toBe(other);
+    expect(s().modsByPreset[subject.id]).toEqual(mods);
+  });
+
+  it("out-of-range or equal indices are a no-op and cost no history entry", () => {
+    s().addModRoute("kick", liveParam);
+    const before = s().activeMods;
+    const depth = s().undoDepth;
+
+    s().reorderModRoutes(liveParam, 0, 5); // toIndex out of range — one route
+    s().reorderModRoutes(liveParam, 0, 0); // equal indices
+    s().reorderModRoutes("notARealParam", 0, 1); // no route carries this param
+
+    expect(s().activeMods).toBe(before); // identity: nothing was even rebuilt
+    expect(s().undoDepth).toBe(depth);
+  });
+
+  it("records ONE history entry per gesture — a second move inside the window groups", () => {
+    s().addModRoute("kick", liveParam);
+    s().addModRoute("bass", liveParam);
+    const depth = s().undoDepth;
+
+    s().reorderModRoutes(liveParam, 0, 1);
+    expect(s().undoDepth).toBe(depth + 1);
+
+    s().reorderModRoutes(liveParam, 1, 0); // a second, genuine move — same gesture
+    expect(s().undoDepth).toBe(depth + 1); // grouped under "mod-reorder", not a 2nd entry
+  });
+});
+
 describe("route recipes still work through the guarded action", () => {
   it("keeps flashing 'Already routed' on a repeat chip click", () => {
     s().applyModRouteRecipe("kick-punch");
@@ -213,5 +275,17 @@ describe("legacy documents", () => {
 
     expect(s().activeMods).toEqual(kept);
     expect(s().modsByPreset[subject.id]).toEqual(kept);
+  });
+
+  it("load routes carrying muted exactly as before (H12 is additive, no schema bump)", () => {
+    const legacy: ModRoute[] = [
+      { id: "mr-legacy-muted", source: "kick", param: liveParam, amount: 0.5, muted: true },
+      { id: "mr-legacy-unmuted", source: "bass", param: liveParam, amount: 0.4 },
+    ];
+
+    s().applyDocument(parseProject(serializeProject(docWith(legacy), APP_VERSION)));
+
+    expect(s().activeMods).toEqual(legacy);
+    expect(s().modsByPreset[subject.id]).toEqual(legacy);
   });
 });

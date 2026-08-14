@@ -3,7 +3,13 @@ import { decodeAudioLenient } from "../../audio/decodeLenient";
 import { analyzeStem, MAX_STEMS, STEM_SLOTS } from "../../audio/stems";
 import { allParams, isModTarget, paramSpecMap, type PresetDef } from "../../render/types";
 import { presetById } from "../../render/presets";
-import { newRouteId, postTargetKey, type ModRoute, type ModSource } from "../modMatrix";
+import {
+  newRouteId,
+  postTargetKey,
+  reorderRoutes,
+  type ModRoute,
+  type ModSource,
+} from "../modMatrix";
 import { MOD_ROUTE_RECIPES, recipeRoutes } from "../modRoutePresets";
 import { saveStoredMods } from "../persistence";
 import { getEngine } from "../services";
@@ -136,6 +142,19 @@ export function stemsModsActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       const modsByPreset = { ...s.modsByPreset };
       if (activeMods.length > 0) modsByPreset[s.presetId] = activeMods;
       else delete modsByPreset[s.presetId];
+      set({ activeMods, modsByPreset });
+      saveStoredMods(modsByPreset);
+    },
+
+    reorderModRoutes(paramKey, fromIndex, toIndex) {
+      const s = get();
+      const activeMods = reorderRoutes(s.activeMods, paramKey, fromIndex, toIndex);
+      // Out of range or a no-op move: reorderRoutes hands back `activeMods`
+      // BY IDENTITY for that, and a rejected call is not an edit — recording
+      // it would put a no-op on the undo stack (same guard as addModRoute).
+      if (activeMods === s.activeMods) return;
+      ctx.record("mod-reorder");
+      const modsByPreset = { ...s.modsByPreset, [s.presetId]: activeMods };
       set({ activeMods, modsByPreset });
       saveStoredMods(modsByPreset);
     },

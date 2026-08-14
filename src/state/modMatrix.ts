@@ -42,6 +42,15 @@ export interface ModRoute {
    */
   attack?: number;
   release?: number;
+  /**
+   * When true, applyMods/applyPostMods skip this route entirely — as if it
+   * were not in the array at all. Absent or false = active, the v1
+   * behavior. OPTIONAL AND ADDITIVE like curve/attack/release: absent on
+   * every v1 route, and validModRoutes OMITS it unless typeof is exactly
+   * boolean. See applyMods' mute skip (H12) for what this does to a
+   * route's lag memo and its published meter value.
+   */
+  muted?: boolean;
 }
 
 /** Per-route source shaping. "linear" behaves exactly like an absent curve. */
@@ -318,6 +327,23 @@ export function applyMods(
   // `base` by identity also lets callers skip a redundant uniform upload.
   let out: ParamValues | null = null;
   for (const route of routes) {
+    // H12: a muted route is inert, exactly as if it were absent from the
+    // array — checked BEFORE the lazy clone (like the mod:"off" skip below)
+    // so an all-muted route list keeps the identity fast path callers rely
+    // on to skip a GPU upload. routeValue() is never called for it, so a lag
+    // memo it already owns (attack/release, P-16) simply stops advancing —
+    // it neither resets nor updates while muted. services.ts's per-route
+    // publisher (getLiveRouteValues) is NOT special-cased for mute: it keeps
+    // copying whatever modEval.routes holds for the id (that frozen memo, or
+    // nothing yet if the route has always been muted, in which case it falls
+    // back to the instant source-through-curve value like any unlagged
+    // route). So a muted route's meter can show a stale or live-instant
+    // number instead of "off" — accepted, because the mute toggle's own UI
+    // (reduced opacity on the whole row, ModulationPage.tsx) is what tells
+    // the user this route does nothing right now, not the meter. On unmute,
+    // the large elapsed dt hits routeValue's own seek/loop snap branch, so
+    // it resumes with a snap rather than gliding in from a stale value.
+    if (route.muted === true) continue;
     const spec = specs.get(route.param);
     if (!spec) continue; // route to a param this preset doesn't have — skip
     // mod:"off" (RP-2): not a modulation target. The target lists no longer
@@ -375,6 +401,10 @@ export function applyPostMods(
 ): PostSettings {
   let out: PostSettings | null = null;
   for (const route of routes) {
+    // H12: see applyMods' mute skip for the full rationale (lag memo
+    // freeze, the publisher deliberately not special-cased). Checked first
+    // so an all-muted post route list also keeps the identity fast path.
+    if (route.muted === true) continue;
     const key = postTargetKey(route.param);
     if (!key) continue;
     const spec = POST_SPECS.get(key)!;
@@ -385,6 +415,49 @@ export function applyPostMods(
     (out as unknown as Record<string, number>)[key] = Math.min(spec.max, Math.max(spec.min, next));
   }
   return out ?? base;
+}
+
+/**
+ * Move one of `paramKey`'s routes from `fromIndex` to `toIndex`, where both
+ * indices are positions within JUST that param's own routes (a
+ * ModulationPage card's own list), not into `routes` itself. Every route of
+ * a DIFFERENT param keeps its exact index in the full array —
+ * applyMods/applyPostMods sum per param, so only the relative order of
+ * routes sharing one param is ever observable, and this is the one place
+ * that order changes (H12).
+ *
+ * Returns `routes` BY IDENTITY, not a copy, when the indices are equal or
+ * out of range, so a rejected call costs nothing — the same convention
+ * applyMods/applyPostMods use to skip a redundant clone.
+ */
+export function reorderRoutes(
+  routes: ModRoute[],
+  paramKey: string,
+  fromIndex: number,
+  toIndex: number,
+): ModRoute[] {
+  const positions: number[] = [];
+  const subset: ModRoute[] = [];
+  routes.forEach((r, i) => {
+    if (r.param === paramKey) {
+      positions.push(i);
+      subset.push(r);
+    }
+  });
+  if (
+    fromIndex < 0 ||
+    fromIndex >= subset.length ||
+    toIndex < 0 ||
+    toIndex >= subset.length ||
+    fromIndex === toIndex
+  ) {
+    return routes;
+  }
+  const [moved] = subset.splice(fromIndex, 1);
+  subset.splice(toIndex, 0, moved);
+  const out = routes.slice();
+  positions.forEach((pos, i) => (out[pos] = subset[i]));
+  return out;
 }
 
 const MOD_CURVES = new Set<string>(["linear", "exp", "smooth"]);
@@ -420,6 +493,7 @@ export function validModRoutes(v: unknown): ModRoute[] {
         typeof r.curve === "string" && MOD_CURVES.has(r.curve) ? (r.curve as ModCurve) : undefined;
       const attack = validLagSec(r.attack);
       const release = validLagSec(r.release);
+      const muted = typeof r.muted === "boolean" ? r.muted : undefined;
       out.push({
         id: r.id,
         source: r.source as ModSource,
@@ -428,6 +502,7 @@ export function validModRoutes(v: unknown): ModRoute[] {
         ...(curve !== undefined ? { curve } : {}),
         ...(attack !== undefined ? { attack } : {}),
         ...(release !== undefined ? { release } : {}),
+        ...(muted !== undefined ? { muted } : {}),
       });
     }
   }

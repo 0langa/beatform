@@ -609,6 +609,10 @@ interface Actions {
   addModRoute(source: ModSource, param: string): void;
   updateModRoute(id: string, patch: Partial<ModRoute>): void;
   removeModRoute(id: string): void;
+  /** Move one of `paramKey`'s routes within its own stack (H12). Indices are
+   *  positions inside that param's routes, matching a ModulationPage card's
+   *  own list — see reorderRoutes (modMatrix.ts) for the exact contract. */
+  reorderModRoutes(paramKey: string, fromIndex: number, toIndex: number): void;
   /** Add a curated route recipe's routes to the active visual (P-7 chips). */
   applyModRouteRecipe(id: string): void;
   /** Re-rasterize the overlay at the live canvas size (debounced). */

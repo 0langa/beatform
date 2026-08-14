@@ -54,13 +54,14 @@ const NO_TIMELINE: DrivenTimeline = { enabled: false, lanes: NO_LANES };
  * TWO DRIVERS, TWO DIFFERENT SETS OF INERT RULES — that asymmetry is the whole
  * subtlety of this function, and it is not a bug in either engine:
  *
- * MODULATION (`applyMods`, modMatrix.ts) skips a route when there is no spec
- * for the key, and when `spec.mod === "off"` — the two `continue`s at the top
- * of its route loop. `post:` routes fall out through the FIRST of those and not
- * a special case of their own: post targets are namespaced keys
- * ("post:chromatic") that no preset declares, so `paramSpecMap` never has them.
- * They are applied by `applyPostMods` against PostSettings, never reach
- * ParamGroups, and marking them is the Scene page's job.
+ * MODULATION (`applyMods`, modMatrix.ts) skips a route when it is `muted`
+ * (H12), when there is no spec for the key, and when `spec.mod === "off"` —
+ * the three `continue`s at the top of its route loop. `post:` routes fall
+ * out through the "no spec" one of those and not a special case of their
+ * own: post targets are namespaced keys ("post:chromatic") that no preset
+ * declares, so `paramSpecMap` never has them. They are applied by
+ * `applyPostMods` against PostSettings, never reach ParamGroups, and
+ * marking them is the Scene page's job.
  *
  * AUTOMATION (`evalTimeline` + `resolveActiveFrame`) skips a lane when the
  * timeline's master switch is off (evalTimeline's first line returns an empty
@@ -97,6 +98,9 @@ export function drivenParamKeys(
   // from, allocates nothing.
   let out: Set<string> | null = null;
   for (const route of mods) {
+    // H12: applyMods skips a muted route entirely — it drives nothing, so
+    // neither does the mark. Mirrors the mod:"off" skip right below it.
+    if (route.muted === true) continue;
     const spec = specs.get(route.param);
     if (!spec) continue;
     if (spec.mod === "off") continue;

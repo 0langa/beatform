@@ -184,6 +184,16 @@ describe("drivenParamKeys", () => {
       ...drivenParamKeys(p, [route("hue")], { enabled: false, lanes: [laneOn(p, "size")] }),
     ]);
   });
+
+  it("D9 (H12): a muted route is NOT driven — applyMods skips it", () => {
+    const p = preset("spectrum-bars");
+    const mods = [route("hue", { muted: true })];
+    expect(drivenParamKeys(p, mods).size).toBe(0);
+    expect(keysAppliedByEngine(p, mods).size).toBe(0);
+    // A mixed stack: only the live route's target is driven.
+    const stacked = [route("hue", { id: "a", muted: true }), route("hue", { id: "b" })];
+    expect([...drivenParamKeys(p, stacked)]).toEqual(["hue"]);
+  });
 });
 
 /**
