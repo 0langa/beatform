@@ -10,7 +10,7 @@ import {
 } from "../src/render/types";
 import { DEFAULT_LYRIC_STYLE, type LyricStyle } from "../src/state/lyrics";
 import { DEFAULT_AUDIOGRAM, type AudiogramSettings } from "../src/state/audiogram";
-import { defaultBuilderStack } from "../src/render/builder2";
+import { defaultBuilderStack, type BuilderStack } from "../src/render/builder2";
 import type { Aspect, ProjectDocument } from "../src/state/project";
 import type { ThemeMeta } from "../src/state/themes";
 import type { SyncSettings } from "../src/audio/types";
@@ -61,6 +61,26 @@ export interface ThemeCandidate {
 }
 
 type ModSpec = Omit<ModRoute, "id">;
+
+/**
+ * The app's starter Builder stack with SLUG-DERIVED layer ids.
+ *
+ * None of these entries selects Builder, so the stack is only ever the
+ * untouched default a fresh document carries — but it still has to be
+ * deterministic, because it is serialized into every `.bftheme` file.
+ * `defaultBuilderStack()` mints its ids through `newLayerId()`, which is
+ * `bl-<seq>-<Math.random()>`: re-running the emit rewrote all five committed
+ * files with new layer ids and nothing else. That breaks the promise the veto
+ * sheet makes about the files being the exact bytes to merge, and it is the
+ * one place this module was not honouring its own determinism rule.
+ *
+ * Only the ids are rewritten, so the stack is otherwise identical to the
+ * app's own default and stays canonical: `validBuilderStack` preserves a
+ * supplied id verbatim (sliced to 24 chars — the longest of these is 17).
+ */
+function stableBuilderStack(slug: string): BuilderStack {
+  return { layers: defaultBuilderStack().layers.map((l, i) => ({ ...l, id: `${slug}-b${i}` })) };
+}
 
 interface CandidateSpec {
   slug: string;
@@ -114,7 +134,7 @@ function candidate(spec: CandidateSpec): ThemeCandidate {
       lyricStyle: { ...DEFAULT_LYRIC_STYLE, ...spec.lyricStyle },
       audiogram: { ...DEFAULT_AUDIOGRAM, ...spec.audiogram },
       customDefs: [],
-      builderStack: defaultBuilderStack(),
+      builderStack: stableBuilderStack(spec.slug),
     },
   };
 }
@@ -687,9 +707,13 @@ export const CANDIDATES: ThemeCandidate[] = [
    *
    * The NAME changed on the device. It was authored as "Blueprint" expecting a
    * drafting-table cyan, and then a six-value `hue` sweep moved the frame's
-   * measured mean hue by four degrees in total: in wireframe material the
-   * lattice does not take its colour from `hue` at all, and the entry renders
-   * violet-magenta whatever the base is set to. Rather than ship a name and a
+   * measured mean hue by four degrees in total. The mechanism is DILUTION,
+   * not exclusion: the hue-driven palette is in every term, but this branch's
+   * dominant ones mix a long way toward a fixed near-white (the beat-pulse
+   * ring at 0.5, the hot vanishing core at 0.6 — tunnelRings.ts:1155,1159)
+   * while its wall term is scaled down hard and the wires carry a fixed
+   * brightness floor. The base colour barely reads, so the entry renders
+   * violet-magenta whatever `hue` is set to. Rather than ship a name and a
    * description promising a colour the mode will not produce, the entry is
    * what it actually is — a blacklit lattice — and the `hue` finding is filed
    * in the veto sheet as a product note.

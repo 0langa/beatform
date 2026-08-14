@@ -15,10 +15,35 @@ Everything here is reviewable from three places:
 - `candidates.ts` and `looks.ts`, which are the typed source the files are
   emitted from, with the reasoning for each entry in the comments.
 
-`npx vitest run --config trackc-candidates/vitest.config.ts` — 124 assertions,
-green. It emits the files, then parses every one of them back through
-`parseTheme` / `parseUserPreset` and asserts nothing was dropped, clamped,
-re-sorted or re-`id`ed.
+`npx vitest run --config trackc-candidates/vitest.config.ts` — 124 test cases,
+green. Emitting is deterministic: running it twice in a row leaves zero git
+diff, so the committed files really are the bytes that would merge.
+
+**What that suite does and does not prove**, stated precisely so nobody later
+trims it on a wrong assumption. It runs two mechanisms that cover different
+things:
+
+- It parses every emitted file back through the app's **real validators**
+  (`parseTheme` → `validateDocument`, `parseUserPreset`) and asserts nothing
+  moved. That catches everything those validators normalize: a route `amount`
+  outside −1..1 is clamped, a malformed sync object is dropped, a route to a
+  rejected source disappears, an un-`id`ed keyframe gets a random id, scenes
+  are re-sorted, a background pointing at a missing asset degrades, an unknown
+  preset id falls back to the default mode.
+- The validators **never look at a param's spec**. `validParamsByPreset` keeps
+  every finite number verbatim — no range, no step, no lookup — and route
+  targets are only length-capped, so a route pointing at a key the preset does
+  not have round-trips perfectly and is simply inert at render time. Param
+  range, step-grid alignment, enum/toggle legality, route-target existence and
+  modulation headroom are proven by **hand-written checks read against the
+  live specs**, not by the round-trip.
+
+Both mechanisms were confirmed non-vacuous by live mutation, 3/3 caught: a
+param pushed outside its spec range failed 2 cases (live-spec checks only — it
+round-trips perfectly), a route re-pointed at a key its preset does not have
+failed 1 (live-spec check only, same reason), and a route `amount` set to 2
+failed 3, one of which is the round-trip diff where the real validator clamped
+it back to 1. Reverting restored 124/124.
 
 ---
 
@@ -142,19 +167,36 @@ shape and the looks apply through `installGalleryEntry` the same way.
    `vocal` only carries a signal once lyrics exist (`realtimeSource.ts:306`,
    `offlineSource.ts:466`) and `stem1..4:*` only once stems are imported.
    Routing to either in shipped content ships a route that does nothing on a
-   bare track, so no candidate uses them. The Modulation page offers both with
-   nothing to say they are inert. A "no signal" state on the source picker,
-   or on the driven-by meter, would close it.
+   bare track, so no candidate uses them.
+   **Credit where it is due: the stem case is already half-handled.** A route
+   whose stem source matches no loaded stem renders as
+   `"<source> (stem not loaded)"` in its row (`ModulationPage.tsx:867-868`),
+   deliberately, so a reopened stem project does not show a blank route. The
+   gap is the FRESH picker: choosing a stem source for a stem you have not
+   loaded gives no such warning at the moment you choose it, and `vocal` has
+   no affordance of this kind at all — it simply reads zero. A "no signal"
+   state on the source picker itself, or on the driven-by meter, would close
+   both.
 2. **A preset's `hue` is not the colour you get.** The shared cosine palette
    is intuitive on its own (195 really is blue), but each mode adds a phase
    offset from its own hue spread and spectrum colouring. Measured: Kaleido
    Nebula's frame mean lands near `284 - hue`, so this lane's deep blue sits
-   at hue 90. Synthwave needed 45/330 rather than 28/202 to read gold. **And
-   in the Tunnel's wireframe material, a six-value hue sweep moved the frame's
-   mean hue by four degrees in total** — that material appears not to take its
-   colour from `hue` at all, which is why row 5 was renamed from Blueprint to
-   Blacklight rather than shipped promising a cyan it will not render. Worth a
-   look as a possible bug.
+   at hue 90. Synthwave needed 45/330 rather than 28/202 to read gold.
+   **The sharpest case is the Tunnel's Wireframe material**, where a six-value
+   hue sweep moved the frame's measured mean hue by four degrees in total. The
+   mechanism is DILUTION, not exclusion — the hue-driven palette is present in
+   every term, but in that branch the dominant ones are mixed a long way toward
+   a fixed near-white: the beat-pulse ring is `mix(pal, vec3f(1.0), 0.5)` and
+   the hot vanishing core `mix(pal, vec3f(1.0), 0.6)`
+   (`tunnelRings.ts:1155,1159`), while the branch's own wall term is scaled
+   down hard (`lit = tileLevel*0.12 + surf*0.05 + v*tileSpectrum*0.2`, line 1041) and the wires get a fixed brightness floor
+   (`seamLevel = groutLevel*1.3 + 0.15`). Net effect: whatever `hue` says, the
+   frame is dominated by desaturated near-white terms, so the base colour
+   barely reads. That is why row 5 was renamed from Blueprint to Blacklight
+   rather than shipped promising a cyan it will not render. Not necessarily a
+   bug — the floor exists so a wireframe with no wires is not an empty screen —
+   but it does make `hue` close to inoperative in that material, which is worth
+   a look.
 3. **Authoring a bright mode at a neutral exposure is a trap.** Kaleido Nebula
    and Particles both emit well past 1.0 across large regions; every one of
    those values clips to white before the post chain can shape it. Three of

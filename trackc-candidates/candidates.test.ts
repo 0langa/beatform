@@ -21,11 +21,29 @@ import { APP_VERSION } from "../src/version";
  *  2. PROVE each emitted file survives the app's real validators losslessly —
  *     that is what PLAN-C1 asks for, and it is a stronger claim than "it
  *     applies". A theme can apply and still not be the theme that was
- *     authored: a param outside its spec range is clamped, an unknown sync
- *     mode is dropped, a route to a rejected source disappears, an
- *     un-`id`ed keyframe gets a RANDOM id backfilled, a background pointing
- *     at an absent asset degrades. Every one of those shows up here as a
- *     diff instead of as a look nobody notices is wrong.
+ *     authored, and the round-trip catches that class as a diff instead of as
+ *     a look nobody notices is wrong.
+ *
+ * TWO MECHANISMS, AND THEY COVER DIFFERENT THINGS. Do not "simplify" the
+ * hand-written checks below on the assumption that the round-trip already
+ * covers them — it does not, and the split is exactly this:
+ *
+ *  - The REAL validators (`parseTheme` -> `validateDocument`) catch anything
+ *    they normalize: a route `amount` outside -1..1 is CLAMPED
+ *    (`validModRoutes`), an unknown sync mode or a malformed sync object is
+ *    dropped, a route to a source the validator rejects disappears, an
+ *    un-`id`ed keyframe gets a RANDOM id backfilled, timeline scenes are
+ *    re-sorted by start, a background pointing at an absent asset degrades to
+ *    the preset background, an unknown preset id falls back to the default
+ *    mode. Those all surface as a round-trip diff.
+ *  - The validators DO NOT look at a param's spec at all. `validParamsByPreset`
+ *    keeps every finite number verbatim — no range, no step, no spec lookup —
+ *    and `validModRoutes` only length-caps `param` (`.slice(0, 64)`), so a
+ *    route pointing at a key the preset does not have round-trips perfectly
+ *    and is silently inert at render time. Param range, step-grid alignment,
+ *    enum/toggle legality, route-target existence, `mod: "off"` targets and
+ *    modulation headroom are caught ONLY by the checks in this file, which
+ *    read the LIVE specs through `allParams(presetById(...))`.
  *
  * Beyond the round-trip, this file enforces the things that make a flagship
  * a flagship rather than a recolour, including two rules the app's own suites
