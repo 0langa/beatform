@@ -22,10 +22,10 @@
         "saturation": 1.15,
         "lightness": 1.05,
         "bandColor": 55,
-        "density": 19,
-        "size": 0.13,
-        "sizeVar": 0.8,
-        "fill": 0.84,
+        "density": 9,
+        "size": 0.08,
+        "sizeVar": 0.5,
+        "fill": 0.5,
         "layers": 3,
         "clump": 0.34,
         "mirror": 1,
@@ -33,21 +33,21 @@
         "speed": 0.85,
         "direction": 90,
         "parallax": 0.8,
-        "streak": 1.1,
+        "streak": 0.8,
         "wander": 0.5,
         "wanderSpeed": 0.5,
         "beatDance": 0.7,
-        "sizePulse": 1.25,
+        "sizePulse": 0.9,
         "energyDrive": 1.3,
-        "beatFlash": 0.22,
-        "beatPop": 0.65,
+        "beatFlash": 0.12,
+        "beatPop": 0.35,
         "shootingStars": 0.28,
-        "hotCore": 0.84,
-        "twinkle": 0.5,
-        "glow": 0.6,
-        "brightness": 1.05,
-        "bgLevel": 0.03,
-        "vignette": 0.4
+        "hotCore": 0.3,
+        "twinkle": 0.34,
+        "glow": 0.24,
+        "brightness": 0.45,
+        "bgLevel": 0.005,
+        "vignette": 0.65
       }
     },
     "syncByPreset": {
@@ -142,13 +142,13 @@
       "lanes": []
     },
     "post": {
-      "bloom": 0.42,
-      "bloomThreshold": 0.82,
-      "exposure": 1.02,
+      "bloom": 0.18,
+      "bloomThreshold": 1.2,
+      "exposure": 0.45,
       "tonemap": true,
-      "vignette": 0.28,
+      "vignette": 0.35,
       "grain": 0.02,
-      "chromatic": 0.07
+      "chromatic": 0.06
     },
     "motion": {
       "rotation": 1.15,
@@ -175,7 +175,7 @@
     "builderStack": {
       "layers": [
         {
-          "id": "bl-15-ck5ccg",
+          "id": "bl-15-gr1ua5",
           "type": "wash",
           "enabled": true,
           "opacity": 1,
@@ -188,7 +188,7 @@
           }
         },
         {
-          "id": "bl-16-s14g55",
+          "id": "bl-16-tlnvvx",
           "type": "stars",
           "enabled": true,
           "opacity": 1,
@@ -202,7 +202,7 @@
           }
         },
         {
-          "id": "bl-17-o0ai01",
+          "id": "bl-17-gs7zz1",
           "type": "bars",
           "enabled": true,
           "opacity": 1,
@@ -217,7 +217,7 @@
           }
         },
         {
-          "id": "bl-18-1s5qgj",
+          "id": "bl-18-kmtq1w",
           "type": "rings",
           "enabled": true,
           "opacity": 1,

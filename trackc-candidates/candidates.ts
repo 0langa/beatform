@@ -178,14 +178,25 @@ export const CANDIDATES: ThemeCandidate[] = [
    * `smoothSpectrum` still on, because that WAS the old entry's one idea) and
    * everything that makes a theme is added underneath it.
    *
-   * The whole piece is built out of lag rather than hits: the bass swell
-   * takes 1.4 s to let go, loudness opens the bloom over two seconds, and the
-   * only beat route on the visual is a `exp`-curved whisper on the ripple, so
-   * a soft kick moves nothing at all. Two tempo-locked LFOs do the breathing
-   * — an 8-beat sine on the fold angle and a 4-beat sine on scale — and the
-   * 8-beat SAW on the drive glow is the tide: it swells across two bars and,
-   * because its release is 1.2 s, falls back gently instead of snapping at
-   * the wrap. Section boundaries land the palette shift.
+   * Two numbers here were found on the device rather than by taste, and both
+   * are load-bearing:
+   *  - `post.exposure` 0.35. Kaleido Nebula emits well past 1.0 across large
+   *    regions, so at a neutral exposure the whole outer field clips to flat
+   *    white and the mode reads as a pastel tie-dye. Measured frames go from
+   *    0% of the picture in black to 28% on this one control.
+   *  - `hue` 90. The mode's palette phase is offset by its own hue spread, so
+   *    the base number is NOT the colour you get: a six-value sweep measured
+   *    the frame's mean hue at roughly 284 - hue, which puts the deep blue
+   *    this piece is named for at 90, not at the 200-ish a colour wheel says.
+   *
+   * The piece is built out of lag rather than hits: the bass swell takes 1.4 s
+   * to let go, loudness opens the bloom over two seconds, and the only beat
+   * route on the visual is an `exp`-curved whisper on the ripple, so a soft
+   * kick moves nothing at all. Two tempo-locked LFOs do the breathing — an
+   * 8-beat sine on the fold angle and a 4-beat sine on scale — and the 8-beat
+   * SAW on the drive glow is the tide: it swells across two bars and, because
+   * its release is 1.2 s, falls back gently instead of snapping at the wrap.
+   * Section boundaries land the palette shift.
    */
   candidate({
     slug: "deep-current",
@@ -195,31 +206,31 @@ export const CANDIDATES: ThemeCandidate[] = [
     bpmHint: [60, 110],
     preset: "nebula",
     params: {
-      hue: 196,
-      hue2: 288,
-      duo: 0.45,
+      hue: 90,
+      hue2: 210,
+      duo: 0.5,
       hueRange: 70,
       midHueShift: 40,
-      saturation: 1.12,
+      saturation: 1.5,
       scale: 2,
       flow: 0.05,
       kaleido: 8,
-      contrast: 0.42,
+      contrast: 0.95,
       warp: 2.4,
       angle: 0,
       spin: 0.35,
-      depth: 0.6,
-      sparkle: 0.35,
-      sparkleScale: 14,
-      sparkleSharp: 26,
+      depth: 0.36,
+      sparkle: 0.4,
+      sparkleScale: 20,
+      sparkleSharp: 32,
       beatRipple: 0.28,
       rippleWidth: 22,
       rippleWarp: 0.06,
-      brightFloor: 0.1,
+      brightFloor: 0.02,
       bassBright: 0.5,
       beatBloom: 0.1,
       driveGlow: 0.14,
-      hotCore: 0.5,
+      hotCore: 0.3,
       stars: 0.25,
       windStrength: 0.18,
       windAngle: 205,
@@ -238,9 +249,9 @@ export const CANDIDATES: ThemeCandidate[] = [
     bg: { mode: BG_SOLID, color: [0.012, 0.03, 0.046] },
     smoothSpectrum: true,
     post: {
-      exposure: 0.92,
-      bloom: 0.22,
-      bloomThreshold: 0.86,
+      exposure: 0.35,
+      bloom: 0.18,
+      bloomThreshold: 1,
       tonemap: true,
       vignette: 0.34,
       grain: 0.045,
@@ -282,18 +293,22 @@ export const CANDIDATES: ThemeCandidate[] = [
   /* FILM-GRADE SUBTLE — proposed replacement for the gallery's
    * `sunset-circuit`.
    *
-   * The incumbent is VHS Sunrise promoted to a document. The golden-sun /
-   * teal-grid pairing that gave it its identity is kept; the tape-era
-   * treatment is not. This is the hour after the set rather than the set: a
-   * road switched on, the sun sinking on a timeline lane over the first
-   * twenty-four seconds, fog rolling in with it, and film grain doing the era
-   * work in the post chain where the user can dial it from one place.
+   * The incumbent is VHS Sunrise promoted to a document. The golden sun that
+   * gave it its identity is kept; the tape-era treatment is not. This is the
+   * hour after the set rather than the set: a road switched on, the sun
+   * sinking on a timeline lane over the first twenty-four seconds, fog rolling
+   * in with it, and film grain doing the era work in the post chain where the
+   * user can dial it from one place.
+   *
+   * `hue` 45 / `gridHue` 330 were measured, not chosen: at the intuitive
+   * pairing (28 / 202) the frame's mean hue came back at 99 — green, not gold
+   * — because the sky and grid dominate the frame and carry their own phase.
+   * 45/330 lands the mean at 36, which is the amber the name promises.
    *
    * There is no kick route anywhere in the piece. Every route is a smooth
    * curve on a slow envelope — loudness on exposure with a 1.6 s release,
    * energy on fog with three seconds — so the visual never snaps. The two
-   * LFOs are the only mechanical motion: a very small 8-beat drift on the
-   * sun's horizontal position, and a 4-beat breath in the sun's bands.
+   * LFOs are the only mechanical motion.
    *
    * Both lanes END on the value the base params hold, so deleting the
    * timeline leaves the shot the theme settles into rather than snapping to
@@ -303,12 +318,12 @@ export const CANDIDATES: ThemeCandidate[] = [
     slug: "sunset-circuit",
     name: "Sunset Circuit",
     description:
-      "The drive home, not the set: a low sun sinking over the first twenty-four seconds, a teal grid running out to a hazy horizon, and real film grain instead of tape hiss. Nothing in it flashes.",
+      "The drive home, not the set: a low sun sinking over the first twenty-four seconds, a grid running out to a hazy horizon, and real film grain instead of tape hiss. Nothing in it flashes.",
     bpmHint: [90, 124],
     preset: "synthwave",
     params: {
-      hue: 28,
-      gridHue: 202,
+      hue: 45,
+      gridHue: 330,
       sunWarm: 1.45,
       sunR: 0.36,
       sunY: 0.26,
@@ -339,9 +354,9 @@ export const CANDIDATES: ThemeCandidate[] = [
     },
     sync: { mode: "energy", smooth: 0.68, attack: 0.4, release: 0.72, contrast: 0.45 },
     post: {
-      exposure: 0.96,
+      exposure: 0.7,
       bloom: 0.24,
-      bloomThreshold: 0.78,
+      bloomThreshold: 0.9,
       tonemap: true,
       vignette: 0.38,
       grain: 0.085,
@@ -399,21 +414,20 @@ export const CANDIDATES: ThemeCandidate[] = [
     ],
   }),
 
-  /* TYPOGRAPHIC — new entry.
-   *
-   * The one candidate where the type is the design and the visual is the bed.
-   * A single amber vector trace held inside a narrow band (`traceClamp` 0.3)
-   * so the lower third stays clear for the lockup, a broadcast reticle for
-   * framing, and three text layers that carry the whole composition: a wide-
-   * tracked kicker top-left, the title set heavy at the bottom-left, the
-   * artist under it in a warm tint at a third of the weight.
+  /* TYPOGRAPHIC — new entry. The one candidate where the type is the design
+   * and the visual is the bed, and the one that came back from the device
+   * needing nothing: a single amber vector trace held inside a narrow band
+   * (`traceClamp` 0.3) so the lower third stays clear for the lockup, a
+   * broadcast reticle for framing, and three text layers that carry the
+   * composition — a wide-tracked kicker top-left, the title set heavy at the
+   * bottom-left, the artist under it in a warm tint at a third of the weight.
    *
    * It is also the timeline SCENE entry, and the name is the reason: the
    * first twelve seconds run a standby instrument — grid graticule, dim beam,
-   * long vignette — and then a two-and-a-half second `glitch` transition
-   * opens into the full look. That is a scene pair, not automation, because
-   * what changes is the whole setup rather than one number. Delete the two
-   * scenes to start on the open.
+   * long vignette — and then a two-and-a-half second `glitch` transition opens
+   * into the full look. That is a scene pair, not automation, because what
+   * changes is the whole setup rather than one number. Delete the two scenes
+   * to start on the open.
    *
    * `audiogram.progressBar` rides along at the frame's edge, because a
    * broadcast piece is a finished deliverable and a progress bar is the one
@@ -510,7 +524,14 @@ export const CANDIDATES: ThemeCandidate[] = [
         attack: 0.1,
         release: 0.55,
       },
-      { source: "kick", param: "gridBeat", amount: 0.3, curve: "exp", attack: 0.01, release: 0.28 },
+      {
+        source: "kick",
+        param: "gridBeat",
+        amount: 0.3,
+        curve: "exp",
+        attack: 0.01,
+        release: 0.28,
+      },
       {
         source: "treble",
         param: "glow",
@@ -541,11 +562,13 @@ export const CANDIDATES: ThemeCandidate[] = [
 
   /* MAXIMAL FESTIVAL — new entry.
    *
-   * Flying (`fly` on) through a wide-hued field at near-maximum density, with
-   * streaks, hot cores and three parallax layers doing the scale. Everything a
-   * drop touches is authored below its ceiling so the drop has somewhere to
-   * go: density sits at 19 of 24, beat flash at 0.22 of 0.5, shooting stars at
-   * 0.28 of 1.
+   * Flying (`fly` on) through a wide-hued field with streaks, hot cores and
+   * three parallax layers doing the scale. The first device pass had this at
+   * density 19 with brightness 1.05 and it came back a solid pink sheet — 0%
+   * of the frame below the dark threshold. Maximal is not the same as bright:
+   * the tuned version runs at density 9 and exposure 0.45, which puts 29% of
+   * the frame in black and lets the streaks read as individual objects
+   * against it. Everything a drop touches still sits below its ceiling.
    *
    * Two routes are the point of the entry. `energy -> density` with a 1.5 s
    * attack and a 3.5 s release makes the sky physically empty out through a
@@ -567,10 +590,10 @@ export const CANDIDATES: ThemeCandidate[] = [
       saturation: 1.15,
       lightness: 1.05,
       bandColor: 55,
-      density: 19,
-      size: 0.13,
-      sizeVar: 0.8,
-      fill: 0.84,
+      density: 9,
+      size: 0.08,
+      sizeVar: 0.5,
+      fill: 0.5,
       layers: 3,
       clump: 0.34,
       // `constellation` is deliberately absent: its own hint scopes it to
@@ -581,31 +604,31 @@ export const CANDIDATES: ThemeCandidate[] = [
       speed: 0.85,
       direction: 90,
       parallax: 0.8,
-      streak: 1.1,
+      streak: 0.8,
       wander: 0.5,
       wanderSpeed: 0.5,
       beatDance: 0.7,
-      sizePulse: 1.25,
+      sizePulse: 0.9,
       energyDrive: 1.3,
-      beatFlash: 0.22,
-      beatPop: 0.65,
+      beatFlash: 0.12,
+      beatPop: 0.35,
       shootingStars: 0.28,
-      hotCore: 0.84,
-      twinkle: 0.5,
-      glow: 0.6,
-      brightness: 1.05,
-      bgLevel: 0.03,
-      vignette: 0.4,
+      hotCore: 0.3,
+      twinkle: 0.34,
+      glow: 0.24,
+      brightness: 0.45,
+      bgLevel: 0.005,
+      vignette: 0.65,
     },
     sync: { mode: "kick", smooth: 0.22, attack: 0.02, release: 0.42 },
     post: {
-      exposure: 1.02,
-      bloom: 0.42,
-      bloomThreshold: 0.82,
+      exposure: 0.45,
+      bloom: 0.18,
+      bloomThreshold: 1.2,
       tonemap: true,
-      vignette: 0.28,
+      vignette: 0.35,
       grain: 0.02,
-      chromatic: 0.07,
+      chromatic: 0.06,
     },
     motion: { rotation: 1.15, pulse: 1.3, spectrumSmooth: 0.15 },
     mods: [
@@ -657,18 +680,27 @@ export const CANDIDATES: ThemeCandidate[] = [
   /* RHYTHMIC / GEOMETRIC — new entry.
    *
    * The Tunnel's wireframe material (`material` 2), which no shipped content
-   * has ever selected, in a near-square shaft: `roundness` 0.15, `twist` 0.3,
-   * `surfaceWarp` 0.25, junctions lit at the intersections, 4-fold mirror.
-   * Architecture rather than a ride — the opposite end of the same mode from
-   * the factory pack's Hyperlane.
+   * has ever selected: a lit lattice with junctions at the intersections,
+   * four-fold mirror, almost no corkscrew (`twist` 0.3) and almost no surface
+   * texture (`surfaceWarp` 0.25). Architecture rather than a ride — the
+   * opposite end of the same mode from the factory pack's Hyperlane.
+   *
+   * The NAME changed on the device. It was authored as "Blueprint" expecting a
+   * drafting-table cyan, and then a six-value `hue` sweep moved the frame's
+   * measured mean hue by four degrees in total: in wireframe material the
+   * lattice does not take its colour from `hue` at all, and the entry renders
+   * violet-magenta whatever the base is set to. Rather than ship a name and a
+   * description promising a colour the mode will not produce, the entry is
+   * what it actually is — a blacklit lattice — and the `hue` finding is filed
+   * in the veto sheet as a product note.
    *
    * Its rhythm section is three routes nothing else in the product uses:
-   *  - a SQUARE LFO on the grid brightness, two beats high and two beats low,
-   *    with 40 ms attack and 180 ms release so it lands as a mechanical swell
-   *    on the grid rather than a strobe;
+   *  - a SQUARE LFO on the lattice brightness, two beats high and two beats
+   *    low, with 40 ms attack and 180 ms release so it lands as a mechanical
+   *    swell rather than a strobe;
    *  - `barPhase` on the centre glow — a ramp that winds up across each bar
-   *    and resets on the downbeat, released over a quarter second so the
-   *    reset reads as a fall rather than a cut;
+   *    and resets on the downbeat, released over a quarter second so the reset
+   *    reads as a fall rather than a cut;
    *  - `sectionPulse` on `mirror`, whose spec is `mod: "snap"`: the applied
    *    value quantizes, so a section boundary steps the shaft from four-fold
    *    to six-fold symmetry and it walks back down over the next two and a
@@ -676,44 +708,44 @@ export const CANDIDATES: ThemeCandidate[] = [
    *    a snapped enum is modulated.
    */
   candidate({
-    slug: "blueprint",
-    name: "Blueprint",
+    slug: "blacklight",
+    name: "Blacklight",
     description:
-      "A square wireframe shaft with lit junctions and four-fold symmetry — drafting-table cyan on ink. The grid pulses on a two-beat square wave, the centre winds up across each bar, and a section change steps the whole shaft to six-fold and back.",
+      "A lit lattice running away from you in the dark — violet wireframe, four-fold symmetry, junctions burning at every intersection. The grid pulses on a two-beat square wave, and a section change steps the whole shaft to six-fold and back.",
     bpmHint: [125, 150],
     preset: "tunnel-rings",
     params: {
-      hue: 196,
-      hueSpread: 40,
-      colorFade: 0.25,
+      hue: 200,
+      hueSpread: 14,
+      colorFade: 0.1,
       material: 2,
       speed: 0.3,
-      rings: 12,
-      spokes: 20,
-      junction: 0.55,
+      rings: 10,
+      spokes: 16,
+      junction: 0.35,
       twist: 0.3,
-      roundness: 0.15,
+      roundness: 0.1,
       surfaceWarp: 0.25,
       curve: 0.3,
       curveScale: 1.2,
       mirror: 4,
       beatPulse: 0.85,
       beatSpeed: 0.16,
-      beatBright: 0.3,
+      beatBright: 0.14,
       pulseWidth: 6,
       cruiseFloor: 0.4,
-      cruiseEnergy: 1.05,
-      centerGlow: 0.24,
-      tileLevel: 0.06,
-      tileSpectrum: 0.66,
-      tileSat: 0.56,
-      checker: 0.05,
-      groutWidth: 0.03,
-      groutLevel: 0.26,
-      fogNear: 0.02,
-      fogFar: 0.6,
+      cruiseEnergy: 0.7,
+      centerGlow: 0.06,
+      tileLevel: 0,
+      tileSpectrum: 0.16,
+      tileSat: 0.9,
+      checker: 0.02,
+      groutWidth: 0.02,
+      groutLevel: 0.12,
+      fogNear: 0.06,
+      fogFar: 0.35,
       coverWall: 0,
-      vignette: 0.5,
+      vignette: 0.7,
     },
     sync: {
       mode: "kick",
@@ -725,13 +757,13 @@ export const CANDIDATES: ThemeCandidate[] = [
     },
     bg: { mode: BG_SOLID, color: [0.02, 0.028, 0.04] },
     post: {
-      exposure: 0.98,
-      bloom: 0.3,
-      bloomThreshold: 0.88,
+      exposure: 0.35,
+      bloom: 0.12,
+      bloomThreshold: 1.25,
       tonemap: true,
-      vignette: 0.34,
+      vignette: 0.4,
       grain: 0.03,
-      chromatic: 0.05,
+      chromatic: 0.04,
     },
     motion: { rotation: 0.9, pulse: 1.15 },
     mods: [

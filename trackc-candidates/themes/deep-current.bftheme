@@ -17,31 +17,31 @@
     "presetId": "nebula",
     "paramsByPreset": {
       "nebula": {
-        "hue": 196,
-        "hue2": 288,
-        "duo": 0.45,
+        "hue": 90,
+        "hue2": 210,
+        "duo": 0.5,
         "hueRange": 70,
         "midHueShift": 40,
-        "saturation": 1.12,
+        "saturation": 1.5,
         "scale": 2,
         "flow": 0.05,
         "kaleido": 8,
-        "contrast": 0.42,
+        "contrast": 0.95,
         "warp": 2.4,
         "angle": 0,
         "spin": 0.35,
-        "depth": 0.6,
-        "sparkle": 0.35,
-        "sparkleScale": 14,
-        "sparkleSharp": 26,
+        "depth": 0.36,
+        "sparkle": 0.4,
+        "sparkleScale": 20,
+        "sparkleSharp": 32,
         "beatRipple": 0.28,
         "rippleWidth": 22,
         "rippleWarp": 0.06,
-        "brightFloor": 0.1,
+        "brightFloor": 0.02,
         "bassBright": 0.5,
         "beatBloom": 0.1,
         "driveGlow": 0.14,
-        "hotCore": 0.5,
+        "hotCore": 0.3,
         "stars": 0.25,
         "windStrength": 0.18,
         "windAngle": 205,
@@ -138,9 +138,9 @@
       "lanes": []
     },
     "post": {
-      "bloom": 0.22,
-      "bloomThreshold": 0.86,
-      "exposure": 0.92,
+      "bloom": 0.18,
+      "bloomThreshold": 1,
+      "exposure": 0.35,
       "tonemap": true,
       "vignette": 0.34,
       "grain": 0.045,
@@ -171,7 +171,7 @@
     "builderStack": {
       "layers": [
         {
-          "id": "bl-t-6f7y53",
+          "id": "bl-t-kag6xi",
           "type": "wash",
           "enabled": true,
           "opacity": 1,
@@ -184,7 +184,7 @@
           }
         },
         {
-          "id": "bl-u-njees8",
+          "id": "bl-u-f6p1u4",
           "type": "stars",
           "enabled": true,
           "opacity": 1,
@@ -198,7 +198,7 @@
           }
         },
         {
-          "id": "bl-v-bi3u2y",
+          "id": "bl-v-gafqbg",
           "type": "bars",
           "enabled": true,
           "opacity": 1,
@@ -213,7 +213,7 @@
           }
         },
         {
-          "id": "bl-w-9rqwhz",
+          "id": "bl-w-0ygge2",
           "type": "rings",
           "enabled": true,
           "opacity": 1,

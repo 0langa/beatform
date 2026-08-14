@@ -7,7 +7,7 @@
     "name": "Sunset Circuit",
     "author": "Beatform",
     "license": "CC0-1.0",
-    "description": "The drive home, not the set: a low sun sinking over the first twenty-four seconds, a teal grid running out to a hazy horizon, and real film grain instead of tape hiss. Nothing in it flashes.",
+    "description": "The drive home, not the set: a low sun sinking over the first twenty-four seconds, a grid running out to a hazy horizon, and real film grain instead of tape hiss. Nothing in it flashes.",
     "bpmHint": [
       90,
       124
@@ -17,8 +17,8 @@
     "presetId": "synthwave",
     "paramsByPreset": {
       "synthwave": {
-        "hue": 28,
-        "gridHue": 202,
+        "hue": 45,
+        "gridHue": 330,
         "sunWarm": 1.45,
         "sunR": 0.36,
         "sunY": 0.26,
@@ -165,8 +165,8 @@
     },
     "post": {
       "bloom": 0.24,
-      "bloomThreshold": 0.78,
-      "exposure": 0.96,
+      "bloomThreshold": 0.9,
+      "exposure": 0.7,
       "tonemap": true,
       "vignette": 0.38,
       "grain": 0.085,
@@ -197,7 +197,7 @@
     "builderStack": {
       "layers": [
         {
-          "id": "bl-x-qt083y",
+          "id": "bl-x-k5bhm5",
           "type": "wash",
           "enabled": true,
           "opacity": 1,
@@ -210,7 +210,7 @@
           }
         },
         {
-          "id": "bl-y-3z8ukf",
+          "id": "bl-y-0vd7yn",
           "type": "stars",
           "enabled": true,
           "opacity": 1,
@@ -224,7 +224,7 @@
           }
         },
         {
-          "id": "bl-z-aob04r",
+          "id": "bl-z-fyuovf",
           "type": "bars",
           "enabled": true,
           "opacity": 1,
@@ -239,7 +239,7 @@
           }
         },
         {
-          "id": "bl-10-3zq6js",
+          "id": "bl-10-ur96ua",
           "type": "rings",
           "enabled": true,
           "opacity": 1,
