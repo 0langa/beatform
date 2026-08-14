@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-solar-cascade",
+    "name": "Solar Cascade",
+    "presetId": "particle-flow",
+    "params": {
+      "hue": 40,
+      "hueSpread": 30,
+      "swirl": 1.2,
+      "gravity": 0.6,
+      "flowStrength": 0.9,
+      "flowScale": 1,
+      "damping": 0.965,
+      "spawnRadius": 0.12,
+      "size": 0.007,
+      "brightness": 0.55,
+      "density": 0.7,
+      "audioFlow": 2.2,
+      "beatBurst": 1.5,
+      "sizePulse": 0.7,
+      "speedColor": 0.04,
+      "sat": 0.96,
+      "field": 3,
+      "attractor": 1,
+      "ribbon": 0.3,
+      "midSwirl": 0.55,
+      "trebleJitter": 0.35,
+      "saturation": 1.05,
+      "vignette": 0.5,
+      "bgLevel": 0.02
+    },
+    "sync": {
+      "mode": "kick",
+      "smooth": 0.28,
+      "attack": 0.02,
+      "release": 0.45
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}

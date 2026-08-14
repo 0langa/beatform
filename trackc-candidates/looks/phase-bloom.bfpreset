@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-phase-bloom",
+    "name": "Phase Bloom",
+    "presetId": "oscilloscope",
+    "params": {
+      "hue": 150,
+      "display": 1,
+      "xyRotate": 45,
+      "renderMode": 0,
+      "traces": 1,
+      "gain": 1.1,
+      "calm": 0.5,
+      "glow": 0.62,
+      "traceBright": 1.2,
+      "coreWidth": 0.0025,
+      "persist": 0.44,
+      "fill": 0,
+      "mirror": 0,
+      "kaleido": 1,
+      "graticule": 2,
+      "gridLevel": 0.06,
+      "gridBeat": 0.35,
+      "scanline": 0.06,
+      "beatLift": 0.14,
+      "hueWave": 30,
+      "agFloor": 0.3,
+      "agRange": 1.6,
+      "bgLevel": 0.02,
+      "vignette": 0.6
+    },
+    "sync": {
+      "mode": "energy",
+      "smooth": 0.35,
+      "attack": 0.06,
+      "release": 0.4
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-solar-temple",
+    "name": "Solar Temple",
+    "presetId": "spectrum-scape",
+    "params": {
+      "hue": 285,
+      "hueRange": 110,
+      "heightScale": 12,
+      "camPitch": 34,
+      "camDist": 20,
+      "camSpin": -10,
+      "fov": 58,
+      "targetY": 1.4,
+      "emissive": 0.7,
+      "light": 0.8,
+      "barWidth": 0.56,
+      "spacing": 0.75,
+      "barShape": 2,
+      "bandGlow": 0.55,
+      "hotBeat": 0.85,
+      "glowBeat": 0.7,
+      "driveHeight": 0.85,
+      "hotWindow": 0.5,
+      "fogDensity": 0.06,
+      "fillLight": 0.45,
+      "ambientLight": 0.8,
+      "hueLift": 30,
+      "saturation": 1.05
+    },
+    "sync": {
+      "mode": "kick",
+      "smooth": 0.38,
+      "attack": 0.04,
+      "release": 0.55,
+      "contrast": 0.9
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}

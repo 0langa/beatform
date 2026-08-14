@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-ember-veil",
+    "name": "Ember Veil",
+    "presetId": "aurora",
+    "params": {
+      "hue": 28,
+      "hueStep": 30,
+      "hueSpread": 85,
+      "palWarm": 0.7,
+      "palSpan": 1.25,
+      "sat": 0.86,
+      "bright": 1.05,
+      "react": 0.7,
+      "flow": 0.55,
+      "thick": 0.15,
+      "baseY": 0.46,
+      "wave": 1.15,
+      "layers": 5,
+      "beatPulse": 0.25,
+      "specAmt": 1.85,
+      "bassSwell": 0.6,
+      "drift": 0.35,
+      "moon": 0.115,
+      "moonX": -0.42,
+      "moonY": 0.84,
+      "moonGlow": 0.52,
+      "ground": 0.22,
+      "groundRough": 0.62,
+      "reflect": 0.34,
+      "horizon": 0.79,
+      "reflectFade": 5.5,
+      "rays": 0.5,
+      "stars": 1,
+      "bgGlow": 0.3,
+      "mirror": 1
+    },
+    "sync": {
+      "mode": "energy",
+      "smooth": 0.78,
+      "attack": 0.45,
+      "release": 0.8
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}

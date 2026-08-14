@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-obsidian-pulse",
+    "name": "Obsidian Pulse",
+    "presetId": "bass-circle",
+    "params": {
+      "hue": 175,
+      "hueSpread": 40,
+      "cover": 0,
+      "radius": 0.16,
+      "barLen": 0.3,
+      "gap": 0.05,
+      "pump": 0.32,
+      "beatPump": 0.3,
+      "beatBurst": 1.1,
+      "particles": 0.8,
+      "partDensity": 7,
+      "partFill": 0.4,
+      "partFloat": 0.6,
+      "rimBright": 1.25,
+      "barGlow": 0.5,
+      "symmetry": 2,
+      "spin": 0.2,
+      "saturation": 1.05,
+      "lightness": 1,
+      "vignette": 0.5,
+      "coreFill": 2,
+      "segments": 24,
+      "segGap": 0.18,
+      "partBeat": 0.45
+    },
+    "sync": {
+      "mode": "kick",
+      "smooth": 0.28,
+      "attack": 0.02,
+      "release": 0.45
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}

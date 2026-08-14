@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-sonar-wall",
+    "name": "Sonar Wall",
+    "presetId": "led-matrix",
+    "params": {
+      "display": 2,
+      "cols": 64,
+      "rows": 40,
+      "gap": 0.09,
+      "rounded": 0,
+      "scrollSpeed": 16,
+      "histFade": 0.55,
+      "hueLow": 205,
+      "hueHigh": 305,
+      "hueShift": 0,
+      "spectrumColor": 0.9,
+      "saturation": 1.1,
+      "lightness": 0.95,
+      "gradStart": 0.3,
+      "gradEnd": 0.9,
+      "litLevel": 0.4,
+      "dim": 0.1,
+      "hotBoost": 0.24,
+      "bassGlow": 0.16,
+      "beatFlash": 0.22,
+      "ghost": 0.2,
+      "peaks": 0,
+      "peakBright": 0.85,
+      "bloom": 0.7,
+      "scanline": 0.16,
+      "flicker": 0.06,
+      "panelVariance": 0.3,
+      "vignette": 0.55
+    },
+    "sync": {
+      "mode": "energy",
+      "smooth": 0.4,
+      "attack": 0.1,
+      "release": 0.45,
+      "contrast": 0.55
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}

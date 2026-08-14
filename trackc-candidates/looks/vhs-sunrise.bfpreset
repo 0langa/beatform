@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-vhs-sunrise",
+    "name": "VHS Sunrise",
+    "presetId": "synthwave",
+    "params": {
+      "hue": 18,
+      "gridHue": 168,
+      "sunX": 0.3,
+      "sunR": 0.3,
+      "sunY": 0.3,
+      "sunRays": 0.46,
+      "scan": 0.76,
+      "mountains": 0.4,
+      "gridGlow": 1.3,
+      "gridScale": 0.7,
+      "horizonY": 0.5,
+      "fog": 0.8,
+      "speed": 1,
+      "react": 0.9,
+      "beatPulse": 0.55,
+      "starDensity": 0.3,
+      "vignette": 0.3,
+      "roadW": 0.5,
+      "roadLanes": 1,
+      "roadGlow": 0.9,
+      "skyline": 0.3,
+      "skyDensity": 0.45,
+      "windows": 0.3,
+      "sunWarm": 1.4,
+      "scanCount": 22,
+      "scanWidth": 0.55
+    },
+    "sync": {
+      "mode": "kick",
+      "smooth": 0.3,
+      "attack": 0.03,
+      "release": 0.5
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}

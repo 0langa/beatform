@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-wide-glass",
+    "name": "Wide Glass",
+    "presetId": "spectrum-bars",
+    "params": {
+      "hue": 190,
+      "hueSpread": 70,
+      "saturation": 1.05,
+      "lightness": 1,
+      "stereoSplit": 0.85,
+      "capShape": 2,
+      "reflect": 0.45,
+      "reflectFade": 4,
+      "sway": 0.25,
+      "barGap": 0.3,
+      "barHeight": 0.7,
+      "barSat": 0.7,
+      "barLift": 0.4,
+      "glow": 0.35,
+      "glowReach": 8,
+      "capBright": 1.05,
+      "peaks": 1,
+      "mirror": 0,
+      "beatZoom": 0.02,
+      "beatFlash": 0.06,
+      "beatBright": 0.08,
+      "bgLevel": 0.02,
+      "bgBassGlow": 0.06,
+      "freqLo": 0.04,
+      "freqHi": 0.9,
+      "vignette": 0.5
+    },
+    "sync": {
+      "mode": "energy",
+      "smooth": 0.42,
+      "shapeRound": 0.2,
+      "contrast": 0.55
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}
