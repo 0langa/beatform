@@ -11,6 +11,41 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- **"Show in folder" after an export.** When an export finishes on the
+  desktop app, the completion message now carries a button that opens
+  Windows Explorer with your new file selected — no more digging through
+  folders to find what you just rendered. Works for video exports and PNG
+  sequences alike.
+- **Mute a modulation route without deleting it.** Every route on the
+  Modulation page has a pause switch now. A muted route keeps all its
+  settings and stops moving its knob until you resume it — perfect for
+  A/B-ing what a route contributes.
+- **Reorder stacked routes.** When two or more routes drive the same
+  control, their order decides how they add up. Stacked routes now show a
+  drag grip and up/down buttons, and a completed drag is a single undo
+  step.
+- **Bulk actions on the Modulation page.** Filter by a source and clear
+  every route it drives in one confirmed click, or set the depth of all
+  routes on one control with a single slider. Each bulk action is one undo
+  step.
+
+### Changed
+
+- **Route meters are exact now.** For routes with rise/fall smoothing, the
+  little meter used to show the raw source value — leading the visual
+  motion it drives. It now shows the same smoothed value the renderer
+  actually uses, so what you see on the card is what the visual does.
+- **The BPM badge only appears when there's a real beat.** A silent or
+  beatless track used to show a meaningless tempo (always around 200 BPM).
+  The footer badge now stays hidden unless the track has a usable pulse —
+  beat detection itself is unchanged.
+- **Automatic lyrics politely decline very long tracks.** Tracks over 90
+  minutes used to risk running the machine out of memory mid-generation.
+  Beatform now says so up front — before any processing starts — instead
+  of failing minutes in.
+
 ## [2.94.0] - 2026-08-13
 
 ### Fixed

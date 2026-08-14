@@ -584,7 +584,10 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       live tempo detection for real audio, and the owner CALLED the display
       half on 2026-08-13: the badge HIDES when the track has no usable pulse
       — no grid confidence, no claim; detection for real audio untouched.
-      Ships with the approved bundle. The original question — whether it read
+      SHIPPED 2026-08-14 with the approved bundle: `selectBpm` returns null
+      below two tracked beats (the same floor `gridPhase` already used), the
+      silent and DC cases are pinned end-to-end through the real
+      `analyzeBeatGrid`, and a 120 BPM click track still shows its badge. The original question — whether it read
       nothing or 0 is an owner call. `beatGrid.test.ts:98` cannot catch it: the
       assertion is a tautology for any non-NaN bpm.
       Dismissed with reasons (do not re-derive): `reset("source")` leaving
@@ -625,7 +628,11 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       mix could OOM — the call was what track length the lyrics feature
       supports, and the owner took it on 2026-08-13: **90 minutes, enforced
       with a friendly refusal** before staging; the streaming rework stays a
-      someday item. Ships with the approved bundle. Recorded without a reaching input, so not claimed as findings:
+      someday item. SHIPPED 2026-08-14 with the approved bundle:
+      `generateLyrics` refuses before staging, before the replace-lyrics
+      prompt, and before any sidecar spawn; the displayed length CEILS to
+      the minute so a refused track can never read equal to the limit; both
+      boundary sides (5400/5401 s) are pinned. Recorded without a reaching input, so not claimed as findings:
       `lyrics_gpu_probe` has no wait ceiling, and `loopback.rs` shares one
       `dead` flag across sessions.
       Checked line by line and clean — skip next sweep: FS scope gating is
@@ -2214,8 +2221,16 @@ read as scope decisions rather than leaks. _(The plan numbered them H8–H12;
 H8 was already taken by the `shotCanvas` entry above, so they are filed one
 higher. Nothing else moved.)_
 
-- [ ] H9 **APPROVED-BUILD (owner click-round 2026-08-13) — the owner chose to
-      build the exact publisher rather than close this as a limitation.** The
+- [x] H9 **DONE 2026-08-14 — shipped with the approved bundle.** The live
+      loop now publishes each route's post-curve post-lag value out of its
+      one evaluation site (`getLiveRouteValues` in services.ts, filled after
+      both apply calls, provably read-only over the lag memo), and route
+      meters prefer the published value by route id with bit-exact instant
+      fallback for lag-less routes. `exportCoreIsolation.test.ts` pins the
+      worker's import graph; the stale "leads the render" hint is gone.
+      Review confirmed the display path cannot advance the envelope.
+      ORIGINAL — APPROVED-BUILD (owner click-round 2026-08-13) — the owner chose to
+      build the exact publisher rather than close this as a limitation. The
       evidence gate below is retired by that verdict; the design constraints
       stand: a module-level slot filled only where the evaluator already runs
       (PerfOverlay-style), published OUT of the live loop, never reaching
@@ -2305,7 +2320,17 @@ higher. Nothing else moved.)_
       key, and `drivenParamKeys(preset, mods)` is a pure function with one
       call site — widening it to `(preset, mods, lanes)` is the whole change,
       plus the same treatment for Scene's post rows.
-- [ ] H12 **APPROVED BOTH (owner click-round 2026-08-13):** mute ships as an
+- [x] H12 **DONE 2026-08-14 — shipped with the approved bundle.** Mute is an
+      optional validated `muted` field (OMIT idiom, v1 routes round-trip
+      byte-identically, no schema bump); the skip lives only in
+      applyMods/applyPostMods before the lazy clone, so both loops share it
+      and an all-muted list keeps the identity fast path. Reorder ships as a
+      pointer-capture drag grip plus keyboard ▲/▼ buttons on stacked cards,
+      committing once on drop under a per-card `mod-reorder:<param>` key;
+      Escape cancels in the capture phase without closing the panel. A muted
+      route's lag memo freezes and its meter falls back to instant math —
+      documented at the skip. ORIGINAL — APPROVED BOTH (owner click-round
+      2026-08-13): mute ships as an
       optional validated `ModRoute` field (a v1 route must round-trip
       unchanged — `validModRoutes` OMITS rather than defaults), reorder ships
       with a NEW grouped-undo label for the drag gesture. Original entry:
@@ -2319,7 +2344,16 @@ higher. Nothing else moved.)_
       also needs a coalescing decision for the drag gesture: `"mod-add"` is
       in history's UNGROUPABLE set while `updateModRoute` coalesces by
       `mod:${id}:${keys}`.
-- [ ] H13 **APPROVED (owner click-round 2026-08-13):** ships with the new
+- [x] H13 **DONE 2026-08-14 — shipped with the approved bundle.**
+      Clear-for-source (askConfirm with real N, T13-shaped declined test,
+      UNGROUPABLE `mod-bulk` key, one undo entry restoring all N) and
+      per-card bulk depth (no confirm, groupable `mod-bulk-depth:<param>`
+      key so a slider drag is ONE undo step — the final whole-branch review
+      caught the original single-key design flooding history). The clear
+      button reveals on the active source filter (progressive disclosure,
+      protecting the 380px layout-audit budget) — owner-visible judgment
+      call, recorded here. ORIGINAL — APPROVED (owner click-round
+      2026-08-13): ships with the new
       grouped undo label its entry demands, `askConfirm`, and a T13-shaped
       declined-confirm test. Original entry: **Bulk actions on the
       Modulation page** — "clear every route for
@@ -2453,6 +2487,13 @@ Execution sequence around the running Track B program:
    then a `platform.ts` wrapper, then a new store field, because `exportDone` is a
    SENTENCE with the path interpolated into prose and there is nothing
    machine-readable to reveal. Only then is the button a two-line change.
+   **SHIPPED 2026-08-14 with the approved bundle**, exactly along that
+   spine: `show_in_folder` (fs_scope-gated like `scan_audio_library`,
+   accepts an existing file OR directory — the PNG-sequence lane reveals a
+   folder — with the explorer `/select,` argument pinned by Rust tests),
+   `showInFolder` wrapper, `exportDonePath` beside the prose (set per lane,
+   cleared everywhere `exportDone` clears, null for browser downloads), and
+   the button in the completion toast with its failure path tested.
    Sixteen mutations, all red, including a renamed persisted format id caught by
    the `loadStoredExportSettings` round-trip.
 
@@ -2636,9 +2677,19 @@ Nine mutations, all red once M2 was corrected.
 
 ### Approved work bundle — owner click-round 2026-08-13
 
-Every open owner decision in this ledger and PROPOSALS.md was put to the
-owner as click-questions and answered; RECALL card #76 carries the raw
-verdicts. Approved for execution, in this order after the E4 items:
+**EXECUTED 2026-08-14 — all six items shipped in v2.95.0.** Built on branch
+`approved-bundle` via subagent-driven development: fresh implementer +
+adversarial review per task (seven fix rounds across the six), a final
+whole-branch review on the strongest model (caught two cross-task defects
+the per-task frames could not see: the bulk-depth undo flood and the
+Escape/panel collision), full gates + the 269-case GPU matrix at zero
+movement, then a fast-forward merge at `1f83196`. Per-item evidence lives
+in each entry (P-8 tail, BPM badge, lyrics ceiling, H9, H12, H13).
+
+Original record — every open owner decision in this ledger and PROPOSALS.md
+was put to the owner as click-questions and answered; RECALL card #76
+carries the raw verdicts. Approved for execution, in this order after the
+E4 items:
 
 1. **Show in folder** (P-8's declined tail, security decision re-taken):
    narrowly scoped Rust command (`explorer /select,<path>`,
