@@ -6,7 +6,7 @@ members = ["lyrics-sidecar"]
 
 [package]
 name = "beatform"
-version = "2.94.0"
+version = "2.95.0"
 description = "Local-first music visualizer — realtime preview and deterministic offline export from one engine."
 authors = ["0langa"]
 edition = "2021"
