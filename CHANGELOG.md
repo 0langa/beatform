@@ -11,6 +11,21 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- **Your work now lives in one crash-safe file.** The desktop app keeps
+  your current project in a single, atomically-written document file and
+  boots straight from it — no more split state between two storage
+  systems, and no more "storage is full" surprises from the browser-style
+  cache the desktop never needed. Closing the app always saves first
+  (with a safety cap so a stuck disk can never trap the window), edits
+  are flushed on a steady heartbeat while you work, and if the file is
+  ever damaged it's set aside and reported instead of silently replaced.
+  After a crash, the app simply restores your work and tells you so with
+  a notice that stays until you dismiss it. A brief boot veil covers the
+  half-second the file takes to load. Existing projects carry over
+  automatically on first launch.
+
 ## [2.96.0] - 2026-08-14
 
 ### Added
