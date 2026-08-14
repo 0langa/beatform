@@ -850,18 +850,30 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       to the pre-drag value without closing the panel. Extraction also made
       the fix unit-testable without mounting all of `App.tsx` (canvas/
       audio/WebGPU init — no existing suite does that).
-      **E2-U2 (FIXED, `02c03d6`): an unbounded tail-line/word time entry
-      silently dropped it from playback AND export.** `clampLineTime`/
-      `clampWordTime` (`lyricsEdit.ts`) set `hi = Infinity` for the LAST
-      line/word; `parseTimeInput` has no upper bound, so a no-colon paste
-      like "1e300" sailed through unclamped. `lrcTimestamp` already
-      saturates every DISPLAYED and exported timestamp at 99:59.99, so
-      nothing looked wrong on screen — but the internal value stayed
+      **E2-U2 (FIXED, `02c03d6`; ceiling made duration-aware,
+      whole-lane-review IMPORTANT, `7c6d313`): an unbounded tail-line/word
+      time entry silently dropped it from playback AND export.**
+      `clampLineTime`/`clampWordTime` (`lyricsEdit.ts`) set `hi = Infinity`
+      for the LAST line/word; `parseTimeInput` has no upper bound, so a
+      no-colon paste like "1e300" sailed through unclamped. `lrcTimestamp`
+      already saturates every DISPLAYED and exported timestamp at 99:59.99,
+      so nothing looked wrong on screen — but the internal value stayed
       astronomical, so `activeLyricIndex`'s binary search never selected
-      that line again. Both clamps now fall back to a new `MAX_TIME_SEC`
-      (5999.99s) — `lrcTimestamp`'s own cap, pulled into one shared
-      constant both reference, rather than threading track duration through
-      a module deliberately kept pure (no playback-state access).
+      that line again. Both clamps originally fell back to a flat
+      `MAX_TIME_SEC` (5999.99s) — `lrcTimestamp`'s own cap — rather than
+      threading track duration through a module deliberately kept pure (no
+      playback-state access). **A whole-lane review caught that flat
+      ceiling regressing a LEGITIMATE tail edit on any track past ~100
+      minutes**: the app documents ~2-hour lyrics tracks as reachable via
+      IMPORT (no clamp of its own — generation's own 90-minute cap never
+      applied there), so such a file genuinely hits this code with a real
+      duration past 5999.99s. Fix shape changed: `clampLineTime`/
+      `clampWordTime`/`setLineTime`/`setWordTime` all gained an optional
+      `ceiling` parameter (default still `MAX_TIME_SEC` — every existing
+      caller's contract is unchanged, only extended);
+      `setLyricLineTime`/`setLyricWordTime`/`nudgeLyricLine`/
+      `nudgeLyricWord` (`lyricsEditActions.ts`) now pass
+      `getEngine().audioBuffer?.duration ?? MAX_TIME_SEC`.
       **E2-U3 (FIXED, `50b36c4`): "Remove lyrics" could delete a just-
       landed background generation instead of the lyrics it asked about —
       corrected repro** (see the full record's correction note: the
@@ -913,6 +925,35 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       verified red without the code change and green with it before
       committing. Lane log with full gate output:
       `.superpowers/e2-lane-log.md`.
+      **Whole-lane review (post-implementation) found the branch NOT
+      MERGEABLE — one CRITICAL, three IMPORTANT, two one-liners, all
+      verified in code — and all six are now FIXED, same red/green
+      discipline, same log.** **CRITICAL (`09492e0`): the E2-U4 busy-gate
+      had no escape hatch** — `apply()` (both dialogs) had no try/catch or
+      timeout around the awaited compile/translate, so a rejection or a
+      genuine hang (`transpileShadertoy` is one opaque Rust `invoke()`
+      with no cancellation path) left `busy`, and therefore the whole
+      dialog, stuck forever. Fixed with `src/ui/asyncTimeout.ts`
+      (`raceTimeout`): races the call against a 15s timeout, never throws,
+      and hands the callee an `AbortSignal` so a LATE-arriving success
+      cannot register/persist/switch after the user was already told it
+      failed. **IMPORTANT (`5d277c2`): the DockResizeHandle extraction
+      (E2-U1) dropped a `visualsDragW` reset**, desyncing the Visuals dock's
+      box from a keyboard resize following a pointer-drag commit — fixed by
+      extracting `commitVisualsWidth` (`App.tsx`) as a real, exported,
+      testable unit. **IMPORTANT (`c64e1e8`): the save dialog and disk
+      pre-flight in `runExport` sat outside any try/catch** — a real throw
+      there (the Tauri ACL-throw class is precedented) left
+      `exportPreparing` stuck exactly like E2-U5's own bug, just reached by
+      exception instead of dismissal; fixed with two targeted try/catch
+      spans. **One-liners (`7d9497d`): `setShowExport(true)` also clears
+      stale `exportDone`/`exportDonePath`** (the identical hazard shape as
+      the `exportError` clear, one field over — `exportDonePath` feeds
+      "Show in folder"); and a comment documenting why
+      `clearLyricsIfUnchanged`'s `lyricFileName` identity check is safe
+      despite being a coarse string proxy rather than a true id. Full
+      suite after this round: 153 files / 2344 tests, all green;
+      `npm run build` clean.
 - [x] E3 **DONE 2026-08-09 — RP-4 investigated and CLOSED as NOT A DEFECT.**
       The mechanism the finding named does not exist in the code, and did not
       exist when the measurement was taken. `WebGPURenderer.create()` requests
