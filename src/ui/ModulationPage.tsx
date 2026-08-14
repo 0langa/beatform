@@ -482,6 +482,15 @@ export function ModulationPage() {
         el.removeEventListener("pointerup", onUp);
         el.removeEventListener("pointercancel", onCancel);
         window.removeEventListener("keydown", onKey);
+        // Unconditional, every exit path (drop, Escape, pointercancel): a
+        // captured pointer released only implicitly by pointerup means an
+        // Escape-cancelled drag leaves the grip capturing until the
+        // physical button-up eventually fires — every pointermove until
+        // then keeps landing here instead of wherever the cursor actually
+        // is. Releasing a pointerId this element does not currently
+        // capture is a no-op, never a throw, so calling it on every path
+        // (including the already-released pointerup case) is safe.
+        el.releasePointerCapture(e.pointerId);
         cancelDragRef.current = null;
         setDragHint(null);
         if (commit) store().reorderModRoutes(paramKey, from, over);

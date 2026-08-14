@@ -190,9 +190,14 @@ describe("drivenParamKeys", () => {
     const mods = [route("hue", { muted: true })];
     expect(drivenParamKeys(p, mods).size).toBe(0);
     expect(keysAppliedByEngine(p, mods).size).toBe(0);
-    // A mixed stack: only the live route's target is driven.
-    const stacked = [route("hue", { id: "a", muted: true }), route("hue", { id: "b" })];
+    // A mixed stack: the muted route targets a DIFFERENT param
+    // ("saturation") than the live one ("hue"). Both targeting "hue" would
+    // pass this assertion even with the muted skip deleted — Set("hue")
+    // gains nothing from adding "hue" again, so the mark would look
+    // correct by coincidence, not because the skip fired.
+    const stacked = [route("saturation", { id: "a", muted: true }), route("hue", { id: "b" })];
     expect([...drivenParamKeys(p, stacked)]).toEqual(["hue"]);
+    expect([...keysAppliedByEngine(p, stacked)]).toEqual(["hue"]);
   });
 });
 

@@ -962,6 +962,11 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const { rows } = seedStackedHueRoutes();
       const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      // jsdom has neither method (same PlayerBar.test.tsx/paramControls.test.tsx
+      // gap noted above) — end()'s unconditional releasePointerCapture call
+      // (the H12 fix-round-2 capture-leak fix) needs this stub too, or every
+      // one of these tests throws the moment a drag actually ends.
+      (grip0 as HTMLButtonElement).releasePointerCapture = () => undefined;
       const original = document.elementFromPoint;
 
       fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
@@ -981,6 +986,11 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const { rows } = seedStackedHueRoutes();
       const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      // jsdom has neither method (same PlayerBar.test.tsx/paramControls.test.tsx
+      // gap noted above) — end()'s unconditional releasePointerCapture call
+      // (the H12 fix-round-2 capture-leak fix) needs this stub too, or every
+      // one of these tests throws the moment a drag actually ends.
+      (grip0 as HTMLButtonElement).releasePointerCapture = () => undefined;
       const original = document.elementFromPoint;
       const before = useVizStore.getState().activeMods;
 
@@ -1015,6 +1025,11 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const rows = [...cards()[0].querySelectorAll<HTMLElement>(".mod-route")];
       const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      // jsdom has neither method (same PlayerBar.test.tsx/paramControls.test.tsx
+      // gap noted above) — end()'s unconditional releasePointerCapture call
+      // (the H12 fix-round-2 capture-leak fix) needs this stub too, or every
+      // one of these tests throws the moment a drag actually ends.
+      (grip0 as HTMLButtonElement).releasePointerCapture = () => undefined;
       const original = document.elementFromPoint;
 
       fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
@@ -1035,6 +1050,11 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const { rows } = seedStackedHueRoutes();
       const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      // jsdom has neither method (same PlayerBar.test.tsx/paramControls.test.tsx
+      // gap noted above) — end()'s unconditional releasePointerCapture call
+      // (the H12 fix-round-2 capture-leak fix) needs this stub too, or every
+      // one of these tests throws the moment a drag actually ends.
+      (grip0 as HTMLButtonElement).releasePointerCapture = () => undefined;
       const original = document.elementFromPoint;
       const before = useVizStore.getState().activeMods;
 
@@ -1055,6 +1075,11 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const { rows } = seedStackedHueRoutes();
       const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      // jsdom has neither method (same PlayerBar.test.tsx/paramControls.test.tsx
+      // gap noted above) — end()'s unconditional releasePointerCapture call
+      // (the H12 fix-round-2 capture-leak fix) needs this stub too, or every
+      // one of these tests throws the moment a drag actually ends.
+      (grip0 as HTMLButtonElement).releasePointerCapture = () => undefined;
       const original = document.elementFromPoint;
       const before = useVizStore.getState().activeMods;
 
@@ -1097,6 +1122,11 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const foreignRow = otherCard.querySelector(".mod-route")!;
       const grip0 = within(hueRow0 as HTMLElement).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      // jsdom has neither method (same PlayerBar.test.tsx/paramControls.test.tsx
+      // gap noted above) — end()'s unconditional releasePointerCapture call
+      // (the H12 fix-round-2 capture-leak fix) needs this stub too, or every
+      // one of these tests throws the moment a drag actually ends.
+      (grip0 as HTMLButtonElement).releasePointerCapture = () => undefined;
       const original = document.elementFromPoint;
       const before = useVizStore.getState().activeMods;
 

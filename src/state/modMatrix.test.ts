@@ -863,14 +863,24 @@ describe("H12: mute — evaluation", () => {
   });
 
   it("a mixed list applies only the live route — muting one leaves the other exactly as before", () => {
-    const base = defaultParams(preset);
+    // amount 1 with a single live route at kick=1 saturates to spec.max
+    // regardless of whether a SECOND route is also (wrongly) contributing —
+    // a route reaching the clamp cannot show whether anything else added to
+    // it, so that shape passes even with the mute skip deleted. 0.05 from
+    // minBase() never saturates: a live-only route lands at
+    // min + 0.05·range, and a broken skip that let the muted route ALSO
+    // apply would sum to min + 0.10·range instead — a different, checkable
+    // number, not a coincidental shared edge.
     const mixed = validModRoutes([
-      { id: "a", source: "kick", param: spec.key, amount: 1, muted: true },
-      { id: "b", source: "kick", param: spec.key, amount: 1 },
+      { id: "a", source: "kick", param: spec.key, amount: 0.05, muted: true },
+      { id: "b", source: "kick", param: spec.key, amount: 0.05 },
     ]);
-    const liveOnly = validModRoutes([{ id: "b", source: "kick", param: spec.key, amount: 1 }]);
-    const out = applyMods(preset, base, mixed, features({ kick: 1 }));
-    expect(out).toEqual(applyMods(preset, base, liveOnly, features({ kick: 1 })));
+    const liveOnly = validModRoutes([{ id: "b", source: "kick", param: spec.key, amount: 0.05 }]);
+    const out = applyMods(preset, minBase(), mixed, features({ kick: 1 }));
+    expect(out).toEqual(applyMods(preset, minBase(), liveOnly, features({ kick: 1 })));
+    // Non-vacuity: pin the actual number too, so a future edit could not
+    // make both sides wrong the same way and still pass the equality above.
+    expect(out[spec.key]).toBeCloseTo(spec.min + 0.05 * range, 10);
   });
 
   it("a muted route's lag memo is never touched — no state entry, not just no value change", () => {
