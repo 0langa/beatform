@@ -347,9 +347,16 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       visible to users too).
 - [ ] C3 Aurora hand-tuned look (needs B first — the mode, not the tuner,
       was the limit) + seeds for any mode whose upgrade unlocks one.
-- [ ] C4 Owner validation loop per batch — explicit approve/veto PER
-      ENTRY before anything merges to registry main. (Process fix: the
-      v1 seed merge rode on a thumbnails-look-fine reading; never again.)
+- [x] C4 **RUN AND PASSED 2026-08-14.** The full candidate set (5 flagship
+      themes, 9 look deltas, 4 new looks — built on branch `c1-themes`,
+      adversarially reviewed, 28 evidence stills) went to the owner as a
+      per-entry veto page; the owner approved ALL 18 entries. Registry
+      staging is in flight as a single PR (controller merges after CI);
+      the step-grid CI rule (owner decision C, same round) rides with it.
+      Related owner verdicts, same round: H13's clear button STAYS
+      filter-gated; P-6 ships bundled thumbnails with an "Apply" button;
+      P-11's recovery toast becomes persistent-until-clicked and its boot
+      gets a ~500 ms veil (both folded into the P-11 lane pre-merge).
 
 ### Track D — Docs truth pass (after A naming lands)
 
