@@ -3490,6 +3490,16 @@ kbd {
   flex: 0 0 auto;
 }
 
+.mod-route-head .chip-x:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.mod-route-head .chip-x:disabled:hover {
+  color: var(--text-faint);
+  background: none;
+}
+
 /* The drag handle (H12). Same visual weight as the chip-x buttons beside it
  * (9px glyph, matching padding) — it is a peer action in the same cluster,
  * not a differently-scaled affordance. `touch-action: none` is the actual

@@ -200,7 +200,23 @@ describe("reorderModRoutes (H12)", () => {
     expect(s().undoDepth).toBe(depth + 1);
 
     s().reorderModRoutes(liveParam, 1, 0); // a second, genuine move — same gesture
-    expect(s().undoDepth).toBe(depth + 1); // grouped under "mod-reorder", not a 2nd entry
+    expect(s().undoDepth).toBe(depth + 1); // grouped under the same per-param key, not a 2nd entry
+  });
+
+  it("reorders on TWO DIFFERENT cards within the grouping window stay two entries (M1)", () => {
+    s().addModRoute("kick", liveParam);
+    s().addModRoute("bass", liveParam); // card A: two routes on liveParam
+    s().addModRoute("kick", postParam);
+    s().addModRoute("bass", postParam); // card B: two routes on postParam
+    const depth = s().undoDepth;
+
+    // A bare "mod-reorder" key (pre-M1) would have let these two collapse
+    // into one entry, exactly like the grouped same-card case above —
+    // the fix is scoping the key to paramKey, not the 800ms window.
+    s().reorderModRoutes(liveParam, 0, 1); // card A
+    s().reorderModRoutes(postParam, 0, 1); // card B, same tick
+
+    expect(s().undoDepth).toBe(depth + 2);
   });
 });
 
@@ -309,19 +325,55 @@ describe("setModRouteAmountsForParam (H13)", () => {
     s().undo();
     expect(s().activeMods).toEqual(before);
   });
+
+  it("two rapid calls on the SAME param group into ONE entry — a drag (C1)", () => {
+    s().addModRoute("kick", liveParam);
+    s().addModRoute("bass", liveParam);
+    const before = s().activeMods;
+    const depth = s().undoDepth;
+
+    // Two onChange events from one continuous <input type="range"> drag,
+    // fired back to back with no delay — must group under the per-param
+    // "mod-bulk-depth:<param>" key, the same idiom updateModRoute's own
+    // per-route key already uses for a Depth-slider drag. Before C1 this
+    // recorded "mod-bulk" (UNGROUPABLE), costing the drag one undo entry
+    // PER POINTER STEP.
+    s().setModRouteAmountsForParam(liveParam, 0.2);
+    s().setModRouteAmountsForParam(liveParam, 0.4);
+
+    expect(s().undoDepth).toBe(depth + 1);
+    expect(s().activeMods.every((r) => r.amount === 0.4)).toBe(true);
+
+    s().undo();
+    // Undo jumps back to BEFORE the whole drag, not to the mid-drag 0.2.
+    expect(s().activeMods).toEqual(before);
+  });
+
+  it("two rapid calls on DIFFERENT params never merge — the key is per-param, not global (C1)", () => {
+    s().addModRoute("kick", liveParam);
+    s().addModRoute("kick", postParam);
+    const depth = s().undoDepth;
+
+    s().setModRouteAmountsForParam(liveParam, 0.3);
+    s().setModRouteAmountsForParam(postParam, 0.6);
+
+    expect(s().undoDepth).toBe(depth + 2);
+  });
 });
 
 describe("mod-bulk history (H13)", () => {
-  it("two rapid bulk actions stay two undo entries — UNGROUPABLE, not the 800ms window", () => {
+  it("two rapid bulk actions stay two undo entries — different keys, not the 800ms window", () => {
     s().addModRoute("kick", liveParam);
     s().addModRoute("bass", liveParam);
     const depth = s().undoDepth;
 
-    // Both record under the literal SAME "mod-bulk" key, back to back, with
-    // no delay — the case a default (groupable) key would collapse to one
-    // entry. UNGROUPABLE (history.ts) is what keeps them apart; see
-    // reorderModRoutes' own "mod-reorder" test above for the CONTRASTING
-    // grouped case.
+    // clearModRoutesForSource keeps the UNGROUPABLE (history.ts) "mod-bulk"
+    // key; setModRouteAmountsForParam records a GROUPABLE per-param
+    // "mod-bulk-depth:<param>" key instead (C1) — two DIFFERENT keys never
+    // merge regardless of timing, so this needs no delay between the calls
+    // to stay two entries. See reorderModRoutes' own per-param-key test
+    // above for the CONTRASTING case where grouping is exactly what's
+    // wanted (two same-card moves collapsing to one entry).
     s().clearModRoutesForSource("bass");
     s().setModRouteAmountsForParam(liveParam, 0.9);
 

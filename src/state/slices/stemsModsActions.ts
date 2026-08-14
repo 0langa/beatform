@@ -153,18 +153,31 @@ export function stemsModsActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // BY IDENTITY for that, and a rejected call is not an edit — recording
       // it would put a no-op on the undo stack (same guard as addModRoute).
       if (activeMods === s.activeMods) return;
-      ctx.record("mod-reorder");
+      // Per-card (M1): a bare "mod-reorder" key let a ▲▼ click on one card
+      // and another ▲▼ click on a DIFFERENT card, fired within the 800ms
+      // window, collapse into one undo entry. Keying on paramKey scopes the
+      // grouping to one card, same idiom as updateModRoute's per-route key
+      // and setModRouteAmountsForParam's per-param key below.
+      ctx.record(`mod-reorder:${paramKey}`);
       const modsByPreset = { ...s.modsByPreset, [s.presetId]: activeMods };
       set({ activeMods, modsByPreset });
       saveStoredMods(modsByPreset);
     },
 
-    // H13 — bulk Modulation actions. Both record under the SAME "mod-bulk"
-    // key, which UNGROUPABLE (history.ts) carries: two bulk actions fired in
-    // quick succession (e.g. a clear followed by a depth drag) must stay two
-    // separate undo entries, exactly like two rapid "mod-add"s already do —
-    // no injectable clock or per-call key needed, UNGROUPABLE membership is
-    // the whole mechanism.
+    // H13 — two bulk Modulation actions, two different undo shapes (C1).
+    // clearModRoutesForSource is discrete and destructive: it keeps the
+    // UNGROUPABLE (history.ts) "mod-bulk" key, exactly like "mod-add", so
+    // two clears fired back to back stay two undo entries, never collapsing
+    // into one that silently drops the first removal.
+    //
+    // setModRouteAmountsForParam instead drives a continuous <input
+    // type="range"> (own comment below) — it records a GROUPABLE per-param
+    // "mod-bulk-depth:<param>" key, so one drag's many onChange calls group
+    // to one entry the same way updateModRoute's own per-route key already
+    // groups a Depth-slider drag. The two actions' keys can never collide —
+    // UNGROUPABLE membership keeps repeat clears apart, the disjoint key
+    // prefix keeps a clear and a depth-set apart, and the per-param suffix
+    // keeps two different cards' depth-sets apart.
 
     /**
      * Remove every route whose source matches. Destructive + bulk: the UI
@@ -202,7 +215,13 @@ export function stemsModsActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     setModRouteAmountsForParam(param, amount) {
       const s = get();
       if (!s.activeMods.some((r) => r.param === param)) return; // nothing to set
-      ctx.record("mod-bulk");
+      // GROUPABLE, per-param (C1): the card's "All" depth row is a
+      // continuous slider, not a discrete action, so unlike
+      // clearModRoutesForSource above it must NOT be UNGROUPABLE — a drag's
+      // stream of onChange calls needs to group to one undo entry, the same
+      // as any other slider. Scoping the key to `param` keeps that grouping
+      // from ever reaching across two different cards.
+      ctx.record(`mod-bulk-depth:${param}`);
       const activeMods = s.activeMods.map((r) => (r.param === param ? { ...r, amount } : r));
       const modsByPreset = { ...s.modsByPreset, [s.presetId]: activeMods };
       set({ activeMods, modsByPreset });

@@ -466,9 +466,9 @@ export function ModulationPage() {
    * the one substitute that still answers "what's under the pointer" while
    * captured, and it needs no `getBoundingClientRect` math of its own.
    *
-   * COMMITS ON DROP: `reorderModRoutes` (and therefore the single
-   * "mod-reorder" history record it makes) is called from EXACTLY one
-   * place — the pointerup handler — never from a move. Escape or a
+   * COMMITS ON DROP: `reorderModRoutes` (and therefore the single per-card
+   * "mod-reorder:<param>" history record it makes, M1) is called from
+   * EXACTLY one place — the pointerup handler — never from a move. Escape or a
    * `pointercancel` (window drag-out, pen palm rejection, browser-
    * initiated) tear down through the identical `end()` but pass
    * `commit=false`, so a cancelled drag calls `reorderModRoutes` zero
@@ -495,8 +495,18 @@ export function ModulationPage() {
       };
       const onUp = () => end(true);
       const onCancel = () => end(false);
+      // CAPTURE phase, and stopPropagation on the way in (I1): useAppShortcuts
+      // (mounted at App root, window, BUBBLE phase) runs its own Escape
+      // cascade ending in setShowPanel(false). A bubble-phase listener here
+      // would run AFTER that cascade, so cancelling a drag would also close
+      // the whole Visuals panel underneath it. Capture always reaches window
+      // before bubble does, and stopPropagation() keeps the keydown from
+      // ever reaching useAppShortcuts' listener at all.
       const onKey = (ev: KeyboardEvent) => {
-        if (ev.key === "Escape") end(false);
+        if (ev.key === "Escape") {
+          ev.stopPropagation();
+          end(false);
+        }
       };
       // Hoisted function declaration: onUp/onCancel/onKey above reference it
       // by name before this line runs, which is fine — none of them are
@@ -506,7 +516,10 @@ export function ModulationPage() {
         el.removeEventListener("pointermove", onMove);
         el.removeEventListener("pointerup", onUp);
         el.removeEventListener("pointercancel", onCancel);
-        window.removeEventListener("keydown", onKey);
+        // The trailing `true` must match the CAPTURE registration below —
+        // capture and bubble are distinct listener entries even for the
+        // same type/function, so a mismatched flag here would never remove it.
+        window.removeEventListener("keydown", onKey, true);
         // Unconditional, every exit path (drop, Escape, pointercancel): a
         // captured pointer released only implicitly by pointerup means an
         // Escape-cancelled drag leaves the grip capturing until the
@@ -523,7 +536,7 @@ export function ModulationPage() {
       el.addEventListener("pointermove", onMove);
       el.addEventListener("pointerup", onUp);
       el.addEventListener("pointercancel", onCancel);
-      window.addEventListener("keydown", onKey);
+      window.addEventListener("keydown", onKey, true);
       cancelDragRef.current = () => end(false);
     };
 
@@ -882,6 +895,14 @@ export function ModulationPage() {
                             className="mod-route-grip"
                             title="Drag to reorder — or use the move buttons"
                             aria-label={`Reorder ${src} for ${card.label}`}
+                            // Pointer-only gesture (M3): startRouteDrag's
+                            // preventDefault already blocks the native
+                            // click-to-focus a mousedown would otherwise
+                            // give this button, so no key could ever
+                            // operate it — tabIndex={-1} keeps Tab from
+                            // stopping on a control it can't use. The ▲▼
+                            // buttons beside it are the keyboard path.
+                            tabIndex={-1}
                             onPointerDown={startRouteDrag(card.param, ri)}
                           >
                             ⠿

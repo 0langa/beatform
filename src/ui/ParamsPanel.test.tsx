@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { DEFAULT_PREFS, getPrefs, setPrefs, subscribePrefs } from "../state/prefs";
 import { ParamsPanel } from "./ParamsPanel";
 import { cardHeading } from "./ModulationPage";
+import { useAppShortcuts } from "./useAppShortcuts";
 import { __meterCount } from "./ModMeters";
 import { __hintListenerCount, formatValue, getHint } from "./kit";
 import { renderProbe } from "./testing/renderProbe";
@@ -1140,6 +1141,56 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       // reorderModRoutes call, which is already proven to cost nothing.
       expect(useVizStore.getState().activeMods).toBe(before);
       expect(useVizStore.getState().undoDepth).toBe(0);
+    });
+
+    /**
+     * I1 — the Escape-cancels-a-drag test above mounts `<ParamsPanel />`
+     * alone, so ModulationPage's own window keydown listener is the ONLY
+     * one that could see the keypress; a bubble-vs-capture regression would
+     * never show up there. useAppShortcuts (App.tsx mount) is a SEPARATE
+     * window keydown listener whose own Escape cascade ends in
+     * `setShowPanel(false)` — mounting it here alongside the panel, the way
+     * App.tsx actually does, is what makes a regression back to a
+     * bubble-phase drag listener observable.
+     */
+    it("Escape during a drag does not also close the Visuals panel (I1)", () => {
+      function Harness() {
+        useAppShortcuts(useVizStore.getState);
+        return <ParamsPanel />;
+      }
+      const a = { id: "r1", source: "kick" as const, param: "hue", amount: 0.5 };
+      const b = { id: "r2", source: "bass" as const, param: "hue", amount: -0.25 };
+      act(() =>
+        useVizStore.setState({
+          presetId: "spectrum-bars",
+          activeMods: [a, b],
+          modsByPreset: { ...useVizStore.getState().modsByPreset, "spectrum-bars": [a, b] },
+          showPanel: true,
+        }),
+      );
+      render(<Harness />);
+      gotoModulation();
+      const rows = [...cards()[0].querySelectorAll<HTMLElement>(".mod-route")];
+      const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
+      (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      (grip0 as HTMLButtonElement).releasePointerCapture = () => undefined;
+      const before = useVizStore.getState().activeMods;
+
+      fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
+      // Dispatched at document.body, not window: startRouteDrag's own
+      // preventDefault means the grip never actually takes focus (M3), so
+      // in the real app this Escape lands on whatever had focus before the
+      // drag (nothing, here) — and, same as any real keydown, window sees
+      // it via the CAPTURING pass down to that target before the BUBBLING
+      // pass back up. Dispatching directly at `window` would skip that
+      // distinction entirely (target === currentTarget fires every
+      // listener in registration order, capture or not) and could not
+      // catch this regression.
+      fireEvent.keyDown(document.body, { key: "Escape" });
+
+      expect(useVizStore.getState().activeMods).toBe(before); // drag cancelled: untouched
+      expect(useVizStore.getState().undoDepth).toBe(0);
+      expect(useVizStore.getState().showPanel).toBe(true); // I1: panel stays open
     });
   });
 });

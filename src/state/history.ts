@@ -20,10 +20,13 @@ let lastPushAt = -Infinity;
 /** Gesture keys that must NEVER group: each invocation is a discrete action a
  * user expects to undo one at a time. Grouping collapsed "add two text layers
  * quickly" into a single undo that removed both, and holding `]` walked dozens
- * of presets under one entry. "mod-bulk" (H13) is the same shape: a clear-for-
- * source and a card's bulk depth set both record under that one key, and two
- * of them fired within the 800ms window must stay two undo entries, not
- * collapse into one that silently drops the first. */
+ * of presets under one entry. "mod-bulk" (H13) is the same shape:
+ * clearModRoutesForSource is a discrete bulk removal, and two of them fired
+ * within the 800ms window must stay two undo entries, not collapse into one
+ * that silently drops the first routes list. (H13's other bulk action,
+ * setModRouteAmountsForParam, drives a continuous slider instead and is
+ * deliberately GROUPABLE on its own per-param key — see stemsModsActions.ts,
+ * C1.) */
 const UNGROUPABLE = new Set([
   "layer-add",
   "mod-add",

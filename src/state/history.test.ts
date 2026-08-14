@@ -112,10 +112,12 @@ describe("history", () => {
     pushHistory(doc(2), "layer-add", 1100);
     pushHistory(doc(3), "preset", 1200);
     pushHistory(doc(4), "preset", 1250);
-    // "mod-bulk" (H13): two bulk Modulation actions fired back to back — a
-    // clear-for-source immediately followed by a card's bulk depth set, both
-    // record under this one key — must stay two entries too, not collapse
-    // into one that silently drops the first.
+    // "mod-bulk" (H13): two clearModRoutesForSource calls fired back to
+    // back — e.g. clearing two different sources in quick succession — must
+    // stay two entries too, not collapse into one that silently drops the
+    // first removal. The card's bulk depth set records its own GROUPABLE
+    // per-param key instead (stemsModsActions.ts, C1), so it is not this
+    // key's concern.
     pushHistory(doc(5), "mod-bulk", 1300);
     pushHistory(doc(6), "mod-bulk", 1300); // same millisecond — still ungrouped
     expect(historyDepths().undo).toBe(6);
