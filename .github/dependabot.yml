@@ -30,3 +30,15 @@ updates:
     groups:
       cargo-minor-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # webview2-com and windows-core must move in LOCKSTEP with wry, which
+      # pins webview2-com ^0.38 (checked through wry 0.56.1, 2026-08-14). An
+      # app-side bump alone puts two incompatible copies of the WebView2 type
+      # graph in one build — dependabot PRs #13/#15 failed CI on exactly that
+      # (E0308). We bump both by hand, together, when the tauri/wry stack
+      # moves; cargo's version resolution forces the moment on us anyway.
+      # Patch updates stay allowed so a CVE fix on the current line arrives.
+      - dependency-name: "webview2-com"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "windows-core"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
