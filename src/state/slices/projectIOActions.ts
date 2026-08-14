@@ -2,7 +2,7 @@ import { APP_VERSION } from "../../version";
 import { safeName } from "../batch";
 import { clearHistory, historyDepths, popRedo, popUndo } from "../history";
 import { wasPreviousExitClean } from "../persistence";
-import { clearAutosave, isTauri, openTextFile, readAutosave, saveTextFile } from "../platform";
+import { isTauri, openTextFile, readAutosave, saveTextFile, writeAutosave } from "../platform";
 import {
   parseProject,
   PROJECT_EXTENSION,
@@ -148,44 +148,75 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     },
 
     /**
-     * Boot-time half of the autosave. Offers recovery only when the last
-     * session did NOT exit cleanly — an ordinary quit leaves the marker at "1"
-     * and this returns silently, so the common path shows nothing at all.
+     * P-11: the desktop boot chokepoint. The synchronous initial state (built
+     * at module scope in store.ts from the 17 localStorage document keys —
+     * see .superpowers/p11-lane-log.md's Task 1 map) is already on screen by
+     * the time this runs; it is now ONLY the fallback this function falls
+     * back to, never the thing a user is meant to keep looking at. Runs once,
+     * unconditionally, every desktop launch — not gated on "did we crash"
+     * the way the old `checkAutosaveRecovery` was, because the autosave file
+     * is simply the document now, not a special crash artifact.
      *
-     * Everything here is best-effort: a missing, unparseable or truncated
-     * autosave must never keep the app from starting.
+     * `readAutosave`/`parseProject` are best-effort by construction: missing,
+     * unreadable, truncated or newer-schema-than-this-build content all fall
+     * back to exactly what's already showing (localStorage's synchronous
+     * read), so boot can never white-screen on a bad file. On that fallback
+     * path this also establishes the autosave file immediately (rather than
+     * waiting up to autosaveIntervalSec for the user's first edit), so the
+     * NEXT boot has one to prefer — the plan's recorded "boot from
+     * localStorage ONCE" migration preference.
+     *
+     * `undoDepth === 0` is the guard against the one real risk here: this is
+     * async, and if the read is unusually slow (a large embedded background
+     * asset, a slow disk) a user could in principle start editing before it
+     * resolves. undoDepth is hardcoded to 0 in the synchronous initial state
+     * and only ever moves via a record()-backed action, so it is an exact,
+     * cheap proxy for "nothing has happened since boot yet" — silently
+     * replacing a real in-session edit with whatever was on disk a moment
+     * earlier would be its own data-loss bug.
+     *
+     * Browser build: isTauri() gates this at the one entrypoint — readAutosave
+     * and writeAutosave already no-op there too, but the explicit early
+     * return keeps that provable by inspection alone.
+     *
+     * P-11 Task 4 — what became of the old Restore/Discard prompt: applying
+     * is no longer conditional on "did we crash" (it happens every launch,
+     * silently, per the paragraphs above), so there are never two competing
+     * candidate documents for a user to choose between any more — nothing
+     * left to discard TO. The one thing that choice-driven flow gave that a
+     * silent apply doesn't is AWARENESS that a crash happened at all, which
+     * this preserves as a passive, one-time flashNotice (the exact sentence
+     * the old restoreAutosave() used) instead of an actionable bar — fired
+     * only when there's something genuinely worth telling the user (the
+     * previous exit was unclean AND the autosave actually applied; a clean
+     * exit, same as today, stays completely silent — the common path).
      */
-    async checkAutosaveRecovery() {
-      if (wasPreviousExitClean()) {
-        // Clean quit — the file on disk is a duplicate of what localStorage
-        // already restored. Drop it so a LATER crash can't offer stale work.
-        void clearAutosave();
-        return;
-      }
+    async bootDesktopDocument() {
+      if (!isTauri()) return;
       const contents = await readAutosave();
-      if (contents === null) return;
-      try {
-        set({ recoveredDoc: parseProject(contents) });
-      } catch (e) {
-        console.warn("[autosave] unusable, discarding", e);
-        void clearAutosave();
+      if (contents !== null) {
+        try {
+          const doc = parseProject(contents);
+          if (get().undoDepth === 0) {
+            const recovering = !wasPreviousExitClean();
+            get().applyDocument(doc);
+            if (recovering) ctx.flashNotice("Recovered your work from the last session");
+          } else {
+            console.warn(
+              "[autosave] the user already edited before boot resolved — keeping their edits",
+            );
+          }
+          return;
+        } catch (e) {
+          console.warn("[autosave] unusable, falling back to the last session cache", e);
+        }
       }
-    },
-
-    restoreAutosave() {
-      const doc = get().recoveredDoc;
-      if (!doc) return;
-      // Same treatment as opening a project: the recovered document becomes
-      // the new baseline, so undo can't step back into the pre-boot state.
-      clearHistory();
-      set({ recoveredDoc: null, undoDepth: 0, redoDepth: 0 });
-      get().applyDocument(doc);
-      ctx.flashNotice("Recovered your work from the last session");
-    },
-
-    dismissAutosave() {
-      set({ recoveredDoc: null });
-      void clearAutosave();
+      // Missing or unparseable: docOf(get()) is already the localStorage
+      // fallback (nothing to apply) — just make sure a file exists for next
+      // time, immediately rather than debounced.
+      void writeAutosave(serializeProject(ctx.docOf(get()), APP_VERSION)).catch((e) => {
+        console.warn("[autosave] initial write failed", e);
+      });
     },
   } satisfies Partial<VizState>;
 }

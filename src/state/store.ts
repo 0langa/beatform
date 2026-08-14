@@ -262,13 +262,6 @@ interface SessionSlice {
   error: string | null;
   /** Transient positive feedback (project saved, preset imported, …). */
   notice: string | null;
-  /**
-   * Work recovered from a previous session that ended without a clean exit.
-   * Non-null puts a Restore/Discard bar on screen; the document is NOT applied
-   * until the user says so, because silently replacing what they just booted
-   * into would be its own kind of data loss.
-   */
-  recoveredDoc: ProjectDocument | null;
   userPresets: UserPreset[];
   /** Gallery (public curated registry) browser state — session-only. */
   galleryStatus: "idle" | "loading" | "ready" | "error";
@@ -620,9 +613,9 @@ interface Actions {
   /** Open a project from already-read text (the drag-drop path). */
   openProjectText(name: string, contents: string): void;
   applyDocument(doc: ProjectDocument): void;
-  checkAutosaveRecovery(): Promise<void>;
-  restoreAutosave(): void;
-  dismissAutosave(): void;
+  /** P-11: the desktop boot chokepoint — see projectIOActions.ts's own doc
+   * comment and .superpowers/p11-lane-log.md for the full design. */
+  bootDesktopDocument(): Promise<void>;
   undo(): void;
   redo(): void;
   saveUserPreset(name: string): void;
@@ -1270,7 +1263,6 @@ export const useVizStore = create<VizState>((set, get) => {
     showExport: false,
     error: null,
     notice: null,
-    recoveredDoc: null,
     userPresets: loadUserPresets(),
     galleryStatus: "idle" as const,
     galleryError: null,
