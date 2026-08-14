@@ -314,11 +314,20 @@ describe("T15 — liveness and silence, measured over the same frames", () => {
     expect(Number(v(el))).toBe(0.25);
   });
 
-  it("shows the raw source through the curve for a lagged route — never the smoothed value", () => {
-    // D4, said out loud as a test: attack/release are DISPLAY-invisible here.
-    // The engine's lag stage is caller-state-mutating and stays private; a UI
-    // that reproduced it would advance the loop's envelopes a second time per
-    // frame and change what the renderer draws.
+  it("without a routeId, the meter always shows the raw source through the curve — never a smoothed value of its own", () => {
+    // D4, said out loud as a test: this is the NO-ROUTEID fallback path (see
+    // MeterSpec.routeId and the file header for the full H9 contract). The
+    // spec below never sets routeId, so the driver has no published value to
+    // prefer and always computes the instant source-through-curve expression
+    // itself, however large or fast a step the source takes — proving THIS
+    // driver holds no smoothing state of its own. Contrast the T20 describe
+    // block below ("prefers the loop's published value..."): WITH a routeId,
+    // the meter DOES show the loop's smoothed/published value instead. The
+    // engine's own lag stage stays private and caller-state-mutating
+    // regardless — a UI that reproduced it locally, rather than reading the
+    // read-only copy services.ts already publishes, would advance the
+    // loop's envelopes a second time per frame and change what the renderer
+    // draws.
     const step = fakeRaf();
     const specs: MeterSpec[] = [{ source: "bass" }];
     const { container } = render(<MeterHost specs={specs} />);

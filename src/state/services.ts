@@ -92,11 +92,13 @@ export function getLiveStemValues(): Record<string, number> | undefined {
  * subscription and no store write.
  *
  * ONE Map, allocated once and never reassigned — clearing and refilling it in
- * place is what keeps the publish allocation-free. It is rebuilt from
- * rf.mods in full every frame rather than diffed, so a route id from a
- * preset the timeline has since left (or a route the user just deleted)
- * cannot survive into a frame that no longer has it: "has an entry" IS
- * "published this frame".
+ * place is what keeps the publish from allocating a NEW MAP INSTANCE every
+ * frame (Map.clear()/.set() still touch the existing hash entries, which is
+ * not literally free — the property this buys is "no fresh Map object per
+ * frame", not "no work at all"). It is rebuilt from rf.mods in full every
+ * frame rather than diffed, so a route id from a preset the timeline has
+ * since left (or a route the user just deleted) cannot survive into a frame
+ * that no longer has it: "has an entry" IS "published this frame".
  *
  * Every entry is read-only OVER modEval: `modEval.routes.get(id)?.value` is
  * the memo applyMods/applyPostMods already advanced this frame for a route
