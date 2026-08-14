@@ -1189,28 +1189,63 @@ buf` — immediately before the job is built, with nothing awaitable
       H.264 25 Mbps export completed — consistent with the fix, though
       starvation was always timing-dependent, so only absence over many
       exports is confirming evidence.
-- [ ] E4b **Export performance — findings filed, measure before touching.**
-      Owner reports (Surface Pro 8, Iris Xe): exports 3-10 fps; ~3× faster
-      after a reboot (3-day-uptime degradation is real and external to the
-      app); an H.264 1080p60 run showed "16 fps → 7 fps at 16%". Findings
-      from the 2026-08-13 code read: (1) the dialog's fps readout is
-      `done/elapsed` — a CUMULATIVE average (exportActions.ts), so the early
-      number rides the encoder-queue fill at render speed and then decays
-      toward the steady pipeline rate; the slide is largely a measurement
-      artifact plus Surface thermal settle, NOT a leak (E2's render wave
-      verified nothing accumulates per frame). Small honest fix: a windowed
-      rate. (2) The structural lever: the frame loop SERIALIZES render
-      (`gpuDone()`) and encode (`add()`) per frame — render 60 ms + encode
-      80 ms = 140 ms/frame where a ONE-frame pipeline overlap yields
-      max(render, encode). Potentially ~2× on encoder-bound machines, zero
-      pixel change BY CONSTRUCTION (scheduling, not content) — but the
+- [x] E4b **DONE 2026-08-14 — measured; the pipeline-overlap lever is a
+      NO-GO, windowed fps readout shipped.** Owner reports (Surface Pro 8,
+      Iris Xe): exports 3-10 fps; ~3× faster after a reboot (3-day-uptime
+      degradation is real and external to the app); an H.264 1080p60 run
+      showed "16 fps → 7 fps at 16%". Findings from the 2026-08-13 code read:
+      (1) the dialog's fps readout is `done/elapsed` — a CUMULATIVE average
+      (exportActions.ts), so the early number rides the encoder-queue fill at
+      render speed and then decays toward the steady pipeline rate; the slide
+      is largely a measurement artifact plus Surface thermal settle, NOT a
+      leak (E2's render wave verified nothing accumulates per frame). Small
+      honest fix: a windowed rate. (2) The structural lever: the frame loop
+      SERIALIZES render (`gpuDone()`) and encode (`add()`) per frame — render
+      60 ms + encode 80 ms = 140 ms/frame where a ONE-frame pipeline overlap
+      yields max(render, encode). Potentially ~2× on encoder-bound machines,
+      zero pixel change BY CONSTRUCTION (scheduling, not content) — but the
       loop's awaits are documented load-bearing backpressure, so this ships
-      only with: per-phase timing instrumentation FIRST (prove the split),
-      a bounded single-frame in-flight design that preserves backpressure,
-      and the full determinism suite + golden traces green. (3) Encoder
-      configs are clean — no `hardwareAcceleration` override (Chromium may
-      pick hardware H.264), `latencyMode:"quality"` stays (pixels are
-      sacred; the owner's rule: never trade quality for speed).
+      only with: per-phase timing instrumentation FIRST (prove the split), a
+      bounded single-frame in-flight design that preserves backpressure, and
+      the full determinism suite + golden traces green. (3) Encoder configs
+      are clean — no `hardwareAcceleration` override (Chromium may pick
+      hardware H.264), `latencyMode:"quality"` stays (pixels are sacred; the
+      owner's rule: never trade quality for speed).
+      **PLAN-E4B.md Task 1 (measurement), done.** A TEMPORARY per-phase timing
+      seam (`ExportCoreHooks.onPhaseSample`, exportCore.ts) instrumented the
+      frame loop's render/readback/encode/wall split with zero cost when
+      absent (gated on the hook existing; no production caller sets it) and
+      pinned by `exportCorePhaseSample.test.ts`. Device-measured on the
+      Surface Pro 8 (Iris Xe — WebGPU adapter confirms `gen-12lp`), browser
+      lane, `particle-flow` (the same preset from the original report) at
+      1920×1080@60/25 Mbps/20 s (1200 frames): **h264 is 91.0% render / 8.6%
+      encode (80.9 fps avg)**; **software AV1 is 7.1% render / 92.9% encode
+      (4.76 fps avg — closely matching the owner's own field reports and
+      E4a's prior "~4-5 fps" device evidence)**. The two codecs sit at
+      opposite extremes — h264's sub-millisecond p50/p90 encode is consistent
+      with the Iris Xe's hardware H.264 path Chromium is free to pick (no
+      override exists, per finding (3) above); AV1 has no hardware encoder on
+      this chip and its software fallback dominates completely. Decision rule
+      agreed with the controller — overlap proceeds only if encode-wait share
+      is 25-75% on either codec — is not met by EITHER (8.6% and 92.9% both
+      fall outside the band, on opposite sides), and both independently trip
+      this entry's own ">80% dominant ⇒ small lever" heuristic too. Best-case
+      theoretical speedup from overlap (wall time over the dominant phase
+      alone) is ~1.10× for h264 and ~1.08× for av1 — single-digit percent,
+      not the "up to 2×" that would justify touching the loop's
+      backpressure. **Verdict: the one-frame pipeline overlap (Task 3) does
+      NOT proceed** — the frame loop's serialized render/encode awaits stay
+      exactly as they are. Full numbers table, methodology and a real-device
+      sanity check on the instrumentation hook itself are in
+      `.superpowers/e4b-task1-measurement.md` on the `e4b-export-perf`
+      branch. **Task 2 (windowed fps readout) shipped in the same commit:**
+      `exporting.speed` now windows to the last ~5 s of `onProgress` samples
+      instead of averaging over the whole run since start
+      (exportActions.ts); the old cumulative average survives as
+      `exporting.avgSpeed` for any future ETA math. UI-only, determinism
+      untouched — pinned by a synthetic fast-then-slow progress sequence
+      (exportActions.test.ts) proving the windowed reading tracks the recent
+      rate where the old cumulative would not.
 
 - [x] E2-R1 **DONE 2026-08-10 — with option (f), on the owner's approval.**
       Designed by a workflow: four parallel investigations, a three-lens judge
