@@ -800,6 +800,119 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       remainder** wave 1 named and did not cover: `modMatrix`,
       `frameResolve` and the store slices have not had the adversarial
       pass persistence and the document model got.
+      **Wave 2 (UI) — gap (a) CLOSED, DONE 2026-08-14.** Re-derived against
+      the current tree per the accounting note above — the archived
+      register is unreachable and no wave-2 findings block existed. Full
+      record (scope, every finding's reaching scenario, and all nineteen
+      dismissals in detail): `.superpowers/e2-wave2-ui-findings.md`. Same
+      shape as waves 3/4/5: every dialog/panel taking user text/numbers/
+      files, the Escape-cascade/focus-trap story, async dialogs reading
+      store state across an `await`, `set({ error })` visibility, and new
+      render-loop-adjacency violations (the store-direct migration's own
+      closed history not re-litigated). **Five real findings, adversarially
+      verified 5/5 CONFIRMED** (a second pass independently re-derived each
+      reaching scenario against the current tree before any fix landed —
+      same discipline waves 3/4/5 applied above); **nineteen dismissed**,
+      grouped: numeric/text-entry surfaces already fully hardened upstream
+      of the point a bad value could stick (SliderField, look/theme name
+      inputs, ShaderEditor's param rows, ShadertoyImport, GalleryDialog's
+      search, Batch's track-title input, ExportDialog itself has no
+      free-text fields at all) — 7; drag gestures immune to the Escape-
+      cascade hazard E2-U1 fixes, by construction (native HTML5 DnD takes
+      no `keydown` during a drag, or React-synthetic handlers with nothing
+      pending to lose on an interrupting unmount) — 4; MIDI learn's no-
+      timeout armed state is a deliberate, disclosed, cancellable DAW-
+      standard mode, not a coding defect — 1; the global toast's stacking
+      context already paints over every modal (`.app`'s `position: fixed`
+      forces one shared context, independent of z-index) — 1; two existing
+      confirm-then-await patterns (`deleteLook`, `clearSourceGuarded`)
+      already re-validate identity or re-match by source after the await,
+      unlike E2-U3 — 2; `UpdatePrompt`'s own bubble-phase Escape is harmless
+      because it can only ever appear before any other panel is open — 1;
+      focus-trap coverage is complete, 9/9 dialogs — 1; render-loop
+      adjacency has zero new `eslint-disable`s and every newest-surface
+      selector reads a primitive (grep-verified) — 1; tab order on the
+      newest surfaces (mute switch, grips, bulk controls) is correct by
+      design, including one deliberately `tabIndex={-1}` grip with a
+      documented keyboard alternative — 1.
+      **E2-U1 (FIXED, `acca967`): Escape mid-drag on the Library/Visuals
+      resize handles closed the panel instead of cancelling the resize.**
+      Same pointer-capture shape as `ModulationPage`'s route-reorder drag,
+      but with no capture-phase `keydown` listener of its own — the global
+      Escape cascade (bubble phase) unmounted the handle mid-drag, and
+      since an unmounted captured element releases capture implicitly
+      (`lostpointercapture`, never `pointerup`), the only place the width
+      persists never ran. Width silently reverted to the pre-drag size on
+      next launch, no error. Extracted the shared drag idiom into
+      `src/ui/DockResizeHandle.tsx` (both handles now share one
+      implementation) with the same capture-phase `keydown` +
+      `stopPropagation` treatment `startRouteDrag` uses; Escape now reverts
+      to the pre-drag value without closing the panel. Extraction also made
+      the fix unit-testable without mounting all of `App.tsx` (canvas/
+      audio/WebGPU init — no existing suite does that).
+      **E2-U2 (FIXED, `02c03d6`): an unbounded tail-line/word time entry
+      silently dropped it from playback AND export.** `clampLineTime`/
+      `clampWordTime` (`lyricsEdit.ts`) set `hi = Infinity` for the LAST
+      line/word; `parseTimeInput` has no upper bound, so a no-colon paste
+      like "1e300" sailed through unclamped. `lrcTimestamp` already
+      saturates every DISPLAYED and exported timestamp at 99:59.99, so
+      nothing looked wrong on screen — but the internal value stayed
+      astronomical, so `activeLyricIndex`'s binary search never selected
+      that line again. Both clamps now fall back to a new `MAX_TIME_SEC`
+      (5999.99s) — `lrcTimestamp`'s own cap, pulled into one shared
+      constant both reference, rather than threading track duration through
+      a module deliberately kept pure (no playback-state access).
+      **E2-U3 (FIXED, `50b36c4`): "Remove lyrics" could delete a just-
+      landed background generation instead of the lyrics it asked about —
+      corrected repro** (see the full record's correction note: the
+      original reaching scenario required a Generate button that cannot be
+      on screen while lyrics are loaded). No lyrics loaded → start Generate
+      (phase "generating", `lyricFileName` stays empty) → "+ Import
+      lyrics…" is still mounted and lands a file with no confirm → the ✕
+      that appears afterward opens its own confirm → the still-running
+      generation completes mid-confirm, silently replacing the imported
+      content → "Yes" deletes the just-landed generation, no toast either
+      way. Fixed both halves: the ✕ and the import control are `disabled`
+      whenever `lyricsGen.phase !== "idle"` (with a title naming why), and
+      `clearLyricsGuarded` snapshots `lyricFileName` before the confirm,
+      handing it to a new store action (`clearLyricsIfUnchanged`) that
+      re-reads it after the await and no-ops with a flash notice on a
+      mismatch — `clearLyrics` has no id to re-validate against the way
+      `deleteLook`'s `deleteUserPreset` does, so identity has to be an
+      explicit check.
+      **E2-U4 (FIXED, `c9fb097`): ShaderEditor / ShadertoyImport "Discard"
+      during an in-flight compile applied anyway.** Backdrop, header ✕ and
+      the dialogs' own local Escape handler all funnel through one
+      `requestClose()`, which only checked `dirty` (still true while that
+      SAME edit's compile is mid-flight) — never `busy`. Discarding
+      unmounted the dialog but not the `saveCustomPreset` promise, which
+      still registered, persisted and switched the live visual on success.
+      `requestClose` now returns immediately while `busy`, in both dialogs
+      — one gate covers all three paths since they already shared it; the
+      header close button also goes `disabled` with a title naming why,
+      matching ExportDialog's own close-button pattern.
+      **E2-U5 (FIXED, `ab12529`): ExportDialog could be closed mid-
+      preflight, orphaning the run.** `runExport` claims
+      `shared.exportStarting` synchronously, but `exporting` — the only
+      thing the dialog's backdrop and close button gated dismissal on — is
+      not set until after the native save dialog and the disk pre-flight
+      (including its own "Low disk space?" confirm). Closing the dialog in
+      that window orphaned the run: it kept going with no UI, and a failure
+      wrote to `exportError`, a field only this dialog renders, so it
+      surfaced only as a stale message on a later reopen. New reactive
+      field `exportPreparing` mirrors `shared.exportStarting` (one
+      `endExportPreparing()` helper shared by all six of `runExport`'s exit
+      points, so the two can't drift); the dialog gates both paths on
+      `exporting || exportPreparing`, and a THIRD path sharing the exact
+      same gap — `useAppShortcuts`' own Escape cascade, gated only on
+      `!s.exporting` — got the same fix, beyond the finding's own two named
+      call sites. `setShowExport(true)` now clears any leftover
+      `exportError` on open.
+      All five gated per-fix on `typecheck`/`lint`/targeted `vitest`, then
+      the whole lane on `format:check` + full `npm test`; every fix's test
+      verified red without the code change and green with it before
+      committing. Lane log with full gate output:
+      `.superpowers/e2-lane-log.md`.
 - [x] E3 **DONE 2026-08-09 — RP-4 investigated and CLOSED as NOT A DEFECT.**
       The mechanism the finding named does not exist in the code, and did not
       exist when the measurement was taken. `WebGPURenderer.create()` requests
