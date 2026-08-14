@@ -439,7 +439,14 @@ interface Actions {
   useAlbumArtBackground(): void;
   setAspect(aspect: Aspect): void;
   setSmoothSpectrum(v: boolean): void;
-  setTimeline(timeline: Timeline): void;
+  /**
+   * `historyKey` (P-5) lets callers scope gesture-grouping tighter than the
+   * default `"timeline"` — e.g. per-scene, per-field keys so dragging scene
+   * A then scene B doesn't collapse into one undo entry, matching how
+   * `setParam` groups per `` `param:${key}` ``. Omit it for the old
+   * behavior; every pre-P-5 call site and test keeps working unchanged.
+   */
+  setTimeline(timeline: Timeline, historyKey?: string): void;
   /** Replace the Builder stack (undoable; recompiles only on structural change). */
   setBuilderStack(stack: BuilderStack): void;
   /** Save the current Builder stack as a shareable .bfbuilder file. */
@@ -1887,8 +1894,8 @@ export const useVizStore = create<VizState>((set, get) => {
       if (active) getRenderer()?.setPreset(def);
     },
 
-    setTimeline(timeline) {
-      record("timeline");
+    setTimeline(timeline, historyKey) {
+      record(historyKey ?? "timeline");
       // P-5: `enabled` is DERIVED here, not taken from the caller — the
       // toolbar's manual toggle is gone, so this is the one place (with
       // autoArrangeTimeline below) that decides on/off from content, for

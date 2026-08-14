@@ -3808,6 +3808,9 @@ kbd {
   position: absolute;
   top: 2px;
   bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   background: rgba(59, 130, 246, 0.3);
   border: 1px solid rgba(106, 168, 255, 0.5);
   border-radius: 5px;
@@ -3822,6 +3825,25 @@ kbd {
 .tl-scene.selected {
   background: rgba(59, 130, 246, 0.55);
   border-color: rgba(160, 200, 255, 0.9);
+}
+
+/* Mode thumbnail (P-5): a small swatch so a scene reads at a glance, the
+   same cached PNGs the preset strip's chips use. Square-cropped from the
+   16:9 source — fine at this size, it's an identity swatch, not a preview. */
+.tl-scene-thumb {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  object-fit: cover;
+}
+
+.tl-scene-editor-thumb {
+  width: 40px;
+  height: 22.5px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  object-fit: cover;
 }
 
 .tl-empty-hint {

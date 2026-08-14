@@ -2,7 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { presets } from "../render/presets";
-import type { Timeline } from "../state/timeline";
+import type { Scene, Timeline } from "../state/timeline";
+import type { UserPreset } from "../state/userPresets";
+import { clearHistory } from "../state/history";
 import { renderProbe } from "./testing/renderProbe";
 import { TimelinePanel } from "./TimelinePanel";
 
@@ -86,6 +88,13 @@ beforeEach(() => {
   });
   mocks.engine.seek.mockClear();
   mocks.engine.audioBuffer = null;
+  // history.ts keeps its undo/redo stacks and gesture-grouping key in module
+  // state OUTSIDE the zustand store, so restoring PRISTINE below (a shallow
+  // merge of store fields) cannot reset it — without this, a test's grouping
+  // assertion could pass or fail depending on what an EARLIER test in this
+  // file last recorded and how many wall-clock ms ago, since the 800ms
+  // grouping window is real time. Same fix stemsModsActions.test.ts uses.
+  clearHistory();
 });
 
 afterEach(() => {
@@ -387,5 +396,317 @@ describe("derived timeline.enabled — the toggle is gone, content decides (P-5 
     const after = useVizStore.getState().timeline;
     expect(after.scenes).toHaveLength(0);
     expect(after.enabled).toBe(false);
+  });
+});
+
+/**
+ * Selects a scene the same way a user does: pointerdown on its on-track
+ * block (which TimelinePanel treats as select-then-maybe-drag). jsdom
+ * implements neither Pointer Capture method TimelinePanel calls
+ * unconditionally once a gesture begins/ends on the scroll container — same
+ * gap, same fix as paramControls.test.tsx's dial stub. No pointermove is
+ * fired, so `moved` stays false and this reads as a tap/select, never a drag.
+ */
+/** jsdom implements neither Pointer Capture method TimelinePanel calls
+ * unconditionally once a gesture begins/ends on the scroll container — same
+ * gap, same fix as paramControls.test.tsx's dial stub. Returns the (now
+ * stubbed) scroll element for the caller to dispatch further events on. */
+function stubPointerCapture(): HTMLElement {
+  const scroll = document.querySelector<HTMLElement>(".tl-scroll")!;
+  const stub = scroll as unknown as {
+    setPointerCapture: (id: number) => void;
+    releasePointerCapture: (id: number) => void;
+  };
+  stub.setPointerCapture = () => undefined;
+  stub.releasePointerCapture = () => undefined;
+  return scroll;
+}
+
+/** Selects a scene the same way a user does: pointerdown on its on-track
+ * block, no pointermove — reads as a tap/select, never a drag. */
+function selectScene(titlePattern: RegExp) {
+  const scroll = stubPointerCapture();
+  fireEvent.pointerDown(screen.getByTitle(titlePattern), { button: 0, pointerId: 1, clientX: 10 });
+  fireEvent.pointerUp(scroll, { pointerId: 1 });
+}
+
+/** Drags a scene block from `fromX` to `toX` (clientX only — TimelinePanel's
+ * geometry math runs on jsdom's all-zero `getBoundingClientRect`, so only
+ * the RELATIVE pointer delta from the down-point is meaningful in this
+ * environment, never the absolute resulting `start` time). Two pointermoves,
+ * not one, so a test can prove the drag's OWN gesture groups into one undo
+ * entry rather than merely firing once. */
+function dragScene(titlePattern: RegExp, fromX: number, toX: number) {
+  const scroll = stubPointerCapture();
+  fireEvent.pointerDown(screen.getByTitle(titlePattern), {
+    button: 0,
+    pointerId: 1,
+    clientX: fromX,
+    clientY: 10,
+  });
+  fireEvent.pointerMove(scroll, { pointerId: 1, clientX: toX, clientY: 10 });
+  fireEvent.pointerMove(scroll, { pointerId: 1, clientX: toX + 5, clientY: 10 });
+  fireEvent.pointerUp(scroll, { pointerId: 1 });
+}
+
+/** The scene editor's Fade row is a real `<input type="range">` (Slider.tsx)
+ * with no title/label of its own — SliderField never forwards one, and the
+ * wrapping `<label>` covers two form controls (the slider and its readout),
+ * so an accessible-name query would be ambiguous. Direct DOM query instead,
+ * same idiom this file's own `playheadLeft()` helper already uses. */
+const fadeInput = () =>
+  document.querySelector<HTMLInputElement>(".tl-scene-editor input[type='range']")!;
+
+describe("undo-key redesign for scenes (P-5 task 2)", () => {
+  describe("setTimeline's optional historyKey — the new mechanism", () => {
+    it("two rapid calls sharing a custom key group into one undo entry", () => {
+      const { timeline } = probedTimeline();
+      mountProbed(timeline);
+      const depth = useVizStore.getState().undoDepth;
+      act(() => {
+        useVizStore.getState().setTimeline({ enabled: false, scenes: [], lanes: [] }, "custom-key");
+        useVizStore.getState().setTimeline({ enabled: false, scenes: [], lanes: [] }, "custom-key");
+      });
+      expect(useVizStore.getState().undoDepth).toBe(depth + 1);
+    });
+
+    it("two rapid calls with different custom keys stay two undo entries", () => {
+      const { timeline } = probedTimeline();
+      mountProbed(timeline);
+      const depth = useVizStore.getState().undoDepth;
+      act(() => {
+        useVizStore.getState().setTimeline({ enabled: false, scenes: [], lanes: [] }, "key-a");
+        useVizStore.getState().setTimeline({ enabled: false, scenes: [], lanes: [] }, "key-b");
+      });
+      expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+    });
+
+    it("omitting the key still defaults to the groupable 'timeline' key (back-compat)", () => {
+      const { timeline } = probedTimeline();
+      mountProbed(timeline);
+      const depth = useVizStore.getState().undoDepth;
+      act(() => {
+        useVizStore.getState().setTimeline({ enabled: false, scenes: [], lanes: [] });
+        useVizStore.getState().setTimeline({ enabled: false, scenes: [], lanes: [] });
+      });
+      expect(useVizStore.getState().undoDepth).toBe(depth + 1);
+    });
+  });
+
+  describe("scene add/remove", () => {
+    it("two rapid '+ Scene at playhead' clicks cost TWO undo entries, not one", () => {
+      const { timeline } = probedTimeline();
+      mountProbed(timeline);
+      const depth = useVizStore.getState().undoDepth;
+      const addBtn = screen.getByTitle("Add a scene with the current visual at the playhead");
+
+      fireEvent.click(addBtn);
+      fireEvent.click(addBtn);
+
+      expect(useVizStore.getState().timeline.scenes).toHaveLength(2);
+      expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+
+      // And undo steps back ONE add at a time, not both at once.
+      useVizStore.getState().undo();
+      expect(useVizStore.getState().timeline.scenes).toHaveLength(1);
+    });
+
+    it("removing a scene uses a key distinct from the generic 'timeline' key", () => {
+      const scene: Scene = { id: "s1", name: "Nebula", presetId: presets[0].id, start: 5 };
+      const timeline: Timeline = { enabled: true, scenes: [scene], lanes: [] };
+      mountProbed(timeline);
+      selectScene(/Nebula — drag to move/);
+      const depth = useVizStore.getState().undoDepth;
+
+      fireEvent.click(screen.getByRole("button", { name: "Delete scene" }));
+      // A generic, default-keyed edit fired immediately after: if removeScene
+      // still shared the flat "timeline" key, these two would incorrectly
+      // group into one entry.
+      act(() =>
+        useVizStore.getState().setTimeline({ ...useVizStore.getState().timeline, lanes: [] }),
+      );
+
+      expect(useVizStore.getState().timeline.scenes).toHaveLength(0);
+      expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+    });
+  });
+
+  describe("scene position drag — per-scene grouping (the rule's own words: 'scene drags... must group per gesture')", () => {
+    it("two pointermoves of the SAME drag group into one undo entry", () => {
+      const scene: Scene = { id: "s1", name: "Nebula", presetId: presets[0].id, start: 5 };
+      const timeline: Timeline = { enabled: true, scenes: [scene], lanes: [] };
+      mountProbed(timeline);
+      const depth = useVizStore.getState().undoDepth;
+
+      dragScene(/Nebula — drag to move/, 100, 130);
+
+      expect(useVizStore.getState().undoDepth).toBe(depth + 1);
+    });
+
+    it("dragging scene A then scene B, back to back, never merges — per-scene key", () => {
+      const sceneA: Scene = { id: "s1", name: "Nebula", presetId: presets[0].id, start: 5 };
+      const sceneB: Scene = { id: "s2", name: "Aurora", presetId: presets[0].id, start: 40 };
+      const timeline: Timeline = { enabled: true, scenes: [sceneA, sceneB], lanes: [] };
+      mountProbed(timeline);
+      const depth = useVizStore.getState().undoDepth;
+
+      dragScene(/Nebula — drag to move/, 100, 130);
+      dragScene(/Aurora — drag to move/, 300, 330);
+
+      expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+    });
+  });
+
+  describe("scene fade slider — per-scene grouping, like a param drag", () => {
+    it("two rapid fade edits on the SAME scene group into one undo entry", () => {
+      const scene: Scene = {
+        id: "s1",
+        name: "Nebula",
+        presetId: presets[0].id,
+        start: 5,
+        fadeSec: 0.5,
+      };
+      const timeline: Timeline = { enabled: true, scenes: [scene], lanes: [] };
+      mountProbed(timeline);
+      selectScene(/Nebula — drag to move/);
+      const depth = useVizStore.getState().undoDepth;
+
+      fireEvent.change(fadeInput(), { target: { value: "1" } });
+      fireEvent.change(fadeInput(), { target: { value: "1.5" } });
+
+      expect(useVizStore.getState().undoDepth).toBe(depth + 1);
+      expect(useVizStore.getState().timeline.scenes[0].fadeSec).toBe(1.5);
+    });
+
+    it("fade edits on DIFFERENT scenes never merge, even back to back", () => {
+      const sceneA: Scene = {
+        id: "s1",
+        name: "Nebula",
+        presetId: presets[0].id,
+        start: 5,
+        fadeSec: 0.5,
+      };
+      const sceneB: Scene = {
+        id: "s2",
+        name: "Aurora",
+        presetId: presets[0].id,
+        start: 20,
+        fadeSec: 0.5,
+      };
+      const timeline: Timeline = { enabled: true, scenes: [sceneA, sceneB], lanes: [] };
+      mountProbed(timeline);
+      const depth = useVizStore.getState().undoDepth;
+
+      selectScene(/Nebula — drag to move/);
+      fireEvent.change(fadeInput(), { target: { value: "1" } });
+
+      selectScene(/Aurora — drag to move/);
+      fireEvent.change(fadeInput(), { target: { value: "2" } });
+
+      expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+    });
+  });
+});
+
+describe("scene thumbnails, on-track (P-5 task 2)", () => {
+  it("shows the cached thumbnail for the scene's mode", () => {
+    const scene: Scene = { id: "s1", name: "Nebula", presetId: presets[0].id, start: 5 };
+    const timeline: Timeline = { enabled: true, scenes: [scene], lanes: [] };
+    mountProbed(timeline);
+    act(() =>
+      useVizStore.setState({ presetThumbs: { [presets[0].id]: "data:image/png;base64,AAA" } }),
+    );
+    const img = document.querySelector<HTMLImageElement>(".tl-scene img");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,AAA");
+  });
+
+  it("renders text-only, no <img>, when no thumbnail is cached yet", () => {
+    const scene: Scene = { id: "s1", name: "Nebula", presetId: presets[0].id, start: 5 };
+    const timeline: Timeline = { enabled: true, scenes: [scene], lanes: [] };
+    mountProbed(timeline); // presetThumbs is not seeded -> null, like a fresh boot
+    expect(document.querySelector(".tl-scene img")).toBeNull();
+    expect(screen.getByText("Nebula")).toBeTruthy();
+  });
+});
+
+describe("per-scene look picker (P-5 task 2)", () => {
+  const look = (presetId: string, id: string, name: string): UserPreset => ({
+    id,
+    name,
+    presetId,
+    params: { hue: 0.42 },
+    createdAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  it("offers only looks saved for THIS scene's mode", () => {
+    const scene: Scene = { id: "s1", name: "Nebula", presetId: presets[0].id, start: 5 };
+    const timeline: Timeline = { enabled: true, scenes: [scene], lanes: [] };
+    mountProbed(timeline);
+    act(() =>
+      useVizStore.setState({
+        userPresets: [
+          look(presets[0].id, "up1", "Matching Look"),
+          look(presets[1].id, "up2", "Other Mode Look"),
+        ],
+      }),
+    );
+    selectScene(/Nebula — drag to move/);
+
+    const picker = screen.getByTitle(/Apply a saved look/i) as HTMLSelectElement;
+    const optionLabels = [...picker.options].map((o) => o.textContent);
+    expect(optionLabels).toContain("Matching Look");
+    expect(optionLabels).not.toContain("Other Mode Look");
+  });
+
+  it("applying a look rewrites presetId + params + name in ONE history entry", () => {
+    const scene: Scene = {
+      id: "s1",
+      name: "Nebula",
+      presetId: presets[0].id,
+      start: 5,
+      params: { hue: 0.1 },
+    };
+    const timeline: Timeline = { enabled: true, scenes: [scene], lanes: [] };
+    mountProbed(timeline);
+    act(() => useVizStore.setState({ userPresets: [look(presets[0].id, "up1", "Sunset")] }));
+    selectScene(/Nebula — drag to move/);
+    const depth = useVizStore.getState().undoDepth;
+
+    fireEvent.change(screen.getByTitle(/Apply a saved look/i), { target: { value: "up1" } });
+
+    const after = useVizStore.getState().timeline.scenes[0];
+    expect(after.presetId).toBe(presets[0].id);
+    expect(after.params).toEqual({ hue: 0.42 });
+    expect(after.name).toBe("Sunset");
+    expect(useVizStore.getState().undoDepth).toBe(depth + 1);
+  });
+
+  it("an unknown look id is a no-op — nothing applied, nothing recorded (mirrors applyUserPreset's own guard)", () => {
+    const scene: Scene = { id: "s1", name: "Nebula", presetId: presets[0].id, start: 5 };
+    const timeline: Timeline = { enabled: true, scenes: [scene], lanes: [] };
+    mountProbed(timeline);
+    act(() => useVizStore.setState({ userPresets: [look(presets[0].id, "up1", "Sunset")] }));
+    selectScene(/Nebula — drag to move/);
+    const depth = useVizStore.getState().undoDepth;
+    const before = useVizStore.getState().timeline.scenes[0];
+
+    // The picker only ever offers real ids, but the action itself must not
+    // trust that — same defensive shape as applyUserPreset's `if (!preset) return`.
+    fireEvent.change(screen.getByTitle(/Apply a saved look/i), { target: { value: "not-real" } });
+
+    expect(useVizStore.getState().timeline.scenes[0]).toBe(before);
+    expect(useVizStore.getState().undoDepth).toBe(depth);
+  });
+
+  it("the scene editor shows a larger thumbnail preview when one is cached", () => {
+    const scene: Scene = { id: "s1", name: "Nebula", presetId: presets[0].id, start: 5 };
+    const timeline: Timeline = { enabled: true, scenes: [scene], lanes: [] };
+    mountProbed(timeline);
+    act(() =>
+      useVizStore.setState({ presetThumbs: { [presets[0].id]: "data:image/png;base64,BBB" } }),
+    );
+    selectScene(/Nebula — drag to move/);
+    const img = document.querySelector<HTMLImageElement>(".tl-scene-editor img");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,BBB");
   });
 });

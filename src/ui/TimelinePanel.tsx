@@ -93,6 +93,16 @@ export function TimelinePanel() {
    * still worth building for a later render on capable hardware.
    */
   const simplifiedRenderer = useVizStore((s) => s.simplifiedRenderer);
+  /** presetId -> PNG data URL; null while thumbnails are still rendering.
+   * Same store-owned cache PresetStrip.tsx reads (App.tsx's
+   * loadPresetThumbnails() populates it once, globally) — no second
+   * thumbnail path. */
+  const presetThumbs = useVizStore((s) => s.presetThumbs);
+  /** Looks ("my tunings of a mode"), for the per-scene look picker. A store-
+   * owned array reference, safe to select directly (ParamsPanel's
+   * `looksForMode` precedent) — filtering by scene happens below in a
+   * useMemo, never inside this selector. */
+  const userPresets = useVizStore((s) => s.userPresets);
 
   // A DERIVATION THAT ALLOCATES: two selections + useMemo, never a selector.
   // `orderedPresets(...)` inside one would hand useSyncExternalStore a fresh
@@ -203,10 +213,37 @@ export function TimelinePanel() {
     [timeline.scenes],
   );
 
+  const selectedSceneObj = selectedScene
+    ? (timeline.scenes.find((s) => s.id === selectedScene) ?? null)
+    : null;
+  /**
+   * Looks saved for the SELECTED scene's mode (P-5) — looks for a different
+   * mode carry the wrong param shape and would just be noise here. Keyed on
+   * the PRIMITIVE presetId (extracted below), not the scene object itself:
+   * `update()` spreads a fresh scene object on every write, including a
+   * position drag's pointer-rate ones, and none of those change which mode
+   * is selected — so keying on the object would re-filter `userPresets`
+   * every drag frame for nothing. A DERIVATION THAT ALLOCATES: useMemo,
+   * never a selector.
+   */
+  const selectedScenePresetId = selectedSceneObj?.presetId;
+  const looksForSelectedScene = useMemo(
+    () =>
+      selectedScenePresetId ? userPresets.filter((p) => p.presetId === selectedScenePresetId) : [],
+    [userPresets, selectedScenePresetId],
+  );
+
   // P-5: no `enabled: true` here — the store's setTimeline derives it from
   // content (scenes/lanes present or not), which is also what turns it back
   // OFF when the last scene and lane are removed. See deriveTimelineEnabled.
-  const update = (patch: Partial<Timeline>) => store().setTimeline({ ...timeline, ...patch });
+  //
+  // `historyKey` (optional) lets a call scope gesture-grouping tighter than
+  // the flat default — e.g. per-scene, per-field — matching how `setParam`
+  // groups per `param:${key}`. See the lane log for which call sites use it
+  // and why (a scoping call, not full coverage: discrete adds and continuous
+  // per-target drags/scrubs are covered; discrete <select> edits are not).
+  const update = (patch: Partial<Timeline>, historyKey?: string) =>
+    store().setTimeline({ ...timeline, ...patch }, historyKey);
 
   /** The playhead, read at CLICK time off the live snapshot. Subscribing to
    * it here is what the migration removed: `time` moves 4x/second and is
@@ -220,12 +257,17 @@ export function TimelinePanel() {
       presetId: activePreset.id,
       start: snap(playheadTime()),
     };
-    update({ scenes: [...timeline.scenes, scene] });
+    // UNGROUPABLE (history.ts): two rapid adds must cost two undo entries,
+    // the same shape as layer-add/mod-add — see the lane log.
+    update({ scenes: [...timeline.scenes, scene] }, "timeline-scene-add");
     setSelectedScene(scene.id);
   };
 
   const removeScene = (id: string) => {
-    update({ scenes: timeline.scenes.filter((s) => s.id !== id) });
+    // Its own key (distinct from the flat "timeline" default, though not
+    // UNGROUPABLE — mirrors layer-remove/mod-remove) so a delete can't
+    // cross-group with an unrelated drag landing in the same 800ms window.
+    update({ scenes: timeline.scenes.filter((s) => s.id !== id) }, "timeline-scene-remove");
     if (selectedScene === id) setSelectedScene(null);
   };
 
@@ -234,6 +276,30 @@ export function TimelinePanel() {
     update({
       scenes: timeline.scenes.map((s) =>
         s.id === id ? { ...s, presetId, name: preset?.name ?? s.name } : s,
+      ),
+    });
+  };
+
+  /**
+   * Apply a saved look to a scene (P-5). A look's `params` is already a FULL
+   * snapshot for one presetId (saveUserPreset captures `{...activeParams}`);
+   * a scene's own `params` is a sparse override that layers over the
+   * document's per-preset params (frameResolve's `baseOf`) — writing the
+   * whole thing in reproduces the look exactly, same shape `applyUserPreset`
+   * gives the LIVE document, just addressed at one scene instead. Renames
+   * the scene to the look's name, same as picking a raw mode above renames
+   * it to the mode's name — more informative than the generic preset name.
+   * Mirrors applyUserPreset's own guard: an id that doesn't resolve is a
+   * no-op, nothing applied, nothing recorded.
+   */
+  const setSceneLook = (id: string, lookId: string) => {
+    const look = userPresets.find((p) => p.id === lookId);
+    if (!look) return;
+    update({
+      scenes: timeline.scenes.map((s) =>
+        s.id === id
+          ? { ...s, presetId: look.presetId, name: look.name, params: { ...look.params } }
+          : s,
       ),
     });
   };
@@ -345,9 +411,13 @@ export function TimelinePanel() {
       const start = snap(
         Math.max(0, Math.min(duration, tOf(e.clientX - rect.left) - drag.grabOffsetSec)),
       );
-      update({
-        scenes: timeline.scenes.map((s) => (s.id === drag.id ? { ...s, start } : s)),
-      });
+      update(
+        { scenes: timeline.scenes.map((s) => (s.id === drag.id ? { ...s, start } : s)) },
+        // Per-scene (P-5, the plan's own words: "scene drags... must group
+        // per gesture"): one drag's pointer-rate updates collapse to one
+        // undo entry, but grabbing a DIFFERENT scene next never cross-groups.
+        `timeline-scene-drag:${drag.id}`,
+      );
     } else {
       // Ignore sub-3px jitter so a tap stays a tap (see endDrag).
       if (!drag.moved && Math.hypot(e.clientX - drag.downX, e.clientY - drag.downY) < 3) return;
@@ -516,6 +586,14 @@ export function TimelinePanel() {
                     });
                   }}
                 >
+                  {presetThumbs?.[s.presetId] && (
+                    <img
+                      className="tl-scene-thumb"
+                      src={presetThumbs[s.presetId]}
+                      alt=""
+                      draggable={false}
+                    />
+                  )}
                   <span className="tl-scene-name">{s.name}</span>
                 </div>
               );
@@ -624,6 +702,14 @@ export function TimelinePanel() {
             if (!s) return null;
             return (
               <>
+                {presetThumbs?.[s.presetId] && (
+                  <img
+                    className="tl-scene-editor-thumb"
+                    src={presetThumbs[s.presetId]}
+                    alt=""
+                    draggable={false}
+                  />
+                )}
                 <select
                   className="select"
                   value={s.presetId}
@@ -633,6 +719,23 @@ export function TimelinePanel() {
                   {presets.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="select"
+                  value=""
+                  title="Apply a saved look to this scene"
+                  onChange={(e) => {
+                    if (e.target.value) setSceneLook(s.id, e.target.value);
+                  }}
+                >
+                  <option value="">
+                    {looksForSelectedScene.length > 0 ? "Apply a look…" : "No looks for this mode"}
+                  </option>
+                  {looksForSelectedScene.map((look) => (
+                    <option key={look.id} value={look.id}>
+                      {look.name}
                     </option>
                   ))}
                 </select>
@@ -648,9 +751,18 @@ export function TimelinePanel() {
                     format={FADE_SECONDS}
                     onChange={(v) => {
                       const fadeSec = v || undefined;
-                      update({
-                        scenes: timeline.scenes.map((x) => (x.id === s.id ? { ...x, fadeSec } : x)),
-                      });
+                      update(
+                        {
+                          scenes: timeline.scenes.map((x) =>
+                            x.id === s.id ? { ...x, fadeSec } : x,
+                          ),
+                        },
+                        // Per-scene (like a param drag): dragging the Fade
+                        // slider fires one update per pointermove, and must
+                        // group into one undo entry — but never cross-group
+                        // with the SAME drag on a different scene.
+                        `timeline-scene:${s.id}:fade`,
+                      );
                     }}
                   />
                 </label>
