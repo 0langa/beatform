@@ -229,49 +229,65 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       let pngDir: string | null = null;
       /** %TEMP% path, retained so a failure can re-measure its volume. */
       let scratchPathForError: string | null = null;
-      if (isTauri()) {
-        if (pngMode) {
-          const dir = await pickFolder("Choose a folder for the PNG sequence");
-          if (!dir) {
-            endExportPreparing();
-            return;
+      // Whole-lane review, IMPORTANT: this whole span (the native save
+      // dialog through the desktop-only refusal) sat OUTSIDE any try/catch
+      // — pickFolder/pickSavePath are real Tauri plugin calls that CAN
+      // throw (the ACL-throw precedent is real: ShaderEditor.tsx's own
+      // comment records askConfirm throwing "not allowed by ACL" in an
+      // installed build). An uncaught throw here would skip every
+      // endExportPreparing() call below, leaving shared.exportStarting
+      // (and its reactive mirror, exportPreparing) stuck true forever —
+      // the SAME "stuck busy" class E2-U5 exists to prevent, just reached
+      // through a throw instead of a dismissal.
+      try {
+        if (isTauri()) {
+          if (pngMode) {
+            const dir = await pickFolder("Choose a folder for the PNG sequence");
+            if (!dir) {
+              endExportPreparing();
+              return;
+            }
+            // Keep each run in its own subfolder so sequences never interleave.
+            pngDir = `${dir}/${baseName}_frames`;
+          } else {
+            savePath = await pickSavePath(
+              fileName,
+              proresMode
+                ? [{ name: "QuickTime (ProRes)", extensions: ["mov"] }]
+                : av1Mode
+                  ? [{ name: "MP4 (AV1 10-bit)", extensions: ["mp4"] }]
+                  : animFormat
+                    ? [
+                        {
+                          name: animFormat === "gif" ? "GIF animation" : "WebP animation",
+                          extensions: [animFormat],
+                        },
+                      ]
+                    : webmMode
+                      ? [{ name: "WebM video", extensions: ["webm"] }]
+                      : [{ name: "MP4 video", extensions: ["mp4"] }],
+            );
+            if (!savePath) {
+              endExportPreparing();
+              return;
+            }
           }
-          // Keep each run in its own subfolder so sequences never interleave.
-          pngDir = `${dir}/${baseName}_frames`;
-        } else {
-          savePath = await pickSavePath(
-            fileName,
-            proresMode
-              ? [{ name: "QuickTime (ProRes)", extensions: ["mov"] }]
-              : av1Mode
-                ? [{ name: "MP4 (AV1 10-bit)", extensions: ["mp4"] }]
-                : animFormat
-                  ? [
-                      {
-                        name: animFormat === "gif" ? "GIF animation" : "WebP animation",
-                        extensions: [animFormat],
-                      },
-                    ]
-                  : webmMode
-                    ? [{ name: "WebM video", extensions: ["webm"] }]
-                    : [{ name: "MP4 video", extensions: ["mp4"] }],
-          );
-          if (!savePath) {
-            endExportPreparing();
-            return;
-          }
+        } else if (pngMode || proresMode || av1Mode || animFormat) {
+          set({
+            exportError: pngMode
+              ? "PNG sequence export needs the desktop app (it writes a folder)"
+              : animFormat
+                ? "GIF/WebP export needs the desktop app (it runs the bundled ffmpeg)"
+                : av1Mode
+                  ? "AV1 10-bit export needs the desktop app (it runs the bundled ffmpeg)"
+                  : "ProRes export needs the desktop app (it runs the bundled ffmpeg)",
+          });
+          endExportPreparing();
+          return;
         }
-      } else if (pngMode || proresMode || av1Mode || animFormat) {
-        set({
-          exportError: pngMode
-            ? "PNG sequence export needs the desktop app (it writes a folder)"
-            : animFormat
-              ? "GIF/WebP export needs the desktop app (it runs the bundled ffmpeg)"
-              : av1Mode
-                ? "AV1 10-bit export needs the desktop app (it runs the bundled ffmpeg)"
-                : "ProRes export needs the desktop app (it runs the bundled ffmpeg)",
-        });
+      } catch (e) {
         endExportPreparing();
+        set({ exportError: `Could not open the save dialog: ${(e as Error)?.message ?? String(e)}` });
         return;
       }
       if (genAtStart !== shared.trackLoadGen) {
@@ -288,35 +304,46 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // about space we cannot see.
       const destination = savePath ?? pngDir;
       if (destination) {
-        const scratchPath = await scratchDir();
-        scratchPathForError = scratchPath;
-        const [outVol, scratchVol] = await Promise.all([
-          diskSpace(destination),
-          scratchPath ? diskSpace(scratchPath) : Promise.resolve(null),
-        ]);
-        const kind: ExportFormatKind = pngMode
-          ? "png"
-          : proresMode
-            ? "prores"
-            : av1Mode
-              ? "av1-10"
-              : (animFormat ?? (webmMode ? "webm" : "mp4"));
-        const warning = preflightWarning(
-          estimateExportBytes({
-            format: kind,
-            width: res.w,
-            height: res.h,
-            fps,
-            seconds: segment ? segment.duration : buf.duration,
-            bitrate: mbps * 1e6,
-            sampleRate: buf.sampleRate,
-            channels: buf.numberOfChannels,
-          }),
-          outVol,
-          scratchVol,
-        );
-        if (warning && !(await askConfirm(warning, "Low disk space"))) {
+        // Whole-lane review, IMPORTANT: same reasoning as the save-dialog
+        // try/catch above — scratchDir/diskSpace are Tauri commands and
+        // askConfirm's own ACL-throw precedent applies here just as much
+        // as it does to the save dialog. This span used to sit outside any
+        // try/catch too.
+        try {
+          const scratchPath = await scratchDir();
+          scratchPathForError = scratchPath;
+          const [outVol, scratchVol] = await Promise.all([
+            diskSpace(destination),
+            scratchPath ? diskSpace(scratchPath) : Promise.resolve(null),
+          ]);
+          const kind: ExportFormatKind = pngMode
+            ? "png"
+            : proresMode
+              ? "prores"
+              : av1Mode
+                ? "av1-10"
+                : (animFormat ?? (webmMode ? "webm" : "mp4"));
+          const warning = preflightWarning(
+            estimateExportBytes({
+              format: kind,
+              width: res.w,
+              height: res.h,
+              fps,
+              seconds: segment ? segment.duration : buf.duration,
+              bitrate: mbps * 1e6,
+              sampleRate: buf.sampleRate,
+              channels: buf.numberOfChannels,
+            }),
+            outVol,
+            scratchVol,
+          );
+          if (warning && !(await askConfirm(warning, "Low disk space"))) {
+            endExportPreparing();
+            return;
+          }
+        } catch (e) {
           endExportPreparing();
+          set({ exportError: `Could not check disk space: ${(e as Error)?.message ?? String(e)}` });
           return;
         }
       }

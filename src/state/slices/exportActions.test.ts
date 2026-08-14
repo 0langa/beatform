@@ -799,6 +799,85 @@ describe("exportPreparing mirrors shared.exportStarting through the whole pre-en
   });
 });
 
+/**
+ * Whole-lane review, IMPORTANT on top of E2-U5: the native save dialog and
+ * the disk pre-flight (pickFolder/pickSavePath/scratchDir/diskSpace/
+ * askConfirm) are real Tauri plugin calls that CAN throw — the ACL-throw
+ * precedent is real (ShaderEditor.tsx's own comment records askConfirm
+ * throwing "not allowed by ACL" in an installed build) — and that whole
+ * span used to sit OUTSIDE any try/catch. An uncaught throw there skipped
+ * every endExportPreparing() call, leaving shared.exportStarting AND
+ * exportPreparing stuck true forever: the exact same "permanently stuck"
+ * class E2-U5 exists to prevent, just reached through an exception instead
+ * of a dismissal click.
+ */
+describe("a throw during the save dialog or disk pre-flight still settles exportPreparing (whole-lane review, IMPORTANT)", () => {
+  it("a thrown pickSavePath clears exportPreparing/shared.exportStarting and surfaces exportError", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    const boom = new Error("dialog plugin: not allowed by ACL");
+    vi.mocked(pickSavePath).mockRejectedValueOnce(boom);
+
+    await s().runExport();
+
+    expect(exportVideo).not.toHaveBeenCalled();
+    expect(s().exportPreparing).toBe(false);
+    expect(shared.exportStarting).toBe(false);
+    expect(s().exportError).toContain("Could not open the save dialog");
+    expect(s().exportError).toContain("not allowed by ACL");
+    // The slot is released — a later export is not permanently blocked.
+    expect(s().exporting).toBeNull();
+  });
+
+  it("a thrown pickFolder (PNG sequence lane) is caught the same way", async () => {
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format: "png", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickFolder).mockRejectedValueOnce(new Error("folder picker crashed"));
+
+    await s().runExport();
+
+    expect(exportVideo).not.toHaveBeenCalled();
+    expect(s().exportPreparing).toBe(false);
+    expect(shared.exportStarting).toBe(false);
+    expect(s().exportError).toContain("Could not open the save dialog");
+  });
+
+  it("a thrown diskSpace during the pre-flight clears exportPreparing/shared.exportStarting and surfaces exportError", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\video.mp4");
+    vi.mocked(diskSpace).mockRejectedValueOnce(new Error("disk_space command failed"));
+
+    await s().runExport();
+
+    expect(exportVideo).not.toHaveBeenCalled();
+    expect(s().exportPreparing).toBe(false);
+    expect(shared.exportStarting).toBe(false);
+    expect(s().exportError).toContain("Could not check disk space");
+    expect(s().exportError).toContain("disk_space command failed");
+  });
+
+  it("a thrown askConfirm (low-disk-space prompt) is caught the same way", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\video.mp4");
+    vi.mocked(diskSpace).mockResolvedValueOnce({ freeBytes: 0, totalBytes: 1e9, root: "C:\\" });
+    vi.mocked(askConfirm).mockRejectedValueOnce(new Error("not allowed by ACL"));
+
+    await s().runExport();
+
+    expect(exportVideo).not.toHaveBeenCalled();
+    expect(s().exportPreparing).toBe(false);
+    expect(shared.exportStarting).toBe(false);
+    expect(s().exportError).toContain("Could not check disk space");
+  });
+});
+
 describe("setShowExport(true) clears a stale exportError (E2-U5)", () => {
   // codecSupport seeded non-null in every test below: setShowExport probes
   // it lazily when null, and the real probeCodecs() has nothing to work
