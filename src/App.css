@@ -3443,10 +3443,36 @@ kbd {
   opacity: 0.5;
 }
 
+/* Drag reorder (H12), driven by startRouteDrag/dragClassFor in
+ * ModulationPage.tsx. box-shadow, never border/outline-width or padding —
+ * it does not participate in layout AT ALL (inset or not), so toggling
+ * these classes mid-drag can never shift a row by even a subpixel, unlike
+ * PresetOrderEditor's border-based scheme (that page accepted a permanently
+ * reserved 2px transparent edge to get the same guarantee; this one does
+ * not need to). */
+.mod-route.dragging {
+  opacity: 0.4;
+}
+
+.mod-route.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.mod-route.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
 .mod-route-head {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* H12 added a grip beside the existing switch/select/▲/▼/✕ cluster — at
+   * the 380px dock minimum with a stacked (2+ route) card, that is six
+   * fixed-or-flex items in ~174px. Wrapping the trailing action cluster
+   * onto a second line beats crushing the source select to a handful of
+   * characters; the select's own min-width: 0 still shrinks first, this is
+   * only the overflow valve once it can't shrink any further. */
+  flex-wrap: wrap;
 }
 
 .mod-source {
@@ -3462,6 +3488,31 @@ kbd {
 
 .mod-route-head .chip-x {
   flex: 0 0 auto;
+}
+
+/* The drag handle (H12). Same visual weight as the chip-x buttons beside it
+ * (9px glyph, matching padding) — it is a peer action in the same cluster,
+ * not a differently-scaled affordance. `touch-action: none` is the actual
+ * fix for the dock's nested scroll fighting the gesture: without it, a
+ * touch-drag started on the grip is stolen by `.panel-scroll` panning
+ * before startRouteDrag's own pointermove listener ever sees it. */
+.mod-route-grip {
+  flex: 0 0 auto;
+  font-size: 9px;
+  color: var(--text-faint);
+  padding: 2px 3px;
+  border-radius: 4px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.mod-route-grip:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mod-route.dragging .mod-route-grip {
+  cursor: grabbing;
 }
 
 .mod-depth,

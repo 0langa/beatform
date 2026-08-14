@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { MAX_STEMS, STEM_TRACK_KEYS } from "../audio/stems";
 import {
   allParams,
@@ -263,6 +263,25 @@ export function ModulationPage() {
   const [openCards, setOpenCards] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [pickedSource, setPickedSource] = useState<string | null>(null);
 
+  /** Drag-reorder (H12) visual feedback ONLY — view state, same as above.
+   *  `paramKey` scopes it to one card (cards render independently, and the
+   *  keys below are indices WITHIN that card's own route list, not into
+   *  `activeMods`). The gesture's actual source of truth lives in local
+   *  closures inside startRouteDrag, not here — see its own doc comment. */
+  const [dragHint, setDragHint] = useState<{ paramKey: string; from: number; over: number } | null>(
+    null,
+  );
+  /** Escape hatch for a drag left in progress when this page unmounts (dock
+   *  navigation mid-drag). Nothing else tears down the raw
+   *  addEventListener calls startRouteDrag makes outside React — the grip's
+   *  own pointerup/pointercancel still land on it once removed from the DOM
+   *  in most engines, but the window `keydown` listener would not
+   *  otherwise ever go away. Reassigned by every startRouteDrag call,
+   *  cleared by its own `end()`; the unmount effect below just needs
+   *  SOMETHING to call if one is still armed. */
+  const cancelDragRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => cancelDragRef.current?.(), []);
+
   // What modulation may drive: mod:"off" params (pure toggles and mode-choice
   // enums, RP-2) are not targets, so the picker does not offer them.
   const modTargetGroupViews = useMemo(
@@ -382,6 +401,97 @@ export function ModulationPage() {
   };
 
   const sourceName = (id: string) => sourceLabels.get(id) ?? id;
+
+  /** Drag class for one route row, mirroring PresetOrderEditor's own
+   *  `dragging` / `drop-before` / `drop-after` scheme exactly (name and
+   *  meaning) so the two drag affordances in this app read identically.
+   *  `ri` is this row's index within ITS OWN card — the same space
+   *  `dragHint.from`/`.over` live in. */
+  const dragClassFor = (paramKey: string, ri: number): string => {
+    if (!dragHint || dragHint.paramKey !== paramKey) return "";
+    if (dragHint.from === ri) return " dragging";
+    if (dragHint.over === ri) return dragHint.from < ri ? " drop-after" : " drop-before";
+    return "";
+  };
+
+  /**
+   * Pointer-based drag reorder (H12) — the PRIMARY gesture; the ▲▼ buttons
+   * rendered beside the grip are the keyboard/complement path, and both
+   * end at the exact same `reorderModRoutes` call, so they can never
+   * disagree about what a "move" means.
+   *
+   * Scoped to the grip element alone via `e.currentTarget`, never the
+   * whole row: a whole-row `draggable`/pointer-drag would fight the row's
+   * OWN controls (the source select, the Depth/Rise/Fall sliders, the mute
+   * switch) — starting a drag from the Depth slider's thumb must adjust
+   * Depth, not reorder the route. `touch-action: none` on `.mod-route-grip`
+   * (App.css) is the other half of that isolation: without it, a touch-drag
+   * begun on the grip would be stolen by the dock's own scroll container
+   * before a single pointermove reached this handler.
+   *
+   * Pointer CAPTURE (`el.setPointerCapture`, matching App.tsx's
+   * startVisualsResize/startLibraryResize idiom exactly) is what keeps the
+   * gesture alive even once the pointer strays outside the grip's own
+   * bounds — required here since the grip is a handful of pixels inside a
+   * scrollable dock column. Capture means native pointerenter/leave on the
+   * ROWS themselves never fires during the drag (every subsequent pointer
+   * event for this pointerId is redirected to the grip), so hit-testing
+   * uses `document.elementFromPoint` + a `data-mod-route-param`/
+   * `data-mod-route-index` pair on each row instead of relying on that —
+   * the one substitute that still answers "what's under the pointer" while
+   * captured, and it needs no `getBoundingClientRect` math of its own.
+   *
+   * COMMITS ON DROP: `reorderModRoutes` (and therefore the single
+   * "mod-reorder" history record it makes) is called from EXACTLY one
+   * place — the pointerup handler — never from a move. Escape or a
+   * `pointercancel` (window drag-out, pen palm rejection, browser-
+   * initiated) tear down through the identical `end()` but pass
+   * `commit=false`, so a cancelled drag calls `reorderModRoutes` zero
+   * times: no mutation, no history entry, not even the no-op-but-harmless
+   * call a same-position drop would make.
+   */
+  const startRouteDrag =
+    (paramKey: string, from: number) => (e: React.PointerEvent<HTMLButtonElement>) => {
+      e.preventDefault(); // no native text-selection/drag-image while dragging
+      let over = from;
+      const el = e.currentTarget;
+      el.setPointerCapture(e.pointerId);
+      setDragHint({ paramKey, from, over });
+
+      const onMove = (ev: PointerEvent) => {
+        const hit = (
+          document.elementFromPoint(ev.clientX, ev.clientY) as Element | null
+        )?.closest<HTMLElement>("[data-mod-route-param]");
+        if (!hit || hit.dataset.modRouteParam !== paramKey) return;
+        const idx = Number(hit.dataset.modRouteIndex);
+        if (Number.isNaN(idx) || idx === over) return;
+        over = idx;
+        setDragHint({ paramKey, from, over });
+      };
+      const onUp = () => end(true);
+      const onCancel = () => end(false);
+      const onKey = (ev: KeyboardEvent) => {
+        if (ev.key === "Escape") end(false);
+      };
+      // Hoisted function declaration: onUp/onCancel/onKey above reference it
+      // by name before this line runs, which is fine — none of them are
+      // actually CALLED until the browser dispatches an event, by which
+      // point the whole synchronous body below has long since executed.
+      function end(commit: boolean) {
+        el.removeEventListener("pointermove", onMove);
+        el.removeEventListener("pointerup", onUp);
+        el.removeEventListener("pointercancel", onCancel);
+        window.removeEventListener("keydown", onKey);
+        cancelDragRef.current = null;
+        setDragHint(null);
+        if (commit) store().reorderModRoutes(paramKey, from, over);
+      }
+      el.addEventListener("pointermove", onMove);
+      el.addEventListener("pointerup", onUp);
+      el.addEventListener("pointercancel", onCancel);
+      window.addEventListener("keydown", onKey);
+      cancelDragRef.current = () => end(false);
+    };
 
   return (
     <>
@@ -601,7 +711,16 @@ export function ModulationPage() {
                     (raw === reach ? "" : " — the knob's own limit stops it there");
                 }
                 return (
-                  <div key={r.id} className={`mod-route${r.muted ? " muted" : ""}`}>
+                  <div
+                    key={r.id}
+                    className={`mod-route${r.muted ? " muted" : ""}${dragClassFor(card.param, ri)}`}
+                    // Drag hit-testing target (startRouteDrag, above) — read
+                    // via document.elementFromPoint while the pointer is
+                    // captured on another row's grip, never queried by index
+                    // or rect math.
+                    data-mod-route-param={card.param}
+                    data-mod-route-index={ri}
+                  >
                     <div className="mod-route-head">
                       {/* H12: on = active (v1 behavior, absent muted). The
                           patch omits the key on unmute rather than writing a
@@ -662,12 +781,24 @@ export function ModulationPage() {
                       {/* Reorder (H12): only when there is more than one route
                           to reorder — a stacked card is the exception (0 of the
                           43 routes in the 13 shipped factory themes share a
-                          param), so a single-route card never shows two
-                          buttons that could only ever be disabled. Indices are
-                          WITHIN this card's own list, matching reorderRoutes'
-                          contract (modMatrix.ts) exactly. */}
+                          param), so a single-route card never shows a grip and
+                          two buttons that could only ever be disabled/inert.
+                          Indices are WITHIN this card's own list, matching
+                          reorderRoutes' contract (modMatrix.ts) exactly. Drag
+                          (the grip) is the primary gesture; ▲▼ are the
+                          keyboard/complement path — both call the identical
+                          store action, so they can never disagree. */}
                       {card.routes.length > 1 && (
                         <>
+                          <button
+                            type="button"
+                            className="mod-route-grip"
+                            title="Drag to reorder — or use the move buttons"
+                            aria-label={`Reorder ${src} for ${card.label}`}
+                            onPointerDown={startRouteDrag(card.param, ri)}
+                          >
+                            ⠿
+                          </button>
                           <button
                             className="chip-x"
                             title="Move earlier"

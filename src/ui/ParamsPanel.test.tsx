@@ -831,6 +831,44 @@ describe("modulation v2 UI (P-16/P-7)", { timeout: 30_000 }, () => {
  *  property off the real element. */
 const isDisabled = (el: HTMLElement) => (el as HTMLButtonElement).disabled;
 
+/** Two routes stacked on "hue" ("kick" then "bass") — the fixture the
+ *  button- and drag-based reorder tests below BOTH build on, so a result
+ *  difference between the two gestures cannot hide behind a fixture
+ *  difference. Returns the card and its two row elements, in document
+ *  order. */
+function seedStackedHueRoutes() {
+  const a = { id: "r1", source: "kick" as const, param: "hue", amount: 0.5 };
+  const b = { id: "r2", source: "bass" as const, param: "hue", amount: -0.25 };
+  act(() =>
+    useVizStore.setState({
+      presetId: "spectrum-bars",
+      activeMods: [a, b],
+      modsByPreset: { ...useVizStore.getState().modsByPreset, "spectrum-bars": [a, b] },
+    }),
+  );
+  render(<ParamsPanel />);
+  gotoModulation();
+  const card = cards()[0];
+  return { card, rows: [...card.querySelectorAll<HTMLElement>(".mod-route")] };
+}
+
+/** Shared by every reorder test below, button- or drag-driven: asserts the
+ *  resulting DOCUMENT order by id, so both gestures are held to the exact
+ *  same outcome. */
+function expectRouteOrder(ids: string[]) {
+  expect(useVizStore.getState().activeMods.map((r) => r.id)).toEqual(ids);
+}
+
+/** A real zero baseline for the undo/redo counters. This file's afterEach
+ *  resets the STORE's undoDepth field (via the PRISTINE merge) but not
+ *  history.ts's own module-level stacks — clear both explicitly so a
+ *  delta measured after this point is relative to a real zero, not to
+ *  whatever the rest of the suite already pushed. */
+function resetHistory() {
+  clearHistory();
+  act(() => useVizStore.setState({ undoDepth: 0, redoDepth: 0 }));
+}
+
 describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
   it("the mute switch flips `muted`, dims the row, and omits the key again on unmute", () => {
     seedRoute("hue");
@@ -869,38 +907,23 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
     seedRoute("hue");
     render(<ParamsPanel />);
     gotoModulation();
-    // This file's afterEach resets the STORE's undoDepth field (via the
-    // PRISTINE merge) but not history.ts's own module-level stacks — clear
-    // both explicitly so the delta below is measured from a real zero, not
-    // from whatever the rest of the suite already pushed.
-    clearHistory();
-    act(() => useVizStore.setState({ undoDepth: 0, redoDepth: 0 }));
+    resetHistory();
     fireEvent.click(screen.getByRole("switch", { name: /Pause kick moving/i }));
     expect(useVizStore.getState().undoDepth).toBe(1);
   });
 
-  it("a single-route card shows no reorder buttons — nothing to reorder against", () => {
+  it("a single-route card shows no grip and no reorder buttons — nothing to reorder against", () => {
     seedRoute("hue");
     render(<ParamsPanel />);
     gotoModulation();
     const card = cards()[0];
     expect(within(card).queryByTitle("Move earlier")).toBeNull();
     expect(within(card).queryByTitle("Move later")).toBeNull();
+    expect(within(card).queryByTitle("Drag to reorder — or use the move buttons")).toBeNull();
   });
 
   it("a stacked card reorders on click, disables the buttons at the ends, and costs one undo entry", () => {
-    const a = { id: "r1", source: "kick" as const, param: "hue", amount: 0.5 };
-    const b = { id: "r2", source: "bass" as const, param: "hue", amount: -0.25 };
-    act(() =>
-      useVizStore.setState({
-        presetId: "spectrum-bars",
-        activeMods: [a, b],
-        modsByPreset: { ...useVizStore.getState().modsByPreset, "spectrum-bars": [a, b] },
-      }),
-    );
-    render(<ParamsPanel />);
-    gotoModulation();
-    const card = cards()[0];
+    const { card } = seedStackedHueRoutes();
     const ups = within(card).getAllByTitle("Move earlier");
     const downs = within(card).getAllByTitle("Move later");
     expect(ups).toHaveLength(2);
@@ -910,12 +933,197 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
     expect(isDisabled(ups[1])).toBe(false);
     expect(isDisabled(downs[1])).toBe(true); // last route: nothing later
 
-    // See the mute test above for why both halves need clearing here.
-    clearHistory();
-    act(() => useVizStore.setState({ undoDepth: 0, redoDepth: 0 }));
+    resetHistory();
     fireEvent.click(downs[0]); // move "kick" (index 0) later, past "bass"
-    expect(useVizStore.getState().activeMods.map((r) => r.id)).toEqual(["r2", "r1"]);
+    expectRouteOrder(["r2", "r1"]);
     expect(useVizStore.getState().undoDepth).toBe(1);
+  });
+
+  /**
+   * Drag (H12 fix round 1) — the PRIMARY gesture per the owner's verdict;
+   * the button tests above stay as the keyboard/complement path's own
+   * coverage. jsdom has neither real layout nor real pointer capture
+   * (confirmed prior art: PlayerBar.test.tsx / paramControls.test.tsx both
+   * stub `setPointerCapture` rather than rely on it), so:
+   *  - `setPointerCapture` is stubbed on the grip, matching that idiom
+   *    exactly.
+   *  - Hit-testing is mocked at `document.elementFromPoint`, matching
+   *    startRouteDrag's own contract (it never calls
+   *    `getBoundingClientRect`), and every subsequent pointer event is
+   *    dispatched AT THE GRIP — the element startRouteDrag actually
+   *    attaches its raw listeners to (`e.currentTarget`), mirroring how
+   *    PlayerBar's own capture-based drag test dispatches follow-up events
+   *    at the element the capturing code listens on, not at whatever the
+   *    real cursor would be over.
+   */
+  describe("drag reorder (H12 fix round 1)", () => {
+    /** Stub setPointerCapture (absent in jsdom) and mock elementFromPoint
+     *  to answer with `row` regardless of the coordinates handed to it —
+     *  startRouteDrag never reads clientX/clientY itself beyond passing
+     *  them straight through, so the exact numbers in a test are inert. */
+    function mockHit(row: HTMLElement) {
+      document.elementFromPoint = vi.fn(() => row);
+    }
+
+    it("produces the exact same result as the button gesture (shared assertion)", () => {
+      const { rows } = seedStackedHueRoutes();
+      const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
+      (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      const original = document.elementFromPoint;
+      resetHistory();
+
+      fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
+      mockHit(rows[1]);
+      fireEvent.pointerMove(grip0, { pointerId: 1, clientX: 0, clientY: 40 });
+      fireEvent.pointerUp(grip0, { pointerId: 1, clientX: 0, clientY: 40 });
+      document.elementFromPoint = original;
+
+      // The exact assertion the button test above makes — same fixture,
+      // same helper, same expected order: dragging "kick" (row 0) onto
+      // "bass" (row 1) swaps them, identically to clicking "Move later".
+      expectRouteOrder(["r2", "r1"]);
+      expect(useVizStore.getState().undoDepth).toBe(1);
+    });
+
+    it("commits on drop, not on hover: no store write while the pointer is still moving", () => {
+      const { rows } = seedStackedHueRoutes();
+      const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
+      (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      const original = document.elementFromPoint;
+      resetHistory();
+      const before = useVizStore.getState().activeMods;
+
+      fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
+      mockHit(rows[1]);
+      fireEvent.pointerMove(grip0, { pointerId: 1, clientX: 0, clientY: 40 });
+      // Still mid-drag — the document must be untouched so far.
+      expect(useVizStore.getState().activeMods).toBe(before);
+      expect(useVizStore.getState().undoDepth).toBe(0);
+
+      fireEvent.pointerUp(grip0, { pointerId: 1, clientX: 0, clientY: 40 });
+      document.elementFromPoint = original;
+      expectRouteOrder(["r2", "r1"]);
+      expect(useVizStore.getState().undoDepth).toBe(1);
+    });
+
+    it("one history entry per completed drag, however many rows the pointer crossed first", () => {
+      // Three routes so the gesture can cross an intermediate row before
+      // landing — a real multi-hop drag, not a single hop dressed up as one.
+      const a = { id: "r1", source: "kick" as const, param: "hue", amount: 0.5 };
+      const b = { id: "r2", source: "bass" as const, param: "hue", amount: -0.25 };
+      const c = { id: "r3", source: "mid" as const, param: "hue", amount: 0.1 };
+      act(() =>
+        useVizStore.setState({
+          presetId: "spectrum-bars",
+          activeMods: [a, b, c],
+          modsByPreset: { ...useVizStore.getState().modsByPreset, "spectrum-bars": [a, b, c] },
+        }),
+      );
+      render(<ParamsPanel />);
+      gotoModulation();
+      const rows = [...cards()[0].querySelectorAll<HTMLElement>(".mod-route")];
+      const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
+      (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      const original = document.elementFromPoint;
+      resetHistory();
+
+      fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
+      mockHit(rows[1]);
+      fireEvent.pointerMove(grip0, { pointerId: 1, clientX: 0, clientY: 20 }); // over row 1
+      mockHit(rows[2]);
+      fireEvent.pointerMove(grip0, { pointerId: 1, clientX: 0, clientY: 40 }); // over row 2
+      mockHit(rows[1]);
+      fireEvent.pointerMove(grip0, { pointerId: 1, clientX: 0, clientY: 20 }); // back over row 1
+      fireEvent.pointerUp(grip0, { pointerId: 1, clientX: 0, clientY: 20 }); // drop on row 1
+      document.elementFromPoint = original;
+
+      expectRouteOrder(["r2", "r1", "r3"]);
+      expect(useVizStore.getState().undoDepth).toBe(1); // one record, not one per hop
+    });
+
+    it("Escape cancels an in-progress drag — no mutation, no history entry", () => {
+      const { rows } = seedStackedHueRoutes();
+      const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
+      (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      const original = document.elementFromPoint;
+      resetHistory();
+      const before = useVizStore.getState().activeMods;
+
+      fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
+      mockHit(rows[1]);
+      fireEvent.pointerMove(grip0, { pointerId: 1, clientX: 0, clientY: 40 });
+      fireEvent.keyDown(window, { key: "Escape" });
+      // The user's physical mouse-up still lands after Escape — it must
+      // not ALSO commit (end()'s cleanup already tore the listeners down).
+      fireEvent.pointerUp(grip0, { pointerId: 1, clientX: 0, clientY: 40 });
+      document.elementFromPoint = original;
+
+      expect(useVizStore.getState().activeMods).toBe(before); // identity: untouched
+      expect(useVizStore.getState().undoDepth).toBe(0);
+    });
+
+    it("a pointercancel (drop outside / OS interruption) cancels — no mutation, no history entry", () => {
+      const { rows } = seedStackedHueRoutes();
+      const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
+      (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      const original = document.elementFromPoint;
+      resetHistory();
+      const before = useVizStore.getState().activeMods;
+
+      fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
+      mockHit(rows[1]);
+      fireEvent.pointerMove(grip0, { pointerId: 1, clientX: 0, clientY: 40 });
+      fireEvent.pointerCancel(grip0, { pointerId: 1 });
+      document.elementFromPoint = original;
+
+      expect(useVizStore.getState().activeMods).toBe(before);
+      expect(useVizStore.getState().undoDepth).toBe(0);
+    });
+
+    it("dragging onto a DIFFERENT card's row is ignored — the paramKey guard", () => {
+      // A drag started on "hue" must never resolve against a row from a
+      // different target's card, even if elementFromPoint's mock is sloppy
+      // about it — dataset.modRouteParam is what startRouteDrag actually
+      // gates on.
+      const a = { id: "r1", source: "kick" as const, param: "hue", amount: 0.5 };
+      const b = { id: "r2", source: "bass" as const, param: "hue", amount: -0.25 };
+      const other = { id: "r3", source: "mid" as const, param: otherTarget(), amount: 0.2 };
+      act(() =>
+        useVizStore.setState({
+          presetId: "spectrum-bars",
+          activeMods: [a, b, other],
+          modsByPreset: { ...useVizStore.getState().modsByPreset, "spectrum-bars": [a, b, other] },
+        }),
+      );
+      render(<ParamsPanel />);
+      gotoModulation();
+      const allCards = cards();
+      // queryAllByTitle, not queryByTitle: the hue card has TWO "Move
+      // earlier" buttons (one per stacked route), which a singular query
+      // treats as ambiguous.
+      const hueCard = allCards.find((c) => within(c).queryAllByTitle("Move earlier").length > 0)!;
+      const otherCard = allCards.find((c) => c !== hueCard)!;
+      const hueRow0 = within(hueCard)
+        .getAllByTitle("What drives this route")[0]
+        .closest(".mod-route")!;
+      const foreignRow = otherCard.querySelector(".mod-route")!;
+      const grip0 = within(hueRow0 as HTMLElement).getByRole("button", { name: /Reorder Kick/i });
+      (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
+      const original = document.elementFromPoint;
+      resetHistory();
+      const before = useVizStore.getState().activeMods;
+
+      fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
+      mockHit(foreignRow as HTMLElement); // wrong card entirely
+      fireEvent.pointerMove(grip0, { pointerId: 1, clientX: 0, clientY: 400 });
+      fireEvent.pointerUp(grip0, { pointerId: 1, clientX: 0, clientY: 400 });
+      document.elementFromPoint = original;
+
+      // The foreign hit never updated `over`, so drop == pickup: a no-op
+      // reorderModRoutes call, which is already proven to cost nothing.
+      expect(useVizStore.getState().activeMods).toBe(before);
+      expect(useVizStore.getState().undoDepth).toBe(0);
+    });
   });
 });
 
