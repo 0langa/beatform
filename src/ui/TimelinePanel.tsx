@@ -118,6 +118,18 @@ export function TimelinePanel() {
   const waveRef = useRef<HTMLCanvasElement>(null);
   const [zoom, setZoom] = useState(1);
   const [selectedScene, setSelectedScene] = useState<string | null>(null);
+  /**
+   * Solo (P-5): which lanes' on-track rows to show, by param — empty means
+   * show everything. Local component state ONLY, same as `zoom` right above
+   * it: it never reaches `timeline`/the store, never calls `update()`, never
+   * persists, and resets to show-all on every remount. This is deliberate,
+   * not an oversight — solo is a VIEW filter (which rows are drawn), never
+   * an evaluation change (every lane keeps driving its param through
+   * evalTimeline exactly as if none of this existed). Keyed by `param`
+   * rather than array index: stable across an add/remove/reorder elsewhere,
+   * where an index would silently solo the wrong lane.
+   */
+  const [soloedLanes, setSoloedLanes] = useState<Set<string>>(new Set());
   const [drag, setDrag] = useState<
     | {
         kind: "scene";
@@ -313,15 +325,31 @@ export function TimelinePanel() {
       param,
       keyframes: [{ id: newKeyframeId(), t: snap(playheadTime()), value, curve: "linear" }],
     };
-    update({ lanes: [...timeline.lanes, lane] });
+    // UNGROUPABLE (history.ts): two rapid adds must cost two undo entries,
+    // the same shape as timeline-scene-add/layer-add/mod-add.
+    update({ lanes: [...timeline.lanes, lane] }, "timeline-lane-add");
   };
 
   const removeLane = (index: number) => {
-    update({ lanes: timeline.lanes.filter((_, i) => i !== index) });
+    // Its own key (distinct from the flat "timeline" default, though not
+    // UNGROUPABLE — mirrors timeline-scene-remove/layer-remove/mod-remove).
+    update({ lanes: timeline.lanes.filter((_, i) => i !== index) }, "timeline-lane-remove");
   };
 
   const setLane = (index: number, lane: AutomationLane) => {
     update({ lanes: timeline.lanes.map((l, i) => (i === index ? lane : l)) });
+  };
+
+  /** Solo (P-5): toggle whether a lane's on-track row is shown. Pure local
+   * view state — see the state declaration's own comment for why this must
+   * never become a document write. */
+  const toggleSolo = (param: string) => {
+    setSoloedLanes((prev) => {
+      const next = new Set(prev);
+      if (next.has(param)) next.delete(param);
+      else next.add(param);
+      return next;
+    });
   };
 
   // Resolve the param's real range. Lanes outlive preset switches, so a lane
@@ -485,23 +513,6 @@ export function TimelinePanel() {
         >
           ✦ Auto-arrange
         </button>
-        <select
-          className="select tl-add-lane"
-          value=""
-          title="Add an automation lane for a parameter"
-          onChange={(e) => addLane(e.target.value)}
-        >
-          <option value="">+ Automation lane…</option>
-          {paramOptions.map((p) => (
-            <option
-              key={p.key}
-              value={p.key}
-              disabled={timeline.lanes.some((l) => l.param === p.key)}
-            >
-              {p.label}
-            </option>
-          ))}
-        </select>
         <div className="tl-zoom">
           <span className="row-label">Zoom</span>
           <Slider
@@ -522,6 +533,69 @@ export function TimelinePanel() {
         >
           <IconClose size={16} />
         </button>
+      </div>
+
+      {/* Lane list panel (P-5): the one place to add, remove, and solo
+          automation lanes — the on-track rows below stay the place to edit
+          THEIR keyframes. */}
+      <div className="tl-lane-list">
+        <select
+          className="select tl-add-lane"
+          value=""
+          title="Add an automation lane for a parameter"
+          onChange={(e) => addLane(e.target.value)}
+        >
+          <option value="">+ Automation lane…</option>
+          {paramOptions.map((p) => (
+            <option
+              key={p.key}
+              value={p.key}
+              disabled={timeline.lanes.some((l) => l.param === p.key)}
+            >
+              {p.label}
+            </option>
+          ))}
+        </select>
+        {timeline.lanes.length > 0 && (
+          <div className="style-chips">
+            {timeline.lanes.map((lane, li) => {
+              const soloed = soloedLanes.has(lane.param);
+              return (
+                <span key={lane.param} className="user-chip-wrap">
+                  <button
+                    className={`style-chip ${soloed ? "active" : ""}`}
+                    aria-pressed={soloed}
+                    title={
+                      soloed
+                        ? `Un-solo ${lane.param} — every lane still drives its param regardless of solo`
+                        : `Solo ${lane.param} — show only soloed lanes on the track below (does not change what plays)`
+                    }
+                    onClick={() => toggleSolo(lane.param)}
+                  >
+                    {lane.param}
+                  </button>
+                  <button
+                    className="chip-x"
+                    title="Remove lane"
+                    aria-label={`Remove ${lane.param} automation lane`}
+                    onClick={() => removeLane(li)}
+                  >
+                    ✕
+                  </button>
+                </span>
+              );
+            })}
+            {soloedLanes.size > 0 && (
+              <button
+                className="text-btn"
+                title="Show every lane again"
+                onClick={() => setSoloedLanes(new Set())}
+              >
+                Clear solo ({soloedLanes.size})
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div
@@ -603,8 +677,15 @@ export function TimelinePanel() {
             )}
           </div>
 
-          {/* Automation lanes */}
+          {/* Automation lanes. Iterates the FULL array, unfiltered — `li`
+              must stay a true index into `timeline.lanes` for every
+              keyframe-interaction handler below (onLanePointer, beginDrag,
+              moveDragged, cycleCurve, removeKeyframe, nudgeKeyframe), none
+              of which know about a solo-filtered subset. A soloed-out lane's
+              ROW just renders nothing; the lane and its keyframes are
+              untouched — solo is view-only (P-5). */}
           {timeline.lanes.map((lane, li) => {
+            if (soloedLanes.size > 0 && !soloedLanes.has(lane.param)) return null;
             const spec = laneSpec(lane);
             return (
               <div key={lane.param} className="tl-lane-row">

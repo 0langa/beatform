@@ -3738,6 +3738,22 @@ kbd {
   flex: 1;
 }
 
+/* Lane list panel (P-5): add-select + one chip per lane. Chip mechanics
+   (.style-chips/.style-chip/.active/.user-chip-wrap/.chip-x) are the SAME
+   classes ParamsPanel's "looks" list already uses — reused rather than
+   duplicated, so "soloed" gets the app's one existing active-chip look. */
+.tl-lane-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.tl-lane-list .style-chips {
+  margin-bottom: 0;
+}
+
 .tl-scroll {
   overflow-x: auto;
   overflow-y: hidden;

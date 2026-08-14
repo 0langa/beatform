@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { presets } from "../render/presets";
-import type { Scene, Timeline } from "../state/timeline";
+import type { AutomationLane, Scene, Timeline } from "../state/timeline";
 import type { UserPreset } from "../state/userPresets";
 import { clearHistory } from "../state/history";
 import { renderProbe } from "./testing/renderProbe";
@@ -708,5 +708,133 @@ describe("per-scene look picker (P-5 task 2)", () => {
     selectScene(/Nebula — drag to move/);
     const img = document.querySelector<HTMLImageElement>(".tl-scene-editor img");
     expect(img?.getAttribute("src")).toBe("data:image/png;base64,BBB");
+  });
+});
+
+function lane(param: string, value = 0.5): AutomationLane {
+  return { param, keyframes: [{ id: `k-${param}`, t: 0, value, curve: "linear" }] };
+}
+
+/** The lane list panel row (P-5 task 3) — add-select + one chip per lane.
+ * Scoped queries live here since a lane's remove button now exists TWICE
+ * (this chip strip, and the on-track row's own sticky label) with the same
+ * wording by design (one consistent phrase, not two to maintain). */
+const laneList = () => within(document.querySelector<HTMLElement>(".tl-lane-list")!);
+
+describe("lane list panel (P-5 task 3)", () => {
+  it("renders a chip per lane, alongside the add-lane control", () => {
+    const timeline: Timeline = { enabled: true, scenes: [], lanes: [lane("hue"), lane("glow")] };
+    mountProbed(timeline);
+    expect(laneList().getByRole("button", { name: "hue" })).toBeTruthy();
+    expect(laneList().getByRole("button", { name: "glow" })).toBeTruthy();
+    expect(screen.getByTitle("Add an automation lane for a parameter")).toBeTruthy();
+  });
+
+  describe("solo — a pure view filter (the plan's own words: 'never an eval change')", () => {
+    it("toggling solo writes NOTHING to the document — same timeline reference, no undo entry", () => {
+      const timeline: Timeline = { enabled: true, scenes: [], lanes: [lane("hue"), lane("glow")] };
+      mountProbed(timeline);
+      const before = useVizStore.getState().timeline;
+      const depth = useVizStore.getState().undoDepth;
+
+      fireEvent.click(laneList().getByRole("button", { name: "hue" }));
+
+      expect(useVizStore.getState().timeline).toBe(before); // identity: no write happened at all
+      expect(useVizStore.getState().undoDepth).toBe(depth);
+    });
+
+    it("soloing a lane hides the OTHER lane's on-track row; both chips stay reachable", () => {
+      const timeline: Timeline = { enabled: true, scenes: [], lanes: [lane("hue"), lane("glow")] };
+      mountProbed(timeline);
+      expect(document.querySelectorAll(".tl-lane-row")).toHaveLength(2);
+
+      fireEvent.click(laneList().getByRole("button", { name: "hue" }));
+
+      const rows = document.querySelectorAll(".tl-lane-row");
+      expect(rows).toHaveLength(1);
+      expect(rows[0].querySelector(".tl-lane-label")?.textContent).toContain("hue");
+      // Solo never removes a lane from the panel that controls it — you must
+      // be able to see (and un-solo) a hidden lane's own chip.
+      expect(laneList().getByRole("button", { name: "hue" })).toBeTruthy();
+      expect(laneList().getByRole("button", { name: "glow" })).toBeTruthy();
+    });
+
+    it("soloing a SECOND lane shows both soloed rows, still hides the rest", () => {
+      const timeline: Timeline = {
+        enabled: true,
+        scenes: [],
+        lanes: [lane("hue"), lane("glow"), lane("barGap")],
+      };
+      mountProbed(timeline);
+
+      fireEvent.click(laneList().getByRole("button", { name: "hue" }));
+      fireEvent.click(laneList().getByRole("button", { name: "glow" }));
+
+      const rows = [...document.querySelectorAll(".tl-lane-row")];
+      expect(rows).toHaveLength(2);
+      const labels = rows.map((r) => r.querySelector(".tl-lane-label")?.textContent);
+      expect(labels.some((t) => t?.includes("hue"))).toBe(true);
+      expect(labels.some((t) => t?.includes("glow"))).toBe(true);
+      expect(labels.some((t) => t?.includes("barGap"))).toBe(false);
+    });
+
+    it("un-soloing the only soloed lane restores every row", () => {
+      const timeline: Timeline = { enabled: true, scenes: [], lanes: [lane("hue"), lane("glow")] };
+      mountProbed(timeline);
+      const chip = laneList().getByRole("button", { name: "hue" });
+
+      fireEvent.click(chip); // solo on
+      expect(document.querySelectorAll(".tl-lane-row")).toHaveLength(1);
+      fireEvent.click(chip); // solo off
+      expect(document.querySelectorAll(".tl-lane-row")).toHaveLength(2);
+    });
+
+    it("'Clear solo' appears only while something is soloed, and resets to show-all", () => {
+      const timeline: Timeline = { enabled: true, scenes: [], lanes: [lane("hue"), lane("glow")] };
+      mountProbed(timeline);
+      expect(screen.queryByRole("button", { name: /Clear solo/i })).toBeNull();
+
+      fireEvent.click(laneList().getByRole("button", { name: "hue" }));
+      expect(document.querySelectorAll(".tl-lane-row")).toHaveLength(1);
+
+      fireEvent.click(screen.getByRole("button", { name: /Clear solo/i }));
+      expect(document.querySelectorAll(".tl-lane-row")).toHaveLength(2);
+      expect(screen.queryByRole("button", { name: /Clear solo/i })).toBeNull();
+    });
+  });
+
+  describe("lane add/remove undo keys", () => {
+    it("two rapid lane adds cost TWO undo entries, not one", () => {
+      const { timeline } = probedTimeline();
+      mountProbed(timeline);
+      const depth = useVizStore.getState().undoDepth;
+      const add = screen.getByTitle("Add an automation lane for a parameter") as HTMLSelectElement;
+
+      fireEvent.change(add, { target: { value: "hue" } });
+      fireEvent.change(add, { target: { value: "glow" } });
+
+      expect(useVizStore.getState().timeline.lanes).toHaveLength(2);
+      expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+
+      useVizStore.getState().undo();
+      expect(useVizStore.getState().timeline.lanes).toHaveLength(1);
+    });
+
+    it("removing a lane uses a key distinct from the flat 'timeline' key", () => {
+      const timeline: Timeline = { enabled: true, scenes: [], lanes: [lane("hue")] };
+      mountProbed(timeline);
+      const depth = useVizStore.getState().undoDepth;
+
+      fireEvent.click(laneList().getByRole("button", { name: "Remove hue automation lane" }));
+      // A generic, default-keyed edit fired immediately after: if removeLane
+      // still shared the flat "timeline" key, these two would incorrectly
+      // group into one entry.
+      act(() =>
+        useVizStore.getState().setTimeline({ ...useVizStore.getState().timeline, scenes: [] }),
+      );
+
+      expect(useVizStore.getState().timeline.lanes).toHaveLength(0);
+      expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+    });
   });
 });

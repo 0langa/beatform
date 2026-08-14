@@ -26,10 +26,11 @@ let lastPushAt = -Infinity;
  * that silently drops the first routes list. (H13's other bulk action,
  * setModRouteAmountsForParam, drives a continuous slider instead and is
  * deliberately GROUPABLE on its own per-param key — see stemsModsActions.ts,
- * C1.) `"timeline-scene-add"` (P-5) is the same shape again: TimelinePanel's
- * "+ Scene at playhead" used to share the single flat `"timeline"` key with
- * every other timeline edit, so two rapid clicks silently cost only one undo
- * entry — the exact `layer-add`/`mod-add` bug, just not yet fixed here. */
+ * C1.) `"timeline-scene-add"`/`"timeline-lane-add"` (P-5) are the same shape
+ * again: TimelinePanel's "+ Scene at playhead" and "+ Automation lane…" both
+ * used to share the single flat `"timeline"` key with every other timeline
+ * edit, so two rapid clicks of either silently cost only one undo entry —
+ * the exact `layer-add`/`mod-add` bug, just not yet fixed there. */
 const UNGROUPABLE = new Set([
   "layer-add",
   "mod-add",
@@ -38,6 +39,7 @@ const UNGROUPABLE = new Set([
   "delete-preset",
   "bg-mode",
   "timeline-scene-add",
+  "timeline-lane-add",
 ]);
 
 export function snapshotForHistory(doc: ProjectDocument): ProjectDocument {
