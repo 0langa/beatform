@@ -36,11 +36,14 @@ import modMetersSource from "./ModMeters.tsx?raw";
  * zero meters and assert nothing.
  */
 
-/** Controllable analyzer + published stems behind the services mock. */
+/** Controllable analyzer + published stems/routes behind the services mock. */
 const svc = vi.hoisted(() => ({
   analyzer: null as { features: AudioFeatures } | null,
   peekCalls: 0,
   stems: undefined as Record<string, number> | undefined,
+  // A fresh empty Map each reset, exactly like services.ts's own module-level
+  // slot: cleared and refilled, never reassigned to a NEW Map identity mid-run.
+  routes: new Map<string, number>(),
 }));
 
 vi.mock("../state/services", () => ({
@@ -60,6 +63,7 @@ vi.mock("../state/services", () => ({
     return svc.analyzer;
   }),
   getLiveStemValues: vi.fn(() => svc.stems),
+  getLiveRouteValues: vi.fn(() => svc.routes),
   getPresentedFrames: vi.fn(() => 0),
   getRenderer: vi.fn(() => null),
   setLiveRenderPaused: vi.fn(),
@@ -196,6 +200,7 @@ beforeEach(() => {
   svc.analyzer = { features };
   svc.peekCalls = 0;
   svc.stems = undefined;
+  svc.routes.clear();
   body.n = 0;
 });
 
@@ -528,6 +533,60 @@ describe("T17 — lifecycle and gates", () => {
     expect(v(el)).toBe("");
     step(16, 20, { advanceTrack: false });
     expect(Number(v(container.querySelector('[data-testid="meter-0"]')))).toBe(0.5);
+  });
+});
+
+describe("T20 — H9: the published post-lag route value", () => {
+  /** Test values are exact multiples of 1/512 (the meter's write quantum,
+   *  Q in ModMeters.tsx) throughout this block, the same discipline T15
+   *  already uses — anything else would make a quantization rounding
+   *  artifact indistinguishable from a real bug in which value won. */
+
+  it("prefers the loop's published value over the instant curve value while they differ", () => {
+    const step = fakeRaf();
+    const specs: MeterSpec[] = [{ source: "bass", routeId: "r1" }];
+    features.bass = 0.25;
+    // Mid-transient: the loop's smoothed value has not caught up to the raw
+    // source yet — exactly the frame H9 exists to display correctly.
+    svc.routes.set("r1", 0.75);
+    const { container } = render(<MeterHost specs={specs} />);
+    step(16, 2);
+
+    const el = container.querySelector('[data-testid="meter-0"]');
+    expect(Number(v(el))).toBe(0.75);
+    expect(Number(v(el))).not.toBe(shapedValue(undefined, sourceValue(features, "bass")));
+
+    // …and tracks the published Map frame to frame, exactly like a stem
+    // source does — this is a live read, not a value captured at mount.
+    svc.routes.set("r1", 0.125);
+    step(16, 1);
+    expect(Number(v(el))).toBe(0.125);
+  });
+
+  it("falls back to the instant curve value, bit-exactly, when routeId is unset or unpublished this frame", () => {
+    const step = fakeRaf();
+    // "r2" IS published this frame, at a value that would be wrong for
+    // either meter below — proving neither one reads someone else's entry.
+    svc.routes.set("r2", 0.5);
+    const specs: MeterSpec[] = [
+      { source: "bass" }, // no routeId at all — every source chip's shape
+      { source: "rms", curve: "exp", routeId: "r1" }, // routeId set, but "r1" was never published
+    ];
+    features.bass = 0.75;
+    features.rms = 0.5;
+    const { container } = render(<MeterHost specs={specs} />);
+    step(16, 2);
+
+    // Both land on the SAME expression every lag-less meter always has —
+    // the published Map, empty for these ids, changes nothing.
+    expect(Number(v(container.querySelector('[data-testid="meter-0"]')))).toBe(
+      shapedValue(undefined, sourceValue(features, "bass")),
+    );
+    expect(Number(v(container.querySelector('[data-testid="meter-1"]')))).toBe(
+      shapedValue("exp", sourceValue(features, "rms")),
+    );
+    expect(Number(v(container.querySelector('[data-testid="meter-0"]')))).toBe(0.75);
+    expect(Number(v(container.querySelector('[data-testid="meter-1"]')))).toBe(0.25);
   });
 });
 

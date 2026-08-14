@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { getLiveStemValues, peekAnalyzer } from "../state/services";
+import { getLiveRouteValues, getLiveStemValues, peekAnalyzer } from "../state/services";
 import { shapedValue, sourceValue, type ModCurve, type ModSource } from "../state/modMatrix";
 import { useVizStore } from "../state/store";
 
@@ -14,27 +14,53 @@ import { useVizStore } from "../state/store";
  * a 60 Hz meter, silently, with every existing test still green.
  *
  * DETERMINISM: this file may only DISPLAY what the shipping evaluator
- * resolves. It calls the two PURE, STATELESS exports of modMatrix.ts —
- * sourceValue and shapedValue — and nothing else. It never constructs, holds,
- * reads or passes the caller-owned lag memory: the private per-route lag
- * evaluator in modMatrix.ts MUTATES the memo it reads, and the live loop owns
- * exactly one of those (services.ts:315). A UI call through it would advance
- * every lagged route's envelope a second time per frame and change what the
- * renderer draws — preview would diverge from export depending on whether
- * this panel happens to be open. That is why the lag evaluator is not
- * exported from modMatrix.ts and must never be.
+ * resolves, never a second opinion of its own. Two read-only sources feed it:
+ *   - sourceValue and shapedValue, modMatrix.ts's two PURE, STATELESS
+ *     exports, for the raw-source-through-curve INSTANT value; and
+ *   - getLiveRouteValues() (services.ts), a published Map the live loop
+ *     fills, once per frame, strictly AFTER its own applyMods/applyPostMods
+ *     calls, with each route's resolved POST-LAG value (H9's published-slot
+ *     contract) — see MeterSpec.routeId below.
+ * It never constructs, holds, reads or passes the caller-owned lag memory
+ * itself: the private per-route lag evaluator in modMatrix.ts MUTATES the
+ * memo it reads, and the live loop owns exactly one of those (services.ts,
+ * inside its frame loop). A UI call through it would advance every lagged
+ * route's envelope a second time per frame and change what the renderer
+ * draws — preview would diverge from export depending on whether this panel
+ * happens to be open. That is why the lag evaluator is not exported from
+ * modMatrix.ts and must never be; getLiveRouteValues() only ever hands back
+ * a plain number the loop already finished computing for its own render.
  *
- * CONSEQUENCE, stated honestly: the indicator is the RAW source through the
- * CURVE. It is not post-lag. For a route with attack/release it LEADS the
- * render; the card's hint says so. (0 of the 43 routes in the 13 shipped
- * factory themes carry curve or lag, so for shipped content this is
- * bit-exactly the value that enters the multiply.)
+ * CONSEQUENCE: a MeterSpec with no routeId — every source chip, and a route
+ * diamond whose route has no attack/release — shows the RAW source through
+ * the CURVE, computed right here. That is bit-exact with what the loop
+ * actually used, by construction: a lag-less route's own resolution IS that
+ * same expression. A MeterSpec whose routeId DOES have an entry in
+ * getLiveRouteValues() this frame (a route with attack/release, currently
+ * part of the frame being rendered) shows that value instead — the exact
+ * post-lag number the render used, copied out, never re-derived. Should the
+ * published Map have nothing for it this frame (the route belongs to a
+ * preset that is not the one currently active), it falls back to the same
+ * instant expression as any other meter. (0 of the 43 routes in the 13
+ * shipped factory themes carry curve or lag, so for shipped content every
+ * meter takes the instant path and the two are indistinguishable.)
  */
 
 export interface MeterSpec {
   source: ModSource;
   /** Route curve; undefined = linear. Display-only. */
   curve?: ModCurve;
+  /**
+   * H9 — set only for a route-meter whose route carries attack/release. When
+   * present, the tick prefers getLiveRouteValues().get(routeId) over the
+   * instant curve value, for exactly the frames where the loop published an
+   * entry for it; otherwise (unset, or the id is not in the Map this frame)
+   * the meter computes the same raw-source-through-curve value every other
+   * meter does. A lag-less route should leave this unset: its instant value
+   * already equals its resolved one, so there is nothing the indirection
+   * would change — see the file header.
+   */
+  routeId?: string;
   /**
    * Optional numeric readout, written on the 250 ms clock only.
    *
@@ -145,8 +171,15 @@ export function ModMeterDriver() {
       if (wantText) lastText = t;
 
       const stems = getLiveStemValues();
+      const publishedRoutes = getLiveRouteValues();
       for (const [el, spec] of meters) {
-        const v = shapedValue(spec.curve, sourceValue(f, spec.source, stems));
+        // H9: routeId is set only for a lag-carrying route (see MeterSpec);
+        // `published` is undefined whenever it's unset OR the loop did not
+        // publish an entry for it this frame, and `??` falls through to the
+        // same instant expression every other meter uses. Never `||`: a
+        // published 0 (a route parked at its floor) must not be discarded.
+        const published = spec.routeId ? publishedRoutes.get(spec.routeId) : undefined;
+        const v = published ?? shapedValue(spec.curve, sourceValue(f, spec.source, stems));
         const q = v <= 0 ? 0 : v >= 1 ? Q : (v * Q) | 0;
         if (lastQ.get(el) !== q) {
           lastQ.set(el, q);

@@ -75,6 +75,7 @@ vi.mock("../render/canvas2dRenderer", () => {
 import {
   getAnalyzer,
   getEngine,
+  getLiveRouteValues,
   getLiveStemValues,
   getRenderer,
   initServices,
@@ -86,6 +87,8 @@ import { DEFAULT_POST } from "../render/types";
 import type { FrameResolveInput } from "./frameResolve";
 import { EMPTY_TIMELINE } from "./timeline";
 import { registerCustomPreset, unregisterCustomPreset } from "../render/presets/custom";
+import type { ModRoute } from "./modMatrix";
+import type { AudioFeatures } from "../audio/types";
 
 function fakeCanvas(): HTMLCanvasElement {
   return {
@@ -400,5 +403,180 @@ describe("services.ts frame loop — live stem publication (P-1 stage 3)", () =>
     expect(getLiveStemValues()).toBeUndefined();
 
     dispose();
+  });
+});
+
+/**
+ * H9: the Modulation page's route meters read a value published straight out
+ * of THIS frame's own evaluation — never a second call through the private,
+ * memo-mutating routeValue(). These tests drive the REAL loop (mocking only
+ * the analyzer's per-frame features, the same lever the stem tests above
+ * use) so the published numbers are the loop's actual arithmetic, not a
+ * stand-in for it, and the lag memory is the loop's own modEval — there is
+ * no seam to reach it from outside, which is by design (T19 in
+ * ModMeters.test.tsx forbids a src/ui file from importing it at all).
+ */
+describe("services.ts frame loop — live route-value publication (H9)", () => {
+  const PRESET_ID = "custom-route-publish-test";
+  const PARAM_KEY = "decay";
+  const ROUTE_ID = "r1";
+  // A PRESET-param target (never post:*): the mocked WebGPURenderer in this
+  // file's top-level mock does not implement setPost, so a route that made
+  // applyPostMods return a changed object would throw here. applyMods needs
+  // no such method — render() alone covers it.
+  const ROUTE: ModRoute = {
+    id: ROUTE_ID,
+    source: "bass",
+    param: PARAM_KEY,
+    amount: 0.5,
+    attack: 1,
+    release: 1,
+  };
+
+  afterEach(() => {
+    unregisterCustomPreset(PRESET_ID);
+  });
+
+  /** Registers the shared preset, arms a manually-driven rAF and starts the
+   *  loop; the caller wires the analyzer mock afterwards (it needs the
+   *  instance initServices creates). */
+  function rig(mods: ModRoute[]) {
+    registerCustomPreset({
+      id: PRESET_ID,
+      name: "R",
+      params: [{ key: PARAM_KEY, label: "Decay", min: 0, max: 1, step: 0.01, default: 0 }],
+      wgsl: "// r",
+    } as unknown as PresetDef);
+
+    const rafBox: { cb: ((t: number) => void) | null } = { cb: null };
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((cb: (t: number) => void) => {
+        rafBox.cb = cb;
+        return 1;
+      }),
+    );
+
+    const dispose = initServices(
+      fakeCanvas(),
+      fakeHooks({
+        getFrameInput: () =>
+          ({
+            timeline: EMPTY_TIMELINE,
+            basePresetId: PRESET_ID,
+            baseParams: {},
+            baseMods: mods,
+            baseBg: {} as BgSettings,
+            paramsByPreset: {},
+            modsByPreset: {},
+          }) as FrameResolveInput,
+      }),
+    );
+    return { rafBox, dispose };
+  }
+
+  it("publishes the post-lag value mid-transient, distinct from the instant target", async () => {
+    const { rafBox, dispose } = rig([ROUTE]);
+    await flush();
+    const state = { time: 0, bass: 0 };
+    (getAnalyzer() as unknown as { update: ReturnType<typeof vi.fn> }).update.mockImplementation(
+      () => ({ time: state.time, bass: state.bass }) as unknown as AudioFeatures,
+    );
+
+    // Frame 1 (t=0): first-ever evaluation of this route snaps to target —
+    // by definition equal to the instant value, nothing to observe yet.
+    rafBox.cb?.(16);
+    expect(getLiveRouteValues().get(ROUTE_ID)).toBe(0);
+
+    // The source jumps to 1 with a 1 s attack in effect: 50 ms later the
+    // smoothed value can only have covered a small fraction of the gap.
+    state.bass = 1;
+    state.time = 0.05;
+    rafBox.cb?.(66);
+
+    const published = getLiveRouteValues().get(ROUTE_ID)!;
+    const instant = 1; // shapedValue(undefined, bass) === bass: a linear route
+    expect(published).toBeGreaterThan(0);
+    expect(published).toBeLessThan(instant);
+    expect(published).not.toBe(instant);
+    // The exact EMA step routeValue()'s docblock in modMatrix.ts specifies:
+    // value += (target - value) * (1 - exp(-dt/tau)), from value=0.
+    expect(published).toBeCloseTo(1 - Math.exp(-0.05 / 1), 10);
+
+    dispose();
+  });
+
+  it("never advances the memo beyond the loop's own frames — extra publish reads change nothing", async () => {
+    const { rafBox, dispose } = rig([ROUTE]);
+    await flush();
+    const state = { time: 0, bass: 0 };
+    (getAnalyzer() as unknown as { update: ReturnType<typeof vi.fn> }).update.mockImplementation(
+      () => ({ time: state.time, bass: state.bass }) as unknown as AudioFeatures,
+    );
+
+    rafBox.cb?.(16); // frame 1, t=0: snaps to 0
+    state.bass = 1;
+    state.time = 0.05;
+    rafBox.cb?.(66); // frame 2, t=0.05
+    const afterFrame2 = getLiveRouteValues().get(ROUTE_ID)!;
+
+    // "Tick the driver" several times between loop frames without the loop
+    // itself running: getLiveRouteValues() is a Map read and nothing else,
+    // so re-reading the publish must be exactly as inert as it looks.
+    for (let i = 0; i < 5; i++) {
+      expect(getLiveRouteValues().get(ROUTE_ID)).toBe(afterFrame2);
+    }
+
+    // Frame 3: another 0.05 s at the still-rising target. If the reads above
+    // — or the publish step itself — had sneaked in an extra advance of
+    // memo.value/memo.time, this frame would land somewhere other than the
+    // one-EMA-step prediction from frame 2's own published value.
+    state.time = 0.1;
+    rafBox.cb?.(116);
+    const predicted = afterFrame2 + (1 - afterFrame2) * (1 - Math.exp(-0.05 / 1));
+    expect(getLiveRouteValues().get(ROUTE_ID)).toBeCloseTo(predicted, 9);
+
+    dispose();
+  });
+
+  it("a lag-less route's published value is bit-exact with the instant curve computation", async () => {
+    const LAGLESS_ID = "r2";
+    const lagless: ModRoute = {
+      id: LAGLESS_ID,
+      source: "rms",
+      param: PARAM_KEY,
+      amount: 0.3,
+      curve: "exp",
+      // No attack/release: routeValue() returns the instant target and never
+      // touches state.routes for this id — the v1 path, unconditionally.
+    };
+    const { rafBox, dispose } = rig([ROUTE, lagless]);
+    await flush();
+    (getAnalyzer() as unknown as { update: ReturnType<typeof vi.fn> }).update.mockImplementation(
+      () => ({ time: 0, bass: 0, rms: 0.5 }) as unknown as AudioFeatures,
+    );
+
+    rafBox.cb?.(16);
+    // exp curve: 0.5² = 0.25 — bit-exact, no attack/release ever touches it.
+    expect(getLiveRouteValues().get(LAGLESS_ID)).toBe(0.25);
+
+    dispose();
+  });
+
+  it("publishes one entry per active route and drops the Map's contents on teardown", async () => {
+    const { rafBox, dispose } = rig([ROUTE]);
+    await flush();
+    (getAnalyzer() as unknown as { update: ReturnType<typeof vi.fn> }).update.mockImplementation(
+      () => ({ time: 0, bass: 0 }) as unknown as AudioFeatures,
+    );
+
+    rafBox.cb?.(16);
+    expect(getLiveRouteValues().get(ROUTE_ID)).toBe(0);
+    expect(getLiveRouteValues().size).toBe(1);
+
+    // Same contract as getLiveStemValues(): a meter mounted after the
+    // session ended must not read a stale entry from a loop that is gone.
+    dispose();
+    expect(getLiveRouteValues().size).toBe(0);
   });
 });

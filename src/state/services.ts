@@ -3,7 +3,13 @@ import { RealtimeAnalyzer } from "../audio/realtimeSource";
 import { Canvas2DRenderer } from "../render/canvas2dRenderer";
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { BgSettings, ParamValues, PostSettings, PresetDef, Renderer } from "../render/types";
-import { applyMods, applyPostMods, createModEvalState } from "./modMatrix";
+import {
+  applyMods,
+  applyPostMods,
+  createModEvalState,
+  shapedValue,
+  sourceValue,
+} from "./modMatrix";
 import { resolveActiveFrame, type FrameResolveInput } from "./frameResolve";
 import { presetById } from "../render/presets";
 import { BUILDER2_ID, currentBuilderStack, packBuilderFrame, sameF32 } from "../render/builder2";
@@ -75,6 +81,38 @@ let lastStemValues: Record<string, number> | null = null;
 
 export function getLiveStemValues(): Record<string, number> | undefined {
   return lastStemValues ?? undefined;
+}
+
+/**
+ * Latest per-route resolved value the LOOP produced this frame ("route id" ->
+ * its post-curve, POST-LAG number, before amount/range scaling), published
+ * for the Modulation page's route meters (H9) in exactly the shape
+ * lastStemValues above is: one module-level slot, one write in the hot path
+ * after the loop's own applyMods/applyPostMods calls, one plain getter, no
+ * subscription and no store write.
+ *
+ * ONE Map, allocated once and never reassigned — clearing and refilling it in
+ * place is what keeps the publish allocation-free. It is rebuilt from
+ * rf.mods in full every frame rather than diffed, so a route id from a
+ * preset the timeline has since left (or a route the user just deleted)
+ * cannot survive into a frame that no longer has it: "has an entry" IS
+ * "published this frame".
+ *
+ * Every entry is read-only OVER modEval: `modEval.routes.get(id)?.value` is
+ * the memo applyMods/applyPostMods already advanced this frame for a route
+ * with attack/release: this call site only ever READS it, via Map.get(),
+ * after both apply calls have run — it never creates an entry or writes
+ * .value/.time. A route without lag never gets a memo (the private
+ * routeValue() in modMatrix.ts returns before touching state.routes for
+ * one), so its published value falls back to the instant
+ * shapedValue(curve, sourceValue(...)) computed right here — bit-exact with
+ * what applyMods/applyPostMods themselves used, by definition, since that
+ * instant expression IS routeValue()'s own no-lag branch.
+ */
+const lastRouteValues = new Map<string, number>();
+
+export function getLiveRouteValues(): ReadonlyMap<string, number> {
+  return lastRouteValues;
 }
 /**
  * Identity guard for the three module-level singletons above (engine already
@@ -474,6 +512,21 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         stemValues,
         modEval,
       );
+      // Route meter publish (H9): both apply calls above have now advanced
+      // modEval for every route in rf.mods this frame — a route targets
+      // either a preset param (applyMods) or a post key (applyPostMods),
+      // never both, so this is the one point per frame where every route's
+      // result is available. Cleared and rebuilt, not diffed: cheap (routes
+      // per preset is small) and it guarantees a stale id from a preset the
+      // timeline just left cannot outlive this frame's read.
+      lastRouteValues.clear();
+      for (const route of rf.mods) {
+        lastRouteValues.set(
+          route.id,
+          modEval.routes.get(route.id)?.value ??
+            shapedValue(route.curve, sourceValue(features, route.source, stemValues)),
+        );
+      }
       // Builder bridge chokepoint (RP-20, determinism law): modulation and
       // automation compose into the params RECORD above, but builder layer
       // values reach the GPU via the builderLayers storage buffer — overlay
@@ -582,6 +635,11 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       // otherwise a meter mounted after teardown would read a stale Record
       // from a session that no longer exists.
       lastStemValues = null;
+      // Same reasoning for the route-value publish (H9): clear rather than
+      // reassign, so getLiveRouteValues() keeps handing back the SAME Map
+      // identity for the module's lifetime — just an empty one once this
+      // loop is gone, instead of one frame's values from a dead session.
+      lastRouteValues.clear();
     }
   };
 }

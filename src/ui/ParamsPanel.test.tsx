@@ -64,8 +64,12 @@ vi.mock("../state/services", () => ({
   // page mounts the driver). The driver bails on `peekAnalyzer() -> null`
   // before it ever reads stems, but a mock that simply OMITS an export the
   // subject imports is a TypeError waiting for the first test that hands the
-  // analyzer back — so it is stubbed rather than left undefined.
+  // analyzer back — so it is stubbed rather than left undefined. Same
+  // reasoning for getLiveRouteValues (H9): an empty Map is the correct
+  // "nothing published" shape, matching what services.ts hands back before
+  // any loop has ever run.
   getLiveStemValues: vi.fn(() => undefined),
+  getLiveRouteValues: vi.fn(() => new Map()),
   getRenderer: vi.fn(() => null),
   setLiveRenderPaused: vi.fn(),
   remeasure: vi.fn(),

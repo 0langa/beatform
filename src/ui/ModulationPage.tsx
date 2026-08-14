@@ -48,7 +48,10 @@ import { meterRef, ModMeterDriver } from "./ModMeters";
  * (`--v`) on `.mod-swing-arm` / `.mod-meter-fill`. Nothing here imports
  * ModEvalState, createModEvalState or routeValue — routeValue mutates the
  * caller's lag memo, so a UI call would advance every lagged route's envelope
- * a second time per frame and change what the renderer draws.
+ * a second time per frame and change what the renderer draws. The one thing
+ * this page hands the meter engine beyond source/curve is a route's bare id
+ * string (H9, RouteMeter below) — the engine, not this page, turns that into
+ * a published post-lag number by reading services.ts's read-only copy.
  *
  * Its own component purely for SUBSCRIPTION GRANULARITY, in the shape
  * <PanelFooterBadges /> established: `stems` and `stemAnalyzing` are read by
@@ -198,10 +201,12 @@ function TargetOptions(props: {
  * be stripped back to its resting position on every frame of that drag; on a
  * PAUSED track it would then stay there for up to 250 ms, because the driver's
  * "track time did not move" fast path skips the write until the next text
- * tick. Memoized on (source, curve) — the only two fields the spec carries —
- * the registration survives depth drags, card disclosure, source filtering,
- * retargeting and stem imports, and re-registers exactly when the value being
- * displayed would change anyway.
+ * tick. Memoized on their primitive fields — `source` alone for the chip
+ * meter, `source`/`curve`/`routeId` for the swing arm — the registration
+ * survives depth drags, card disclosure, source filtering, retargeting and
+ * stem imports, and re-registers exactly when the value being displayed
+ * would change anyway (routeId flips between a route's id and undefined
+ * exactly when rise/fall crosses zero, which is such a case).
  *
  * Neither component holds the spec in a ref or mutates it: `meterRef` is
  * re-called with a fresh spec when, and only when, its inputs change.
@@ -216,11 +221,16 @@ function SourceMeter(props: { source: ModSource }) {
   );
 }
 
-/** The diamond that walks a route's painted range. `curve` is display-only —
- *  the raw source through the shipping curve stage, never the lagged value. */
-function RouteMeter(props: { source: ModSource; curve?: ModCurve }) {
-  const { source, curve } = props;
-  const ref = useMemo(() => meterRef({ source, curve }), [source, curve]);
+/** The diamond that walks a route's painted range. `curve` is display-only.
+ *  `routeId` is this route's id, passed ONLY while it carries attack/release
+ *  (H9) — the caller below gates on that, not this component, so a lag-less
+ *  route stays on the exact same instant-math path it always was. With a
+ *  routeId, the meter prefers the loop's own published post-lag value for
+ *  any frame it has one; see ModMeters.tsx's file header for the full
+ *  contract. */
+function RouteMeter(props: { source: ModSource; curve?: ModCurve; routeId?: string }) {
+  const { source, curve, routeId } = props;
+  const ref = useMemo(() => meterRef({ source, curve, routeId }), [source, curve, routeId]);
   return (
     <span className="mod-swing-arm" ref={ref}>
       <span className="mod-diamond" />
@@ -662,7 +672,16 @@ export function ModulationPage() {
                         <span className="mod-range-track" style={track}>
                           <span className="mod-range-fill" />
                           <span className="mod-range-swing">
-                            <RouteMeter source={r.source} curve={r.curve} />
+                            <RouteMeter
+                              source={r.source}
+                              curve={r.curve}
+                              // H9: only a route that actually carries lag
+                              // gets its id — see RouteMeter's own doc
+                              // comment for why the gate lives here.
+                              routeId={
+                                (r.attack ?? 0) > 0 || (r.release ?? 0) > 0 ? r.id : undefined
+                              }
+                            />
                           </span>
                         </span>
                       </div>
@@ -722,12 +741,6 @@ export function ModulationPage() {
                             }
                           />
                         </div>
-                        {(r.attack ?? 0) + (r.release ?? 0) > 0 && (
-                          <p className="section-hint">
-                            The marker above reads the source, not the smoothed value, so it leads
-                            the render while rise or fall is set.
-                          </p>
-                        )}
                       </div>
                     )}
                   </div>
