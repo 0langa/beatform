@@ -486,8 +486,7 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
 - [x] D6 **DONE — P-21 stage 2 shipped (branch `p21-stage2`).** H7a
       (Track H) closed stage 1 — single-source generation. Stage 2 closes
       the rest: a ten-entry FAQ section in `guideContent.ts` (through the
-      same engine, every claim traced to README/CHANGELOG/BACKLOG/source
-      before being written), and the gallery submission helper
+      same engine), and the gallery submission helper
       (`node scripts/gallery-submit.mjs <file>` — validates with the app's
       own `parseUserPreset`/`parseTheme`, hashes and sizes exactly,
       self-checks the assembled registry entry through the app's own
@@ -496,9 +495,26 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       brief named). The dropped Projects-section link to the site's
       `docs/templates.md` was restored plainly inside the existing Themes
       bullet, through the engine's existing `link` Inline — no new engine
-      machinery, per the plan. Evidence: `src/state/gallerySubmit.test.ts`
-      (16 tests, including a self-check-is-live proof), full gate suite
-      green, CLI proven end-to-end against real generated fixtures with an
+      machinery, per the plan.
+      **On the FAQ's claims:** every one was sourced (README/CHANGELOG/
+      BACKLOG/source before being written), but sourcing is process, not
+      proof — a claim traced to a plausible origin can still be wrong if
+      that origin itself was stale. The adversarial lane review spot-checked
+      each claim against the code that actually ENFORCES the behavior, not
+      just prose that describes it, and caught exactly that gap once: the
+      FAQ's export-formats entry, and the guide's own pre-existing PNG-frames
+      bullet, both said PNG renders in the browser build — `exportConfig.ts`'s
+      `REASON_DESKTOP_FOLDER` and `exportActions.ts`'s browser-path refusal
+      gate it to desktop instead, because it writes a folder with no browser
+      equivalent. Both fixed. One smaller wording fix landed alongside it:
+      only AV1 10-bit streams raw frames to the ffmpeg sidecar; ProRes/GIF/
+      WebP send PNG-encoded ones. Net: the review's own verdict is the honest
+      record here, not this ledger's self-assessment.
+      Evidence: `src/state/gallerySubmit.test.ts` (16 in-process tests,
+      including a self-check-is-live proof) + `src/state/gallerySubmit.cli.test.ts`
+      (3 real-subprocess tests added in review, covering the CLI wrapper
+      itself — argv, exit codes, `--out`), full gate suite green, the CLI
+      proven end-to-end against real generated fixtures with an
       independently cross-checked SHA-256.
 
 ### Track E — Hardening burn-down (NEW, from the audit register)
