@@ -55,6 +55,11 @@ describe("Escape", () => {
   function escState() {
     return {
       exporting: null,
+      // E2-U5: the reactive mirror of shared.exportStarting — true from the
+      // moment runExport claims the slot until either `exporting` takes
+      // over or the call bails out, well before `exporting` itself is set
+      // (the native save dialog + disk pre-flight both run in that gap).
+      exportPreparing: false,
       batchStatus: "idle",
       stageMode: false,
       setShowHelp: vi.fn(),
@@ -81,6 +86,28 @@ describe("Escape", () => {
     expect(state.setShowGallery).toHaveBeenCalledWith(false);
     expect(state.setShowTimeline).toHaveBeenCalledWith(false);
     expect(state.setShowHelp).toHaveBeenCalledWith(false);
+    expect(state.setShowExport).toHaveBeenCalledWith(false);
+  });
+
+  /**
+   * E2-U5 — Escape is a THIRD path to setShowExport(false), alongside
+   * ExportDialog's own backdrop and close button (ExportDialog.test.tsx).
+   * runExport claims shared.exportStarting (mirrored here as
+   * exportPreparing) well before `exporting` is ever set — the native save
+   * dialog and the disk pre-flight both run in that gap — so gating only on
+   * `exporting` left Escape free to orphan a run the same way the dialog's
+   * own controls could.
+   */
+  it("does not dismiss Export while exportPreparing is true, even though exporting is still null", () => {
+    const state = { ...escState(), exportPreparing: true };
+    render(<Harness state={state} />);
+
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+
+    expect(state.setShowExport).not.toHaveBeenCalled();
+    // A single, targeted gate — the rest of the cascade is untouched.
+    expect(state.setShowPanel).toHaveBeenCalledWith(false);
+    expect(state.setShowLibrary).toHaveBeenCalledWith(false);
   });
 
   it("only blurs the field while typing — the panel stack stays up", () => {

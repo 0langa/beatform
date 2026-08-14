@@ -316,6 +316,13 @@ interface SessionSlice {
   redoDepth: number;
   exportSettings: ExportSettings;
   exporting: ExportProgress | null;
+  /** Reactive mirror of shared.exportStarting (E2-U5): true from the moment
+   *  runExport claims the re-entrancy slot until either `exporting` takes
+   *  over (encoding has actually begun) or the call bails out early — the
+   *  native save dialog, the disk pre-flight and its own confirm all run in
+   *  this window, well before `exporting` itself is set. ExportDialog gates
+   *  its dismissal on this OR `exporting`; nothing else should need it. */
+  exportPreparing: boolean;
   exportError: string | null;
   exportDone: string | null;
   /** The machine-readable counterpart to `exportDone`: the same save path or
@@ -1338,6 +1345,7 @@ export const useVizStore = create<VizState>((set, get) => {
     shadertoyImportEditId: null,
     showBatch: false,
     exporting: null,
+    exportPreparing: false,
     exportError: null,
     exportDone: null,
     exportDonePath: null,

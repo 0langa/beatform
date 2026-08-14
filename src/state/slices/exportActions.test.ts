@@ -120,6 +120,15 @@ vi.mock("../platform", async (importOriginal) => {
     scratchDir: vi.fn(async () => null),
     animBegin: vi.fn(async () => {}),
     proresFinish: vi.fn(async () => {}),
+    // Real askConfirm goes through @tauri-apps/plugin-dialog (Tauri lane) or
+    // window.confirm (browser lane, and `window` here is the plain stub
+    // above with no `confirm`) — neither works in this environment. No
+    // existing test below ever reaches the disk pre-flight's confirm
+    // (destination stays null unless isTauri()+pickSavePath are both opted
+    // in), so this default is inert for all of them; the E2-U5 tests opt in
+    // per-call via mockReturnValueOnce/mockResolvedValueOnce, same idiom as
+    // isTauri/pickSavePath above.
+    askConfirm: vi.fn(async () => true),
   };
 });
 
@@ -145,7 +154,7 @@ const { analyzeTrack } = await import("../../audio/analysis/trackAnalysis");
 const { ANALYSIS_TIMEOUT_MS } = await import("../batchRunner");
 const { ANALYSIS_TIMEOUT_REASON } = await import("./exportActions");
 const { shared } = await import("./shared");
-const { isTauri, pickSavePath, pickFolder } = await import("../platform");
+const { isTauri, pickSavePath, pickFolder, diskSpace, askConfirm } = await import("../platform");
 
 const s = () => useVizStore.getState();
 
@@ -675,5 +684,154 @@ describe("the export fps readout windows to the recent rate (E4b)", () => {
 
     gate.resolve({ blob: undefined, bytes: 1000, seconds: 1, audioCodec: "aac" });
     await run;
+  });
+});
+
+/**
+ * E2-U5 — ExportDialog could be closed mid-preflight, orphaning the run.
+ *
+ * `shared.exportStarting` is claimed SYNCHRONOUSLY the moment runExport
+ * passes its re-entrancy guard, but `exporting` — the only thing
+ * ExportDialog's backdrop/close button used to gate dismissal on — is not
+ * set until several awaits later: the native save dialog, then the disk
+ * pre-flight (including its own "Low disk space?" confirm). Closing the
+ * dialog anywhere in that window used to unmount it without stopping
+ * runExport, which kept running to completion (or failure) with no UI
+ * showing progress or the eventual error.
+ *
+ * `exportPreparing` is the reactive mirror of `shared.exportStarting` that
+ * closes the gap — these tests pin its timing across every phase and every
+ * early-return path, using the REAL runExport with pickSavePath/diskSpace/
+ * askConfirm mocked controllably (the same deferred-promise idiom the E2-R2
+ * and E4b describe blocks above already use for analysis/exportVideo).
+ * ExportDialog's own reaction to the flag (backdrop no-op, close button
+ * disabled+titled) is covered separately in ExportDialog.test.tsx, which
+ * mounts the real dialog and sets the flag directly — no need to duplicate
+ * runExport's whole async orchestration there too.
+ */
+describe("exportPreparing mirrors shared.exportStarting through the whole pre-encode window (E2-U5)", () => {
+  it("is set synchronously and stays true through the native save-dialog window, well before `exporting` exists", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    const gate = deferred<string | null>();
+    vi.mocked(pickSavePath).mockReturnValueOnce(gate.promise);
+
+    expect(s().exportPreparing).toBe(false);
+    const run = s().runExport();
+    await Promise.resolve(); // one microtask turn: past the synchronous claim
+    expect(s().exportPreparing).toBe(true);
+    expect(shared.exportStarting).toBe(true);
+    // The exact gap this finding is about: still nothing here for the
+    // dialog's OLD gate (`!!exporting`) to have caught.
+    expect(s().exporting).toBeNull();
+
+    gate.resolve(null); // user cancels the native save dialog
+    await run;
+
+    expect(s().exportPreparing).toBe(false);
+    expect(shared.exportStarting).toBe(false);
+    expect(exportVideo).not.toHaveBeenCalled();
+  });
+
+  it("stays true through the disk pre-flight's own confirm, and clears (with nothing rendered) if declined", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\video.mp4");
+    // Zero free space comfortably triggers preflightWarning's shortfall
+    // check for any non-zero bitrate estimate.
+    vi.mocked(diskSpace).mockResolvedValueOnce({ freeBytes: 0, totalBytes: 1e9, root: "C:\\" });
+    const gate = deferred<boolean>();
+    vi.mocked(askConfirm).mockReturnValueOnce(gate.promise);
+
+    const run = s().runExport();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(askConfirm).toHaveBeenCalledTimes(1);
+    expect(String(vi.mocked(askConfirm).mock.calls[0][0])).toContain("Not enough disk space");
+    // The confirm itself IS part of "preparing" — exportPreparing must not
+    // have lapsed just because control is sitting inside askConfirm.
+    expect(s().exportPreparing).toBe(true);
+    expect(s().exporting).toBeNull();
+
+    gate.resolve(false); // user declines — "Start it anyway?" answered no
+    await run;
+
+    expect(exportVideo).not.toHaveBeenCalled();
+    expect(s().exportPreparing).toBe(false);
+    expect(shared.exportStarting).toBe(false);
+  });
+
+  it("remains true once `exporting` takes over — one continuous claim, not a handoff — clearing only when the run truly ends", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    const gate = deferred<{ blob: undefined; bytes: number; seconds: number; audioCodec: "aac" }>();
+    vi.mocked(exportVideo).mockImplementationOnce(async () => gate.promise);
+
+    const run = s().runExport();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(s().exporting).not.toBeNull(); // encoding has genuinely begun
+    expect(s().exportPreparing).toBe(true); // the SAME claim, still held
+
+    gate.resolve({ blob: undefined, bytes: 1000, seconds: 1, audioCodec: "aac" });
+    await run;
+
+    expect(s().exportPreparing).toBe(false);
+    expect(s().exporting).toBeNull();
+  });
+
+  it("clears on every early-return path, not just the ones covered above", async () => {
+    // Cancelled PNG-folder picker (isTauri, pngMode) — a THIRD early-return
+    // site distinct from the save-path-cancel and disk-pre-flight-decline
+    // cases already covered, pinning that endExportPreparing was wired into
+    // every one of runExport's bail-out points, not just some of them.
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format: "png", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickFolder).mockResolvedValueOnce(null); // user cancels the folder picker
+
+    await s().runExport();
+
+    expect(exportVideo).not.toHaveBeenCalled();
+    expect(s().exportPreparing).toBe(false);
+    expect(shared.exportStarting).toBe(false);
+  });
+});
+
+describe("setShowExport(true) clears a stale exportError (E2-U5)", () => {
+  // codecSupport seeded non-null in every test below: setShowExport probes
+  // it lazily when null, and the real probeCodecs() has nothing to work
+  // with in this Node-environment test file.
+  const codecSupport = { h264: true, hevc: false, av1: false, vp9a: false };
+
+  it("opening the dialog clears a leftover exportError from a prior (possibly orphaned) run", () => {
+    useVizStore.setState({ exportError: "boom", showExport: false, codecSupport });
+
+    s().setShowExport(true);
+
+    expect(s().exportError).toBeNull();
+    expect(s().showExport).toBe(true);
+  });
+
+  it("closing the dialog does not touch exportError — only opening clears it", () => {
+    useVizStore.setState({ exportError: "boom", showExport: true, codecSupport });
+
+    s().setShowExport(false);
+
+    expect(s().exportError).toBe("boom");
+    expect(s().showExport).toBe(false);
+  });
+
+  it("is a harmless no-op while a run is genuinely still in flight (exportError is already null there)", () => {
+    useVizStore.setState({
+      exportError: null,
+      exporting: { done: 1, total: 10, speed: null, avgSpeed: null },
+      codecSupport,
+    });
+
+    s().setShowExport(true);
+
+    expect(s().exportError).toBeNull();
   });
 });

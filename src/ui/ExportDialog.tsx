@@ -102,6 +102,13 @@ function CapabilityGrid<T extends string>(props: {
 export function ExportDialog() {
   const exportSettings = useVizStore((s) => s.exportSettings);
   const exporting = useVizStore((s) => s.exporting);
+  // E2-U5: runExport claims shared.exportStarting synchronously, well
+  // before `exporting` itself is set — the native save dialog and the
+  // disk pre-flight (with its own "Low disk space?" confirm) both run in
+  // that gap. exportPreparing is the reactive mirror of that claim, so the
+  // dialog's own dismissal gate below covers the WHOLE run, not just the
+  // encode phase.
+  const exportPreparing = useVizStore((s) => s.exportPreparing);
   const exportError = useVizStore((s) => s.exportError);
   const exportDone = useVizStore((s) => s.exportDone);
   const exportDonePath = useVizStore((s) => s.exportDonePath);
@@ -141,9 +148,14 @@ export function ExportDialog() {
     ? Math.round((exporting.done / Math.max(1, exporting.total)) * 100)
     : 0;
   const exportSpeed = exporting?.speed != null ? exporting.speed.toFixed(0) : null;
+  // Both dismissal paths gate on this (E2-U5) — a run that hasn't reached
+  // `exporting` yet is still a run, and closing the dialog on it must not
+  // orphan the save dialog / disk pre-flight / its own "Low disk space?"
+  // confirm still in flight underneath.
+  const dismissBlocked = !!exporting || exportPreparing;
 
   return (
-    <div className="modal-backdrop" onClick={() => !exporting && store().setShowExport(false)}>
+    <div className="modal-backdrop" onClick={() => !dismissBlocked && store().setShowExport(false)}>
       <div
         ref={dialogRef}
         className="modal"
@@ -157,9 +169,9 @@ export function ExportDialog() {
           <span className="panel-heading">Export video</span>
           <button
             className="icon-btn subtle"
-            disabled={!!exporting}
+            disabled={dismissBlocked}
             aria-label="Close"
-            title={exporting ? "Export in progress…" : "Close"}
+            title={exporting ? "Export in progress…" : exportPreparing ? "Preparing export…" : "Close"}
             onClick={() => store().setShowExport(false)}
           >
             <IconClose size={16} />

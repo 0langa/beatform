@@ -105,7 +105,18 @@ async function awaitAnalysisBounded(wait: Promise<void>, signal: AbortSignal): P
 export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
     setShowExport(showExport) {
-      set({ showExport });
+      set({
+        showExport,
+        // E2-U5: a reopened dialog must never show a stale failure as if it
+        // just happened. Unconditional on every open, not just after a
+        // known-orphaned run — by construction the dialog was closed just
+        // before this call, so any exportError already sitting in the store
+        // is from before THIS viewing regardless of how the previous run
+        // ended. A run still in flight (exporting or exportPreparing) has
+        // its own exportError already null (runExport clears it the moment
+        // it actually starts encoding), so this is a no-op for that case.
+        ...(showExport ? { exportError: null } : null),
+      });
       // Probe codec support the first time the panel opens — the result is
       // hardware-fixed for the session, and the select renders from it.
       if (showExport && !get().codecSupport) {
@@ -159,6 +170,22 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // slot synchronously so a double-click cannot pass the guard twice and
       // clobber the shared abort controller (same hole startBatch had).
       shared.exportStarting = true;
+      // Reactive mirror of the claim above (E2-U5): `exporting` itself stays
+      // null through the native save dialog and the disk pre-flight below —
+      // both take real user/async time — so ExportDialog had nothing
+      // reactive to gate its own dismissal on until encoding actually
+      // began. Cleared through `endExportPreparing` below on every exit
+      // path, the same set of places that already clear `shared.
+      // exportStarting`, so the two can never drift out of sync.
+      set({ exportPreparing: true });
+      // Every early-return path below used to clear ONLY shared.
+      // exportStarting; now it clears this reactive mirror too, in one
+      // place, so a future added return can't clear one and forget the
+      // other.
+      const endExportPreparing = () => {
+        shared.exportStarting = false;
+        set({ exportPreparing: false });
+      };
       const settings = get().exportSettings;
       const canvasMode = settings.mode === "canvas";
       // Canvas loops are fixed to the Spotify spec: 9:16, 30 fps, 3-8 s
@@ -206,7 +233,7 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         if (pngMode) {
           const dir = await pickFolder("Choose a folder for the PNG sequence");
           if (!dir) {
-            shared.exportStarting = false;
+            endExportPreparing();
             return;
           }
           // Keep each run in its own subfolder so sequences never interleave.
@@ -230,7 +257,7 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                     : [{ name: "MP4 video", extensions: ["mp4"] }],
           );
           if (!savePath) {
-            shared.exportStarting = false;
+            endExportPreparing();
             return;
           }
         }
@@ -244,12 +271,12 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                 ? "AV1 10-bit export needs the desktop app (it runs the bundled ffmpeg)"
                 : "ProRes export needs the desktop app (it runs the bundled ffmpeg)",
         });
-        shared.exportStarting = false;
+        endExportPreparing();
         return;
       }
       if (genAtStart !== shared.trackLoadGen) {
         set({ exportError: "The track changed while the save dialog was open — export cancelled" });
-        shared.exportStarting = false;
+        endExportPreparing();
         return;
       }
 
@@ -289,7 +316,7 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           scratchVol,
         );
         if (warning && !(await askConfirm(warning, "Low disk space"))) {
-          shared.exportStarting = false;
+          endExportPreparing();
           return;
         }
       }
@@ -586,7 +613,7 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         overlayBitmap?.close();
         set({ exporting: null });
         shared.exportAbort = null;
-        shared.exportStarting = false;
+        endExportPreparing();
       }
     },
 

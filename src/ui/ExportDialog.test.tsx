@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { CodecSupport } from "../export/codecProbe";
 import {
@@ -350,5 +350,76 @@ describe("Show in folder", () => {
     } finally {
       errorSpy.mockRestore();
     }
+  });
+});
+
+/**
+ * E2-U5 — the backdrop and close button used to gate solely on `exporting`,
+ * but runExport (exportActions.ts) does not set that until well after the
+ * native save dialog and the disk pre-flight (its own "Low disk space?"
+ * confirm included) — both real async/user-time gaps. Closing the dialog
+ * there used to orphan the run: it kept going with no UI, and any error it
+ * hit landed in `exportError`, a field only this dialog renders.
+ *
+ * `exportPreparing` (store.ts) is the reactive mirror of
+ * `shared.exportStarting` that closes the gap — its OWN timing across
+ * runExport's real async phases is covered in exportActions.test.ts; these
+ * tests instead set it directly (same `mount()` idiom as every `exporting`
+ * test above) to pin how the DIALOG reacts, without re-driving the whole
+ * save-dialog/disk-preflight orchestration here too.
+ */
+describe("dismissal is blocked through the whole pre-encode window (E2-U5)", () => {
+  function backdrop(): HTMLElement {
+    return document.querySelector(".modal-backdrop")!;
+  }
+
+  it("blocks both the backdrop and the close button while exportPreparing is true, before exporting exists", () => {
+    const setShowExportMock = vi.fn();
+    act(() => useVizStore.setState({ setShowExport: setShowExportMock }));
+    mount({ exportPreparing: true, exporting: null });
+
+    const closeBtn = screen.getByRole("button", { name: "Close" });
+    expect(isDisabled(closeBtn)).toBe(true);
+    // Distinct wording from the encoding-phase title (below) — this IS the
+    // gap the finding is about: nothing here would have tripped the old
+    // `!!exporting` gate.
+    expect(closeBtn.getAttribute("title")).toBe("Preparing export…");
+
+    fireEvent.click(closeBtn);
+    fireEvent.click(backdrop());
+
+    expect(setShowExportMock).not.toHaveBeenCalled();
+  });
+
+  it("still blocks both paths once exporting takes over, with its own distinct title", () => {
+    const setShowExportMock = vi.fn();
+    act(() => useVizStore.setState({ setShowExport: setShowExportMock }));
+    mount({ exportPreparing: true, exporting: { done: 3, total: 10, speed: 12, avgSpeed: 10 } });
+
+    const closeBtn = screen.getByRole("button", { name: "Close" });
+    expect(isDisabled(closeBtn)).toBe(true);
+    expect(closeBtn.getAttribute("title")).toBe("Export in progress…");
+
+    fireEvent.click(closeBtn);
+    fireEvent.click(backdrop());
+
+    expect(setShowExportMock).not.toHaveBeenCalled();
+  });
+
+  it("normal open/close is unaffected once both flags are clear", () => {
+    const setShowExportMock = vi.fn();
+    act(() => useVizStore.setState({ setShowExport: setShowExportMock }));
+    mount({ exportPreparing: false, exporting: null });
+
+    const closeBtn = screen.getByRole("button", { name: "Close" });
+    expect(isDisabled(closeBtn)).toBe(false);
+    expect(closeBtn.getAttribute("title")).toBe("Close");
+
+    fireEvent.click(closeBtn);
+    expect(setShowExportMock).toHaveBeenCalledOnce();
+
+    setShowExportMock.mockClear();
+    fireEvent.click(backdrop());
+    expect(setShowExportMock).toHaveBeenCalledOnce();
   });
 });

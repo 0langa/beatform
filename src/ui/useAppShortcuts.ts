@@ -66,7 +66,12 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         s.setShowHelp(false);
         s.setShowGuide(false);
         s.setShowSettings(false);
-        if (!s.exporting) s.setShowExport(false);
+        // E2-U5: exportPreparing covers the same in-flight-but-not-yet-
+        // `exporting` window ExportDialog's own two dismissal paths gate
+        // on (the native save dialog + disk pre-flight run before
+        // `exporting` is ever set) — Escape is a third path to the same
+        // setShowExport(false) call and must not orphan a run either.
+        if (!s.exporting && !s.exportPreparing) s.setShowExport(false);
         // Never let Escape dismiss a running queue out from under itself.
         if (s.batchStatus !== "running") s.setShowBatch(false);
         if (s.stageMode) s.setStageMode(false); // also clears blackout
