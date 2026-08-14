@@ -108,6 +108,11 @@ afterEach(() => {
   cleanup();
   // Never setState(x, true): a full replace would drop the actions.
   useVizStore.setState(PRISTINE);
+  // The PRISTINE merge resets the store's undoDepth/redoDepth MIRRORS, but
+  // history.ts's undo/redo stacks are module-level and survive it — clear
+  // them too, so every test's depth assertions measure from a real zero
+  // instead of whatever the rest of the suite already pushed.
+  clearHistory();
   // Prefs bleed between tests otherwise — the panel seeds advancedGroups,
   // the active page and the collapse set from getPrefs() at MOUNT, so a
   // collapse written by one test silently hides controls from the next (it
@@ -859,16 +864,6 @@ function expectRouteOrder(ids: string[]) {
   expect(useVizStore.getState().activeMods.map((r) => r.id)).toEqual(ids);
 }
 
-/** A real zero baseline for the undo/redo counters. This file's afterEach
- *  resets the STORE's undoDepth field (via the PRISTINE merge) but not
- *  history.ts's own module-level stacks — clear both explicitly so a
- *  delta measured after this point is relative to a real zero, not to
- *  whatever the rest of the suite already pushed. */
-function resetHistory() {
-  clearHistory();
-  act(() => useVizStore.setState({ undoDepth: 0, redoDepth: 0 }));
-}
-
 describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
   it("the mute switch flips `muted`, dims the row, and omits the key again on unmute", () => {
     seedRoute("hue");
@@ -907,7 +902,6 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
     seedRoute("hue");
     render(<ParamsPanel />);
     gotoModulation();
-    resetHistory();
     fireEvent.click(screen.getByRole("switch", { name: /Pause kick moving/i }));
     expect(useVizStore.getState().undoDepth).toBe(1);
   });
@@ -933,7 +927,6 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
     expect(isDisabled(ups[1])).toBe(false);
     expect(isDisabled(downs[1])).toBe(true); // last route: nothing later
 
-    resetHistory();
     fireEvent.click(downs[0]); // move "kick" (index 0) later, past "bass"
     expectRouteOrder(["r2", "r1"]);
     expect(useVizStore.getState().undoDepth).toBe(1);
@@ -970,7 +963,6 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
       const original = document.elementFromPoint;
-      resetHistory();
 
       fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
       mockHit(rows[1]);
@@ -990,7 +982,6 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
       const original = document.elementFromPoint;
-      resetHistory();
       const before = useVizStore.getState().activeMods;
 
       fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
@@ -1025,7 +1016,6 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
       const original = document.elementFromPoint;
-      resetHistory();
 
       fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
       mockHit(rows[1]);
@@ -1046,7 +1036,6 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
       const original = document.elementFromPoint;
-      resetHistory();
       const before = useVizStore.getState().activeMods;
 
       fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
@@ -1067,7 +1056,6 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const grip0 = within(rows[0]).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
       const original = document.elementFromPoint;
-      resetHistory();
       const before = useVizStore.getState().activeMods;
 
       fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });
@@ -1110,7 +1098,6 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       const grip0 = within(hueRow0 as HTMLElement).getByRole("button", { name: /Reorder Kick/i });
       (grip0 as HTMLButtonElement).setPointerCapture = () => undefined;
       const original = document.elementFromPoint;
-      resetHistory();
       const before = useVizStore.getState().activeMods;
 
       fireEvent.pointerDown(grip0, { pointerId: 1, clientX: 0, clientY: 0 });

@@ -66,6 +66,7 @@ const { presets } = await import("../../render/presets");
 const { allParams, isModTarget, POST_MOD_TARGETS } = await import("../../render/types");
 const { POST_TARGET_PREFIX } = await import("../modMatrix");
 const { parseProject, serializeProject } = await import("../project");
+const { clearHistory } = await import("../history");
 const { APP_VERSION } = await import("../../version");
 
 /** The first registry visual carrying BOTH a modulatable knob and one the
@@ -81,6 +82,10 @@ const s = () => useVizStore.getState();
 const pairs = () => s().activeMods.map((r) => `${r.source}/${r.param}`);
 
 beforeEach(() => {
+  // `undoDepth: 0` below only resets the store's MIRROR of the depth —
+  // history.ts's module-level stacks survive setState and the next record()
+  // re-syncs the mirror from them, so clear the stacks too for a real zero.
+  clearHistory();
   useVizStore.setState({
     presetId: subject.id,
     activeMods: [],
