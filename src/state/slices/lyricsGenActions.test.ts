@@ -152,7 +152,7 @@ describe("generateLyrics track length ceiling", () => {
     await s().generateLyrics("small", "auto");
 
     expect(s().error).toBe(
-      "This track is 1 h 30 min — automatic lyrics support tracks up to 90 minutes.",
+      "This track is 1 h 31 min — automatic lyrics support tracks up to 90 minutes.",
     );
     expect(s().lyricsGen.phase).toBe("idle");
     expect(lyricsStageAudio).not.toHaveBeenCalled();
@@ -178,7 +178,7 @@ describe("generateLyrics track length ceiling", () => {
     await s().generateLyrics("small", "auto");
 
     expect(s().error).toBe(
-      "This track is 1 h 30 min — automatic lyrics support tracks up to 90 minutes.",
+      "This track is 1 h 31 min — automatic lyrics support tracks up to 90 minutes.",
     );
     expect(s().lyricsGen.phase).toBe("idle");
     expect(askConfirm).not.toHaveBeenCalled(); // refusal precedes the replace prompt

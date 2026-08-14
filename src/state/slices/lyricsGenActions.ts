@@ -46,10 +46,13 @@ const DISK_MARGIN_BYTES = 500 * 1e6;
  * duplicate. Exported for the boundary test. */
 export const LYRICS_MAX_TRACK_SEC = 90 * 60;
 
-/** "H h MM min", rounded to the minute — same name-the-limit shape as
- * assertSizeAllowed's MB message in platform.ts. */
+/** "H h MM min", rounded UP to the next minute — a refusal must never
+ * display a length that reads equal to the stated limit (whole-second
+ * overages between 5401s and 5459s would otherwise floor/round down to
+ * "1 h 30 min", the same text as the 90-minute cap itself). Same
+ * name-the-limit shape as assertSizeAllowed's MB message in platform.ts. */
 function formatTrackDuration(sec: number): string {
-  const totalMin = Math.round(sec / 60);
+  const totalMin = Math.ceil(sec / 60);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   return h > 0 ? `${h} h ${m} min` : `${m} min`;
