@@ -11,6 +11,39 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- **The timeline grew into its engine.** Scenes are cards now — each with a
+  live thumbnail of its mode and its own look picker — lanes live in a
+  proper list with add, remove and solo-visibility, and keyframes go where
+  you click, with drag-scrubbing to set values and a chip that tells you
+  when beat-snap is active. The "Enabled" toggle is gone: a timeline with
+  content plays, an empty one is off. Every gesture is a single undo step.
+- **The guide answers questions now.** A new FAQ section — export formats
+  and what needs the desktop app, why export speed varies, where your
+  files live, the lyrics limits, and more — generated from the same single
+  source as the rest of the guide, in-app and on the site.
+- **Submitting to the Gallery is one command.** `gallery-submit` validates
+  your theme or look with the app's own parsers, computes the hash and
+  size the Gallery verifies on install, and writes a ready PR body.
+
+### Changed
+
+- **The export fps readout tells the truth.** It used to average over the
+  whole run, so a slow start dragged the number down forever. It now
+  tracks the last few seconds — what the export is doing right now.
+
+### Fixed
+
+- **Five paper cuts found by an adversarial UI audit.** Pressing Escape
+  while resizing a side panel no longer closes the panel (and your width
+  sticks). A typo in a lyric's time field can no longer make that line
+  vanish from playback and exports. Removing lyrics while a generation is
+  finishing in the background can no longer delete the fresh result.
+  Discarding the shader editor mid-compile no longer applies the shader
+  anyway. And closing the export dialog during the save-location step no
+  longer orphans a running export invisibly.
+
 ## [2.95.0] - 2026-08-14
 
 ### Added
