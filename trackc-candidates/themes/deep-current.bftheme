@@ -1,0 +1,233 @@
+{
+  "kind": "bftheme",
+  "schemaVersion": 1,
+  "projectSchemaVersion": 14,
+  "appVersion": "2.95.0",
+  "meta": {
+    "name": "Deep Current",
+    "author": "Beatform",
+    "license": "CC0-1.0",
+    "description": "Bioluminescent folds a long way under the surface. Nothing strikes: the bass swells and takes a second and a half to let go, the tide glows in over two bars, and every section change turns the water a different colour.",
+    "bpmHint": [
+      60,
+      110
+    ]
+  },
+  "document": {
+    "presetId": "nebula",
+    "paramsByPreset": {
+      "nebula": {
+        "hue": 196,
+        "hue2": 288,
+        "duo": 0.45,
+        "hueRange": 70,
+        "midHueShift": 40,
+        "saturation": 1.12,
+        "scale": 2,
+        "flow": 0.05,
+        "kaleido": 8,
+        "contrast": 0.42,
+        "warp": 2.4,
+        "angle": 0,
+        "spin": 0.35,
+        "depth": 0.6,
+        "sparkle": 0.35,
+        "sparkleScale": 14,
+        "sparkleSharp": 26,
+        "beatRipple": 0.28,
+        "rippleWidth": 22,
+        "rippleWarp": 0.06,
+        "brightFloor": 0.1,
+        "bassBright": 0.5,
+        "beatBloom": 0.1,
+        "driveGlow": 0.14,
+        "hotCore": 0.5,
+        "stars": 0.25,
+        "windStrength": 0.18,
+        "windAngle": 205,
+        "vignette": 0.6
+      }
+    },
+    "syncByPreset": {
+      "nebula": {
+        "mode": "bass",
+        "smooth": 0.72,
+        "attack": 0.35,
+        "release": 0.8,
+        "shapeRound": 0.35,
+        "contrast": 0.42
+      }
+    },
+    "bgByPreset": {},
+    "centerImageByPreset": {},
+    "bg": {
+      "mode": 1,
+      "color": [
+        0.012,
+        0.03,
+        0.046
+      ]
+    },
+    "overlayLayers": [],
+    "assets": {},
+    "aspect": "16:9",
+    "modsByPreset": {
+      "nebula": [
+        {
+          "id": "deep-current-m0",
+          "source": "bass",
+          "param": "bassBright",
+          "amount": 0.22,
+          "curve": "smooth",
+          "attack": 0.28,
+          "release": 1.4
+        },
+        {
+          "id": "deep-current-m1",
+          "source": "rms",
+          "param": "post:bloom",
+          "amount": 0.16,
+          "curve": "smooth",
+          "attack": 0.5,
+          "release": 2.2
+        },
+        {
+          "id": "deep-current-m2",
+          "source": "lfo:sine:8",
+          "param": "angle",
+          "amount": 0.06
+        },
+        {
+          "id": "deep-current-m3",
+          "source": "lfo:sine:4",
+          "param": "scale",
+          "amount": 0.05
+        },
+        {
+          "id": "deep-current-m4",
+          "source": "lfo:saw:8",
+          "param": "driveGlow",
+          "amount": 0.3,
+          "attack": 0.6,
+          "release": 1.2
+        },
+        {
+          "id": "deep-current-m5",
+          "source": "sectionPulse",
+          "param": "hue",
+          "amount": 0.06,
+          "curve": "exp",
+          "attack": 0.6,
+          "release": 6
+        },
+        {
+          "id": "deep-current-m6",
+          "source": "kick",
+          "param": "beatRipple",
+          "amount": 0.12,
+          "curve": "exp",
+          "attack": 0.01,
+          "release": 0.35
+        }
+      ]
+    },
+    "smoothSpectrum": true,
+    "timeline": {
+      "enabled": false,
+      "scenes": [],
+      "lanes": []
+    },
+    "post": {
+      "bloom": 0.22,
+      "bloomThreshold": 0.86,
+      "exposure": 0.92,
+      "tonemap": true,
+      "vignette": 0.34,
+      "grain": 0.045,
+      "chromatic": 0.03
+    },
+    "motion": {
+      "rotation": 0.75,
+      "pulse": 0.65,
+      "detail": 1,
+      "spectrumSmooth": 0.45
+    },
+    "lyricStyle": {
+      "enabled": true,
+      "position": "bottom",
+      "size": 1,
+      "color": "#ffffff",
+      "fadeSec": 0.15,
+      "anim": "plain"
+    },
+    "audiogram": {
+      "progressBar": false,
+      "timeReadout": false,
+      "waveformStrip": false,
+      "position": "bottom",
+      "color": "#7c5cff"
+    },
+    "customDefs": [],
+    "builderStack": {
+      "layers": [
+        {
+          "id": "bl-t-3cb4ak",
+          "type": "wash",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "glow": 0.5,
+            "flash": 0.35
+          }
+        },
+        {
+          "id": "bl-u-bdyulx",
+          "type": "stars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "density": 10,
+            "speed": 0.6,
+            "streak": 0.4
+          }
+        },
+        {
+          "id": "bl-v-bl2wvi",
+          "type": "bars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "height": 0.5,
+            "gap": 0.25,
+            "glow": 0.5,
+            "peaks": 1
+          }
+        },
+        {
+          "id": "bl-w-86aceu",
+          "type": "rings",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "start": 0.05,
+            "end": 0.48,
+            "sharp": 0.5,
+            "bright": 0.8
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,241 @@
+{
+  "kind": "bftheme",
+  "schemaVersion": 1,
+  "projectSchemaVersion": 14,
+  "appVersion": "2.95.0",
+  "meta": {
+    "name": "Blueprint",
+    "author": "Beatform",
+    "license": "CC0-1.0",
+    "description": "A square wireframe shaft with lit junctions and four-fold symmetry — drafting-table cyan on ink. The grid pulses on a two-beat square wave, the centre winds up across each bar, and a section change steps the whole shaft to six-fold and back.",
+    "bpmHint": [
+      125,
+      150
+    ]
+  },
+  "document": {
+    "presetId": "tunnel-rings",
+    "paramsByPreset": {
+      "tunnel-rings": {
+        "hue": 196,
+        "hueSpread": 40,
+        "colorFade": 0.25,
+        "material": 2,
+        "speed": 0.3,
+        "rings": 12,
+        "spokes": 20,
+        "junction": 0.55,
+        "twist": 0.3,
+        "roundness": 0.15,
+        "surfaceWarp": 0.25,
+        "curve": 0.3,
+        "curveScale": 1.2,
+        "mirror": 4,
+        "beatPulse": 0.85,
+        "beatSpeed": 0.16,
+        "beatBright": 0.3,
+        "pulseWidth": 6,
+        "cruiseFloor": 0.4,
+        "cruiseEnergy": 1.05,
+        "centerGlow": 0.24,
+        "tileLevel": 0.06,
+        "tileSpectrum": 0.66,
+        "tileSat": 0.56,
+        "checker": 0.05,
+        "groutWidth": 0.03,
+        "groutLevel": 0.26,
+        "fogNear": 0.02,
+        "fogFar": 0.6,
+        "coverWall": 0,
+        "vignette": 0.5
+      }
+    },
+    "syncByPreset": {
+      "tunnel-rings": {
+        "mode": "kick",
+        "smooth": 0.18,
+        "attack": 0.012,
+        "release": 0.34,
+        "shapeRound": 0.1,
+        "contrast": 0.58
+      }
+    },
+    "bgByPreset": {},
+    "centerImageByPreset": {},
+    "bg": {
+      "mode": 1,
+      "color": [
+        0.02,
+        0.028,
+        0.04
+      ]
+    },
+    "overlayLayers": [],
+    "assets": {},
+    "aspect": "16:9",
+    "modsByPreset": {
+      "tunnel-rings": [
+        {
+          "id": "blueprint-m0",
+          "source": "kick",
+          "param": "beatBright",
+          "amount": 0.28,
+          "curve": "exp",
+          "attack": 0.005,
+          "release": 0.16
+        },
+        {
+          "id": "blueprint-m1",
+          "source": "lfo:square:4",
+          "param": "groutLevel",
+          "amount": 0.18,
+          "attack": 0.04,
+          "release": 0.18
+        },
+        {
+          "id": "blueprint-m2",
+          "source": "barPhase",
+          "param": "centerGlow",
+          "amount": 0.2,
+          "curve": "smooth",
+          "attack": 0.02,
+          "release": 0.25
+        },
+        {
+          "id": "blueprint-m3",
+          "source": "bass",
+          "param": "pulseWidth",
+          "amount": -0.18,
+          "curve": "smooth",
+          "attack": 0.1,
+          "release": 0.6
+        },
+        {
+          "id": "blueprint-m4",
+          "source": "energy",
+          "param": "speed",
+          "amount": 0.14,
+          "curve": "smooth",
+          "attack": 0.6,
+          "release": 1.8
+        },
+        {
+          "id": "blueprint-m5",
+          "source": "snare",
+          "param": "post:chromatic",
+          "amount": 0.07,
+          "curve": "exp",
+          "attack": 0.01,
+          "release": 0.22
+        },
+        {
+          "id": "blueprint-m6",
+          "source": "sectionPulse",
+          "param": "mirror",
+          "amount": 0.2,
+          "curve": "exp",
+          "attack": 0.05,
+          "release": 2.5
+        }
+      ]
+    },
+    "smoothSpectrum": false,
+    "timeline": {
+      "enabled": false,
+      "scenes": [],
+      "lanes": []
+    },
+    "post": {
+      "bloom": 0.3,
+      "bloomThreshold": 0.88,
+      "exposure": 0.98,
+      "tonemap": true,
+      "vignette": 0.34,
+      "grain": 0.03,
+      "chromatic": 0.05
+    },
+    "motion": {
+      "rotation": 0.9,
+      "pulse": 1.15,
+      "detail": 1,
+      "spectrumSmooth": 0
+    },
+    "lyricStyle": {
+      "enabled": true,
+      "position": "bottom",
+      "size": 1,
+      "color": "#ffffff",
+      "fadeSec": 0.15,
+      "anim": "plain"
+    },
+    "audiogram": {
+      "progressBar": false,
+      "timeReadout": false,
+      "waveformStrip": false,
+      "position": "bottom",
+      "color": "#7c5cff"
+    },
+    "customDefs": [],
+    "builderStack": {
+      "layers": [
+        {
+          "id": "bl-19-b2qt4v",
+          "type": "wash",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "glow": 0.5,
+            "flash": 0.35
+          }
+        },
+        {
+          "id": "bl-1a-0cqupp",
+          "type": "stars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "density": 10,
+            "speed": 0.6,
+            "streak": 0.4
+          }
+        },
+        {
+          "id": "bl-1b-kg2lpk",
+          "type": "bars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "height": 0.5,
+            "gap": 0.25,
+            "glow": 0.5,
+            "peaks": 1
+          }
+        },
+        {
+          "id": "bl-1c-pjxoxc",
+          "type": "rings",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "start": 0.05,
+            "end": 0.48,
+            "sharp": 0.5,
+            "bright": 0.8
+          }
+        }
+      ]
+    }
+  }
+}
