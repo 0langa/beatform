@@ -1238,7 +1238,17 @@ buf` — immediately before the job is built, with nothing awaitable
       exactly as they are. Full numbers table, methodology and a real-device
       sanity check on the instrumentation hook itself are in
       `.superpowers/e4b-task1-measurement.md` on the `e4b-export-perf`
-      branch. **Task 2 (windowed fps readout) shipped in the same commit:**
+      branch. **Recorded permanently so it is never mistaken for a
+      determinism break: ordinary MP4/WebM exports of an identical project
+      are NOT byte-identical run to run**, because mediabunny stamps a
+      `Date.now()`-based `creation_time` into the container at mux time
+      (isobmff-muxer). Container metadata only — two hook-absent control
+      runs differed in hash while matching in byte length, and frame
+      content is identical. The ledger's prior "byte-identical across two
+      device runs" evidence (the AV1 deep-color entry) came from the FFMPEG
+      SIDECAR lane, which mediabunny never touches — both observations are
+      correct for their own lane. To test the determinism law on the
+      browser/mediabunny lane, compare frame payloads, not file hashes. **Task 2 (windowed fps readout) shipped in the same commit:**
       `exporting.speed` now windows to the last ~5 s of `onProgress` samples
       instead of averaging over the whole run since start
       (exportActions.ts); the old cumulative average survives as
