@@ -294,7 +294,9 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         }
       } catch (e) {
         endExportPreparing();
-        set({ exportError: `Could not open the save dialog: ${(e as Error)?.message ?? String(e)}` });
+        set({
+          exportError: `Could not open the save dialog: ${(e as Error)?.message ?? String(e)}`,
+        });
         return;
       }
       if (genAtStart !== shared.trackLoadGen) {

@@ -129,7 +129,11 @@ describe("saveCustomPreset — signal abort", () => {
 describe("importShadertoyGlsl — signal abort", () => {
   it("skips saveCustomPreset entirely when aborted right as the transpile resolves", async () => {
     vi.mocked(isTauri).mockReturnValue(true);
-    const gate = deferred<{ ok: boolean; wgsl: string | null; errors: { line: number | null; message: string }[] }>();
+    const gate = deferred<{
+      ok: boolean;
+      wgsl: string | null;
+      errors: { line: number | null; message: string }[];
+    }>();
     vi.mocked(transpileShadertoy).mockReturnValueOnce(gate.promise);
     const saveCustomPresetMock = vi.fn(async () => []);
     useVizStore.setState({ saveCustomPreset: saveCustomPresetMock });

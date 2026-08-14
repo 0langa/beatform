@@ -52,18 +52,6 @@ import {
 import "./App.css";
 
 /**
- * Keyboard resize for the two drag handles (P-1 §4). Arrows move the
- * SEPARATOR — ARIA's window-splitter semantics — so the same keypress grows
- * the left-hand Library and the right-hand Visuals in opposite directions;
- * `sign` carries that. Home/End take the pane the handle controls to its
- * minimum/maximum.
- *
- * Pointer-only was tolerable while Visuals was an overlay nicety; it is
- * a real gap now that this is the control sizing a permanent workspace.
- * Returns null for keys it does not own, so the handler can bail without
- * swallowing Tab or Escape.
- */
-/**
  * The Visuals dock's DockResizeHandle onCommit — pulled out of the JSX and
  * exported (whole-lane review, IMPORTANT on top of E2-U1) so it is a real,
  * independently-testable unit rather than an inline closure only a full
@@ -97,6 +85,18 @@ export function commitVisualsWidth(
   persist(v);
 }
 
+/**
+ * Keyboard resize for the two drag handles (P-1 §4). Arrows move the
+ * SEPARATOR — ARIA's window-splitter semantics — so the same keypress grows
+ * the left-hand Library and the right-hand Visuals in opposite directions;
+ * `sign` carries that. Home/End take the pane the handle controls to its
+ * minimum/maximum.
+ *
+ * Pointer-only was tolerable while Visuals was an overlay nicety; it is
+ * a real gap now that this is the control sizing a permanent workspace.
+ * Returns null for keys it does not own, so the handler can bail without
+ * swallowing Tab or Escape.
+ */
 export function resizeKeyValue(
   e: React.KeyboardEvent<HTMLDivElement>,
   current: number,
@@ -716,7 +716,9 @@ export default function App() {
           compute={(ev) => Math.min(760, Math.max(380, window.innerWidth - ev.clientX))}
           onDrag={setVisualsDragW}
           onCommit={(v) =>
-            commitVisualsWidth(v, setVisualsDragW, setVisualsW, (w) => setPrefs({ visualsWidth: w }))
+            commitVisualsWidth(v, setVisualsDragW, setVisualsW, (w) =>
+              setPrefs({ visualsWidth: w }),
+            )
           }
           onCancel={() => setVisualsDragW(null)}
           onKeyDown={visualsResizeKey}

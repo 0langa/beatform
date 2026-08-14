@@ -232,12 +232,7 @@ describe("CRITICAL (whole-lane review) — apply() always settles busy, even on 
       const gate = deferred<string[]>();
       let capturedSignal: AbortSignal | undefined;
       const importShadertoyGlslMock = vi.fn(
-        (
-          _glsl: string,
-          _meta: unknown,
-          _editId: string | null,
-          signal?: AbortSignal,
-        ) => {
+        (_glsl: string, _meta: unknown, _editId: string | null, signal?: AbortSignal) => {
           capturedSignal = signal;
           return gate.promise;
         },

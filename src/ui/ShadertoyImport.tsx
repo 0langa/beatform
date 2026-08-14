@@ -89,7 +89,12 @@ export function ShadertoyImport() {
     const s = store();
     const outcome = await raceTimeout(
       (signal) =>
-        s.importShadertoyGlsl(glsl, { name, author, source, license }, s.shadertoyImportEditId, signal),
+        s.importShadertoyGlsl(
+          glsl,
+          { name, author, source, license },
+          s.shadertoyImportEditId,
+          signal,
+        ),
       SHADER_APPLY_TIMEOUT_MS,
     );
     setBusy(false);
