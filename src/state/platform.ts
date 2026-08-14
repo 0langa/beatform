@@ -601,6 +601,28 @@ const DOCUMENT_FILE = "document.bfproj";
 const LEGACY_DOCUMENT_FILE = "autosave.bfproj";
 
 /**
+ * Second whole-lane-review round, item 1: every write funnels through ONE
+ * tmp filename (`${DOCUMENT_FILE}.tmp`). Two writes ever overlapping in
+ * flight — a timer-triggered `scheduleAutosave` write racing an
+ * `onCloseRequested`/pagehide `flushAutosave`, the most likely real case —
+ * would both touch that same tmp path: the loser's `rename` can ENOENT
+ * (the winner already moved the file), surfacing as a false "Autosave is
+ * failing" toast for a write that in truth succeeded via the other caller,
+ * or an interleaved tmp write can promote the WRONG content via whichever
+ * rename fires second. Serializing every call through one chain removes
+ * the overlap at the root — at most one write is ever actually running —
+ * so unique-per-call tmp names are unnecessary (the plan's fix explicitly
+ * prefers this over that).
+ *
+ * A rejected write must not poison the chain for whatever comes after it
+ * (a failed write this time must not block a healthy one next time), so
+ * the chain link always resolves — `.catch()` swallows here — while the
+ * promise handed back to THIS call's caller (`thisWrite`) still reflects
+ * its own real outcome untouched.
+ */
+let autosaveWriteChain: Promise<void> = Promise.resolve();
+
+/**
  * Tauri only: crash-safe autosave of the current project to app data —
  * P-11 whole-lane-review fix C2(b): write to a tmp file, then rename over
  * the real one. `rename` is atomic on both NTFS and the POSIX filesystems
@@ -609,8 +631,15 @@ const LEGACY_DOCUMENT_FILE = "autosave.bfproj";
  * would then fail to parse and, pre-fix, get silently overwritten by the
  * very next fallback boot (see readAutosave/bootDesktopDocument).
  */
-export async function writeAutosave(contents: string): Promise<void> {
-  if (!isTauri()) return; // browser sessions persist via localStorage already
+export function writeAutosave(contents: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve(); // browser sessions persist via localStorage already
+  const previous = autosaveWriteChain.catch(() => undefined);
+  const thisWrite = previous.then(() => writeAutosaveNow(contents));
+  autosaveWriteChain = thisWrite.catch(() => undefined);
+  return thisWrite;
+}
+
+async function writeAutosaveNow(contents: string): Promise<void> {
   const { writeTextFile, rename, mkdir, BaseDirectory } = await import("@tauri-apps/plugin-fs");
   await mkdir("", { baseDir: BaseDirectory.AppData, recursive: true }).catch(() => undefined);
   const tmp = `${DOCUMENT_FILE}.tmp`;

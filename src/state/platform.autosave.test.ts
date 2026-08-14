@@ -100,6 +100,101 @@ describe("writeAutosave — C2(b) atomic write", () => {
   });
 });
 
+/** A promise this test controls the settling of — same shape as the
+ * `deferred()` helper established in customShaderActions.test.ts /
+ * projectIOActions.test.ts. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+describe("writeAutosave — second whole-lane-review round item 1: serialized writes", () => {
+  it("a second write STARTS only after the first settles — no false-failure from a shared tmp path", async () => {
+    // Park the FIRST write's writeTextFile call — it will not resolve
+    // until this test releases it. try/finally: if an assertion below
+    // throws, `parked` must still be released — this file has ONE shared
+    // module import (no vi.resetModules() per test), so a promise left
+    // dangling here would leave the real, module-level write chain stuck
+    // forever and cascade a timeout into every OTHER test in this file
+    // (this is exactly what happened while writing this test the first
+    // time — a tick-counting mistake below failed an assertion before
+    // `parked` was ever released, and three unrelated tests after this
+    // one in file order started timing out).
+    const parked = deferred<undefined>();
+    writeTextFile.mockImplementationOnce(async () => parked.promise);
+    try {
+      const firstWrite = writeAutosave("content-A");
+      // vi.waitFor, not a fixed Promise.resolve() tick count: writeAutosave's
+      // chain hops through .catch()/.then() plus writeAutosaveNow's own
+      // `await import(...)`/`await mkdir(...)` before it ever reaches
+      // writeTextFile — the exact hop count is an implementation detail
+      // this test should not have to know.
+      await vi.waitFor(() => expect(writeTextFile).toHaveBeenCalledTimes(1));
+
+      const secondWrite = writeAutosave("content-B");
+      // The second write must NOT start its own writeTextFile call while
+      // the first is still parked. A real (short) wait, not more
+      // Promise.resolve() ticks: only a macrotask boundary guarantees
+      // every pending microtask — however many the chain needs — has
+      // already run, so "nothing happened by then" is actually provable.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(writeTextFile).toHaveBeenCalledTimes(1);
+      expect(rename).not.toHaveBeenCalled();
+
+      // Release the first write.
+      parked.resolve(undefined);
+      await firstWrite;
+
+      // NOW the second write's writeTextFile call must have started.
+      await vi.waitFor(() => expect(writeTextFile).toHaveBeenCalledTimes(2));
+      expect(writeTextFile.mock.calls[1][1]).toBe("content-B");
+
+      await expect(secondWrite).resolves.toBeUndefined();
+      expect(rename).toHaveBeenCalledTimes(2);
+    } finally {
+      parked.resolve(undefined); // no-op if already released above
+    }
+  });
+
+  it("a failed write does not poison the chain — the NEXT write still runs, and its own promise is unaffected", async () => {
+    writeTextFile.mockImplementationOnce(async () => {
+      throw new Error("disk full");
+    });
+
+    await expect(writeAutosave("content-A")).rejects.toThrow("disk full");
+
+    // The chain must keep flowing: a second, healthy write afterward must
+    // not inherit the first one's rejection.
+    await expect(writeAutosave("content-B")).resolves.toBeUndefined();
+    expect(rename).toHaveBeenCalledTimes(1); // only the SECOND write reached rename
+  });
+
+  it("three overlapping writes all eventually complete, strictly one at a time (never more than one writeTextFile call outstanding)", async () => {
+    let outstanding = 0;
+    let maxOutstanding = 0;
+    writeTextFile.mockImplementation(async () => {
+      outstanding++;
+      maxOutstanding = Math.max(maxOutstanding, outstanding);
+      await Promise.resolve(); // yield, so a real overlap WOULD show up here if it existed
+      outstanding--;
+      return undefined;
+    });
+
+    await Promise.all([
+      writeAutosave("content-A"),
+      writeAutosave("content-B"),
+      writeAutosave("content-C"),
+    ]);
+
+    expect(maxOutstanding).toBe(1);
+    expect(writeTextFile).toHaveBeenCalledTimes(3);
+    expect(rename).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe("readAutosave — I3 filename migration", () => {
   it("reads document.bfproj directly when it exists — never touches the legacy name", async () => {
     exists.mockImplementation(async (path: string) => path === "document.bfproj");
