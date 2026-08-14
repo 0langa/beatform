@@ -169,7 +169,14 @@ describe("the two boolean-returning savers report success, not quota failure, wh
   });
 
   it("saveStoredOverlay and saveCustomPresets return true on desktop even though they write nothing — a false would fire a false 'too large to remember' toast on every save", async () => {
-    installGlobals(new RecordingStorage());
+    // M1 (whole-lane review): keep the storage reference and assert the
+    // keys are genuinely UNWRITTEN, not just that the return value looks
+    // right — the pin session that gates SS-2 absence (above) never
+    // actually exercises these two, since neither is on its edit path.
+    // Without this, a bug that returns the right boolean while still
+    // calling through to safeSetItem underneath would pass silently.
+    const storage = new RecordingStorage();
+    installGlobals(storage);
     vi.resetModules();
     const platform = await import("./platform");
     vi.mocked(platform.isTauri).mockReturnValue(true);
@@ -177,6 +184,8 @@ describe("the two boolean-returning savers report success, not quota failure, wh
 
     expect(p.saveStoredOverlay([], {})).toBe(true);
     expect(p.saveCustomPresets([])).toBe(true);
+    expect(storage.written.has("viz.overlay.v1")).toBe(false);
+    expect(storage.written.has("viz.customPresets.v1")).toBe(false);
   });
 
   it("control: both still return the safeSetItem-shaped boolean in the browser build", async () => {

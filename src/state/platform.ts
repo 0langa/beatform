@@ -578,41 +578,118 @@ export function bytesToDataUrl(bytes: Uint8Array, mime: string): string {
   return `data:${mime};base64,${btoa(bin)}`;
 }
 
-const AUTOSAVE_FILE = "autosave.bfproj";
+/**
+ * P-11 whole-lane-review fix I3. Pre-P-11 builds already used the name
+ * `autosave.bfproj` for a crash-recovery-ONLY copy, safe for THEM to clear
+ * on every clean exit (their `checkAutosaveRecovery` did exactly that — the
+ * real document lived in localStorage, so the file was a disposable
+ * duplicate). Post-P-11 the file under this name IS the document, full
+ * stop — so an old build's "clean exit -> delete it" logic, unaware
+ * anything changed, would destroy the user's ONLY copy the moment they
+ * downgraded after an ordinary quit. A different filename means an old
+ * build physically cannot reach the file this build depends on, in either
+ * direction: it can't destroy this file, and this file can't be mistaken
+ * for the old crash-only copy by a harness that still expects that name.
+ */
+const DOCUMENT_FILE = "document.bfproj";
+/** Pre-P-11 filename — read exactly ONCE, at migration, when
+ * `DOCUMENT_FILE` doesn't exist yet (see `readAutosave`). Never written to
+ * or removed by this build afterward: left in place as a rollback net, the
+ * same treatment P-11's plan already gives the stale localStorage document
+ * keys, and it means an OLD build a user downgrades to still finds ITS OWN
+ * expected file undisturbed rather than mysteriously missing. */
+const LEGACY_DOCUMENT_FILE = "autosave.bfproj";
 
-/** Tauri only: crash-safe autosave of the current project to app data. */
+/**
+ * Tauri only: crash-safe autosave of the current project to app data —
+ * P-11 whole-lane-review fix C2(b): write to a tmp file, then rename over
+ * the real one. `rename` is atomic on both NTFS and the POSIX filesystems
+ * Tauri targets, so a crash or power loss mid-write leaves either the
+ * complete OLD file or the complete NEW one — never a half-written one that
+ * would then fail to parse and, pre-fix, get silently overwritten by the
+ * very next fallback boot (see readAutosave/bootDesktopDocument).
+ */
 export async function writeAutosave(contents: string): Promise<void> {
   if (!isTauri()) return; // browser sessions persist via localStorage already
-  const { writeTextFile, mkdir, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+  const { writeTextFile, rename, mkdir, BaseDirectory } = await import("@tauri-apps/plugin-fs");
   await mkdir("", { baseDir: BaseDirectory.AppData, recursive: true }).catch(() => undefined);
-  await writeTextFile(AUTOSAVE_FILE, contents, { baseDir: BaseDirectory.AppData });
+  const tmp = `${DOCUMENT_FILE}.tmp`;
+  await writeTextFile(tmp, contents, { baseDir: BaseDirectory.AppData });
+  await rename(tmp, DOCUMENT_FILE, {
+    oldPathBaseDir: BaseDirectory.AppData,
+    newPathBaseDir: BaseDirectory.AppData,
+  });
 }
 
 /**
- * The other half of the autosave: read back what the last session left behind.
- * Returns null when there is nothing to recover (browser, no file, or an
- * unreadable one) — recovery is strictly best-effort and must never block boot.
+ * The other half of the autosave: read back what the last session left
+ * behind. Returns null when there is nothing to recover (browser, no file,
+ * or an unreadable one) — recovery is strictly best-effort and must never
+ * block boot.
+ *
+ * One-time legacy migration (I3): an install upgrading from a pre-P-11
+ * build has its real content under `LEGACY_DOCUMENT_FILE` and nothing under
+ * `DOCUMENT_FILE` yet. When that's the situation, read the legacy content
+ * AND immediately re-establish it under the new name via the normal atomic
+ * writeAutosave — this is what makes the migration actually one-time
+ * (every later boot finds `DOCUMENT_FILE` directly) rather than "every boot
+ * until the user happens to edit something," and starts protecting the
+ * content from an old-build downgrade from the very next launch on.
  */
 export async function readAutosave(): Promise<string | null> {
   if (!isTauri()) return null;
   try {
     const { readTextFile, exists, BaseDirectory } = await import("@tauri-apps/plugin-fs");
-    if (!(await exists(AUTOSAVE_FILE, { baseDir: BaseDirectory.AppData }))) return null;
-    return await readTextFile(AUTOSAVE_FILE, { baseDir: BaseDirectory.AppData });
+    if (await exists(DOCUMENT_FILE, { baseDir: BaseDirectory.AppData })) {
+      return await readTextFile(DOCUMENT_FILE, { baseDir: BaseDirectory.AppData });
+    }
+    if (await exists(LEGACY_DOCUMENT_FILE, { baseDir: BaseDirectory.AppData })) {
+      const legacy = await readTextFile(LEGACY_DOCUMENT_FILE, { baseDir: BaseDirectory.AppData });
+      await writeAutosave(legacy);
+      return legacy;
+    }
+    return null;
   } catch (e) {
     console.warn("[autosave] could not read", e);
     return null;
   }
 }
 
-/** Drop the autosave — the user declined recovery, or it has been applied. */
+/** Drop the autosave — the document has been captured elsewhere and this
+ * copy is no longer needed. (Never touches `LEGACY_DOCUMENT_FILE` — see its
+ * own comment: this build neither writes nor removes that name.) */
 export async function clearAutosave(): Promise<void> {
   if (!isTauri()) return;
   try {
     const { remove, BaseDirectory } = await import("@tauri-apps/plugin-fs");
-    await remove(AUTOSAVE_FILE, { baseDir: BaseDirectory.AppData });
+    await remove(DOCUMENT_FILE, { baseDir: BaseDirectory.AppData });
   } catch {
     // Already gone, or locked — nothing to do.
+  }
+}
+
+/**
+ * P-11 whole-lane-review fix C2(c): move an UNPARSEABLE autosave aside
+ * instead of letting the caller's fallback write-back silently overwrite
+ * it. A corrupt file might still be forensically recoverable by hand
+ * (or by a bug report); silently discarding what might be the only copy of
+ * a user's work over a parse bug would be worse than a leftover file in
+ * AppData. Best-effort: if the rename itself fails there is nothing more
+ * this layer can do, and the caller's fallback write-back proceeds either
+ * way (this must never be what blocks boot).
+ */
+export async function quarantineCorruptAutosave(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const { rename, exists, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+    if (!(await exists(DOCUMENT_FILE, { baseDir: BaseDirectory.AppData }))) return;
+    const quarantined = `${DOCUMENT_FILE}.corrupt-${Date.now()}`;
+    await rename(DOCUMENT_FILE, quarantined, {
+      oldPathBaseDir: BaseDirectory.AppData,
+      newPathBaseDir: BaseDirectory.AppData,
+    });
+  } catch (e) {
+    console.warn("[autosave] could not quarantine the corrupt file", e);
   }
 }
 

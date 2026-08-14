@@ -237,9 +237,15 @@ function scheduleWrite(key: string, write: () => void): void {
 const LS_CLEAN_EXIT = "viz.cleanExit";
 
 /**
- * Captured ONCE at module load, before any of this session's own writes. The
- * boot sequence dirties the marker almost immediately (applyDocument →
- * scheduleAutosave), so reading it later would always say "clean".
+ * Captured ONCE at module load, before any of this session's own writes.
+ * Any ordinary edit dirties the marker almost immediately (record() →
+ * scheduleAutosave), so reading it later would always say "clean". (P-11
+ * whole-lane-review fix M2: `bootDesktopDocument`'s OWN apply of what it
+ * just read from disk is a deliberate exception — it passes
+ * `{alreadyOnDisk: true}`, which skips scheduleAutosave entirely, so a
+ * boot that applies the autosave and nothing else does NOT dirty this
+ * marker. Every other applyDocument caller — undo, redo, theme-apply,
+ * new-project, a manual open — still does.)
  */
 const previousExitWasClean = (() => {
   try {
@@ -271,11 +277,31 @@ function markCleanExit(): void {
   }
 }
 
+/**
+ * Whole-lane-review fix C1: best-effort desktop autosave flush, fired from
+ * the SAME pagehide handler that already flushes localStorage — injected by
+ * the store at module init (same pattern as `setWriteFailureNotifier` just
+ * above: this layer cannot import the store without a cycle). `pagehide`
+ * cannot reliably await async work (the OS/browser may tear the process
+ * down before a promise settles), so this is fire-and-forget, not the
+ * primary defense — `onCloseRequested` (store.ts's `initApp`) is the AWAITED
+ * one that actually blocks the window from closing. This is the net for
+ * paths `onCloseRequested` doesn't cover (e.g. a background/OS-level tab
+ * hide that isn't a real quit) and a second chance if it does fire for a
+ * real quit but hasn't resolved yet.
+ */
+let flushAutosaveOnPagehide: (() => void) | null = null;
+
+export function setAutosaveFlushOnPagehide(fn: () => void): void {
+  flushAutosaveOnPagehide = fn;
+}
+
 if (typeof window !== "undefined") {
   // A closing/backgrounded tab must not drop the last debounced edit.
   window.addEventListener("pagehide", () => {
     flushPendingWrites();
     markCleanExit();
+    flushAutosaveOnPagehide?.();
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushPendingWrites();

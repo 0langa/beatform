@@ -71,8 +71,10 @@ describe("clean-exit marker", () => {
   });
 
   it("keeps reporting the PREVIOUS exit after this session dirties the marker", async () => {
-    // The boot sequence dirties the marker almost immediately (applyDocument →
-    // scheduleAutosave). If the flag were re-read later it would always say
+    // An ordinary edit dirties the marker almost immediately (record() →
+    // scheduleAutosave — bootDesktopDocument's OWN apply is the one
+    // deliberate exception, see the P-11 fix M2 note at this const's
+    // declaration). If the flag were re-read later it would always say
     // "clean" and recovery would never fire.
     installStorage("0");
     const { wasPreviousExitClean, markSessionDirty } = await importFresh();
@@ -249,5 +251,58 @@ describe("legacy preset ids in the session cache", () => {
     expect(mod.loadStoredBgByPreset(assets).particles?.mode).toBe(1);
     expect(mod.loadStoredCenterImages(assets)).toEqual({ particles: "as-1" });
     expect(mod.loadStoredTimeline().scenes.map((s) => s.presetId)).toEqual(["particles"]);
+  });
+});
+
+/**
+ * P-11 whole-lane-review fix C1 — the best-effort half of the close-flush.
+ * `onCloseRequested` (store.ts) is the AWAITED, primary defense; this is the
+ * net for whatever it doesn't cover (see setAutosaveFlushOnPagehide's own
+ * comment). `installStorage`'s shared `window.addEventListener: () => {}`
+ * stub can't prove a registered handler actually RUNS — it's a no-op by
+ * design, used only by tests that need pagehide registration to not throw.
+ * This describe needs to CAPTURE and INVOKE the handler, so it builds its
+ * own.
+ */
+describe("autosave flush registration on pagehide", () => {
+  function installCapturingStorage(): {
+    store: FakeStorage;
+    firePagehide: () => void;
+  } {
+    const store = new FakeStorage();
+    const listeners = new Map<string, () => void>();
+    vi.stubGlobal("localStorage", store);
+    vi.stubGlobal("window", {
+      addEventListener: (type: string, fn: () => void) => listeners.set(type, fn),
+    });
+    vi.stubGlobal("document", { addEventListener: () => {}, visibilityState: "visible" });
+    return {
+      store,
+      firePagehide: () => listeners.get("pagehide")?.(),
+    };
+  }
+
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fires the registered callback on pagehide, alongside the existing localStorage flush", async () => {
+    const { store, firePagehide } = installCapturingStorage();
+    const mod = await importFresh();
+    const flush = vi.fn();
+    mod.setAutosaveFlushOnPagehide(flush);
+
+    firePagehide();
+
+    expect(flush).toHaveBeenCalledTimes(1);
+    // The pre-existing behavior this must not have disturbed: the clean-exit
+    // marker still flips to "1" on the SAME pagehide.
+    expect(store.getItem("viz.cleanExit")).toBe("1");
+  });
+
+  it("no callback registered: pagehide still runs its existing work without throwing", async () => {
+    const { firePagehide } = installCapturingStorage();
+    await importFresh();
+    expect(firePagehide).not.toThrow();
   });
 });

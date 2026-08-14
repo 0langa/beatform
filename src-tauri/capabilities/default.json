@@ -14,6 +14,7 @@
     "fs:allow-write-text-file",
     "fs:allow-write-file",
     "fs:allow-remove",
+    "fs:allow-rename",
     "fs:scope-appdata-recursive",
     "updater:default",
     "process:allow-restart"
