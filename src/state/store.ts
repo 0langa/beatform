@@ -131,6 +131,7 @@ import {
   loadStoredSmoothSpectrum,
   saveStoredSmoothSpectrum,
   markSessionDirty,
+  setAutosaveFlushOnPagehide,
   setWriteFailureNotifier,
 } from "./persistence";
 import { getPrefs, setPrefs } from "./prefs";
@@ -307,6 +308,19 @@ interface SessionSlice {
   analyzing: boolean;
   undoDepth: number;
   redoDepth: number;
+  /**
+   * Whole-lane-review fix I1: a monotonic counter bumped on every
+   * `applyDocument` call (undo/redo/open/theme-apply/new-project/boot),
+   * regardless of what `undoDepth` does. `undoDepth` alone cannot guard
+   * `bootDesktopDocument`'s async read against a manual project open racing
+   * it: `openProject`/`openProjectText` both FORCE `undoDepth` to 0 (same
+   * value a fresh boot already has), so a drag-dropped .bfproj landing
+   * during the read window was invisible to that check. `docEpoch` is
+   * strictly increasing and touched by every document-replacing path, so
+   * boot snapshotting it before the read and comparing after catches this
+   * class the undoDepth guard structurally cannot.
+   */
+  docEpoch: number;
   exportSettings: ExportSettings;
   exporting: ExportProgress | null;
   /** Reactive mirror of shared.exportStarting (E2-U5): true from the moment
@@ -612,10 +626,28 @@ interface Actions {
   openProject(): Promise<void>;
   /** Open a project from already-read text (the drag-drop path). */
   openProjectText(name: string, contents: string): void;
-  applyDocument(doc: ProjectDocument): void;
+  /**
+   * `alreadyOnDisk`: whole-lane-review fix M2. Set by `bootDesktopDocument`
+   * when the document it is applying is byte-for-byte what was just READ
+   * from the autosave file — every other caller (undo/redo/open/theme/new)
+   * is applying a document that is NOT yet on disk and must keep the normal
+   * scheduleAutosave() behavior. Without this, every desktop boot dirtied
+   * the clean-exit marker and queued an identical rewrite before the user
+   * touched anything — a hard kill in that window reported a false "crashed
+   * last time" on the NEXT boot even though nothing was ever at risk.
+   */
+  applyDocument(doc: ProjectDocument, opts?: { alreadyOnDisk?: boolean }): void;
   /** P-11: the desktop boot chokepoint — see projectIOActions.ts's own doc
    * comment and .superpowers/p11-lane-log.md for the full design. */
   bootDesktopDocument(): Promise<void>;
+  /** Whole-lane-review fix C1: an immediate (non-debounced), awaited write
+   * of the current document to the autosave file — bypasses and cancels
+   * scheduleAutosave's pending timers. Used by the Tauri close-requested
+   * handler (awaited, so the window does not actually close until this
+   * settles) and best-effort from the pagehide handler (fire-and-forget —
+   * pagehide cannot reliably await async work). A no-op in the browser
+   * build. */
+  flushAutosave(): Promise<void>;
   undo(): void;
   redo(): void;
   saveUserPreset(name: string): void;
@@ -736,7 +768,22 @@ let unclaimedAnalysisId: number | null = null;
  * second click from running a second start path whose failure cleanup would
  * tear down the first click's worklet. */
 let liveToggling = false;
+/** Trailing timer: reset on every scheduleAutosave() call, fires
+ * autosaveIntervalSec after the LAST edit (the "quiet period" write). */
 let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * Whole-lane-review fix C1: the max-latency ceiling. Set ONCE per burst
+ * (only when undefined — never reset by a later scheduleAutosave() call
+ * the way autosaveTimer is), so it fires autosaveIntervalSec after the
+ * FIRST edit of a burst regardless of how many more edits keep pushing
+ * `autosaveTimer` out. Without this, `autosaveTimer` alone is a PURE
+ * trailing debounce with no cap: continuous editing (a long slider drag —
+ * one record() per pointermove) keeps resetting it forever, so the on-disk
+ * autosave's staleness was bounded only by "how long until the user
+ * pauses," not by the configured interval at all. Cleared (both timers)
+ * the moment a write actually starts.
+ */
+let autosaveMaxTimer: ReturnType<typeof setTimeout> | undefined;
 
 function resolveParams(presetId: string, overrides: Record<string, ParamValues>): ParamValues {
   const preset = presetById(presetId);
@@ -1089,28 +1136,64 @@ export const useVizStore = create<VizState>((set, get) => {
       });
   };
 
-  /** Crash-safe project autosave (desktop), debounced past edit bursts. */
+  /**
+   * The one place that actually performs a write, shared by the trailing
+   * timer, the max-latency ceiling, and flushAutosave. Clears BOTH timers
+   * first (synchronously) so a document change that arrives while this
+   * write is in flight starts a fresh, correctly-anchored burst rather than
+   * being silently absorbed by timers this call is about to fire anyway.
+   */
+  const runScheduledAutosaveWrite = (): Promise<void> => {
+    clearTimeout(autosaveTimer);
+    clearTimeout(autosaveMaxTimer);
+    autosaveTimer = undefined;
+    autosaveMaxTimer = undefined;
+    return writeAutosave(serializeProject(docOf(get()), APP_VERSION)).catch((e) => {
+      console.error("[autosave]", e);
+      // Surface ONCE per session: a failing autosave means the sole
+      // persisted copy silently isn't being kept up to date — exactly the
+      // failure that went unnoticed from the feature's birth until the
+      // first hardware test (the $APPDATA write scope was never granted).
+      if (!autosaveFailureShown) {
+        autosaveFailureShown = true;
+        set({
+          error: `Autosave is failing — your changes are not being saved (${(e as Error).message ?? e})`,
+        });
+      }
+      throw e; // rethrown for flushAutosave's awaiters (onCloseRequested); the two setTimeout call sites below swallow it themselves — the logging above already happened
+    });
+  };
+
+  /** setTimeout callback wrapper: the meaningful handling (console.error +
+   * user-facing toast) already happened inside runScheduledAutosaveWrite's
+   * own catch before it rethrows for flushAutosave's benefit — a bare
+   * `void runScheduledAutosaveWrite()` here would otherwise surface that
+   * rethrow as an unhandled promise rejection on every timer-driven write
+   * failure. */
+  const runScheduledAutosaveWriteFireAndForget = (): void => {
+    void runScheduledAutosaveWrite().catch(() => undefined);
+  };
+
+  /**
+   * Debounced-with-a-ceiling project autosave (desktop) — whole-lane-review
+   * fix C1. `autosaveTimer` is the ordinary trailing debounce (fires
+   * autosaveIntervalSec after the LAST edit); `autosaveMaxTimer` is set
+   * ONCE per burst and is never reset, so it fires no later than
+   * autosaveIntervalSec after the FIRST edit regardless of how long the
+   * burst continues — the cap that a pure trailing debounce doesn't have
+   * (see autosaveMaxTimer's own comment at its declaration).
+   */
   const scheduleAutosave = () => {
     // Mark the session dirty IMMEDIATELY, not when the debounced write lands:
-    // a crash inside those 5 s is exactly the case recovery exists for, and the
-    // previous autosave on disk is then the newest copy of the work.
+    // a crash inside this window is exactly the case recovery exists for,
+    // and the previous autosave on disk is then the newest copy of the work.
     markSessionDirty();
+    const intervalMs = getPrefs().autosaveIntervalSec * 1000;
     clearTimeout(autosaveTimer);
-    autosaveTimer = setTimeout(() => {
-      void writeAutosave(serializeProject(docOf(get()), APP_VERSION)).catch((e) => {
-        console.error("[autosave]", e);
-        // Surface ONCE per session: a failing autosave means crash recovery
-        // silently cannot work — exactly the failure that went unnoticed from
-        // the feature's birth until the first hardware test (the $APPDATA
-        // write scope was never granted).
-        if (!autosaveFailureShown) {
-          autosaveFailureShown = true;
-          set({
-            error: `Autosave is failing — crash recovery is unavailable (${(e as Error).message ?? e})`,
-          });
-        }
-      });
-    }, getPrefs().autosaveIntervalSec * 1000);
+    autosaveTimer = setTimeout(runScheduledAutosaveWriteFireAndForget, intervalMs);
+    if (autosaveMaxTimer === undefined) {
+      autosaveMaxTimer = setTimeout(runScheduledAutosaveWriteFireAndForget, intervalMs);
+    }
   };
 
   /**
@@ -1286,6 +1369,7 @@ export const useVizStore = create<VizState>((set, get) => {
     analyzing: false,
     undoDepth: 0,
     redoDepth: 0,
+    docEpoch: 0,
     exportSettings: (() => {
       const stored = loadStoredExportSettings();
       // Sidecar/PNG formats need the desktop; a persisted one loading in the
@@ -1478,18 +1562,54 @@ export const useVizStore = create<VizState>((set, get) => {
       // the next one (the action checks the toggle + current-track membership).
       getEngine().onEnded = () => void get().advanceLibrary();
       get().pokeChrome();
+
+      // Whole-lane-review fix C1: an OS-level quit (or the window's own
+      // close button) must not lose whatever hasn't reached the trailing
+      // debounce yet. `preventDefault()` holds the window open until the
+      // flush settles, then this destroys it itself — the window never
+      // stays open longer than the flush takes, and a failed flush still
+      // lets the user out rather than hanging the app closed.
+      // `closeRequestedDisposed`/`unlistenCloseRequested`: the async
+      // `onCloseRequested()` install can resolve AFTER this effect has
+      // already torn down (a fast remount, StrictMode's double-invoke) —
+      // the disposed flag makes that late arrival unlisten itself instead
+      // of leaking a listener bound to a torn-down closure.
+      let closeRequestedDisposed = false;
+      let unlistenCloseRequested: (() => void) | null = null;
+      if (isTauri()) {
+        void (async () => {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          const appWindow = getCurrentWindow();
+          const un = await appWindow.onCloseRequested(async (event) => {
+            event.preventDefault();
+            try {
+              await get().flushAutosave();
+            } catch (e) {
+              console.error("[autosave] close-flush failed", e);
+            } finally {
+              await appWindow.destroy();
+            }
+          });
+          if (closeRequestedDisposed) un();
+          else unlistenCloseRequested = un;
+        })().catch((e) => console.warn("[autosave] could not install the close handler", e));
+      }
+
       return () => {
         clearTimeout(idleTimer);
         clearTimeout(overlayTimer);
         liveCanvas = null;
         dispose();
+        closeRequestedDisposed = true;
+        unlistenCloseRequested?.();
         // The rest of teardown: services.dispose() above only owns the
         // engine/analyzer/renderer/loop. Everything the STORE itself
         // retained outside React state was left dangling here — a stale
         // ImageBitmap, up to 240 decoded video-bg frames (~220 MB), a live
-        // MIDI listener, a 5s autosave timer that fires after teardown and
-        // writes to disk, and a prefetched AudioBuffer for the session.
+        // MIDI listener, an autosave timer pair that fires after teardown
+        // and writes to disk, and a prefetched AudioBuffer for the session.
         clearTimeout(autosaveTimer);
+        clearTimeout(autosaveMaxTimer);
         overlayBase?.close();
         overlayBase = null;
         disposeVideoBgFrames(videoBgFrames);
@@ -2303,7 +2423,7 @@ export const useVizStore = create<VizState>((set, get) => {
       set({ error });
     },
 
-    applyDocument(doc) {
+    applyDocument(doc, opts) {
       // Embedded custom defs merge into the session library (replace-by-id):
       // project open brings the visuals it references, and undo after
       // deleteCustomPreset restores the def alongside the document that
@@ -2340,6 +2460,13 @@ export const useVizStore = create<VizState>((set, get) => {
         lyricStyle: doc.lyricStyle,
         audiogram: doc.audiogram,
         builderStack: doc.builderStack,
+        // Whole-lane-review fix I1: bumped on EVERY applyDocument call,
+        // unconditionally — this is what lets bootDesktopDocument detect a
+        // manual project open (or undo/redo/theme-apply/new-project) that
+        // landed during its async autosave read, which undoDepth alone
+        // cannot (open/newProject force undoDepth to 0, the same value a
+        // fresh boot already has).
+        docEpoch: get().docEpoch + 1,
         // Keep the export resolution consistent with the incoming aspect
         // (covers project-open AND undo/redo of aspect changes).
         exportSettings: {
@@ -2399,8 +2526,22 @@ export const useVizStore = create<VizState>((set, get) => {
       getAnalyzer().setSync(sync);
       get().refreshOverlay();
       // Covers undo/redo/project-open: without this the autosave file kept
-      // the PRE-undo document until the next ordinary edit.
-      scheduleAutosave();
+      // the PRE-undo document until the next ordinary edit. Whole-lane-review
+      // fix M2: SKIPPED when `alreadyOnDisk` — bootDesktopDocument's
+      // successful-read path is applying bytes that are, by construction,
+      // already sitting in the exact file scheduleAutosave would go on to
+      // rewrite. Without this guard, EVERY desktop boot dirtied the
+      // clean-exit marker and queued an identical rewrite before the user
+      // touched anything, so a hard kill in that window falsely reported
+      // "crashed last time" on the next launch even though nothing was ever
+      // at risk and nothing had changed.
+      if (!opts?.alreadyOnDisk) scheduleAutosave();
+    },
+
+    /** Whole-lane-review fix C1 — see this action's own VizState doc comment. */
+    async flushAutosave() {
+      if (!isTauri()) return;
+      await runScheduledAutosaveWrite();
     },
 
     saveUserPreset(name) {
@@ -2631,6 +2772,19 @@ export const useVizStore = create<VizState>((set, get) => {
 // throttled inside persistence so a full store announces itself once, not on
 // every keystroke. Wired here because persistence cannot import the store.
 setWriteFailureNotifier((message) => useVizStore.setState({ error: message }));
+
+// Whole-lane-review fix C1: best-effort autosave flush from the SAME
+// pagehide handler that already flushes localStorage — see
+// setAutosaveFlushOnPagehide's own comment (persistence.ts) for why this is
+// fire-and-forget rather than the primary defense (initApp's onCloseRequested
+// is the awaited one). flushAutosave itself is isTauri()-gated, so this is
+// inert in the browser build.
+setAutosaveFlushOnPagehide(() => {
+  void useVizStore
+    .getState()
+    .flushAutosave()
+    .catch((e) => console.warn("[autosave] pagehide flush failed", e));
+});
 
 /**
  * ONE chokepoint feeding the analyzer's lyric-derived vocal presence (P-15).

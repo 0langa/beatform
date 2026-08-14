@@ -2,13 +2,21 @@ import { APP_VERSION } from "../../version";
 import { safeName } from "../batch";
 import { clearHistory, historyDepths, popRedo, popUndo } from "../history";
 import { wasPreviousExitClean } from "../persistence";
-import { isTauri, openTextFile, readAutosave, saveTextFile, writeAutosave } from "../platform";
+import {
+  isTauri,
+  openTextFile,
+  quarantineCorruptAutosave,
+  readAutosave,
+  saveTextFile,
+  writeAutosave,
+} from "../platform";
 import {
   parseProject,
   PROJECT_EXTENSION,
   ProjectParseError,
   serializeProject,
   validateDocument,
+  type ProjectDocument,
 } from "../project";
 import { parseTheme, serializeTheme, ThemeParseError } from "../themes";
 import type { VizState } from "../store";
@@ -166,14 +174,25 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
      * NEXT boot has one to prefer — the plan's recorded "boot from
      * localStorage ONCE" migration preference.
      *
-     * `undoDepth === 0` is the guard against the one real risk here: this is
-     * async, and if the read is unusually slow (a large embedded background
-     * asset, a slow disk) a user could in principle start editing before it
-     * resolves. undoDepth is hardcoded to 0 in the synchronous initial state
-     * and only ever moves via a record()-backed action, so it is an exact,
-     * cheap proxy for "nothing has happened since boot yet" — silently
-     * replacing a real in-session edit with whatever was on disk a moment
-     * earlier would be its own data-loss bug.
+     * Two guards decide whether the parsed document actually gets applied,
+     * covering two DIFFERENT risk classes a slow read (a large embedded
+     * background asset, a slow disk) leaves open — whole-lane-review fix I1
+     * found the first is not enough on its own:
+     *  - `undoDepth === 0`: no raw, record()-backed edit (setParam,
+     *    switchPreset, ...) happened since boot. These never call
+     *    applyDocument, so only undoDepth catches them.
+     *  - `docEpoch === epochAtReadStart`: no applyDocument-backed
+     *    replacement (undo, redo, theme-apply, new-project, or — the gap I1
+     *    found — a manual project OPEN) happened since boot. `openProject`/
+     *    `openProjectText` both FORCE undoDepth to 0 (clearHistory then
+     *    `set({undoDepth:0,...})`) — the SAME value a fresh boot already
+     *    has — so a drag-dropped .bfproj landing in the read window was
+     *    invisible to the undoDepth check alone. docEpoch is a monotonic
+     *    counter bumped unconditionally inside applyDocument (see its own
+     *    comment in store.ts), so it catches this class the undoDepth guard
+     *    structurally cannot.
+     * Both together: "nothing has replaced or edited the document by any
+     * path since this read started."
      *
      * Browser build: isTauri() gates this at the one entrypoint — readAutosave
      * and writeAutosave already no-op there too, but the explicit early
@@ -193,27 +212,59 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
      */
     async bootDesktopDocument() {
       if (!isTauri()) return;
+      const epochAtReadStart = get().docEpoch;
       const contents = await readAutosave();
       if (contents !== null) {
+        let doc: ProjectDocument | null = null;
         try {
-          const doc = parseProject(contents);
-          if (get().undoDepth === 0) {
-            const recovering = !wasPreviousExitClean();
-            get().applyDocument(doc);
-            if (recovering) ctx.flashNotice("Recovered your work from the last session");
-          } else {
-            console.warn(
-              "[autosave] the user already edited before boot resolved — keeping their edits",
-            );
+          doc = parseProject(contents);
+        } catch (e) {
+          // Whole-lane-review fix C2(c): move the bad file aside rather than
+          // let the fallback write-back below silently overwrite it — it
+          // might still be forensically recoverable, and destroying what
+          // might be the user's only copy over a parse bug is worse than a
+          // leftover file. Surfaced as the persistent error toast, not a
+          // transient notice: this is a real, if rare, event worth a click
+          // to dismiss rather than 4 seconds of visibility.
+          console.warn("[autosave] unusable — quarantining and falling back", e);
+          await quarantineCorruptAutosave();
+          set({
+            error:
+              "Your autosave file couldn't be read and was moved aside — starting from your last session",
+          });
+        }
+        if (doc !== null) {
+          // Whole-lane-review fix C2(a): parsing succeeded. Everything past
+          // this point is a SEPARATE failure domain from the parse above —
+          // an apply-time exception is caught and logged here, but must
+          // NEVER fall through to the write-back below. Before this fix a
+          // single try wrapped both parseProject AND applyDocument, so an
+          // apply-time hiccup on a perfectly GOOD file fell into the same
+          // catch as a corrupt one and the write-back then serialized
+          // STALE (pre-apply) state over a file that was actually fine.
+          try {
+            if (get().undoDepth === 0 && get().docEpoch === epochAtReadStart) {
+              const recovering = !wasPreviousExitClean();
+              // alreadyOnDisk (M2): this is byte-for-byte what was just read
+              // from the file — applying it must not dirty the clean-exit
+              // marker or queue a redundant identical rewrite before the
+              // user has touched anything.
+              get().applyDocument(doc, { alreadyOnDisk: true });
+              if (recovering) ctx.flashNotice("Recovered your work from the last session");
+            } else {
+              console.warn(
+                "[autosave] the document already changed (an edit, or a manual open) before boot resolved — keeping it",
+              );
+            }
+          } catch (e) {
+            console.error("[autosave] applying the recovered document failed", e);
           }
           return;
-        } catch (e) {
-          console.warn("[autosave] unusable, falling back to the last session cache", e);
         }
       }
-      // Missing or unparseable: docOf(get()) is already the localStorage
-      // fallback (nothing to apply) — just make sure a file exists for next
-      // time, immediately rather than debounced.
+      // Missing, or corrupt (quarantined above): docOf(get()) is already the
+      // localStorage fallback (nothing to apply) — just make sure a file
+      // exists for next time, immediately rather than debounced.
       void writeAutosave(serializeProject(ctx.docOf(get()), APP_VERSION)).catch((e) => {
         console.warn("[autosave] initial write failed", e);
       });

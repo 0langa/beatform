@@ -112,7 +112,15 @@ export function SettingsDialog() {
             {desktop && (
               <SliderRow
                 label="Autosave delay"
-                hint="How long after your last edit the crash-recovery autosave is written"
+                // P-11 whole-lane-review fix C1: this used to be a
+                // crash-recovery-only nicety (localStorage held the real
+                // document; the autosave file was a backup copy). It is now
+                // the ONLY thing standing between an edit and losing it —
+                // closing the window or a hard kill still flushes
+                // immediately regardless of this setting, but continuous
+                // editing (a long slider drag) can leave up to this many
+                // seconds unsaved if the app is killed mid-drag.
+                hint="How much unsaved work you could lose during continuous editing (closing the window always saves immediately)"
                 min={2}
                 max={30}
                 step={1}

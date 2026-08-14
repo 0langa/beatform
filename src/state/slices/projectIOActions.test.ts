@@ -89,17 +89,29 @@ describe("bootDesktopDocument — desktop boots from the autosave file (P-11 Tas
     expect(useVizStore.getState().presetId).toBe(before);
   });
 
-  it("desktop, autosave parses: becomes the boot document — preferred over the localStorage-sourced state already loaded", async () => {
-    vi.mocked(isTauri).mockReturnValue(true);
-    vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(OTHER_PRESET));
-    expect(useVizStore.getState().presetId).not.toBe(OTHER_PRESET); // sanity: really a change
+  it("desktop, autosave parses: becomes the boot document — preferred over the localStorage-sourced state already loaded, and does NOT schedule a redundant rewrite (M2)", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(isTauri).mockReturnValue(true);
+      vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(OTHER_PRESET));
+      expect(useVizStore.getState().presetId).not.toBe(OTHER_PRESET); // sanity: really a change
 
-    await useVizStore.getState().bootDesktopDocument();
+      await useVizStore.getState().bootDesktopDocument();
 
-    expect(useVizStore.getState().presetId).toBe(OTHER_PRESET);
-    // Just read this exact content from disk — nothing has changed that
-    // would need re-establishing it.
-    expect(writeAutosave).not.toHaveBeenCalled();
+      expect(useVizStore.getState().presetId).toBe(OTHER_PRESET);
+      // M2: this is a fake-timer upgrade of a test that used to only prove
+      // "hasn't been called YET" (synchronously true even when a redundant
+      // write was silently queued behind the debounce). applyDocument's
+      // `{alreadyOnDisk: true}` skips scheduleAutosave() entirely on this
+      // path, so advancing well past any possible autosaveIntervalSec must
+      // prove NO write ever fires, not just that none happened before this
+      // line — just read this exact content from disk, nothing changed
+      // that needs re-establishing it.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(writeAutosave).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("desktop, autosave missing: keeps the localStorage-sourced state (the recorded fallback) and writes the autosave immediately", async () => {
@@ -201,5 +213,91 @@ describe("recovery-flow reconciliation — a passive notice replaces the Restore
     expect(s.recoveredDoc).toBeUndefined();
     expect(s.restoreAutosave).toBeUndefined();
     expect(s.dismissAutosave).toBeUndefined();
+  });
+});
+
+describe("whole-lane-review fix C2(a) — an apply-time failure on a GOOD file must never reach the write-back", () => {
+  it("parseProject succeeds, applyDocument throws: the fallback write-back never fires (would otherwise serialize STALE state over a file that was actually fine)", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(OTHER_PRESET));
+    const warnSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    // Before the fix, ONE try wrapped both parseProject AND applyDocument —
+    // this simulates an apply-time hiccup on an otherwise-good, successfully
+    // PARSED file (a renderer bug, a bad merge, anything) landing in that
+    // shared catch.
+    useVizStore.setState({
+      applyDocument: vi.fn(() => {
+        throw new Error("applyDocument blew up");
+      }),
+    });
+
+    await useVizStore.getState().bootDesktopDocument();
+
+    // The bug this pins: the old shared catch fell through to
+    // `writeAutosave(serializeProject(docOf(get())))`, overwriting the disk
+    // file that had just parsed FINE with the stale, never-applied state.
+    expect(writeAutosave).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("the SAME apply failure does not throw out of bootDesktopDocument itself — the exception is caught and logged, not silently swallowed", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(OTHER_PRESET));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    useVizStore.setState({
+      applyDocument: vi.fn(() => {
+        throw new Error("applyDocument blew up");
+      }),
+    });
+
+    await expect(useVizStore.getState().bootDesktopDocument()).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+});
+
+describe("whole-lane-review fix I1 — a manual project open racing the read wins", () => {
+  /** A promise this test controls the settling of, matching the
+   * `deferred()` helper shape already established elsewhere in this
+   * codebase's store-level tests (customShaderActions.test.ts). */
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  it("a project opened WHILE the autosave read is still in flight wins — the late-arriving autosave content is discarded, not silently applied over it", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    const read = deferred<string | null>();
+    vi.mocked(readAutosave).mockReturnValue(read.promise);
+
+    const bootPromise = useVizStore.getState().bootDesktopDocument();
+
+    // The manual open lands WHILE the read above is still pending — this is
+    // exactly the case undoDepth alone cannot catch: openProjectText FORCES
+    // undoDepth back to 0, the same value a fresh boot already has.
+    // Distinct from OTHER_PRESET ("particle-flow", used for the stale
+    // autosave content below) so the two are unambiguous in the assertion.
+    const OPENED_PRESET = "spectrum-bars";
+    useVizStore.getState().openProjectText("manual.bfproj", autosaveTextWithPreset(OPENED_PRESET));
+    expect(useVizStore.getState().undoDepth).toBe(0); // confirms the trap I1 found is real
+    expect(useVizStore.getState().presetId).toBe(OPENED_PRESET);
+
+    // NOW the stale autosave read resolves, with DIFFERENT content.
+    read.resolve(autosaveTextWithPreset(OTHER_PRESET));
+    await bootPromise;
+
+    // The manually-opened project must still be what's live — not silently
+    // replaced by the autosave content that started loading before it.
+    expect(useVizStore.getState().presetId).toBe(OPENED_PRESET);
+  });
+
+  it("docEpoch is bumped by the manual open, unlike undoDepth which the open itself resets to 0", async () => {
+    const before = useVizStore.getState().docEpoch;
+    useVizStore.getState().openProjectText("manual.bfproj", autosaveTextWithPreset(OTHER_PRESET));
+    expect(useVizStore.getState().undoDepth).toBe(0);
+    expect(useVizStore.getState().docEpoch).toBeGreaterThan(before);
   });
 });

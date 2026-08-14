@@ -734,9 +734,7 @@ export const GUIDE: readonly GuideSection[] = [
       { h4: "Never lose work" },
       {
         p: [
-          "On desktop, Beatform autosaves the project in the background (the delay is yours to set in Preferences). After a crash or force-kill, the next launch offers ",
-          { em: "Restore" },
-          " — your unsaved tweaks come back.",
+          "On desktop, Beatform saves your project automatically in the background (how quickly is yours to set in Preferences), and closing the window — or a crash — always flushes the very latest edit first, so nothing from the moment before is lost. Reopen the app and your work is simply there; after a crash or force-kill, a quick note lets you know it was recovered.",
         ],
       },
     ],
@@ -878,7 +876,7 @@ export const GUIDE: readonly GuideSection[] = [
           { code: ".bfproj" },
           ") saves wherever you choose in the native save dialog — Beatform just remembers the folder as a convenience default. A look (",
           { code: ".bfpreset" },
-          ") lives in the app's own local storage the moment you save it; exporting one to a file is a separate, explicit step, same as a theme. The one file Beatform writes on its own is the autosave — a single background copy in the app's local data folder, kept only for crash recovery and offered back on the next launch.",
+          ") lives in the app's own local storage the moment you save it; exporting one to a file is a separate, explicit step, same as a theme. The one file Beatform writes on its own is the project document — a single copy in the app's local data folder that mirrors your current work automatically and loads back in every time you reopen the app.",
         ],
       },
       { h4: "What do I need for automatic lyrics, and is there a length limit?" },

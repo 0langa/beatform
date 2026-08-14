@@ -256,7 +256,7 @@ Press <kbd>B</kbd>, drop a folder of tracks, and Beatform renders one video per 
 
 ### Never lose work
 
-On desktop, Beatform autosaves the project in the background (the delay is yours to set in Preferences). After a crash or force-kill, the next launch offers _Restore_ — your unsaved tweaks come back.
+On desktop, Beatform saves your project automatically in the background (how quickly is yours to set in Preferences), and closing the window — or a crash — always flushes the very latest edit first, so nothing from the moment before is lost. Reopen the app and your work is simply there; after a crash or force-kill, a quick note lets you know it was recovered.
 
 <a id="gallery"></a>
 
@@ -355,7 +355,7 @@ WebGPU is Beatform's real renderer — every mode, Builder, custom shaders, post
 
 ### Where do my projects, looks and themes actually live?
 
-A project (`.bfproj`) saves wherever you choose in the native save dialog — Beatform just remembers the folder as a convenience default. A look (`.bfpreset`) lives in the app's own local storage the moment you save it; exporting one to a file is a separate, explicit step, same as a theme. The one file Beatform writes on its own is the autosave — a single background copy in the app's local data folder, kept only for crash recovery and offered back on the next launch.
+A project (`.bfproj`) saves wherever you choose in the native save dialog — Beatform just remembers the folder as a convenience default. A look (`.bfpreset`) lives in the app's own local storage the moment you save it; exporting one to a file is a separate, explicit step, same as a theme. The one file Beatform writes on its own is the project document — a single copy in the app's local data folder that mirrors your current work automatically and loads back in every time you reopen the app.
 
 ### What do I need for automatic lyrics, and is there a length limit?
 
