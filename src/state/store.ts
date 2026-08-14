@@ -785,6 +785,20 @@ let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
  */
 let autosaveMaxTimer: ReturnType<typeof setTimeout> | undefined;
 
+/**
+ * Second whole-lane-review round, item 2: `initApp`'s onCloseRequested
+ * handler awaits `flushAutosave()` with no deadline of its own — a
+ * genuinely hung write (a cloud-synced AppData folder can stall a file
+ * operation for real on Windows) would leave the window permanently
+ * unclosable. Long enough for an ordinary write, short enough that a
+ * stall doesn't read as a frozen app. On timeout the handler proceeds to
+ * destroy() anyway: writeAutosave's atomic tmp+rename (see platform.ts)
+ * means abandoning the wait can never leave a TORN file on disk, only one
+ * a few seconds staler than ideal — an intact old copy beats an
+ * unclosable app.
+ */
+const CLOSE_FLUSH_TIMEOUT_MS = 4000;
+
 function resolveParams(presetId: string, overrides: Record<string, ParamValues>): ParamValues {
   const preset = presetById(presetId);
   return { ...defaultParams(preset), ...overrides[preset.id] };
@@ -1582,8 +1596,31 @@ export const useVizStore = create<VizState>((set, get) => {
           const appWindow = getCurrentWindow();
           const un = await appWindow.onCloseRequested(async (event) => {
             event.preventDefault();
+            // Whole-lane-review round 2, item 2: race the flush against
+            // CLOSE_FLUSH_TIMEOUT_MS rather than awaiting it unconditionally
+            // — see that const's own comment. Deliberately NOT importing
+            // src/ui/asyncTimeout.ts's raceTimeout for this: that file lives
+            // in ui/, and no file under src/state/ imports from ui/ anywhere
+            // in this codebase (state is what ui depends ON, never the
+            // reverse). The shape needed here is smaller besides — no
+            // AbortSignal to thread through, since flushAutosave's
+            // underlying fs calls have no cancellation path to abort into
+            // either (the same limit that file's own doc comment records
+            // for ITS callers).
+            let timedOut = false;
+            const timeoutPromise = new Promise<void>((resolve) => {
+              setTimeout(() => {
+                timedOut = true;
+                resolve();
+              }, CLOSE_FLUSH_TIMEOUT_MS);
+            });
             try {
-              await get().flushAutosave();
+              await Promise.race([get().flushAutosave(), timeoutPromise]);
+              if (timedOut) {
+                console.warn(
+                  "[autosave] close-flush did not finish in time — closing with the last completed write",
+                );
+              }
             } catch (e) {
               console.error("[autosave] close-flush failed", e);
             } finally {

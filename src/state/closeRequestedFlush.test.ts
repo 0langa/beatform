@@ -147,4 +147,61 @@ describe("Tauri onCloseRequested — the awaited close-flush", () => {
     dispose();
     vi.mocked(platform.isTauri).mockReturnValue(true);
   });
+
+  describe("second whole-lane-review round item 2: the flush has a deadline", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("a permanently hung flush still lets the handler settle within the deadline, and destroy still fires", async () => {
+      const dispose = useVizStore.getState().initApp(fakeCanvas());
+      // Install the handler on REAL timers first (vi.waitFor's own polling
+      // assumes them); switch to fake ones only for the deadline itself.
+      await vi.waitFor(() => expect(onCloseRequested).toHaveBeenCalledTimes(1));
+
+      // A genuine hang: a promise that never settles, simulating a
+      // cloud-synced AppData folder stalling the write for real.
+      vi.spyOn(useVizStore.getState(), "flushAutosave").mockReturnValue(
+        new Promise<void>(() => undefined),
+      );
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      vi.useFakeTimers();
+      let settled = false;
+      const handlerPromise = registeredHandler!({ preventDefault: vi.fn() }) as Promise<void>;
+      void handlerPromise.then(() => {
+        settled = true;
+      });
+
+      // Well before the deadline: still waiting, destroy not called yet.
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(settled).toBe(false);
+      expect(destroy).not.toHaveBeenCalled();
+
+      // Past the deadline: the handler must settle on its own, and destroy
+      // must fire — the permanently-hung flush is simply abandoned, not
+      // awaited forever.
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(settled).toBe(true);
+      expect(destroy).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("did not finish in time"));
+
+      warnSpy.mockRestore();
+      dispose();
+    });
+
+    it("a flush that settles WELL before the deadline is not affected by it — no spurious timeout warning", async () => {
+      const dispose = useVizStore.getState().initApp(fakeCanvas());
+      await vi.waitFor(() => expect(onCloseRequested).toHaveBeenCalledTimes(1));
+      vi.spyOn(useVizStore.getState(), "flushAutosave").mockResolvedValue(undefined);
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      await registeredHandler!({ preventDefault: vi.fn() });
+
+      expect(destroy).toHaveBeenCalledTimes(1);
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+      dispose();
+    });
+  });
 });
