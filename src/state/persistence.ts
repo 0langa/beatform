@@ -25,12 +25,36 @@ import { getPrefs, setPrefs } from "./prefs";
 import { defaultBuilderStack, validBuilderStack, type BuilderStack } from "../render/builder2";
 import { validMidiBindings, type MidiBinding } from "./midi";
 import type { ExportSettings } from "./store";
+import { isTauri } from "./platform";
 
 /**
  * localStorage persistence for the current session. Keys and formats are the
- * pre-store ones, so existing installs keep their settings. This layer gets
- * superseded by project files (.bfproj); it will remain as the "last session"
- * cache.
+ * pre-store ones, so existing installs keep their settings.
+ *
+ * P-11: on desktop, the 17 DOCUMENT-key savers below (one per
+ * `ProjectDocument` field — see .superpowers/p11-lane-log.md's Task 1 map
+ * for the exhaustive list) are each guarded `if (isTauri()) return;` at the
+ * top of their own body. The autosave `.bfproj` (store.ts's
+ * `scheduleAutosave`/`writeAutosave`) is now the ONE desktop serialization
+ * path — this is the SS-2 quota-split-brain class closed at the root, not
+ * guarded per call site: writing the same field to two independently-quota'd
+ * stores is what let them diverge, so desktop stops writing the document to
+ * the one that has a quota at all. The LOADERS stay universal/unguarded on
+ * both platforms — desktop's synchronous boot still reads them as the
+ * fallback (Task 2), and the browser build's boot/persistence is completely
+ * unaffected (still reads AND writes every key, exactly as before this
+ * lane). The two boolean-returning savers (`saveStoredOverlay`,
+ * `saveCustomPresets`) return `true`, not the `safeSetItem`-shaped `false`,
+ * when gated off — from every caller's point of view the write SUCCEEDED
+ * (the document is captured by the autosave writer instead), and a handful
+ * of call sites gate a dependent write or a user-facing "too large to
+ * remember" notice on that return value; answering `false` there would fire
+ * a false quota warning on every desktop image/shader save.
+ *
+ * Non-document keys (`viz.exportSettings.v1`, `viz.midiBindings.v1`, the
+ * `viz.docSchema.v1` stamp, `viz.cleanExit`) are untouched by any of this —
+ * they were never part of `ProjectDocument`/`.bfproj` and keep behaving
+ * exactly as before, on both platforms.
  */
 const LS_PRESET = "viz.activePreset";
 const LS_PARAMS = "viz.params.v1";
@@ -269,6 +293,7 @@ export function loadStoredPresetId(): string | null {
 }
 
 export function saveStoredPresetId(id: string): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   safeSetItem(LS_PRESET, id);
 }
 
@@ -286,6 +311,7 @@ export function loadStoredParams(): Record<string, ParamValues> {
 }
 
 export function saveStoredParams(params: Record<string, ParamValues>): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   scheduleWrite(LS_PARAMS, () => safeSetItem(LS_PARAMS, JSON.stringify(params)));
 }
 
@@ -294,6 +320,7 @@ export function loadStoredSync(): Record<string, SyncSettings> {
 }
 
 export function saveStoredSync(sync: Record<string, SyncSettings>): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   scheduleWrite(LS_SYNC, () => safeSetItem(LS_SYNC, JSON.stringify(sync)));
 }
 
@@ -304,6 +331,7 @@ export function loadStoredBg(): BgSettings {
 }
 
 export function saveStoredBg(bg: BgSettings): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   safeSetItem(LS_BG, JSON.stringify(bg));
 }
 
@@ -317,6 +345,7 @@ export function loadStoredBgByPreset(
 }
 
 export function saveStoredBgByPreset(v: Record<string, BgSettings>): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   scheduleWrite(LS_BG_BY_PRESET, () => safeSetItem(LS_BG_BY_PRESET, JSON.stringify(v)));
 }
 
@@ -328,6 +357,7 @@ export function loadStoredCenterImages(
 }
 
 export function saveStoredCenterImages(v: Record<string, string>): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   scheduleWrite(LS_CENTER_IMAGES, () => safeSetItem(LS_CENTER_IMAGES, JSON.stringify(v)));
 }
 
@@ -356,6 +386,11 @@ export function saveStoredOverlay(
   layers: OverlayLayer[],
   assets: Record<string, OverlayAsset>,
 ): boolean {
+  // P-11: `true`, not the safeSetItem-shaped `false` — see this file's
+  // top-of-file comment. Desktop callers gate a dependent write (or a
+  // "too large to remember" notice) on this return value; the write did
+  // not fail, it simply isn't this layer's job any more.
+  if (isTauri()) return true;
   // Best-effort: image assets are multi-MB data URLs and can blow the
   // localStorage quota. A failed persist must not throw out of the store
   // action — the layer would exist in state but never draw (the trailing
@@ -375,6 +410,10 @@ export function loadCustomPresets(): PresetDef[] {
 }
 
 export function saveCustomPresets(defs: PresetDef[]): boolean {
+  // P-11: `true`, not `false` — see saveStoredOverlay above and this file's
+  // top-of-file comment. saveCustomPreset (customShaderActions.ts) gates its
+  // "saved" vs. "too large to remember" toast on this return value.
+  if (isTauri()) return true;
   return safeSetItem(LS_CUSTOM_PRESETS, JSON.stringify(defs));
 }
 
@@ -385,6 +424,7 @@ export function loadStoredLyricStyle(): LyricStyle {
 }
 
 export function saveStoredLyricStyle(style: LyricStyle): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   safeSetItem(LS_LYRIC_STYLE, JSON.stringify(style));
 }
 
@@ -395,6 +435,7 @@ export function loadStoredAudiogram(): AudiogramSettings {
 }
 
 export function saveStoredAudiogram(a: AudiogramSettings): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   safeSetItem(LS_AUDIOGRAM, JSON.stringify(a));
 }
 
@@ -457,6 +498,7 @@ export function loadStoredPost(): PostSettings {
 }
 
 export function saveStoredPost(post: PostSettings): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   scheduleWrite(LS_POST, () => safeSetItem(LS_POST, JSON.stringify(post)));
 }
 const LS_MOTION = "viz.motion.v1";
@@ -466,6 +508,7 @@ export function loadStoredMotion(): MotionSettings {
 }
 
 export function saveStoredMotion(motion: MotionSettings): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   scheduleWrite(LS_MOTION, () => safeSetItem(LS_MOTION, JSON.stringify(motion)));
 }
 const LS_MODS = "viz.mods.v1";
@@ -478,6 +521,7 @@ export function loadStoredBuilderStack(): BuilderStack {
 }
 
 export function saveStoredBuilderStack(stack: BuilderStack): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   scheduleWrite(LS_BUILDER, () => safeSetItem(LS_BUILDER, JSON.stringify(stack)));
 }
 
@@ -486,6 +530,7 @@ export function loadStoredTimeline(): Timeline {
 }
 
 export function saveStoredTimeline(timeline: Timeline): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   safeSetItem(LS_TIMELINE, JSON.stringify(timeline));
 }
 
@@ -494,6 +539,7 @@ export function loadStoredMods(): Record<string, ModRoute[]> {
 }
 
 export function saveStoredMods(mods: Record<string, ModRoute[]>): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   scheduleWrite(LS_MODS, () => safeSetItem(LS_MODS, JSON.stringify(mods)));
 }
 
@@ -502,6 +548,7 @@ export function loadStoredAspect(): Aspect {
 }
 
 export function saveStoredAspect(aspect: Aspect): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   safeSetItem(LS_ASPECT, aspect);
 }
 
@@ -514,6 +561,7 @@ export function loadStoredSmoothSpectrum(): boolean {
 }
 
 export function saveStoredSmoothSpectrum(v: boolean): void {
+  if (isTauri()) return; // P-11: desktop's document lives in the autosave file
   safeSetItem(LS_SMOOTH_SPECTRUM, v ? "1" : "0");
 }
 
