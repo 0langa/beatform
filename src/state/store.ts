@@ -263,6 +263,32 @@ interface SessionSlice {
   error: string | null;
   /** Transient positive feedback (project saved, preset imported, …). */
   notice: string | null;
+  /**
+   * Owner ruling D (final round): the desktop boot recovery message
+   * ("Recovered your work from the last session") is its own PERSISTENT
+   * flag, not the transient `notice` — it must linger until the user
+   * dismisses it, not auto-fade on flashNotice's 4s timer, matching the
+   * same transient-vs-persistent split this app already draws for
+   * `error`/`simplifiedRenderer` (the corrupt-quarantine toast, C2(c), is
+   * the precedent this reuses: a session-only boolean, an explicit dismiss
+   * action, no timer). Set by `bootDesktopDocument` (projectIOActions.ts)
+   * on the recovering branch only; never written anywhere else.
+   */
+  recoveredNotice: boolean;
+  /**
+   * Owner ruling E (final round): true ONLY on desktop, ONLY for the first
+   * paint — hides the measured ~423ms window (I2, device smoke) between the
+   * synchronous localStorage-sourced fallback rendering and the autosave
+   * swap landing. Computed once, synchronously, from `isTauri()` at store
+   * creation (the SAME module-scope timing every other document-boot field
+   * already uses) so it is correct from the very first render — nothing
+   * async decides its STARTING value, only App.tsx's boot effect decides
+   * when to drop it (`hideBootVeil`), via whichever comes first: the boot
+   * promise settling or a hard-capped setTimeout independent of it. Always
+   * `false` in the browser build, and never set back to `true` once
+   * cleared — this is a one-time boot affordance, not a toggle.
+   */
+  bootVeilVisible: boolean;
   userPresets: UserPreset[];
   /** Gallery (public curated registry) browser state — session-only. */
   galleryStatus: "idle" | "loading" | "ready" | "error";
@@ -604,6 +630,13 @@ interface Actions {
   /** Close the simplified-renderer banner. Dismissible so it is not a dead
    * end, but never auto-expiring — the controls it explains stay disabled. */
   dismissSimplifiedNotice(): void;
+  /** Owner ruling D: close the persistent boot-recovery notice — see
+   * `recoveredNotice`'s own doc comment. */
+  dismissRecoveredNotice(): void;
+  /** Owner ruling E: drop the boot veil — see `bootVeilVisible`'s own doc
+   * comment. Idempotent (App.tsx calls this from two independent triggers,
+   * whichever fires first); a no-op once already false. */
+  hideBootVeil(): void;
   setStageMode(v: boolean): void;
   setBlackout(v: boolean): void;
   setShowExport(v: boolean): void;
@@ -1360,6 +1393,8 @@ export const useVizStore = create<VizState>((set, get) => {
     showExport: false,
     error: null,
     notice: null,
+    recoveredNotice: false,
+    bootVeilVisible: isTauri(),
     userPresets: loadUserPresets(),
     galleryStatus: "idle" as const,
     galleryError: null,
@@ -2432,6 +2467,14 @@ export const useVizStore = create<VizState>((set, get) => {
 
     dismissSimplifiedNotice() {
       set({ simplifiedNoticeDismissed: true });
+    },
+
+    dismissRecoveredNotice() {
+      set({ recoveredNotice: false });
+    },
+
+    hideBootVeil() {
+      set({ bootVeilVisible: false });
     },
 
     setStageMode(stageMode) {

@@ -243,6 +243,39 @@ body,
   background: #000;
   z-index: 60;
 }
+
+/* Owner ruling E (final round), desktop only: hides the measured ~423ms
+   stale-document flash (I2, device smoke) between first paint and the
+   autosave swap landing. Same full-viewport-overlay shape as
+   .blackout-overlay above, one z-index higher (must sit above literally
+   everything, including that one, however unlikely the overlap). Plain
+   --bg-strong ground — the same token .crash-screen uses for its own
+   "the real app isn't here yet" full-viewport state — deliberately no
+   spinner/logo/text: there is no other pre-paint loading affordance in
+   this app to match, so inventing one here would be a new splash brand,
+   not a match of an existing one. The node stays MOUNTED the whole time
+   (App.tsx only conditions its presence on isTauri(), never on
+   bootVeilVisible) — dropping it is a pure opacity transition, never a
+   layout-affecting mount/unmount. */
+.boot-veil {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-strong);
+  z-index: 65;
+  opacity: 1;
+  transition: opacity 150ms ease;
+}
+
+.boot-veil.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-veil {
+    transition: none;
+  }
+}
 .stage-hud,
 .volume-flash {
   position: fixed;
@@ -2898,6 +2931,13 @@ kbd {
 }
 
 .notice-toast {
+  color: var(--accent, #6aa8ff);
+}
+
+/* Owner ruling D (final round): same accent tone as .notice-toast (positive,
+   not an error) — persistent instead of transient is a lifetime difference
+   (session flag + dismiss button, see App.tsx), not a color one. */
+.recovered-toast {
   color: var(--accent, #6aa8ff);
 }
 

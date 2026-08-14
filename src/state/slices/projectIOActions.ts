@@ -220,11 +220,16 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
      * candidate documents for a user to choose between any more — nothing
      * left to discard TO. The one thing that choice-driven flow gave that a
      * silent apply doesn't is AWARENESS that a crash happened at all, which
-     * this preserves as a passive, one-time flashNotice (the exact sentence
-     * the old restoreAutosave() used) instead of an actionable bar — fired
-     * only when there's something genuinely worth telling the user (the
-     * previous exit was unclean AND the autosave actually applied; a clean
-     * exit, same as today, stays completely silent — the common path).
+     * this preserves as a notice (the exact sentence the old restoreAutosave()
+     * used) instead of an actionable bar — fired only when there's something
+     * genuinely worth telling the user (the previous exit was unclean AND the
+     * autosave actually applied; a clean exit, same as today, stays
+     * completely silent — the common path). Owner ruling D (final round):
+     * this notice is PERSISTENT (`recoveredNotice`, dismissed by its own
+     * action), not the transient `flashNotice` — a boot recovery is worth
+     * more than 4 seconds of visibility, and a user who stepped away from
+     * the machine at exactly the wrong moment must still see it when they
+     * come back.
      */
     async bootDesktopDocument() {
       if (!isTauri()) return;
@@ -271,7 +276,7 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                 // marker or queue a redundant identical rewrite before the
                 // user has touched anything.
                 get().applyDocument(doc, { alreadyOnDisk: true });
-                if (recovering) ctx.flashNotice("Recovered your work from the last session");
+                if (recovering) set({ recoveredNotice: true });
               } else {
                 console.warn(
                   "[autosave] the document already changed (an edit, or a manual open) before boot resolved — keeping it",

@@ -7,6 +7,7 @@ import { BatchPanel } from "./ui/BatchPanel";
 import { SIMPLIFIED_EXPORT_REASON, useVizStore } from "./state/store";
 import { selectEffectiveBg } from "./state/selectors";
 import { installDevHooks } from "./devHooks";
+import { isTauri } from "./state/platform";
 import { getPrefs, setPrefs, subscribePrefs } from "./state/prefs";
 import { PlayerBar } from "./ui/PlayerBar";
 import { LibraryPanel } from "./ui/LibraryPanel";
@@ -117,6 +118,59 @@ export function resizeKeyValue(
   return Math.min(hi, Math.max(lo, next));
 }
 
+/**
+ * Owner ruling E (final round): the desktop boot veil's hard cap. The
+ * device smoke measured a real ~423ms stale-document flash (I2) between
+ * first paint (localStorage's synchronous fallback) and the autosave swap
+ * landing — this hides it. Deliberately generous relative to that
+ * measurement (never observed anywhere near the cap in practice) so the
+ * cap is a genuine safety net for a slow/stalled read, not a routine exit.
+ */
+const BOOT_VEIL_CAP_MS = 500;
+
+/**
+ * Races `bootPromise` against `capMs`, calling `onDrop` whichever settles
+ * first. Extracted from the effect that uses it so the race itself is
+ * unit-testable without rendering React (matching this file's own existing
+ * pattern of exporting pure logic for testing — see `commitVisualsWidth`/
+ * `resizeKeyValue` above). Two INDEPENDENT triggers, not one timeout
+ * wrapping the promise: the cap must fire regardless of what the promise
+ * does, even if it never settles at all — a hung Tauri IPC read must not
+ * keep the veil up past the cap. `.finally`, not `.then`: both the
+ * successful-swap branch and the fallback branch of `bootDesktopDocument`
+ * must drop the veil, and a rejection (defensive — the real implementation
+ * never rejects, but this must not assume that) drops it too rather than
+ * riding the cap. `onDrop` fires EXACTLY once per race: whichever trigger
+ * wins clears the other (a `settled` guard plus `clearTimeout` inside the
+ * winning path itself, not just in the returned cancel function) — without
+ * this, a promise that resolves well before the cap left the cap timer
+ * armed, and it fired `onDrop` a second time when it eventually elapsed.
+ * `.finally`'s own return value is a second promise that mirrors the
+ * original's rejection; `void`-discarding it without a `.catch` left that
+ * mirrored rejection unhandled whenever `bootPromise` itself rejected, so
+ * the drop path swallows it explicitly. Returns a cancel function for the
+ * effect's own cleanup (a fast unmount before either trigger fires).
+ */
+export function raceBootVeilDrop(
+  bootPromise: Promise<unknown>,
+  capMs: number,
+  onDrop: () => void,
+): () => void {
+  let settled = false;
+  const drop = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(cap);
+    onDrop();
+  };
+  const cap = setTimeout(drop, capMs);
+  void bootPromise.finally(drop).catch(() => undefined);
+  return () => {
+    settled = true;
+    clearTimeout(cap);
+  };
+}
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -151,6 +205,8 @@ export default function App() {
   const showExport = useVizStore((s) => s.showExport);
   const error = useVizStore((s) => s.error);
   const notice = useVizStore((s) => s.notice);
+  const recoveredNotice = useVizStore((s) => s.recoveredNotice);
+  const bootVeilVisible = useVizStore((s) => s.bootVeilVisible);
   const aspect = useVizStore((s) => s.aspect);
   const showTimeline = useVizStore((s) => s.showTimeline);
   /** A BOOLEAN, not the progress object: `exporting` is rewritten once per
@@ -262,8 +318,21 @@ export default function App() {
   // cache already on screen (isTauri()-gated inside the action; a no-op in
   // the browser build). Runs once, after the app has booted into its normal
   // (localStorage-sourced) state — that state is now just the fallback.
+  //
+  // Owner ruling E (final round): the boot veil (rendered below, in the JSX)
+  // hides the gap between that fallback and this promise settling. It drops
+  // on WHICHEVER COMES FIRST — `.finally` (not `.then`) fires on the
+  // successful-swap branch AND the fallback branch alike, so a missing or
+  // corrupt autosave still drops the veil promptly rather than riding the
+  // cap every time. The cap timer is a completely SEPARATE setTimeout, not
+  // derived from this promise in any way — a genuinely stalled Tauri IPC
+  // read cannot keep the veil up past BOOT_VEIL_CAP_MS regardless of what
+  // bootDesktopDocument is doing.
   useEffect(() => {
-    void store().bootDesktopDocument();
+    if (!isTauri()) return; // browser never shows the veil — nothing to hide
+    return raceBootVeilDrop(store().bootDesktopDocument(), BOOT_VEIL_CAP_MS, () =>
+      store().hideBootVeil(),
+    );
   }, [store]);
 
   // Preset thumbnails (P-3). The GENERATION is what became eager, not the
@@ -780,6 +849,23 @@ export default function App() {
             </button>
           </div>
         )}
+        {/* Owner ruling D (final round): persistent, dismissible — same
+            idiom as the error toast above (session-only flag + explicit
+            close), NOT the transient notice below. A boot recovery is
+            worth more than 4 seconds of visibility. */}
+        {recoveredNotice && (
+          <div className="toast recovered-toast" role="status">
+            <span className="toast-text">Recovered your work from the last session</span>
+            <button
+              className="chip-x"
+              aria-label="Dismiss"
+              title="Dismiss"
+              onClick={() => store().dismissRecoveredNotice()}
+            >
+              <IconClose size={13} />
+            </button>
+          </div>
+        )}
         {notice && !error && (
           <div className="toast notice-toast" role="status">
             <span className="toast-text">{notice}</span>
@@ -890,6 +976,17 @@ export default function App() {
       {showGuide && <GuideDialog onClose={() => store().setShowGuide(false)} />}
       {showExport && <ExportDialog />}
       {showSettings && <SettingsDialog />}
+
+      {/* Owner ruling E (final round): desktop-only boot veil — see
+          BOOT_VEIL_CAP_MS's own comment and bootVeilVisible's doc comment
+          (store.ts). Gated on isTauri() itself (not just bootVeilVisible
+          starting false) so the browser build never puts this node in the
+          DOM at all — the SHOW-to-HIDE transition afterward is a pure CSS
+          opacity toggle on an already-mounted node, never a mount/unmount,
+          so dropping it can never shift layout. */}
+      {isTauri() && (
+        <div className={`boot-veil${bootVeilVisible ? "" : " hidden"}`} aria-hidden="true" />
+      )}
     </div>
   );
 }

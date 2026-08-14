@@ -164,8 +164,8 @@ describe("bootDesktopDocument — desktop boots from the autosave file (P-11 Tas
   });
 });
 
-describe("recovery-flow reconciliation — a passive notice replaces the Restore/Discard prompt (P-11 Task 4)", () => {
-  it("previous exit unclean + the autosave applies: fires the same one-time notice restoreAutosave() used to", async () => {
+describe("recovery-flow reconciliation — a persistent, dismissible notice replaces the Restore/Discard prompt (P-11 Task 4, owner ruling D)", () => {
+  it("previous exit unclean + the autosave applies: sets the persistent recoveredNotice flag (NOT the transient notice, which auto-fades)", async () => {
     vi.mocked(isTauri).mockReturnValue(true);
     vi.mocked(wasPreviousExitClean).mockReturnValue(false);
     vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(OTHER_PRESET));
@@ -173,7 +173,41 @@ describe("recovery-flow reconciliation — a passive notice replaces the Restore
     await useVizStore.getState().bootDesktopDocument();
 
     expect(useVizStore.getState().presetId).toBe(OTHER_PRESET);
-    expect(useVizStore.getState().notice).toBe("Recovered your work from the last session");
+    expect(useVizStore.getState().recoveredNotice).toBe(true);
+    // Owner ruling D: this is NOT the auto-fading transient toast — flashNotice
+    // (which writes `notice`) is never called for this case any more.
+    expect(useVizStore.getState().notice).toBeNull();
+  });
+
+  it("owner ruling D: the recovered notice does not expire on the transient 4s timer — it is still true well past it", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(isTauri).mockReturnValue(true);
+      vi.mocked(wasPreviousExitClean).mockReturnValue(false);
+      vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(OTHER_PRESET));
+
+      await useVizStore.getState().bootDesktopDocument();
+      expect(useVizStore.getState().recoveredNotice).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(10_000); // well past flashNotice's 4000ms
+      expect(useVizStore.getState().recoveredNotice).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("owner ruling D: dismissRecoveredNotice() clears it, and only it", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(wasPreviousExitClean).mockReturnValue(false);
+    vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(OTHER_PRESET));
+    await useVizStore.getState().bootDesktopDocument();
+    expect(useVizStore.getState().recoveredNotice).toBe(true);
+    useVizStore.setState({ error: "unrelated" });
+
+    useVizStore.getState().dismissRecoveredNotice();
+
+    expect(useVizStore.getState().recoveredNotice).toBe(false);
+    expect(useVizStore.getState().error).toBe("unrelated"); // untouched by the dismiss
   });
 
   it("previous exit was clean: silent even though the autosave still applies — this is the common path, every ordinary launch", async () => {
@@ -184,7 +218,7 @@ describe("recovery-flow reconciliation — a passive notice replaces the Restore
     await useVizStore.getState().bootDesktopDocument();
 
     expect(useVizStore.getState().presetId).toBe(OTHER_PRESET); // still preferred — Task 2's rule is unconditional
-    expect(useVizStore.getState().notice).toBeNull();
+    expect(useVizStore.getState().recoveredNotice).toBe(false);
   });
 
   it("previous exit unclean but the autosave is missing (fallback path): no notice — nothing was actually recovered, it's an ordinary cache boot", async () => {
@@ -194,7 +228,7 @@ describe("recovery-flow reconciliation — a passive notice replaces the Restore
 
     await useVizStore.getState().bootDesktopDocument();
 
-    expect(useVizStore.getState().notice).toBeNull();
+    expect(useVizStore.getState().recoveredNotice).toBe(false);
   });
 
   it("previous exit unclean, autosave parses, but the anti-clobber guard skipped applying it: no notice either — nothing was applied", async () => {
@@ -205,7 +239,7 @@ describe("recovery-flow reconciliation — a passive notice replaces the Restore
 
     await useVizStore.getState().bootDesktopDocument();
 
-    expect(useVizStore.getState().notice).toBeNull();
+    expect(useVizStore.getState().recoveredNotice).toBe(false);
   });
 
   it("recoveredDoc/restoreAutosave/dismissAutosave no longer exist on VizState — the interactive prompt's machinery is gone, not just unreachable", () => {
