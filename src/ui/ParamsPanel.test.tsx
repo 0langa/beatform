@@ -21,7 +21,7 @@ import {
 import { BUILDER2_ID } from "../render/builder2";
 import { LFO_SOURCES, MOD_LAG_MAX_SEC, MOD_SOURCES } from "../state/modMatrix";
 import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
-import { clearHistory } from "../state/history";
+import { clearHistory, historyDepths } from "../state/history";
 
 /**
  * The Visuals contract after P-12.
@@ -1141,6 +1141,106 @@ describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
       expect(useVizStore.getState().activeMods).toBe(before);
       expect(useVizStore.getState().undoDepth).toBe(0);
     });
+  });
+});
+
+/** Two routes sharing "kick" across two DIFFERENT cards, plus one "bass"
+ *  route that must survive untouched — the fixture for both clear-for-source
+ *  tests below. Same-source-different-card is exactly the case a bulk clear
+ *  earns its keep over removing routes one card at a time (H13). */
+function seedCrossCardKickRoutes() {
+  const other = otherTarget();
+  const a = { id: "r1", source: "kick" as const, param: "hue", amount: 0.5 };
+  const b = { id: "r2", source: "kick" as const, param: other, amount: -0.3 };
+  const c = { id: "r3", source: "bass" as const, param: "hue", amount: 0.2 };
+  act(() =>
+    useVizStore.setState({
+      presetId: "spectrum-bars",
+      activeMods: [a, b, c],
+      modsByPreset: { ...useVizStore.getState().modsByPreset, "spectrum-bars": [a, b, c] },
+    }),
+  );
+  render(<ParamsPanel />);
+  gotoModulation();
+  return { a, b, c };
+}
+
+describe("bulk actions (H13)", { timeout: 30_000 }, () => {
+  it("the clear-routes button only appears once its chip is the active filter", () => {
+    // Progressive disclosure, not a permanent neighbor on every chip — see
+    // ModulationPage.tsx's own comment: unconditionally widening every chip
+    // risks the gpu-pixel-matrix layout audit at the 380px dock floor.
+    seedCrossCardKickRoutes();
+    expect(screen.queryByRole("button", { name: /^Clear \d+ routes? driven by/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Kick" }));
+    expect(screen.getByRole("button", { name: "Clear 2 routes driven by Kick" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Kick" })); // click again clears the filter
+    expect(screen.queryByRole("button", { name: /^Clear \d+ routes? driven by/ })).toBeNull();
+  });
+
+  it("declining the clear-routes confirm leaves routes and history untouched", async () => {
+    seedCrossCardKickRoutes();
+    askConfirmMock.mockImplementation(async () => false);
+    const before = useVizStore.getState().activeMods;
+    const undoBefore = historyDepths().undo;
+
+    // The clear button is progressive disclosure: it only appears once this
+    // chip is the active filter (ModulationPage.tsx's own comment has why).
+    fireEvent.click(screen.getByRole("button", { name: "Kick" }));
+    // The aria-label IS the query: if it did not name the real count and the
+    // source's label exactly, this button would not be found at all.
+    fireEvent.click(screen.getByRole("button", { name: "Clear 2 routes driven by Kick" }));
+    await act(async () => {});
+
+    expect(askConfirmMock).toHaveBeenCalledTimes(1);
+    expect(String(askConfirmMock.mock.calls[0][0])).toContain("2 routes driven by Kick");
+    expect(useVizStore.getState().activeMods).toBe(before); // identity: untouched
+    expect(historyDepths().undo).toBe(undoBefore); // T13 shape: decline costs nothing
+  });
+
+  it("confirming removes exactly N routes with one new undo entry, and undo restores them", async () => {
+    const { a, b, c } = seedCrossCardKickRoutes();
+    const undoBefore = historyDepths().undo;
+
+    fireEvent.click(screen.getByRole("button", { name: "Kick" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear 2 routes driven by Kick" }));
+    await act(async () => {});
+
+    // Both "kick" routes gone — from two DIFFERENT cards — and the "bass"
+    // route (a different source) survives untouched.
+    expect(useVizStore.getState().activeMods).toEqual([c]);
+    expect(historyDepths().undo).toBe(undoBefore + 1);
+
+    act(() => useVizStore.getState().undo());
+    // Snapshot restore is a JSON round-trip, so equal, not the SAME objects.
+    expect(useVizStore.getState().activeMods).toEqual([a, b, c]);
+  });
+
+  it("a single-route card shows no bulk depth control — nothing to bulk-set", () => {
+    // Same reasoning H12 gates the grip/▲▼ on: at one route, this control
+    // would set the exact same thing the route's own Depth slider already
+    // does, so hiding it is not a missing feature.
+    seedRoute("hue");
+    render(<ParamsPanel />);
+    gotoModulation();
+    const card = cards()[0];
+    expect(card.querySelector(".mod-depth-bulk")).toBeNull();
+  });
+
+  it("the card's All depth control sets every stacked route in one edit", () => {
+    const { card } = seedStackedHueRoutes(); // kick@0.5, bass@-0.25, both "hue"
+    const slider = card.querySelector<HTMLInputElement>(".mod-depth-bulk .slider")!;
+    // Shows routes[0]'s ("kick") amount as its starting position.
+    expect(slider.value).toBe("0.5");
+
+    fireEvent.change(slider, { target: { value: "-0.6" } });
+
+    const amounts = useVizStore.getState().activeMods.map((r) => r.amount);
+    expect(amounts[0]).toBeCloseTo(-0.6);
+    expect(amounts[1]).toBeCloseTo(-0.6);
+    expect(useVizStore.getState().undoDepth).toBe(1); // one bulk edit, one entry
   });
 });
 

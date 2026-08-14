@@ -158,5 +158,55 @@ export function stemsModsActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       set({ activeMods, modsByPreset });
       saveStoredMods(modsByPreset);
     },
+
+    // H13 — bulk Modulation actions. Both record under the SAME "mod-bulk"
+    // key, which UNGROUPABLE (history.ts) carries: two bulk actions fired in
+    // quick succession (e.g. a clear followed by a depth drag) must stay two
+    // separate undo entries, exactly like two rapid "mod-add"s already do —
+    // no injectable clock or per-call key needed, UNGROUPABLE membership is
+    // the whole mechanism.
+
+    /**
+     * Remove every route whose source matches. Destructive + bulk: the UI
+     * asks first (ModulationPage's clearSourceGuarded calls askConfirm, then
+     * this) — this action itself is deliberately prompt-free, the same
+     * UI-level-guard split ParamsPanel.tsx uses for deleteLook/
+     * clearLyricsGuarded, so a test (or any future non-UI caller) can invoke
+     * it directly with no dialog in the way.
+     *
+     * Muted routes are removed too: mute only skips a route in applyMods, it
+     * does not change what source the route matches, and "clear every route
+     * driven by X" is the promise on the button regardless of mute state.
+     */
+    clearModRoutesForSource(source) {
+      const s = get();
+      const activeMods = s.activeMods.filter((r) => r.source !== source);
+      if (activeMods.length === s.activeMods.length) return; // nothing matched
+      ctx.record("mod-bulk");
+      const modsByPreset = { ...s.modsByPreset };
+      if (activeMods.length > 0) modsByPreset[s.presetId] = activeMods;
+      else delete modsByPreset[s.presetId];
+      set({ activeMods, modsByPreset });
+      saveStoredMods(modsByPreset);
+    },
+
+    /**
+     * Set `amount` on every route targeting `param` — the stacked card's
+     * "All" depth row (H13). NOT destructive (every value stays a slider
+     * drag away from where it started), so no confirm.
+     *
+     * Muted routes are included: amount is independent of mute state, same
+     * as each route's own Depth slider (updateModRoute) already treats a
+     * muted route's amount as live, just not currently applied.
+     */
+    setModRouteAmountsForParam(param, amount) {
+      const s = get();
+      if (!s.activeMods.some((r) => r.param === param)) return; // nothing to set
+      ctx.record("mod-bulk");
+      const activeMods = s.activeMods.map((r) => (r.param === param ? { ...r, amount } : r));
+      const modsByPreset = { ...s.modsByPreset, [s.presetId]: activeMods };
+      set({ activeMods, modsByPreset });
+      saveStoredMods(modsByPreset);
+    },
   } satisfies Partial<VizState>;
 }

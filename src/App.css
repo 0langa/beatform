@@ -3541,6 +3541,15 @@ kbd {
   flex: 0 0 40px;
 }
 
+/* Bulk depth (H13): a card-level control, not one of the routes it acts on —
+   the divider is what separates "sets all of the below" from the list it is
+   setting. */
+.mod-depth-bulk {
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
 /* "10.00 s" needs the extra column the depth readout does not. */
 .mod-lag .row-value {
   flex: 0 0 48px;

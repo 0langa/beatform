@@ -204,6 +204,131 @@ describe("reorderModRoutes (H12)", () => {
   });
 });
 
+describe("clearModRoutesForSource (H13)", () => {
+  it("removes every route for the source, including a muted one, and leaves other sources alone", () => {
+    s().addModRoute("kick", liveParam);
+    s().addModRoute("kick", postParam);
+    s().addModRoute("bass", liveParam);
+    const kickRouteId = s().activeMods[0].id;
+    s().updateModRoute(kickRouteId, { muted: true }); // still matches "kick" — mute is not a filter
+    const depth = s().undoDepth;
+
+    s().clearModRoutesForSource("kick");
+
+    expect(pairs()).toEqual([`bass/${liveParam}`]);
+    expect(s().modsByPreset[subject.id]).toEqual(s().activeMods);
+    // ONE entry for the whole bulk removal, not one per route removed.
+    expect(s().undoDepth).toBe(depth + 1);
+  });
+
+  it("is a no-op — no mutation, no history entry — when the source has no routes", () => {
+    s().addModRoute("kick", liveParam);
+    const before = s().activeMods;
+    const depth = s().undoDepth;
+
+    s().clearModRoutesForSource("bass"); // no bass routes exist
+
+    expect(s().activeMods).toBe(before); // identity: nothing was even rebuilt
+    expect(s().undoDepth).toBe(depth);
+  });
+
+  it("drops modsByPreset's entry entirely when the source was the only one routed", () => {
+    s().addModRoute("kick", liveParam);
+    expect(s().modsByPreset[subject.id]).toBeDefined();
+
+    s().clearModRoutesForSource("kick");
+
+    // Same convention as removeModRoute: an empty route list deletes the
+    // preset's key rather than leaving `[]` behind.
+    expect(s().activeMods).toEqual([]);
+    expect(s().modsByPreset[subject.id]).toBeUndefined();
+  });
+
+  it("records ONE entry regardless of N; undo restores all N routes", () => {
+    s().addModRoute("kick", liveParam);
+    s().addModRoute("kick", postParam);
+    s().addModRoute("bass", liveParam);
+    const before = s().activeMods;
+    const depth = s().undoDepth;
+
+    s().clearModRoutesForSource("kick");
+    expect(s().activeMods).toHaveLength(1);
+    expect(s().undoDepth).toBe(depth + 1);
+
+    s().undo();
+    // Snapshot restore is a JSON round-trip (history.ts), so the routes are
+    // equal, not the SAME objects — toEqual, not toBe.
+    expect(s().activeMods).toEqual(before);
+  });
+});
+
+describe("setModRouteAmountsForParam (H13)", () => {
+  it("sets amount on every route for the param, including a muted one, and leaves other targets alone", () => {
+    s().addModRoute("kick", liveParam);
+    s().addModRoute("bass", liveParam); // second route on the SAME target
+    s().addModRoute("kick", postParam); // a DIFFERENT target
+    const [first, second, other] = s().activeMods;
+    s().updateModRoute(second.id, { muted: true });
+    const depth = s().undoDepth;
+
+    s().setModRouteAmountsForParam(liveParam, -0.75);
+
+    const mods = s().activeMods;
+    expect(mods[0].id).toBe(first.id);
+    expect(mods[0].amount).toBe(-0.75);
+    expect(mods[1].id).toBe(second.id);
+    expect(mods[1].amount).toBe(-0.75);
+    expect(mods[1].muted).toBe(true); // amount is independent of mute state
+    // The different-target route is untouched — SAME object, not just equal.
+    expect(mods[2]).toBe(other);
+    expect(s().modsByPreset[subject.id]).toEqual(mods);
+    // ONE entry for the whole bulk set, not one per route touched.
+    expect(s().undoDepth).toBe(depth + 1);
+  });
+
+  it("is a no-op — no mutation, no history entry — when nothing targets the param", () => {
+    s().addModRoute("kick", liveParam);
+    const before = s().activeMods;
+    const depth = s().undoDepth;
+
+    s().setModRouteAmountsForParam("notARealParam", 0.4);
+
+    expect(s().activeMods).toBe(before); // identity: nothing was even rebuilt
+    expect(s().undoDepth).toBe(depth);
+  });
+
+  it("records ONE entry; undo restores the original amounts", () => {
+    s().addModRoute("kick", liveParam);
+    s().addModRoute("bass", liveParam);
+    const before = s().activeMods;
+    const depth = s().undoDepth;
+
+    s().setModRouteAmountsForParam(liveParam, 0.1);
+    expect(s().undoDepth).toBe(depth + 1);
+
+    s().undo();
+    expect(s().activeMods).toEqual(before);
+  });
+});
+
+describe("mod-bulk history (H13)", () => {
+  it("two rapid bulk actions stay two undo entries — UNGROUPABLE, not the 800ms window", () => {
+    s().addModRoute("kick", liveParam);
+    s().addModRoute("bass", liveParam);
+    const depth = s().undoDepth;
+
+    // Both record under the literal SAME "mod-bulk" key, back to back, with
+    // no delay — the case a default (groupable) key would collapse to one
+    // entry. UNGROUPABLE (history.ts) is what keeps them apart; see
+    // reorderModRoutes' own "mod-reorder" test above for the CONTRASTING
+    // grouped case.
+    s().clearModRoutesForSource("bass");
+    s().setModRouteAmountsForParam(liveParam, 0.9);
+
+    expect(s().undoDepth).toBe(depth + 2);
+  });
+});
+
 describe("route recipes still work through the guarded action", () => {
   it("keeps flashing 'Already routed' on a repeat chip click", () => {
     s().applyModRouteRecipe("kick-punch");

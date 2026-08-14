@@ -112,7 +112,13 @@ describe("history", () => {
     pushHistory(doc(2), "layer-add", 1100);
     pushHistory(doc(3), "preset", 1200);
     pushHistory(doc(4), "preset", 1250);
-    expect(historyDepths().undo).toBe(4);
+    // "mod-bulk" (H13): two bulk Modulation actions fired back to back — a
+    // clear-for-source immediately followed by a card's bulk depth set, both
+    // record under this one key — must stay two entries too, not collapse
+    // into one that silently drops the first.
+    pushHistory(doc(5), "mod-bulk", 1300);
+    pushHistory(doc(6), "mod-bulk", 1300); // same millisecond — still ungrouped
+    expect(historyDepths().undo).toBe(6);
   });
 
   it("still groups a continuous slider drag", () => {

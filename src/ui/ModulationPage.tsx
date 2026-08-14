@@ -19,6 +19,7 @@ import {
   type ModSource,
 } from "../state/modMatrix";
 import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
+import { askConfirm } from "../state/platform";
 import { selectPreset } from "../state/selectors";
 import { useVizStore } from "../state/store";
 import { formatValue, Segmented, SECONDS, SliderField } from "./kit";
@@ -352,6 +353,16 @@ export function ModulationPage() {
     return out;
   }, [mods]);
 
+  /** Source id -> how many of its routes exist right now (H13) — what the
+   *  bulk-clear button's confirm message and aria-label name, and muted
+   *  routes count too (clearModRoutesForSource removes them along with the
+   *  rest). */
+  const sourceCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of mods) m.set(r.source, (m.get(r.source) ?? 0) + 1);
+    return m;
+  }, [mods]);
+
   /** Source id -> the label the pickers and chips print. */
   const sourceLabels = useMemo(() => {
     const m = new Map<string, string>();
@@ -401,6 +412,20 @@ export function ModulationPage() {
   };
 
   const sourceName = (id: string) => sourceLabels.get(id) ?? id;
+
+  /** Destructive AND bulk (H13): askConfirm names the real N and the
+   *  source's own label, exactly what the button promises. UI-LEVEL GUARD —
+   *  same split as ParamsPanel's deleteLook/clearLyricsGuarded: the raw
+   *  clearModRoutesForSource action stays prompt-free, this wraps it. */
+  const clearSourceGuarded = async (source: ModSource) => {
+    const n = sourceCounts.get(source) ?? 0;
+    if (n === 0) return;
+    const ok = await askConfirm(
+      `Remove ${n} route${n === 1 ? "" : "s"} driven by ${sourceName(source)}?`,
+      "Clear routes",
+    );
+    if (ok) store().clearModRoutesForSource(source);
+  };
 
   /** Drag class for one route row, mirroring PresetOrderEditor's own
    *  `dragging` / `drop-before` / `drop-after` scheme exactly (name and
@@ -616,26 +641,52 @@ export function ModulationPage() {
       </div>
 
       {/* Live source meters, one per source IN USE. Each chip also filters the
-          cards below it — click again (or the same chip) to clear. */}
+          cards below it — click again (or the same chip) to clear.
+          H13's bulk clear is progressive disclosure, not a permanent
+          neighbor: it only appears once THIS chip is the active filter.
+          Two reasons, not one — filtering-then-clearing is already the
+          natural "show me what this does, now remove it" order, and
+          unconditionally widening every chip risks the layout audit
+          (scripts/gpu-pixel-matrix.mjs) at the 380px dock floor, where
+          "Vocals (lyrics)" — the longest source label in the registry —
+          already sits close to the 174px content column's edge; adding a
+          second button to every chip narrows that margin for a control
+          most chips are not currently using. Gating on the active filter
+          keeps the unfiltered row exactly as wide as it always was. */}
       {sourcesInUse.length > 0 && (
         <div className="mod-sources">
           <span className="mod-sources-label">Driven by</span>
-          {sourcesInUse.map((id) => (
-            <button
-              key={id}
-              className={`style-chip mod-source-chip${filter === id ? " active" : ""}`}
-              aria-pressed={filter === id}
-              title={
-                filter === id
-                  ? "Showing only the controls this drives — click to show all again"
-                  : `Show only the controls ${sourceName(id)} drives`
-              }
-              onClick={() => setPickedSource(filter === id ? null : id)}
-            >
-              <span className="mod-chip-label">{sourceName(id)}</span>
-              <SourceMeter source={id} />
-            </button>
-          ))}
+          {sourcesInUse.map((id) => {
+            const active = filter === id;
+            const n = sourceCounts.get(id) ?? 0;
+            return (
+              <span key={id} className="user-chip-wrap">
+                <button
+                  className={`style-chip mod-source-chip${active ? " active" : ""}`}
+                  aria-pressed={active}
+                  title={
+                    active
+                      ? "Showing only the controls this drives — click to show all again"
+                      : `Show only the controls ${sourceName(id)} drives`
+                  }
+                  onClick={() => setPickedSource(active ? null : id)}
+                >
+                  <span className="mod-chip-label">{sourceName(id)}</span>
+                  <SourceMeter source={id} />
+                </button>
+                {active && (
+                  <button
+                    className="chip-x"
+                    title={`Remove every route driven by ${sourceName(id)}`}
+                    aria-label={`Clear ${n} route${n === 1 ? "" : "s"} driven by ${sourceName(id)}`}
+                    onClick={() => void clearSourceGuarded(id)}
+                  >
+                    ✕
+                  </button>
+                )}
+              </span>
+            );
+          })}
         </div>
       )}
 
@@ -688,6 +739,33 @@ export function ModulationPage() {
                     `210 → 360` line, paired with where the route takes it,
                     which is strictly more useful than the number alone. */}
               </div>
+
+              {/* Bulk depth (H13): only once the card actually stacks more
+                  than one route — at exactly one route this control would
+                  set the exact same thing the route's own Depth slider below
+                  already does, pure redundant chrome (the identical reasoning
+                  H12 gates the grip/▲▼ on). Not destructive, so no confirm.
+                  Card-level, so it sits flush with the head rather than
+                  indented like a route (App.css draws the divider) — it acts
+                  ON every route below it, it is not one of them. Shows
+                  routes[0]'s amount as its position: after one use every
+                  matched route shares that exact value, so the slider stays
+                  representative from then on; before a first use it is simply
+                  "where the first route in document order currently sits". */}
+              {card.routes.length > 1 && (
+                <div className="mod-depth mod-depth-bulk">
+                  <span className="mod-depth-label">All</span>
+                  <SliderField
+                    label={`Set depth for all ${card.routes.length} routes on ${card.label}`}
+                    hint={`Sets every route stacked on ${card.label} to the same depth`}
+                    min={-1}
+                    max={1}
+                    step={0.01}
+                    value={card.routes[0].amount}
+                    onChange={(amount) => store().setModRouteAmountsForParam(card.param, amount)}
+                  />
+                </div>
+              )}
 
               {card.routes.map((r, ri) => {
                 const src = sourceName(r.source);

@@ -613,6 +613,14 @@ interface Actions {
    *  positions inside that param's routes, matching a ModulationPage card's
    *  own list — see reorderRoutes (modMatrix.ts) for the exact contract. */
   reorderModRoutes(paramKey: string, fromIndex: number, toIndex: number): void;
+  /** Bulk-remove every route whose source matches (H13). Destructive + bulk —
+   *  the UI asks first (ModulationPage's clearSourceGuarded); this action
+   *  itself stays prompt-free, same UI-level-guard split as
+   *  deleteLook/clearLyricsGuarded (ParamsPanel.tsx). */
+  clearModRoutesForSource(source: ModSource): void;
+  /** Bulk-set `amount` on every route targeting `param` — the stacked card's
+   *  "All" depth control (H13). Not destructive, no confirm. */
+  setModRouteAmountsForParam(param: string, amount: number): void;
   /** Add a curated route recipe's routes to the active visual (P-7 chips). */
   applyModRouteRecipe(id: string): void;
   /** Re-rasterize the overlay at the live canvas size (debounced). */
