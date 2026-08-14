@@ -37,6 +37,21 @@ import type { GetFn, SetFn, SliceCtx } from "./ctx";
 import { shared } from "./shared";
 
 let exportStartedAt = 0;
+/**
+ * E4b: recent (elapsedMs-since-start, done) samples for the windowed fps
+ * readout, reset alongside exportStartedAt at the top of every export. The
+ * dialog's fps used to be a pure cumulative average (done/elapsed since
+ * start) — accurate on average, but it rides the encoder-queue fill at
+ * render speed for the first few seconds and then decays toward the real
+ * steady-state rate for the rest of the run, which is what the owner watched
+ * as "16 fps -> 7 fps at 16%" (BACKLOG E4b). This ring keeps only the last
+ * SPEED_WINDOW_MS of onProgress samples so the readout tracks the CURRENT
+ * rate instead.
+ */
+let speedWindow: Array<{ t: number; done: number }> = [];
+/** Window width for the fps readout above. onProgress fires every 10 frames
+ * (exportCore.ts), so 5 s covers several samples even on a fast 60 fps job. */
+const SPEED_WINDOW_MS = 5000;
 
 /** The refusal when analysis never lands — one sentence, one place. */
 export const ANALYSIS_TIMEOUT_REASON =
@@ -282,11 +297,12 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       const ac = new AbortController();
       shared.exportAbort = ac;
       exportStartedAt = performance.now();
+      speedWindow = [];
       set({
         exportError: null,
         exportDone: null,
         exportDonePath: null,
-        exporting: { done: 0, total: 1, speed: null },
+        exporting: { done: 0, total: 1, speed: null, avgSpeed: null },
       });
       // ProRes: frames stream to the ffmpeg sidecar as they render; writes
       // are chained so ordering is exact, and a dead sidecar aborts the
@@ -497,12 +513,25 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                   : undefined,
               signal: ac.signal,
               onProgress: (done, total) => {
-                const elapsed = (performance.now() - exportStartedAt) / 1000;
+                const now = performance.now();
+                const elapsed = (now - exportStartedAt) / 1000;
+                // Windowed rate (E4b): drop samples older than the window,
+                // always keeping at least the one just pushed so the first
+                // call of a run never reads an empty ring.
+                speedWindow.push({ t: now, done });
+                const windowStartT = now - SPEED_WINDOW_MS;
+                while (speedWindow.length > 1 && speedWindow[0].t < windowStartT) {
+                  speedWindow.shift();
+                }
+                const oldest = speedWindow[0];
+                const windowSecs = (now - oldest.t) / 1000;
+                const windowDone = done - oldest.done;
                 set({
                   exporting: {
                     done,
                     total,
-                    speed: done > 0 && elapsed > 0 ? done / elapsed : null,
+                    speed: windowSecs > 0 && windowDone > 0 ? windowDone / windowSecs : null,
+                    avgSpeed: done > 0 && elapsed > 0 ? done / elapsed : null,
                   },
                 });
               },

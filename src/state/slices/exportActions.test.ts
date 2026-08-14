@@ -591,3 +591,89 @@ describe("exportDonePath — the machine-readable companion to exportDone", () =
     expect(s().exportDonePath).toBeNull();
   });
 });
+
+/**
+ * E4b — the fps readout tracks the CURRENT rate, not the whole run's average.
+ *
+ * The old `speed` was a pure cumulative average (done/elapsed since the
+ * export started): correct on average, but it rides the encoder-queue fill
+ * at render speed for the first stretch and only decays toward the real
+ * steady-state rate afterward — which is what the owner watched as "16 fps
+ * -> 7 fps at 16%" (BACKLOG E4b), largely a measurement artifact rather than
+ * a leak. This pins the fix: `speed` now windows to the last ~5 s of
+ * onProgress samples, while `avgSpeed` keeps the old cumulative number
+ * available (for ETA math, if a future caller wants it).
+ */
+describe("the export fps readout windows to the recent rate (E4b)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("tracks a slow recent stretch instead of averaging it into a fast start", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    let onProgress: ((done: number, total: number) => void) | undefined;
+    const gate = deferred<{ blob: undefined; bytes: number; seconds: number; audioCodec: "aac" }>();
+    vi.mocked(exportVideo).mockImplementationOnce(async (_buf, options: ExportOptions) => {
+      onProgress = options.onProgress;
+      return gate.promise;
+    });
+    let mockNow = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => mockNow);
+
+    const run = s().runExport();
+    // Let runExport's pre-render awaits (analysis/overlay) settle so
+    // exportVideo has actually been called and onProgress captured — same
+    // microtask-drain idiom the E2-R2 tests above use.
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(onProgress).toBeDefined();
+
+    // Phase 1 — fast: 100 frames over 1000 ms (100 fps), onProgress every 10
+    // frames like the real core (exportCore.ts).
+    for (let i = 1; i <= 10; i++) {
+      mockNow = i * 100;
+      onProgress!(i * 10, 1000);
+    }
+    // Phase 2 — slow: 100 more frames spread over the NEXT 5800 ms (~16.7
+    // fps) — long enough that the 5 s window has fully slid past phase 1 by
+    // the last sample.
+    for (let i = 1; i <= 10; i++) {
+      mockNow = 1000 + i * 580;
+      onProgress!(100 + i * 10, 1000);
+    }
+
+    const { speed, avgSpeed } = s().exporting!;
+    // Windowed: close to phase 2's true rate (100 frames / 5.8 s).
+    expect(speed).not.toBeNull();
+    expect(speed!).toBeGreaterThan(14);
+    expect(speed!).toBeLessThan(19);
+    // Cumulative: 200 frames / 6.8 s — still dragged up by the fast start,
+    // and clearly higher than the windowed reading above. This is the number
+    // the OLD `speed` field would have shown for the whole run.
+    expect(avgSpeed).not.toBeNull();
+    const cumulative = 200 / ((1000 + 5800) / 1000);
+    expect(avgSpeed!).toBeCloseTo(cumulative, 5);
+    expect(avgSpeed!).toBeGreaterThan(speed! + 5);
+
+    gate.resolve({ blob: undefined, bytes: 1000, seconds: 1, audioCodec: "aac" });
+    await run;
+  });
+
+  it("is null on the very first sample — nothing recent to divide by yet", async () => {
+    useVizStore.setState({ beatGrid: GRID, sections: SECTIONS, analyzing: false });
+    let onProgress: ((done: number, total: number) => void) | undefined;
+    const gate = deferred<{ blob: undefined; bytes: number; seconds: number; audioCodec: "aac" }>();
+    vi.mocked(exportVideo).mockImplementationOnce(async (_buf, options: ExportOptions) => {
+      onProgress = options.onProgress;
+      return gate.promise;
+    });
+
+    const run = s().runExport();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    onProgress!(10, 1000);
+
+    expect(s().exporting!.speed).toBeNull();
+
+    gate.resolve({ blob: undefined, bytes: 1000, seconds: 1, audioCodec: "aac" });
+    await run;
+  });
+});

@@ -36,8 +36,24 @@ export function autoBitrateMbps(w: number, h: number, fps: number): number {
 export interface ExportProgress {
   done: number;
   total: number;
-  /** Encode speed in frames/s, measured over the run; null until known. */
+  /**
+   * Encode speed in frames/s over the last ~5 s of frames (E4b) — tracks the
+   * CURRENT pipeline rate, so a slow stretch shows up promptly instead of
+   * being averaged away by everything rendered before it. null until enough
+   * recent samples exist. This is what the dialog displays.
+   */
   speed: number | null;
+  /**
+   * Cumulative done/elapsed average across the whole run so far — the OLD
+   * `speed` computation, kept for ETA math (total remaining time wants the
+   * long-run rate, not a window that swings with a momentary GPU/encoder
+   * hiccup) if a caller ever needs it. null until known. Optional: only the
+   * interactive single-export path (exportActions.ts) populates it today —
+   * batch progress (batchActions.ts) has no separate windowed reading, so it
+   * mirrors its one rate into `speed` and leaves this unset rather than
+   * claim a distinct number it does not have.
+   */
+  avgSpeed?: number | null;
 }
 
 export interface ExportSettings {

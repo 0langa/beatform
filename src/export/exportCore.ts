@@ -305,7 +305,45 @@ export interface ExportCoreHooks {
    * export far faster than the PNG lane ever could.
    */
   onRawFrame?: (data: Uint16Array) => void | Promise<void>;
+  /**
+   * E4b: per-frame phase timing, a TEST SEAM in the same family as
+   * onHeartbeat/livenessPulseMs above — no production caller sets this today.
+   * Built to answer one question (BACKLOG E4b): does the frame loop's render
+   * wait (`renderAt` + `gpuDone()` + any readback) or its encode wait
+   * (`add()`/`onFrame`/`onRawFrame` backpressure) dominate wall time, which
+   * decides whether a one-frame pipeline overlap is worth building.
+   *
+   * Zero cost when absent: every timestamp below is gated on this hook
+   * existing, so a run with no listener touches performance.now() zero
+   * times — pinned by exportCorePhaseSample.test.ts, which spies on it and
+   * asserts no calls. Like every hook here, it has zero effect on rendered
+   * output BY CONSTRUCTION: each timestamp is read after the call it times
+   * and only written into the sample object handed to the caller — nothing
+   * computed here is ever read back by the loop itself, so there is no path
+   * from this hook's presence to a different renderAt/add/onFrame/onRawFrame
+   * argument on any frame.
+   */
+  onPhaseSample?: (sample: PhaseSample) => void;
   signal?: AbortSignal;
+}
+
+/** One frame's wall-clock phase split, ms. See ExportCoreHooks.onPhaseSample. */
+export interface PhaseSample {
+  /** Frame index, 0-based — matches onProgress's `done` cadence but fires
+   * every frame (onProgress only posts every 10th). */
+  n: number;
+  /** `renderAt(...)` (synchronous submit) through `await gpuDone()`. */
+  renderMs: number;
+  /** Canvas/deep-target readback: `convertToBlob` (png) or
+   * `readbackDeepFrame` (deep). Zero for the ordinary MP4/WebM lane, where
+   * the encoder samples the canvas directly — no separate readback step. */
+  readbackMs: number;
+  /** The frame sink: `videoSource.add()` (MP4/WebM), `onFrame` (png), or
+   * `onRawFrame` (deep) — whichever backpressure await this job's mode uses. */
+  encodeMs: number;
+  /** render + readback + encode + the per-frame audio pump — the full cost
+   * this frame added to the loop's wall clock. */
+  wallMs: number;
 }
 
 const CODEC_NAMES: Record<VideoCodecId, string> = {
@@ -915,6 +953,11 @@ export async function runExportJob(
     for (let n = 0; n < total; n++) {
       abort();
       if (deviceLost) throw deviceLost;
+      // E4b test seam — see ExportCoreHooks.onPhaseSample. Gated on the hook
+      // existing so an ordinary export (no listener) never calls performance.now()
+      // here at all.
+      const phaseSample = hooks.onPhaseSample;
+      const tFrameStart = phaseSample ? performance.now() : 0;
 
       const t = n / job.fps;
       // Advance texture-feedback state independently from output cadence.
@@ -1062,6 +1105,11 @@ export async function runExportJob(
       // gpuDone() resolves on a lost device instead of rejecting, so without
       // this the snapshot below would quietly capture a black frame.
       if (deviceLost) throw deviceLost;
+      // E4b: render phase ends here (submit + GPU completion) — see
+      // ExportCoreHooks.onPhaseSample. Reused as the readback phase's start
+      // below; a lane with no separate readback (the ordinary MP4/WebM
+      // encoder branch) leaves readbackMs at exactly 0 by never advancing it.
+      const tRenderDone = phaseSample ? performance.now() : 0;
 
       let source: OffscreenCanvas = canvas;
       if (xfadeFrames > 0) {
@@ -1086,6 +1134,9 @@ export async function runExportJob(
         }
       }
 
+      // E4b: readback phase — advanced only by the two lanes that actually
+      // read pixels back off the GPU; see ExportCoreHooks.onPhaseSample.
+      let tReadbackDone = tRenderDone;
       if (isDeep) {
         // Deep lane: read the rgba16float tap back as packed u16 — the canvas
         // holds nothing in deep mode (the final pass rendered into the
@@ -1093,6 +1144,7 @@ export async function runExportJob(
         // deliberately never touched here.
         const raw = await renderer.readbackDeepFrame();
         bytesOut += raw.byteLength;
+        tReadbackDone = phaseSample ? performance.now() : 0;
         // Awaited: the deep lane's backpressure (see onRawFrame's docs — at
         // ~16.6 MB per 1080p frame this await matters more than the PNG one).
         await hooks.onRawFrame!(raw);
@@ -1102,6 +1154,7 @@ export async function runExportJob(
         const blob = await source.convertToBlob({ type: "image/png" });
         const bytes = new Uint8Array(await blob.arrayBuffer());
         bytesOut += bytes.length;
+        tReadbackDone = phaseSample ? performance.now() : 0;
         // Awaited: this is the PNG lane's backpressure (see onFrame's docs).
         await hooks.onFrame?.(bytes, n);
       } else {
@@ -1126,6 +1179,9 @@ export async function runExportJob(
           sample.close();
         }
       }
+      // E4b: encode phase ends here — the frame sink's backpressure await,
+      // whichever lane this job took. See ExportCoreHooks.onPhaseSample.
+      const tEncodeDone = phaseSample ? performance.now() : 0;
 
       // M9: keep the audio lane one chunk ahead of the video timestamp just
       // encoded, so the muxer can interleave instead of buffering a lane.
@@ -1133,6 +1189,15 @@ export async function runExportJob(
       // No timer-based yield here: gpuDone() above already yields the event
       // loop every frame (timers are throttled to 1s in hidden tabs and
       // would stall exports; GPU-completion promises are not).
+      if (phaseSample) {
+        phaseSample({
+          n,
+          renderMs: tRenderDone - tFrameStart,
+          readbackMs: tReadbackDone - tRenderDone,
+          encodeMs: tEncodeDone - tReadbackDone,
+          wallMs: performance.now() - tFrameStart,
+        });
+      }
       if (n % 10 === 0) hooks.onProgress?.(n, total);
     }
 
