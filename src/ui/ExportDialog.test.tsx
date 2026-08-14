@@ -336,7 +336,10 @@ describe("Show in folder", () => {
     // an assertion failure above would otherwise leave console.error silenced
     // for every later test in this file.
     try {
-      mount({ exportDone: "MP4 saved to C:\\out\\video.mp4", exportDonePath: "C:\\out\\video.mp4" });
+      mount({
+        exportDone: "MP4 saved to C:\\out\\video.mp4",
+        exportDonePath: "C:\\out\\video.mp4",
+      });
 
       const button = showInFolderButton();
       expect(button).not.toBeNull();
