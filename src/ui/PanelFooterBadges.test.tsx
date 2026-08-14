@@ -151,6 +151,18 @@ describe("PanelFooterBadges readouts", () => {
     expect(badges().some((b) => b.textContent!.includes("BPM"))).toBe(false);
   });
 
+  it("hides a NONZERO claimed tempo when the grid has no usable pulse", () => {
+    // The case the zero-tempo test above cannot reach: a silent/DC track
+    // still gets a nonzero bpm out of detection (autocorrelation always picks
+    // a best-scoring lag, ~200.9 BPM at the MAX_BPM boundary), so `bpm > 0`
+    // alone was never the right hide rule. beatTimes.length < 2 is — the same
+    // floor gridPhase uses for "no grid".
+    const { badges } = seed({
+      beatGrid: { bpm: 200.9, beatTimes: new Float32Array([0]), hopSec: 0.0116 },
+    });
+    expect(badges().some((b) => b.textContent!.includes("BPM"))).toBe(false);
+  });
+
   it("swaps the backend chip for the fallback's own words and warning colour", () => {
     const { badges, tip } = seed({ simplifiedRenderer: true, rendererKind: "canvas2d" });
     expect(badges()[0].textContent).toBe("simplified");

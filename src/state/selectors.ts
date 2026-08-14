@@ -86,9 +86,18 @@ export function selectHasCoverArt(s: { coverArt: unknown }): boolean {
   return !!s.coverArt;
 }
 
-/** Detected tempo, or null before analysis lands. */
-export function selectBpm(s: { beatGrid: { bpm: number } | null }): number | null {
-  return s.beatGrid?.bpm ?? null;
+/** Detected tempo, or null before analysis lands, or when the track has no
+ * usable pulse. `beatTimes.length < 2` is the same "no grid" predicate
+ * `gridPhase` (audio/analysis/beatGrid.ts) already lives by: a silent or
+ * DC-offset track can still make `estimateTempo` pick a best-scoring lag (an
+ * all-zero autocorrelation "wins" at the tempo-range boundary, ~200.9 BPM),
+ * but the DP beat tracker then finds no positive-score transition, so fewer
+ * than two beats land in `beatTimes`. A claimed tempo with nothing to grid is
+ * not a claim worth showing. */
+export function selectBpm(s: {
+  beatGrid: { bpm: number; beatTimes: { length: number } } | null;
+}): number | null {
+  return s.beatGrid && s.beatGrid.beatTimes.length >= 2 ? s.beatGrid.bpm : null;
 }
 
 /** Detected key display name, or null before analysis / for atonal tracks. */

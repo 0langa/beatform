@@ -36,7 +36,10 @@ import { selectBpm, selectKeyName } from "../state/selectors";
  *    onsets, autocorrelation, 60-200 BPM, ONE value for the whole track
  *    (audio/analysis/beatGrid.ts:4-28). Computed once per loaded FILE
  *    (store.ts:2288) and explicitly nulled for live system audio
- *    (store.ts:1948-1952).
+ *    (store.ts:1948-1952). Hidden even with a grid present when it has no
+ *    usable pulse — `selectBpm` returns null for `beatTimes.length < 2`, the
+ *    same "no grid" floor `gridPhase` uses, so a silent/DC track's spurious
+ *    tempo (detection still scores SOME lag) never becomes a claim here.
  *  - key      — `trackKey.name` from `estimateKey`: chromagram averaged over
  *    the whole track, correlated with the Krumhansl-Kessler profiles over 24
  *    rotations; null when the chroma is too flat to call

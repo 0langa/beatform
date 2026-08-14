@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { analyzeBeatGrid, gridPhase } from "./beatGrid";
 import type { PcmData } from "../types";
+import { selectBpm } from "../../state/selectors";
 
 const SR = 48000;
 
@@ -97,6 +98,59 @@ describe("beat grid", () => {
     expect(grid.beatTimes.length === 0 || grid.bpm === 0 || grid.bpm > 0).toBe(true); // no crash
   });
 });
+
+/**
+ * BPM badge honesty (BACKLOG "Approved work bundle" #2): a silent or DC track
+ * makes `estimateTempo` claim a tempo anyway — an all-zero/near-flat ACF still
+ * "wins" at `minLag` (the MAX_BPM boundary), landing on ~200.9 BPM — but the DP
+ * tracker in `trackBeats` never finds a positive-score transition to chain, so
+ * `beatTimes` stops at a single entry. `selectBpm` hides exactly that case.
+ * This suite proves it end to end through the REAL pipeline, not a hand-typed
+ * `BeatGrid`, because the interaction between `estimateTempo`'s degenerate
+ * fallback and `trackBeats`' DP is not obvious from reading either function in
+ * isolation. Real DSP seconds: see GATES.md §1.
+ */
+describe(
+  "BPM badge honesty: selectBpm over analyzeBeatGrid's real output",
+  { timeout: 30_000 },
+  () => {
+    it("hides the tempo silence produces (pins the 200.9 BPM regression)", () => {
+      const silent: PcmData = {
+        sampleRate: SR,
+        length: SR * 10,
+        duration: 10,
+        channels: [new Float32Array(SR * 10)],
+      };
+      const grid = analyzeBeatGrid(silent);
+      // The regression is specifically that detection claims a tempo THIS
+      // silent — if bpm went to 0 the old `bpm > 0` check would already hide
+      // it and this test would prove nothing.
+      expect(grid.bpm).toBeGreaterThan(0);
+      expect(grid.beatTimes.length).toBeLessThan(2);
+      expect(selectBpm({ beatGrid: grid })).toBeNull();
+    });
+
+    it("hides the tempo a DC-offset track produces, the same way", () => {
+      const dc: PcmData = {
+        sampleRate: SR,
+        length: SR * 10,
+        duration: 10,
+        channels: [new Float32Array(SR * 10).fill(0.3)],
+      };
+      const grid = analyzeBeatGrid(dc);
+      expect(grid.bpm).toBeGreaterThan(0);
+      expect(grid.beatTimes.length).toBeLessThan(2);
+      expect(selectBpm({ beatGrid: grid })).toBeNull();
+    });
+
+    it("still shows the tempo for a track with a real, trackable pulse", () => {
+      const grid = analyzeBeatGrid(clickTrack(120, 10));
+      expect(grid.beatTimes.length).toBeGreaterThanOrEqual(2);
+      expect(selectBpm({ beatGrid: grid })).toBe(grid.bpm);
+      expectTempoNear(grid.bpm, 120);
+    });
+  },
+);
 
 describe("gridPhase", () => {
   const grid = {

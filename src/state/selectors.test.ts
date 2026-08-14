@@ -239,7 +239,17 @@ describe("primitive readouts", () => {
 
   it("selectBpm is null before analysis lands", () => {
     expect(selectBpm({ beatGrid: null })).toBeNull();
-    expect(selectBpm({ beatGrid: { bpm: 128 } })).toBe(128);
+    expect(selectBpm({ beatGrid: { bpm: 128, beatTimes: new Float32Array([0, 0.5]) } })).toBe(128);
+  });
+
+  it("selectBpm hides a claimed tempo when the grid has no usable pulse", () => {
+    // The regression this guards: a silent/DC track still gets a nonzero bpm
+    // out of estimateTempo (an all-zero ACF "wins" at minLag, ~200.9 BPM),
+    // but trackBeats' DP finds no positive-score transition, so beatTimes
+    // stays under 2 entries — the same predicate gridPhase already treats as
+    // "no grid". Zero and one beat are the two ways to be under that floor.
+    expect(selectBpm({ beatGrid: { bpm: 200.9, beatTimes: new Float32Array() } })).toBeNull();
+    expect(selectBpm({ beatGrid: { bpm: 200.9, beatTimes: new Float32Array([0]) } })).toBeNull();
   });
 
   it("selectKeyName is null before analysis / for atonal tracks", () => {
