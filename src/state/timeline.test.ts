@@ -156,9 +156,17 @@ describe("timeline evaluation", () => {
  * P-5 task 1: the "Enabled" toggle is gone from the UI — `enabled` is now
  * derived from content at every WRITE site (setTimeline/autoArrangeTimeline
  * in store.ts), never hand-set. This is the one formula both call sites
- * share. It is deliberately NOT used by `validTimeline` — see that
- * describe block below, "an enabled flag with no content stays disabled",
- * and the lane log for why load and write must stay on separate rules.
+ * share. It is deliberately NOT used by `validTimeline` — see that describe
+ * block below, specifically "an explicit false survives even with content"
+ * (the direction that actually matters for this claim: `validTimeline`'s
+ * `raw.enabled === true && hasContent` AND can trivially narrow a stray
+ * `true` to `false` — "an enabled flag with no content stays disabled"
+ * already pinned that half, before this task existed. PRESERVING an
+ * explicit `false` against non-empty content is the other half, the one
+ * this whole design leans on, and it went untested until the fix-wave
+ * review caught the gap: the doc comment here used to cite the wrong one
+ * of the two as evidence) — and the lane log for why load and write must
+ * stay on separate rules.
  */
 describe("deriveTimelineEnabled (write-time derivation, P-5)", () => {
   it("false with no scenes and no lanes", () => {
@@ -230,6 +238,27 @@ describe("timeline validation", () => {
 
   it("an enabled flag with no content stays disabled", () => {
     expect(validTimeline({ enabled: true, scenes: [], lanes: [] }).enabled).toBe(false);
+  });
+
+  it("an explicit false survives even with content — a legacy paused document stays paused on load (P-5)", () => {
+    // The compat promise P-5's derived-enabled design (deriveTimelineEnabled,
+    // above) rests on: a document saved with enabled:false while scenes
+    // still exist on it (a user's deliberate "pause the arrangement, keep
+    // the scenes") must not come back to life just because it happens to
+    // load through the same validator as everything else. The formula is
+    // an AND, so it can only ever narrow a stray `true` to `false` (the
+    // sibling test above) — it can never resurrect an explicit `false`.
+    // The obvious future refactor (validTimeline calling
+    // deriveTimelineEnabled instead of keeping its own formula) would flip
+    // every legacy paused document to playing on load, and no OTHER test
+    // in this file would notice: this is the one that would.
+    expect(
+      validTimeline({
+        enabled: false,
+        scenes: [{ id: "a", name: "A", presetId: P0, start: 0 }],
+        lanes: [],
+      }).enabled,
+    ).toBe(false);
   });
 
   it("garbage becomes the empty timeline", () => {

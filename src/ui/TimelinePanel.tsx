@@ -175,18 +175,20 @@ export function TimelinePanel() {
   const tOf = (x: number) => Math.min(duration, Math.max(0, x / pps));
 
   /** P-5 snap indicator: whether `snap()` below is actually doing anything.
-   * Both read the SAME condition — kept as one boolean rather than a second
-   * inline check, so the toolbar chip can never drift out of sync with
-   * what dragging/adding actually does. */
-  const snapActive = !!(beatGrid?.beatTimes && beatGrid.beatTimes.length > 0);
+   * `beatTimes` is the ONE extraction of `beatGrid?.beatTimes` — `snapActive`
+   * and `snap()` both branch on THIS binding (M2, fix-wave: they used to be
+   * two separately-written, merely-equivalent conditions, which a comment
+   * here claimed "can never drift out of sync" without actually being true
+   * — now it is: there is only one place `beatGrid?.beatTimes` is read). */
+  const beatTimes = beatGrid?.beatTimes;
+  const snapActive = !!beatTimes && beatTimes.length > 0;
 
   const snap = (t: number): number => {
-    const beats = beatGrid?.beatTimes;
-    if (!beats || beats.length === 0) return t;
+    if (!beatTimes || beatTimes.length === 0) return t;
     // nearest beat within 12 px
     let best = t;
     let bestD = 12 / pps;
-    for (const b of beats) {
+    for (const b of beatTimes) {
       const d = Math.abs(b - t);
       if (d < bestD) {
         bestD = d;
@@ -301,11 +303,19 @@ export function TimelinePanel() {
 
   const setScenePreset = (id: string, presetId: string) => {
     const preset = presets.find((p) => p.id === presetId);
-    update({
-      scenes: timeline.scenes.map((s) =>
-        s.id === id ? { ...s, presetId, name: preset?.name ?? s.name } : s,
-      ),
-    });
+    update(
+      {
+        scenes: timeline.scenes.map((s) =>
+          s.id === id ? { ...s, presetId, name: preset?.name ?? s.name } : s,
+        ),
+      },
+      // Per-scene-per-field (fix-wave follow-up): a mode switch and a
+      // transition switch on the SAME scene, fired back to back, must not
+      // collapse into one undo entry — two DIFFERENT discrete edits, not
+      // one gesture. Distinct fields on the SAME scene get distinct keys
+      // too, same idiom as the fade slider's `timeline-scene:${id}:fade`.
+      `timeline-scene:${id}:preset`,
+    );
   };
 
   /**
@@ -323,13 +333,17 @@ export function TimelinePanel() {
   const setSceneLook = (id: string, lookId: string) => {
     const look = userPresets.find((p) => p.id === lookId);
     if (!look) return;
-    update({
-      scenes: timeline.scenes.map((s) =>
-        s.id === id
-          ? { ...s, presetId: look.presetId, name: look.name, params: { ...look.params } }
-          : s,
-      ),
-    });
+    update(
+      {
+        scenes: timeline.scenes.map((s) =>
+          s.id === id
+            ? { ...s, presetId: look.presetId, name: look.name, params: { ...look.params } }
+            : s,
+        ),
+      },
+      // Per-scene-per-field (fix-wave follow-up) — see setScenePreset's comment.
+      `timeline-scene:${id}:look`,
+    );
   };
 
   const addLane = (param: string) => {
@@ -503,8 +517,19 @@ export function TimelinePanel() {
       if (!drag.moved && Math.hypot(e.clientX - drag.downX, e.clientY - drag.downY) < 3) return;
       if (!drag.moved) setDrag({ ...drag, moved: true });
       const lane = timeline.lanes[drag.lane];
-      const row = scrollRef.current!.querySelectorAll(".tl-lane-row")[drag.lane];
-      const rowRect = (row as HTMLElement).getBoundingClientRect();
+      // C1 (whole-lane review): NOT querySelectorAll(...)[drag.lane] — that
+      // indexes the RENDERED NodeList by POSITION, but solo (P-5 task 3)
+      // renders a hidden lane's row as null, shortening the list and
+      // desyncing it from `drag.lane` (the true index into
+      // timeline.lanes). Soloing the second of two lanes and scrubbing
+      // threw on this exact line (index out of range on a 1-element
+      // list); with a hidden row before a THIRD lane, the old lookup
+      // silently returned a NEIGHBOR's row instead. Attribute-matched by
+      // the row's own `data-lane-index` (set below), so a hidden sibling
+      // — however many, wherever positioned — can never shift this.
+      const row = scrollRef.current!.querySelector(`.tl-lane-row[data-lane-index="${drag.lane}"]`);
+      if (!row) return; // this lane's row isn't rendered (soloed out) — nothing to scrub against
+      const rowRect = row.getBoundingClientRect();
       const f = 1 - Math.min(1, Math.max(0, (e.clientY - rowRect.top) / rowRect.height));
       const value = drag.spec.min + f * (drag.spec.max - drag.spec.min);
       // In place: no re-sort while dragging, so drag.index keeps pointing at
@@ -524,7 +549,14 @@ export function TimelinePanel() {
     const keyframes = lane.keyframes.map((k, i) =>
       i === kfIndex ? { ...k, curve: order[(order.indexOf(k.curve) + 1) % order.length] } : k,
     );
-    setLane(laneIndex, { ...lane, keyframes });
+    // Per-keyframe (fix-wave follow-up): tapping keyframe A's curve then
+    // keyframe B's, back to back, must not collapse into one undo entry —
+    // same shape as timeline-key-drag/nudge/remove.
+    setLane(
+      laneIndex,
+      { ...lane, keyframes },
+      `timeline-key-cycle:${lane.keyframes[kfIndex]?.id ?? `${laneIndex}:${kfIndex}`}`,
+    );
   };
 
   const removeKeyframe = (laneIndex: number, kfIndex: number) => {
@@ -587,6 +619,11 @@ export function TimelinePanel() {
         </button>
         <span
           className={`tl-snap ${snapActive ? "active" : ""}`}
+          // M1 (fix-wave, a11y): role="status" + a state-bearing label, not
+          // just a visual color change — "Snap" alone reads identically to
+          // a screen reader whether it's on or off.
+          role="status"
+          aria-label={snapActive ? "Beat snap: on" : "Beat snap: off"}
           title={
             snapActive
               ? "Beat snap is active — scenes and keyframes snap to the detected beat grid while dragging or adding"
@@ -770,7 +807,10 @@ export function TimelinePanel() {
             if (soloedLanes.size > 0 && !soloedLanes.has(lane.param)) return null;
             const spec = laneSpec(lane);
             return (
-              <div key={lane.param} className="tl-lane-row">
+              // data-lane-index (C1): moveDragged looks up this row by
+              // ATTRIBUTE, not array position — see its own comment for why
+              // solo makes positional lookup unsafe.
+              <div key={lane.param} className="tl-lane-row" data-lane-index={li}>
                 <div
                   className="tl-lane-area"
                   title="Click to add a keyframe, drag before releasing to shape its value; drag an existing dot to move it; right-click removes; tap a dot (no drag) to cycle its curve"
@@ -963,16 +1003,20 @@ export function TimelinePanel() {
                     disabled={simplifiedRenderer}
                     onChange={(e) => {
                       const transition = e.target.value as (typeof TRANSITION_KINDS)[number];
-                      update({
-                        scenes: timeline.scenes.map((x) =>
-                          x.id === s.id
-                            ? {
-                                ...x,
-                                transition: transition === "crossfade" ? undefined : transition,
-                              }
-                            : x,
-                        ),
-                      });
+                      update(
+                        {
+                          scenes: timeline.scenes.map((x) =>
+                            x.id === s.id
+                              ? {
+                                  ...x,
+                                  transition: transition === "crossfade" ? undefined : transition,
+                                }
+                              : x,
+                          ),
+                        },
+                        // Per-scene-per-field (fix-wave follow-up) — see setScenePreset's comment.
+                        `timeline-scene:${s.id}:transition`,
+                      );
                     }}
                   >
                     {TRANSITION_KINDS.map((k) => (

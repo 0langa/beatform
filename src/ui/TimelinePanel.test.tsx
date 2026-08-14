@@ -607,6 +607,36 @@ describe("undo-key redesign for scenes (P-5 task 2)", () => {
       expect(useVizStore.getState().undoDepth).toBe(depth + 2);
     });
   });
+
+  describe("discrete scene selects — per-scene-per-field keys (fix-wave follow-up)", () => {
+    /** The Transition <select> carries no title of its own (only the
+     * wrapping <label> does, so getByTitle would return the label, not a
+     * changeable element) — found instead by an option only IT has. */
+    const transitionSelect = () =>
+      [...document.querySelectorAll<HTMLSelectElement>(".tl-scene-editor select")].find((el) =>
+        [...el.options].some((o) => o.textContent === "Crossfade"),
+      )!;
+
+    it("switching a scene's mode then its transition, back to back, costs TWO undo entries", () => {
+      const scene: Scene = { id: "s1", name: "Nebula", presetId: presets[0].id, start: 5 };
+      const timeline: Timeline = { enabled: true, scenes: [scene], lanes: [] };
+      mountProbed(timeline);
+      selectScene(/Nebula — drag to move/);
+      const depth = useVizStore.getState().undoDepth;
+
+      // Two DIFFERENT discrete edits, fired with no delay between them:
+      // under the old flat "timeline" key both landed in the same 800ms
+      // window and wrongly collapsed to one undo entry.
+      fireEvent.change(screen.getByTitle("Visual for this scene"), {
+        target: { value: presets[1].id },
+      });
+      fireEvent.change(transitionSelect(), { target: { value: "wipe" } });
+
+      expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+      expect(useVizStore.getState().timeline.scenes[0].presetId).toBe(presets[1].id);
+      expect(useVizStore.getState().timeline.scenes[0].transition).toBe("wipe");
+    });
+  });
 });
 
 describe("scene thumbnails, on-track (P-5 task 2)", () => {
@@ -870,6 +900,37 @@ describe("beat-snap indicator (P-5 task 4)", () => {
     const chip = screen.getByTitle(/No beat grid detected/i);
     expect(chip.className).not.toContain("active");
   });
+
+  it("has an accessible status role and a state-bearing label (M1, fix-wave)", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    act(() => useVizStore.setState({ beatGrid: fakeBeatGrid([0, 0.5, 1, 1.5]) }));
+
+    const chip = screen.getByRole("status", { name: /beat snap.*on/i });
+    expect(chip.className).toContain("active");
+
+    act(() => useVizStore.setState({ beatGrid: null }));
+    expect(screen.getByRole("status", { name: /beat snap.*off/i })).toBeTruthy();
+  });
+
+  it("snap() actually snaps a gesture to the nearest beat — characterization pin before the M2 dedup", () => {
+    // No existing test exercised snap()'s real math through a gesture (only
+    // the chip's derived on/off state above) — writing this BEFORE
+    // unifying snap()'s guard with `snapActive` (M2) so the refactor has a
+    // behavioral pin, not just a "does it still compile" check.
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    act(() =>
+      useVizStore.setState({
+        beatGrid: fakeBeatGrid([10, 10.5, 11]),
+        playback: { ...PLAYBACK, time: 10.05 }, // just off a beat, well inside snap's 12px window
+      }),
+    );
+
+    fireEvent.click(screen.getByTitle("Add a scene with the current visual at the playhead"));
+
+    expect(useVizStore.getState().timeline.scenes[0].start).toBe(10);
+  });
 });
 
 /** The lane track's droppable area — clicking empty space on it adds a
@@ -1014,5 +1075,136 @@ describe("existing-keyframe drag — per-keyframe grouping, like a param drag (P
     fireEvent.keyDown(keyframeDot(/hue keyframe at 10\.00s/), { key: "ArrowUp" });
 
     expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+  });
+
+  it("cycling a keyframe's curve (tap, no drag) on TWO keyframes back to back never merges (fix-wave follow-up)", () => {
+    mountProbed(twoKeyframeLane());
+    const scroll = stubPointerCapture();
+    const depth = useVizStore.getState().undoDepth;
+
+    const tapDot = (namePattern: RegExp) => {
+      const dot = keyframeDot(namePattern);
+      fireEvent.pointerDown(dot, { button: 0, pointerId: 1, clientX: 50, clientY: 20 });
+      fireEvent.pointerUp(scroll, { pointerId: 1 }); // no pointermove — a tap, not a drag
+    };
+
+    tapDot(/hue keyframe at 0\.00s/);
+    tapDot(/hue keyframe at 10\.00s/);
+
+    expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+    expect(useVizStore.getState().timeline.lanes[0].keyframes[0].curve).toBe("smooth");
+    expect(useVizStore.getState().timeline.lanes[0].keyframes[1].curve).toBe("smooth");
+  });
+});
+
+/**
+ * C1 (whole-lane review): moveDragged's "key" branch resolved the row to
+ * measure geometry against via
+ * `scrollRef.current!.querySelectorAll(".tl-lane-row")[drag.lane]` — a
+ * POSITIONAL index into the RENDERED NodeList. `drag.lane` is the true
+ * index into `timeline.lanes`, but solo (Task 3) renders a hidden lane's
+ * row as `null`, which shortens the NodeList and desyncs the two — proven
+ * in the reviewer's own runner: soloing the second of two lanes and
+ * scrubbing threw (index out of range on the 1-element NodeList), and with
+ * a hidden row BEFORE the dragged lane and a THIRD lane after it, the
+ * lookup silently resolved to the WRONG row instead of throwing.
+ *
+ * These two describes pin the fix (`.tl-lane-row[data-lane-index]`,
+ * attribute-matched rather than positional) with solo and drag/scrub
+ * exercised TOGETHER — the ORIGINAL suite pinned them in separate
+ * describes and never combined them, which is exactly where this hid.
+ */
+describe("C1 fix: row lookup must ignore hidden (soloed-out) rows (P-5 fix wave)", () => {
+  it("scrubbing an EXISTING keyframe on the only-visible lane, with an earlier lane hidden by solo, does not throw", () => {
+    const timeline: Timeline = {
+      enabled: true,
+      scenes: [],
+      lanes: [
+        { param: "hue", keyframes: [{ id: "kHue", t: 0, value: 0.2, curve: "linear" }] },
+        { param: "glow", keyframes: [{ id: "kGlow", t: 5, value: 0.5, curve: "linear" }] },
+      ],
+    };
+    mountProbed(timeline);
+    // Solo "glow" (true index 1) — "hue" (true index 0) stops rendering,
+    // so the DOM's .tl-lane-row NodeList has length 1 while drag.lane will
+    // be 1: the exact desync the old positional lookup could not survive.
+    fireEvent.click(laneList().getByRole("button", { name: "glow" }));
+    expect(document.querySelectorAll(".tl-lane-row")).toHaveLength(1);
+
+    const scroll = stubPointerCapture();
+    const dot = keyframeDot(/glow keyframe at 5\.00s/);
+    // Deliberately NOT wrapped in expect(() => …).not.toThrow(): React
+    // dispatches pointermove as a "continuous event" (see
+    // dispatchContinuousEvent in the stack the old code threw from), and
+    // the resulting TypeError surfaces as an unhandled exception AFTER
+    // fireEvent returns — a synchronous try/catch around the call cannot
+    // observe it. Vitest still fails the FILE on an unhandled exception
+    // (confirmed: this is how the bug was caught), so the real regression
+    // guard is "the whole run stays green" — these assertions below are the
+    // ADDITIONAL, attributable proof of correctness once fixed.
+    fireEvent.pointerDown(dot, { button: 0, pointerId: 1, clientX: 50, clientY: 20 });
+    fireEvent.pointerMove(scroll, { pointerId: 1, clientX: 80, clientY: 25 });
+    fireEvent.pointerUp(scroll, { pointerId: 1 });
+
+    // The scrub actually applied (a crash mid-gesture would leave the
+    // ORIGINAL 0.5 untouched) and landed on the right lane — "hue" (hidden
+    // by solo, never touched by this gesture) kept its own value exactly.
+    expect(useVizStore.getState().timeline.lanes[1].keyframes[0].value).not.toBe(0.5);
+    expect(useVizStore.getState().timeline.lanes[0].keyframes[0].value).toBe(0.2);
+  });
+
+  it("click-to-add + scrub on a non-prefix lane, with an earlier lane hidden by solo, does not throw and writes the right lane", () => {
+    const timeline: Timeline = {
+      enabled: true,
+      scenes: [],
+      lanes: [lane("hue", 0.2), lane("glow", 0.5)],
+    };
+    mountProbed(timeline);
+    fireEvent.click(laneList().getByRole("button", { name: "glow" }));
+    expect(document.querySelectorAll(".tl-lane-row")).toHaveLength(1);
+
+    const scroll = stubPointerCapture();
+    const glowArea = laneArea(); // the only rendered .tl-lane-area — glow's
+    // Not wrapped in .not.toThrow() — see the sibling test's comment on why
+    // that can't observe this specific crash. The click's OWN insert
+    // (addKeyframeAt) happens synchronously in onPointerDown, before the
+    // buggy row lookup is ever reached, so a keyframe COUNT check alone
+    // can't tell a completed scrub from a mid-gesture crash — the `t` of
+    // the new keyframe moving from the click's clientX (60) toward the
+    // scrub's (90) is what a crash on the first pointermove would prevent.
+    fireEvent.pointerDown(glowArea, { button: 0, pointerId: 1, clientX: 60, clientY: 20 });
+    const kfsAfterAdd = useVizStore.getState().timeline.lanes[1].keyframes;
+    const justAdded = kfsAfterAdd[kfsAfterAdd.length - 1];
+    fireEvent.pointerMove(scroll, { pointerId: 1, clientX: 90, clientY: 25 });
+    fireEvent.pointerUp(scroll, { pointerId: 1 });
+
+    expect(useVizStore.getState().timeline.lanes[0].keyframes).toHaveLength(1); // hue: untouched
+    const afterScrub = useVizStore
+      .getState()
+      .timeline.lanes[1].keyframes.find((k) => k.id === justAdded.id)!;
+    expect(afterScrub.t).toBeGreaterThan(justAdded.t); // the scrub moved it rightward
+  });
+
+  it("a THIRD lane after a hidden one resolves to ITS OWN row, not the shifted neighbor", () => {
+    const timeline: Timeline = {
+      enabled: true,
+      scenes: [],
+      lanes: [lane("hue", 0.2), lane("glow", 0.5), lane("barGap", 0.1)],
+    };
+    mountProbed(timeline);
+    // Hide "hue" (index 0) by soloing the OTHER two — solo shows only the
+    // soloed set, so hue (never clicked) drops out while glow+barGap stay.
+    // The DOM NodeList becomes [glow, barGap] — a positional lookup for
+    // barGap's TRUE index (2) would read past the end (2 elements, indices
+    // 0-1) or, with a 4th lane, silently return the wrong one. Attribute
+    // matching must resolve barGap's row by its own data-lane-index
+    // regardless of what solo hid before it.
+    fireEvent.click(laneList().getByRole("button", { name: "glow" }));
+    fireEvent.click(laneList().getByRole("button", { name: "barGap" }));
+    const rows = [...document.querySelectorAll(".tl-lane-row")];
+    expect(rows).toHaveLength(2);
+    const barGapRow = rows.find((r) => r.getAttribute("data-lane-index") === "2");
+    expect(barGapRow).toBeTruthy();
+    expect(barGapRow?.querySelector(".tl-lane-label")?.textContent).toContain("barGap");
   });
 });
