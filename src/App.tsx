@@ -23,6 +23,7 @@ import {
 import { TimelinePanel } from "./ui/TimelinePanel";
 import { PresetStrip } from "./ui/PresetStrip";
 import { ShaderEditor } from "./ui/ShaderEditor";
+import { DockResizeHandle } from "./ui/DockResizeHandle";
 import { ShadertoyImport } from "./ui/ShadertoyImport";
 import { ParamsPanel } from "./ui/ParamsPanel";
 import { EmptyState } from "./ui/EmptyState";
@@ -153,28 +154,10 @@ export default function App() {
   // reinterpretation of this one — reusing `panelWidth` would have handed
   // every existing user a 280px dock on first launch.
   const [panelW, setPanelW] = useState(() => getPrefs().panelWidth);
-  const startLibraryResize = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const el = e.currentTarget;
-    el.setPointerCapture(e.pointerId);
-    let latest = 0;
-    const onMove = (ev: PointerEvent) => {
-      // Library hugs the LEFT edge: width = pointer distance past the gutter.
-      latest = Math.min(440, Math.max(240, ev.clientX - 14));
-      setPanelW(latest);
-    };
-    const onUp = () => {
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", onUp);
-      if (latest > 0) setPrefs({ panelWidth: latest });
-    };
-    el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerup", onUp);
-    // pointercancel (audit U7): a cancelled gesture (window drag-out, pen
-    // palm rejection) used to leak both listeners and skip the persist.
-    el.addEventListener("pointercancel", onUp);
-  }, []);
+  // Pointer-capture drag + capture-phase Escape-cancel (E2-U1) now lives in
+  // DockResizeHandle, shared with the Visuals handle below — see its own
+  // doc comment for why (ModulationPage's startRouteDrag idiom, and why it
+  // has to be a real mountable unit rather than inline here).
   const libraryResizeKey = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       const next = resizeKeyValue(e, panelW, 240, 440, 1);
@@ -196,34 +179,11 @@ export default function App() {
   // dock tracks the pointer and the canvas commits exactly once, on pointerup.
   const [visualsW, setVisualsW] = useState(() => getPrefs().visualsWidth);
   const [visualsDragW, setVisualsDragW] = useState<number | null>(null);
-  const startVisualsResize = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const el = e.currentTarget;
-    el.setPointerCapture(e.pointerId);
-    let latest = 0;
-    const onMove = (ev: PointerEvent) => {
-      // The dock is flush to the right edge — no gutter term, unlike the Library.
-      latest = Math.min(760, Math.max(380, window.innerWidth - ev.clientX));
-      setVisualsDragW(latest); // … the dock tracks the pointer …
-    };
-    const onUp = () => {
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", onUp);
-      setVisualsDragW(null);
-      // … and the canvas commits ONCE. Persisting is pointerup-only for the
-      // same reason: subscribePrefs(() => measure()) turns every prefs write
-      // into a full re-measure, so a per-move persist would run a second
-      // resize storm alongside the first.
-      if (latest > 0) {
-        setVisualsW(latest);
-        setPrefs({ visualsWidth: latest });
-      }
-    };
-    el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerup", onUp);
-    el.addEventListener("pointercancel", onUp);
-  }, []);
+  // Pointer-capture drag + capture-phase Escape-cancel (E2-U1) lives in
+  // DockResizeHandle (shared with the Library handle above). Cancelling
+  // here just clears visualsDragW back to null — visualsW (the committed
+  // value the canvas actually uses) never changes mid-drag in the first
+  // place, so there is nothing else to revert.
   const visualsResizeKey = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       // No drag state: one keypress is one resize, not sixty a second, so this
@@ -692,33 +652,44 @@ export default function App() {
           only alongside Visuals, so opening the Library on its own left
           it unresizable — splitting the two widths is what exposes that. */}
       {showLibrary && (
-        <div
+        <DockResizeHandle
           className="panel-resize-handle library-resize-handle chrome"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize the library"
-          aria-valuenow={panelW}
-          aria-valuemin={240}
-          aria-valuemax={440}
-          tabIndex={0}
+          ariaLabel="Resize the library"
           title="Drag to resize the library"
-          onPointerDown={startLibraryResize}
+          value={panelW}
+          ariaValueNow={panelW}
+          min={240}
+          max={440}
+          // Library hugs the LEFT edge: width = pointer distance past the gutter.
+          compute={(ev) => Math.min(440, Math.max(240, ev.clientX - 14))}
+          onDrag={setPanelW}
+          onCommit={(v) => setPrefs({ panelWidth: v })}
+          onCancel={setPanelW}
           onKeyDown={libraryResizeKey}
         />
       )}
 
       {showPanel && (
-        <div
+        <DockResizeHandle
           className="panel-resize-handle chrome"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize Visuals"
-          aria-valuenow={visualsDragW ?? visualsW}
-          aria-valuemin={380}
-          aria-valuemax={760}
-          tabIndex={0}
+          ariaLabel="Resize Visuals"
           title="Drag to resize Visuals"
-          onPointerDown={startVisualsResize}
+          value={visualsW}
+          ariaValueNow={visualsDragW ?? visualsW}
+          min={380}
+          max={760}
+          // The dock is flush to the right edge — no gutter term, unlike the Library.
+          compute={(ev) => Math.min(760, Math.max(380, window.innerWidth - ev.clientX))}
+          onDrag={setVisualsDragW}
+          onCommit={(v) => {
+            // … the canvas commits ONCE. Persisting is release-only for the
+            // same reason: subscribePrefs(() => measure()) turns every prefs
+            // write into a full re-measure, so a per-move persist would run
+            // a second resize storm alongside the first.
+            setVisualsW(v);
+            setPrefs({ visualsWidth: v });
+          }}
+          onCancel={() => setVisualsDragW(null)}
           onKeyDown={visualsResizeKey}
         />
       )}
