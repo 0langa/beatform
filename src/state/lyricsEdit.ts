@@ -35,6 +35,32 @@ const MIN_GAP = 0.01;
 /** Open-ended last line: nominal window, mirrors lyricProgressAt. */
 const LAST_LINE_SEC = 4;
 
+/**
+ * Centiseconds `lrcTimestamp` saturates at (99:59.99 — LRC's two-digit
+ * minute field cannot express more). ALSO the absolute ceiling
+ * `clampLineTime`/`clampWordTime` clamp a TAIL line/word's own `t` to
+ * (E2-U2), instead of the `Infinity` they used to fall back to when there
+ * is no next neighbour to bound against.
+ *
+ * Why reuse this number rather than track duration (the tighter, more
+ * "correct" bound): this module is deliberately PURE — see the file's own
+ * header — with no access to playback state, and threading a duration
+ * through every line/word time function's signature (and every existing
+ * call site, several of them store actions with no duration in scope
+ * either) is a much bigger change than a bug fix warrants. Reusing
+ * lrcTimestamp's own cap means the clamp and the DISPLAY it used to
+ * disagree with share one literal source of truth: `parseTimeInput` has no
+ * upper bound, so a pasted "1e300" used to sail through `hi = Infinity`
+ * unclamped while `lrcTimestamp` went on saturating the on-screen chip and
+ * the exported timestamp at 99:59.99 — internal state, preview and export
+ * could disagree forever. They can't anymore: nothing in this module can
+ * produce (or display) a `t` past this line.
+ */
+const MAX_TIMESTAMP_CS = 599_999;
+/** Exported so tests (and any future caller) pin against the real number
+ *  instead of re-deriving or hardcoding it. */
+export const MAX_TIME_SEC = MAX_TIMESTAMP_CS / 100;
+
 // ---------------------------------------------------------------------------
 // Shared helpers
 
@@ -164,10 +190,13 @@ function spreadWords(lines: LyricLine[], i: number, tokens: string[]): LyricWord
 }
 
 /** Clamp a new line start into the strictly-monotonic corridor between its
- * neighbours. Returns the clamped time (>= 0 always). */
+ * neighbours. Returns the clamped time (>= 0 always). The LAST line has no
+ * next neighbour to bound it — MAX_TIME_SEC stands in (E2-U2) so a huge
+ * typed value cannot push it past where it can ever be displayed, exported
+ * or found again by activeLyricIndex's binary search. */
 export function clampLineTime(lines: LyricLine[], i: number, t: number): number {
   const lo = i > 0 ? lines[i - 1].t + MIN_GAP : 0;
-  const hi = i + 1 < lines.length ? lines[i + 1].t - MIN_GAP : Infinity;
+  const hi = i + 1 < lines.length ? lines[i + 1].t - MIN_GAP : MAX_TIME_SEC;
   if (hi < lo) return lines[i].t; // degenerate corridor: keep the current time
   return Math.min(hi, Math.max(lo, Math.max(0, t)));
 }
@@ -375,11 +404,13 @@ export function setWordText(lines: LyricLine[], i: number, k: number, text: stri
   return out;
 }
 
-/** Clamp a word start between its neighbours' starts (word 0 down to 0). */
+/** Clamp a word start between its neighbours' starts (word 0 down to 0).
+ * The LAST word of a line has the same unbounded-tail hazard a last LINE
+ * has — MAX_TIME_SEC stands in here too (E2-U2), same reasoning. */
 export function clampWordTime(line: LyricLine, k: number, t: number): number {
   const words = line.words ?? [];
   const lo = k > 0 ? words[k - 1].t + MIN_GAP : 0;
-  const hi = k + 1 < words.length ? words[k + 1].t - MIN_GAP : Infinity;
+  const hi = k + 1 < words.length ? words[k + 1].t - MIN_GAP : MAX_TIME_SEC;
   if (hi < lo) return words[k]?.t ?? 0;
   return Math.min(hi, Math.max(lo, Math.max(0, t)));
 }
@@ -507,7 +538,7 @@ const EDITOR_TAG = "Beatform lyrics editor";
 /** Centisecond two-digit-minute timestamp body, saturated at 99:59.99, with
  * rounding carry (59.996 -> 01:00.00) — exactly lrc.rs::timestamp_body. */
 export function lrcTimestamp(t: number): string {
-  const totalCs = Math.min(599_999, Math.round(Math.max(0, t) * 100));
+  const totalCs = Math.min(MAX_TIMESTAMP_CS, Math.round(Math.max(0, t) * 100));
   const cs = totalCs % 100;
   const secs = Math.floor(totalCs / 100) % 60;
   const mins = Math.floor(totalCs / 6000);

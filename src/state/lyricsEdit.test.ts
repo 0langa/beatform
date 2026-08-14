@@ -3,6 +3,7 @@ import {
   applyLineDetails,
   applyRealignedWords,
   clampLineTime,
+  clampWordTime,
   cloneLines,
   deleteLine,
   flaggedCount,
@@ -10,6 +11,7 @@ import {
   lineSeverity,
   lineWindow,
   lrcTimestamp,
+  MAX_TIME_SEC,
   mergeWithNext,
   nextFlagged,
   nudgeLine,
@@ -292,6 +294,74 @@ describe("word ops", () => {
     expect(words[3].end).toBeCloseTo(19.65);
     expect(out[0].conf).toBeUndefined();
     expect(words.every((w) => w.conf === undefined)).toBe(true);
+  });
+});
+
+/**
+ * E2-U2: the tail line/word (no next neighbour to bound against) used to
+ * clamp against `hi = Infinity`, so an unbounded typed value (parseTimeInput
+ * has no upper bound) passed straight through. Nothing crashed — lrcTimestamp
+ * went on saturating the DISPLAY and the .lrc export at 99:59.99 — but the
+ * internal `t` stayed astronomical, so the line/word silently, permanently
+ * stopped appearing in the karaoke overlay (activeLyricIndex's binary search
+ * never reaches it) in both preview and export, with no error anywhere.
+ */
+describe("tail time ceiling (E2-U2)", () => {
+  it("clampLineTime caps the LAST line at MAX_TIME_SEC instead of accepting an unbounded paste", () => {
+    const lines = fixture();
+    const last = lines.length - 1;
+    expect(clampLineTime(lines, last, 1e300)).toBe(MAX_TIME_SEC);
+    // A legit tail edit well within bounds is untouched.
+    expect(clampLineTime(lines, last, 40)).toBeCloseTo(40);
+  });
+
+  it("a no-colon paste of '1e300' on the LAST line no longer drops it from the overlay forever", () => {
+    // Routed through the real parser, matching the reaching scenario exactly:
+    // TimeChip hands the typed string to parseTimeInput, which accepts any
+    // finite, non-negative number with no upper bound.
+    const parsed = parseTimeInput("1e300");
+    expect(parsed).not.toBeNull(); // confirms the repro's precondition
+    const lines = fixture();
+    const last = lines.length - 1;
+    const out = setLineTime(lines, last, parsed!);
+    expect(out[last].t).toBe(MAX_TIME_SEC);
+    // Still findable — this is the actual user-visible bug: pre-fix, `t`
+    // sailed past every time the app could ever reach, so this index was
+    // never selected by activeLyricIndex, live or in export.
+    expect(activeLyricIndex(out, MAX_TIME_SEC)).toBe(last);
+    // Display/export clamp and the internal value now agree exactly — the
+    // old "editing the field again self-heals it" round-trip is a no-op,
+    // not a silent repair of a still-corrupt internal value.
+    expect(lrcTimestamp(out[last].t)).toBe("99:59.99");
+    expect(parseTimeInput(lrcTimestamp(out[last].t))).toBeCloseTo(out[last].t, 2);
+  });
+
+  it("clampWordTime caps the LAST word of a line the same way", () => {
+    const line = fixture()[0];
+    const lastWord = line.words!.length - 1;
+    expect(clampWordTime(line, lastWord, 1e300)).toBe(MAX_TIME_SEC);
+    // A legit tail word edit well within bounds is untouched.
+    expect(clampWordTime(line, lastWord, 15)).toBeCloseTo(15);
+  });
+
+  it("setWordTime on the last word survives a huge paste without corrupting the line", () => {
+    const out = setWordTime(fixture(), 0, 3, 1e300);
+    const w = out[0].words![3];
+    expect(w.t).toBe(MAX_TIME_SEC);
+    // The trailing explicit end keeps a positive duration relative to t —
+    // proves normalizeWords still ran on the saturated value rather than
+    // being skipped because t hit the ceiling.
+    expect(w.end).toBeGreaterThan(w.t);
+  });
+
+  it("non-tail lines/words are unaffected — the neighbour-derived corridor still wins", () => {
+    // Pins that the ceiling applies ONLY to the tail: a regression that
+    // widened it to every line (e.g. dropping the ternary) would go red
+    // here even though the two tests above would stay green.
+    const lines = fixture();
+    expect(clampLineTime(lines, 1, 1e300)).toBeCloseTo(23.99);
+    const line = fixture()[0];
+    expect(clampWordTime(line, 1, 1e300)).toBeCloseTo(12.59); // bounded by word 2 ("my" @ 12.6), not MAX_TIME_SEC
   });
 });
 
