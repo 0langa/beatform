@@ -28,6 +28,12 @@
 // trick loopback-smoke.mjs's own comment names for optimized validation.
 import { execFileSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
+// Callback-style timers, explicitly imported: this dir's eslint config only
+// allowlists console/process/fetch/Buffer as globals (see lib/app.mjs's own
+// comment on the same constraint) — the promise-based `sleep` above covers
+// most needs, but waitForExit needs a CANCELLABLE handle (clearTimeout),
+// which only the callback API provides.
+import { setTimeout as setTimer, clearTimeout as clearTimer } from "node:timers";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,7 +76,11 @@ function resetSmokeDocument() {
   const dir = smokeAppDataDir();
   if (!fs.existsSync(dir)) return;
   for (const f of fs.readdirSync(dir)) {
-    if (f === "document.bfproj" || f === "document.bfproj.tmp" || f.startsWith("document.bfproj.corrupt-")) {
+    if (
+      f === "document.bfproj" ||
+      f === "document.bfproj.tmp" ||
+      f.startsWith("document.bfproj.corrupt-")
+    ) {
       fs.rmSync(path.join(dir, f), { force: true });
     }
   }
@@ -161,6 +171,7 @@ async function waitStoreHook(cdp, timeoutMs = 60_000) {
   } catch (e) {
     throw new Error(
       `${e.message} — was the exe built with VITE_E2E_HOOKS=1? (installDevHooks gate, src/App.tsx)`,
+      { cause: e },
     );
   }
 }
@@ -191,7 +202,8 @@ function assertShell(shell) {
   if (shell.title !== "Beatform") throw new Error(`wrong title: ${shell.title}`);
   if (shell.readyState !== "complete") throw new Error(`document state: ${shell.readyState}`);
   if (shell.canvasCount < 1) throw new Error("visual canvas missing");
-  if (shell.bodyLen < 20) throw new Error("app shell did not render (no white screen check failed)");
+  if (shell.bodyLen < 20)
+    throw new Error("app shell did not render (no white screen check failed)");
 }
 
 /** Live console.* capture for a page — Runtime.enable already ran inside
@@ -218,7 +230,10 @@ function captureConsole(cdp, sink = []) {
 async function pollForBodyText(cdp, text, timeoutMs, intervalMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const found = await cdp.eval(`document.body.innerText.includes(${JSON.stringify(text)})`, false);
+    const found = await cdp.eval(
+      `document.body.innerText.includes(${JSON.stringify(text)})`,
+      false,
+    );
     if (found) return true;
     await sleep(intervalMs);
   }
@@ -236,6 +251,37 @@ async function pollForErrorToast(cdp, timeoutMs, intervalMs) {
     await sleep(intervalMs);
   }
   return null;
+}
+
+/**
+ * Poll the live store's presetId via CDP until it matches (or the deadline
+ * passes), rather than one immediate read. `window.__store` existing proves
+ * only that the FIRST RENDER committed (installDevHooks runs directly in
+ * the render body, src/App.tsx) — bootDesktopDocument fires from a SEPARATE
+ * useEffect and is itself async (a real Tauri IPC file read + parse +
+ * apply), so there is a genuine, variable-width window after the store hook
+ * appears where the synchronous default (spectrum-bars) is still the live
+ * value. A single immediate read races that window: found live via a
+ * standalone repro that polled docEpoch alongside presetId every 250ms —
+ * t+0ms consistently showed {presetId:"spectrum-bars", docEpoch:0} (the
+ * synchronous default), settling to the real value within one or two
+ * intervals (docEpoch bumped by exactly 1, confirming a single correct
+ * apply, never zero). Reproduced this racing S6's relaunch check specifically
+ * at roughly a 33-67% rate across a handful of runs — NOT a production bug
+ * (the on-disk document.bfproj was byte-identical and correct across every
+ * single one of those runs, both immediately post-close and post-relaunch;
+ * only the harness's own read was too early). Returns the last value seen
+ * either way, so a genuine timeout still reports what was actually live.
+ */
+async function pollForStorePreset(cdp, expectedPresetId, timeoutMs, intervalMs = 100) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await cdp.eval(`window.__store.getState().presetId`, false);
+    if (last === expectedPresetId) return last;
+    await sleep(intervalMs);
+  }
+  return last;
 }
 
 /** Click a preset chip and return the store's presetId immediately after —
@@ -281,9 +327,9 @@ function gracefulClose(app) {
 function waitForExit(app, timeoutMs) {
   if (app.child.exitCode != null || app.child.signalCode != null) return Promise.resolve(true);
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(false), timeoutMs);
+    const timer = setTimer(() => resolve(false), timeoutMs);
     app.child.once("exit", () => {
-      clearTimeout(timer);
+      clearTimer(timer);
       resolve(true);
     });
   });
@@ -340,7 +386,11 @@ async function scenarioS1() {
   try {
     const tBoot = Date.now();
     app = launch("p11-smoke-S1");
-    const page = await waitForPage(app, { timeoutMs: 60_000, intervalMs: 400, match: beatformTitleMatch });
+    const page = await waitForPage(app, {
+      timeoutMs: 60_000,
+      intervalMs: 400,
+      match: beatformTitleMatch,
+    });
     cdp = new Cdp(page.webSocketDebuggerUrl);
     await cdp.open();
     captureConsole(cdp, consoleLines);
@@ -351,13 +401,17 @@ async function scenarioS1() {
     const filePath = documentPath();
     const appeared = await waitForFile(filePath, 8000, 100);
     const elapsedMs = Date.now() - tBoot;
-    if (!appeared) throw new Error(`document.bfproj did not appear within 8000ms of boot (elapsed ${elapsedMs}ms)`);
+    if (!appeared)
+      throw new Error(
+        `document.bfproj did not appear within 8000ms of boot (elapsed ${elapsedMs}ms)`,
+      );
     const parsed = readDocumentJson();
     if (parsed.kind !== "bfproj") throw new Error(`unexpected kind: ${parsed.kind}`);
     if (typeof parsed.schemaVersion !== "number" || parsed.schemaVersion < 1) {
       throw new Error(`bad schemaVersion: ${parsed.schemaVersion}`);
     }
-    if (typeof parsed.document?.presetId !== "string") throw new Error("document.presetId missing/not a string");
+    if (typeof parsed.document?.presetId !== "string")
+      throw new Error("document.presetId missing/not a string");
 
     return {
       id,
@@ -414,14 +468,17 @@ async function scenarioS2() {
     await waitStoreHook(cdp);
 
     const presetId = await cdp.eval(`window.__store.getState().presetId`, false);
-    if (presetId !== ALT_PRESET_A) throw new Error(`UI shows presetId=${presetId}, expected ${ALT_PRESET_A}`);
+    if (presetId !== ALT_PRESET_A)
+      throw new Error(`UI shows presetId=${presetId}, expected ${ALT_PRESET_A}`);
 
     const filePath = documentPath();
     const appeared = await waitForFile(filePath, 8000, 100);
     if (!appeared) throw new Error("document.bfproj did not reappear after the migration boot");
     const parsed = readDocumentJson();
     if (parsed.document?.presetId !== ALT_PRESET_A) {
-      throw new Error(`new document.bfproj has presetId=${parsed.document?.presetId}, expected ${ALT_PRESET_A}`);
+      throw new Error(
+        `new document.bfproj has presetId=${parsed.document?.presetId}, expected ${ALT_PRESET_A}`,
+      );
     }
 
     return {
@@ -543,7 +600,9 @@ async function scenarioS3() {
     await waitDocumentComplete(cdp);
     const parsedAfter = readDocumentJson();
     if (parsedAfter.document?.presetId !== ALT_PRESET_B) {
-      throw new Error(`file presetId drifted to ${parsedAfter.document?.presetId} after boot settled`);
+      throw new Error(
+        `file presetId drifted to ${parsedAfter.document?.presetId} after boot settled`,
+      );
     }
 
     const flashMs = Math.round(flash.elapsedMs);
@@ -590,14 +649,17 @@ async function scenarioS4() {
 
     const click = await clickPresetChip(cdp, ALT_PRESET_A);
     if (!click.clicked) throw new Error(`${ALT_PRESET_A} chip not found in DOM`);
-    if (click.presetId !== ALT_PRESET_A) throw new Error(`click did not switch preset (got ${click.presetId})`);
+    if (click.presetId !== ALT_PRESET_A)
+      throw new Error(`click did not switch preset (got ${click.presetId})`);
 
     // Wait past the 5s default autosaveIntervalSec + max-latency cap
     // (prefs.ts) — poll rather than one flat sleep so ordinary timer jitter
     // doesn't read as a failure.
     const parsed = await waitForDocumentPreset(ALT_PRESET_A, 10_000);
     if (parsed?.document?.presetId !== ALT_PRESET_A) {
-      throw new Error(`autosave had not persisted the edit before the kill (file has ${parsed?.document?.presetId})`);
+      throw new Error(
+        `autosave had not persisted the edit before the kill (file has ${parsed?.document?.presetId})`,
+      );
     }
     const cleanMarkerPreKill = await cdp.eval(`localStorage.getItem("viz.cleanExit")`, false);
 
@@ -618,15 +680,26 @@ async function scenarioS4() {
     await waitDocumentComplete(cdp);
     await waitStoreHook(cdp);
 
-    const presetAfterRecovery = await cdp.eval(`window.__store.getState().presetId`, false);
+    // pollForStorePreset, not one immediate read: bootDesktopDocument's
+    // apply is async and races window.__store's appearance — see that
+    // helper's own comment (found live via S6, same underlying race, this
+    // site never confirmed exempt just because it hasn't shown it yet).
+    const presetAfterRecovery = await pollForStorePreset(cdp, ALT_PRESET_A, 3000);
     if (presetAfterRecovery !== ALT_PRESET_A) {
       throw new Error(`edited state lost — presetId=${presetAfterRecovery} after recovery boot`);
     }
-    const noticeSeen = await pollForBodyText(cdp, "Recovered your work from the last session", 3500, 100);
-    if (!noticeSeen) throw new Error('recovery notice text not found in the DOM within 3500ms of boot');
+    const noticeSeen = await pollForBodyText(
+      cdp,
+      "Recovered your work from the last session",
+      3500,
+      100,
+    );
+    if (!noticeSeen)
+      throw new Error("recovery notice text not found in the DOM within 3500ms of boot");
 
     const falseToast = consoleLines.find((l) => l.includes("Autosave is failing"));
-    if (falseToast) throw new Error(`false "Autosave is failing" console line observed: ${falseToast}`);
+    if (falseToast)
+      throw new Error(`false "Autosave is failing" console line observed: ${falseToast}`);
     const storeError = await cdp.eval(`window.__store.getState().error`, false);
     if (storeError && String(storeError).includes("Autosave is failing")) {
       throw new Error(`store.error shows a false failing toast: ${storeError}`);
@@ -679,7 +752,8 @@ async function scenarioS5() {
 
     // Sanity: the fallback write-back left a fresh, valid file behind.
     const parsed = readDocumentJson();
-    if (parsed.kind !== "bfproj") throw new Error(`fallback file has unexpected kind: ${parsed.kind}`);
+    if (parsed.kind !== "bfproj")
+      throw new Error(`fallback file has unexpected kind: ${parsed.kind}`);
 
     return {
       id,
@@ -715,7 +789,8 @@ async function scenarioS6() {
 
     const click = await clickPresetChip(cdp, ALT_PRESET_A);
     if (!click.clicked) throw new Error(`${ALT_PRESET_A} chip not found in DOM`);
-    if (click.presetId !== ALT_PRESET_A) throw new Error(`click did not switch preset (got ${click.presetId})`);
+    if (click.presetId !== ALT_PRESET_A)
+      throw new Error(`click did not switch preset (got ${click.presetId})`);
 
     const tEdit = Date.now();
     // Close IMMEDIATELY — well under the 5s autosave debounce — so a
@@ -759,13 +834,22 @@ async function scenarioS6() {
     captureConsole(cdp, consoleLines);
     await waitDocumentComplete(cdp);
     await waitStoreHook(cdp);
-    const presetAfterRelaunch = await cdp.eval(`window.__store.getState().presetId`, false);
+    // pollForStorePreset, not one immediate read — see its own comment.
+    // Found live HERE first: a standalone diagnostic repro (edit -> close ->
+    // relaunch, printing docEpoch alongside presetId every 250ms) proved the
+    // synchronous default reads back for a short but real window before
+    // bootDesktopDocument's async apply lands, at roughly a 33-67% rate
+    // across a handful of runs — the on-disk document.bfproj was correct in
+    // every single one, immediately post-close AND post-relaunch. A harness
+    // read-timing bug, not the production bug this scenario exists to catch.
+    const presetAfterRelaunch = await pollForStorePreset(cdp, ALT_PRESET_A, 3000);
     if (presetAfterRelaunch !== ALT_PRESET_A) {
-      throw new Error(`edit not present after relaunch (got ${presetAfterRelaunch})`);
+      throw new Error(`edit not present after relaunch (got ${presetAfterRelaunch}) within 3000ms`);
     }
 
     const falseToast = consoleLines.find((l) => l.includes("Autosave is failing"));
-    if (falseToast) throw new Error(`false "Autosave is failing" console line observed: ${falseToast}`);
+    if (falseToast)
+      throw new Error(`false "Autosave is failing" console line observed: ${falseToast}`);
 
     return {
       id,
@@ -832,7 +916,9 @@ function writeReport(results) {
 
 async function main() {
   if (!fs.existsSync(EXE_PATH)) {
-    console.error(`FATAL: exe not found at ${EXE_PATH} — build it first (see scripts/p11-smoke.conf.json).`);
+    console.error(
+      `FATAL: exe not found at ${EXE_PATH} — build it first (see scripts/p11-smoke.conf.json).`,
+    );
     process.exit(2);
   }
   console.log(`P-11 device smoke — exe: ${EXE_PATH}`);

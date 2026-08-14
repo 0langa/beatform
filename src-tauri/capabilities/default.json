@@ -1,10 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window. dialog:allow-ask is listed on its own because dialog:default covers message/save/open but NOT ask, and the export disk pre-flight needs a yes/no prompt (warn-and-override, never a hard block).",
+  "description": "Capability for the main window. dialog:allow-ask is listed on its own because dialog:default covers message/save/open but NOT ask, and the export disk pre-flight needs a yes/no prompt (warn-and-override, never a hard block). core:window:allow-destroy is listed on its own because core:default does not include it: the autosave close-flush handler (onCloseRequested, store.ts's initApp) calls event.preventDefault() to hold the window open until the pending write settles, then must close the window itself to finish what it deferred — destroy() is the ONLY exit from that self-imposed hold, so without this grant no clean-exit close path exists for anyone, not just the flush. Confirmed live (P-11 device smoke, commit 1460c38): the runtime rejected the call with 'plugin:window|destroy not allowed by ACL' before this entry was added.",
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-destroy",
     "dialog:default",
     "dialog:allow-ask",
     "fs:default",
