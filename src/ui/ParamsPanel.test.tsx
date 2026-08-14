@@ -23,6 +23,7 @@ import { BUILDER2_ID } from "../render/builder2";
 import { LFO_SOURCES, MOD_LAG_MAX_SEC, MOD_SOURCES } from "../state/modMatrix";
 import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
 import { clearHistory, historyDepths } from "../state/history";
+import { IDLE_LYRICS_GEN } from "../state/lyricsGen";
 
 /**
  * The Visuals contract after P-12.
@@ -2168,6 +2169,134 @@ describe("destructive actions ask first (audit UI-3)", { timeout: 30_000 }, () =
     expect(askConfirmMock).toHaveBeenCalledTimes(1);
     expect(String(askConfirmMock.mock.calls[0][0])).toContain("Remove the loaded lyrics (2 lines)");
     expect(useVizStore.getState().lyrics).toHaveLength(2);
+  });
+});
+
+/**
+ * E2-U3 — corrected repro: with no lyrics loaded, a background generation
+ * (phase "generating") leaves lyricFileName empty until it succeeds, so
+ * "+ Import lyrics…" stays mounted and lands a file with no confirm; the ✕
+ * that appears afterward opens its OWN confirm, and the still-running
+ * generation can complete (loadLyricsText, lyricsGenActions.ts:260) while
+ * that confirm sits open — answering "Yes" then deleted whatever just
+ * landed, silently. Two independent defenses, tested separately: the phase
+ * gate (belt) stops opening/using the controls at all while a generation is
+ * known in flight; the identity snapshot (braces) catches a generation that
+ * starts AND finishes entirely inside one confirm's own await.
+ */
+describe("E2-U3 — lyrics clear vs a background generation racing the confirm", { timeout: 30_000 }, () => {
+  it("declined path is unchanged: phase idle, 'No' leaves the loaded lyrics untouched", async () => {
+    act(() =>
+      useVizStore.setState({
+        lyricsGen: { ...IDLE_LYRICS_GEN, phase: "idle" },
+        lyricFileName: "track.lrc",
+        lyrics: [
+          { t: 0, end: null, text: "one" },
+          { t: 1, end: null, text: "two" },
+        ],
+      }),
+    );
+    askConfirmMock.mockImplementation(async () => false);
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+    const removeBtn = screen.getByRole("button", { name: "Remove lyrics" });
+    expect(isDisabled(removeBtn)).toBe(false);
+    fireEvent.click(removeBtn);
+    await act(async () => {});
+
+    expect(askConfirmMock).toHaveBeenCalledTimes(1);
+    expect(useVizStore.getState().lyricFileName).toBe("track.lrc");
+    expect(useVizStore.getState().lyrics).toHaveLength(2);
+  });
+
+  it("a generation landing WHILE the confirm is open makes 'Yes' a no-op, with a notice", async () => {
+    act(() =>
+      useVizStore.setState({
+        lyricsGen: { ...IDLE_LYRICS_GEN, phase: "idle" },
+        lyricFileName: "track.lrc",
+        lyrics: [
+          { t: 0, end: null, text: "one" },
+          { t: 1, end: null, text: "two" },
+        ],
+      }),
+    );
+    let resolveConfirm: (v: boolean) => void = () => undefined;
+    askConfirmMock.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirm = resolve;
+        }),
+    );
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove lyrics" }));
+    await act(async () => {}); // let clearLyricsGuarded reach `await askConfirm(...)` and hang there
+
+    expect(askConfirmMock).toHaveBeenCalledTimes(1);
+    expect(String(askConfirmMock.mock.calls[0][0])).toContain("Remove the loaded lyrics (2 lines)");
+
+    // The background generation lands WHILE the confirm is still open —
+    // exactly lyricsGenActions.ts:260's loadLyricsText call, reproduced
+    // directly here rather than through the whole sidecar pipeline.
+    act(() =>
+      useVizStore.setState({
+        lyrics: [
+          { t: 0, end: null, text: "gen one" },
+          { t: 1, end: null, text: "gen two" },
+          { t: 2, end: null, text: "gen three" },
+        ],
+        lyricFileName: "track (generated).lrc",
+      }),
+    );
+
+    // The user finally answers "Yes" on the now-stale confirm.
+    await act(async () => {
+      resolveConfirm(true);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // No-op: the generated lyrics survive untouched — NOT the 2-line
+    // "track.lrc" content the confirm's message actually named.
+    expect(useVizStore.getState().lyricFileName).toBe("track (generated).lrc");
+    expect(useVizStore.getState().lyrics).toHaveLength(3);
+    expect(useVizStore.getState().notice).toMatch(/changed while that confirm was open/i);
+  });
+
+  it("the ✕ and the import control are both disabled while a generation is in flight", () => {
+    act(() =>
+      useVizStore.setState({
+        lyricsGen: { ...IDLE_LYRICS_GEN, phase: "generating" },
+        lyricFileName: "track.lrc",
+        lyrics: [{ t: 0, end: null, text: "one" }],
+      }),
+    );
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+    const removeBtn = screen.getByRole("button", { name: "Remove lyrics" });
+    expect(isDisabled(removeBtn)).toBe(true);
+    expect(removeBtn.title).toMatch(/generating lyrics/i);
+
+    fireEvent.click(removeBtn); // a disabled button must not open the confirm
+    expect(askConfirmMock).not.toHaveBeenCalled();
+    expect(useVizStore.getState().lyrics).toHaveLength(1); // untouched
+
+    // No lyrics loaded + generating: the import control (visible instead of
+    // the ✕ chip whenever lyricFileName is empty) must be disabled too —
+    // otherwise this is the corrected repro's own entry point.
+    cleanup();
+    act(() =>
+      useVizStore.setState({
+        lyricsGen: { ...IDLE_LYRICS_GEN, phase: "generating" },
+        lyricFileName: null,
+        lyrics: null,
+      }),
+    );
+    render(<ParamsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+    const importInput = document.querySelector('input[type="file"][accept=".lrc,.srt"]');
+    expect(importInput).not.toBeNull();
+    expect((importInput as HTMLInputElement).disabled).toBe(true);
   });
 });
 

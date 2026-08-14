@@ -590,6 +590,10 @@ export function ParamsPanel() {
   const timelineEnabled = useVizStore((s) => s.timeline.enabled);
   const lyricFileName = useVizStore((s) => s.lyricFileName);
   const lyricStyle = useVizStore((s) => s.lyricStyle);
+  // PRIMITIVE off lyricsGen (P-12 discipline): only phase gates the ✕/Import
+  // controls below (E2-U3) — the progress object inside ticks far more often
+  // and neither control needs to re-render for that.
+  const lyricsGenPhase = useVizStore((s) => s.lyricsGen.phase);
   const audiogram = useVizStore((s) => s.audiogram);
   /** Read here only for the factory-stack chips' active detection — the
    * Builder editor below subscribes to the same field independently. */
@@ -676,11 +680,34 @@ export function ParamsPanel() {
     if (ok) s.deleteUserPreset(id);
   };
 
-  /** Destructive clear-all: with the correction editor, loaded lyrics can
-   * carry real editing work — never drop them on a stray click. */
+  /**
+   * Destructive clear-all: with the correction editor, loaded lyrics can
+   * carry real editing work — never drop them on a stray click.
+   *
+   * Belt and braces against the generate-vs-clear race (E2-U3): a
+   * background generation replaces s.lyrics/lyricFileName on success
+   * (loadLyricsText, lyricsGenActions.ts) with no confirm of its own, so
+   * this confirm can end up asking about content that is already gone —
+   * or worse, "Yes" landing after DIFFERENT (just-generated) content took
+   * its place, deleting that instead with zero notice.
+   *  1. Phase gate: refuse to even OPEN the confirm while a generation is
+   *     known in flight (mirrors generateLyrics' own `phase !== "idle"`
+   *     guard, and the ✕ button below is disabled the same way so this is
+   *     mostly unreachable — kept anyway since the raw action must be safe
+   *     regardless of how it's invoked).
+   *  2. Identity snapshot: catches the window the phase gate can't — a
+   *     generation that starts AND finishes entirely inside the confirm's
+   *     own await. clearLyricsIfUnchanged re-reads lyricFileName after the
+   *     await and no-ops (with a flash notice) if it no longer matches,
+   *     the same "snapshot before, compare after" shape deleteLook's
+   *     id-based re-read uses — lyricFileName is the identity here since
+   *     clearLyrics has no id of its own to re-validate against.
+   */
   const clearLyricsGuarded = async () => {
     const s = store();
+    if (s.lyricsGen.phase !== "idle") return; // see the ✕ button's disabled title
     const n = s.lyrics?.length ?? 0;
+    const targetFileName = s.lyricFileName;
     if (n > 0) {
       const ok = await askConfirm(
         `Remove the loaded lyrics (${n} line${n === 1 ? "" : "s"})? Unsaved edits are lost.`,
@@ -688,10 +715,20 @@ export function ParamsPanel() {
       );
       if (!ok) return;
     }
-    s.clearLyrics();
+    store().clearLyricsIfUnchanged(targetFileName);
   };
 
-  const importLyrics = (f: File) => void f.text().then((t) => store().loadLyricsText(f.name, t));
+  /** Gated the same phase check as clearLyricsGuarded (E2-U3): importing
+   *  while a generation is in flight is its own footgun even without the
+   *  ✕ race — generateLyrics' own loadLyricsText call at its success path
+   *  would silently clobber whatever the import just landed, with only a
+   *  second "Lyrics loaded" toast (easy to miss) to show it happened.
+   *  Blocking the control outright is simpler to reason about than
+   *  leaving it live and relying on the user to notice. */
+  const importLyrics = (f: File) => {
+    if (lyricsGenPhase !== "idle") return;
+    void f.text().then((t) => store().loadLyricsText(f.name, t));
+  };
 
   /** Group ids whose expert tier is open (P-9). Global, not per-preset: the
    * old global Essentials/All switch seeded this once, in prefs. */
@@ -1915,7 +1952,15 @@ export function ParamsPanel() {
                 </span>
                 <button
                   className="chip-x"
-                  title="Remove lyrics"
+                  // E2-U3: disabled, not just guarded in the handler — a
+                  // generation owns s.lyrics/lyricFileName until it settles
+                  // back to idle, so removal has to wait its turn.
+                  disabled={lyricsGenPhase !== "idle"}
+                  title={
+                    lyricsGenPhase !== "idle"
+                      ? "Generating lyrics — wait for it to finish before removing"
+                      : "Remove lyrics"
+                  }
                   aria-label="Remove lyrics"
                   onClick={() => void clearLyricsGuarded()}
                 >
@@ -1924,14 +1969,19 @@ export function ParamsPanel() {
               </span>
             ) : (
               <label
-                className="text-btn"
-                title="Import timed lyrics (.lrc from any lyrics site, or .srt) — drawn as a karaoke overlay, identical in exports"
+                className={`text-btn ${lyricsGenPhase !== "idle" ? "disabled" : ""}`}
+                title={
+                  lyricsGenPhase !== "idle"
+                    ? "Generating lyrics — importing now would be overwritten when it finishes"
+                    : "Import timed lyrics (.lrc from any lyrics site, or .srt) — drawn as a karaoke overlay, identical in exports"
+                }
               >
                 + Import lyrics…
                 <input
                   type="file"
                   accept=".lrc,.srt"
                   hidden
+                  disabled={lyricsGenPhase !== "idle"}
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f) importLyrics(f);

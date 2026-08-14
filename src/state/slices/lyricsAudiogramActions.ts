@@ -30,6 +30,26 @@ export function lyricsAudiogramActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       get().refreshOverlay();
     },
 
+    /** Guarded clear (E2-U3). See the VizState doc comment for why the
+     *  identity check lives here rather than in clearLyrics itself:
+     *  clearLyrics has no id to re-validate against (unlike deleteUserPreset,
+     *  which re-reads fresh by id and so can never delete the wrong look),
+     *  so re-reading "fresh" state here would just re-clear whatever
+     *  landed most recently — exactly the bug. Comparing identity BEFORE
+     *  clearing is what actually protects a generation that swapped in new
+     *  lyrics while the UI's confirm was open (same "snapshot before the
+     *  await, compare after" shape generateLyrics already uses for its own
+     *  track-changed-mid-generation race, a few lines away in the sibling
+     *  slice). */
+    clearLyricsIfUnchanged(expectedFileName) {
+      if (get().lyricFileName !== expectedFileName) {
+        ctx.flashNotice("Lyrics changed while that confirm was open — nothing removed");
+        return false;
+      }
+      get().clearLyrics();
+      return true;
+    },
+
     setLyricStyle(patch) {
       ctx.record("lyric-style"); // document state since schema v9 — undoable
       const lyricStyle = { ...get().lyricStyle, ...patch };

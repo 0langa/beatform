@@ -428,13 +428,21 @@ button:disabled {
   border-radius: 6px;
 }
 
-.text-btn:hover {
+.text-btn:hover:not(.disabled) {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text);
 }
 
 .text-btn.danger {
   color: var(--danger);
+}
+
+/* Same values as .seek.disabled — some .text-btn uses (E2-U3's lyrics
+   import label) wrap a native control rather than being one themselves,
+   so a plain modifier class stands in for :disabled. */
+.text-btn.disabled {
+  cursor: default;
+  opacity: 0.4;
 }
 
 /* ---------- top bar ---------- */
@@ -2978,6 +2986,21 @@ kbd {
 .chip-x:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* Generalized from the .mod-route-head/.builder-row/.mode-order-row
+   per-container rules below — a disabled chip-x is the same dimmed,
+   inert look everywhere (E2-U3 adds the lyrics ✕ to the list of callers
+   that can disable one; the more specific rules still win where they
+   already existed, unaffected). */
+.chip-x:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.chip-x:disabled:hover {
+  color: var(--text-faint);
+  background: none;
 }
 
 /* UI-3: in a chip cluster the ✕ (delete forever) and ↗ (export) sit 2 px

@@ -506,6 +506,14 @@ interface Actions {
   /** Import timed lyrics (.lrc/.srt contents) — karaoke overlay. */
   loadLyricsText(fileName: string, contents: string): void;
   clearLyrics(): void;
+  /** Guarded clear (E2-U3): clears only if `lyricFileName` still matches
+   *  `expectedFileName`, else flashes a notice and no-ops. The UI's own
+   *  confirm dialog snapshots `lyricFileName` BEFORE awaiting the user's
+   *  answer and passes that snapshot here — a background generation can
+   *  complete and silently replace lyrics/lyricFileName while the confirm
+   *  was open, and clearing unconditionally at that point would delete
+   *  content the confirm never asked about. Returns whether it cleared. */
+  clearLyricsIfUnchanged(expectedFileName: string | null): boolean;
   /** Refresh lyrics model manifest state + (once) the DirectML probe. */
   refreshLyricsGen(): Promise<void>;
   /** Download the missing models of a tier (resume + SHA-256 in Rust). */
