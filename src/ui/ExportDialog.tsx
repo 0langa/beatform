@@ -171,7 +171,9 @@ export function ExportDialog() {
             className="icon-btn subtle"
             disabled={dismissBlocked}
             aria-label="Close"
-            title={exporting ? "Export in progress…" : exportPreparing ? "Preparing export…" : "Close"}
+            title={
+              exporting ? "Export in progress…" : exportPreparing ? "Preparing export…" : "Close"
+            }
             onClick={() => store().setShowExport(false)}
           >
             <IconClose size={16} />

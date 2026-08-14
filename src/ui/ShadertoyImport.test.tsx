@@ -71,7 +71,9 @@ afterEach(() => {
  *  synchronously, before ever going busy) and starts the translate. */
 function dirtyAndTranslate() {
   fireEvent.change(screen.getByLabelText("Shadertoy GLSL source"), {
-    target: { value: "void mainImage(out vec4 fragColor, in vec2 fragCoord) { fragColor = vec4(1.0); }" },
+    target: {
+      value: "void mainImage(out vec4 fragColor, in vec2 fragCoord) { fragColor = vec4(1.0); }",
+    },
   });
   fireEvent.click(screen.getByRole("button", { name: /Translate \+ add visual/ }));
 }
