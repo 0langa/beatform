@@ -175,7 +175,7 @@
     "builderStack": {
       "layers": [
         {
-          "id": "bl-15-gr1ua5",
+          "id": "bl-15-do88ph",
           "type": "wash",
           "enabled": true,
           "opacity": 1,
@@ -188,7 +188,7 @@
           }
         },
         {
-          "id": "bl-16-tlnvvx",
+          "id": "bl-16-3pow90",
           "type": "stars",
           "enabled": true,
           "opacity": 1,
@@ -202,7 +202,7 @@
           }
         },
         {
-          "id": "bl-17-gs7zz1",
+          "id": "bl-17-6pg3e9",
           "type": "bars",
           "enabled": true,
           "opacity": 1,
@@ -217,7 +217,7 @@
           }
         },
         {
-          "id": "bl-18-kmtq1w",
+          "id": "bl-18-zy8ysr",
           "type": "rings",
           "enabled": true,
           "opacity": 1,
