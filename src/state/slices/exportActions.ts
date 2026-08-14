@@ -107,15 +107,22 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     setShowExport(showExport) {
       set({
         showExport,
-        // E2-U5: a reopened dialog must never show a stale failure as if it
-        // just happened. Unconditional on every open, not just after a
-        // known-orphaned run — by construction the dialog was closed just
-        // before this call, so any exportError already sitting in the store
-        // is from before THIS viewing regardless of how the previous run
-        // ended. A run still in flight (exporting or exportPreparing) has
-        // its own exportError already null (runExport clears it the moment
-        // it actually starts encoding), so this is a no-op for that case.
-        ...(showExport ? { exportError: null } : null),
+        // E2-U5, extended (whole-lane review, one-liner (a)): a reopened
+        // dialog must never show a stale RESULT — failure OR success — as
+        // if it just happened. exportDone/exportDonePath get the identical
+        // treatment exportError already does, and for the identical reason:
+        // "Show in folder" (ExportDialog.tsx) reads exportDonePath, so a
+        // stale one left over from a PRIOR run would happily reveal the
+        // wrong file on an unrelated reopen. Unconditional on every open,
+        // not just after a known-orphaned run — by construction the dialog
+        // was closed just before this call, so anything already sitting in
+        // the store is from before THIS viewing regardless of how the
+        // previous run ended. A run still in flight (exporting or
+        // exportPreparing) already has all three fields null — runExport
+        // clears exportError/exportDone/exportDonePath together, in the
+        // same set() call, the moment it actually starts encoding — so
+        // this is a no-op for that case.
+        ...(showExport ? { exportError: null, exportDone: null, exportDonePath: null } : null),
       });
       // Probe codec support the first time the panel opens — the result is
       // hardware-fixed for the session, and the select renders from it.

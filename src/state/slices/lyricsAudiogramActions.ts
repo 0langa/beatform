@@ -40,7 +40,24 @@ export function lyricsAudiogramActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
      *  lyrics while the UI's confirm was open (same "snapshot before the
      *  await, compare after" shape generateLyrics already uses for its own
      *  track-changed-mid-generation race, a few lines away in the sibling
-     *  slice). */
+     *  slice).
+     *
+     *  `lyricFileName` is a COARSE proxy for identity — a plain string, not
+     *  a true unique id, so two different documents that happened to share
+     *  a name would fool this check. Holds today for two independent
+     *  reasons, not one: (1) generateLyrics names its output
+     *  "<track> (generated).lrc" (lyricsGenActions.ts) — structurally
+     *  distinct from any import's own filename, so the one background
+     *  process that can actually change lyricFileName during the confirm's
+     *  await can never produce a name that collides with what this
+     *  snapshot captured; (2) askConfirm's native dialog (desktop) is
+     *  application-modal — the user cannot click anything else in the app
+     *  while it is open, so they cannot personally trigger a SECOND
+     *  identity-changing action (another import, another generate) during
+     *  the same window; only the one generation already in flight before
+     *  the confirm opened can land. If either assumption changes — a
+     *  generated name loses its distinguishing suffix, or a non-blocking
+     *  confirm surface is added — this check needs a real id instead. */
     clearLyricsIfUnchanged(expectedFileName) {
       if (get().lyricFileName !== expectedFileName) {
         ctx.flashNotice("Lyrics changed while that confirm was open — nothing removed");

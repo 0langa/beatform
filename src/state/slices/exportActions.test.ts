@@ -913,4 +913,38 @@ describe("setShowExport(true) clears a stale exportError (E2-U5)", () => {
 
     expect(s().exportError).toBeNull();
   });
+
+  /**
+   * Whole-lane review, one-liner (a): the identical hazard shape as
+   * exportError, one field over — exportDonePath feeds "Show in folder"
+   * (ExportDialog.tsx), so a stale one left over from a PRIOR run would
+   * happily reveal the wrong file's location on a later, unrelated reopen.
+   */
+  it("opening the dialog also clears a leftover exportDone/exportDonePath from a prior run", () => {
+    useVizStore.setState({
+      exportDone: "MP4 saved to C:\\old\\video.mp4",
+      exportDonePath: "C:\\old\\video.mp4",
+      showExport: false,
+      codecSupport,
+    });
+
+    s().setShowExport(true);
+
+    expect(s().exportDone).toBeNull();
+    expect(s().exportDonePath).toBeNull();
+  });
+
+  it("closing the dialog does not touch exportDone/exportDonePath either", () => {
+    useVizStore.setState({
+      exportDone: "MP4 saved to C:\\old\\video.mp4",
+      exportDonePath: "C:\\old\\video.mp4",
+      showExport: true,
+      codecSupport,
+    });
+
+    s().setShowExport(false);
+
+    expect(s().exportDone).toBe("MP4 saved to C:\\old\\video.mp4");
+    expect(s().exportDonePath).toBe("C:\\old\\video.mp4");
+  });
 });
