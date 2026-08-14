@@ -42,7 +42,7 @@ import { TimelinePanel } from "./TimelinePanel";
 const mocks = vi.hoisted(() => ({
   engine: {
     seek: vi.fn(),
-    audioBuffer: null,
+    audioBuffer: null as { duration: number } | null,
     currentTime: 0,
     duration: 100,
     playing: false,
@@ -85,6 +85,7 @@ beforeEach(() => {
     consoleErrors.push(args.map(String).join(" "));
   });
   mocks.engine.seek.mockClear();
+  mocks.engine.audioBuffer = null;
 });
 
 afterEach(() => {
@@ -281,5 +282,110 @@ describe("TimelinePanel selector granularity (P-12 wave 2)", () => {
     });
     expect(screen.getByText("Timeline")).toBeTruthy();
     expect(bodyRuns()).toBe(runsAtMount);
+  });
+});
+
+/** Minimal AudioBuffer stand-in — autoArrangeTimeline reads only `.duration`
+ * off whatever `getEngine().audioBuffer` returns. */
+function fakeBuffer(duration: number): { duration: number } {
+  return { duration };
+}
+
+/**
+ * P-5 task 1: the manual "Enabled" toggle is gone. `timeline.enabled` is now
+ * DERIVED from content at every write site (setTimeline, autoArrangeTimeline)
+ * — see deriveTimelineEnabled in state/timeline.ts and the lane log for the
+ * full rule, including why `validTimeline` (load) deliberately keeps its own
+ * separate formula and is untouched here.
+ */
+describe("derived timeline.enabled — the toggle is gone, content decides (P-5 task 1)", () => {
+  it("the manual Enabled switch no longer renders", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    expect(screen.queryByRole("switch")).toBeNull();
+    expect(screen.queryByText("Enabled")).toBeNull();
+  });
+
+  it("setTimeline derives enabled from scenes, overriding whatever the caller passed", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    act(() =>
+      useVizStore.getState().setTimeline({
+        enabled: false, // caller says off — content says otherwise
+        scenes: [{ id: "s1", name: "Nebula", presetId: presets[0].id, start: 0 }],
+        lanes: [],
+      }),
+    );
+    expect(useVizStore.getState().timeline.enabled).toBe(true);
+  });
+
+  it("setTimeline derives enabled from lanes alone (H11: a lane alone drives its param)", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    act(() =>
+      useVizStore.getState().setTimeline({
+        enabled: false,
+        scenes: [],
+        lanes: [{ param: "hue", keyframes: [{ id: "k1", t: 0, value: 1, curve: "linear" }] }],
+      }),
+    );
+    expect(useVizStore.getState().timeline.enabled).toBe(true);
+  });
+
+  it("setTimeline derives enabled false when the caller says true but content is empty", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    act(() => useVizStore.getState().setTimeline({ enabled: true, scenes: [], lanes: [] }));
+    expect(useVizStore.getState().timeline.enabled).toBe(false);
+  });
+
+  it("clicking '+ Scene at playhead' turns a fresh, empty, off timeline on", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline); // enabled:false, empty — probedTimeline()'s shape
+    expect(useVizStore.getState().timeline.enabled).toBe(false);
+    fireEvent.click(screen.getByTitle("Add a scene with the current visual at the playhead"));
+    expect(useVizStore.getState().timeline.enabled).toBe(true);
+    expect(useVizStore.getState().timeline.scenes).toHaveLength(1);
+  });
+
+  it("auto-arrange derives enabled the same way as setTimeline (normal case: stays on)", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    mocks.engine.audioBuffer = fakeBuffer(40);
+    // Zero-length, not null: autoArrangeTimeline's guard only needs it
+    // present (a reference is truthy regardless of length), and length 0 is
+    // also the panel's OWN waveform-draw effect's early-return case — the
+    // same reason mountProbed() uses null elsewhere. jsdom has no canvas 2D
+    // context, so a non-empty overview here would crash on canvas.getContext.
+    act(() =>
+      useVizStore.setState({
+        sections: [10, 20, 30],
+        waveformOverview: new Float32Array(0),
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Auto-arrange/ }));
+    const after = useVizStore.getState().timeline;
+    expect(after.scenes.length).toBeGreaterThan(0);
+    expect(after.enabled).toBe(true);
+  });
+
+  it("auto-arrange never produces enabled:true with zero scenes (0-duration buffer edge case)", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    // autoArrangeScenes returns [] for duration<=0. The OLD code hardcoded
+    // `enabled: true` unconditionally on this write; the shared derivation
+    // cannot get this wrong by construction — this is the case that proves it.
+    mocks.engine.audioBuffer = fakeBuffer(0);
+    // Zero-length for the same jsdom-canvas reason as the test above.
+    act(() =>
+      useVizStore.setState({
+        sections: [1, 2],
+        waveformOverview: new Float32Array(0),
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Auto-arrange/ }));
+    const after = useVizStore.getState().timeline;
+    expect(after.scenes).toHaveLength(0);
+    expect(after.enabled).toBe(false);
   });
 });

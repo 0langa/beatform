@@ -83,6 +83,25 @@ export interface Timeline {
 
 export const EMPTY_TIMELINE: Timeline = { enabled: false, scenes: [], lanes: [] };
 
+/**
+ * P-5: the toolbar's manual "Enabled" toggle is gone — a timeline with
+ * scenes or lanes on it IS enabled, empty means off. This is the one
+ * formula every WRITE site (store.ts's `setTimeline` and
+ * `autoArrangeTimeline`) uses to compute the persisted `enabled` field from
+ * here on, ignoring whatever the caller passed for it.
+ *
+ * Deliberately NOT used on load. `validTimeline`'s existing
+ * `raw.enabled === true && (scenes.length > 0 || lanes.length > 0)` stays as
+ * it is: an AND can only narrow a stray `true` to `false`, never resurrect an
+ * explicit `false`, so a legacy document that was manually paused with
+ * scenes still on it (`enabled: false`, non-empty `scenes`) keeps loading
+ * paused — exactly what it meant before this function existed. This
+ * function only governs what a fresh EDIT writes, never what a LOAD reads.
+ */
+export function deriveTimelineEnabled(timeline: Pick<Timeline, "scenes" | "lanes">): boolean {
+  return timeline.scenes.length > 0 || timeline.lanes.length > 0;
+}
+
 export function newSceneId(): string {
   return `sc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }

@@ -41,7 +41,7 @@ import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { KeyEstimate } from "../audio/analysis/keyDetect";
 import { type ModRoute, type ModSource } from "./modMatrix";
 import { historyDepths, pushHistory } from "./history";
-import type { Timeline } from "./timeline";
+import { deriveTimelineEnabled, type Timeline } from "./timeline";
 import { type LyricLine, type LyricStyle } from "./lyrics";
 import { IDLE_LYRICS_GEN, type LyricsGenState, type LyricsTier } from "./lyricsGen";
 import { autoArrangeScenes, overviewEnergy } from "./autoArrange";
@@ -1889,8 +1889,14 @@ export const useVizStore = create<VizState>((set, get) => {
 
     setTimeline(timeline) {
       record("timeline");
-      set({ timeline });
-      saveStoredTimeline(timeline);
+      // P-5: `enabled` is DERIVED here, not taken from the caller — the
+      // toolbar's manual toggle is gone, so this is the one place (with
+      // autoArrangeTimeline below) that decides on/off from content, for
+      // every scene/lane/keyframe edit TimelinePanel makes. Load (validTimeline)
+      // deliberately does NOT use this — see deriveTimelineEnabled's doc comment.
+      const next = { ...timeline, enabled: deriveTimelineEnabled(timeline) };
+      set({ timeline: next });
+      saveStoredTimeline(next);
     },
 
     autoArrangeTimeline() {
@@ -1914,7 +1920,8 @@ export const useVizStore = create<VizState>((set, get) => {
         buf.duration,
         overviewEnergy(s.waveformOverview, buf.duration),
       );
-      const timeline = { ...s.timeline, enabled: true, scenes };
+      const arranged = { ...s.timeline, scenes };
+      const timeline = { ...arranged, enabled: deriveTimelineEnabled(arranged) };
       set({ timeline, showTimeline: true });
       saveStoredTimeline(timeline);
       flashNotice(`Arranged ${scenes.length} scenes from the song's sections — one Ctrl+Z undoes`);

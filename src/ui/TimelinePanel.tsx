@@ -15,7 +15,6 @@ import { useVizStore } from "../state/store";
 import { selectPreset } from "../state/selectors";
 import { Slider } from "./Slider";
 import { SliderField, type ValueUnit } from "./kit";
-import { Switch } from "./Switch";
 import { IconClose } from "./Icons";
 
 /** Scene fades read "0.50s" — same string the row printed by hand. */
@@ -204,8 +203,10 @@ export function TimelinePanel() {
     [timeline.scenes],
   );
 
-  const update = (patch: Partial<Timeline>) =>
-    store().setTimeline({ ...timeline, enabled: true, ...patch });
+  // P-5: no `enabled: true` here — the store's setTimeline derives it from
+  // content (scenes/lanes present or not), which is also what turns it back
+  // OFF when the last scene and lane are removed. See deriveTimelineEnabled.
+  const update = (patch: Partial<Timeline>) => store().setTimeline({ ...timeline, ...patch });
 
   /** The playhead, read at CLICK time off the live snapshot. Subscribing to
    * it here is what the migration removed: `time` moves 4x/second and is
@@ -400,14 +401,6 @@ export function TimelinePanel() {
     <div className="chrome timeline-panel">
       <div className="tl-toolbar">
         <span className="section-title">Timeline</span>
-        <span className="inline tl-enable" title="Master switch — off plays the base setup">
-          <Switch
-            checked={timeline.enabled}
-            onChange={(enabled) => store().setTimeline({ ...timeline, enabled })}
-            label="Timeline enabled"
-          />
-          Enabled
-        </span>
         <button
           className="text-btn"
           title="Add a scene with the current visual at the playhead"

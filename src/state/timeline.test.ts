@@ -1,6 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  deriveTimelineEnabled,
   evalTimeline,
   laneValue,
   validTimeline,
@@ -148,6 +149,42 @@ describe("timeline evaluation", () => {
 
   it("automation values land keyed by param", () => {
     expect(evalTimeline(timeline, 5).automation.hue).toBeCloseTo(150, 5);
+  });
+});
+
+/**
+ * P-5 task 1: the "Enabled" toggle is gone from the UI — `enabled` is now
+ * derived from content at every WRITE site (setTimeline/autoArrangeTimeline
+ * in store.ts), never hand-set. This is the one formula both call sites
+ * share. It is deliberately NOT used by `validTimeline` — see that
+ * describe block below, "an enabled flag with no content stays disabled",
+ * and the lane log for why load and write must stay on separate rules.
+ */
+describe("deriveTimelineEnabled (write-time derivation, P-5)", () => {
+  it("false with no scenes and no lanes", () => {
+    expect(deriveTimelineEnabled({ scenes: [], lanes: [] })).toBe(false);
+  });
+
+  it("true with at least one scene, even with no lanes", () => {
+    expect(
+      deriveTimelineEnabled({
+        scenes: [{ id: "a", name: "A", presetId: P0, start: 0 }],
+        lanes: [],
+      }),
+    ).toBe(true);
+  });
+
+  it("true with at least one lane, even with no scenes (H11: a lane alone drives its param)", () => {
+    expect(
+      deriveTimelineEnabled({
+        scenes: [],
+        lanes: [{ param: "hue", keyframes: [{ t: 0, value: 1, curve: "linear" }] }],
+      }),
+    ).toBe(true);
+  });
+
+  it("true with both", () => {
+    expect(deriveTimelineEnabled(timeline)).toBe(true);
   });
 });
 
