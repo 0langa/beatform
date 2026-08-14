@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.96.0] - 2026-08-14
+
 ### Added
 
 - **The timeline grew into its engine.** Scenes are cards now — each with a
@@ -2723,7 +2725,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.95.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.96.0...HEAD
+[2.96.0]: https://github.com/0langa/beatform/compare/v2.95.0...v2.96.0
 [2.95.0]: https://github.com/0langa/beatform/compare/v2.94.0...v2.95.0
 [2.94.0]: https://github.com/0langa/beatform/compare/v2.93.0...v2.94.0
 [2.93.0]: https://github.com/0langa/beatform/compare/v2.92.1...v2.93.0
