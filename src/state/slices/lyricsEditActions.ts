@@ -21,6 +21,7 @@ import {
   deleteLine,
   insertLineAfter,
   lineWindow,
+  MAX_TIME_SEC,
   mergeWithNext,
   nudgeLine,
   nudgeWord,
@@ -45,6 +46,22 @@ const MAX_UNDO = 100;
 /** Slice margin beyond the line window for re-alignment — must exceed the
  * aligner's own ±0.4 s pad so its window never leaves the slice. */
 const REALIGN_EDGE_SEC = 0.6;
+
+/**
+ * The absolute ceiling a tail line/word's time may clamp to (whole-lane
+ * review, IMPORTANT on top of E2-U2): the loaded track's own duration when
+ * one is available, else lyricsEdit.ts's MAX_TIME_SEC (5999.99s, matched to
+ * lrcTimestamp's own saturation point) as the fallback every OTHER caller
+ * still gets. MAX_TIME_SEC alone regressed a legitimate tail edit on any
+ * track past ~100 minutes — imported lyrics (no clamp of their own) can
+ * genuinely describe one; generateLyrics' own LYRICS_MAX_TRACK_SEC
+ * (lyricsGenActions.ts) documents up to 90 minutes as supported for
+ * generation, and import has no such ceiling at all. `getEngine()` is the
+ * same source `realignLyricLine` below already reads `buf.duration` from —
+ * not the store's own playback state, which this pure-editor slice has no
+ * other reason to subscribe to.
+ */
+const lineTimeCeiling = (): number => getEngine().audioBuffer?.duration ?? MAX_TIME_SEC;
 
 // Editor-local undo/redo stacks (module scope, exactly like history.ts —
 // depths are mirrored into state so buttons can enable/disable reactively).
@@ -77,12 +94,12 @@ export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
 
     setLyricLineTime(i, t) {
       const lines = get().lyrics;
-      if (lines) apply(setLineTime(lines, i, t));
+      if (lines) apply(setLineTime(lines, i, t, lineTimeCeiling()));
     },
 
     nudgeLyricLine(i, deltaSec) {
       const lines = get().lyrics;
-      if (lines) apply(nudgeLine(lines, i, deltaSec));
+      if (lines) apply(nudgeLine(lines, i, deltaSec, lineTimeCeiling()));
     },
 
     splitLyricLine(i, charPos) {
@@ -112,12 +129,12 @@ export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
 
     setLyricWordTime(i, k, t) {
       const lines = get().lyrics;
-      if (lines) apply(setWordTime(lines, i, k, t));
+      if (lines) apply(setWordTime(lines, i, k, t, lineTimeCeiling()));
     },
 
     nudgeLyricWord(i, k, deltaSec) {
       const lines = get().lyrics;
-      if (lines) apply(nudgeWord(lines, i, k, deltaSec));
+      if (lines) apply(nudgeWord(lines, i, k, deltaSec, lineTimeCeiling()));
     },
 
     redistributeLyricWords(i) {

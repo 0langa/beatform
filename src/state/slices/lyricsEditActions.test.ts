@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Store-level contract of the lyrics correction editor (FEAT-004 phase 4):
@@ -20,6 +20,7 @@ vi.mock("../services", () => ({
   initServices: vi.fn(() => vi.fn()),
   getEngine: vi.fn(() => ({
     ctx: { decodeAudioData: vi.fn() },
+    audioBuffer: null as { duration: number } | null,
     currentTime: 0,
     duration: 0,
     playing: false,
@@ -43,6 +44,8 @@ vi.mock("../platform", async (importOriginal) => {
 // store's module-init would read localStorage before it exists (the
 // store.test.ts discipline).
 const { useVizStore } = await import("../store");
+const { getEngine } = await import("../services");
+const { MAX_TIME_SEC } = await import("../lyricsEdit");
 
 const LRC =
   "[00:12.00]<00:12.00>Out <00:12.40>of <00:12.60>my <00:13.30>mind<00:14.42>\n" +
@@ -55,6 +58,22 @@ function load() {
 
 beforeEach(() => {
   useVizStore.getState().clearLyrics();
+});
+
+afterEach(() => {
+  // Every test below that sets a track duration must not leak it forward —
+  // the default (no track loaded) is what every OTHER test in this file
+  // implicitly relies on for the tail-ceiling fallback.
+  vi.mocked(getEngine).mockReturnValue({
+    ctx: { decodeAudioData: vi.fn() },
+    audioBuffer: null,
+    currentTime: 0,
+    duration: 0,
+    playing: false,
+    setVolume: vi.fn(),
+    onEnded: null,
+    dispose: vi.fn(),
+  } as unknown as ReturnType<typeof getEngine>);
 });
 
 describe("editor actions through the store", () => {
@@ -162,5 +181,92 @@ describe("editor actions through the store", () => {
     // Mismatched length: ignored entirely.
     s().applyLyricsConfidence([{ conf: 1, words: [] }]);
     expect(s().lyrics![0].conf).toBeCloseTo(0.8);
+  });
+});
+
+/**
+ * Whole-lane review, IMPORTANT on top of E2-U2: `MAX_TIME_SEC` alone (the
+ * finding's original shape) regressed a legitimate tail edit on any track
+ * longer than ~100 minutes — imported lyrics have no clamp of their own,
+ * so such a file genuinely reaches this code with a real, longer duration.
+ * `setLyricLineTime`/`setLyricWordTime` (the two call sites the finding
+ * named) and `nudgeLyricLine`/`nudgeLyricWord` (the same underlying clamp,
+ * reachable a different way — extended to close the SAME regression
+ * rather than leave half of it standing) now source the ceiling from
+ * `getEngine().audioBuffer?.duration`, falling back to MAX_TIME_SEC only
+ * when no track is loaded.
+ */
+describe("tail time ceiling is duration-aware (whole-lane review, IMPORTANT on top of E2-U2)", () => {
+  function mockDuration(duration: number | null) {
+    vi.mocked(getEngine).mockReturnValue({
+      ctx: { decodeAudioData: vi.fn() },
+      audioBuffer: duration === null ? null : ({ duration } as { duration: number }),
+      currentTime: 0,
+      duration: 0,
+      playing: false,
+      setVolume: vi.fn(),
+      onEnded: null,
+      dispose: vi.fn(),
+    } as unknown as ReturnType<typeof getEngine>);
+  }
+
+  it("setLyricLineTime clamps a tail-line paste to the loaded track's own duration on a >100-min track", () => {
+    mockDuration(7200); // 2-hour track — well past MAX_TIME_SEC (5999.99s)
+    load();
+    const s = () => useVizStore.getState();
+    const last = s().lyrics!.length - 1;
+
+    s().setLyricLineTime(last, 1e300);
+
+    expect(s().lyrics![last].t).toBe(7200);
+  });
+
+  it("setLyricLineTime still falls back to MAX_TIME_SEC when no track is loaded", () => {
+    mockDuration(null);
+    load();
+    const s = () => useVizStore.getState();
+    const last = s().lyrics!.length - 1;
+
+    s().setLyricLineTime(last, 1e300);
+
+    expect(s().lyrics![last].t).toBe(MAX_TIME_SEC);
+  });
+
+  it("setLyricWordTime clamps a tail-word paste to the track's duration the same way", () => {
+    mockDuration(7200);
+    load();
+    const s = () => useVizStore.getState();
+    const lastWord = s().lyrics![0].words!.length - 1; // "mind", the last word of line 0
+
+    s().setLyricWordTime(0, lastWord, 1e300);
+
+    expect(s().lyrics![0].words![lastWord].t).toBe(7200);
+  });
+
+  it("nudgeLyricLine (the same clamp, reached a different way) is duration-aware too", () => {
+    mockDuration(7200);
+    load();
+    const s = () => useVizStore.getState();
+    const last = s().lyrics!.length - 1;
+    // Land the tail line right at the edge of the OLD (wrong) ceiling first,
+    // then nudge it forward — a version that forgot the ceiling on the nudge
+    // path specifically would snap this back to 5999.99 instead of moving it.
+    s().setLyricLineTime(last, 6500);
+    expect(s().lyrics![last].t).toBe(6500);
+
+    s().nudgeLyricLine(last, 500);
+
+    expect(s().lyrics![last].t).toBe(7000);
+  });
+
+  it("a legit tail edit well within a long track's duration is untouched", () => {
+    mockDuration(7200);
+    load();
+    const s = () => useVizStore.getState();
+    const last = s().lyrics!.length - 1;
+
+    s().setLyricLineTime(last, 6800);
+
+    expect(s().lyrics![last].t).toBeCloseTo(6800);
   });
 });

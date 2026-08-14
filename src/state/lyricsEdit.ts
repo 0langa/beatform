@@ -189,14 +189,33 @@ function spreadWords(lines: LyricLine[], i: number, tokens: string[]): LyricWord
   );
 }
 
-/** Clamp a new line start into the strictly-monotonic corridor between its
+/**
+ * Clamp a new line start into the strictly-monotonic corridor between its
  * neighbours. Returns the clamped time (>= 0 always). The LAST line has no
- * next neighbour to bound it — MAX_TIME_SEC stands in (E2-U2) so a huge
- * typed value cannot push it past where it can ever be displayed, exported
- * or found again by activeLyricIndex's binary search. */
-export function clampLineTime(lines: LyricLine[], i: number, t: number): number {
+ * next neighbour to bound it — `ceiling` (default MAX_TIME_SEC, E2-U2)
+ * stands in so a huge typed value cannot push it past where it can ever be
+ * displayed, exported or found again by activeLyricIndex's binary search.
+ *
+ * `ceiling` is a parameter, not a hardcoded MAX_TIME_SEC (whole-lane
+ * review, IMPORTANT): this module is deliberately pure and has no access to
+ * playback state (see the file's own header), but MAX_TIME_SEC alone
+ * regresses a legitimate tail edit on any track longer than ~100 minutes —
+ * the app documents ~2-hour lyrics tracks as supported (LYRICS_MAX_TRACK_SEC,
+ * lyricsGenActions.ts), so such files genuinely exist, arriving via IMPORT
+ * (which has no clamp of its own) rather than generation. Callers that know
+ * the track's real duration (lyricsEditActions.ts) pass it; callers that
+ * don't (tests, or a caller with no loaded track) get the same MAX_TIME_SEC
+ * safety net as before — the contract this function's OWN CALLERS already
+ * relied on is unchanged, only extended.
+ */
+export function clampLineTime(
+  lines: LyricLine[],
+  i: number,
+  t: number,
+  ceiling: number = MAX_TIME_SEC,
+): number {
   const lo = i > 0 ? lines[i - 1].t + MIN_GAP : 0;
-  const hi = i + 1 < lines.length ? lines[i + 1].t - MIN_GAP : MAX_TIME_SEC;
+  const hi = i + 1 < lines.length ? lines[i + 1].t - MIN_GAP : ceiling;
   if (hi < lo) return lines[i].t; // degenerate corridor: keep the current time
   return Math.min(hi, Math.max(lo, Math.max(0, t)));
 }
@@ -204,11 +223,17 @@ export function clampLineTime(lines: LyricLine[], i: number, t: number): number 
 /**
  * Move a line's start to `t` (clamped between neighbours). The line's words
  * and explicit end travel WITH it — a line nudge is "the singer starts
- * later/earlier", not "stretch the line".
+ * later/earlier", not "stretch the line". `ceiling`: see clampLineTime's
+ * doc comment — forwarded verbatim.
  */
-export function setLineTime(lines: LyricLine[], i: number, t: number): LyricLine[] {
+export function setLineTime(
+  lines: LyricLine[],
+  i: number,
+  t: number,
+  ceiling: number = MAX_TIME_SEC,
+): LyricLine[] {
   if (i < 0 || i >= lines.length) return lines;
-  const clamped = clampLineTime(lines, i, t);
+  const clamped = clampLineTime(lines, i, t, ceiling);
   const delta = clamped - lines[i].t;
   if (Math.abs(delta) < 1e-9) return lines;
   const out = cloneLines(lines);
@@ -227,9 +252,14 @@ export function setLineTime(lines: LyricLine[], i: number, t: number): LyricLine
   return out;
 }
 
-export function nudgeLine(lines: LyricLine[], i: number, deltaSec: number): LyricLine[] {
+export function nudgeLine(
+  lines: LyricLine[],
+  i: number,
+  deltaSec: number,
+  ceiling: number = MAX_TIME_SEC,
+): LyricLine[] {
   if (i < 0 || i >= lines.length) return lines;
-  return setLineTime(lines, i, lines[i].t + deltaSec);
+  return setLineTime(lines, i, lines[i].t + deltaSec, ceiling);
 }
 
 /**
@@ -406,22 +436,35 @@ export function setWordText(lines: LyricLine[], i: number, k: number, text: stri
 
 /** Clamp a word start between its neighbours' starts (word 0 down to 0).
  * The LAST word of a line has the same unbounded-tail hazard a last LINE
- * has — MAX_TIME_SEC stands in here too (E2-U2), same reasoning. */
-export function clampWordTime(line: LyricLine, k: number, t: number): number {
+ * has — `ceiling` (default MAX_TIME_SEC, E2-U2) stands in here too, same
+ * reasoning and same duration-aware contract as clampLineTime's own doc
+ * comment (whole-lane review, IMPORTANT). */
+export function clampWordTime(
+  line: LyricLine,
+  k: number,
+  t: number,
+  ceiling: number = MAX_TIME_SEC,
+): number {
   const words = line.words ?? [];
   const lo = k > 0 ? words[k - 1].t + MIN_GAP : 0;
-  const hi = k + 1 < words.length ? words[k + 1].t - MIN_GAP : MAX_TIME_SEC;
+  const hi = k + 1 < words.length ? words[k + 1].t - MIN_GAP : ceiling;
   if (hi < lo) return words[k]?.t ?? 0;
   return Math.min(hi, Math.max(lo, Math.max(0, t)));
 }
 
 /** Move one word's start (clamped); the last word's explicit end keeps its
  * duration so nudging the final word doesn't silently stretch the wipe. */
-export function setWordTime(lines: LyricLine[], i: number, k: number, t: number): LyricLine[] {
+export function setWordTime(
+  lines: LyricLine[],
+  i: number,
+  k: number,
+  t: number,
+  ceiling: number = MAX_TIME_SEC,
+): LyricLine[] {
   if (i < 0 || i >= lines.length) return lines;
   const line = lines[i];
   if (!line.words || k < 0 || k >= line.words.length) return lines;
-  const clamped = clampWordTime(line, k, t);
+  const clamped = clampWordTime(line, k, t, ceiling);
   const delta = clamped - line.words[k].t;
   if (Math.abs(delta) < 1e-9) return lines;
   const out = cloneLines(lines);
@@ -432,10 +475,16 @@ export function setWordTime(lines: LyricLine[], i: number, k: number, t: number)
   return out;
 }
 
-export function nudgeWord(lines: LyricLine[], i: number, k: number, deltaSec: number): LyricLine[] {
+export function nudgeWord(
+  lines: LyricLine[],
+  i: number,
+  k: number,
+  deltaSec: number,
+  ceiling: number = MAX_TIME_SEC,
+): LyricLine[] {
   const w = lines[i]?.words?.[k];
   if (!w) return lines;
-  return setWordTime(lines, i, k, w.t + deltaSec);
+  return setWordTime(lines, i, k, w.t + deltaSec, ceiling);
 }
 
 /** The "spread evenly" button: word starts evenly across the line window,

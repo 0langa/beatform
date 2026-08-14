@@ -363,6 +363,53 @@ describe("tail time ceiling (E2-U2)", () => {
     const line = fixture()[0];
     expect(clampWordTime(line, 1, 1e300)).toBeCloseTo(12.59); // bounded by word 2 ("my" @ 12.6), not MAX_TIME_SEC
   });
+
+  /**
+   * Whole-lane review, IMPORTANT: MAX_TIME_SEC alone regressed a legitimate
+   * tail edit on any track past ~100 minutes — imported lyrics have no
+   * clamp of their own, so such a file genuinely reaches this code with a
+   * real duration past 5999.99s. clampLineTime/clampWordTime/setLineTime/
+   * setWordTime all gained an optional `ceiling` parameter (default
+   * MAX_TIME_SEC — the tests above already pin that default's own
+   * behavior); these pin the parameter itself, at the pure-function layer,
+   * decoupled from lyricsEditActions.ts's own duration-sourcing (covered
+   * in lyricsEditActions.test.ts).
+   */
+  describe("the tail ceiling is a parameter (whole-lane review, IMPORTANT)", () => {
+    it("clampLineTime honors a caller-supplied ceiling on the LAST line", () => {
+      const lines = fixture();
+      const last = lines.length - 1;
+      expect(clampLineTime(lines, last, 1e300, 7200)).toBe(7200);
+      // A value within the custom ceiling but past MAX_TIME_SEC survives —
+      // proves this is a REPLACEMENT ceiling, not an additional cap.
+      expect(clampLineTime(lines, last, 6500, 7200)).toBeCloseTo(6500);
+    });
+
+    it("clampWordTime honors a caller-supplied ceiling on the LAST word", () => {
+      const line = fixture()[0];
+      const lastWord = line.words!.length - 1;
+      expect(clampWordTime(line, lastWord, 1e300, 7200)).toBe(7200);
+      expect(clampWordTime(line, lastWord, 6500, 7200)).toBeCloseTo(6500);
+    });
+
+    it("setLineTime forwards the ceiling through to the clamp", () => {
+      const lines = fixture();
+      const last = lines.length - 1;
+      const out = setLineTime(lines, last, 1e300, 7200);
+      expect(out[last].t).toBe(7200);
+    });
+
+    it("setWordTime forwards the ceiling through to the clamp", () => {
+      const out = setWordTime(fixture(), 0, 3, 1e300, 7200);
+      expect(out[0].words![3].t).toBe(7200);
+    });
+
+    it("omitting the ceiling still defaults to MAX_TIME_SEC — the pure contract every existing caller relies on is unchanged", () => {
+      const lines = fixture();
+      const last = lines.length - 1;
+      expect(clampLineTime(lines, last, 1e300)).toBe(MAX_TIME_SEC);
+    });
+  });
 });
 
 describe("realign + confidence transport", () => {
