@@ -483,18 +483,23 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       justification is the wrong one. **The id itself must still not be
       renamed** — it is a React key whose churn buys nothing — but the
       stated reason should be corrected to match `prefs.ts`.
-- [ ] D6 **P-21 stage 2 remains open.** H7a (Track H) closed stage 1 —
-      single-source generation. Unbuilt: the FAQ section, and the gallery
-      submission helper (validate + hash + PR body from a local file, so
-      a first submission is one command instead of seven manual steps —
-      the original P-21 brief's own framing). Also noticed while merging
-      the guides and deliberately not restored: the old hand-written
-      Projects section linked "Themes" to the site's own
-      `docs/templates.md` (`[Themes](templates)`, still live and linked
-      from `docs/index.md` and `README.md`); the merged `guideContent.ts`
-      carries no equivalent link. Not one of H7a's 23 items and not a
-      product-fact divergence, so it was flagged rather than fixed — left
-      for whoever picks up stage 2 to restore or consciously drop.
+- [x] D6 **DONE — P-21 stage 2 shipped (branch `p21-stage2`).** H7a
+      (Track H) closed stage 1 — single-source generation. Stage 2 closes
+      the rest: a ten-entry FAQ section in `guideContent.ts` (through the
+      same engine, every claim traced to README/CHANGELOG/BACKLOG/source
+      before being written), and the gallery submission helper
+      (`node scripts/gallery-submit.mjs <file>` — validates with the app's
+      own `parseUserPreset`/`parseTheme`, hashes and sizes exactly,
+      self-checks the assembled registry entry through the app's own
+      `parseRegistry`, and prints a ready PR body — so a first submission
+      is one command instead of the seven manual steps the original P-21
+      brief named). The dropped Projects-section link to the site's
+      `docs/templates.md` was restored plainly inside the existing Themes
+      bullet, through the engine's existing `link` Inline — no new engine
+      machinery, per the plan. Evidence: `src/state/gallerySubmit.test.ts`
+      (16 tests, including a self-check-is-live proof), full gate suite
+      green, CLI proven end-to-end against real generated fixtures with an
+      independently cross-checked SHA-256.
 
 ### Track E — Hardening burn-down (NEW, from the audit register)
 
