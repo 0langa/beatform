@@ -153,6 +153,16 @@ export function TimelinePanel() {
         downX: number;
         downY: number;
         moved: boolean;
+        /** P-5: true for a keyframe THIS gesture just created (click-to-add,
+         * then maybe scrub) — a clean release (never moved) must not ALSO
+         * cycle its curve, the behavior reserved for a tap on a keyframe
+         * that already existed before this gesture started. */
+        justAdded: boolean;
+        /** P-5: gesture-grouping key for every setLane call this drag makes,
+         * computed once at gesture start (see addKeyframeAt / the .tl-key
+         * pointerdown handler) so the add-or-grab, every scrub tick, and the
+         * final sort-on-release all share ONE undo entry. */
+        groupKey: string;
       }
     | null
   >(null);
@@ -163,6 +173,12 @@ export function TimelinePanel() {
 
   const xOf = (t: number) => t * pps;
   const tOf = (x: number) => Math.min(duration, Math.max(0, x / pps));
+
+  /** P-5 snap indicator: whether `snap()` below is actually doing anything.
+   * Both read the SAME condition — kept as one boolean rather than a second
+   * inline check, so the toolbar chip can never drift out of sync with
+   * what dragging/adding actually does. */
+  const snapActive = !!(beatGrid?.beatTimes && beatGrid.beatTimes.length > 0);
 
   const snap = (t: number): number => {
     const beats = beatGrid?.beatTimes;
@@ -336,8 +352,8 @@ export function TimelinePanel() {
     update({ lanes: timeline.lanes.filter((_, i) => i !== index) }, "timeline-lane-remove");
   };
 
-  const setLane = (index: number, lane: AutomationLane) => {
-    update({ lanes: timeline.lanes.map((l, i) => (i === index ? lane : l)) });
+  const setLane = (index: number, lane: AutomationLane, historyKey?: string) => {
+    update({ lanes: timeline.lanes.map((l, i) => (i === index ? lane : l)) }, historyKey);
   };
 
   /** Solo (P-5): toggle whether a lane's on-track row is shown. Pure local
@@ -372,11 +388,27 @@ export function TimelinePanel() {
     return { min: 0, max: 1 };
   };
 
-  const onLanePointer = (
+  /**
+   * Click-to-add (P-5): insert a keyframe at the clicked (time, value) and
+   * hand back what the caller needs to immediately start a "key" drag on
+   * it — the REST of the gesture (live scrubbing, sort-on-release) then
+   * reuses the exact machinery an EXISTING keyframe's drag already goes
+   * through (moveDragged/endDrag's "key" branches), rather than a second
+   * implementation of "drag changes a keyframe's time/value".
+   *
+   * Appended, not sorted into place: `index` below is the new keyframe's
+   * position in `lane.keyframes` (its length before the push, i.e. the last
+   * slot after it), which stays valid for the rest of an IN-PLACE drag the
+   * same way an existing keyframe's index does — see moveDragged's own
+   * comment on why keyframes move in place during a drag. `endDrag` sorts
+   * once on release, same as it already does for every other "key" drag —
+   * this is what restores "every stored lane is sorted" (timeline.ts) for a
+   * clean click too, not only a dragged one.
+   */
+  const addKeyframeAt = (
     e: React.PointerEvent<HTMLDivElement>,
     laneIndex: number,
-    action: "add" | "none",
-  ) => {
+  ): { index: number; groupKey: string } => {
     const rect = e.currentTarget.getBoundingClientRect();
     const t = snap(tOf(e.clientX - rect.left));
     const lane = timeline.lanes[laneIndex];
@@ -384,13 +416,22 @@ export function TimelinePanel() {
     const value =
       spec.min +
       (1 - Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))) * (spec.max - spec.min);
-    if (action === "add") {
-      const keyframes = [
-        ...lane.keyframes,
-        { id: newKeyframeId(), t, value, curve: "linear" as const },
-      ].sort((a, b) => a.t - b.t);
-      setLane(laneIndex, { ...lane, keyframes });
-    }
+    const id = newKeyframeId();
+    // Fresh + globally unique per gesture (Date.now() + random suffix): two
+    // separate add gestures can never share this key, even back to back —
+    // no UNGROUPABLE membership needed to keep "discrete adds are discrete"
+    // true here, unlike timeline-scene-add/timeline-lane-add (see the lane
+    // log for why THIS gesture specifically needed the different shape: it
+    // writes more than once, and all of those writes must group WITH each
+    // other).
+    const groupKey = `timeline-key-add:${id}`;
+    const index = lane.keyframes.length;
+    setLane(
+      laneIndex,
+      { ...lane, keyframes: [...lane.keyframes, { id, t, value, curve: "linear" }] },
+      groupKey,
+    );
+    return { index, groupKey };
   };
 
   // Pointer capture on the (stable) scroll container keeps a drag alive even
@@ -402,18 +443,29 @@ export function TimelinePanel() {
 
   const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
     if (drag?.kind === "key") {
-      if (!drag.moved) {
-        // The pointer never really moved: this was a TAP on the dot. Pointer
-        // capture retargets the browser's click/contextmenu to the scroll
-        // container, so the "click a dot to cycle its curve" gesture is
-        // reconstructed from the capture stream instead.
+      if (!drag.moved && !drag.justAdded) {
+        // The pointer never really moved on an EXISTING dot: this was a TAP.
+        // Pointer capture retargets the browser's click/contextmenu to the
+        // scroll container, so the "click a dot to cycle its curve" gesture
+        // is reconstructed from the capture stream instead. A freshly-added
+        // keyframe (justAdded) skips this — a plain click-to-add must leave
+        // the new keyframe exactly as placed, not also flip its curve.
         cycleCurve(drag.lane, drag.index);
       } else {
         // Keyframes are moved IN PLACE during the drag (so drag.index stays
-        // valid even when one crosses a neighbor); sort once on release.
+        // valid even when one crosses a neighbor); sort once on release —
+        // and a clean click-to-add with no drag lands here too (justAdded,
+        // appended rather than sorted at insert time), which is what
+        // restores "every stored lane is sorted" (timeline.ts) for that
+        // case as well. `drag.groupKey`: the same key every write this
+        // gesture made already used, so this final commit groups with them.
         const lane = timeline.lanes[drag.lane];
         if (lane) {
-          setLane(drag.lane, { ...lane, keyframes: [...lane.keyframes].sort((a, b) => a.t - b.t) });
+          setLane(
+            drag.lane,
+            { ...lane, keyframes: [...lane.keyframes].sort((a, b) => a.t - b.t) },
+            drag.groupKey,
+          );
         }
       }
     }
@@ -458,7 +510,11 @@ export function TimelinePanel() {
       // In place: no re-sort while dragging, so drag.index keeps pointing at
       // the same keyframe. The array is re-sorted on pointer release.
       const keyframes = lane.keyframes.map((k, i) => (i === drag.index ? { ...k, t, value } : k));
-      setLane(drag.lane, { ...lane, keyframes });
+      // drag.groupKey (P-5): per-keyframe for a grab of an existing dot, or
+      // the add gesture's own fresh id when this continues a click-to-add —
+      // either way every tick of THIS drag groups into one undo entry, and
+      // grabbing a DIFFERENT keyframe next never cross-groups with it.
+      setLane(drag.lane, { ...lane, keyframes }, drag.groupKey);
     }
   };
 
@@ -473,9 +529,18 @@ export function TimelinePanel() {
 
   const removeKeyframe = (laneIndex: number, kfIndex: number) => {
     const lane = timeline.lanes[laneIndex];
+    const removed = lane.keyframes[kfIndex];
     const keyframes = lane.keyframes.filter((_, i) => i !== kfIndex);
     if (keyframes.length === 0) removeLane(laneIndex);
-    else setLane(laneIndex, { ...lane, keyframes });
+    else
+      // Own key (distinct from the flat "timeline" default, not ungroupable
+      // — mirrors timeline-scene-remove/timeline-lane-remove), so removing a
+      // keyframe can't cross-group with an unrelated edit in the same 800ms.
+      setLane(
+        laneIndex,
+        { ...lane, keyframes },
+        `timeline-key-remove:${removed?.id ?? `${laneIndex}:${kfIndex}`}`,
+      );
   };
 
   // Keyboard nudge for a focused keyframe (parity with the pointer drag):
@@ -490,7 +555,14 @@ export function TimelinePanel() {
     const keyframes = lane.keyframes
       .map((k, i) => (i === kfIndex ? { ...k, value, t } : k))
       .sort((a, b) => a.t - b.t);
-    setLane(laneIndex, { ...lane, keyframes });
+    // Per-keyframe (like a param drag/scene drag): repeated arrow-key
+    // presses on the SAME dot group into one undo entry; a different
+    // keyframe next never cross-groups with it.
+    setLane(
+      laneIndex,
+      { ...lane, keyframes },
+      `timeline-key-nudge:${cur.id ?? `${laneIndex}:${kfIndex}`}`,
+    );
   };
 
   const paramOptions = allParams(activePreset);
@@ -513,6 +585,16 @@ export function TimelinePanel() {
         >
           ✦ Auto-arrange
         </button>
+        <span
+          className={`tl-snap ${snapActive ? "active" : ""}`}
+          title={
+            snapActive
+              ? "Beat snap is active — scenes and keyframes snap to the detected beat grid while dragging or adding"
+              : "No beat grid detected — dragging and adding are unsnapped (free positioning)"
+          }
+        >
+          Snap
+        </span>
         <div className="tl-zoom">
           <span className="row-label">Zoom</span>
           <Slider
@@ -691,10 +773,23 @@ export function TimelinePanel() {
               <div key={lane.param} className="tl-lane-row">
                 <div
                   className="tl-lane-area"
-                  title="Double-click to add a keyframe; drag dots; right-click removes; click a dot to cycle its curve"
-                  onDoubleClick={(e) =>
-                    onLanePointer(e as unknown as React.PointerEvent<HTMLDivElement>, li, "add")
-                  }
+                  title="Click to add a keyframe, drag before releasing to shape its value; drag an existing dot to move it; right-click removes; tap a dot (no drag) to cycle its curve"
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return; // only the primary button adds
+                    e.preventDefault();
+                    const { index, groupKey } = addKeyframeAt(e, li);
+                    beginDrag(e, {
+                      kind: "key",
+                      lane: li,
+                      index,
+                      spec,
+                      downX: e.clientX,
+                      downY: e.clientY,
+                      moved: false,
+                      justAdded: true,
+                      groupKey,
+                    });
+                  }}
                 >
                   {lane.keyframes.map((k, ki) => {
                     const f = (k.value - spec.min) / Math.max(1e-9, spec.max - spec.min);
@@ -749,6 +844,12 @@ export function TimelinePanel() {
                             downX: e.clientX,
                             downY: e.clientY,
                             moved: false,
+                            justAdded: false,
+                            // Per-keyframe (P-5): every write this drag makes
+                            // groups under the SAME key, but grabbing a
+                            // DIFFERENT keyframe next never cross-groups —
+                            // same idiom as timeline-scene-drag:${id}.
+                            groupKey: `timeline-key-drag:${k.id ?? `${li}:${ki}`}`,
                           });
                         }}
                         onContextMenu={(e) => e.preventDefault()}

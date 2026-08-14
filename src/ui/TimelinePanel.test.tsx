@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { presets } from "../render/presets";
 import type { AutomationLane, Scene, Timeline } from "../state/timeline";
 import type { UserPreset } from "../state/userPresets";
+import type { BeatGrid } from "../audio/analysis/beatGrid";
 import { clearHistory } from "../state/history";
 import { renderProbe } from "./testing/renderProbe";
 import { TimelinePanel } from "./TimelinePanel";
@@ -836,5 +837,182 @@ describe("lane list panel (P-5 task 3)", () => {
       expect(useVizStore.getState().timeline.lanes).toHaveLength(0);
       expect(useVizStore.getState().undoDepth).toBe(depth + 2);
     });
+  });
+});
+
+function fakeBeatGrid(times: number[]): BeatGrid {
+  return { bpm: 120, beatTimes: new Float32Array(times), hopSec: 512 / 44100 };
+}
+
+describe("beat-snap indicator (P-5 task 4)", () => {
+  it("reads as active when a beat grid with beats exists", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    act(() => useVizStore.setState({ beatGrid: fakeBeatGrid([0, 0.5, 1, 1.5]) }));
+
+    const chip = screen.getByTitle(/Beat snap is active/i);
+    expect(chip.className).toContain("active");
+  });
+
+  it("reads as inactive with no beat grid — mountProbed's default", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+
+    const chip = screen.getByTitle(/No beat grid detected/i);
+    expect(chip.className).not.toContain("active");
+  });
+
+  it("reads as inactive when the beat grid exists but tracking found no beats", () => {
+    const { timeline } = probedTimeline();
+    mountProbed(timeline);
+    act(() => useVizStore.setState({ beatGrid: fakeBeatGrid([]) }));
+
+    const chip = screen.getByTitle(/No beat grid detected/i);
+    expect(chip.className).not.toContain("active");
+  });
+});
+
+/** The lane track's droppable area — clicking empty space on it adds a
+ * keyframe (P-5 task 4). Assumes exactly one lane is rendered. */
+const laneArea = () => document.querySelector<HTMLElement>(".tl-lane-area")!;
+
+/** Locates a keyframe dot by its aria-label ("hue keyframe at 5.00s") — the
+ * label this file already gives every `.tl-key` (role="slider"). */
+const keyframeDot = (namePattern: RegExp) => screen.getByRole("slider", { name: namePattern });
+
+describe("keyframe click-to-add + value scrubbing (P-5 task 4)", () => {
+  it("clicking empty lane space adds one linear keyframe — no drag needed", () => {
+    const timeline: Timeline = { enabled: true, scenes: [], lanes: [lane("hue", 0.2)] };
+    mountProbed(timeline);
+    const scroll = stubPointerCapture();
+    const before = useVizStore.getState().timeline.lanes[0].keyframes.length;
+
+    fireEvent.pointerDown(laneArea(), { button: 0, pointerId: 1, clientX: 100, clientY: 20 });
+    fireEvent.pointerUp(scroll, { pointerId: 1 });
+
+    const kfs = useVizStore.getState().timeline.lanes[0].keyframes;
+    expect(kfs).toHaveLength(before + 1);
+    const added = kfs.find((k) => k.id !== "k-hue");
+    expect(added?.curve).toBe("linear"); // a clean click must not ALSO cycle it
+  });
+
+  it("dragging after the click scrubs the SAME new keyframe — one undo entry for the whole gesture", () => {
+    const timeline: Timeline = { enabled: true, scenes: [], lanes: [lane("hue", 0.2)] };
+    mountProbed(timeline);
+    const scroll = stubPointerCapture();
+    const depth = useVizStore.getState().undoDepth;
+
+    fireEvent.pointerDown(laneArea(), { button: 0, pointerId: 1, clientX: 100, clientY: 20 });
+    fireEvent.pointerMove(scroll, { pointerId: 1, clientX: 130, clientY: 30 });
+    fireEvent.pointerMove(scroll, { pointerId: 1, clientX: 160, clientY: 40 });
+    fireEvent.pointerUp(scroll, { pointerId: 1 });
+
+    expect(useVizStore.getState().timeline.lanes[0].keyframes).toHaveLength(2); // seed + new
+    expect(useVizStore.getState().undoDepth).toBe(depth + 1);
+  });
+
+  it("two SEPARATE click-to-add gestures cost two undo entries — discrete adds stay discrete", () => {
+    const timeline: Timeline = { enabled: true, scenes: [], lanes: [lane("hue", 0.2)] };
+    mountProbed(timeline);
+    const scroll = stubPointerCapture();
+    const depth = useVizStore.getState().undoDepth;
+
+    fireEvent.pointerDown(laneArea(), { button: 0, pointerId: 1, clientX: 50, clientY: 20 });
+    fireEvent.pointerUp(scroll, { pointerId: 1 });
+    fireEvent.pointerDown(laneArea(), { button: 0, pointerId: 1, clientX: 200, clientY: 20 });
+    fireEvent.pointerUp(scroll, { pointerId: 1 });
+
+    expect(useVizStore.getState().timeline.lanes[0].keyframes).toHaveLength(3); // seed + 2 new
+    expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+  });
+});
+
+describe("existing-keyframe drag — per-keyframe grouping, like a param drag (P-5 task 4)", () => {
+  function twoKeyframeLane(): Timeline {
+    return {
+      enabled: true,
+      scenes: [],
+      lanes: [
+        {
+          param: "hue",
+          keyframes: [
+            { id: "kA", t: 0, value: 0.2, curve: "linear" },
+            { id: "kB", t: 10, value: 0.5, curve: "linear" },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("multiple pointermoves of the SAME keyframe drag group into one undo entry", () => {
+    mountProbed(twoKeyframeLane());
+    const scroll = stubPointerCapture();
+    const depth = useVizStore.getState().undoDepth;
+
+    const dot = keyframeDot(/hue keyframe at 0\.00s/);
+    fireEvent.pointerDown(dot, { button: 0, pointerId: 1, clientX: 50, clientY: 20 });
+    fireEvent.pointerMove(scroll, { pointerId: 1, clientX: 80, clientY: 25 });
+    fireEvent.pointerMove(scroll, { pointerId: 1, clientX: 90, clientY: 30 });
+    fireEvent.pointerUp(scroll, { pointerId: 1 });
+
+    expect(useVizStore.getState().undoDepth).toBe(depth + 1);
+  });
+
+  it("dragging keyframe A then keyframe B, back to back, never merges", () => {
+    mountProbed(twoKeyframeLane());
+    const scroll = stubPointerCapture();
+    const depth = useVizStore.getState().undoDepth;
+
+    const dragDot = (namePattern: RegExp, fromX: number, toX: number) => {
+      const dot = keyframeDot(namePattern);
+      fireEvent.pointerDown(dot, { button: 0, pointerId: 1, clientX: fromX, clientY: 20 });
+      fireEvent.pointerMove(scroll, { pointerId: 1, clientX: toX, clientY: 25 });
+      fireEvent.pointerUp(scroll, { pointerId: 1 });
+    };
+
+    dragDot(/hue keyframe at 0\.00s/, 50, 80);
+    dragDot(/hue keyframe at 10\.00s/, 300, 330);
+
+    expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+  });
+
+  it("removing a keyframe uses a key distinct from the flat 'timeline' key", () => {
+    mountProbed(twoKeyframeLane());
+    const depth = useVizStore.getState().undoDepth;
+
+    // Right-click removes (button 2) — no drag/capture involved.
+    fireEvent.pointerDown(keyframeDot(/hue keyframe at 0\.00s/), {
+      button: 2,
+      pointerId: 1,
+      clientX: 50,
+      clientY: 20,
+    });
+    act(() =>
+      useVizStore.getState().setTimeline({ ...useVizStore.getState().timeline, scenes: [] }),
+    );
+
+    expect(useVizStore.getState().timeline.lanes[0].keyframes).toHaveLength(1);
+    expect(useVizStore.getState().undoDepth).toBe(depth + 2);
+  });
+
+  it("keyboard-nudging the SAME keyframe twice groups into one undo entry", () => {
+    mountProbed(twoKeyframeLane());
+    const depth = useVizStore.getState().undoDepth;
+
+    const dot = keyframeDot(/hue keyframe at 0\.00s/);
+    fireEvent.keyDown(dot, { key: "ArrowUp" });
+    fireEvent.keyDown(dot, { key: "ArrowUp" });
+
+    expect(useVizStore.getState().undoDepth).toBe(depth + 1);
+  });
+
+  it("keyboard-nudging two DIFFERENT keyframes never merges", () => {
+    mountProbed(twoKeyframeLane());
+    const depth = useVizStore.getState().undoDepth;
+
+    fireEvent.keyDown(keyframeDot(/hue keyframe at 0\.00s/), { key: "ArrowUp" });
+    fireEvent.keyDown(keyframeDot(/hue keyframe at 10\.00s/), { key: "ArrowUp" });
+
+    expect(useVizStore.getState().undoDepth).toBe(depth + 2);
   });
 });

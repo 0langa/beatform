@@ -3724,6 +3724,23 @@ kbd {
   padding: 4px 6px;
 }
 
+/* Beat-snap indicator (P-5): makes the always-silent snap() condition in
+   TimelinePanel.tsx visible. Same on/off visual language as .style-chip's
+   .active state (accent vs dim), a small text pill rather than a new icon. */
+.tl-snap {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+}
+
+.tl-snap.active {
+  color: var(--accent-fg);
+  border-color: rgba(106, 168, 255, 0.5);
+  background: rgba(59, 130, 246, 0.15);
+}
+
 .tl-zoom {
   display: inline-flex;
   align-items: center;
