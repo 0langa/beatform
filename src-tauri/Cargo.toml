@@ -57,4 +57,4 @@ windows-core = "0.61"
 # Uninstall-entry self-heal (uninstall_entry.rs): DisplayVersion went
 # stale across five auto-updates (ALIGN-002). Version tracks the tree's
 # existing winreg — no new tree entries.
-winreg = "0.55"
+winreg = "0.56"
