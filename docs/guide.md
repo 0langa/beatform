@@ -234,7 +234,7 @@ The dialog asks for a **Type** first — a normal _Video_ render, or a _Canvas l
 
 - **MP4** — H.264 everywhere; HEVC and AV1 appear as codec choices where your GPU encodes them. Auto or manual bitrate (2–60 Mbps), and optional loudness normalization to −14/−16/−23 LUFS with a −1 dBTP ceiling (audio only — pixels unchanged).
 - **WebM VP9 + alpha** — not a separate format but the _VP9 + alpha_ codec under MP4, which writes a transparent `.webm` for OBS overlays and web embeds (set Background to Transparent).
-- **PNG frames** — numbered stills with alpha for compositing.
+- **PNG frames** (desktop) — numbered stills with alpha for compositing.
 - **ProRes** (desktop) — a 4444 .mov with alpha and untouched PCM audio, straight into Premiere, Resolve or After Effects.
 - **AV1 10-bit** (desktop) — a genuine 10-bit MP4 tapped before the 8-bit swapchain, so wide gradients keep their levels instead of banding.
 - **GIF / animated WebP** (desktop) — loop files; WebP keeps alpha.
@@ -343,11 +343,11 @@ Every performance shortcut has a letter or digit as its main binding, so it sits
 
 ### What can I export without the desktop app?
 
-MP4 (H.264 everywhere, HEVC/AV1 where your GPU supports them), WebM with a real alpha channel, and numbered PNG frames all render in the browser build. ProRes, genuine 10-bit AV1, and GIF/animated WebP need the desktop app — those three are encoded by the bundled ffmpeg sidecar rather than the browser's own WebCodecs pipeline.
+MP4 (H.264 everywhere, HEVC/AV1 where your GPU supports them) and WebM with a real alpha channel both render in the browser build. Everything else needs the desktop app: PNG frames because writing a folder of numbered stills has no browser equivalent, and ProRes, genuine 10-bit AV1, and GIF/animated WebP because they're encoded by the bundled ffmpeg sidecar rather than the browser's own WebCodecs pipeline.
 
 ### Why does an export sometimes take longer than the song itself?
 
-Export renders and encodes every frame for real, so its speed depends on your resolution, frame rate, codec and GPU — not on the length of the track. Hardware-encoded MP4 at common resolutions usually finishes faster than realtime. ProRes, 10-bit AV1, GIF and WebP stream raw frames into the bundled ffmpeg encoder and can run well under realtime, especially at 4K or when your GPU falls back to software encoding — Beatform doesn't promise a particular speed for any format.
+Export renders and encodes every frame for real, so its speed depends on your resolution, frame rate, codec and GPU — not on the length of the track. Hardware-encoded MP4 at common resolutions usually finishes faster than realtime. ProRes, 10-bit AV1, GIF and WebP stream frames into the bundled ffmpeg encoder and can run well under realtime, especially at 4K or when your GPU falls back to software encoding — Beatform doesn't promise a particular speed for any format.
 
 ### What's the difference between WebGPU and the simplified renderer?
 
