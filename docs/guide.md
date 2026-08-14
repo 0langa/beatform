@@ -275,6 +275,10 @@ Entries carry no code — a look or a theme can only select and parameterize vis
 
 The collection lives on GitHub as `beatform-app/gallery` and submissions are reviewed there — the dialog links you to it.
 
+### Submitting
+
+Have a look or theme worth sharing? `node scripts/gallery-submit.mjs <file>` validates it with the app's own checks, computes the hash and size the registry needs, and prints a ready pull-request body — one command instead of several manual steps. It only prepares that text; nothing is uploaded or opened on your behalf.
+
 <a id="preferences"></a>
 
 ## Preferences, updates & shortcuts

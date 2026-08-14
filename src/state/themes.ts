@@ -23,6 +23,10 @@ import {
  */
 
 export const THEME_VERSION = 1;
+/** Mirrors userPresets.ts's USER_PRESET_EXTENSION — the file-kind constant
+ * gallerySubmit.ts keys its extension→type table off, so that table is
+ * built from the same two real sources as everything else there. */
+export const THEME_EXTENSION = "bftheme";
 
 export interface ThemeMeta {
   /** Display name of the theme ("Midnight Phonk"). */

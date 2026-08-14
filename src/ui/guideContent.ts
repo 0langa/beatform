@@ -793,6 +793,14 @@ export const GUIDE: readonly GuideSection[] = [
           " and submissions are reviewed there — the dialog links you to it.",
         ],
       },
+      { h4: "Submitting" },
+      {
+        p: [
+          "Have a look or theme worth sharing? ",
+          { code: "node scripts/gallery-submit.mjs <file>" },
+          " validates it with the app's own checks, computes the hash and size the registry needs, and prints a ready pull-request body — one command instead of several manual steps. It only prepares that text; nothing is uploaded or opened on your behalf.",
+        ],
+      },
     ],
   },
   {
