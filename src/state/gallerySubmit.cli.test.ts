@@ -73,10 +73,24 @@ afterAll(() => {
  * Windows cmd/PowerShell quoting entirely (execFileSync with an argv array
  * spawns the executable directly). Uses process.execPath rather than a bare
  * "node" so the subprocess is guaranteed the exact same Node binary running
- * the test, not whatever "node" resolves to on PATH. */
+ * the test, not whatever "node" resolves to on PATH.
+ *
+ * `timeout: 25_000` is load-bearing, not a nicety: execFileSync is
+ * SYNCHRONOUS and blocks this process's event loop for as long as the
+ * child runs, so vitest's own describe-level `{ timeout: 30_000 }` cannot
+ * preempt a genuinely hung child — that timer callback can never fire
+ * while the event loop is blocked inside this call. Without an explicit
+ * timeout here, a hang would wait forever, not 30s. Node's own
+ * `execFileSync` timeout kills the CHILD (default SIGTERM) once it fires,
+ * which unblocks this call and lets the describe budget mean something.
+ * Set below the describe budget so a hang is reported as a timeout
+ * failure from THIS call, not a separate vitest-level budget breach. */
 function run(args: string[]): { status: number; stdout: string; stderr: string } {
   try {
-    const stdout = execFileSync(process.execPath, [CLI, ...args], { encoding: "utf8" });
+    const stdout = execFileSync(process.execPath, [CLI, ...args], {
+      encoding: "utf8",
+      timeout: 25_000,
+    });
     return { status: 0, stdout, stderr: "" };
   } catch (e) {
     const err = e as { status: number | null; stdout: string; stderr: string };
