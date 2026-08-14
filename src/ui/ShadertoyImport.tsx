@@ -55,7 +55,15 @@ export function ShadertoyImport() {
   // window.confirm into `plugin:dialog|confirm`, which the capability file
   // deliberately does not allow (only `ask` is granted). Raw confirm threw
   // "not allowed by ACL" in the installed v2.64.0 build.
+  //
+  // E2-U4 (same fix as ShaderEditor.tsx, same reasoning): blocked outright
+  // while `busy` — all three dismissal paths below (backdrop, header ✕, the
+  // local Escape handler) call this one function. Before this, "Discard"
+  // during an in-flight translate unmounted the dialog but not the promise:
+  // importShadertoyGlsl -> saveCustomPreset still registered, persisted and
+  // switched the live visual to what was just "discarded".
   const requestClose = () => {
+    if (busy) return;
     void (async () => {
       if (dirty && !(await askConfirm("Discard this import?", "Import Shadertoy shader"))) return;
       store().closeShadertoyImport();
@@ -108,7 +116,8 @@ export function ShadertoyImport() {
           </span>
           <button
             className="icon-btn subtle"
-            title="Close"
+            disabled={busy}
+            title={busy ? "Translating…" : "Close"}
             aria-label="Close import dialog"
             onClick={requestClose}
           >

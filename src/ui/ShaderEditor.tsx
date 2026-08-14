@@ -130,7 +130,21 @@ export function ShaderEditor() {
   // capability file does not grant. This dirty-close confirm had been broken
   // in every installed build since it was added (L12); the Shadertoy smoke
   // finally exercised the path.
+  //
+  // E2-U4: blocked outright while `busy` — ALL THREE dismissal paths
+  // (backdrop, header ✕, the local Escape handler below) call this one
+  // function, so gating it here is enough for all of them, matching how
+  // ExportDialog disables its own close control during work (E2-U5). Before
+  // this, "Discard" during an in-flight compile unmounted the dialog but not
+  // the promise: saveCustomPreset (customShaderActions.ts) still registered,
+  // persisted AND switched the live visual to what was just "discarded",
+  // with a toast landing after the dialog was already gone. Once `apply()`
+  // settles — success or failure — `busy` clears and normal dismissal rules
+  // resume; a failed compile never reached saveCustomPreset's persist/switch
+  // step in the first place, so there is nothing left to wrongly "keep" by
+  // discarding after a failure.
   const requestClose = () => {
+    if (busy) return;
     void (async () => {
       if (dirty && !(await askConfirm("Discard unsaved changes to this shader?", "Shader editor")))
         return;
@@ -182,7 +196,8 @@ export function ShaderEditor() {
           <span className="panel-heading">Shader editor</span>
           <button
             className="icon-btn subtle"
-            title="Close"
+            disabled={busy}
+            title={busy ? "Compiling…" : "Close"}
             aria-label="Close shader editor"
             onClick={requestClose}
           >
