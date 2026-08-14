@@ -704,7 +704,14 @@ export const GUIDE: readonly GuideSection[] = [
             { em: "Visuals ▸ Looks & themes" },
             " exports the whole current look as a ",
             { code: ".bftheme" },
-            " anyone can drop onto their Beatform window.",
+            " anyone can drop onto their Beatform window (",
+            {
+              link: {
+                text: "file format reference",
+                href: "https://0langa.github.io/beatform/templates",
+              },
+            },
+            ").",
           ],
           [
             { strong: "Builder stacks" },
@@ -830,6 +837,84 @@ export const GUIDE: readonly GuideSection[] = [
           ") are kept for US-layout muscle memory and are bound by physical position, not by the character printed on them. And ",
           { kbd: "Esc" },
           ", wherever you are, closes whatever's open.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "faq",
+    title: "FAQ",
+    blocks: [
+      { h4: "What can I export without the desktop app?" },
+      {
+        p: [
+          "MP4 (H.264 everywhere, HEVC/AV1 where your GPU supports them), WebM with a real alpha channel, and numbered PNG frames all render in the browser build. ProRes, genuine 10-bit AV1, and GIF/animated WebP need the desktop app — those three are encoded by the bundled ffmpeg sidecar rather than the browser's own WebCodecs pipeline.",
+        ],
+      },
+      { h4: "Why does an export sometimes take longer than the song itself?" },
+      {
+        p: [
+          "Export renders and encodes every frame for real, so its speed depends on your resolution, frame rate, codec and GPU — not on the length of the track. Hardware-encoded MP4 at common resolutions usually finishes faster than realtime. ProRes, 10-bit AV1, GIF and WebP stream raw frames into the bundled ffmpeg encoder and can run well under realtime, especially at 4K or when your GPU falls back to software encoding — Beatform doesn't promise a particular speed for any format.",
+        ],
+      },
+      { h4: "What's the difference between WebGPU and the simplified renderer?" },
+      {
+        p: [
+          "WebGPU is Beatform's real renderer — every mode, Builder, custom shaders, post-processing and scene transitions all run there, and exports require it. When WebGPU isn't available (an old WebView2 runtime, or a GPU on the driver blocklist), Beatform falls back to a Canvas2D renderer that draws exactly one thing: an approximation of Spectrum Bars, no matter which mode is selected. The other modes' own looks, Builder, custom shaders, Motion masters, post-processing, scene transitions and cover art have no Canvas2D equivalent, so the fallback disables those controls and explains why instead of quietly ignoring them.",
+        ],
+      },
+      { h4: "Where do my projects, looks and themes actually live?" },
+      {
+        p: [
+          "A project (",
+          { code: ".bfproj" },
+          ") saves wherever you choose in the native save dialog — Beatform just remembers the folder as a convenience default. A look (",
+          { code: ".bfpreset" },
+          ") lives in the app's own local storage the moment you save it; exporting one to a file is a separate, explicit step, same as a theme. The one file Beatform writes on its own is the autosave — a single background copy in the app's local data folder, kept only for crash recovery and offered back on the next launch.",
+        ],
+      },
+      { h4: "What do I need for automatic lyrics, and is there a length limit?" },
+      {
+        p: [
+          "Generating lyrics needs the desktop app: Whisper (via whisper.cpp) transcribes the mix, an Ultimate Vocal Remover model isolates the vocal, and a wav2vec2 aligner times each word against it — all locally, and the models download once with their size shown up front. Tracks over 90 minutes are declined before any processing starts, to avoid running the machine out of memory partway through.",
+        ],
+      },
+      {
+        h4: "I turned on system-audio visualization and there's no BPM or beat-synced pulse — is that a bug?",
+      },
+      {
+        p: [
+          "No. Live system audio never gets a beat grid — Beatform can't analyze a track it hasn't heard yet — so grid-driven effects (the ones that land exactly on a metronome beat) automatically fall back to reacting to onsets instead, and the BPM badge stays hidden rather than guess. It's preview-only in the other direction too: a live session has no export counterpart, so there's nothing to render a video from once you stop performing.",
+        ],
+      },
+      { h4: "Does MIDI mapping need special drivers?" },
+      {
+        p: [
+          "No — Beatform talks to controllers directly through the browser's Web MIDI API, the same on desktop as in the browser build. There's nothing to install: open the Live page, click ",
+          { em: "Learn CC" },
+          " or ",
+          { em: "Learn note" },
+          ", move the control or hit the pad, and the binding is saved from then on.",
+        ],
+      },
+      { h4: "What Shadertoy shaders can I import?" },
+      {
+        p: [
+          "Single-pass shaders using the Image tab — paste the source and Beatform translates it to WGSL locally, keeping the author and license with the visual. Multipass buffers, cubemap/video/keyboard channels, static textures on iChannel1–3, and channels chosen at runtime instead of written literally aren't supported yet. An unsupported shader gets a diagnostic naming the reason rather than a silent failure.",
+        ],
+      },
+      { h4: "How does the Gallery keep a download from being something malicious?" },
+      {
+        p: [
+          "A look or theme carries no code — it can only select and parameterize visuals Beatform already ships, so applying one is exactly as safe as clicking around the UI. Every file is pinned to an immutable commit, fetched only from that one allowed address, and its SHA-256 is checked before Beatform ever parses it — see ",
+          { em: "Gallery" },
+          " above for the full model.",
+        ],
+      },
+      { h4: "Does Beatform collect data, track me, or need an account?" },
+      {
+        p: [
+          "No. There's no account, no telemetry, and no cloud rendering — everything runs on your machine, and the app is free and open source (MIT), distributed only through GitHub Releases. The one network request Beatform makes on its own is the update check, a plain fetch of a static file; the Gallery only talks to the network once you open it.",
         ],
       },
     ],
