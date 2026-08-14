@@ -21,6 +21,7 @@ import {
 import { BUILDER2_ID } from "../render/builder2";
 import { LFO_SOURCES, MOD_LAG_MAX_SEC, MOD_SOURCES } from "../state/modMatrix";
 import { MOD_ROUTE_RECIPES } from "../state/modRoutePresets";
+import { clearHistory } from "../state/history";
 
 /**
  * The Visuals contract after P-12.
@@ -823,6 +824,98 @@ describe("modulation v2 UI (P-16/P-7)", { timeout: 30_000 }, () => {
     expect(hint.textContent).toMatch(/export/i);
     // …and the primary action is still right there.
     expect(screen.getByTitle("Choose a knob to modulate")).toBeTruthy();
+  });
+});
+
+/** No jest-dom in this repo (see PresetOrderEditor.test.tsx) — read the
+ *  property off the real element. */
+const isDisabled = (el: HTMLElement) => (el as HTMLButtonElement).disabled;
+
+describe("mute & reorder (H12)", { timeout: 30_000 }, () => {
+  it("the mute switch flips `muted`, dims the row, and omits the key again on unmute", () => {
+    seedRoute("hue");
+    render(<ParamsPanel />);
+    gotoModulation();
+    const card = cards()[0];
+    expect(card.querySelector(".mod-route")!.className).not.toMatch(/\bmuted\b/);
+
+    const toggle = within(card).getByRole("switch", { name: /Pause kick moving/i });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(toggle);
+    expect(useVizStore.getState().activeMods[0].muted).toBe(true);
+    expect(card.querySelector(".mod-route")!.className).toMatch(/\bmuted\b/);
+    const resumeToggle = within(card).getByRole("switch", { name: /Resume kick moving/i });
+    expect(resumeToggle.getAttribute("aria-checked")).toBe("false");
+
+    fireEvent.click(resumeToggle);
+    // Unmuting OMITS the key rather than writing a literal `muted: false` —
+    // the same "don't grow a stray key on a stray click" contract T11 pins
+    // for curve/attack/release. `{ ...r, muted: undefined }` still leaves
+    // "muted" as an own (undefined-valued) property on the LIVE object —
+    // `in` would report it present — so this checks the PERSISTED
+    // projection instead, exactly like T11's own assertion.
+    const route = useVizStore.getState().activeMods[0];
+    expect(Object.keys(JSON.parse(JSON.stringify(route))).sort()).toEqual([
+      "amount",
+      "id",
+      "param",
+      "source",
+    ]);
+    expect(card.querySelector(".mod-route")!.className).not.toMatch(/\bmuted\b/);
+  });
+
+  it("mute records one history entry via updateModRoute's existing per-route key", () => {
+    seedRoute("hue");
+    render(<ParamsPanel />);
+    gotoModulation();
+    // This file's afterEach resets the STORE's undoDepth field (via the
+    // PRISTINE merge) but not history.ts's own module-level stacks — clear
+    // both explicitly so the delta below is measured from a real zero, not
+    // from whatever the rest of the suite already pushed.
+    clearHistory();
+    act(() => useVizStore.setState({ undoDepth: 0, redoDepth: 0 }));
+    fireEvent.click(screen.getByRole("switch", { name: /Pause kick moving/i }));
+    expect(useVizStore.getState().undoDepth).toBe(1);
+  });
+
+  it("a single-route card shows no reorder buttons — nothing to reorder against", () => {
+    seedRoute("hue");
+    render(<ParamsPanel />);
+    gotoModulation();
+    const card = cards()[0];
+    expect(within(card).queryByTitle("Move earlier")).toBeNull();
+    expect(within(card).queryByTitle("Move later")).toBeNull();
+  });
+
+  it("a stacked card reorders on click, disables the buttons at the ends, and costs one undo entry", () => {
+    const a = { id: "r1", source: "kick" as const, param: "hue", amount: 0.5 };
+    const b = { id: "r2", source: "bass" as const, param: "hue", amount: -0.25 };
+    act(() =>
+      useVizStore.setState({
+        presetId: "spectrum-bars",
+        activeMods: [a, b],
+        modsByPreset: { ...useVizStore.getState().modsByPreset, "spectrum-bars": [a, b] },
+      }),
+    );
+    render(<ParamsPanel />);
+    gotoModulation();
+    const card = cards()[0];
+    const ups = within(card).getAllByTitle("Move earlier");
+    const downs = within(card).getAllByTitle("Move later");
+    expect(ups).toHaveLength(2);
+    expect(downs).toHaveLength(2);
+    expect(isDisabled(ups[0])).toBe(true); // first route: nothing earlier
+    expect(isDisabled(downs[0])).toBe(false);
+    expect(isDisabled(ups[1])).toBe(false);
+    expect(isDisabled(downs[1])).toBe(true); // last route: nothing later
+
+    // See the mute test above for why both halves need clearing here.
+    clearHistory();
+    act(() => useVizStore.setState({ undoDepth: 0, redoDepth: 0 }));
+    fireEvent.click(downs[0]); // move "kick" (index 0) later, past "bass"
+    expect(useVizStore.getState().activeMods.map((r) => r.id)).toEqual(["r2", "r1"]);
+    expect(useVizStore.getState().undoDepth).toBe(1);
   });
 });
 

@@ -23,6 +23,7 @@ import { selectPreset } from "../state/selectors";
 import { useVizStore } from "../state/store";
 import { formatValue, Segmented, SECONDS, SliderField } from "./kit";
 import { meterRef, ModMeterDriver } from "./ModMeters";
+import { Switch } from "./Switch";
 
 /**
  * The Modulation page (P-1 stage 3) — one CARD PER MODULATED CONTROL.
@@ -569,7 +570,7 @@ export function ModulationPage() {
                     which is strictly more useful than the number alone. */}
               </div>
 
-              {card.routes.map((r) => {
+              {card.routes.map((r, ri) => {
                 const src = sourceName(r.source);
                 const shape = shapeSummary(r);
                 // The range this route paints: from the resting value to what
@@ -600,8 +601,25 @@ export function ModulationPage() {
                     (raw === reach ? "" : " — the knob's own limit stops it there");
                 }
                 return (
-                  <div key={r.id} className="mod-route">
+                  <div key={r.id} className={`mod-route${r.muted ? " muted" : ""}`}>
                     <div className="mod-route-head">
+                      {/* H12: on = active (v1 behavior, absent muted). The
+                          patch omits the key on unmute rather than writing a
+                          literal `false` — the curve/attack/release idiom
+                          below (`v === "linear" ? undefined : v`) — so a
+                          route merely LOOKED at keeps its v1 shape. */}
+                      <Switch
+                        checked={!r.muted}
+                        onChange={(on) =>
+                          store().updateModRoute(r.id, { muted: on ? undefined : true })
+                        }
+                        title={r.muted ? "Unmute this route" : "Mute this route"}
+                        label={
+                          r.muted
+                            ? `Resume ${src} moving ${card.label}`
+                            : `Pause ${src} moving ${card.label}`
+                        }
+                      />
                       <select
                         className="select mod-source"
                         value={r.source}
@@ -641,6 +659,35 @@ export function ModulationPage() {
                           ))}
                         </optgroup>
                       </select>
+                      {/* Reorder (H12): only when there is more than one route
+                          to reorder — a stacked card is the exception (0 of the
+                          43 routes in the 13 shipped factory themes share a
+                          param), so a single-route card never shows two
+                          buttons that could only ever be disabled. Indices are
+                          WITHIN this card's own list, matching reorderRoutes'
+                          contract (modMatrix.ts) exactly. */}
+                      {card.routes.length > 1 && (
+                        <>
+                          <button
+                            className="chip-x"
+                            title="Move earlier"
+                            aria-label={`Move ${src} earlier in the stack for ${card.label}`}
+                            disabled={ri === 0}
+                            onClick={() => store().reorderModRoutes(card.param, ri, ri - 1)}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            className="chip-x"
+                            title="Move later"
+                            aria-label={`Move ${src} later in the stack for ${card.label}`}
+                            disabled={ri === card.routes.length - 1}
+                            onClick={() => store().reorderModRoutes(card.param, ri, ri + 1)}
+                          >
+                            ▼
+                          </button>
+                        </>
+                      )}
                       <button
                         className="chip-x"
                         title="Remove this route"
