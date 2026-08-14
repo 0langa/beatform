@@ -40,6 +40,21 @@ import { shared } from "./shared";
  * just doing it — models land on the app-data volume (usually C:). */
 const DISK_MARGIN_BYTES = 500 * 1e6;
 
+/** `audio.rs` decodes the whole track into memory before staging it for the
+ * sidecar (~1.27 GB/hour) — the owner-set ceiling on what generateLyrics
+ * will attempt. Enforced once, in JS, before staging; no Rust-side
+ * duplicate. Exported for the boundary test. */
+export const LYRICS_MAX_TRACK_SEC = 90 * 60;
+
+/** "H h MM min", rounded to the minute — same name-the-limit shape as
+ * assertSizeAllowed's MB message in platform.ts. */
+function formatTrackDuration(sec: number): string {
+  const totalMin = Math.round(sec / 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h} h ${m} min` : `${m} min`;
+}
+
 export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
     async refreshLyricsGen() {
@@ -133,6 +148,14 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       const buf = engine.audioBuffer;
       if (!buf) {
         set({ error: "Load a track first — lyrics are generated from the loaded audio" });
+        return;
+      }
+      if (buf.duration > LYRICS_MAX_TRACK_SEC) {
+        set({
+          error:
+            `This track is ${formatTrackDuration(buf.duration)} — automatic lyrics support ` +
+            `tracks up to ${LYRICS_MAX_TRACK_SEC / 60} minutes.`,
+        });
         return;
       }
       // Lyrics are per-track exactly like stems: `buf` is THIS track's audio,

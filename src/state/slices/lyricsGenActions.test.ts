@@ -57,6 +57,7 @@ vi.mock("../platform", async (importOriginal) => {
   return {
     ...actual,
     isTauri: () => true,
+    askConfirm: vi.fn(async () => true),
     writeAutosave: vi.fn(async () => {}),
     lyricsStageAudio: vi.fn(async () => {}),
     lyricsGenerate: vi.fn(
@@ -79,6 +80,8 @@ vi.mock("../platform", async (importOriginal) => {
 const { useVizStore } = await import("../store");
 const { getEngine } = await import("../services");
 const { shared } = await import("./shared");
+const { askConfirm, lyricsStageAudio } = await import("../platform");
+const { LYRICS_MAX_TRACK_SEC } = await import("./lyricsGenActions");
 
 const LRC =
   "[00:12.00]Out of my mind\n" + "[00:19.65]Plain fallback line\n" + "[00:24.00]Third line here\n";
@@ -110,6 +113,8 @@ beforeEach(() => {
   useVizStore.setState({ notice: null, error: null });
   h.resolveGenerate = null;
   h.resolveAlign = null;
+  vi.mocked(askConfirm).mockClear();
+  vi.mocked(lyricsStageAudio).mockClear();
 });
 
 describe("generateLyrics track guard", () => {
@@ -138,6 +143,47 @@ describe("generateLyrics track guard", () => {
     expect(s().lyrics).toHaveLength(3);
     expect(s().lyricFileName).toBe("Track A (generated).lrc");
     expect(s().lyricsGen.phase).toBe("idle");
+  });
+});
+
+describe("generateLyrics track length ceiling", () => {
+  it("refuses a track over the 90-minute limit before staging anything", async () => {
+    engine.audioBuffer = fakeBuffer(LYRICS_MAX_TRACK_SEC + 1); // 5401s, one second over
+    await s().generateLyrics("small", "auto");
+
+    expect(s().error).toBe(
+      "This track is 1 h 30 min — automatic lyrics support tracks up to 90 minutes.",
+    );
+    expect(s().lyricsGen.phase).toBe("idle");
+    expect(lyricsStageAudio).not.toHaveBeenCalled();
+    expect(askConfirm).not.toHaveBeenCalled();
+  });
+
+  it("proceeds past the gate at exactly the 90-minute limit (5400s)", async () => {
+    engine.audioBuffer = fakeBuffer(LYRICS_MAX_TRACK_SEC);
+    const done = s().generateLyrics("small", "auto");
+    await until(() => h.resolveGenerate !== null);
+
+    expect(lyricsStageAudio).toHaveBeenCalledTimes(1);
+    expect(s().error).toBeNull();
+    h.resolveGenerate!(LRC);
+    await done;
+
+    expect(s().lyricsGen.phase).toBe("idle");
+  });
+
+  it("refuses an over-limit track without the replace-lyrics prompt, even with lyrics already loaded", async () => {
+    s().loadLyricsText("song.lrc", LRC);
+    engine.audioBuffer = fakeBuffer(LYRICS_MAX_TRACK_SEC + 1);
+    await s().generateLyrics("small", "auto");
+
+    expect(s().error).toBe(
+      "This track is 1 h 30 min — automatic lyrics support tracks up to 90 minutes.",
+    );
+    expect(s().lyricsGen.phase).toBe("idle");
+    expect(askConfirm).not.toHaveBeenCalled(); // refusal precedes the replace prompt
+    expect(lyricsStageAudio).not.toHaveBeenCalled();
+    expect(s().lyrics).toHaveLength(3); // untouched — never even asked to replace
   });
 });
 
