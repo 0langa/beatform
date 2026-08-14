@@ -242,6 +242,38 @@ describe("recovery-flow reconciliation — a persistent, dismissible notice repl
     expect(useVizStore.getState().recoveredNotice).toBe(false);
   });
 
+  it("final review round, item 1: newProject() clears a standing recovered notice — File>New after a recovery must not leave the toast standing over an unrelated document", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(wasPreviousExitClean).mockReturnValue(false);
+    vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(OTHER_PRESET));
+    await useVizStore.getState().bootDesktopDocument();
+    expect(useVizStore.getState().recoveredNotice).toBe(true); // sanity: recovery really fired
+
+    useVizStore.getState().newProject();
+
+    expect(useVizStore.getState().recoveredNotice).toBe(false);
+  });
+
+  it("final review round, item 1: openProjectText() clears a standing recovered notice — opening an unrelated project must not leave the toast standing over it", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(wasPreviousExitClean).mockReturnValue(false);
+    vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(OTHER_PRESET));
+    await useVizStore.getState().bootDesktopDocument();
+    expect(useVizStore.getState().recoveredNotice).toBe(true); // sanity: recovery really fired
+
+    useVizStore
+      .getState()
+      .openProjectText("unrelated.bfproj", autosaveTextWithPreset("spectrum-bars"));
+
+    expect(useVizStore.getState().recoveredNotice).toBe(false);
+  });
+
+  // openProject() itself is not separately exercised here (it needs a real
+  // file-dialog mock this file doesn't set up) — it is covered by
+  // inspection instead, the same standard this lane already applies
+  // elsewhere: it calls applyDocument exactly like openProjectText does,
+  // and the fix lives in applyDocument's own set(), not in either caller.
+
   it("recoveredDoc/restoreAutosave/dismissAutosave no longer exist on VizState — the interactive prompt's machinery is gone, not just unreachable", () => {
     const s = useVizStore.getState() as unknown as Record<string, unknown>;
     expect(s.recoveredDoc).toBeUndefined();
@@ -356,6 +388,13 @@ describe("whole-lane-review round 2, item 3 — boot reentrancy guard (React Str
     // independently-scheduled boots.
     const first = useVizStore.getState().bootDesktopDocument();
     const second = useVizStore.getState().bootDesktopDocument();
+
+    // Final review round, item 2: ownership must be knowable SYNCHRONOUSLY,
+    // before either promise settles — this is what lets App.tsx's boot-veil
+    // effect skip the second (non-owner) call entirely instead of racing a
+    // promise that resolves almost immediately.
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
 
     // The second call must not have started its own read — readAutosave
     // was invoked exactly once, by the first call.

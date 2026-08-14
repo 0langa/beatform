@@ -171,6 +171,39 @@ export function raceBootVeilDrop(
   };
 }
 
+/**
+ * Final review round, item 2. Wraps `raceBootVeilDrop` with the one thing
+ * it cannot know on its own: whether the `Promise<void> | null` it was
+ * handed came from the invocation that actually OWNS the boot.
+ * `bootDesktopDocument` (projectIOActions.ts) returns `null` synchronously
+ * — not a fast-resolving Promise — for a call that loses the reentrancy
+ * guard, exactly so this check can be synchronous too: `null` skips the
+ * race ENTIRELY, touching neither the cap timer nor `onDrop`, so a
+ * non-owner invocation can never be the one that drops the veil.
+ *
+ * This matters under React StrictMode's dev-only double-invoke, where the
+ * SAME effect body runs twice back to back: the first call owns the boot
+ * and gets a real, slow-to-settle promise; the second gets `null`. Before
+ * this existed, the effect fed BOTH calls' results into
+ * `raceBootVeilDrop` unconditionally — the second call's promise resolved
+ * on the very next microtask (nothing more than the reentrancy guard's
+ * own synchronous `return`), which read to `raceBootVeilDrop` as a
+ * legitimate completion and dropped the veil while the real, owning
+ * call's read was still in flight.
+ *
+ * Exported for the same reason `raceBootVeilDrop` is: unit-testable
+ * without rendering React or a real `bootDesktopDocument` — see
+ * App.test.ts for the simulated-double-invoke case this fixes.
+ */
+export function armBootVeilRace(
+  bootPromise: Promise<unknown> | null,
+  capMs: number,
+  onDrop: () => void,
+): void {
+  if (bootPromise === null) return;
+  raceBootVeilDrop(bootPromise, capMs, onDrop);
+}
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -328,11 +361,30 @@ export default function App() {
   // derived from this promise in any way — a genuinely stalled Tauri IPC
   // read cannot keep the veil up past BOOT_VEIL_CAP_MS regardless of what
   // bootDesktopDocument is doing.
+  //
+  // Final review round, item 2: `armBootVeilRace` is what makes this safe
+  // under React StrictMode's dev-only double-invoke of this same effect
+  // body — `bootDesktopDocument()` returns `null` (not a promise) for
+  // whichever invocation loses the reentrancy guard, and `armBootVeilRace`
+  // skips the race entirely for that one, so only the invocation that
+  // actually owns the boot can ever call `hideBootVeil`. See that
+  // function's own doc comment above for the bug this replaced.
+  //
+  // Deliberately no cleanup returned (unlike the idle-thumbnail effect
+  // below, which DOES cancel on cleanup — its work is genuinely
+  // cancelable). `bootDesktopDocument`'s read keeps running regardless of
+  // what any particular effect invocation does; there is no way to abort
+  // it. Wiring `raceBootVeilDrop`'s cancel function into THIS effect's own
+  // cleanup would silence the one race that owns the boot the moment
+  // StrictMode's synthetic remount cleans up the first invocation — since
+  // the second invocation is a non-owner that never starts a race of its
+  // own (immediately above), nothing would be left to ever drop the veil.
+  // The race is self-bounding regardless (the cap fires no matter what),
+  // so there is nothing to leak by letting it run to completion across a
+  // remount.
   useEffect(() => {
     if (!isTauri()) return; // browser never shows the veil — nothing to hide
-    return raceBootVeilDrop(store().bootDesktopDocument(), BOOT_VEIL_CAP_MS, () =>
-      store().hideBootVeil(),
-    );
+    armBootVeilRace(store().bootDesktopDocument(), BOOT_VEIL_CAP_MS, () => store().hideBootVeil());
   }, [store]);
 
   // Preset thumbnails (P-3). The GENERATION is what became eager, not the
@@ -858,7 +910,7 @@ export default function App() {
             <span className="toast-text">Recovered your work from the last session</span>
             <button
               className="chip-x"
-              aria-label="Dismiss"
+              aria-label="Dismiss the recovery notice"
               title="Dismiss"
               onClick={() => store().dismissRecoveredNotice()}
             >

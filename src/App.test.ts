@@ -5,7 +5,7 @@
 // so this needs a DOM environment even though raceBootVeilDrop itself
 // touches neither React nor the store.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { raceBootVeilDrop } from "./App";
+import { armBootVeilRace, raceBootVeilDrop } from "./App";
 
 /**
  * Owner ruling E (final round) — the boot veil's drop race, tested in
@@ -15,8 +15,9 @@ import { raceBootVeilDrop } from "./App";
  * logic, see `commitVisualsWidth`/`resizeKeyValue`). The full
  * isTauri()-gated wiring (never renders the veil node at all in the
  * browser build, starts `bootVeilVisible` true only on desktop) is covered
- * at the store level in store.test.ts-adjacent files; this file owns the
- * "whichever comes first" race itself.
+ * at the store level in bootVeil.test.ts; this file owns the "whichever
+ * comes first" race itself, plus (final review round, item 2)
+ * `armBootVeilRace`'s ownership check on top of it.
  */
 
 afterEach(() => {
@@ -90,5 +91,64 @@ describe("raceBootVeilDrop", () => {
 
     await vi.advanceTimersByTimeAsync(1000);
     expect(onDrop).not.toHaveBeenCalled();
+  });
+});
+
+describe("armBootVeilRace (final review round, item 2)", () => {
+  it("simulated StrictMode double-invoke: the non-owner's null is a no-op — only the owning call's promise can drop the veil", async () => {
+    vi.useFakeTimers();
+    const onDrop = vi.fn();
+    let resolveOwnerBoot!: () => void;
+    const ownerBoot = new Promise<void>((r) => {
+      resolveOwnerBoot = r;
+    });
+
+    // Two "effect-style" calls back to back, exactly how the real effect
+    // body calls bootDesktopDocument() on each StrictMode invocation: the
+    // first owns the boot (a real, slow-to-settle promise), the second is
+    // what bootDesktopDocument's reentrancy guard hands back — null.
+    armBootVeilRace(ownerBoot, 500, onDrop);
+    armBootVeilRace(null, 500, onDrop);
+
+    // Before this fix, the second (non-owner) call fed a fast-resolving
+    // promise into raceBootVeilDrop and dropped the veil almost
+    // immediately. It must now do nothing at all, at any point.
+    await vi.advanceTimersByTimeAsync(50);
+    expect(onDrop).not.toHaveBeenCalled();
+
+    // The REAL boot (the first, owning call) settles — this is the only
+    // thing allowed to drop the veil here, since the cap is still 450ms out.
+    resolveOwnerBoot();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onDrop).toHaveBeenCalledTimes(1);
+
+    // Well past the cap: still exactly once — the non-owner call never
+    // armed a race (and so never armed a cap timer) that could fire again.
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onDrop).toHaveBeenCalledTimes(1);
+  });
+
+  it("a null call alone never drops the veil — not even at the cap, since it never starts a race", async () => {
+    vi.useFakeTimers();
+    const onDrop = vi.fn();
+
+    armBootVeilRace(null, 500, onDrop);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
+  it("an owning call still hits the cap on its own when the real boot never settles — the ownership check doesn't defeat the hung-read guarantee", async () => {
+    vi.useFakeTimers();
+    const onDrop = vi.fn();
+    const neverSettles = new Promise<void>(() => undefined);
+
+    armBootVeilRace(neverSettles, 500, onDrop);
+    armBootVeilRace(null, 500, onDrop); // the StrictMode non-owner, as always
+
+    await vi.advanceTimersByTimeAsync(499);
+    expect(onDrop).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onDrop).toHaveBeenCalledTimes(1);
   });
 });

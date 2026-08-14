@@ -271,8 +271,13 @@ interface SessionSlice {
    * same transient-vs-persistent split this app already draws for
    * `error`/`simplifiedRenderer` (the corrupt-quarantine toast, C2(c), is
    * the precedent this reuses: a session-only boolean, an explicit dismiss
-   * action, no timer). Set by `bootDesktopDocument` (projectIOActions.ts)
-   * on the recovering branch only; never written anywhere else.
+   * action, no timer). Set TRUE only by `bootDesktopDocument`
+   * (projectIOActions.ts) on the recovering branch. Set back to FALSE by
+   * `dismissRecoveredNotice` (the user's own click) and, since the final
+   * review round, unconditionally by every `applyDocument` call (see that
+   * action's own comment) — it describes the document that was just
+   * replaced, by definition, so a fresh document of any kind (new, open,
+   * undo, redo, theme) invalidates it same as an explicit dismiss would.
    */
   recoveredNotice: boolean;
   /**
@@ -670,9 +675,23 @@ interface Actions {
    * last time" on the NEXT boot even though nothing was ever at risk.
    */
   applyDocument(doc: ProjectDocument, opts?: { alreadyOnDisk?: boolean }): void;
-  /** P-11: the desktop boot chokepoint — see projectIOActions.ts's own doc
-   * comment and .superpowers/p11-lane-log.md for the full design. */
-  bootDesktopDocument(): Promise<void>;
+  /**
+   * P-11: the desktop boot chokepoint — see projectIOActions.ts's own doc
+   * comment and .superpowers/p11-lane-log.md for the full design.
+   *
+   * Final review round, item 2: returns `null` SYNCHRONOUSLY, not a
+   * Promise, when this particular call is not the owner (isTauri() false,
+   * or the reentrancy guard finds a boot already in flight — React
+   * StrictMode's dev-only double-invoke is the case that matters here).
+   * `null` rather than a fast-resolving `Promise<void>` is deliberate: the
+   * caller (App.tsx's boot-veil effect) needs to know ownership at the
+   * SAME moment it decides whether to arm the veil's race at all, and by
+   * the time any promise — however fast — resolved, it would already be
+   * too late to matter. A non-owner call touches nothing and returns
+   * immediately; only the owner's call does any work or ever resolves
+   * once real work (read/parse/apply) has actually happened.
+   */
+  bootDesktopDocument(): Promise<void> | null;
   /** Whole-lane-review fix C1: an immediate (non-debounced), awaited write
    * of the current document to the autosave file — bypasses and cancels
    * scheduleAutosave's pending timers. Used by the Tauri close-requested
@@ -2547,6 +2566,32 @@ export const useVizStore = create<VizState>((set, get) => {
         // cannot (open/newProject force undoDepth to 0, the same value a
         // fresh boot already has).
         docEpoch: get().docEpoch + 1,
+        // Final review round, item 1: a standing recovery notice describes
+        // the PREVIOUS document by definition — newProject()/openProject()/
+        // openProjectText() all replace the document through this same
+        // chokepoint (as do undo/redo/theme-apply/bootDesktopDocument
+        // itself) without ever having cleared it, so recovering from a
+        // crash and then starting fresh or opening something unrelated
+        // left the "Recovered your work from the last session" toast
+        // standing over a document it no longer describes. Cleared HERE
+        // rather than in the three actions individually: one line instead
+        // of three, and it correctly covers undo/redo/theme-apply too,
+        // which are just as capable of making the notice stale. Order is
+        // safe against bootDesktopDocument's own use of this function —
+        // its `if (recovering) set({ recoveredNotice: true })` runs AFTER
+        // this applyDocument call returns, so the true case is never
+        // clobbered by its own boot.
+        //
+        // `error` has the same staleness gap by the same precedent (whole-
+        // lane review found it too) and is deliberately NOT touched here:
+        // unlike recoveredNotice, error carries many unrelated failure
+        // messages (a save failure, a theme parse failure, ...) that are
+        // not all "about the previous document" in the same tight sense,
+        // there is no specific bug report driving it, and no existing
+        // test pins whether callers rely on an error surviving an
+        // unrelated undo/redo today — closing it blind risked a silent
+        // behavior change this round did not ask for.
+        recoveredNotice: false,
         // Keep the export resolution consistent with the incoming aspect
         // (covers project-open AND undo/redo of aspect changes).
         exportSettings: {
