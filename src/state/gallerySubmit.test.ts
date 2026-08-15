@@ -4,7 +4,7 @@ import { parseRegistry, REGISTRY_SCHEMA_VERSION } from "./gallery";
 import { serializeUserPreset, type UserPreset } from "./userPresets";
 import { presets } from "../render/presets";
 import { serializeTheme, THEME_VERSION } from "./themes";
-import { FACTORY_THEMES } from "./factoryThemes";
+import { FACTORY_GALLERY_ENTRIES, FACTORY_THEMES } from "./factoryThemes";
 import { PROJECT_VERSION } from "./project";
 import { APP_VERSION } from "../version";
 
@@ -67,6 +67,13 @@ describe("buildSubmission — looks (.bfpreset)", () => {
     expect(result.prBody).toContain(result.sha256);
     expect(result.prBody).toContain(String(bytes.byteLength));
     expect(result.prBody).toContain("neon-drop.bfpreset");
+    // P-6 regression: `origin` is an in-memory discriminant parseRegistry's
+    // validEntry() stamps on its OUTPUT (result.entry legitimately carries
+    // it) — never part of the on-disk registry FORMAT, so prBody's JSON
+    // snippet (real text a maintainer copies into index.json) must not
+    // contain it, even though the entry it was built from does.
+    expect(result.entry).toHaveProperty("origin", "remote");
+    expect(result.prBody).not.toContain('"origin"');
   });
 
   it("derives the registry id from the preset's own name when --id is omitted", async () => {
@@ -112,7 +119,15 @@ describe("buildSubmission — looks (.bfpreset)", () => {
 describe("buildSubmission — themes (.bftheme)", () => {
   it("accepts a valid theme: correct hash, correct size, entry fields match", async () => {
     const bytes = validThemeBytes();
-    const result = await buildSubmission("deep-current.bftheme", bytes, baseOpts);
+    // Content is the REAL first factory theme (Cover Story, see
+    // `validThemeBytes`) so its own name would derive a RESERVED id
+    // (P-6) — explicit --id, same as any submitter of "a look inspired by
+    // a built-in" would need to pick, keeps this test about submission
+    // mechanics rather than accidentally exercising the reserved-id gate.
+    const result = await buildSubmission("deep-current.bftheme", bytes, {
+      ...baseOpts,
+      id: "deep-current",
+    });
 
     expect(result.kind).toBe("theme");
     expect(result.folder).toBe("themes");
@@ -142,7 +157,11 @@ describe("buildSubmission — themes (.bftheme)", () => {
   });
 
   it("the assembled theme entry round-trips through the app's own parseRegistry, unchanged", async () => {
-    const result = await buildSubmission("deep-current.bftheme", validThemeBytes(), baseOpts);
+    // Same reserved-id reason as the test above — explicit --id.
+    const result = await buildSubmission("deep-current.bftheme", validThemeBytes(), {
+      ...baseOpts,
+      id: "deep-current",
+    });
     const parsed = parseRegistry(
       JSON.stringify({ schemaVersion: REGISTRY_SCHEMA_VERSION, entries: [result.entry] }),
     );
@@ -218,5 +237,29 @@ describe("buildSubmission — refusals", () => {
         description: "x".repeat(501),
       }),
     ).rejects.toThrow(/registry validator/);
+  });
+
+  // P-6: installGalleryEntry matches a built-in by id BEFORE it ever
+  // consults the fetched registry, unconditionally — a submission reusing
+  // one of the 13 reserved slugs would be unreachable forever if a
+  // maintainer merged it (its own card's Apply would silently apply the
+  // BUILT-IN theme instead), and parseRegistry's validator has no idea
+  // built-ins exist, so it would not catch this on its own. Uses a LOOK
+  // fixture deliberately: the collision is on the id string alone, not
+  // id+kind, so this also proves the check is not scoped to themes only.
+  it("refuses a submission whose id collides with a built-in factory theme, naming it", async () => {
+    const reservedId = "cover-story";
+    const builtin = FACTORY_GALLERY_ENTRIES.find((e) => e.id === reservedId);
+    expect(builtin, "premise: this id must really be reserved today").toBeDefined();
+    let error: unknown;
+    try {
+      await buildSubmission("x.bfpreset", validLookBytes(), { ...baseOpts, id: reservedId });
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(SubmissionError);
+    const message = (error as Error).message;
+    expect(message).toContain(reservedId);
+    expect(message).toContain(builtin!.name);
   });
 });

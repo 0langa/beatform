@@ -1,4 +1,5 @@
 import { GalleryError, parseRegistry, REGISTRY_SCHEMA_VERSION, type GalleryEntry } from "./gallery";
+import { FACTORY_GALLERY_ENTRIES } from "./factoryThemes";
 import { parseUserPreset, USER_PRESET_EXTENSION } from "./userPresets";
 import { parseTheme, THEME_EXTENSION } from "./themes";
 import { APP_VERSION } from "../version";
@@ -264,6 +265,26 @@ export async function buildSubmission(
     minAppVersion: opts.minAppVersion ?? APP_VERSION,
     schemaVersion,
   };
+
+  // RESERVED-ID CHECK, sibling of the self-check below: P-6's built-in
+  // Gallery entries (FACTORY_GALLERY_ENTRIES, gallery.ts's BuiltinGalleryEntry)
+  // are matched by id BEFORE the fetched registry is even consulted
+  // (installGalleryEntry checks built-ins first, unconditionally) — a
+  // submission that reused one of those 13 ids would, if a maintainer ever
+  // merged it, sit in the Gallery as an apparently-normal remote card whose
+  // Apply button silently applies the BUILT-IN theme instead of the
+  // submitted one, no matter what the card itself shows. parseRegistry's
+  // own validator (the self-check right below) has no knowledge of
+  // built-ins and would happily accept the collision, so it has to be
+  // caught here, before a maintainer ever sees the PR.
+  const reserved = FACTORY_GALLERY_ENTRIES.find((e) => e.id === id);
+  if (reserved) {
+    throw new SubmissionError(
+      `"${id}" is reserved by the built-in factory theme "${reserved.name}" — pick a ` +
+        "different --id. Built-in ids are matched before the fetched registry, so an entry " +
+        "with this id would never be reachable no matter how it looks in the PR.",
+    );
+  }
 
   // SELF-CHECK: run the assembled entry back through the app's OWN registry
   // parser — the same one fetchRegistry() feeds a live index into.

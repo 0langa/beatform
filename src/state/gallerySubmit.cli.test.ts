@@ -136,6 +136,11 @@ describe("gallery-submit.mjs — real subprocess", SUITE, () => {
       "--author=CLI Test",
       "--license=CC-BY-4.0",
       "--description=CLI subprocess theme fixture.",
+      // themePath's content is the REAL first factory theme (Cover Story,
+      // see beforeAll) so its own name would derive a RESERVED id (P-6) —
+      // explicit --id sidesteps that gate, same as gallerySubmit.test.ts's
+      // in-process theme fixtures needed.
+      "--id=cli-fixture-theme",
       `--out=${outPath}`,
     ]);
     expect(result.status).toBe(0);
