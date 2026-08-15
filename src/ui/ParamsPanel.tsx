@@ -6,7 +6,9 @@ import type {
   BgFit,
   BgMode,
   MotionSettings,
+  ParamSpec,
   ParamValues,
+  PostNumericKey,
   PostSettings,
   PresetDef,
 } from "../render/types";
@@ -19,6 +21,8 @@ import {
   DEFAULT_MOTION,
   DEFAULT_POST,
   defaultParams,
+  MOTION_MASTER_SPECS,
+  POST_MOD_TARGETS,
 } from "../render/types";
 import { ASPECTS } from "../state/project";
 import { FACTORY_THEMES } from "../state/factoryThemes";
@@ -276,64 +280,27 @@ function BgFitRows(props: {
   );
 }
 
-type PostNumKey = "bloom" | "bloomThreshold" | "exposure" | "vignette" | "grain" | "chromatic";
-const POST_SLIDERS: Array<{
-  key: PostNumKey;
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-  hint: string;
-}> = [
-  {
-    key: "exposure",
-    label: "Exposure",
-    min: 0.2,
-    max: 3,
-    step: 0.01,
-    hint: "Overall brightness before tonemapping — 1 is neutral, higher lifts the whole image",
-  },
-  {
-    key: "bloom",
-    label: "Bloom",
-    min: 0,
-    max: 1,
-    step: 0.01,
-    hint: "Soft glow bleeding out of bright areas — the signature 'lit' look",
-  },
-  {
-    key: "bloomThreshold",
-    label: "Bloom threshold",
-    min: 0.4,
-    max: 1.6,
-    step: 0.01,
-    hint: "Only luma above this glows — lower catches more of the image, higher keeps it to highlights",
-  },
-  {
-    key: "vignette",
-    label: "Vignette",
-    min: 0,
-    max: 1,
-    step: 0.01,
-    hint: "Darkens the corners to draw the eye inward",
-  },
-  {
-    key: "chromatic",
-    label: "Chromatic",
-    min: 0,
-    max: 1,
-    step: 0.01,
-    hint: "RGB split toward the edges — a lens/analog fringe",
-  },
-  {
-    key: "grain",
-    label: "Film grain",
-    min: 0,
-    max: 0.5,
-    step: 0.01,
-    hint: "Deterministic film grain keyed to track time",
-  },
-];
+/**
+ * What each post knob DOES. Range, step and label live in POST_MOD_TARGETS —
+ * the panel adds only the words, so the sliders and the modulation clamps
+ * can never disagree.
+ */
+const POST_HINTS: Record<PostNumericKey, string> = {
+  exposure: "Overall brightness before tonemapping — 1 is neutral, higher lifts the whole image",
+  bloom: "Soft glow bleeding out of bright areas — the signature 'lit' look",
+  bloomThreshold:
+    "Only luma above this glows — lower catches more of the image, higher keeps it to highlights",
+  vignette: "Darkens the corners to draw the eye inward",
+  chromatic: "RGB split toward the edges — a lens/analog fringe",
+  grain: "Deterministic film grain keyed to track time",
+};
+const POST_SLIDERS = POST_MOD_TARGETS.map((spec) => ({ ...spec, hint: POST_HINTS[spec.key] }));
+
+/** The motion masters' shared specs (render sites: Global motion + Sync). */
+const MOTION_SPEC = Object.fromEntries(MOTION_MASTER_SPECS.map((s) => [s.key, s])) as Record<
+  keyof MotionSettings,
+  ParamSpec
+>;
 
 type VisualsPageId = AppPrefs["visualsPage"];
 
@@ -1195,9 +1162,9 @@ export function ParamsPanel() {
                   <SliderRow
                     label="Rotation"
                     hint="Global spin master — 0% stops all rotation, 100% = normal, up to 200%"
-                    min={0}
-                    max={2}
-                    step={0.05}
+                    min={MOTION_SPEC.rotation.min}
+                    max={MOTION_SPEC.rotation.max}
+                    step={MOTION_SPEC.rotation.step}
                     value={motion.rotation}
                     onChange={(v) => store().setMotion({ rotation: v })}
                     format={PERCENT}
@@ -1209,9 +1176,9 @@ export function ParamsPanel() {
                   <SliderRow
                     label="Pulse"
                     hint="Global pulse master — 0% removes beat pumping, 100% = normal, up to 200%"
-                    min={0}
-                    max={2}
-                    step={0.05}
+                    min={MOTION_SPEC.pulse.min}
+                    max={MOTION_SPEC.pulse.max}
+                    step={MOTION_SPEC.pulse.step}
                     value={motion.pulse}
                     onChange={(v) => store().setMotion({ pulse: v })}
                     format={PERCENT}
@@ -1223,9 +1190,9 @@ export function ParamsPanel() {
                   <SliderRow
                     label="Detail"
                     hint="Detail — how many bars / points / segments this mode draws"
-                    min={0}
-                    max={1}
-                    step={0.02}
+                    min={MOTION_SPEC.detail.min}
+                    max={MOTION_SPEC.detail.max}
+                    step={MOTION_SPEC.detail.step}
                     value={motion.detail}
                     onChange={(v) => store().setMotion({ detail: v })}
                     format={PERCENT}
@@ -1489,9 +1456,9 @@ export function ParamsPanel() {
               <SliderRow
                 label="Spectrum smooth"
                 hint="Rounds the spectrum from hard bins toward a flowing curve"
-                min={0}
-                max={1}
-                step={0.02}
+                min={MOTION_SPEC.spectrumSmooth.min}
+                max={MOTION_SPEC.spectrumSmooth.max}
+                step={MOTION_SPEC.spectrumSmooth.step}
                 value={motion.spectrumSmooth}
                 onChange={(v) => store().setMotion({ spectrumSmooth: v })}
                 format={PERCENT}

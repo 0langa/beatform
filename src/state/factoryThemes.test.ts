@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { FACTORY_THEMES } from "./factoryThemes";
 import { parseTheme, serializeTheme } from "./themes";
 import { validateDocument } from "./project";
-import { postTargetKey, POST_TARGET_PREFIX } from "./modMatrix";
+import { MOD_AMOUNT_STEP, postTargetKey, POST_TARGET_PREFIX } from "./modMatrix";
 import { presetById } from "../render/presets";
-import { allParams, POST_MOD_TARGETS } from "../render/types";
+import { allParams, MOTION_MASTER_SPECS, POST_MOD_TARGETS } from "../render/types";
 import { builderLayerType, BUILDER_MAX_LAYERS } from "../render/builder2";
 
 /**
@@ -26,6 +26,33 @@ import { builderLayerType, BUILDER_MAX_LAYERS } from "../render/builder2";
  */
 
 const POST_KEYS = new Set(POST_MOD_TARGETS.map((s) => s.key));
+
+/**
+ * The same rounding a native range input applies to its own value — the
+ * identical arithmetic to presetStyles.test.ts and the gallery registry's
+ * step-grid rule, and the three must keep agreeing or "legal" means
+ * different things in different places.
+ *
+ * Why grids and not just ranges: "already canonical" keeps every finite
+ * number verbatim (validateDocument clamps, never snaps), so an off-grid
+ * value renders exactly as authored right up until the user brushes its
+ * slider — which rewrites it onto the grid, silently turning the theme into
+ * one nobody reviewed. Held to their grids here: the post chain, the motion
+ * masters and route amounts. Preset params, scene overrides and lane
+ * keyframes are NOT yet — the shipped pack carries 19 values off their
+ * sliders' 0.02/0.05 grids, and legalising them is a per-param step-retune
+ * pass, tracked in BACKLOG.md, after which that leg belongs here too.
+ */
+function expectOnGrid(v: number, min: number, step: number, what: string) {
+  if (!(step > 0)) return;
+  const steps = (v - min) / step;
+  const off = Math.abs(steps - Math.round(steps));
+  expect(
+    off < 1e-6,
+    `${what}=${v} is off the ${step} grid ` +
+      `(nearest reachable: ${min + Math.round(steps) * step})`,
+  ).toBe(true);
+}
 
 describe("factory template pack", () => {
   it("ships a curated set, not a stub", () => {
@@ -102,6 +129,33 @@ describe("factory template pack", () => {
         expect(s, `unknown param "${key}"`).toBeDefined();
         expect(value, `${key} below min`).toBeGreaterThanOrEqual(s!.min);
         expect(value, `${key} above max`).toBeLessThanOrEqual(s!.max);
+      }
+    },
+  );
+
+  it.each(FACTORY_THEMES.map((t) => [t.meta.name, t] as const))(
+    "%s: post chain sits on the post sliders' step grid",
+    (_name, t) => {
+      for (const spec of POST_MOD_TARGETS) {
+        expectOnGrid(t.document.post[spec.key], spec.min, spec.step, `post.${spec.key}`);
+      }
+    },
+  );
+
+  it.each(FACTORY_THEMES.map((t) => [t.meta.name, t] as const))(
+    "%s: motion masters sit on their sliders' step grid",
+    (_name, t) => {
+      for (const spec of MOTION_MASTER_SPECS) {
+        expectOnGrid(t.document.motion[spec.key], spec.min, spec.step, `motion.${spec.key}`);
+      }
+    },
+  );
+
+  it.each(FACTORY_THEMES.map((t) => [t.meta.name, t] as const))(
+    "%s: route amounts sit on the amount slider's step grid",
+    (_name, t) => {
+      for (const routes of Object.values(t.document.modsByPreset)) {
+        for (const r of routes) expectOnGrid(r.amount, -1, MOD_AMOUNT_STEP, `${r.param} amount`);
       }
     },
   );

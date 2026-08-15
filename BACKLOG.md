@@ -360,6 +360,37 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       filter-gated; P-6 ships bundled thumbnails with an "Apply" button;
       P-11's recovery toast becomes persistent-until-clicked and its boot
       gets a ~500 ms veil (both folded into the P-11 lane pre-merge).
+- [ ] C5 Step-grid follow-through (post-chain gap, found 2026-08-15). The
+      registry rule C4 shipped covers preset params ONLY (owner decision C);
+      the approved entries carried three post values (deep-current grain
+      0.045; sunset-circuit grain 0.085 + chromatic 0.035) and two motion
+      values (spectrumSmooth 0.45 / 0.15) off the app sliders' grids —
+      silent-drift-on-brush, the exact failure the rule exists to stop.
+      **App side CLOSED 2026-08-15** (branch
+      `claude/dazzling-brahmagupta-d5f256`): grain + chromatic steps
+      0.01 → 0.005 and detail + spectrumSmooth 0.02 → 0.01 — integer
+      refinements, so every old grid point stays legal, zero content bytes
+      changed, zero render change (post/motion `step` is never read on a
+      render path). Structure went with it: `POST_SLIDERS` now derives from
+      `POST_MOD_TARGETS`, `MOTION_MASTER_SPECS` is the motion masters'
+      single source, `MOD_AMOUNT_STEP` is exported and consumed by the
+      amount sliders; `factoryThemes.test.ts` holds the factory pack to the
+      post/motion/amount grids and `paramModel.test.ts` sanity-checks the
+      tables. All 5 registry themes verified legal on the new grids; live
+      DOM steps verified in the running app. Remainders:
+      (a) factory preset-PARAM values: **19 off-grid across 10 themes**
+      (barGlow 0.35 / coverMix 0.95 / voiceFocus 0.85 … on 0.02 sliders,
+      speed 0.22 + bright 0.26 + drift 0.12 on 0.05, bgBassGlow 0.012 on
+      0.005) — authors demonstrably work at x.x5 / 0.01 precision that
+      0.02-step sliders cannot express; needs a per-param step-retune pass
+      (refinements only, same integer-divisor rule), after which the
+      params/scenes/keyframes leg joins the factoryThemes grid test
+      (inventory + test shape are in this entry's session);
+      (b) registry-side rule extension = owner decision #6;
+      (c) blacklight `sync.attack = 0.012` sits off the sync trio's 0.01
+      grid — the one approved value the app-side pass does NOT legalize
+      (sync table untouched here; 0.002 would be the conforming
+      refinement).
 
 ### Track D — Docs truth pass (after A naming lands)
 
@@ -2961,6 +2992,17 @@ shipped earlier in the same day's sessions.
    `2575652`. `PROPOSALS.md` now carries a current execution-status table.
    Its original P-1 body predates both renames; the shipped surface is
    **Visuals**, not Inspector.
+6. **OPEN — extend the registry step-grid rule beyond preset params?** The
+   gallery `schema/README.md` scope note ("the post chain, the motion
+   masters and modulation route amounts … are out of scope") predates the
+   app-side grid closure (C5, 2026-08-15): every approved entry is now
+   legal on the post/motion/amount grids, so extending
+   `scripts/validate.mjs` + `gen-param-specs.mjs` to emit and check those
+   three tables is **byte-neutral** — no re-emit, no re-approval of the 18
+   entries. Sync stays genuinely open either way: blacklight's
+   `sync.attack = 0.012` is off the 0.01 sync grid, so covering sync means
+   refining the app's sync-trio step (0.002) first, or scoping sync out
+   explicitly in the README.
 
 ### Parked (do not start)
 

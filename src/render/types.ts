@@ -518,22 +518,31 @@ export interface PostSettings {
   /** Chromatic aberration 0..1 (RGB split toward the edges). */
   chromatic: number;
 }
+/** PostSettings' slider-editable keys — everything but the tonemap toggle. */
+export type PostNumericKey = Exclude<keyof PostSettings, "tonemap">;
+
 /**
  * The post-processing knobs the modulation matrix can drive, as ordinary
  * ParamSpecs so routing/clamping reuses exactly the preset-param machinery.
  * `tonemap` is absent on purpose: it is a boolean, and a continuously
  * modulated on/off would strobe.
  *
- * Ranges mirror the panel's own sliders — the two must agree, or a modulated
- * value could sit outside what the user can dial by hand.
+ * This table IS the panel's slider spec — ParamsPanel derives its post
+ * sliders from it, so the sliders and the modulation clamps cannot drift
+ * apart. That makes `step` the persistence grid for shipped content
+ * (factoryThemes.test.ts holds the factory pack to it; the gallery
+ * registry's step-grid rule is the same check for gallery content): a value
+ * off the grid is rewritten the first time the user touches its slider.
+ * A step may only ever be refined by an integer divisor of its old value,
+ * so every previously reachable value stays reachable.
  */
-export const POST_MOD_TARGETS: ParamSpec[] = [
+export const POST_MOD_TARGETS: Array<ParamSpec & { key: PostNumericKey }> = [
   { key: "exposure", label: "Exposure", min: 0.2, max: 3, step: 0.01, default: 1 },
   { key: "bloom", label: "Bloom", min: 0, max: 1, step: 0.01, default: 0 },
   { key: "bloomThreshold", label: "Bloom threshold", min: 0.4, max: 1.6, step: 0.01, default: 1 },
   { key: "vignette", label: "Vignette", min: 0, max: 1, step: 0.01, default: 0 },
-  { key: "chromatic", label: "Chromatic", min: 0, max: 1, step: 0.01, default: 0 },
-  { key: "grain", label: "Film grain", min: 0, max: 0.5, step: 0.01, default: 0 },
+  { key: "chromatic", label: "Chromatic", min: 0, max: 1, step: 0.005, default: 0 },
+  { key: "grain", label: "Film grain", min: 0, max: 0.5, step: 0.005, default: 0 },
 ];
 
 export const DEFAULT_POST: PostSettings = {
@@ -567,6 +576,21 @@ export const DEFAULT_MOTION: MotionSettings = {
   detail: 1,
   spectrumSmooth: 0,
 };
+
+/**
+ * The motion masters' slider specs — the single source ParamsPanel renders
+ * from (rotation/pulse/detail on the Global motion page, spectrum smoothing
+ * on Sync). As with POST_MOD_TARGETS, `step` doubles as the persistence grid
+ * for shipped content, so factoryThemes.test.ts holds every factory theme to
+ * it; refine a step only by an integer divisor of its old value. Defaults
+ * must equal DEFAULT_MOTION — paramModel.test.ts ties the two together.
+ */
+export const MOTION_MASTER_SPECS: Array<ParamSpec & { key: keyof MotionSettings }> = [
+  { key: "rotation", label: "Rotation", min: 0, max: 2, step: 0.05, default: 1 },
+  { key: "pulse", label: "Pulse", min: 0, max: 2, step: 0.05, default: 1 },
+  { key: "detail", label: "Detail", min: 0, max: 1, step: 0.01, default: 1 },
+  { key: "spectrumSmooth", label: "Spectrum smooth", min: 0, max: 1, step: 0.01, default: 0 },
+];
 
 /** Crossfade input: the outgoing setup's params and the 0..1 blend. */
 export interface TransitionState {

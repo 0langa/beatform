@@ -1,6 +1,6 @@
 import type { AudioFeatures } from "../audio/types";
-import type { PostSettings, PresetDef } from "../render/types";
-import { POST_MOD_TARGETS, paramSpecMap, type ParamValues } from "../render/types";
+import type { PostNumericKey, PostSettings, PresetDef } from "../render/types";
+import { POST_MOD_TARGETS, paramSpecMap, type ParamSpec, type ParamValues } from "../render/types";
 
 /**
  * Modulation matrix: route any audio feature to any numeric parameter of the
@@ -374,13 +374,23 @@ export function applyMods(
  */
 export const POST_TARGET_PREFIX = "post:";
 
-const POST_SPECS = new Map(POST_MOD_TARGETS.map((s) => [s.key, s]));
+/**
+ * The grid every modulation-amount slider renders with (ModulationPage), and
+ * therefore the persistence grid for shipped route amounts — an off-grid
+ * amount is rewritten the first time the user touches its slider, so
+ * factoryThemes.test.ts holds the factory pack to it.
+ */
+export const MOD_AMOUNT_STEP = 0.01;
+
+const POST_SPECS = new Map<string, ParamSpec>(POST_MOD_TARGETS.map((s) => [s.key, s]));
 
 /** The PostSettings key a route drives, or null when it targets a preset param. */
-export function postTargetKey(param: string): string | null {
+export function postTargetKey(param: string): PostNumericKey | null {
   if (!param.startsWith(POST_TARGET_PREFIX)) return null;
   const key = param.slice(POST_TARGET_PREFIX.length);
-  return POST_SPECS.has(key) ? key : null;
+  // Membership in POST_SPECS is what makes the cast true: the map's keys are
+  // exactly the PostNumericKeys.
+  return POST_SPECS.has(key) ? (key as PostNumericKey) : null;
 }
 
 /**
@@ -409,10 +419,10 @@ export function applyPostMods(
     if (!key) continue;
     const spec = POST_SPECS.get(key)!;
     if (!out) out = { ...base };
-    const current = (out as unknown as Record<string, number>)[key] ?? spec.default;
+    const current = out[key];
     const value = routeValue(route, features, stems, state);
     const next = current + value * route.amount * (spec.max - spec.min);
-    (out as unknown as Record<string, number>)[key] = Math.min(spec.max, Math.max(spec.min, next));
+    out[key] = Math.min(spec.max, Math.max(spec.min, next));
   }
   return out ?? base;
 }

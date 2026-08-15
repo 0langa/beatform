@@ -3,11 +3,15 @@ import { presets } from "./presets";
 import { builder } from "./presets/builder";
 import {
   allParams,
+  DEFAULT_MOTION,
+  DEFAULT_POST,
   defaultParams,
   FALLBACK_GROUP,
   groupParams,
   isModTarget,
+  MOTION_MASTER_SPECS,
   paramSearchText,
+  POST_MOD_TARGETS,
   presetGroups,
   type ParamSpec,
   type PresetDef,
@@ -244,6 +248,49 @@ describe("taper metadata (RP-14)", () => {
   it("nebula's scale carries the wave-0 proving taper", () => {
     const nebula = ALL.find((p) => p.id === "nebula")!;
     expect(nebula.params.find((p) => p.key === "scale")?.taper).toBe("log");
+  });
+});
+
+describe("document-level spec tables (post + motion)", () => {
+  // These two tables are what the panel's post and motion sliders render
+  // from, so their `step` is the persistence grid factoryThemes.test.ts and
+  // the gallery registry hold shipped content to. The checks here are the
+  // table-side half of that contract.
+  const TABLES = [
+    ["POST_MOD_TARGETS", POST_MOD_TARGETS],
+    ["MOTION_MASTER_SPECS", MOTION_MASTER_SPECS],
+  ] as const;
+
+  for (const [name, specs] of TABLES) {
+    it(`${name}: specs are well-formed and defaults sit on their own grid`, () => {
+      for (const s of specs) {
+        expect(s.step, `${name}/${s.key}: step must be positive`).toBeGreaterThan(0);
+        expect(s.min, `${name}/${s.key}: empty range`).toBeLessThan(s.max);
+        expect(s.default, `${name}/${s.key}: default below min`).toBeGreaterThanOrEqual(s.min);
+        expect(s.default, `${name}/${s.key}: default above max`).toBeLessThanOrEqual(s.max);
+        const steps = (s.default - s.min) / s.step;
+        expect(
+          Math.abs(steps - Math.round(steps)) < 1e-6,
+          `${name}/${s.key}: default ${s.default} is off its own ${s.step} grid`,
+        ).toBe(true);
+      }
+    });
+  }
+
+  it("defaults agree with the document default objects", () => {
+    // A spec default that disagrees with DEFAULT_POST / DEFAULT_MOTION would
+    // make "reset" and "neutral" two different values.
+    for (const s of POST_MOD_TARGETS) expect(s.default, s.key).toBe(DEFAULT_POST[s.key]);
+    for (const s of MOTION_MASTER_SPECS) expect(s.default, s.key).toBe(DEFAULT_MOTION[s.key]);
+  });
+
+  it("the tables cover exactly the sliders' document fields", () => {
+    expect(new Set(POST_MOD_TARGETS.map((s) => s.key))).toEqual(
+      new Set(Object.keys(DEFAULT_POST).filter((k) => k !== "tonemap")),
+    );
+    expect(new Set(MOTION_MASTER_SPECS.map((s) => s.key))).toEqual(
+      new Set(Object.keys(DEFAULT_MOTION)),
+    );
   });
 });
 

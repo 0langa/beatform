@@ -11,6 +11,7 @@ import {
 } from "../render/types";
 import {
   LFO_SOURCES,
+  MOD_AMOUNT_STEP,
   MOD_LAG_MAX_SEC,
   MOD_SOURCES,
   POST_TARGET_PREFIX,
@@ -773,7 +774,7 @@ export function ModulationPage() {
                     hint={`Sets every route stacked on ${card.label} to the same depth`}
                     min={-1}
                     max={1}
-                    step={0.01}
+                    step={MOD_AMOUNT_STEP}
                     value={card.routes[0].amount}
                     onChange={(amount) => store().setModRouteAmountsForParam(card.param, amount)}
                   />
@@ -944,7 +945,7 @@ export function ModulationPage() {
                         hint="Share of the knob's own range added at full signal — negative pulls the other way"
                         min={-1}
                         max={1}
-                        step={0.01}
+                        step={MOD_AMOUNT_STEP}
                         value={r.amount}
                         onChange={(amount) => store().updateModRoute(r.id, { amount })}
                       />
