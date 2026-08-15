@@ -41,8 +41,13 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   BaseDirectory,
 }));
 
-const { writeAutosave, readAutosave, clearAutosave, quarantineCorruptAutosave } =
-  await import("./platform");
+const {
+  writeAutosave,
+  readAutosave,
+  clearAutosave,
+  quarantineCorruptAutosave,
+  quarantineSupersededAutosave,
+} = await import("./platform");
 
 function setDesktop(desktop: boolean): void {
   vi.stubGlobal("window", desktop ? { __TAURI_INTERNALS__: {} } : {});
@@ -300,5 +305,50 @@ describe("quarantineCorruptAutosave — C2(c)", () => {
     await quarantineCorruptAutosave();
     expect(exists).not.toHaveBeenCalled();
     expect(rename).not.toHaveBeenCalled();
+  });
+});
+
+describe("quarantineSupersededAutosave — D1 fix part (b), sibling of quarantineCorruptAutosave", () => {
+  it("renames the current file aside with a .superseded-<timestamp> suffix, and returns the new name", async () => {
+    exists.mockResolvedValue(true);
+    const before = Date.now();
+
+    const result = await quarantineSupersededAutosave();
+
+    expect(rename).toHaveBeenCalledTimes(1);
+    const [oldPath, newPath, opts] = rename.mock.calls[0];
+    expect(oldPath).toBe("document.bfproj");
+    expect(newPath).toMatch(/^document\.bfproj\.superseded-\d+$/);
+    expect(result).toBe(newPath);
+    const ts = Number((newPath as string).split("superseded-")[1]);
+    expect(ts).toBeGreaterThanOrEqual(before);
+    expect(opts).toEqual({
+      oldPathBaseDir: BaseDirectory.AppData,
+      newPathBaseDir: BaseDirectory.AppData,
+    });
+    // Distinct naming from the corrupt-file quarantine — the two events
+    // must read differently to anyone looking at AppData by hand.
+    expect(newPath).not.toMatch(/corrupt/);
+  });
+
+  it("nothing to quarantine: no rename attempted, returns null", async () => {
+    exists.mockResolvedValue(false);
+    const result = await quarantineSupersededAutosave();
+    expect(rename).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  it("a rename failure is swallowed and returns null — best-effort, must never throw out of boot", async () => {
+    exists.mockResolvedValue(true);
+    rename.mockRejectedValue(new Error("locked"));
+    await expect(quarantineSupersededAutosave()).resolves.toBeNull();
+  });
+
+  it("browser build: a no-op, returns null", async () => {
+    setDesktop(false);
+    const result = await quarantineSupersededAutosave();
+    expect(exists).not.toHaveBeenCalled();
+    expect(rename).not.toHaveBeenCalled();
+    expect(result).toBeNull();
   });
 });

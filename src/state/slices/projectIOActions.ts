@@ -6,6 +6,7 @@ import {
   isTauri,
   openTextFile,
   quarantineCorruptAutosave,
+  quarantineSupersededAutosave,
   readAutosave,
   saveTextFile,
   writeAutosave,
@@ -259,6 +260,12 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // above. Checked AFTER isTauri() so a browser no-op never touches it.
       if (bootStarted) return null;
       bootStarted = true;
+      // D1 fix (E2-D1) — opens the boot-settlement window every autosave
+      // write-back (runScheduledAutosaveWrite/flushAutosave, store.ts) waits
+      // on before ever serializing the document; see awaitBootSettled's own
+      // comment in store.ts. Symmetric with `bootStarted` itself: begun here
+      // in the same synchronous prefix, ended in the same `finally` below.
+      ctx.beginBootRead();
       return (async () => {
         try {
           const epochAtReadStart = get().docEpoch;
@@ -304,6 +311,27 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                   console.warn(
                     "[autosave] the document already changed (an edit, or a manual open) before boot resolved — keeping it",
                   );
+                  // D1 fix, part (b) — QUARANTINE-ASIDE ON REFUSAL. The file
+                  // just read is NOT corrupt (it parsed fine, right above)
+                  // — it is only refused because memory outran it. Without
+                  // this, the session's ordinary autosave — armed by
+                  // whatever edit caused the refusal, or fired by an
+                  // ordinary close — serializes the OLDER in-memory
+                  // document straight over this file the instant part (a)'s
+                  // boot-settlement gate opens, permanently discarding a
+                  // file that was never bad, only out-raced. Moving it
+                  // aside first means that write can only ever overwrite a
+                  // COPY. Best-effort (quarantineSupersededAutosave never
+                  // throws): a failed rename here must not be what breaks
+                  // boot, same standard as the corrupt-file quarantine
+                  // above. See that function's own comment in platform.ts
+                  // and .superpowers-repro/e2-deepstate-findings.md (E2-D1).
+                  const quarantined = await quarantineSupersededAutosave();
+                  if (quarantined !== null) {
+                    set({
+                      supersededNotice: `Your project changed before a newer autosaved version finished loading, so that version was set aside as "${quarantined}" in your app data folder instead of being overwritten.`,
+                    });
+                  }
                 }
               } catch (e) {
                 console.error("[autosave] applying the recovered document failed", e);
@@ -319,6 +347,7 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           });
         } finally {
           bootStarted = false;
+          ctx.endBootRead();
         }
       })();
     },

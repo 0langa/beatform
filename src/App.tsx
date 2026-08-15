@@ -239,6 +239,7 @@ export default function App() {
   const error = useVizStore((s) => s.error);
   const notice = useVizStore((s) => s.notice);
   const recoveredNotice = useVizStore((s) => s.recoveredNotice);
+  const supersededNotice = useVizStore((s) => s.supersededNotice);
   const bootVeilVisible = useVizStore((s) => s.bootVeilVisible);
   const aspect = useVizStore((s) => s.aspect);
   const showTimeline = useVizStore((s) => s.showTimeline);
@@ -913,6 +914,24 @@ export default function App() {
               aria-label="Dismiss the recovery notice"
               title="Dismiss"
               onClick={() => store().dismissRecoveredNotice()}
+            >
+              <IconClose size={13} />
+            </button>
+          </div>
+        )}
+        {/* D1 fix (E2-D1), part (b): same persistent/dismissible idiom as
+            the recovery toast above, but carries dynamic text (the
+            quarantined filename) rather than a fixed sentence — see
+            supersededNotice's own doc comment in store.ts for why this one
+            is NOT cleared by applyDocument the way recoveredNotice is. */}
+        {supersededNotice && (
+          <div className="toast superseded-toast" role="status">
+            <span className="toast-text">{supersededNotice}</span>
+            <button
+              className="chip-x"
+              aria-label="Dismiss the superseded-file notice"
+              title="Dismiss"
+              onClick={() => store().dismissSupersededNotice()}
             >
               <IconClose size={13} />
             </button>

@@ -2941,6 +2941,13 @@ kbd {
   color: var(--accent, #6aa8ff);
 }
 
+/* D1 fix (E2-D1), part (b): same accent tone and persistence as
+   .recovered-toast — nothing was lost (the file was moved aside, not
+   destroyed), so this is informational rather than an error. */
+.superseded-toast {
+  color: var(--accent, #6aa8ff);
+}
+
 /* Simplified renderer (audit F1): the app is WORKING but is not drawing what
    the UI describes, and that lasts the whole session — so this one neither
    fades on a timer nor styles itself as a crash. Warning-coloured edge,

@@ -51,4 +51,27 @@ export interface SliceCtx {
    * analysis timeout.
    */
   settleUnclaimedAnalysis: () => void;
+  /**
+   * D1 fix (E2-D1) — bracket the desktop boot's autosave READ. Called only
+   * by `bootDesktopDocument`'s owning invocation (projectIOActions.ts), in
+   * the same synchronous prefix as `bootStarted = true` and the same
+   * `finally` as `bootStarted = false` respectively — the two flags exist
+   * for different consumers (this pair is what every autosave write-back
+   * in the app waits on; `bootStarted` is only the reentrancy guard) but
+   * must never be able to drift apart in when they open/close.
+   *
+   * `beginBootRead` installs a fresh pending "settlement" promise;
+   * `endBootRead` resolves it. `runScheduledAutosaveWrite`/`flushAutosave`
+   * (store.ts, via the module-private `awaitBootSettled`) wait on that
+   * promise — bounded by a timeout so a hung read can never dam them
+   * forever — before ever serializing the document, so a write can no
+   * longer land while bootDesktopDocument's anti-clobber guard (and the
+   * quarantine-aside it performs on refusal) is still deciding what "the
+   * document" even is. See store.ts's own comment above the module-scope
+   * declaration for the full mechanism and
+   * .superpowers-repro/e2-deepstate-findings.md (E2-D1) for the bug this
+   * closes.
+   */
+  beginBootRead: () => void;
+  endBootRead: () => void;
 }

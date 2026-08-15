@@ -281,6 +281,25 @@ interface SessionSlice {
    */
   recoveredNotice: boolean;
   /**
+   * D1 fix (E2-D1), part (b) — QUARANTINE-ASIDE ON REFUSAL. Set by
+   * `bootDesktopDocument` (projectIOActions.ts) when its anti-clobber guard
+   * refuses to apply a document that parsed fine — not the corrupt-file
+   * case, which uses `error` — because the in-memory document already
+   * moved on. Holds the human-readable message (naming the quarantined
+   * filename the user can go find in AppData), not a boolean: unlike
+   * `recoveredNotice`'s fixed sentence, this describes a specific file the
+   * UI cannot hardcode. `null` when there is nothing to show.
+   *
+   * Deliberately NOT auto-cleared by `applyDocument` the way `recoveredNotice`
+   * is — that field describes the document just replaced, by definition
+   * stale the instant a fresh one lands; this one describes an ARCHIVAL
+   * EVENT (a file was set aside at a specific path) that stays exactly as
+   * true no matter how many further edits the session makes. Same
+   * persistent/dismissible shape as `recoveredNotice` otherwise (owner
+   * ruling D): no timer, cleared only by `dismissSupersededNotice`.
+   */
+  supersededNotice: string | null;
+  /**
    * Owner ruling E (final round): true ONLY on desktop, ONLY for the first
    * paint — hides the measured ~423ms window (I2, device smoke) between the
    * synchronous localStorage-sourced fallback rendering and the autosave
@@ -638,6 +657,10 @@ interface Actions {
   /** Owner ruling D: close the persistent boot-recovery notice — see
    * `recoveredNotice`'s own doc comment. */
   dismissRecoveredNotice(): void;
+  /** D1 fix, part (b): close the persistent superseded-file notice — see
+   * `supersededNotice`'s own doc comment for why it is not auto-cleared by
+   * `applyDocument` the way `recoveredNotice` is. */
+  dismissSupersededNotice(): void;
   /** Owner ruling E: drop the boot veil — see `bootVeilVisible`'s own doc
    * comment. Idempotent (App.tsx calls this from two independent triggers,
    * whichever fires first); a no-op once already false. */
@@ -850,6 +873,87 @@ let autosaveMaxTimer: ReturnType<typeof setTimeout> | undefined;
  * unclosable app.
  */
 const CLOSE_FLUSH_TIMEOUT_MS = 4000;
+
+/**
+ * D1 fix (E2-D1) — GATE AUTOSAVE ON BOOT SETTLEMENT.
+ *
+ * The boot veil's hard cap (App.tsx's BOOT_VEIL_CAP_MS) can legitimately
+ * drop while `bootDesktopDocument`'s read is still in flight — a large
+ * embedded background asset or a slow disk make a >500ms read a real case,
+ * not a hypothetical one (that function's own comment). The user is then
+ * looking at a fully interactive app whose document is the potentially
+ * ancient localStorage-sourced seed. Before this fix, an edit in that
+ * window armed `scheduleAutosave`; when the real read landed a moment
+ * later, the anti-clobber guard in `bootDesktopDocument` correctly refused
+ * to apply it over the fresh edit, but the armed autosave then went on to
+ * serialize the stale-base document straight over the newer file the guard
+ * had just refused to touch — a *legitimately successful* write of the
+ * wrong content, no error, no quarantine, nothing to notice. See
+ * .superpowers-repro/e2-deepstate-findings.md (E2-D1) for the full trace,
+ * including the no-edit variant (closing the window mid-read has the same
+ * effect via `flushAutosave`, with no edit needed at all).
+ *
+ * The fix: every write-back through `runScheduledAutosaveWrite`
+ * (`flushAutosave` funnels through the same function) waits for the boot
+ * read to settle FIRST, so `docOf(get())` is only ever serialized AFTER
+ * `bootDesktopDocument`'s guard — and the quarantine-aside it now performs
+ * on refusal, see `quarantineSupersededAutosave` in platform.ts — has
+ * already run. Combined with that quarantine, this closes BOTH repro paths
+ * and restores the M2 `alreadyOnDisk` invariant ("these bytes are already
+ * the file") for the no-edit case, where a premature write would otherwise
+ * make that claim false the instant the read resolves.
+ *
+ * `bootSettled` starts PRE-RESOLVED: most of this app's lifetime — every
+ * browser-build session, and any desktop session outside its own one-time
+ * boot read — has no outstanding boot to wait for, and a write that will
+ * never be raced by one must not pay any latency for this at all;
+ * `awaitBootSettled` resolves on the very next microtask in that case,
+ * never touching the bounded timeout below. Only `bootDesktopDocument`'s
+ * owning call (via `ctx.beginBootRead`/`ctx.endBootRead`, symmetric with
+ * that function's own `bootStarted` reentrancy flag — see ctx.ts's own
+ * comment) ever installs a genuinely pending promise here, for the exact
+ * span of its own read + guard + quarantine-aside.
+ */
+let bootSettled: Promise<void> = Promise.resolve();
+let resolveBootSettled: (() => void) | null = null;
+
+const beginBootRead = (): void => {
+  bootSettled = new Promise<void>((resolve) => {
+    resolveBootSettled = resolve;
+  });
+};
+
+const endBootRead = (): void => {
+  resolveBootSettled?.();
+  resolveBootSettled = null;
+};
+
+/**
+ * Bounded wait, sharing `CLOSE_FLUSH_TIMEOUT_MS`'s mold and its literal
+ * value on purpose: both express the identical judgment call ("how long is
+ * it reasonable to make the user wait before proceeding with whatever
+ * we've got"), and a hung boot read must never be able to dam an autosave
+ * write — or the close-flush that awaits one — forever. `Promise.race`
+ * against a fresh per-call timeout, not a single shared timer: this must
+ * be safe to call from many places (every debounced write, every
+ * `flushAutosave`) without callers coordinating a timer between them.
+ *
+ * Residual, deliberately accepted overlap with the close handler's OWN
+ * `CLOSE_FLUSH_TIMEOUT_MS` race (store.ts's `onCloseRequested` installer):
+ * in the pathological case of a read that is BOTH hung AND being awaited
+ * by a close, this bound can spend the entire close-flush budget just
+ * waiting for boot before the write even starts, so the outer race may
+ * abandon the write before it finishes. That is not a new risk — the
+ * outer race already documents abandoning a slow write as acceptable ("an
+ * intact old copy beats an unclosable app") — only a new *reason* the same
+ * already-accepted budget might be spent. The alternative (an unbounded
+ * wait) is strictly worse: a permanently unclosable window.
+ */
+const awaitBootSettled = (): Promise<void> =>
+  Promise.race([
+    bootSettled,
+    new Promise<void>((resolve) => setTimeout(resolve, CLOSE_FLUSH_TIMEOUT_MS)),
+  ]);
 
 function resolveParams(presetId: string, overrides: Record<string, ParamValues>): ParamValues {
   const preset = presetById(presetId);
@@ -1208,26 +1312,37 @@ export const useVizStore = create<VizState>((set, get) => {
    * first (synchronously) so a document change that arrives while this
    * write is in flight starts a fresh, correctly-anchored burst rather than
    * being silently absorbed by timers this call is about to fire anyway.
+   *
+   * D1 fix (E2-D1): waits for the boot read to settle (bounded —
+   * `awaitBootSettled`'s own comment) BEFORE ever calling `docOf(get())`.
+   * `docOf` is evaluated inside the `.then()`, i.e. AFTER that wait, so it
+   * captures whatever `bootDesktopDocument`'s guard — and the
+   * quarantine-aside it performs on refusal — left behind, never a
+   * snapshot taken before either had a chance to run. On the ordinary path
+   * (no boot outstanding) `awaitBootSettled` resolves on the next
+   * microtask, so this adds no observable latency.
    */
   const runScheduledAutosaveWrite = (): Promise<void> => {
     clearTimeout(autosaveTimer);
     clearTimeout(autosaveMaxTimer);
     autosaveTimer = undefined;
     autosaveMaxTimer = undefined;
-    return writeAutosave(serializeProject(docOf(get()), APP_VERSION)).catch((e) => {
-      console.error("[autosave]", e);
-      // Surface ONCE per session: a failing autosave means the sole
-      // persisted copy silently isn't being kept up to date — exactly the
-      // failure that went unnoticed from the feature's birth until the
-      // first hardware test (the $APPDATA write scope was never granted).
-      if (!autosaveFailureShown) {
-        autosaveFailureShown = true;
-        set({
-          error: `Autosave is failing — your changes are not being saved (${(e as Error).message ?? e})`,
-        });
-      }
-      throw e; // rethrown for flushAutosave's awaiters (onCloseRequested); the two setTimeout call sites below swallow it themselves — the logging above already happened
-    });
+    return awaitBootSettled()
+      .then(() => writeAutosave(serializeProject(docOf(get()), APP_VERSION)))
+      .catch((e) => {
+        console.error("[autosave]", e);
+        // Surface ONCE per session: a failing autosave means the sole
+        // persisted copy silently isn't being kept up to date — exactly the
+        // failure that went unnoticed from the feature's birth until the
+        // first hardware test (the $APPDATA write scope was never granted).
+        if (!autosaveFailureShown) {
+          autosaveFailureShown = true;
+          set({
+            error: `Autosave is failing — your changes are not being saved (${(e as Error).message ?? e})`,
+          });
+        }
+        throw e; // rethrown for flushAutosave's awaiters (onCloseRequested); the two setTimeout call sites below swallow it themselves — the logging above already happened
+      });
   };
 
   /** setTimeout callback wrapper: the meaningful handling (console.error +
@@ -1350,6 +1465,8 @@ export const useVizStore = create<VizState>((set, get) => {
     prefetchNextLibraryTrack,
     invalidateAnalysis,
     settleUnclaimedAnalysis,
+    beginBootRead,
+    endBootRead,
   };
 
   return {
@@ -1413,6 +1530,7 @@ export const useVizStore = create<VizState>((set, get) => {
     error: null,
     notice: null,
     recoveredNotice: false,
+    supersededNotice: null,
     bootVeilVisible: isTauri(),
     userPresets: loadUserPresets(),
     galleryStatus: "idle" as const,
@@ -2490,6 +2608,10 @@ export const useVizStore = create<VizState>((set, get) => {
 
     dismissRecoveredNotice() {
       set({ recoveredNotice: false });
+    },
+
+    dismissSupersededNotice() {
+      set({ supersededNotice: null });
     },
 
     hideBootVeil() {

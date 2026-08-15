@@ -722,6 +722,45 @@ export async function quarantineCorruptAutosave(): Promise<void> {
   }
 }
 
+/**
+ * D1 fix (E2-D1), part (b) — sibling of `quarantineCorruptAutosave` for a
+ * file that is NOT corrupt. `bootDesktopDocument`'s anti-clobber guard can
+ * refuse to apply a document that parsed fine and was ready to apply,
+ * because the in-memory document already moved on (an edit, undo/redo, or
+ * a manual open landed during the read). Before this existed, nothing
+ * protected that refused file: the session's ordinary autosave write —
+ * armed by whatever caused the refusal — went on to serialize the OLDER
+ * in-memory document straight over it, permanently discarding a file that
+ * was never bad, only out-raced. Moving it aside first means that write
+ * can only ever overwrite a COPY.
+ *
+ * Distinct suffix from the corrupt-file quarantine (`.superseded-` vs
+ * `.corrupt-`) so the two events read differently to anyone looking at the
+ * AppData folder by hand — one says "this file was unusable," the other
+ * says "this file was fine, but something newer replaced it in memory
+ * first." Returns the quarantined filename on success — unlike its
+ * sibling, the caller needs it to tell the user WHERE the file went, not
+ * just THAT something happened — or null if there was nothing to
+ * quarantine or the rename itself failed (best-effort, same as its
+ * sibling: this must never be what blocks boot).
+ */
+export async function quarantineSupersededAutosave(): Promise<string | null> {
+  if (!isTauri()) return null;
+  try {
+    const { rename, exists, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+    if (!(await exists(DOCUMENT_FILE, { baseDir: BaseDirectory.AppData }))) return null;
+    const quarantined = `${DOCUMENT_FILE}.superseded-${Date.now()}`;
+    await rename(DOCUMENT_FILE, quarantined, {
+      oldPathBaseDir: BaseDirectory.AppData,
+      newPathBaseDir: BaseDirectory.AppData,
+    });
+    return quarantined;
+  } catch (e) {
+    console.warn("[autosave] could not quarantine the superseded file", e);
+    return null;
+  }
+}
+
 export function downloadBlob(blob: Blob, name: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

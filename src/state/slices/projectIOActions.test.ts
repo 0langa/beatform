@@ -43,6 +43,10 @@ vi.mock("../platform", async (importOriginal) => {
     readAutosave: vi.fn(async () => null),
     writeAutosave: vi.fn(async () => {}),
     clearAutosave: vi.fn(async () => {}),
+    // D1 fix, part (b): default "nothing to quarantine" — individual tests
+    // below override this to a deterministic filename when they need to
+    // assert on the notice's content.
+    quarantineSupersededAutosave: vi.fn(async () => null),
   };
 });
 
@@ -56,7 +60,8 @@ vi.mock("../persistence", async (importOriginal) => {
 });
 
 const { useVizStore } = await import("../store");
-const { isTauri, readAutosave, writeAutosave } = await import("../platform");
+const { isTauri, readAutosave, writeAutosave, quarantineSupersededAutosave } =
+  await import("../platform");
 const { wasPreviousExitClean } = await import("../persistence");
 
 const PRISTINE = { ...useVizStore.getState() };
@@ -75,6 +80,7 @@ afterEach(() => {
   vi.mocked(readAutosave).mockReset().mockResolvedValue(null);
   vi.mocked(writeAutosave).mockClear().mockResolvedValue(undefined);
   vi.mocked(wasPreviousExitClean).mockReturnValue(true);
+  vi.mocked(quarantineSupersededAutosave).mockReset().mockResolvedValue(null);
 });
 
 describe("bootDesktopDocument — desktop boots from the autosave file (P-11 Task 2)", () => {
@@ -438,5 +444,192 @@ describe("whole-lane-review round 2, item 3 — boot reentrancy guard (React Str
     await useVizStore.getState().bootDesktopDocument();
     expect(readAutosave).toHaveBeenCalledTimes(2);
     expect(useVizStore.getState().presetId).toBe(OTHER_PRESET);
+  });
+});
+
+/**
+ * E2-D1 (D1 patch lane, 2.97.1) — promoted from the read-only repro at
+ * .superpowers-repro/d1-staleOverwrite.test.ts. That repro proved the bug by
+ * asserting the CURRENT (buggy) mechanism end to end: guard refuses ->
+ * nothing protects the file -> the session's ordinary autosave overwrites it
+ * with stale-base content. These tests assert the FIXED behavior instead —
+ * they fail against pre-fix code for the right reason (the protections
+ * below don't exist yet), and pass once both fix pieces land:
+ *
+ *  (a) GATE AUTOSAVE ON BOOT SETTLEMENT — runScheduledAutosaveWrite (the one
+ *      serialization chokepoint flushAutosave also funnels through) waits
+ *      for bootDesktopDocument's read to settle before ever calling
+ *      docOf(get()), bounded so a hung read can't dam autosave/close
+ *      forever (store.ts's awaitBootSettled, sharing CLOSE_FLUSH_TIMEOUT_MS's
+ *      mold).
+ *  (b) QUARANTINE-ASIDE ON REFUSAL — when the anti-clobber guard refuses to
+ *      apply a newer, successfully-parsed document because memory already
+ *      moved on, the file is moved aside (quarantineSupersededAutosave)
+ *      BEFORE bootDesktopDocument returns, so whatever write (a) eventually
+ *      lets through can only ever overwrite a copy.
+ *
+ * Three distinct built-in preset ids disambiguate "seed" (the frozen
+ * localStorage fallback docOf(PRISTINE) already carries), "edit" (the
+ * in-window record()-backed change), and "newer file" (what the read
+ * resolves with) — same convention the repro established.
+ */
+describe("D1 fix — GATE AUTOSAVE ON BOOT SETTLEMENT + QUARANTINE-ASIDE ON REFUSAL (E2-D1)", () => {
+  const NEWER_FILE_PRESET = "tunnel-rings";
+  const QUARANTINE_NAME = "document.bfproj.superseded-1700000000000";
+
+  it("edit lands during the in-flight read: the guard still refuses the late apply, and the refused (not corrupt — it parsed fine) file is quarantined aside before boot returns, with a persistent notice naming where it went", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(quarantineSupersededAutosave).mockResolvedValue(QUARANTINE_NAME);
+    let resolveRead!: (contents: string) => void;
+    vi.mocked(readAutosave).mockImplementation(
+      () => new Promise<string | null>((r) => (resolveRead = r)),
+    );
+    const seedPreset = useVizStore.getState().presetId; // the frozen localStorage-sourced fallback
+
+    const boot = useVizStore.getState().bootDesktopDocument();
+    expect(boot).not.toBeNull();
+    expect(useVizStore.getState().presetId).toBe(seedPreset);
+
+    // The veil cap has dropped; the user clicks a preset chip while the
+    // read above is still in flight — any record()-backed action works.
+    useVizStore.getState().switchPreset(OTHER_PRESET);
+    expect(useVizStore.getState().undoDepth).toBe(1);
+
+    // The real read finally lands with a DIFFERENT, newer document.
+    resolveRead(autosaveTextWithPreset(NEWER_FILE_PRESET));
+    await boot;
+
+    // The guard correctly refuses the late apply — unchanged by this fix.
+    expect(useVizStore.getState().presetId).toBe(OTHER_PRESET);
+    // NEW (part b): the refused file — not corrupt, it parsed fine and was
+    // ready to apply — is moved aside before boot returns, and the user is
+    // told where.
+    expect(quarantineSupersededAutosave).toHaveBeenCalledTimes(1);
+    expect(useVizStore.getState().supersededNotice).toContain(QUARANTINE_NAME);
+
+    // The debounced write this edit armed (simulated here via flushAutosave
+    // — the same runScheduledAutosaveWrite chokepoint a real timer landing
+    // would call) still lands: the user's in-memory edit is the right
+    // content to persist. By now the newer file is already safe under the
+    // quarantine name, so this write can only ever overwrite a COPY.
+    await useVizStore.getState().flushAutosave();
+    expect(writeAutosave).toHaveBeenCalledTimes(1);
+    const written = JSON.parse(vi.mocked(writeAutosave).mock.calls[0][0] as string) as {
+      document: { presetId: string };
+    };
+    expect(written.document.presetId).toBe(OTHER_PRESET);
+  });
+
+  it("no-edit variant: closing while the read is in flight WAITS for boot to settle instead of writing the frozen seed — the flush's write reflects the newer on-disk document (M2 restored)", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    let resolveRead!: (contents: string) => void;
+    vi.mocked(readAutosave).mockImplementation(
+      () => new Promise<string | null>((r) => (resolveRead = r)),
+    );
+
+    const boot = useVizStore.getState().bootDesktopDocument();
+    expect(boot).not.toBeNull();
+
+    // User hits the title-bar X (outside the webview) while the read above
+    // is still pending: onCloseRequested -> flushAutosave.
+    const flushPromise = useVizStore.getState().flushAutosave();
+    try {
+      await Promise.resolve();
+      await Promise.resolve();
+      // Gated — must NOT have written the frozen seed just because the
+      // close fired before the read resolved.
+      expect(writeAutosave).not.toHaveBeenCalled();
+    } finally {
+      // Release the parked read NO MATTER what the assertion above did —
+      // an unresolved read here would leave `bootStarted` (module-scoped
+      // in projectIOActions.ts) stuck true and wedge the reentrancy guard
+      // for every later test in this file, exactly the hazard
+      // platform.autosave.test.ts's own "second write STARTS only after
+      // the first settles" test documents for the identical pattern.
+      resolveRead(autosaveTextWithPreset(NEWER_FILE_PRESET));
+    }
+    await boot; // no edit raced it, so the guard applies the newer doc (alreadyOnDisk)
+    await flushPromise; // the gate now opens and the flush's write proceeds
+
+    expect(useVizStore.getState().presetId).toBe(NEWER_FILE_PRESET);
+    expect(writeAutosave).toHaveBeenCalledTimes(1);
+    const written = JSON.parse(vi.mocked(writeAutosave).mock.calls[0][0] as string) as {
+      document: { presetId: string };
+    };
+    expect(written.document.presetId).toBe(NEWER_FILE_PRESET); // NOT the stale seed
+  });
+
+  it("a boot read that never resolves does not dam flushAutosave forever — it proceeds once the bound elapses, and a later close still works", async () => {
+    vi.useFakeTimers();
+    let resolveRead: ((contents: string | null) => void) | undefined;
+    let boot: Promise<void> | null = null;
+    try {
+      vi.mocked(isTauri).mockReturnValue(true);
+      vi.mocked(readAutosave).mockImplementation(
+        () => new Promise<string | null>((r) => (resolveRead = r)),
+      );
+      boot = useVizStore.getState().bootDesktopDocument();
+      expect(boot).not.toBeNull();
+
+      const flushPromise = useVizStore.getState().flushAutosave();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(writeAutosave).not.toHaveBeenCalled();
+
+      // Safely past any reasonable bound (store.ts's CLOSE_FLUSH_TIMEOUT_MS
+      // mold this reuses is 4000ms) without depending on that exact number.
+      await vi.advanceTimersByTimeAsync(10_000);
+      await flushPromise;
+
+      expect(writeAutosave).toHaveBeenCalledTimes(1); // proceeded despite the still-hung read
+    } finally {
+      // Let the parked read settle NO MATTER what the assertions above
+      // did, so bootStarted's own `finally` (projectIOActions.ts) actually
+      // runs — otherwise this test permanently wedges the reentrancy guard
+      // (bootStarted stuck true) for every later test in this file.
+      resolveRead?.(null);
+      await boot;
+      vi.useRealTimers();
+    }
+  });
+
+  it("boot already settled: flushAutosave's write is not delayed by the gate at all (happy-path latency unaffected)", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(readAutosave).mockResolvedValue(null); // resolves immediately -> boot settles fast
+    await useVizStore.getState().bootDesktopDocument();
+    vi.mocked(writeAutosave).mockClear(); // drop the fallback write boot's own missing-file path just made
+
+    // REAL timers on purpose: if the gate added even a fixed multi-second
+    // delay on the already-settled path, this would be slow/flaky rather
+    // than clean — the absence of any vi.advanceTimersByTimeAsync call here
+    // is the proof.
+    await useVizStore.getState().flushAutosave();
+
+    expect(writeAutosave).toHaveBeenCalledTimes(1);
+  });
+
+  it("quarantine finds nothing to move (already gone, or the rename failed): no notice is raised — best-effort, same precedent as the corrupt-file quarantine", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(quarantineSupersededAutosave).mockResolvedValue(null);
+    vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(NEWER_FILE_PRESET));
+    useVizStore.setState({ undoDepth: 1 }); // forces the refusal branch
+
+    await useVizStore.getState().bootDesktopDocument();
+
+    expect(useVizStore.getState().supersededNotice).toBeNull();
+  });
+
+  it("dismissSupersededNotice() clears it, and only it", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(quarantineSupersededAutosave).mockResolvedValue(QUARANTINE_NAME);
+    vi.mocked(readAutosave).mockResolvedValue(autosaveTextWithPreset(NEWER_FILE_PRESET));
+    useVizStore.setState({ undoDepth: 1 }); // forces the refusal branch
+    await useVizStore.getState().bootDesktopDocument();
+    expect(useVizStore.getState().supersededNotice).not.toBeNull();
+    useVizStore.setState({ error: "unrelated" });
+
+    useVizStore.getState().dismissSupersededNotice();
+
+    expect(useVizStore.getState().supersededNotice).toBeNull();
+    expect(useVizStore.getState().error).toBe("unrelated"); // untouched by the dismiss
   });
 });
