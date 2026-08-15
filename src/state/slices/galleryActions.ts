@@ -15,6 +15,28 @@ import type { GetFn, SetFn, SliceCtx } from "./ctx";
 const APPLIED_FLASH_MS = 2500;
 let appliedTimer: ReturnType<typeof setTimeout> | undefined;
 
+/**
+ * P-6 review Important 1: GalleryDialog deliberately exempts a built-in
+ * Apply from the "one remote install at a time" busy lock (`galleryBusy`) —
+ * a built-in never fetches, so there is nothing in flight to guard against
+ * (see that file's own comment on `disabled`). That means a slow REMOTE
+ * install can still be awaiting its download/verify when the user clicks a
+ * built-in's Apply — and the remote branch used to call
+ * applyTheme/applyUserPreset unconditionally once it finished, with no way
+ * to know a later, more deliberate action had already superseded it.
+ *
+ * This is a monotonic "latest user action" claim, bumped by EVERY
+ * apply-triggering action: a built-in Apply (synchronous, bumps then
+ * applies immediately) and the START of a remote install (bumps and
+ * captures its own value into `myToken` before the `await` below). The
+ * remote branch compares its captured value against the CURRENT one right
+ * before its own final apply — if anything bumped the token in between,
+ * this install lost the race and must not apply. Module-scoped like
+ * `appliedTimer` above: pure internal bookkeeping, not something any UI
+ * reads.
+ */
+let latestUserActionToken = 0;
+
 export function galleryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
     setShowGallery(v, filter) {
@@ -77,6 +99,10 @@ export function galleryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // did not expect from what reads as a bundled card.
       const builtin = FACTORY_GALLERY_ENTRIES.find((e) => e.id === id);
       if (builtin) {
+        // P-6 review Important 1: claim the token BEFORE applying — this is
+        // itself a "latest user action" that must be able to invalidate a
+        // remote install already in flight (see the remote branch below).
+        latestUserActionToken++;
         get().applyTheme(builtin.document, builtin.name);
         // Transient confirmation only, exactly like a remote theme (A1) —
         // and NOT galleryInstalled: that map exists so a LOOK's "✓ Added"
@@ -111,6 +137,11 @@ export function galleryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         return;
       }
       set({ galleryBusy: id });
+      // P-6 review Important 1: claim the token for the FULL duration of
+      // this install, from the moment the user asked for it — not when the
+      // (slow, network-bound) download eventually resolves. Compared
+      // against the current value just before the final apply below.
+      const myToken = ++latestUserActionToken;
       try {
         // fetchEntryContent enforces host allowlist, exact size and SHA-256
         // BEFORE this text exists; the parsers below are the same validators
@@ -121,23 +152,41 @@ export function galleryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           const userPresets = [preset, ...get().userPresets];
           set({ userPresets });
           saveUserPresets(userPresets);
-          get().applyUserPreset(preset.id);
           // Record WHICH user preset this install created: "✓ Added" is only
           // honest while that preset survives, so the dialog checks the id
           // against userPresets — deleting the look reverts the button (A1).
+          // UNCONDITIONAL, even if the apply below is skipped as stale: the
+          // content DID install into My Looks either way — only whether it
+          // ALSO became the active look is in question.
           set({ galleryInstalled: { ...get().galleryInstalled, [id]: preset.id } });
-          ctx.flashNotice(`"${entry.name}" by ${entry.author.name} added to My Looks`);
+          if (myToken === latestUserActionToken) {
+            get().applyUserPreset(preset.id);
+            ctx.flashNotice(`"${entry.name}" by ${entry.author.name} added to My Looks`);
+          } else {
+            // A later action (another install, or a built-in Apply) won the
+            // race while this download was in flight — the look is safely
+            // in My Looks, but applying it now would silently overwrite
+            // whatever the user has since deliberately switched to.
+            ctx.flashNotice(`"${entry.name}" installed — kept your current look`);
+          }
         } else {
           const { document } = parseTheme(text);
-          get().applyTheme(document, entry.name);
-          // Transient confirmation only — a theme is re-appliable by design
-          // (New Project made a persistent "Added" an obvious lie).
-          set({ galleryApplied: id });
-          clearTimeout(appliedTimer);
-          appliedTimer = setTimeout(() => {
-            if (get().galleryApplied === id) set({ galleryApplied: null });
-          }, APPLIED_FLASH_MS);
-          ctx.flashNotice(`"${entry.name}" by ${entry.author.name} applied`);
+          if (myToken === latestUserActionToken) {
+            get().applyTheme(document, entry.name);
+            // Transient confirmation only — a theme is re-appliable by design
+            // (New Project made a persistent "Added" an obvious lie).
+            set({ galleryApplied: id });
+            clearTimeout(appliedTimer);
+            appliedTimer = setTimeout(() => {
+              if (get().galleryApplied === id) set({ galleryApplied: null });
+            }, APPLIED_FLASH_MS);
+            ctx.flashNotice(`"${entry.name}" by ${entry.author.name} applied`);
+          } else {
+            // Same race as the look branch above — a theme has no persisted
+            // "installed" record distinct from applying it, so a stale
+            // result simply isn't applied; nothing to reconcile afterward.
+            ctx.flashNotice(`"${entry.name}" installed — kept your current look`);
+          }
         }
       } catch (e) {
         const msg =
