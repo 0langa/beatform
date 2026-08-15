@@ -227,6 +227,31 @@ describe("factory themes", () => {
     },
   );
 
+  // The reachability law presetStyles.test.ts enforces for factory styles,
+  // applied to the third kind of shipped content: a tuned value off its
+  // param's step grid renders one way when the theme loads and CHANGES the
+  // moment the user nudges that slider, because the range input rewrites it
+  // onto the grid — a factory look drifting under the user's own cursor.
+  it.each(FACTORY_THEMES.map((t) => [t.meta.name, t] as const))(
+    "%s: tuned params sit on their param's step grid",
+    (_name, t) => {
+      const spec = new Map(allParams(presetById(t.document.presetId)).map((p) => [p.key, p]));
+      const tuned = t.document.paramsByPreset[t.document.presetId] ?? {};
+      for (const [key, value] of Object.entries(tuned)) {
+        const s = spec.get(key);
+        if (!s || !(s.step > 0)) continue;
+        // The same rounding a native range input applies to its own value.
+        const steps = (value - s.min) / s.step;
+        const off = Math.abs(steps - Math.round(steps));
+        expect(
+          off < 1e-6,
+          `${t.meta.name}: ${key}=${value} is off the ${s.step} grid ` +
+            `(nearest reachable: ${s.min + Math.round(steps) * s.step})`,
+        ).toBe(true);
+      }
+    },
+  );
+
   it("names are unique", () => {
     const names = FACTORY_THEMES.map((t) => t.meta.name);
     expect(new Set(names).size).toBe(names.length);

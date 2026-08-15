@@ -483,7 +483,7 @@ export const spectrumBars: PresetDef = {
       group: "backdrop",
       min: 0,
       max: 0.2,
-      step: 0.005,
+      step: 0.001,
       default: 0.05,
       hint: "Background breathes brighter with bass energy",
     },

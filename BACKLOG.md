@@ -1452,6 +1452,27 @@ buf` — immediately before the job is built, with nothing awaitable
       (exportActions.test.ts) proving the windowed reading tracks the recent
       rate where the old cumulative would not.
 
+- [x] E5 **DONE 2026-08-15 — off-grid defaults: 24 spec defaults and 19
+      factory-theme values were unreachable by the sliders that edit them.**
+      Surfaced by the gallery registry's new step-grid CI rule: the live
+      glass-mandala seed carries radial-burst's coverMix default 0.85, which
+      is 42.5 steps on its own 0.02 grid — the first nudge rewrites it to
+      0.84/0.86 and no amount of nudging returns it. A one-pass scan found
+      the identical bug in 13 more presets (classic builder included) and 10
+      factory themes (worst: Cover Story with two, On Air with four). Fix is
+      step REFINEMENT only — 0.02→0.01, 0.05→0.01, 0.005→0.001 on the 39
+      offending specs (review recount: 24 off-grid defaults ∪ 19 off-grid
+      theme values, 4 overlapping): every refined grid is a superset of the old one, so
+      no stored value moves, nothing re-renders (step never reaches the
+      shader ABI), no document migration, and registry seeds that dumped
+      defaults become grid-legal without touching the registry. Class closed
+      in tests, not just instances: paramModel.test.ts asserts every default
+      (all presets + builder + POST_MOD_TARGETS) sits in range AND on its
+      own grid, themes.test.ts asserts factory-theme tuned params sit on
+      their param's grid — completing the set with the existing
+      presetStyles.test.ts style-grid law, so all three kinds of shipped
+      content now answer to the same reachability rule.
+
 - [x] E2-R1 **DONE 2026-08-10 — with option (f), on the owner's approval.**
       Designed by a workflow: four parallel investigations, a three-lens judge
       panel (determinism / blast radius / reversibility), one synthesis.

@@ -406,7 +406,7 @@ export const synthwave: PresetDef = {
       group: "shape",
       min: 0,
       max: 1,
-      step: 0.02,
+      step: 0.01,
       default: 0.35,
       hint: "Silhouetted rolling mountains on the horizon (rise with the bass), rim-lit along the ridge",
     },

@@ -123,8 +123,40 @@ describe("groupParams ordering", () => {
   });
 });
 
+/**
+ * Default-reachability law, shared by preset specs and the post mod targets:
+ * a spec's default must sit inside its own range and on its own step grid.
+ *
+ * Off-grid, the default is a value its own slider can never produce — the
+ * first nudge rewrites it to the nearest grid point, so any document that
+ * stored the default (v1 .bfpreset exports dump every param) silently changes
+ * the moment that control is touched, and no amount of nudging brings it
+ * back. Caught live by the gallery registry's step-grid CI: glass-mandala
+ * carried radial-burst's coverMix default of 0.85 against a 0.02 step —
+ * 42.5 steps from min, unreachable by the control that edits it.
+ */
+function expectReachableDefault(where: string, spec: ParamSpec) {
+  expect(
+    spec.default >= spec.min && spec.default <= spec.max,
+    `${where}/${spec.key}: default ${spec.default} outside ${spec.min}..${spec.max}`,
+  ).toBe(true);
+  if (!(spec.step > 0)) return;
+  // The same rounding a native range input applies to its own value.
+  const steps = (spec.default - spec.min) / spec.step;
+  const off = Math.abs(steps - Math.round(steps));
+  expect(
+    off < 1e-6,
+    `${where}/${spec.key}: default ${spec.default} is off the ${spec.step} grid ` +
+      `(nearest reachable: ${spec.min + Math.round(steps) * spec.step})`,
+  ).toBe(true);
+}
+
 describe("control types", () => {
   for (const preset of ALL) {
+    it(`${preset.id}: every default is reachable by its own control`, () => {
+      for (const spec of allParams(preset)) expectReachableDefault(preset.id, spec);
+    });
+
     it(`${preset.id}: enum options are reachable values, and cover every style`, () => {
       const defaults = defaultParams(preset);
       for (const spec of allParams(preset)) {
@@ -177,6 +209,12 @@ describe("control types", () => {
       }
     });
   }
+
+  // POST_MOD_TARGETS mirror the post panel's own sliders (documented on the
+  // spec list itself), so their defaults answer to the same reachability law.
+  it("post mod targets: defaults are reachable by the sliders they mirror", () => {
+    for (const spec of POST_MOD_TARGETS) expectReachableDefault("post", spec);
+  });
 });
 
 describe("mod metadata (RP-2 / RP-14)", () => {
