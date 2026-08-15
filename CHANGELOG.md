@@ -11,6 +11,17 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A slow project load can no longer be overwritten by a stale start.**
+  In 2.97.0, if your project file took unusually long to load (very large
+  embedded media, a slow or cloud-synced disk) and you started editing or
+  closed the window before it finished, the app could save an older
+  version of your project over the newer one — silently. Saving now waits
+  for the load to finish, and if the app ever does decline a late-arriving
+  newer version, that version is set aside as its own file and a notice
+  tells you exactly where it is. Nothing is ever silently discarded.
+
 ## [2.97.0] - 2026-08-15
 
 ### Fixed
