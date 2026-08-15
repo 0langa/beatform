@@ -25,7 +25,6 @@ import {
   POST_MOD_TARGETS,
 } from "../render/types";
 import { ASPECTS } from "../state/project";
-import { FACTORY_THEMES } from "../state/factoryThemes";
 import { GalleryLink } from "./GalleryDialog";
 import { ModulationPage } from "./ModulationPage";
 import { LYRIC_ANIMS } from "../state/lyrics";
@@ -1226,11 +1225,14 @@ export function ParamsPanel() {
       // Two surfaces, one blob, because they are one section (see below).
       // The user looks' own NAMES are in it: a saved look is the only thing on
       // this page the user named themselves, so it is the first word they
-      // would type to find it again.
+      // would type to find it again. Factory theme names are deliberately
+      // NOT in this list (P-6): they no longer have chips on this page to
+      // land on — searching "Hyperlane" now finds nothing here, which is
+      // honest, rather than landing on a section that can't show it.
       search:
         `looks themes look theme templates save import export bfpreset bftheme complete colors sync post gallery community browse ${looksForMode
           .map((p) => p.name)
-          .join(" ")} ${FACTORY_THEMES.map((t) => t.meta.name).join(" ")}`.toLowerCase(),
+          .join(" ")}`.toLowerCase(),
       body: (
         <>
           {/* ONE section, not two. A second PageSection would put a bare
@@ -1325,22 +1327,16 @@ export function ParamsPanel() {
             )}
           </div>
 
+          {/* P-6: the FACTORY_THEMES chip row that lived here is gone — the
+              13 factory themes are now Gallery entries (marked "Built-in"),
+              so the Gallery is the single door for "a complete look" instead
+              of a second, panel-only affordance. Deleting the row is the
+              point: it's what makes the deep link below the one path in,
+              not a shortcut around it. */}
           <p className="section-hint">
-            Complete looks — visual, colors, sync, post — in one click. Drop any .bftheme file onto
-            the window to import; save yours to share.
+            Complete themes — visual, colors, sync, post — live in the Gallery, ready to apply in
+            one click. Drop any .bftheme file onto the window to import; save yours to share.
           </p>
-          <div className="style-chips">
-            {FACTORY_THEMES.map((t) => (
-              <button
-                key={t.meta.name}
-                className="style-chip"
-                title={`${t.meta.description ?? ""}${t.meta.bpmHint ? ` (~${t.meta.bpmHint[0]}-${t.meta.bpmHint[1]} BPM)` : ""}`}
-                onClick={() => store().applyTheme(t.document, t.meta.name)}
-              >
-                {t.meta.name}
-              </button>
-            ))}
-          </div>
           {savingTheme ? (
             <form
               className="save-look-row"

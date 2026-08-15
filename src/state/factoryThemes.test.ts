@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { FACTORY_THEMES } from "./factoryThemes";
+import { FACTORY_GALLERY_ENTRIES, FACTORY_THEMES } from "./factoryThemes";
+import { entryGate } from "./gallery";
 import { parseTheme, serializeTheme } from "./themes";
 import { validateDocument } from "./project";
 import { MOD_AMOUNT_STEP, postTargetKey, POST_TARGET_PREFIX } from "./modMatrix";
@@ -62,6 +63,12 @@ describe("factory template pack", () => {
   it("names and slugs are unique", () => {
     const names = FACTORY_THEMES.map((t) => t.meta.name);
     expect(new Set(names).size).toBe(names.length);
+    // Direct check: P-6 uses `slug` as the Gallery entry id, so a duplicate
+    // slug is now a duplicate React key / duplicate registry-adjacent id,
+    // not just the mod-route collision the indirect check below already
+    // caught.
+    const slugs = FACTORY_THEMES.map((t) => t.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
     // Route/layer ids are slug-derived, so a duplicate slug would collide two
     // themes' ids without any other symptom.
     const ids = FACTORY_THEMES.flatMap((t) => Object.values(t.document.modsByPreset).flat()).map(
@@ -256,5 +263,70 @@ describe("factory template pack", () => {
       ),
     );
     expect(calm.length, "the pack needs at least one restrained look").toBeGreaterThan(0);
+  });
+});
+
+/**
+ * P-6: the factory pack as Gallery rows. These are contract tests for the
+ * DERIVED export, not a re-test of the pack's own content (covered above) —
+ * every check here is about the mapping from FactoryTheme to
+ * BuiltinGalleryEntry staying honest, not about any one theme's params.
+ */
+describe("FACTORY_GALLERY_ENTRIES (P-6 built-in Gallery rows)", () => {
+  it("has exactly one row per factory theme, in the same order", () => {
+    expect(FACTORY_GALLERY_ENTRIES.length).toBe(FACTORY_THEMES.length);
+    FACTORY_GALLERY_ENTRIES.forEach((entry, i) => {
+      expect(entry.id).toBe(FACTORY_THEMES[i].slug);
+      expect(entry.name).toBe(FACTORY_THEMES[i].meta.name);
+    });
+  });
+
+  it("is structurally a built-in, never a fetchable remote entry", () => {
+    for (const entry of FACTORY_GALLERY_ENTRIES) {
+      expect(entry.origin).toBe("builtin");
+      expect(entry.type).toBe("theme");
+      // The discriminant is what a card/gate/install call site branches on
+      // — asserting these keys are simply ABSENT (not undefined-but-present)
+      // is what would catch a future edit that accidentally spreads a
+      // GalleryEntry-shaped object in here.
+      expect("contentUrl" in entry).toBe(false);
+      expect("sha256" in entry).toBe(false);
+      expect("minAppVersion" in entry).toBe(false);
+      expect("schemaVersion" in entry).toBe(false);
+    }
+  });
+
+  it("every id is unique and matches its theme's slug", () => {
+    const ids = FACTORY_GALLERY_ENTRIES.map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("carries a non-empty bundled preview for every entry", () => {
+    for (const entry of FACTORY_GALLERY_ENTRIES) {
+      expect(entry.previewUrl, `${entry.id} has no previewUrl`).toBeTruthy();
+      expect(typeof entry.previewUrl).toBe("string");
+    }
+  });
+
+  it("license is always one of the values the narrower union accepts", () => {
+    // Pins the invariant the `as` cast in factoryThemes.ts leans on: every
+    // theme in the pack shares the `LICENSE` constant. A future entry
+    // authored with a different (loosely-typed) meta.license would fail
+    // HERE, not silently mislabel a card.
+    for (const entry of FACTORY_GALLERY_ENTRIES) {
+      expect(["CC0-1.0", "CC-BY-4.0"]).toContain(entry.license);
+    }
+  });
+
+  it("document is the theme's own document, not a copy that can drift", () => {
+    FACTORY_GALLERY_ENTRIES.forEach((entry, i) => {
+      expect(entry.document).toEqual(FACTORY_THEMES[i].document);
+    });
+  });
+
+  it("is never gated — see gallery.test.ts's entryGate suite for the direct check", () => {
+    for (const entry of FACTORY_GALLERY_ENTRIES) {
+      expect(entryGate(entry)).toBeNull();
+    }
   });
 });

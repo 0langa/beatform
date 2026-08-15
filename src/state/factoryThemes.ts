@@ -17,6 +17,31 @@ import type { SyncSettings } from "../audio/types";
 import type { ModRoute } from "./modMatrix";
 import type { Timeline } from "./timeline";
 import type { OverlayLayer } from "../render/overlay";
+import type { BuiltinGalleryEntry } from "./gallery";
+
+// P-6 built-in previews: real captures of the app's own WebGPU output
+// (applyTheme -> live canvas -> downscaled WEBP), not a runtime render of the
+// bare preset. thumbnails.ts's per-preset strip renders DEFAULT params on an
+// offscreen renderer and deliberately skips post-processing, background mode,
+// modulation and the Builder stack — fine for "what does this MODE look
+// like", dishonest for "what does this THEME look like", since several of
+// these are defined by exactly what that path omits: Editorial Ink's solid
+// ink `bg`, On Air's audiogram strip, Assembly's own seven-layer Builder
+// stack in place of the preset's default one. Bundled instead: 13 files,
+// ~60 KB total (see the P-6 lane log for the capture method and provenance).
+import coverStoryPreview from "../assets/gallery-builtins/cover-story.webp";
+import hyperlanePreview from "../assets/gallery-builtins/hyperlane.webp";
+import chromeSunsetPreview from "../assets/gallery-builtins/chrome-sunset.webp";
+import ionStormPreview from "../assets/gallery-builtins/ion-storm.webp";
+import skylinePreview from "../assets/gallery-builtins/skyline.webp";
+import eventHorizonPreview from "../assets/gallery-builtins/event-horizon.webp";
+import liquidChromePreview from "../assets/gallery-builtins/liquid-chrome.webp";
+import signalWallPreview from "../assets/gallery-builtins/signal-wall.webp";
+import polarNightPreview from "../assets/gallery-builtins/polar-night.webp";
+import editorialInkPreview from "../assets/gallery-builtins/editorial-ink.webp";
+import onAirPreview from "../assets/gallery-builtins/on-air.webp";
+import pocketRavePreview from "../assets/gallery-builtins/pocket-rave.webp";
+import assemblyPreview from "../assets/gallery-builtins/assembly.webp";
 
 /**
  * Factory theme packs — curated, genre-shaped starting points shipped
@@ -47,6 +72,13 @@ import type { OverlayLayer } from "../render/overlay";
  */
 
 export interface FactoryTheme {
+  /** Stable, kebab-case identity — the same value every mod-route/layer id
+   * inside `document` is derived from below. Surfaced here (not just used
+   * inside `theme()`) because P-6 needs a slug-keyed lookup to build the
+   * Gallery's built-in rows, and re-deriving a slug from `meta.name` would
+   * be a second, driftable source of truth for something that already has
+   * a canonical one. */
+  slug: string;
   meta: ThemeMeta;
   document: ProjectDocument;
 }
@@ -89,6 +121,7 @@ function theme(spec: ThemeSpec): FactoryTheme {
     ...l,
   }));
   return {
+    slug: spec.slug,
     meta: {
       name: spec.name,
       author: BY,
@@ -845,3 +878,50 @@ export const FACTORY_THEMES: FactoryTheme[] = [
     ],
   }),
 ];
+
+/** slug -> bundled preview asset, keyed off the same slug every theme's mod
+ * routes are already derived from. */
+const BUILTIN_PREVIEWS: Record<string, string> = {
+  "cover-story": coverStoryPreview,
+  hyperlane: hyperlanePreview,
+  "chrome-sunset": chromeSunsetPreview,
+  "ion-storm": ionStormPreview,
+  skyline: skylinePreview,
+  "event-horizon": eventHorizonPreview,
+  "liquid-chrome": liquidChromePreview,
+  "signal-wall": signalWallPreview,
+  "polar-night": polarNightPreview,
+  "editorial-ink": editorialInkPreview,
+  "on-air": onAirPreview,
+  "pocket-rave": pocketRavePreview,
+  assembly: assemblyPreview,
+};
+
+/**
+ * The factory pack as Gallery rows (P-6). `origin: "builtin"` is the
+ * discriminant that keeps these out of the verified-download path
+ * entirely: GalleryDialog merges this array ahead of the fetched
+ * `GalleryEntry[]`, and `installGalleryEntry` branches on `origin` before
+ * it ever reaches `fetchEntryContent`/`verifiedFetch` — a built-in never
+ * makes a network request.
+ *
+ * `license` is narrowed with an `as` rather than read loosely as `string`:
+ * every entry in the pack shares the `LICENSE` constant above (CC0-1.0),
+ * which `factoryThemes.test.ts` pins so this cast can never silently
+ * mislabel a future non-CC0 entry without a test failing first.
+ */
+export const FACTORY_GALLERY_ENTRIES: BuiltinGalleryEntry[] = FACTORY_THEMES.map((t) => {
+  const previewUrl = BUILTIN_PREVIEWS[t.slug];
+  if (!previewUrl) throw new Error(`factoryThemes: no bundled preview for "${t.slug}"`);
+  return {
+    origin: "builtin",
+    id: t.slug,
+    type: "theme",
+    name: t.meta.name,
+    description: t.meta.description!,
+    author: { name: t.meta.author },
+    license: t.meta.license as "CC0-1.0" | "CC-BY-4.0",
+    previewUrl,
+    document: t.document,
+  };
+});

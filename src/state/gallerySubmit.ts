@@ -185,7 +185,14 @@ function prBody(sub: Omit<Submission, "prBody">, opts: SubmissionOptions): strin
     "SHA; nothing else in the entry should need to change.",
     "",
     "```json",
-    JSON.stringify(sub.entry, null, 2),
+    // `origin` is an in-memory discriminant parseRegistry stamps on every
+    // entry it returns (P-6) — never part of the on-disk registry FORMAT,
+    // so it is stripped here rather than pasted into a real index.json.
+    JSON.stringify(
+      Object.fromEntries(Object.entries(sub.entry).filter(([k]) => k !== "origin")),
+      null,
+      2,
+    ),
     "```",
     "",
   ].join("\n");
@@ -240,7 +247,11 @@ export async function buildSubmission(
   const contentUrl = `https://raw.githubusercontent.com/beatform-app/gallery/${PLACEHOLDER_PIN}/${folder}/${fileNameOut}`;
   const sha256 = await sha256Hex(bytes);
 
-  const entry: GalleryEntry = {
+  // Not yet a real GalleryEntry: `origin` is stamped by parseRegistry's own
+  // validEntry() below, on the far side of the same self-check every real
+  // registry fetch runs — asserting it here, before that check has run,
+  // would be claiming a fact this object has not earned yet.
+  const entry: Omit<GalleryEntry, "origin"> = {
     id,
     type: kind,
     name: resolvedName,

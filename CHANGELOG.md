@@ -11,6 +11,14 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- **The factory theme pack moved into the Gallery.** All 13 built-in themes
+  are Gallery entries now, marked _Built-in_ — no download, and they show
+  up even with no connection at all. The Visuals panel's row of theme chips
+  is gone; _Looks & themes_ now points straight at the Gallery for a
+  complete look, so there's one place to browse instead of two.
+
 ## [2.97.1] - 2026-08-15
 
 ### Fixed

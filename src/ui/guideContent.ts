@@ -747,7 +747,9 @@ export const GUIDE: readonly GuideSection[] = [
         p: [
           "The ",
           { em: "Gallery" },
-          " button in the top bar opens a curated, public collection of looks and themes you can use without leaving the app. Filter it by ",
+          " button in the top bar opens a curated, public collection of looks and themes you can use without leaving the app — including Beatform's own factory theme pack, marked ",
+          { em: "Built-in" },
+          " and available even with no connection at all. Filter it by ",
           { em: "All" },
           ", ",
           { em: "Looks" },
@@ -764,7 +766,9 @@ export const GUIDE: readonly GuideSection[] = [
           ],
           [
             { strong: "Apply theme" },
-            " replaces your whole setup with that entry — mode, controls, background, layers, post, the lot. As with any theme, ",
+            " (a built-in entry's button just says ",
+            { strong: "Apply" },
+            ") replaces your whole setup with that entry — mode, controls, background, layers, post, the lot. As with any theme, ",
             { kbd: "Ctrl+Z" },
             " undoes it.",
           ],

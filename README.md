@@ -54,7 +54,9 @@ Free and open source. Built to become a professional-grade tool for producers an
 - **Gallery**: browse a public, curated collection of community looks and
   themes right in the app (top-bar button) — every entry pinned to an
   immutable version and checksum-verified before it is ever parsed; add a
-  look or apply a theme in one click. Submissions are reviewed on GitHub
+  look or apply a theme in one click. The 13 factory themes live here too,
+  marked **Built-in** and available with no connection at all. Submissions
+  are reviewed on GitHub
   ([beatform-app/gallery](https://github.com/beatform-app/gallery))
 - **Shadertoy import**: paste a single-pass Shadertoy shader (the Image tab)
   and it becomes a Beatform visual — translated to WGSL locally, audio on

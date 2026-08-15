@@ -391,6 +391,35 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       grid — the one approved value the app-side pass does NOT legalize
       (sync table untouched here; 0.002 would be the conforming
       refinement).
+- [x] P-6 **Factory themes become built-in Gallery entries. DONE 2026-08-15**
+      (branch `p6-builtin-gallery`). The 13-chip row on the Visuals panel's
+      Looks & themes page is gone; the factory pack now lives in the
+      Gallery, marked "Built-in", merged ahead of the fetched registry rows,
+      and — the piece the implementation note flagged as easiest to miss —
+      still rendering when the registry fetch fails outright (proved live
+      against the running app and in `gallery-e2e.mjs`'s new steps).
+      `GalleryEntry` gained an `origin: "remote"` tag and a sibling
+      `BuiltinGalleryEntry` carries `origin: "builtin"` — a real
+      discriminated union, not optional fields on one shape — so
+      `entryGate()` returns null for a built-in before touching
+      `minAppVersion`/`schemaVersion`, neither of which it has. The REMOTE
+      verified-download contract (allowlist/pin/size/SHA-256 in
+      `gallery.ts`) is untouched; a built-in never calls it. A built-in
+      never writes `galleryInstalled` (mirrors the existing remote-theme
+      rule — applying is idempotent, nothing to track). Owner decisions
+      from the C4 round shipped as specified: bundled real thumbnails (13
+      files, ~60 KB total) and "Apply" as the built-in button verb.
+      Thumbnails are real captures of the app's own output, not the
+      preset-default renders `thumbnails.ts`'s runtime path produces —
+      evaluated and rejected reusing that path, since several of these
+      themes are defined by exactly what it skips (post chain, background
+      override, Builder stack, timeline camera, overlay lockup).
+      `gallery-e2e.mjs`'s counts (just re-pinned by C4 to 18 remote
+      entries) fold in the 13 built-ins; two new steps prove a built-in
+      applies with no network touched and that it survives a forced
+      registry failure. Full gate set green; `gallery-e2e.mjs` run against
+      a real debug shell (main's existing build — this lane touched no Rust)
+      pointed at this worktree's own dev server.
 
 ### Track D — Docs truth pass (after A naming lands)
 
@@ -2723,7 +2752,8 @@ Execution sequence around the running Track B program:
    v2.80.0's "Inspector" — see the vocabulary block. Stages 2 and 3, and
    the honest limit of what stage 1 bought: **Track H**.
 5. **Track C (seed v2):** with modulation v2 live; P-6 factory-themes-
-   into-Gallery lands here.
+   into-Gallery lands here. **P-6 DONE 2026-08-15** — see Track C's own
+   entry for the full writeup.
 6. **Track D (docs):** after P-1's rename settles; P-21 single-source
    guides + submission tooling is D's engine.
 7. **Fillers, any release:** P-3 first-run, P-8 export-format honesty,

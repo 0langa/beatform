@@ -5,6 +5,7 @@ import {
   fetchRegistry,
   GalleryError,
 } from "../gallery";
+import { FACTORY_GALLERY_ENTRIES } from "../factoryThemes";
 import { parseTheme, ThemeParseError } from "../themes";
 import { parseUserPreset, saveUserPresets, UserPresetParseError } from "../userPresets";
 import type { VizState } from "../store";
@@ -67,6 +68,30 @@ export function galleryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     },
 
     async installGalleryEntry(id) {
+      // P-6: a built-in never fetches, so it skips every step below that
+      // exists to make a REMOTE download safe (size cap, SHA-256, the
+      // `galleryBusy` "one install at a time" guard) — there is nothing in
+      // flight to guard against. Checked first so an id that somehow
+      // collided with a remote entry's would resolve to the offline,
+      // always-available copy rather than start a network fetch the user
+      // did not expect from what reads as a bundled card.
+      const builtin = FACTORY_GALLERY_ENTRIES.find((e) => e.id === id);
+      if (builtin) {
+        get().applyTheme(builtin.document, builtin.name);
+        // Transient confirmation only, exactly like a remote theme (A1) —
+        // and NOT galleryInstalled: that map exists so a LOOK's "✓ Added"
+        // can track whether the user preset its install created still
+        // exists. A built-in creates nothing to track; applying is
+        // idempotent and repeatable, so it gets the same galleryApplied
+        // flash a remote theme gets and never touches galleryInstalled.
+        set({ galleryApplied: id });
+        clearTimeout(appliedTimer);
+        appliedTimer = setTimeout(() => {
+          if (get().galleryApplied === id) set({ galleryApplied: null });
+        }, APPLIED_FLASH_MS);
+        ctx.flashNotice(`"${builtin.name}" applied`);
+        return;
+      }
       const entry = get().galleryEntries.find((e) => e.id === id);
       if (!entry || get().galleryBusy !== null) return;
       // A1: an installed look that still exists is DONE — the card's button is

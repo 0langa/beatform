@@ -1,7 +1,8 @@
 // FEAT-003 Gallery E2E: drives the debug shell over CDP against the REAL
 // beatform-app/gallery registry on main, through the app's full
 // verified-download path — CSP, allowlist, exact-size, SHA-256, parse —
-// and proves install effects in the store.
+// and proves install effects in the store. P-6 (see below) extends this to
+// the 13 built-in factory themes, which never touch that path at all.
 //
 //   node scripts/gallery-e2e.mjs [--registry=<raw index.json url>]
 // Prereq: Vite dev on 127.0.0.1:1420.
@@ -20,11 +21,19 @@ const registry = (process.argv.find((a) => a.startsWith("--registry=")) ?? "").s
 // The live-registry shape these assertions pin (beatform-app/gallery main
 // after the 2026-08-14 Track C merge): 13 looks + 5 themes, every entry
 // with a preview, and "prism" matching exactly one entry. Count checks are
-// growth-tolerant (>= MIN_ENTRIES); the theme count and the one-hit search
-// are exact — revisit BOTH whenever the registry moves (P-6 folding the
-// factory themes into the gallery will move them again).
-const MIN_ENTRIES = 18;
-const THEME_COUNT = 5;
+// growth-tolerant (>= REMOTE_MIN_ENTRIES); the theme count and the one-hit
+// search are exact — revisit BOTH whenever the registry moves.
+const REMOTE_MIN_ENTRIES = 18;
+const REMOTE_THEME_COUNT = 5;
+// P-6: the factory pack's 13 themes are now ALWAYS in the dialog's grid,
+// merged ahead of the fetched rows — regardless of what the live registry
+// answers, including when it fails outright (step 8 below). BUILTIN_COUNT
+// is exact and registry-independent (it is compiled into this build, not
+// fetched); MIN_ENTRIES/THEME_COUNT fold it into the REMOTE_* numbers above
+// for the merged-grid assertions the rest of this file already had.
+const BUILTIN_COUNT = 13;
+const MIN_ENTRIES = REMOTE_MIN_ENTRIES + BUILTIN_COUNT;
+const THEME_COUNT = REMOTE_THEME_COUNT + BUILTIN_COUNT;
 const outDir = path.join(root, "node_modules", ".cache", "gallery-e2e");
 mkdirSync(outDir, { recursive: true });
 
@@ -62,7 +71,11 @@ try {
              ids: st.galleryEntries.map(e => e.id) };
   })()`);
   console.log("REGISTRY:", JSON.stringify(loaded));
-  if (loaded.status !== "ready" || loaded.count < MIN_ENTRIES) {
+  // `galleryEntries`/`galleryPreviews` are REMOTE-only (P-6 deliberately
+  // keeps the store's fetched-entry state undiluted by built-ins — see the
+  // gallery.ts file header); both checks below stay scoped to
+  // REMOTE_MIN_ENTRIES, not the merged MIN_ENTRIES the DOM-level checks use.
+  if (loaded.status !== "ready" || loaded.count < REMOTE_MIN_ENTRIES) {
     throw new Error(`registry load failed: ${JSON.stringify(loaded)}`);
   }
 
@@ -70,7 +83,7 @@ try {
   const previews = await cdp.eval(`(async () => {
     const delay = ms => new Promise(r => setTimeout(r, ms));
     const deadline = Date.now() + 60000;
-    while (Object.keys(window.__store.getState().galleryPreviews).length < ${MIN_ENTRIES}) {
+    while (Object.keys(window.__store.getState().galleryPreviews).length < ${REMOTE_MIN_ENTRIES}) {
       if (Date.now() > deadline) break;
       await delay(300);
     }
@@ -78,7 +91,7 @@ try {
     return { count: Object.keys(p).length, sample: Object.values(p)[0] ?? null };
   })()`);
   console.log("PREVIEWS:", JSON.stringify(previews));
-  if (previews.count < MIN_ENTRIES || !/^blob:/.test(previews.sample ?? "")) {
+  if (previews.count < REMOTE_MIN_ENTRIES || !/^blob:/.test(previews.sample ?? "")) {
     throw new Error(`previews incomplete: ${JSON.stringify(previews)}`);
   }
 
@@ -148,6 +161,34 @@ try {
     throw new Error(`transient Applied state never cleared: ${JSON.stringify(transient)}`);
   }
 
+  // 4b. P-6: a BUILT-IN theme applies with no network involved at all — no
+  // verified-download step, no galleryBusy — and (unlike a look, and unlike
+  // nothing at all before P-6) it must NOT write galleryInstalled: a
+  // built-in is not an "install", applying it is idempotent and repeatable
+  // exactly like a remote theme, so it rides the SAME galleryApplied signal
+  // a remote theme uses and never touches the look-only map.
+  const builtin = await cdp.eval(`(async () => {
+    const before = window.__store.getState().presetId;
+    await window.__store.getState().installGalleryEntry("cover-story");
+    const st = window.__store.getState();
+    return {
+      before, after: st.presetId,
+      applied: st.galleryApplied,
+      installedAsLook: "cover-story" in st.galleryInstalled,
+      busy: st.galleryBusy,
+      error: st.error,
+    };
+  })()`);
+  console.log("BUILTIN-APPLY:", JSON.stringify(builtin));
+  if (
+    builtin.after !== "bass-circle" ||
+    builtin.applied !== "cover-story" ||
+    builtin.installedAsLook ||
+    builtin.busy !== null
+  ) {
+    throw new Error(`built-in apply failed: ${JSON.stringify(builtin)}`);
+  }
+
   // 5. The dialog surface: top-bar button state -> dialog, cards, filter,
   // search — the UI the user actually touches.
   const dom = await cdp.eval(`(async () => {
@@ -173,10 +214,25 @@ try {
     setter.call(inp, "");
     inp.dispatchEvent(new Event("input", { bubbles: true }));
     await delay(200);
-    return { all, themes, searched,
+    // P-6: built-ins are merged AHEAD of the fetched rows — order-independent
+    // of which built-in is first (that is an internal factoryThemes.ts
+    // detail this script should not couple to), so this checks that the
+    // first BUILTIN_COUNT cards are ALL badged, rather than naming one.
+    const cardEls = [...document.querySelectorAll(".gallery-dialog .gallery-card")];
+    const leadingBuiltins = cardEls
+      .slice(0, ${BUILTIN_COUNT})
+      .every(c => c.querySelector(".gallery-builtin-badge") !== null);
+    return { all, themes, searched, leadingBuiltins,
+             builtinBadges: document.querySelectorAll(".gallery-dialog .gallery-builtin-badge").length,
              imgs: document.querySelectorAll(".gallery-dialog .gallery-preview[src^='blob:']").length };
   })()`);
-  if (dom.all < MIN_ENTRIES || dom.themes !== THEME_COUNT || dom.searched !== 1) {
+  if (
+    dom.all < MIN_ENTRIES ||
+    dom.themes !== THEME_COUNT ||
+    dom.searched !== 1 ||
+    dom.builtinBadges !== BUILTIN_COUNT ||
+    !dom.leadingBuiltins
+  ) {
     throw new Error(`dialog surface failed: ${JSON.stringify(dom)}`);
   }
   console.log("DOM:", JSON.stringify(dom));
@@ -245,6 +301,63 @@ try {
     deeplink.plain < MIN_ENTRIES
   ) {
     throw new Error(`deep-link filter failed: ${JSON.stringify(deeplink)}`);
+  }
+
+  // 8. P-6 "offline always": built-ins render even when the registry fetch
+  // fails outright. Before P-6 the error state replaced the WHOLE dialog
+  // body; this is the direct regression test for the trap the P-6 design
+  // note calls out by name as the piece most likely to be missed, because
+  // "show the built-ins" reads like it is already handled the moment the
+  // ready-state grid works.
+  const offline = await cdp.eval(`(async () => {
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+    const st = window.__store.getState();
+    localStorage.setItem(
+      "viz.galleryRegistryOverride",
+      "https://raw.githubusercontent.com/beatform-app/gallery/main/p6-e2e-404-${Date.now()}.json",
+    );
+    // Step 7 left the dialog CLOSED (GalleryDialog only mounts while
+    // showGallery is true) — reopen it so there is a DOM to read at all.
+    // Status is "ready" from step 1, not "idle", so setShowGallery's own
+    // idle-triggered fetch will NOT fire; openGallery() is called explicitly.
+    st.setShowGallery(true);
+    await delay(150);
+    await window.__store.getState().openGallery();
+    await delay(500);
+    const after = window.__store.getState();
+    return {
+      status: after.galleryStatus,
+      remoteCount: after.galleryEntries.length,
+      cards: document.querySelectorAll(".gallery-dialog .gallery-card").length,
+      badges: document.querySelectorAll(".gallery-dialog .gallery-builtin-badge").length,
+      errorVisible: document.querySelector(".gallery-error")?.textContent ?? null,
+    };
+  })()`);
+  console.log("OFFLINE-BUILTINS:", JSON.stringify(offline));
+  if (
+    offline.status !== "error" ||
+    offline.remoteCount !== 0 ||
+    offline.cards !== BUILTIN_COUNT ||
+    offline.badges !== BUILTIN_COUNT ||
+    !offline.errorVisible
+  ) {
+    throw new Error(`offline built-ins failed: ${JSON.stringify(offline)}`);
+  }
+
+  // Restore: clear the override and reload the real registry, so the
+  // harness exits with the store in the same working state it would be in
+  // after a normal run (and so a screenshot/inspection after this point,
+  // if anyone adds one, is not looking at a deliberately broken registry).
+  const restored = await cdp.eval(`(async () => {
+    localStorage.removeItem("viz.galleryRegistryOverride");
+    window.__store.getState().setShowGallery(false);
+    await window.__store.getState().openGallery();
+    const after = window.__store.getState();
+    return { status: after.galleryStatus, count: after.galleryEntries.length };
+  })()`);
+  console.log("RESTORED:", JSON.stringify(restored));
+  if (restored.status !== "ready" || restored.count < REMOTE_MIN_ENTRIES) {
+    throw new Error(`registry restore failed: ${JSON.stringify(restored)}`);
   }
 
   console.log("GALLERY-E2E OK");

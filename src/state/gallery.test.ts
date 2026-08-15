@@ -11,6 +11,7 @@ import {
   type GalleryEntry,
 } from "./gallery";
 import { APP_VERSION } from "../version";
+import { FACTORY_GALLERY_ENTRIES } from "./factoryThemes";
 
 /**
  * The gallery is the one place the app takes UNTRUSTED REMOTE input, so
@@ -43,6 +44,12 @@ async function sha(bytes: Uint8Array): Promise<string> {
 
 function makeEntry(over: Partial<GalleryEntry> & Record<string, unknown> = {}): GalleryEntry {
   return {
+    // P-6: real GalleryEntry values always carry this (validEntry() stamps
+    // it); spelled out here too so a `makeEntry()` object matches the real
+    // shape byte-for-byte instead of relying on `Partial<GalleryEntry>`
+    // quietly making the cast below compile without the field ever being
+    // set at runtime.
+    origin: "remote",
     id: "test-look",
     type: "look",
     name: "Test Look",
@@ -174,6 +181,19 @@ describe("entryGate", () => {
       /newer app version/,
     );
     expect(entryGate(makeEntry({ minAppVersion: APP_VERSION, schemaVersion: 1 }))).toBeNull();
+  });
+
+  // P-6: a built-in has neither field to compare (no minAppVersion, no
+  // schemaVersion — it shipped with this exact build), so entryGate must
+  // return null unconditionally, checked BEFORE either comparison runs.
+  // Falling through to the version check on an absent field is the trap
+  // named in the P-6 design note: it would render the whole factory pack
+  // as permanently un-installable.
+  it("never gates a built-in, whatever its content", () => {
+    expect(FACTORY_GALLERY_ENTRIES.length).toBeGreaterThan(0);
+    for (const b of FACTORY_GALLERY_ENTRIES) {
+      expect(entryGate(b), `${b.id} should never be gated`).toBeNull();
+    }
   });
 });
 

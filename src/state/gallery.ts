@@ -1,6 +1,7 @@
 import { APP_VERSION } from "../version";
 import { PROJECT_VERSION } from "./project";
 import { USER_PRESET_VERSION } from "./userPresets";
+import type { ProjectDocument } from "./project";
 
 /**
  * Gallery — the in-app browser for the public, owner-curated registry at
@@ -57,6 +58,10 @@ const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 export type GalleryEntryType = "look" | "theme";
 
 export interface GalleryEntry {
+  /** P-6: every REMOTE entry is tagged, so a card-rendering/gate/install
+   * call site can discriminate `GalleryEntry | BuiltinGalleryEntry` on one
+   * field instead of guessing from which properties happen to be present. */
+  origin: "remote";
   id: string;
   type: GalleryEntryType;
   name: string;
@@ -72,6 +77,43 @@ export interface GalleryEntry {
   schemaVersion: number;
   preview?: { url: string; sha256: string };
 }
+
+/**
+ * P-6: a factory theme, shaped to sit in the same Gallery grid as a
+ * REMOTE {@link GalleryEntry} — but it is not one. `origin: "builtin"` is
+ * the whole reason this is its own interface rather than an optional-field
+ * bag bolted onto `GalleryEntry`: a built-in never has a `contentUrl`, a
+ * `sha256`, a size cap or a `minAppVersion`, because it never fetches
+ * anything — it is already inside the binary. Making that a TYPE fact
+ * (rather than "these fields happen to be undefined") is what keeps a
+ * future edit from wiring a built-in through `verifiedFetch`/`fetchEntryContent`
+ * by accident.
+ *
+ * Factory themes are the only source today, so `type` is pinned to
+ * `"theme"` rather than the full {@link GalleryEntryType} union — narrower
+ * than necessary is the honest shape; widening it is a one-line change
+ * the day a built-in LOOK exists.
+ */
+export interface BuiltinGalleryEntry {
+  origin: "builtin";
+  id: string;
+  type: "theme";
+  name: string;
+  description: string;
+  author: { name: string };
+  license: "CC0-1.0" | "CC-BY-4.0";
+  /** A bundled asset URL (Vite-hashed, served from 'self') — never fetched
+   * over the network, never hash-verified, because it never leaves the app. */
+  previewUrl: string;
+  /** What "Apply" hands to `applyTheme` — already-validated, already in the
+   * binary; there is no download/parse step for a built-in to skip past. */
+  document: ProjectDocument;
+}
+
+/** Anywhere the Gallery dialog needs to treat a remote and a built-in row
+ * uniformly (badge, gate, card fields) — see the file header for what stays
+ * REMOTE-only (the verified-download contract) below this type. */
+export type AnyGalleryEntry = GalleryEntry | BuiltinGalleryEntry;
 
 export class GalleryError extends Error {}
 
@@ -89,8 +131,16 @@ export function semverGte(a: string, b: string): boolean {
  * Why can't this entry be installed by THIS build? null when it can.
  * Newer content is listed but gated — seeing what exists is the nudge to
  * update; silently hiding it would look like an empty gallery.
+ *
+ * P-6: a built-in is NEVER gated — it has no `minAppVersion` and no
+ * `schemaVersion` to compare (it shipped with this exact build), so this
+ * returns null before touching either field. Falling through to the
+ * version comparison below on a field that does not exist would show the
+ * whole factory pack as permanently un-installable — the trap the P-6
+ * design note calls out by name.
  */
-export function entryGate(entry: GalleryEntry): string | null {
+export function entryGate(entry: GalleryEntry | BuiltinGalleryEntry): string | null {
+  if (entry.origin === "builtin") return null;
   if (!semverGte(APP_VERSION, entry.minAppVersion)) {
     return `Needs Beatform ${entry.minAppVersion} or newer — update the app to install this`;
   }
@@ -162,6 +212,7 @@ function validEntry(v: unknown): GalleryEntry | null {
     preview = { url: p.url, sha256: p.sha256 };
   }
   return {
+    origin: "remote",
     id: e.id,
     type: e.type,
     name: e.name,

@@ -1695,6 +1695,15 @@ button.row-value:focus-visible {
   color: var(--text-faint);
 }
 
+/* P-6: sibling of the type-label span above it — same badge visual language
+   as PanelFooterBadges' `.renderer-badge`, just enough external margin to
+   sit in the meta line's inline text flow between the type label and
+   "· by <author>". */
+.gallery-builtin-badge {
+  margin: 0 5px;
+  vertical-align: 1px;
+}
+
 .gallery-install-btn {
   align-self: flex-start;
   margin-top: 3px;

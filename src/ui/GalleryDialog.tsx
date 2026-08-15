@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useVizStore } from "../state/store";
-import { entryGate, type GalleryEntryType } from "../state/gallery";
+import { entryGate, type AnyGalleryEntry, type GalleryEntryType } from "../state/gallery";
+import { FACTORY_GALLERY_ENTRIES } from "../state/factoryThemes";
 import { useFocusTrap } from "./useFocusTrap";
 import { IconClose } from "./Icons";
 
@@ -24,6 +25,11 @@ const TYPE_EXPLAINERS: Record<GalleryEntryType, string> = {
   look: "Looks restyle the current visual mode",
   theme: "Themes replace your whole setup",
 };
+
+/** P-6: the "Built-in" badge's own sentence, living beside TYPE_EXPLAINERS
+ * so the two badges on a card tell one story — WHAT this is (look/theme)
+ * and WHERE its bytes come from (fetched vs. already in the app). */
+const BUILTIN_BLURB = "Ships with the app — no download, works offline";
 
 /** Text link into the Gallery dialog, optionally pre-filtered to one entry
  * type (A3 deep links) — used by the Themes section and the My Looks row. */
@@ -61,9 +67,18 @@ export function GalleryDialog() {
   // Tab used to walk out into the chrome the backdrop covers.
   const trapRef = useFocusTrap(true);
 
+  // P-6: built-ins are ALWAYS present, merged in ahead of the fetched rows —
+  // never touching the network path (FACTORY_GALLERY_ENTRIES is static data,
+  // not store state) and still there when `entries` is empty, whether that
+  // is "still loading", "fetch failed", or a genuinely empty registry.
+  const merged = useMemo<AnyGalleryEntry[]>(
+    () => [...FACTORY_GALLERY_ENTRIES, ...entries],
+    [entries],
+  );
+
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return entries.filter(
+    return merged.filter(
       (e) =>
         (filter === "all" || e.type === filter) &&
         (q === "" ||
@@ -71,7 +86,7 @@ export function GalleryDialog() {
           e.description.toLowerCase().includes(q) ||
           e.author.name.toLowerCase().includes(q)),
     );
-  }, [entries, filter, query]);
+  }, [merged, filter, query]);
 
   const close = () => store().setShowGallery(false);
 
@@ -104,7 +119,13 @@ export function GalleryDialog() {
           (beatform-app/gallery).
         </p>
 
-        {status === "ready" && entries.length > 0 && (
+        {/* P-6: used to gate on status==="ready" && entries.length>0 — nothing
+            to filter until the registry answered. Built-ins mean there is
+            ALWAYS something to filter/search, so this now reads the merged
+            list: otherwise a user who picked "Looks" before the registry
+            answered would lose the very row that would tell them why the
+            grid below is empty. */}
+        {merged.length > 0 && (
           <>
             <div className="gallery-toolbar">
               {(
@@ -147,6 +168,14 @@ export function GalleryDialog() {
 
         <div className="gallery-dialog-body">
           {status === "loading" && <p className="section-hint">Loading the Gallery…</p>}
+          {/* P-6 "offline always": this used to be the dialog's whole body on
+              failure — replacing everything below it, built-ins included.
+              It is now an ADDITION above the grid, never a replacement: the
+              grid keeps rendering from `shown`, which is built from `merged`
+              and therefore never empties out just because the fetch did.
+              This is the piece the P-6 design note calls out by name as
+              easiest to miss, because "show the built-ins" reads like it is
+              already handled the moment the ready-state grid works. */}
           {status === "error" && (
             <>
               <p className="section-hint gallery-error">{error}</p>
@@ -157,33 +186,59 @@ export function GalleryDialog() {
               </div>
             </>
           )}
-          {status === "ready" && entries.length === 0 && (
-            <p className="section-hint">
-              Nothing published yet — the first curated looks and themes are on their way.
-            </p>
-          )}
-          {status === "ready" && entries.length > 0 && shown.length === 0 && (
+          {shown.length === 0 ? (
             <p className="section-hint">Nothing matches that filter.</p>
-          )}
-          {status === "ready" && shown.length > 0 && (
+          ) : (
             <div className="gallery-grid gallery-grid-wide">
               {shown.map((e) => {
                 const gate = entryGate(e);
+                const isBuiltin = e.origin === "builtin";
                 const isBusy = busy === e.id;
                 const typeLabel = e.type === "look" ? "Look" : "Theme";
                 // A1: a look is Added only while the user preset its install
                 // created still exists — not because a stale session record
-                // says so. Themes never persist an installed state; they get
-                // the transient "Applied ✓" instead (applying is repeatable).
+                // says so. Themes (remote OR built-in) never persist an
+                // installed state; they get the transient "Applied ✓"
+                // instead (applying is repeatable).
                 const installedPresetId = installed[e.id];
                 const done =
                   e.type === "look" &&
                   installedPresetId !== undefined &&
                   userPresets.some((p) => p.id === installedPresetId);
                 const justApplied = e.type === "theme" && applied === e.id;
+                // P-6: a built-in never fetches, so none of the remote-only
+                // reasons a button goes disabled apply — including the
+                // GLOBAL "one remote install at a time" lock (`busy !==
+                // null`), which would otherwise grey out an offline, instant
+                // action for however long an unrelated download takes.
+                const disabled = isBuiltin
+                  ? false
+                  : done || isBusy || busy !== null || gate !== null;
+                const label = done
+                  ? "✓ Added"
+                  : justApplied
+                    ? "Applied ✓"
+                    : isBusy
+                      ? "Verifying…"
+                      : gate !== null
+                        ? "Needs app update"
+                        : isBuiltin
+                          ? "Apply"
+                          : e.type === "look"
+                            ? "+ Add look"
+                            : "Apply theme";
+                const tooltip =
+                  gate ??
+                  (done
+                    ? "Already in My Looks — delete the look there to add it again"
+                    : e.type === "look"
+                      ? "Add to My Looks"
+                      : "Apply this theme");
                 return (
-                  <div className="gallery-card" key={e.id}>
-                    {previews[e.id] ? (
+                  <div className="gallery-card" key={`${e.origin}:${e.id}`}>
+                    {isBuiltin ? (
+                      <img className="gallery-preview" src={e.previewUrl} alt="" />
+                    ) : previews[e.id] ? (
                       <img className="gallery-preview" src={previews[e.id]} alt="" />
                     ) : (
                       <div className="gallery-preview gallery-preview-empty">{typeLabel}</div>
@@ -193,38 +248,34 @@ export function GalleryDialog() {
                       <div className="gallery-card-desc">{e.description}</div>
                       <div
                         className="gallery-card-meta"
-                        title={e.author.url ? `Author: ${e.author.url}` : undefined}
+                        title={
+                          e.origin === "remote" && e.author.url
+                            ? `Author: ${e.author.url}`
+                            : undefined
+                        }
                       >
-                        <span title={TYPE_EXPLAINERS[e.type]}>{typeLabel}</span> · by{" "}
-                        {e.author.name} · {e.license}
+                        <span title={TYPE_EXPLAINERS[e.type]}>{typeLabel}</span>
+                        {isBuiltin && (
+                          <span
+                            className="renderer-badge gallery-builtin-badge"
+                            title={BUILTIN_BLURB}
+                          >
+                            Built-in
+                          </span>
+                        )}{" "}
+                        · by {e.author.name} · {e.license}
                       </div>
                       <button
                         className="text-btn gallery-install-btn"
                         // Added DISABLES the button (A1): it used to stay
                         // clickable and every press stacked another copy
                         // into My Looks.
-                        disabled={done || isBusy || busy !== null || gate !== null}
-                        title={
-                          gate ??
-                          (done
-                            ? "Already in My Looks — delete the look there to add it again"
-                            : e.type === "look"
-                              ? "Add to My Looks"
-                              : "Apply this theme")
-                        }
+                        disabled={disabled}
+                        title={tooltip}
+                        aria-label={isBuiltin ? `Apply "${e.name}"` : undefined}
                         onClick={() => void store().installGalleryEntry(e.id)}
                       >
-                        {done
-                          ? "✓ Added"
-                          : justApplied
-                            ? "Applied ✓"
-                            : isBusy
-                              ? "Verifying…"
-                              : gate !== null
-                                ? "Needs app update"
-                                : e.type === "look"
-                                  ? "+ Add look"
-                                  : "Apply theme"}
+                        {label}
                       </button>
                     </div>
                   </div>

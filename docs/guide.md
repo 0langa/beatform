@@ -262,10 +262,10 @@ On desktop, Beatform saves your project automatically in the background (how qui
 
 ## Gallery
 
-The _Gallery_ button in the top bar opens a curated, public collection of looks and themes you can use without leaving the app. Filter it by _All_, _Looks_ or _Themes_, or search it by name.
+The _Gallery_ button in the top bar opens a curated, public collection of looks and themes you can use without leaving the app — including Beatform's own factory theme pack, marked _Built-in_ and available even with no connection at all. Filter it by _All_, _Looks_ or _Themes_, or search it by name.
 
 - **+ Add look** puts that entry into your own saved looks for the mode it belongs to, and applies it straight away.
-- **Apply theme** replaces your whole setup with that entry — mode, controls, background, layers, post, the lot. As with any theme, <kbd>Ctrl+Z</kbd> undoes it.
+- **Apply theme** (a built-in entry's button just says **Apply**) replaces your whole setup with that entry — mode, controls, background, layers, post, the lot. As with any theme, <kbd>Ctrl+Z</kbd> undoes it.
 
 _Looks & themes_ in the Visuals dock has its own two shortcuts into the Gallery, pre-filtered to whichever of the two you were looking at.
 
