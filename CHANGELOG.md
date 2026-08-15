@@ -11,6 +11,17 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.97.0] - 2026-08-15
+
+### Fixed
+
+- **Sliders no longer quietly rewrite tuned values.** Some factory themes
+  and Gallery presets carry values finer than their slider's old step
+  size, so the first nudge snapped them to a different number with no way
+  back. Every affected slider's grid is now fine enough to hold the
+  values the content actually ships with — nothing renders differently;
+  the sliders just stopped lying.
+
 ### Changed
 
 - **Your work now lives in one crash-safe file.** The desktop app keeps
@@ -2740,7 +2751,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.96.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.97.0...HEAD
+[2.97.0]: https://github.com/0langa/beatform/compare/v2.96.0...v2.97.0
 [2.96.0]: https://github.com/0langa/beatform/compare/v2.95.0...v2.96.0
 [2.95.0]: https://github.com/0langa/beatform/compare/v2.94.0...v2.95.0
 [2.94.0]: https://github.com/0langa/beatform/compare/v2.93.0...v2.94.0
