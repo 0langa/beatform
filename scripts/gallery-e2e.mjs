@@ -1,7 +1,7 @@
 // FEAT-003 Gallery E2E: drives the debug shell over CDP against the REAL
-// beatform-app/gallery registry (a branch until the owner merges), through
-// the app's full verified-download path — CSP, allowlist, exact-size,
-// SHA-256, parse — and proves install effects in the store.
+// beatform-app/gallery registry on main, through the app's full
+// verified-download path — CSP, allowlist, exact-size, SHA-256, parse —
+// and proves install effects in the store.
 //
 //   node scripts/gallery-e2e.mjs [--registry=<raw index.json url>]
 // Prereq: Vite dev on 127.0.0.1:1420.
@@ -17,6 +17,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const registry = (process.argv.find((a) => a.startsWith("--registry=")) ?? "").slice(
   "--registry=".length,
 );
+// The live-registry shape these assertions pin (beatform-app/gallery main
+// after the 2026-08-14 Track C merge): 13 looks + 5 themes, every entry
+// with a preview, and "prism" matching exactly one entry. Count checks are
+// growth-tolerant (>= MIN_ENTRIES); the theme count and the one-hit search
+// are exact — revisit BOTH whenever the registry moves (P-6 folding the
+// factory themes into the gallery will move them again).
+const MIN_ENTRIES = 18;
+const THEME_COUNT = 5;
 const outDir = path.join(root, "node_modules", ".cache", "gallery-e2e");
 mkdirSync(outDir, { recursive: true });
 
@@ -54,7 +62,7 @@ try {
              ids: st.galleryEntries.map(e => e.id) };
   })()`);
   console.log("REGISTRY:", JSON.stringify(loaded));
-  if (loaded.status !== "ready" || loaded.count < 11) {
+  if (loaded.status !== "ready" || loaded.count < MIN_ENTRIES) {
     throw new Error(`registry load failed: ${JSON.stringify(loaded)}`);
   }
 
@@ -62,7 +70,7 @@ try {
   const previews = await cdp.eval(`(async () => {
     const delay = ms => new Promise(r => setTimeout(r, ms));
     const deadline = Date.now() + 60000;
-    while (Object.keys(window.__store.getState().galleryPreviews).length < 11) {
+    while (Object.keys(window.__store.getState().galleryPreviews).length < ${MIN_ENTRIES}) {
       if (Date.now() > deadline) break;
       await delay(300);
     }
@@ -70,7 +78,7 @@ try {
     return { count: Object.keys(p).length, sample: Object.values(p)[0] ?? null };
   })()`);
   console.log("PREVIEWS:", JSON.stringify(previews));
-  if (previews.count < 11 || !/^blob:/.test(previews.sample ?? "")) {
+  if (previews.count < MIN_ENTRIES || !/^blob:/.test(previews.sample ?? "")) {
     throw new Error(`previews incomplete: ${JSON.stringify(previews)}`);
   }
 
@@ -168,7 +176,7 @@ try {
     return { all, themes, searched,
              imgs: document.querySelectorAll(".gallery-dialog .gallery-preview[src^='blob:']").length };
   })()`);
-  if (dom.all < 11 || dom.themes !== 2 || dom.searched !== 1) {
+  if (dom.all < MIN_ENTRIES || dom.themes !== THEME_COUNT || dom.searched !== 1) {
     throw new Error(`dialog surface failed: ${JSON.stringify(dom)}`);
   }
   console.log("DOM:", JSON.stringify(dom));
@@ -231,7 +239,11 @@ try {
     return { filtered, active, plain };
   })()`);
   console.log("DEEPLINK:", JSON.stringify(deeplink));
-  if (deeplink.filtered !== 2 || deeplink.active !== "Themes" || deeplink.plain < 11) {
+  if (
+    deeplink.filtered !== THEME_COUNT ||
+    deeplink.active !== "Themes" ||
+    deeplink.plain < MIN_ENTRIES
+  ) {
     throw new Error(`deep-link filter failed: ${JSON.stringify(deeplink)}`);
   }
 

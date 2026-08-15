@@ -351,8 +351,11 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       themes, 9 look deltas, 4 new looks — built on branch `c1-themes`,
       adversarially reviewed, 28 evidence stills) went to the owner as a
       per-entry veto page; the owner approved ALL 18 entries. Registry
-      staging is in flight as a single PR (controller merges after CI);
-      the step-grid CI rule (owner decision C, same round) rides with it.
+      staging MERGED to main 2026-08-14 (gallery PR #1; the step-grid CI
+      rule — owner decision C, same round — rode in it): the live registry
+      serves 18 entries, 13 looks + 5 themes. `gallery-e2e.mjs` re-pinned
+      to that shape 2026-08-15 (growth-tolerant counts, exact 5-theme
+      filter, "prism" still a one-hit search) — GREEN against live main.
       Related owner verdicts, same round: H13's clear button STAYS
       filter-gated; P-6 ships bundled thumbnails with an "Apply" button;
       P-11's recovery toast becomes persistent-until-clicked and its boot
