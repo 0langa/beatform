@@ -938,21 +938,38 @@ const endBootRead = (): void => {
  * be safe to call from many places (every debounced write, every
  * `flushAutosave`) without callers coordinating a timer between them.
  *
+ * C1 fix (review round) — resolves to a DISCRIMINANT, not `void`. The
+ * first version of this resolved to nothing at all, and
+ * `runScheduledAutosaveWrite` proceeded to write UNCONDITIONALLY once this
+ * settled either way — which meant a read slower than the bound produced
+ * the exact E2-D1 bug this whole mechanism exists to prevent, just moved
+ * one layer down: `docOf(get())` still reflects whatever `bootDesktopDocument`'s
+ * guard hasn't had a chance to examine yet (the stale seed, plus any edit
+ * that landed in the window), and writing it discards the real autosave
+ * file's content just as surely as having no gate at all — with the added
+ * insult that the eventual quarantine-aside then archives THAT premature
+ * write instead of the true newer document. Callers MUST branch on the
+ * result; see `runScheduledAutosaveWrite`'s own comment for the one place
+ * that does.
+ *
  * Residual, deliberately accepted overlap with the close handler's OWN
  * `CLOSE_FLUSH_TIMEOUT_MS` race (store.ts's `onCloseRequested` installer):
  * in the pathological case of a read that is BOTH hung AND being awaited
  * by a close, this bound can spend the entire close-flush budget just
- * waiting for boot before the write even starts, so the outer race may
- * abandon the write before it finishes. That is not a new risk — the
- * outer race already documents abandoning a slow write as acceptable ("an
- * intact old copy beats an unclosable app") — only a new *reason* the same
- * already-accepted budget might be spent. The alternative (an unbounded
- * wait) is strictly worse: a permanently unclosable window.
+ * waiting for boot before a write is even attempted, so the outer race may
+ * move on before one lands. That is not a new risk — the outer race
+ * already documents abandoning a slow write as acceptable ("an intact old
+ * copy beats an unclosable app") — only a new *reason* the same
+ * already-accepted budget might be spent, and per the fix above it now
+ * trades "abandon a slow write" for "abandon a write we correctly declined
+ * to attempt," which is strictly safer, not worse.
  */
-const awaitBootSettled = (): Promise<void> =>
+const awaitBootSettled = (): Promise<"settled" | "timeout"> =>
   Promise.race([
-    bootSettled,
-    new Promise<void>((resolve) => setTimeout(resolve, CLOSE_FLUSH_TIMEOUT_MS)),
+    bootSettled.then((): "settled" => "settled"),
+    new Promise<"timeout">((resolve) =>
+      setTimeout(() => resolve("timeout"), CLOSE_FLUSH_TIMEOUT_MS),
+    ),
   ]);
 
 function resolveParams(presetId: string, overrides: Record<string, ParamValues>): ParamValues {
@@ -1321,6 +1338,26 @@ export const useVizStore = create<VizState>((set, get) => {
    * snapshot taken before either had a chance to run. On the ordinary path
    * (no boot outstanding) `awaitBootSettled` resolves on the next
    * microtask, so this adds no observable latency.
+   *
+   * C1 fix (review round) — a TIMEOUT outcome SKIPS the write entirely
+   * rather than proceeding with it. Writing on a mere timeout is exactly
+   * the bug this gate exists to prevent: `bootDesktopDocument`'s guard (and
+   * the quarantine-aside it performs on refusal) hasn't run yet, so
+   * `docOf(get())` could still be the stale localStorage seed — writing it
+   * would silently discard the real autosave file's content just as
+   * surely as having no gate at all, and worse, would leave the eventual
+   * quarantine-aside archiving THAT premature write instead of the true
+   * newer document once the read finally lands. `scheduleAutosave()` on
+   * the skip path re-arms a fresh burst so the NEXT debounce/max-latency
+   * cycle retries — by then boot will most likely have settled; if the
+   * read is genuinely, permanently hung, this simply retries forever
+   * without ever writing, which is correct: the existing on-disk file,
+   * whatever it is, stays safer than a write we could never vouch for.
+   * `flushAutosave`'s callers (the close handler) already treat an
+   * abandoned write as acceptable via their own independent
+   * `CLOSE_FLUSH_TIMEOUT_MS` race — resolving normally here rather than
+   * throwing keeps that true, instead of surfacing a misleading "Autosave
+   * is failing" toast for a write that was correctly declined, not failed.
    */
   const runScheduledAutosaveWrite = (): Promise<void> => {
     clearTimeout(autosaveTimer);
@@ -1328,7 +1365,16 @@ export const useVizStore = create<VizState>((set, get) => {
     autosaveTimer = undefined;
     autosaveMaxTimer = undefined;
     return awaitBootSettled()
-      .then(() => writeAutosave(serializeProject(docOf(get()), APP_VERSION)))
+      .then((outcome) => {
+        if (outcome === "timeout") {
+          console.warn(
+            "[autosave] the boot read has not settled after the bound — skipping this write rather than risk stale pre-guard content; a later cycle will retry",
+          );
+          scheduleAutosave();
+          return;
+        }
+        return writeAutosave(serializeProject(docOf(get()), APP_VERSION));
+      })
       .catch((e) => {
         console.error("[autosave]", e);
         // Surface ONCE per session: a failing autosave means the sole

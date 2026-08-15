@@ -319,19 +319,40 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                   // ordinary close — serializes the OLDER in-memory
                   // document straight over this file the instant part (a)'s
                   // boot-settlement gate opens, permanently discarding a
-                  // file that was never bad, only out-raced. Moving it
-                  // aside first means that write can only ever overwrite a
-                  // COPY. Best-effort (quarantineSupersededAutosave never
-                  // throws): a failed rename here must not be what breaks
+                  // file that was never bad, only out-raced. Archiving it
+                  // first means that write can only ever overwrite a COPY.
+                  //
+                  // C1 fix (review round): hands over `contents` — the
+                  // exact bytes just read and parsed — rather than letting
+                  // quarantineSupersededAutosave trust whatever is
+                  // currently on disk. See that function's own comment in
+                  // platform.ts for why that distinction is load-bearing
+                  // once runScheduledAutosaveWrite's own boot-settlement
+                  // wait can time out and let an unrelated write through
+                  // before this guard ever runs.
+                  //
+                  // Best-effort (quarantineSupersededAutosave never
+                  // throws): a failed write here must not be what breaks
                   // boot, same standard as the corrupt-file quarantine
-                  // above. See that function's own comment in platform.ts
-                  // and .superpowers-repro/e2-deepstate-findings.md (E2-D1).
-                  const quarantined = await quarantineSupersededAutosave();
-                  if (quarantined !== null) {
-                    set({
-                      supersededNotice: `Your project changed before a newer autosaved version finished loading, so that version was set aside as "${quarantined}" in your app data folder instead of being overwritten.`,
-                    });
-                  }
+                  // above. See .superpowers-repro/e2-deepstate-findings.md
+                  // (E2-D1).
+                  const quarantined = await quarantineSupersededAutosave(contents);
+                  // I1 fix (review round): UNCONDITIONAL — a silent failure
+                  // here would mean the gated write this same refusal is
+                  // about to unblock later clobbers a file NOTHING
+                  // protected, with no record the user could ever trace it
+                  // back to. Success names where the file went; failure
+                  // still names the source file so the user has a chance
+                  // to act (copy it out by hand) before the next write
+                  // lands — matching the corrupt-file quarantine's own
+                  // precedent of always surfacing something, never staying
+                  // silent on a failure it already knows about.
+                  set({
+                    supersededNotice:
+                      quarantined !== null
+                        ? `Your project changed before a newer autosaved version finished loading, so that version was set aside as "${quarantined}" in your app data folder instead of being overwritten.`
+                        : `Your project changed before a newer autosaved version finished loading, and that version could not be set aside — it may be overwritten soon. If you need it, copy "document.bfproj" from your app data folder now.`,
+                  });
                 }
               } catch (e) {
                 console.error("[autosave] applying the recovered document failed", e);

@@ -619,35 +619,57 @@ const LEGACY_DOCUMENT_FILE = "autosave.bfproj";
  * the chain link always resolves — `.catch()` swallows here — while the
  * promise handed back to THIS call's caller (`thisWrite`) still reflects
  * its own real outcome untouched.
+ *
+ * D1 fix review round (C1(b)/M1) — this chain, and the atomic tmp+rename
+ * primitive below, are now shared with `quarantineSupersededAutosave`
+ * (targeting its own `.superseded-<ts>` filename instead of
+ * `DOCUMENT_FILE`) rather than that function doing its own bare,
+ * unserialized rename. A bare rename was fine when it was moving a file
+ * already known to be complete (the corrupt-file quarantine's case — it
+ * quarantines bytes that already survived a full write); it was never
+ * actually safe for "write MY known-good bytes over whatever might be
+ * there," and became actively wrong once `runScheduledAutosaveWrite`
+ * gained a timeout path that can itself land a write in between a read
+ * and its quarantine.
  */
 let autosaveWriteChain: Promise<void> = Promise.resolve();
 
 /**
- * Tauri only: crash-safe autosave of the current project to app data —
- * P-11 whole-lane-review fix C2(b): write to a tmp file, then rename over
- * the real one. `rename` is atomic on both NTFS and the POSIX filesystems
- * Tauri targets, so a crash or power loss mid-write leaves either the
- * complete OLD file or the complete NEW one — never a half-written one that
- * would then fail to parse and, pre-fix, get silently overwritten by the
- * very next fallback boot (see readAutosave/bootDesktopDocument).
+ * The shared low-level primitive: write `contents` to a `.tmp` sibling of
+ * `targetFile`, then rename over it atomically, serialized through the
+ * single `autosaveWriteChain` above so no two writes into AppData's
+ * autosave-file family — the live document, or an archived quarantine
+ * copy — can ever have their tmp files interleave. `rename` is atomic on
+ * both NTFS and the POSIX filesystems Tauri targets, so a crash or power
+ * loss mid-write leaves either the complete OLD file at `targetFile` or
+ * the complete NEW one — never a half-written one.
  */
-export function writeAutosave(contents: string): Promise<void> {
-  if (!isTauri()) return Promise.resolve(); // browser sessions persist via localStorage already
+function chainedWrite(contents: string, targetFile: string): Promise<void> {
   const previous = autosaveWriteChain.catch(() => undefined);
-  const thisWrite = previous.then(() => writeAutosaveNow(contents));
+  const thisWrite = previous.then(() => writeFileAtomic(contents, targetFile));
   autosaveWriteChain = thisWrite.catch(() => undefined);
   return thisWrite;
 }
 
-async function writeAutosaveNow(contents: string): Promise<void> {
+async function writeFileAtomic(contents: string, targetFile: string): Promise<void> {
   const { writeTextFile, rename, mkdir, BaseDirectory } = await import("@tauri-apps/plugin-fs");
   await mkdir("", { baseDir: BaseDirectory.AppData, recursive: true }).catch(() => undefined);
-  const tmp = `${DOCUMENT_FILE}.tmp`;
+  const tmp = `${targetFile}.tmp`;
   await writeTextFile(tmp, contents, { baseDir: BaseDirectory.AppData });
-  await rename(tmp, DOCUMENT_FILE, {
+  await rename(tmp, targetFile, {
     oldPathBaseDir: BaseDirectory.AppData,
     newPathBaseDir: BaseDirectory.AppData,
   });
+}
+
+/**
+ * Tauri only: crash-safe autosave of the current project to app data —
+ * P-11 whole-lane-review fix C2(b): write to a tmp file, then rename over
+ * the real one, via `chainedWrite` above.
+ */
+export function writeAutosave(contents: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve(); // browser sessions persist via localStorage already
+  return chainedWrite(contents, DOCUMENT_FILE);
 }
 
 /**
@@ -731,8 +753,23 @@ export async function quarantineCorruptAutosave(): Promise<void> {
  * protected that refused file: the session's ordinary autosave write —
  * armed by whatever caused the refusal — went on to serialize the OLDER
  * in-memory document straight over it, permanently discarding a file that
- * was never bad, only out-raced. Moving it aside first means that write
- * can only ever overwrite a COPY.
+ * was never bad, only out-raced. Archiving it first means that write can
+ * only ever overwrite a COPY.
+ *
+ * C1 fix (review round) — takes the ALREADY-READ, ALREADY-PARSED
+ * `contents` directly and WRITES them, rather than renaming whatever
+ * happens to be sitting at `DOCUMENT_FILE` when this runs. The earlier
+ * bare-rename version trusted the live file to still hold the same bytes
+ * `bootDesktopDocument` just read — true right up until
+ * `runScheduledAutosaveWrite` gained a bounded timeout that can let a
+ * write through before the boot guard (and this function) ever run: once
+ * that happens, the "live file" this would have renamed could already BE
+ * the premature stale write, and archiving it would preserve the WRONG
+ * content while telling the user the newer version was safe. Writing our
+ * own known-good bytes, atomically, through the same serialized chain
+ * `writeAutosave` uses (`chainedWrite`) removes the assumption entirely —
+ * the archived file is always the true content this call was asked to
+ * preserve, regardless of anything racing it.
  *
  * Distinct suffix from the corrupt-file quarantine (`.superseded-` vs
  * `.corrupt-`) so the two events read differently to anyone looking at the
@@ -740,20 +777,16 @@ export async function quarantineCorruptAutosave(): Promise<void> {
  * says "this file was fine, but something newer replaced it in memory
  * first." Returns the quarantined filename on success — unlike its
  * sibling, the caller needs it to tell the user WHERE the file went, not
- * just THAT something happened — or null if there was nothing to
- * quarantine or the rename itself failed (best-effort, same as its
- * sibling: this must never be what blocks boot).
+ * just THAT something happened — or null if the write itself failed
+ * (best-effort, same as its sibling: this must never be what blocks boot;
+ * the caller surfaces a failure notice too — see I1 in
+ * projectIOActions.ts's own comment — rather than failing silently).
  */
-export async function quarantineSupersededAutosave(): Promise<string | null> {
+export async function quarantineSupersededAutosave(contents: string): Promise<string | null> {
   if (!isTauri()) return null;
+  const quarantined = `${DOCUMENT_FILE}.superseded-${Date.now()}`;
   try {
-    const { rename, exists, BaseDirectory } = await import("@tauri-apps/plugin-fs");
-    if (!(await exists(DOCUMENT_FILE, { baseDir: BaseDirectory.AppData }))) return null;
-    const quarantined = `${DOCUMENT_FILE}.superseded-${Date.now()}`;
-    await rename(DOCUMENT_FILE, quarantined, {
-      oldPathBaseDir: BaseDirectory.AppData,
-      newPathBaseDir: BaseDirectory.AppData,
-    });
+    await chainedWrite(contents, quarantined);
     return quarantined;
   } catch (e) {
     console.warn("[autosave] could not quarantine the superseded file", e);

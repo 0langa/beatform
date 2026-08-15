@@ -133,7 +133,7 @@ describe("writeAutosave — second whole-lane-review round item 1: serialized wr
     try {
       const firstWrite = writeAutosave("content-A");
       // vi.waitFor, not a fixed Promise.resolve() tick count: writeAutosave's
-      // chain hops through .catch()/.then() plus writeAutosaveNow's own
+      // chain hops through .catch()/.then() plus writeFileAtomic's own
       // `await import(...)`/`await mkdir(...)` before it ever reaches
       // writeTextFile — the exact hop count is an implementation detail
       // this test should not have to know.
@@ -309,15 +309,27 @@ describe("quarantineCorruptAutosave — C2(c)", () => {
 });
 
 describe("quarantineSupersededAutosave — D1 fix part (b), sibling of quarantineCorruptAutosave", () => {
-  it("renames the current file aside with a .superseded-<timestamp> suffix, and returns the new name", async () => {
-    exists.mockResolvedValue(true);
+  /**
+   * C1(b) fix (review round): this function no longer renames whatever is
+   * on disk — it WRITES the caller's own known-good `contents` directly,
+   * atomically (tmp then rename, `chainedWrite`/`writeFileAtomic`), so the
+   * archived copy can never be some OTHER write that raced it. These tests
+   * exercise that write path directly rather than mocking `exists`+`rename`
+   * as a bare move.
+   */
+  it("writes the given contents to a .superseded-<timestamp> file via the atomic tmp+rename path, and returns the new name", async () => {
     const before = Date.now();
 
-    const result = await quarantineSupersededAutosave();
+    const result = await quarantineSupersededAutosave('{"presetId":"the-true-newer-doc"}');
+
+    expect(writeTextFile).toHaveBeenCalledTimes(1);
+    const [tmpPath, writtenContents] = writeTextFile.mock.calls[0];
+    expect(writtenContents).toBe('{"presetId":"the-true-newer-doc"}');
+    expect(tmpPath).toMatch(/^document\.bfproj\.superseded-\d+\.tmp$/);
 
     expect(rename).toHaveBeenCalledTimes(1);
     const [oldPath, newPath, opts] = rename.mock.calls[0];
-    expect(oldPath).toBe("document.bfproj");
+    expect(oldPath).toBe(tmpPath);
     expect(newPath).toMatch(/^document\.bfproj\.superseded-\d+$/);
     expect(result).toBe(newPath);
     const ts = Number((newPath as string).split("superseded-")[1]);
@@ -329,26 +341,64 @@ describe("quarantineSupersededAutosave — D1 fix part (b), sibling of quarantin
     // Distinct naming from the corrupt-file quarantine — the two events
     // must read differently to anyone looking at AppData by hand.
     expect(newPath).not.toMatch(/corrupt/);
+
+    // The tmp write must land BEFORE the rename — same atomicity guarantee
+    // as the live document's own write (a crash between the two leaves
+    // either nothing new or the complete archived file, never torn).
+    const writeOrder = writeTextFile.mock.invocationCallOrder[0];
+    const renameOrder = rename.mock.invocationCallOrder[0];
+    expect(writeOrder).toBeLessThan(renameOrder);
+
+    // Never re-reads or checks for existence — it does not need to know
+    // (or trust) what, if anything, is already on disk.
+    expect(exists).not.toHaveBeenCalled();
   });
 
-  it("nothing to quarantine: no rename attempted, returns null", async () => {
-    exists.mockResolvedValue(false);
-    const result = await quarantineSupersededAutosave();
-    expect(rename).not.toHaveBeenCalled();
-    expect(result).toBeNull();
+  it("a write failure is swallowed and returns null — best-effort, must never throw out of boot", async () => {
+    writeTextFile.mockRejectedValueOnce(new Error("disk full"));
+    await expect(quarantineSupersededAutosave('{"presetId":"x"}')).resolves.toBeNull();
   });
 
-  it("a rename failure is swallowed and returns null — best-effort, must never throw out of boot", async () => {
-    exists.mockResolvedValue(true);
-    rename.mockRejectedValue(new Error("locked"));
-    await expect(quarantineSupersededAutosave()).resolves.toBeNull();
+  it("a rename failure (after a successful tmp write) is also swallowed and returns null", async () => {
+    rename.mockRejectedValueOnce(new Error("locked"));
+    await expect(quarantineSupersededAutosave('{"presetId":"x"}')).resolves.toBeNull();
   });
 
   it("browser build: a no-op, returns null", async () => {
     setDesktop(false);
-    const result = await quarantineSupersededAutosave();
-    expect(exists).not.toHaveBeenCalled();
+    const result = await quarantineSupersededAutosave('{"presetId":"x"}');
+    expect(writeTextFile).not.toHaveBeenCalled();
     expect(rename).not.toHaveBeenCalled();
     expect(result).toBeNull();
+  });
+
+  it("shares the SAME serialized write chain as writeAutosave — a quarantine write and a live-document write never interleave their tmp files", async () => {
+    // Park the quarantine write's tmp write — it will not resolve until
+    // this test releases it. try/finally: this file has one shared module
+    // import, so a promise left dangling here would cascade a timeout into
+    // every later test (this exact hazard is documented on the "second
+    // write STARTS only after the first settles" test above).
+    const parked = deferred<undefined>();
+    writeTextFile.mockImplementationOnce(async () => parked.promise);
+    try {
+      const quarantineWrite = quarantineSupersededAutosave('{"presetId":"newer"}');
+      await vi.waitFor(() => expect(writeTextFile).toHaveBeenCalledTimes(1));
+
+      const liveWrite = writeAutosave('{"presetId":"edited"}');
+      // A real (short) wait — only a macrotask boundary guarantees every
+      // pending microtask has already run, so "nothing happened by then"
+      // is actually provable, not just "didn't happen on THIS tick."
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(writeTextFile).toHaveBeenCalledTimes(1); // the live write has NOT started yet
+
+      parked.resolve(undefined);
+      await quarantineWrite;
+
+      await vi.waitFor(() => expect(writeTextFile).toHaveBeenCalledTimes(2));
+      expect(writeTextFile.mock.calls[1][1]).toBe('{"presetId":"edited"}');
+      await expect(liveWrite).resolves.toBeUndefined();
+    } finally {
+      parked.resolve(undefined);
+    }
   });
 });
