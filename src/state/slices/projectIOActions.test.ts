@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { serializeProject, validateDocument } from "../project";
+import { clearHistory } from "../history";
+import { unregisterCustomPreset } from "../../render/presets/custom";
 
 /**
  * P-11 Task 2 — the boot chokepoint switch: desktop boot now prefers the
@@ -730,5 +732,90 @@ describe("D1 fix — GATE AUTOSAVE ON BOOT SETTLEMENT + QUARANTINE-ASIDE ON REFU
 
     expect(useVizStore.getState().supersededNotice).toBeNull();
     expect(useVizStore.getState().error).toBe("unrelated"); // untouched by the dismiss
+  });
+});
+
+describe("E2-D2 fix — an in-place custom-shader re-save must be undoable (.superpowers-repro/e2-deepstate-findings.md)", () => {
+  // saveCustomPreset (customShaderActions.ts) used to mutate customDefs via a
+  // bare set() before any record() — by the time switchPreset()'s own
+  // record("preset") ran, the edit was already baked into the "before"
+  // snapshot it captured, so Ctrl+Z after re-saving the ACTIVE shader was a
+  // silent, permanent no-op. Two independent pieces close it:
+  //  (1) saveCustomPreset now wraps its mutation in ctx.asOneGesture
+  //      ("shader-save"), which both records BEFORE the mutation AND
+  //      suppresses switchPreset's own inner record() — without the
+  //      suppression, a re-save of the ALREADY-active shader would still
+  //      push a second, redundant "preset" entry whose snapshot already
+  //      has the edit baked in (nothing changes customDefs between the two
+  //      record() calls), so the FIRST Ctrl+Z would look like a no-op and
+  //      only a second one would actually restore the old WGSL.
+  //  (2) undo()/redo() (projectIOActions.ts) pass applyDocument the new
+  //      `fromHistory` flag, which bypasses mergeEmbeddedDefs' S1 "keep the
+  //      local edit" protection (custom.ts) — a CORRECT pre-edit snapshot
+  //      still could not win against the (by-then newer) in-memory def once
+  //      applied, because S1 was written to protect a local edit against an
+  //      OLDER file on project-open, and treated a same-session history
+  //      snapshot exactly the same way.
+  const ID = "custom-e2d2-fix";
+  const V1 = "fn preset(uv: vec2f) -> vec3f { return vec3f(1.0); } // VERSION ONE";
+  const V2 = "fn preset(uv: vec2f) -> vec3f { return vec3f(0.5); } // VERSION TWO";
+
+  afterEach(() => {
+    clearHistory();
+    unregisterCustomPreset(ID);
+  });
+
+  it("Ctrl+Z after re-saving the ACTIVE shader restores the previous WGSL in exactly one step; redo brings the edit back", async () => {
+    clearHistory();
+    useVizStore.setState({ checkCustomPreset: vi.fn(async () => []) });
+    const store = () => useVizStore.getState();
+
+    // Import a new shader — becomes the active preset via switchPreset.
+    const err1 = await store().saveCustomPreset({ id: ID, name: "Mine", params: [], wgsl: V1 });
+    expect(err1).toEqual([]);
+    expect(store().presetId).toBe(ID);
+    expect(store().customDefs.find((d) => d.id === ID)?.wgsl).toBe(V1);
+
+    // Edit the WGSL and save again — same id, the in-place re-save path
+    // (ShaderEditor.tsx's Save button).
+    const err2 = await store().saveCustomPreset({ id: ID, name: "Mine", params: [], wgsl: V2 });
+    expect(err2).toEqual([]);
+    expect(store().customDefs.find((d) => d.id === ID)?.wgsl).toBe(V2);
+    // Two discrete saves, back to back with no delay between them — this is
+    // 2 (not 1) only if "shader-save" resists the 800ms gesture-grouping
+    // window (history.ts UNGROUPABLE), and 2 (not 3) only if asOneGesture
+    // actually suppressed switchPreset's own inner record() on both calls.
+    expect(store().undoDepth).toBe(2);
+
+    store().undo();
+    expect(store().customDefs.find((d) => d.id === ID)?.wgsl).toBe(V1); // fixed: ONE Ctrl+Z, not two, not never
+    expect(store().presetId).toBe(ID);
+
+    store().redo();
+    expect(store().customDefs.find((d) => d.id === ID)?.wgsl).toBe(V2);
+    expect(store().presetId).toBe(ID);
+  });
+
+  it("a project OPEN still keeps the local edit — S1's original protection is untouched by the history exemption", async () => {
+    clearHistory();
+    useVizStore.setState({ checkCustomPreset: vi.fn(async () => []) });
+    const store = () => useVizStore.getState();
+    const EDITED =
+      "fn preset(uv: vec2f) -> vec3f { return vec3f(0.5); } // EDITED LOCALLY, NOT YET RE-EMBEDDED";
+    const OLDER =
+      "fn preset(uv: vec2f) -> vec3f { return vec3f(1.0); } // WHAT THE INCOMING FILE STILL HAS";
+
+    await store().saveCustomPreset({ id: ID, name: "Mine", params: [], wgsl: EDITED });
+    expect(store().customDefs.find((d) => d.id === ID)?.wgsl).toBe(EDITED);
+
+    const incoming = validateDocument({
+      presetId: ID,
+      customDefs: [{ id: ID, name: "Mine", params: [], wgsl: OLDER }],
+    });
+    store().openProjectText("older-project.bfproj", serializeProject(incoming, "test"));
+
+    // openProjectText -> applyDocument never passes fromHistory — S1 keeps
+    // the local (newer) edit exactly as it did before this fix.
+    expect(store().customDefs.find((d) => d.id === ID)?.wgsl).toBe(EDITED);
   });
 });

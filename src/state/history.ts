@@ -40,6 +40,12 @@ const UNGROUPABLE = new Set([
   "bg-mode",
   "timeline-scene-add",
   "timeline-lane-add",
+  // E2-D2: saveCustomPreset's Save is a discrete commit of one WGSL
+  // version, not a continuous gesture — grouping two rapid saves (the
+  // Shader Editor's normal "tweak, Save, tweak, Save" iteration loop) would
+  // silently drop the intermediate version from history, the same
+  // un-undoable-edit shape this key exists to fix in the first place.
+  "shader-save",
 ]);
 
 export function snapshotForHistory(doc: ProjectDocument): ProjectDocument {

@@ -205,17 +205,30 @@ export function sameCustomDef(a: PresetDef, b: PresetDef): boolean {
  * clears history first). Identical copies and brand-new ids import as
  * before. Returns the merged library, the defs that should be (re)registered
  * and the names of local defs that were protected.
+ *
+ * `fromHistory` (E2-D2, set ONLY by undo()/redo() in projectIOActions.ts):
+ * a history-apply's "embedded" copy is not an older FILE that could
+ * silently clobber a newer edit — it IS this session's own history, and the
+ * "local" def it would otherwise lose to is the very in-place edit an undo
+ * was asked to revert (saveCustomPreset's re-save path). S1's asymmetry
+ * (local wins) only makes sense when there's no way back to the embedded
+ * copy except by re-opening the old file; undo/redo's snapshot is exactly
+ * that way back, so for them the embedded copy must always win — bypassing
+ * the keep entirely, same as an identical or brand-new id. A project OPEN
+ * still goes through this function without `fromHistory` and keeps S1's
+ * original protection.
  */
 export function mergeEmbeddedDefs(
   local: PresetDef[],
   embedded: PresetDef[],
+  fromHistory = false,
 ): { merged: PresetDef[]; register: PresetDef[]; kept: string[] } {
   const byId = new Map(local.map((d) => [d.id, d]));
   const register: PresetDef[] = [];
   const kept: string[] = [];
   for (const def of embedded) {
     const mine = byId.get(def.id);
-    if (mine && !sameCustomDef(mine, def)) kept.push(mine.name);
+    if (mine && !sameCustomDef(mine, def) && !fromHistory) kept.push(mine.name);
     else register.push(def);
   }
   const ids = new Set(register.map((d) => d.id));

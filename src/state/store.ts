@@ -696,8 +696,17 @@ interface Actions {
    * the clean-exit marker and queued an identical rewrite before the user
    * touched anything — a hard kill in that window reported a false "crashed
    * last time" on the NEXT boot even though nothing was ever at risk.
+   *
+   * `fromHistory`: E2-D2. Set ONLY by undo()/redo() (projectIOActions.ts).
+   * Threaded through to mergeEmbeddedDefs (custom.ts) to bypass S1's "keep
+   * the local edit" protection — see that function's own comment for why a
+   * history-apply is exempt while every other caller (project open, theme
+   * apply, new-project, boot) is not.
    */
-  applyDocument(doc: ProjectDocument, opts?: { alreadyOnDisk?: boolean }): void;
+  applyDocument(
+    doc: ProjectDocument,
+    opts?: { alreadyOnDisk?: boolean; fromHistory?: boolean },
+  ): void;
   /**
    * P-11: the desktop boot chokepoint — see projectIOActions.ts's own doc
    * comment and .superpowers/p11-lane-log.md for the full design.
@@ -2702,7 +2711,11 @@ export const useVizStore = create<VizState>((set, get) => {
         // been edited — the local version stays in the library AND the
         // registry, and the user is told. Identical/new defs import as
         // before, keeping registration idempotent for undo/redo.
-        const { merged, register, kept } = mergeEmbeddedDefs(customDefs, doc.customDefs);
+        const { merged, register, kept } = mergeEmbeddedDefs(
+          customDefs,
+          doc.customDefs,
+          opts?.fromHistory,
+        );
         customDefs = merged;
         for (const def of register) registerCustomPreset(def);
         if (register.length > 0) saveCustomPresets(customDefs);

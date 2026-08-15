@@ -119,4 +119,26 @@ describe("mergeEmbeddedDefs (S1 — project-open must not clobber newer local ed
     const { kept } = mergeEmbeddedDefs([localNewer], [mk("custom-a", "S")]);
     expect(kept).toHaveLength(1);
   });
+
+  it("E2-D2: fromHistory bypasses the keep — undo/redo's snapshot always wins, even when local differs", () => {
+    const localEdited = mk("custom-a", "EDITED AFTER THE SNAPSHOT WAS TAKEN", "My shader");
+    const { merged, register, kept } = mergeEmbeddedDefs(
+      [localEdited],
+      [mk("custom-a", "WHAT THE HISTORY SNAPSHOT HAS", "My shader")],
+      true, // fromHistory — set only by undo()/redo() (projectIOActions.ts)
+    );
+    expect(kept).toEqual([]); // S1's protection does not apply to a history-apply
+    expect(register).toHaveLength(1);
+    expect(merged).toEqual([mk("custom-a", "WHAT THE HISTORY SNAPSHOT HAS", "My shader")]);
+  });
+
+  it("fromHistory defaults to false — omitting it is byte-identical to the pre-E2-D2 signature", () => {
+    const localNewer = mk("custom-a", "EDITED SOURCE", "My shader");
+    const { kept, register } = mergeEmbeddedDefs(
+      [localNewer],
+      [mk("custom-a", "OLD SOURCE", "My shader")],
+    );
+    expect(kept).toEqual(["My shader"]);
+    expect(register).toEqual([]);
+  });
 });

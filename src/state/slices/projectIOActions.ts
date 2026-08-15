@@ -84,7 +84,12 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     undo() {
       const snapshot = popUndo(ctx.docOf(get()));
       if (snapshot) {
-        get().applyDocument(snapshot);
+        // E2-D2: fromHistory — this snapshot IS the document at a specific
+        // point in this session's own history, not an older file, so it
+        // must win over S1's "keep the local edit" protection in
+        // mergeEmbeddedDefs (custom.ts) or an in-place shader re-save
+        // (saveCustomPreset) could never be undone.
+        get().applyDocument(snapshot, { fromHistory: true });
         ctx.flashNotice("Undone");
       }
       const d = historyDepths();
@@ -94,7 +99,8 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     redo() {
       const snapshot = popRedo(ctx.docOf(get()));
       if (snapshot) {
-        get().applyDocument(snapshot);
+        // E2-D2: same reasoning as undo() above — see that call's comment.
+        get().applyDocument(snapshot, { fromHistory: true });
         ctx.flashNotice("Redone");
       }
       const d = historyDepths();

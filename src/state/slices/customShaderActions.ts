@@ -96,13 +96,33 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // not have this arrive five seconds later and silently apply anyway.
       if (signal?.aborted) return [];
       if (errors.length > 0) return errors;
-      registerCustomPreset(def);
-      const customDefs = [...get().customDefs.filter((d) => d.id !== def.id), def];
-      set({ customDefs });
-      // Quota failure must not hide behind a success toast — the shader would
-      // exist this session and silently vanish on restart.
-      const persisted = saveCustomPresets(customDefs);
-      get().switchPreset(def.id);
+      // E2-D2 fix: customDefs is a docOf-covered document field like every
+      // other document write, so it must join undo history the SAME way —
+      // recorded BEFORE the mutation, not after. The old code called a bare
+      // set() here and relied on switchPreset()'s own record("preset")
+      // below to cover it — but by the time that ran, the edit was already
+      // baked into the "before" snapshot it captured, making a re-save of
+      // the ACTIVE shader permanently un-undoable (no depth of Ctrl+Z could
+      // reach the old WGSL — see mergeEmbeddedDefs' `fromHistory` for the
+      // other half of why). asOneGesture both records the correct pre-edit
+      // snapshot AND suppresses switchPreset's own inner record() (still
+      // called below — it's what actually pushes the new WGSL to the
+      // renderer), so a save costs exactly one Ctrl+Z: without the
+      // suppression, re-saving the ALREADY-active shader would push a
+      // SECOND, redundant "preset" entry whose snapshot already contains
+      // the edit (nothing changes customDefs between the two record()
+      // calls), so the first Ctrl+Z would look like a silent no-op and only
+      // a second one would actually restore the old WGSL.
+      let persisted = false;
+      ctx.asOneGesture("shader-save", () => {
+        registerCustomPreset(def);
+        const customDefs = [...get().customDefs.filter((d) => d.id !== def.id), def];
+        set({ customDefs });
+        // Quota failure must not hide behind a success toast — the shader
+        // would exist this session and silently vanish on restart.
+        persisted = saveCustomPresets(customDefs);
+        get().switchPreset(def.id);
+      });
       ctx.flashNotice(
         persisted
           ? `Custom visual "${def.name}" saved`
