@@ -275,6 +275,14 @@ struct Uniforms {
 // so the pair keeps its inter-channel phase; mono sources carry the mono
 // trace in both halves. Read it through waveAt2()/waveXY() below.
 @group(0) @binding(11) var<storage, read> waveform2: array<f32>;
+// The lyric PLATE: the current lyric moment rasterized host-side
+// (render/lyricPlate.ts) — the Lyric Stage mode's text input, uploaded on
+// plate-key moves by both render loops and bound as a 1x1 transparent
+// stand-in when no timed lyrics are loaded. Channels are CLASSES, not
+// paint: R = glyph coverage, G = karaoke-lit, B = the active word; a 4x4 px
+// status block at the top-left corner carries main/prev/next line presence
+// as color. Read it through lyricSample()/hasLyrics() below.
+@group(0) @binding(12) var lyricTex: texture_2d<f32>;
 
 // Builder Studio: parameter slot s (0..15) of layer instance li.
 fn LP(li: u32, s: u32) -> f32 { return builderLayers[li * 16u + s]; }
@@ -299,6 +307,16 @@ fn coverAspect() -> f32 {
   let d = vec2f(textureDimensions(coverTex));
   return d.x / max(d.y, 1.0);
 }
+
+/** The lyric plate at uv (0..1 across the plate). See binding 12: channels
+ * are classes (R glyph / G lit / B active word), not paint — the sampling
+ * preset assigns every real color. */
+fn lyricSample(uv: vec2f) -> vec4f {
+  return textureSampleLevel(lyricTex, overlaySmp, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0);
+}
+/** False when no timed lyrics are loaded (the 1x1 stand-in is bound), so a
+ * lyric-driven preset can fall back to its no-lyrics treatment. */
+fn hasLyrics() -> bool { return textureDimensions(lyricTex).x > 1u; }
 
 /**
  * Fit a box coordinate (0..1 across the destination) onto a texture of
@@ -1663,7 +1681,7 @@ export function assemblePresetModule(preset: PresetDef): string {
 // A `shadertoy` preset's `wgsl` is a COMPLETE fragment module emitted by the
 // Rust-side transpiler: own uniform block + four channel textures + one
 // sampler on @group(0) bindings 0–5, entry `@fragment fn main`. It cannot
-// share the snippet ABI's pipeline layout (11 bindings, storage buffers), so
+// share the snippet ABI's pipeline layout (13 bindings, storage buffers), so
 // it runs on its own layout with this fullscreen-triangle vertex stage
 // appended to the module.
 // ---------------------------------------------------------------------------
@@ -1989,6 +2007,10 @@ export class WebGPURenderer implements Renderer {
   private emptyBg: GPUTexture;
   private bgTexture: GPUTexture | null = null;
   private coverTexture: GPUTexture | null = null;
+  /** 1x1 transparent stand-in bound when no lyric plate is set
+   * (hasLyrics() = false). */
+  private emptyLyric: GPUTexture;
+  private lyricTexture: GPUTexture | null = null;
 
   // Crossfade machinery: a second compiled preset + params, two offscreen
   // targets and a static blend pass (the render graph's first citizen).
@@ -2287,6 +2309,19 @@ export class WebGPURenderer implements Renderer {
       { bytesPerRow: 4 },
       [1, 1],
     );
+    // 1x1 transparent stand-in for the lyric plate — its width of 1 IS the
+    // hasLyrics() = false signal, the exact emptyCover arrangement.
+    this.emptyLyric = device.createTexture({
+      size: [1, 1],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    device.queue.writeTexture(
+      { texture: this.emptyLyric },
+      new Uint8Array([0, 0, 0, 0]),
+      { bytesPerRow: 4 },
+      [1, 1],
+    );
     this.overlaySampler = device.createSampler({
       magFilter: "linear",
       minFilter: "linear",
@@ -2356,6 +2391,7 @@ export class WebGPURenderer implements Renderer {
         { binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
         { binding: 10, visibility: GPUShaderStage.FRAGMENT, buffer: storage },
         { binding: 11, visibility: GPUShaderStage.FRAGMENT, buffer: storage },
+        { binding: 12, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
       ],
     });
     this.pipelineLayout = device.createPipelineLayout({
@@ -2641,6 +2677,7 @@ export class WebGPURenderer implements Renderer {
           { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
           { binding: 10, resource: { buffer: this.builderBuf } },
           { binding: 11, resource: { buffer: this.waveBuf2 } },
+          { binding: 12, resource: (this.lyricTexture ?? this.emptyLyric).createView() },
         ],
       });
     }
@@ -2667,6 +2704,7 @@ export class WebGPURenderer implements Renderer {
           { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
           { binding: 10, resource: { buffer: this.builderBuf } },
           { binding: 11, resource: { buffer: this.waveBuf2 } },
+          { binding: 12, resource: (this.lyricTexture ?? this.emptyLyric).createView() },
         ],
       });
     }
@@ -3167,6 +3205,55 @@ export class WebGPURenderer implements Renderer {
     this.transitionBindGroup = null;
     this.compositeBind = null;
     this.historyCompositeBind = null;
+  }
+
+  /**
+   * Upload the lyric plate (render/lyricPlate.ts) — the Lyric Stage mode's
+   * text input. setOverlay's lifecycle, for setOverlay's reason: the plate
+   * re-rasterizes on every key move (line changes, 1/32 karaoke-fill steps),
+   * so the texture is reused while its size holds and bind groups are
+   * invalidated only when the texture OBJECT changes — recreating per upload
+   * would rebuild four bind groups many times a second at 4K. The copy
+   * snapshots the bitmap synchronously; it is closed here (ownership
+   * transfer, the same contract every other bitmap setter honors).
+   */
+  setLyricPlate(source: ImageBitmap | null): void {
+    if (!source) {
+      if (this.lyricTexture) {
+        this.lyricTexture.destroy();
+        this.lyricTexture = null;
+        this.bindGroup = null;
+        this.transitionBindGroup = null;
+        this.compositeBind = null;
+        this.historyCompositeBind = null;
+      }
+      return;
+    }
+    if (
+      !this.lyricTexture ||
+      this.lyricTexture.width !== source.width ||
+      this.lyricTexture.height !== source.height
+    ) {
+      this.lyricTexture?.destroy();
+      this.lyricTexture = this.device.createTexture({
+        size: [source.width, source.height],
+        format: "rgba8unorm",
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.bindGroup = null;
+      this.transitionBindGroup = null;
+      this.compositeBind = null;
+      this.historyCompositeBind = null;
+    }
+    this.device.queue.copyExternalImageToTexture(
+      { source },
+      { texture: this.lyricTexture, premultipliedAlpha: true },
+      [source.width, source.height],
+    );
+    source.close();
   }
 
   /**
@@ -3971,6 +4058,7 @@ export class WebGPURenderer implements Renderer {
           { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
           { binding: 10, resource: { buffer: this.builderBuf } },
           { binding: 11, resource: { buffer: this.waveBuf2 } },
+          { binding: 12, resource: (this.lyricTexture ?? this.emptyLyric).createView() },
         ],
       });
     }
@@ -3991,6 +4079,8 @@ export class WebGPURenderer implements Renderer {
     this.emptyCover.destroy();
     this.emptyBg.destroy();
     this.bgTexture?.destroy();
+    this.lyricTexture?.destroy();
+    this.emptyLyric.destroy();
     this.transitionParamsBuf.destroy();
     this.blendUniform.destroy();
     this.fadeTexA?.destroy();
@@ -4061,6 +4151,7 @@ export class WebGPURenderer implements Renderer {
           { binding: 9, resource: (this.bgTexture ?? this.emptyBg).createView() },
           { binding: 10, resource: { buffer: this.builderBuf } },
           { binding: 11, resource: { buffer: this.waveBuf2 } },
+          { binding: 12, resource: (this.lyricTexture ?? this.emptyLyric).createView() },
         ],
       });
     }

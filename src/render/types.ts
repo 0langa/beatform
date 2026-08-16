@@ -639,6 +639,14 @@ export interface Renderer {
    * null clears it, making hasCover() false.
    */
   setCoverArt(source: ImageBitmap | null): void;
+  /**
+   * The lyric plate (render/lyricPlate.ts): the current lyric moment
+   * rasterized host-side, for presets that sample it (lyricSample() — the
+   * Lyric Stage mode). Takes ownership of the bitmap; null clears it, making
+   * hasLyrics() false. Uploaded on plate-key moves by both render loops, so
+   * the same setOverlay-style texture reuse applies.
+   */
+  setLyricPlate(source: ImageBitmap | null): void;
   /** Upload the Builder Studio per-layer parameter block (builder2.ts). */
   setBuilderParams(data: Float32Array): void;
   /**

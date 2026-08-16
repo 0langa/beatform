@@ -120,6 +120,15 @@ export class Canvas2DRenderer implements Renderer {
     this.smooth = v;
   }
 
+  setLyricPlate(source: ImageBitmap | null): void {
+    // Fallback renderer draws spectrum bars only — no lyric-stage plate to
+    // sample. Honest no-op, but the OWNERSHIP contract still holds: the host
+    // rasterizes a fresh plate per key move and every setter closes what it
+    // is handed, so dropping it unclosed here would leak one bitmap per
+    // karaoke fill step.
+    source?.close();
+  }
+
   setMotion(): void {
     // Fallback renderer approximates spectrum-bars only; motion masters no-op.
     // The Motion sliders are disabled while it is active (F1) — they used to

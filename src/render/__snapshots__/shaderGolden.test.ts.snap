@@ -4873,6 +4873,14 @@ struct Uniforms {
 // so the pair keeps its inter-channel phase; mono sources carry the mono
 // trace in both halves. Read it through waveAt2()/waveXY() below.
 @group(0) @binding(11) var<storage, read> waveform2: array<f32>;
+// The lyric PLATE: the current lyric moment rasterized host-side
+// (render/lyricPlate.ts) — the Lyric Stage mode's text input, uploaded on
+// plate-key moves by both render loops and bound as a 1x1 transparent
+// stand-in when no timed lyrics are loaded. Channels are CLASSES, not
+// paint: R = glyph coverage, G = karaoke-lit, B = the active word; a 4x4 px
+// status block at the top-left corner carries main/prev/next line presence
+// as color. Read it through lyricSample()/hasLyrics() below.
+@group(0) @binding(12) var lyricTex: texture_2d<f32>;
 
 // Builder Studio: parameter slot s (0..15) of layer instance li.
 fn LP(li: u32, s: u32) -> f32 { return builderLayers[li * 16u + s]; }
@@ -4897,6 +4905,16 @@ fn coverAspect() -> f32 {
   let d = vec2f(textureDimensions(coverTex));
   return d.x / max(d.y, 1.0);
 }
+
+/** The lyric plate at uv (0..1 across the plate). See binding 12: channels
+ * are classes (R glyph / G lit / B active word), not paint — the sampling
+ * preset assigns every real color. */
+fn lyricSample(uv: vec2f) -> vec4f {
+  return textureSampleLevel(lyricTex, overlaySmp, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0);
+}
+/** False when no timed lyrics are loaded (the 1x1 stand-in is bound), so a
+ * lyric-driven preset can fall back to its no-lyrics treatment. */
+fn hasLyrics() -> bool { return textureDimensions(lyricTex).x > 1u; }
 
 /**
  * Fit a box coordinate (0..1 across the destination) onto a texture of
