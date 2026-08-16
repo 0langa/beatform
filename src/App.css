@@ -2917,6 +2917,30 @@ kbd {
      the column term a narrow window (dock clamped to 320, column 480) let a
      560px toast run 40px under the dock on each side. */
   max-width: min(calc((100vw - var(--visuals-w)) * 0.92), 560px);
+  /* P-10 residual (recorded, not fixed, in the P-10 bundle): with only
+     `bottom` set and no `max-height`, this box's height is content-driven and
+     its TOP edge is the one that moves — so a four-way pile-up (fallback
+     banner + error + recovered notice + superseded notice; `notice-toast` is
+     the only slot that can't join them, gated by `notice && !error`) pushed
+     the earliest toasts above the canvas with no way to reach their dismiss
+     buttons. Verified live at 1280×380 with all four mounted: overlapped the
+     top bar (measured stack top 17px vs top-bar bottom 58px); the same
+     probe with these two lines added stayed clipped to the capped box and
+     scrolled instead. 100vh-160px leaves the 58px top bar plus margin above
+     the box and comfortably fits the common case (four real toasts measure
+     271px total) without ever growing past the visible canvas. overflow-y
+     scrolls rather than clips — same reasoning as `.modal`'s "must scroll,
+     not clip the header X off a short window" a few hundred lines up — so a
+     toast's dismiss button is always reachable, never stranded. DOM order is
+     unchanged, and that is what keeps the newest toast on screen without any
+     scrolling: fallback/recovered/superseded are all boot-time conditions
+     already showing before the user can do anything, so `error` — the only
+     one of the four that can newly appear mid-session — is genuinely the
+     freshest, and it already renders second, inside the scrolled-to-top
+     default view. The two boot-time notices are what scroll into view behind
+     it, not the other way around. */
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
   z-index: 15;
   /* The column spans the full width so its children can centre; without this
      the gaps between toasts would swallow clicks on the visual behind them. */
