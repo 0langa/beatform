@@ -203,7 +203,7 @@ Press <kbd>T</kbd>. Scenes switch visual modes at chosen beats (drags snap to th
 
 ## Library & live input
 
-Both of these are desktop-only — they need the installed app, not the browser build.
+Both of these live in the installed desktop app.
 
 ### Music library
 
@@ -341,9 +341,9 @@ Every performance shortcut has a letter or digit as its main binding, so it sits
 
 ## FAQ
 
-### What can I export without the desktop app?
+### Which formats can I export?
 
-MP4 (H.264 everywhere, HEVC/AV1 where your GPU supports them) and WebM with a real alpha channel both render in the browser build. Everything else needs the desktop app: PNG frames because writing a folder of numbered stills has no browser equivalent, and ProRes, genuine 10-bit AV1, and GIF/animated WebP because they're encoded by the bundled ffmpeg sidecar rather than the browser's own WebCodecs pipeline.
+MP4 (H.264 everywhere, HEVC/AV1 where your GPU supports them) and WebM with a real alpha channel render through the app's built-in WebCodecs pipeline. PNG frame sequences, ProRes 4444, genuine 10-bit AV1, and GIF/animated WebP go through the bundled ffmpeg encoder instead — that's how the deep-color formats keep more than 8 bits per channel all the way to disk.
 
 ### Why does an export sometimes take longer than the song itself?
 
@@ -367,7 +367,7 @@ No. Live system audio never gets a beat grid — Beatform can't analyze a track 
 
 ### Does MIDI mapping need special drivers?
 
-No — Beatform talks to controllers directly through the browser's Web MIDI API, the same on desktop as in the browser build. There's nothing to install: open the Live page, click _Learn CC_ or _Learn note_, move the control or hit the pad, and the binding is saved from then on.
+No — Beatform talks to controllers directly through the Web MIDI API. There's nothing to install: open the Live page, click _Learn CC_ or _Learn note_, move the control or hit the pad, and the binding is saved from then on.
 
 ### What Shadertoy shaders can I import?
 

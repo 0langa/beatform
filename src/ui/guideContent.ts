@@ -543,7 +543,7 @@ export const GUIDE: readonly GuideSection[] = [
     title: "Library & live input",
     blocks: [
       {
-        p: ["Both of these are desktop-only — they need the installed app, not the browser build."],
+        p: ["Both of these live in the installed desktop app."],
       },
       { h4: "Music library" },
       {
@@ -855,10 +855,10 @@ export const GUIDE: readonly GuideSection[] = [
     id: "faq",
     title: "FAQ",
     blocks: [
-      { h4: "What can I export without the desktop app?" },
+      { h4: "Which formats can I export?" },
       {
         p: [
-          "MP4 (H.264 everywhere, HEVC/AV1 where your GPU supports them) and WebM with a real alpha channel both render in the browser build. Everything else needs the desktop app: PNG frames because writing a folder of numbered stills has no browser equivalent, and ProRes, genuine 10-bit AV1, and GIF/animated WebP because they're encoded by the bundled ffmpeg sidecar rather than the browser's own WebCodecs pipeline.",
+          "MP4 (H.264 everywhere, HEVC/AV1 where your GPU supports them) and WebM with a real alpha channel render through the app's built-in WebCodecs pipeline. PNG frame sequences, ProRes 4444, genuine 10-bit AV1, and GIF/animated WebP go through the bundled ffmpeg encoder instead — that's how the deep-color formats keep more than 8 bits per channel all the way to disk.",
         ],
       },
       { h4: "Why does an export sometimes take longer than the song itself?" },
@@ -900,7 +900,7 @@ export const GUIDE: readonly GuideSection[] = [
       { h4: "Does MIDI mapping need special drivers?" },
       {
         p: [
-          "No — Beatform talks to controllers directly through the browser's Web MIDI API, the same on desktop as in the browser build. There's nothing to install: open the Live page, click ",
+          "No — Beatform talks to controllers directly through the Web MIDI API. There's nothing to install: open the Live page, click ",
           { em: "Learn CC" },
           " or ",
           { em: "Learn note" },

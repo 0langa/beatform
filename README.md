@@ -20,6 +20,8 @@
 
 Tauri 2 + React + TypeScript, WebGPU rendering (Canvas2D fallback), Rust core.
 
+Runs on **Windows 10/11 (x64)** — a ~57 MB installer from [Releases](https://github.com/0langa/beatform/releases/latest), no account, no setup wizard questions. macOS/Linux builds aren't offered yet; the stack (Tauri 2) supports them, so open an issue if you'd use one.
+
 Free and open source. Built to become a professional-grade tool for producers and artists — local-first, no cloud rendering, no watermarks, no subscriptions.
 
 ## Features
