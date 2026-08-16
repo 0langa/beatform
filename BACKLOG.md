@@ -3284,6 +3284,15 @@ was already decided; this section is where "what ships when" now lives.
   seeding/outreach starting now. This lane never ships a version bump on
   its own and does not authorize posting: posting/representing the
   project publicly stays exclusively the owner's action.
+  **Written materials DONE 2026-08-17** at
+  `OneDrive\Documents\doc\beatform-launch-kit\` (positioning, per-venue
+  post drafts with [SLOT] markers for the owner's own words, 13-still +
+  6-animated screenshot shot-list, FAQ answers, owner checklist; 8
+  [VERIFY] flags inline). Its doc-gaps report produced the docs-truth
+  commit `34ca8c1` (README platform facts, CHANGELOG single Added,
+  guide 'browser build' rewrite). REMAINING in this lane: capture the
+  shot-list on device (candidates for the owner's pick — README hero
+  shots included), and the owner-only steps in README-kit.md.
 
 **End condition** for this plan, and functionally for the whole quality-
 consolidation program: every ledger row is either shipped, or carries one
