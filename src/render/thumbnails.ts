@@ -192,6 +192,18 @@ const THUMB_PARAMS: Record<string, Record<string, number>> = {
     fade: 0.35,
     grid: 0,
   },
+  // Lyric Stage: the chip renders with no plate bound, so it shows the
+  // rehearsal specimen — whose default four rows are ~7 px tall at 144x81,
+  // word blocks of 2-3 px. Three big rows keep the blocks readable at chip
+  // size, and the lifted glow/skyline make the stage read as lit. Draw-side
+  // only; the shipped defaults are untouched everywhere else.
+  "lyric-stage": {
+    greekRows: 3,
+    size: 1.4,
+    glow: 1,
+    ghostBars: 0.45,
+    flare: 0.5,
+  },
 };
 
 /** A flattering, deterministic feature frame: full spectrum, a beat mid-decay. */

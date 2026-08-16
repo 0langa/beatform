@@ -34,6 +34,7 @@ describe("default order", () => {
       "bass-circle",
       "led-matrix",
       "spectro-falls",
+      "lyric-stage",
       "tunnel-rings",
       "oscilloscope",
       "nebula",

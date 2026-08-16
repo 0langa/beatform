@@ -48,6 +48,9 @@ const ABI_BASELINE: Record<string, string> = {
   // edit answers to it exactly like the fifteen above.
   "spectro-falls":
     "direction,slices,axis,speed,hue,hueSpread,saturation,lightness,prism,quiet,loud,airLift,beatBoost,glow,edge,fade,hotWhite,spill,floorLevel,grid,gridLines,beatMarks,axisFocus,bassGlow,vignette",
+  // P-19 entry 2: the typography mode. First baseline, same contract.
+  "lyric-stage":
+    "layout,size,context,tilt,hue,hueSpread,saturation,lightness,drift,entrance,beatPunch,wordGlow,chromaSplit,glow,flare,ghostBars,stageLevel,unsungDim,contextScale,greekRows,glowReach,bassStage,flutter,rehearse,vignette",
   "voice-orb":
     "hue,size,satellites,ring,ringStyle,mirror,texture,response,voiceFocus,wobble,sparkle,flare,rmsBlend,growth,idleBreath,wobScale,mode1,mode2,mode3,coreGlow,breathGlow,rimGlow,ringDist,ringWave,ringCount,satSize,satDist,satOrbit,sparkleScale,bgLevel,vignette",
   "echo-trails":
