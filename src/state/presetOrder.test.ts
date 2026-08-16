@@ -33,6 +33,7 @@ describe("default order", () => {
       "echo-trails",
       "bass-circle",
       "led-matrix",
+      "spectro-falls",
       "tunnel-rings",
       "oscilloscope",
       "nebula",

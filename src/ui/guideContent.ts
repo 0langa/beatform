@@ -112,7 +112,7 @@ export const GUIDE: readonly GuideSection[] = [
     blocks: [
       {
         p: [
-          "Sixteen modes live on the strip — from classic spectrum bars to 120k-particle flow fields and a full 3D bar city. Every mode except Builder, which stacks its own layers instead, has:",
+          "Seventeen modes live on the strip — from classic spectrum bars to 120k-particle flow fields, a full 3D bar city and a scrolling spectrogram that draws the whole song as it plays. Every mode except Builder, which stacks its own layers instead, has:",
         ],
       },
       {

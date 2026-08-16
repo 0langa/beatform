@@ -9,6 +9,7 @@ import { tunnelRings } from "./tunnelRings";
 import { nebula } from "./nebula";
 import { metaballs } from "./metaballs";
 import { ledMatrix } from "./ledMatrix";
+import { spectroFalls } from "./spectroFalls";
 import { voiceOrb } from "./voiceOrb";
 import { echoTrails } from "./echoTrails";
 import { particleFlow } from "./particleFlow";
@@ -35,6 +36,7 @@ export const presets: PresetDef[] = [
   aurora,
   synthwave,
   bassCircle,
+  spectroFalls,
   // ONE Builder on the strip (the layer compositor);
   // rendering resolves through presetById -> currentBuilder2Def().
   currentBuilder2Def(),

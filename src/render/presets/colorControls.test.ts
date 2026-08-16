@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import { bassCircle } from "./bassCircle";
 import { ledMatrix } from "./ledMatrix";
 import { radialBurst } from "./radialBurst";
+import { spectroFalls } from "./spectroFalls";
 import { spectrumBars } from "./spectrumBars";
 
-const COLOR_PRESETS = [spectrumBars, bassCircle, radialBurst, ledMatrix];
+// P-19 joined the club: Spectro Falls is a mode whose entire identity is
+// colour, so the global saturation/lightness pair belongs on it — and routing
+// every authored colour through presetColor is what lets the GPU matrix's
+// color/grayscale case prove the palette is honest.
+const COLOR_PRESETS = [spectrumBars, bassCircle, radialBurst, ledMatrix, spectroFalls];
 
 describe("full preset color controls", () => {
   for (const preset of COLOR_PRESETS) {

@@ -3037,6 +3037,51 @@ ranked roster (spectrogram waterfall first) at its head unless reordered.
 `.bfpreset` `appVersion` and Gallery-tombstone decisions were taken and
 shipped earlier in the same day's sessions.
 
+### P-19 lane 1 — Spectro Falls (spectrogram waterfall archetype) — CODE COMPLETE, device gate pending
+
+The head of P-19's ranked roster, executed on branch `p19-waterfall`. A
+first-class mode (`spectro-falls`, "Spectro Falls") whose entire identity is
+the scrolling time-frequency image — the full archetype behind the
+spectrogram-_lite_ that led-matrix's Waterfall display already ships.
+
+- Design record: the mode's own file header carries the visual intent (the
+  registry convention); the extended rationale — decisions taken, and the two
+  things deliberately NOT built — is the local lane log
+  `.superpowers/p19-lane-log.md` (gitignored, like `PLAN-*.md`).
+- Shape: 16 curated params + 9 advanced, six factory looks covering all four
+  scroll directions and both ends of the slice count. Joins the full
+  colour-controls club (saturation/lightness), so it answers the GPU matrix's
+  `color/grayscale` case like spectrum-bars does.
+- Determinism: feedback opt-in through a statically scannable
+  `feedbackSample(` call; the scroll is
+  `floor(u.time*rate) - floor((u.time - u.dt)*rate)` — the identical
+  track-time derivation led-matrix's waterfall uses, asserted against it in
+  `spectroFalls.test.ts` so neither can drift alone. History moves by whole
+  slices and is read back from the raw data channel (output alpha), so no
+  generation loss and no post accumulating into the record.
+- Gates run: `npm run typecheck`, `npm run lint`, `npm run format:check`,
+  `npm test` (163 files / 2605 tests green after blessing the two
+  bless-required snapshots), `npm run build`. WGSL parsed AND validated
+  offline with naga 30 (standalone validator on devstorage) — that check is
+  what caught a WGSL **reserved word** (`layout`) before it could reach a
+  device.
+- Shader-golden diff is **additive only** (351 inserted lines, zero deleted):
+  no existing preset body, no shared prelude line and no param ABI moved, so
+  the 269 existing GPU pixel cases must not move.
+- Verified ON DEVICE before commit: rendered in the worktree dev server
+  against the shipped demo tracks plus a synthetic sweep probe (a log sweep
+  must draw one clean diagonal, a steady tone one straight rail). That pass
+  found and fixed three defects no Node test could see — a one-sided air lift
+  that left the bass pinned at full heat, a linear brightness ramp with no
+  dark space to read against, and a spill halo three times too wide — and
+  re-tuned every factory look to the corrected scale. Details in the lane log.
+- **Outstanding, owner/controller side:** `npm run test:gpu` adds 11 cases
+  (`@defaults`, six styles, two colour cases, two extremes) and therefore
+  fails as `matrix case drift; added=...` until re-blessed with
+  `npm run test:gpu:update`. Verify the new frames visually before blessing;
+  the mode's defaults are designed to render non-black at every point in the
+  matrix walk (the ground is a lit surface, never a hole).
+
 ### Decision points for the owner
 
 1. **RESOLVED 2026-08-12 — live themes stay until C1.** Owner call: do NOT

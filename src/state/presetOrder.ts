@@ -28,6 +28,7 @@ export const DEFAULT_PRESET_ORDER: readonly string[] = [
   "echo-trails",
   "bass-circle",
   "led-matrix",
+  "spectro-falls",
   "tunnel-rings",
   "oscilloscope",
   "nebula",

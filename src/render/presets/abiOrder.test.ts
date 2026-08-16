@@ -43,6 +43,11 @@ const ABI_BASELINE: Record<string, string> = {
     "hue,count,size,speed,glow,threshold,gloss,beatSwell,smear,orbitX,orbitY,radiusFloor,energyGrow,radiusBand,rimStart,innerGrad,hueField,beatBright,bgLevel,vignette,mirror,lightAngle,squash,bassWeight,eccentric,environment",
   "led-matrix":
     "display,cols,rows,gap,rounded,hueShift,saturation,lightness,ghost,scrollSpeed,beatBoost,dim,hueLow,hueHigh,spectrumColor,gradStart,gradEnd,litLevel,hotBoost,bassGlow,beatFlash,peaks,peakBright,bloom,histFade,scanline,flicker,panelVariance,vignette",
+  // P-19: the spectrogram-waterfall archetype. New in this release, so its
+  // row is a first baseline rather than a frozen historical one — every later
+  // edit answers to it exactly like the fifteen above.
+  "spectro-falls":
+    "direction,slices,axis,speed,hue,hueSpread,saturation,lightness,prism,quiet,loud,airLift,beatBoost,glow,edge,fade,hotWhite,spill,floorLevel,grid,gridLines,beatMarks,axisFocus,bassGlow,vignette",
   "voice-orb":
     "hue,size,satellites,ring,ringStyle,mirror,texture,response,voiceFocus,wobble,sparkle,flare,rmsBlend,growth,idleBreath,wobScale,mode1,mode2,mode3,coreGlow,breathGlow,rimGlow,ringDist,ringWave,ringCount,satSize,satDist,satOrbit,sparkleScale,bgLevel,vignette",
   "echo-trails":

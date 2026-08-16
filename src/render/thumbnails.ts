@@ -177,6 +177,21 @@ const THUMB_PARAMS: Record<string, Record<string, number>> = {
     sat: 0.95,
     sizePulse: 1,
   },
+  // Spectro Falls: the record has to have FILLED by snapshot time. The warm-up
+  // is 15 frames on the fixed 1/60 feedback tick — a quarter-second of history
+  // — so the shipped 180 slices would fill 8% of the chip and the rest would
+  // be floor. Sixteen slices fill fifteen of sixteen in the same walk, leaving
+  // only the oldest (already the most faded) dark, and at 144x81 those bands
+  // are 5 px tall: a legible waterfall instead of a hairline. Glow and now-line
+  // lifted for the downscale, palette exactly as shipped.
+  "spectro-falls": {
+    slices: 16,
+    glow: 1.1,
+    edge: 1.1,
+    spill: 0.8,
+    fade: 0.35,
+    grid: 0,
+  },
 };
 
 /** A flattering, deterministic feature frame: full spectrum, a beat mid-decay. */

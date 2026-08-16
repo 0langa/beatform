@@ -11,6 +11,23 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- **Spectro Falls — a new visual mode: the song draws itself.** A scrolling
+  spectrogram where every moment of the spectrum prints as one thin slice
+  and then flows away from the live edge — kick drums as bars along the
+  bottom, hats as bright dust along the top, a held pad as a stack of
+  steady rails. Quiet sits deep and cold, peaks blow out to white, and the
+  live edge burns as the read head. Scroll it **down, up, left or right**,
+  fold the frequency axis into a mirrored pair (bass down the middle, or
+  air), and turn on the frequency grid or the **beat marks**, which print
+  the detected beat grid straight into the record and scroll it with the
+  music. Six looks ship with it: Spectro Falls, Sonar, Tape Scroll, Prism
+  Rain, Ember Drift and Score.
+  Every colour control is retroactive — turn the contrast or the palette
+  and the whole visible history re-develops, not just the moments recorded
+  after you touched the knob.
+
 ## [2.98.0] - 2026-08-16
 
 ### Fixed
