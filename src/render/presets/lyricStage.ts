@@ -594,23 +594,38 @@ fn preset(uv: vec2f) -> vec4f {
   if (hasLyrics()) {
     let scale = P_size() * settle * pump;
     col += textStack(uv, scale, skew);
-    // Halo: four widening taps of the main band, squared so the glow hugs
-    // the letterforms instead of fogging the stage.
+    // Halo: TWO RINGS of eight taps each, tight to the letterforms. Glyph
+    // coverage is high-frequency data — a handful of wide point taps renders
+    // as legible offset COPIES of the text (measured on device: four taps at
+    // ~1% spread drew a dark echo of the whole line), so the halo has to be
+    // many close taps whose average reads as dilation. Squared response
+    // keeps it hugging the strokes; the tint follows the centre tap's own
+    // sung/active state so unsung words never drown in glow.
     let mainC = mainCenterY();
-    let d = 0.005 + P_glowReach() * 0.012;
+    let center = bandTap(uv, BAND_MAIN_LO, BAND_MAIN_HI, mainC, scale, skew);
+    let d1 = 0.0035 + P_glowReach() * 0.0065;
     var halo = 0.0;
-    halo += bandTap(uv + vec2f(d, 0.0), BAND_MAIN_LO, BAND_MAIN_HI, mainC, scale, skew).r;
-    halo += bandTap(uv - vec2f(d, 0.0), BAND_MAIN_LO, BAND_MAIN_HI, mainC, scale, skew).r;
-    halo += bandTap(uv + vec2f(0.0, d), BAND_MAIN_LO, BAND_MAIN_HI, mainC, scale, skew).r;
-    halo += bandTap(uv - vec2f(0.0, d), BAND_MAIN_LO, BAND_MAIN_HI, mainC, scale, skew).r;
-    halo = halo * 0.25;
+    for (var k = 0; k < 8; k++) {
+      let a = f32(k) * 0.7853981634; // TAU / 8
+      let o = vec2f(cos(a), sin(a));
+      halo += bandTap(uv + o * d1, BAND_MAIN_LO, BAND_MAIN_HI, mainC, scale, skew).r * 0.085;
+      halo += bandTap(uv + o * d1 * 1.9, BAND_MAIN_LO, BAND_MAIN_HI, mainC, scale, skew).r * 0.04;
+    }
+    let cLit = clamp(max(center.g, center.b) / max(center.r, 1e-4), 0.0, 1.0);
     col += presetColor(P_hue() + P_hueSpread(), 0.6, 0.55)
-         * halo * halo * P_glow() * (0.8 + 0.5 * beat * u.pulse);
+         * halo * halo * P_glow() * (0.35 + 0.65 * max(cLit, 0.25 + 0.4 * beat))
+         * (0.8 + 0.5 * beat * u.pulse);
   }
 
   // The rehearsal, whenever nothing real is on stage: no lyrics loaded, or
-  // an instrumental stretch (presence fades it back in as the words leave).
-  let rehearse = P_rehearse() * (1.0 - presence);
+  // an instrumental stretch. The gate has a DEADZONE, not a linear fade —
+  // measured on device, 1 - presence let the specimen flash through every
+  // ordinary 1 s inter-line gap (the prev line's hold decays presence to
+  // ~0.8 there, which read as placeholder blocks strobing behind the real
+  // words). The smoothstep keeps short gaps clean and lets the specimen
+  // bloom only once a genuine break has run for a couple of seconds; the
+  // next line's lead-in raises presence again, so it also exits early.
+  let rehearse = P_rehearse() * smoothstep(0.55, 0.15, presence);
   if (rehearse > 0.001) {
     let rows = clamp(floor(P_greekRows() * mix(0.55, 1.0, u.detail)), 2.0, 5.0);
     let rowH = 0.085 * P_size() * pump;
