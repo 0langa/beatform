@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SpectrumResolution, SyncMode } from "../audio/types";
+import { SYNC_TRIO_STEP } from "../audio/types";
 import { MAX_FREQ, MIN_FREQ } from "../audio/featurePipeline";
 import { spectrumDiagnostics } from "../audio/dsp/displaySpectrum";
 import type {
@@ -1420,7 +1421,7 @@ export function ParamsPanel() {
             hint="Overall response — 0 = punchy, 1 = long glides. Sets attack + release together"
             min={0}
             max={1}
-            step={0.01}
+            step={SYNC_TRIO_STEP}
             value={sync.smooth}
             onChange={(v) =>
               store().setSync({ ...sync, smooth: v, attack: undefined, release: undefined })
@@ -1432,7 +1433,7 @@ export function ParamsPanel() {
             hint="Attack — how fast the reaction rises on a hit (0 = instant, 1 = slow)"
             min={0}
             max={1}
-            step={0.01}
+            step={SYNC_TRIO_STEP}
             value={sync.attack ?? sync.smooth}
             onChange={(v) => store().setSync({ ...sync, attack: v })}
             onHint={emitHint}
@@ -1442,7 +1443,7 @@ export function ParamsPanel() {
             hint="Release — how slowly the reaction falls after a hit (0 = instant, 1 = long)"
             min={0}
             max={1}
-            step={0.01}
+            step={SYNC_TRIO_STEP}
             value={sync.release ?? sync.smooth}
             onChange={(v) => store().setSync({ ...sync, release: v })}
             onHint={emitHint}

@@ -170,6 +170,23 @@ const MIN_SPAN_RATIO = 3;
 
 export const DEFAULT_SYNC: SyncSettings = { mode: "kick", smooth: 0.5 };
 
+/**
+ * The step for the sync-trio sliders (Smoothing/Attack/Release on the Sync
+ * page) — all three share one grid, same as POST_MOD_TARGETS and
+ * MOTION_MASTER_SPECS double their `step` as the persistence grid for
+ * shipped content (a gallery registry theme's tuned value is "legal" only if
+ * it sits on this grid; off-grid survives verbatim until the user's first
+ * touch of the slider rewrites it — see factoryThemes.test.ts's
+ * `expectOnGrid`). Refined from 0.01 (C5(c), BACKLOG): the owner-approved
+ * "blacklight" registry theme carries `sync.attack = 0.012`, which 0.01
+ * cannot reach (nearest legal neighbors were 0.01/0.02). 0.002 does: 0.012 /
+ * 0.002 = 6 exactly. Same E5 integer-divisor discipline as every other step
+ * refinement in this codebase — 0.01 is an integer multiple of 0.002 (5x),
+ * so every value already reachable on the old grid stays reachable, no
+ * stored sync value moves, and no document migration is needed.
+ */
+export const SYNC_TRIO_STEP = 0.002;
+
 const SYNC_MODES: readonly SyncMode[] = [
   "energy",
   "bass",
