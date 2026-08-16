@@ -20,7 +20,14 @@ import { presets } from "./render/presets";
 import { APP_VERSION } from "./version";
 import { pcmFromAudioBuffer } from "./audio/offlineSource";
 import { wavFromPcm } from "./audio/dsp/wav";
-import { proresSetAudio, av1Begin, proresWrite, proresFinish, proresAbort } from "./state/platform";
+import {
+  proresSetAudio,
+  av1Begin,
+  proresBegin,
+  proresWrite,
+  proresFinish,
+  proresAbort,
+} from "./state/platform";
 // The track-load counter itself, not a store field — it lives outside the
 // state object on purpose (slices/shared.ts), so `store()` cannot hand it over
 // and __runExport's guard below has to read it where runExport reads it.
@@ -394,6 +401,16 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
        * finished .mp4 at this path. Mirrors exportActions' av1Mode leg.
        */
       av1Path: string;
+      /**
+       * Debug shell only (needs Tauri IPC): run the REAL ProRes 4444 deep
+       * lane (FEAT-005 follow-up) — same raw rgba64le deep-color tap as
+       * av1Path, but through prores_begin (yuva444p10le, straight alpha)
+       * instead of av1_begin. Mirrors exportActions' proresMode leg exactly,
+       * including deepStraightAlpha — the un-premultiply av1Path's lane
+       * never needed (AV1's yuv420p10le carries no alpha at all). Mutually
+       * exclusive with av1Path; av1Path wins if both are somehow set.
+       */
+      proresPath: string;
       /** Normalize the exported audio (audio lane only). */
       loudness: import("./export/exportCore").LoudnessJob;
       /**
@@ -474,19 +491,26 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
     // silently passes the exact regressions it exists to catch.
     const pngHashes: string[] = [];
     const doc = docFromState(s);
-    // AV1 10-bit probe lane: real sidecar handshake, real deep-color tap —
-    // the same chain-serialized backpressure as exportActions' av1Mode leg.
+    // AV1 10-bit / ProRes 4444-deep probe lane: real sidecar handshake, real
+    // deep-color tap — the same chain-serialized backpressure as
+    // exportActions' av1Mode/proresMode legs. rawPath is whichever of the two
+    // mutually-exclusive options was set (av1Path wins if somehow both are).
     let rawFrames = 0;
     let rawDistinct = 0;
     let proresChain = Promise.resolve();
     const proresFail: { err: unknown } = { err: null };
-    if (opts.av1Path) {
+    const rawPath = opts.av1Path ?? opts.proresPath;
+    if (rawPath) {
       // Headless stand-in for the save dialog's allow_file — debug builds only
       // (the command is a hard error in release).
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("debug_allow_path", { path: opts.av1Path });
+      await invoke("debug_allow_path", { path: rawPath });
       await proresSetAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
-      await av1Begin(opts.fps ?? 30, w, h, opts.av1Path);
+      if (opts.av1Path) {
+        await av1Begin(opts.fps ?? 30, w, h, opts.av1Path);
+      } else {
+        await proresBegin(opts.fps ?? 30, w, h, opts.proresPath!);
+      }
     }
     // E3d, and the LAST word before the snapshot and the live engine are read
     // into the job below. The counter above cannot be that word on two counts.
@@ -510,9 +534,10 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
     // into exceptionDetails, segment-parity-probe leaves `failed` undefined and
     // exits non-zero).
     if (getEngine().audioBuffer !== buf) {
-      // The av1 lane already has a live ffmpeg session; a refusal that walked
-      // away from its stdin would hang the sidecar and the next run with it.
-      if (opts.av1Path) await proresAbort().catch(() => undefined);
+      // The av1/ProRes lane already has a live ffmpeg session; a refusal that
+      // walked away from its stdin would hang the sidecar and the next run
+      // with it.
+      if (rawPath) await proresAbort().catch(() => undefined);
       throw new Error("The track changed while the export was starting — export cancelled");
     }
     // Everything the document contributes goes through the SAME builder the
@@ -581,8 +606,15 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
                 win.__lastPngFrameEnd = new Blob([data.slice()], { type: "image/png" });
               }
             : undefined,
-          deepColor: opts.av1Path ? true : undefined,
-          onRawFrame: opts.av1Path
+          deepColor: rawPath ? true : undefined,
+          // Straight-alpha un-premultiply only for the ProRes lane — mirrors
+          // exportActions' `deepStraightAlpha: proresMode ? true : undefined`
+          // exactly. av1Path's yuv420p10le carries no alpha at all, so its raw
+          // premultiplied bytes must stay untouched (deepFrameToRgba64, not
+          // deepFrameToStraightRgba64) — same distinction videoExporter.ts
+          // documents at ExportJob.deepStraightAlpha.
+          deepStraightAlpha: opts.proresPath ? true : undefined,
+          onRawFrame: rawPath
             ? (data: Uint16Array) => {
                 rawFrames++;
                 // Renderer-leg proof: distinct u16 red-channel values in the
@@ -606,10 +638,10 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
         },
       ),
     ).catch(async (e: unknown) => {
-      if (opts.av1Path) await proresAbort().catch(() => undefined);
+      if (rawPath) await proresAbort().catch(() => undefined);
       throw proresFail.err ?? e;
     });
-    if (opts.av1Path) {
+    if (rawPath) {
       await proresChain;
       if (proresFail.err != null) {
         await proresAbort().catch(() => undefined);
@@ -643,7 +675,7 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
       ...(result.loudness ? { loudness: result.loudness } : {}),
       ...(measured ? { measured } : {}),
       ...(opts.png ? { pngFrames: pngFrames.length, pngBytes: pngFrames, pngHashes } : {}),
-      ...(opts.av1Path ? { rawFrames, rawDistinct } : {}),
+      ...(rawPath ? { rawFrames, rawDistinct } : {}),
     };
     // Published only now, on the ONE path that produced a real export.
     win.__lastExport = info;

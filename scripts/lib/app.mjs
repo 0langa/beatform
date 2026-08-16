@@ -18,6 +18,7 @@
 //   9980   av1-e2e.mjs
 //   10060  lyrics-e2e.mjs
 //   10140  installed-runtime-smoke.mjs
+//   10220  deepcolor-verify.mjs --prores
 //
 //   (gpu-pixel-matrix.mjs predates this map and rolls 9400 + pid % 500 —
 //   a span that overlaps several bases above. It accepts --port=<n>; pass
