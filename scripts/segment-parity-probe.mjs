@@ -19,7 +19,9 @@
  * exported pixels and is not a no-op. Drive that from the shell — this script
  * only prints the digest.
  *
- * Port base 10220: past installed-runtime-smoke (10140), clear of the map.
+ * Port base 10380: registered in lib/app.mjs's map. (Originally 10220,
+ * "clear of the map" — until p11-smoke.mjs and deepcolor-verify.mjs each
+ * independently claimed the same slot; all three now own distinct bases.)
  * Preset and start are overridable so the same probe can serve BACKLOG E3a,
  * whose experiment is specifically about Particle Flow.
  */
@@ -77,7 +79,7 @@ const server = createServer((_req, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const wavPort = server.address().port;
 
-const app = spawnApp({ root, portBase: 10220, profileName: "segment-parity" });
+const app = spawnApp({ root, portBase: 10380, profileName: "segment-parity" });
 let cdp;
 // Deliberately uninitialised: the only path that sets it is the one that
 // actually reached a verdict. Anything else — a throw through the finally,

@@ -435,9 +435,10 @@ async function runProresDeviceLeg() {
       wavServer.on("error", reject);
     });
 
-    // Port base 10220 — next free slot after installed-runtime-smoke.mjs's
-    // 10140 in the map at the top of lib/app.mjs (also registered there).
-    app = spawnApp({ root, portBase: 10220, profileName: "wv2-prores-profile" });
+    // Port base 10460 — registered in the map at the top of lib/app.mjs.
+    // (Originally grabbed 10220, which p11-smoke.mjs and
+    // segment-parity-probe.mjs had also each claimed as "free".)
+    app = spawnApp({ root, portBase: 10460, profileName: "wv2-prores-profile" });
 
     // NOT TAURI_WARMUP: a raw CDP Runtime.evaluate of a bare-specifier
     // dynamic import (`import("@tauri-apps/api/core")`) reproducibly throws

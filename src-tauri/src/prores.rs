@@ -136,6 +136,12 @@ fn ffmpeg_path() -> Result<PathBuf, String> {
 /// the input spec — codec, profile, pix_fmt, vendor tag, audio codec — is
 /// UNCHANGED from the 8-bit-PNG-in-disguise contract this pipe used to carry:
 /// only the source precision moved, not the encoded result's shape.
+///
+/// One truth about that shape, measured on device (FEAT-005 smoke): the
+/// `yuva444p10le` below is a REQUEST, and prores_ks quietly ignores it —
+/// ProRes 4444 stores 12-bit natively, so decoders report `yuva444p12le`
+/// and the smoke counted 2441 distinct luma levels (impossible at 10 bits).
+/// The delivered precision is higher than the arg suggests, never lower.
 fn prores_args(fps: u32, width: u32, height: u32, wav: &str, out: &str) -> Vec<String> {
     [
         "-hide_banner",

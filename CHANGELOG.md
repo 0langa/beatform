@@ -11,6 +11,24 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- **ProRes 4444 exports now carry true deep color.** The transparent-video
+  lane reads the renderer's 16-bit tap directly instead of squeezing
+  through 8-bit images first — measured on device: over 2400 distinct
+  brightness levels where 8-bit caps at 256, stored at ProRes 4444's full
+  native 12-bit precision. Transparency comes through mathematically
+  correct against any background, and the same project exports the same
+  file byte-for-byte, every time.
+
+### Fixed
+
+- **A round of interior hardening on the modulation math.** Fuzz testing
+  the modulation matrix, frame resolution, and store actions surfaced
+  seven paths where a malformed value could slip into route math or
+  parameter state — all now rejected at the door, none reachable through
+  normal UI use.
+
 ## [2.99.0] - 2026-08-16
 
 ### Added
