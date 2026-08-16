@@ -97,9 +97,22 @@ export const EMPTY_TIMELINE: Timeline = { enabled: false, scenes: [], lanes: [] 
  * scenes still on it (`enabled: false`, non-empty `scenes`) keeps loading
  * paused — exactly what it meant before this function existed. This
  * function only governs what a fresh EDIT writes, never what a LOAD reads.
+ *
+ * E2(b): `setTimeline`'s own `timeline: Timeline` parameter is, like every
+ * store action argument, a compile-time-only promise — neither WRITE site
+ * validates its `scenes`/`lanes` before calling here, so a caller handing a
+ * `Timeline`-shaped-but-incomplete object (missing `scenes`/`lanes`, or the
+ * wrong type) used to crash here reading `.length` off `undefined` rather
+ * than degrading to "empty". `Array.isArray` is a no-op for every real
+ * `Timeline` (both fields are always real arrays by construction on every
+ * path that actually builds one), so this changes nothing for a well-formed
+ * caller and only guards the malformed one.
  */
 export function deriveTimelineEnabled(timeline: Pick<Timeline, "scenes" | "lanes">): boolean {
-  return timeline.scenes.length > 0 || timeline.lanes.length > 0;
+  return (
+    (Array.isArray(timeline.scenes) && timeline.scenes.length > 0) ||
+    (Array.isArray(timeline.lanes) && timeline.lanes.length > 0)
+  );
 }
 
 export function newSceneId(): string {

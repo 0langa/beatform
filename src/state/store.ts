@@ -75,7 +75,13 @@ import {
   type OverlayMeta,
   type TextLayer,
 } from "../render/overlay";
-import { serializeProject, type Aspect, type ProjectDocument } from "./project";
+import {
+  serializeProject,
+  validMotion,
+  validPost,
+  type Aspect,
+  type ProjectDocument,
+} from "./project";
 import { type ThemeMeta } from "./themes";
 import {
   loadUserPresets,
@@ -1972,6 +1978,19 @@ export const useVizStore = create<VizState>((set, get) => {
     },
 
     setParam(key, value) {
+      // E2(b): `value` is typed `number` but that's compile-time only — a
+      // hostile/malformed caller (this action is public store surface, not
+      // an internal-only helper) can still hand a non-finite one, and
+      // nothing downstream of this action clamps it: `activeParams` IS the
+      // live render params (CLAUDE.md's audio->render contract), read
+      // directly by the renderer. Same guard `validParamsByPreset` already
+      // applies on LOAD; this is the equivalent for the live-edit path,
+      // which had none. Silently ignored, not corrected to a fallback, and
+      // returned BEFORE record() — same "a rejected call costs nothing,
+      // doesn't reach the undo stack" precedent stemsModsActions.ts's
+      // addModRoute/reorderModRoutes already establish for their own
+      // guards.
+      if (!Number.isFinite(value)) return;
       // Builder bridge (RP-20): while Builder is active, a virtual l<i>.* key
       // routes through the STACK — the persisted truth — and takes the normal
       // setBuilderStack path (history, persistence, mirror, pack, upload).
@@ -2295,12 +2314,27 @@ export const useVizStore = create<VizState>((set, get) => {
 
     setTimeline(timeline, historyKey) {
       record(historyKey ?? "timeline");
+      // E2(b): `scenes`/`lanes` normalized to real arrays BEFORE anything
+      // stores or reads them — deriveTimelineEnabled's own Array.isArray
+      // guard (see its comment) stops IT from throwing on a malformed
+      // caller, but a `{ ...timeline, enabled: false }` built from one
+      // still WROTE `scenes: undefined` into the document if that guard
+      // were the only fix: the very next action to call record() crashed
+      // in referencedCustomDefs' `for (const scene of s.timeline.scenes)`
+      // reading the now-corrupted store state, nowhere near this action.
+      // No-op for every real caller (TimelinePanel always hands real
+      // arrays); only changes behavior for a malformed one.
+      const safeTimeline: Timeline = {
+        enabled: timeline.enabled,
+        scenes: Array.isArray(timeline.scenes) ? timeline.scenes : [],
+        lanes: Array.isArray(timeline.lanes) ? timeline.lanes : [],
+      };
       // P-5: `enabled` is DERIVED here, not taken from the caller — the
       // toolbar's manual toggle is gone, so this is the one place (with
       // autoArrangeTimeline below) that decides on/off from content, for
       // every scene/lane/keyframe edit TimelinePanel makes. Load (validTimeline)
       // deliberately does NOT use this — see deriveTimelineEnabled's doc comment.
-      const next = { ...timeline, enabled: deriveTimelineEnabled(timeline) };
+      const next = { ...safeTimeline, enabled: deriveTimelineEnabled(safeTimeline) };
       set({ timeline: next });
       saveStoredTimeline(next);
     },
@@ -2340,7 +2374,16 @@ export const useVizStore = create<VizState>((set, get) => {
 
     setPost(patch) {
       record("post");
-      const post = { ...get().post, ...patch };
+      // E2(b): `patch` is `Partial<PostSettings>` at compile time only.
+      // `validPost` is the SAME validator project/theme load already runs
+      // full PostSettings through (it clamps to exactly the ranges
+      // POST_MOD_TARGETS' sliders already enforce, so this is a no-op for
+      // every real UI patch and only ever changes behavior for a hostile
+      // one) — reused here rather than duplicated, so the live-edit path
+      // holds `post` to the same contract the load path always has. Matters
+      // because `post` feeds `getRenderer()?.setPost(post)` two lines down:
+      // a non-finite value here is a GPU uniform, not just a stored field.
+      const post = validPost({ ...get().post, ...patch });
       set({ post });
       saveStoredPost(post);
       getRenderer()?.setPost(post);
@@ -2348,7 +2391,10 @@ export const useVizStore = create<VizState>((set, get) => {
 
     setMotion(patch) {
       record("motion");
-      const motion = { ...get().motion, ...patch };
+      // E2(b): same reasoning as setPost just above — validMotion already
+      // matches MOTION_MASTER_SPECS' slider ranges exactly, so this is a
+      // no-op for every real caller and only guards the hostile case.
+      const motion = validMotion({ ...get().motion, ...patch });
       set({ motion });
       saveStoredMotion(motion);
       getRenderer()?.setMotion(motion);

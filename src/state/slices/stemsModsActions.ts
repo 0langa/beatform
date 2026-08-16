@@ -7,6 +7,7 @@ import {
   newRouteId,
   postTargetKey,
   reorderRoutes,
+  validModRoutes,
   type ModRoute,
   type ModSource,
 } from "../modMatrix";
@@ -129,7 +130,24 @@ export function stemsModsActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     updateModRoute(id, patch) {
       ctx.record(`mod:${id}:${Object.keys(patch).join(",")}`);
       const s = get();
-      const activeMods = s.activeMods.map((r) => (r.id === id ? { ...r, ...patch } : r));
+      // E2(b): `patch` is `Partial<ModRoute>` at compile time only — a
+      // hostile/malformed patch (this is a public store action) used to
+      // merge straight in with `{ ...r, ...patch }`, no validation, so a
+      // non-finite amount/attack/release, an unrecognized curve, or a
+      // hostile `source` could all land in `activeMods`/`modsByPreset`
+      // un-checked. `validModRoutes` is the SAME validator every project/
+      // theme/localStorage load already runs a route through — reusing it
+      // here (on the merged candidate, not the bare patch) means a route
+      // this store holds live is held to exactly the same shape a freshly
+      // loaded one would be, whichever path it arrived by. Falls back to
+      // the pre-patch route `r` (rejecting the whole patch) only in the
+      // rare case id/source/param/amount themselves become invalid — the
+      // same "unknown/garbage source" the validator already drops on load.
+      const activeMods = s.activeMods.map((r) => {
+        if (r.id !== id) return r;
+        const [validated] = validModRoutes([{ ...r, ...patch }]);
+        return validated ?? r;
+      });
       const modsByPreset = { ...s.modsByPreset, [s.presetId]: activeMods };
       set({ activeMods, modsByPreset });
       saveStoredMods(modsByPreset);
