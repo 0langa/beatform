@@ -301,6 +301,68 @@ describe("resolveActiveFrame property fuzz: purity", { timeout: 30_000 }, () => 
       RUNS,
     );
   });
+
+  /**
+   * The task's own named invariant for this surface: "automation spread
+   * never injects non-spec keys into rendering." `AutomationLane.param` is
+   * an unrestricted string (`validTimeline` slices to 64 chars, no
+   * denylist), and `evalTimeline` writes `automation[lane.param] = v` where
+   * `automation = Object.create(null)` — so a lane can genuinely be named
+   * "__proto__" or "constructor". `params = { ...params, ...automation }`
+   * then spreads that into a normal-prototype object.
+   *
+   * NON-VACUITY / analysis, not assumed: spread (`{...source}`) copies via
+   * `CreateDataPropertyOrThrow` (`[[DefineOwnProperty]]`), never `[[Set]]` —
+   * unlike `obj.__proto__ = x` or `obj["__proto__"] = x` (direct
+   * assignment), which DOES invoke the inherited accessor and can reassign
+   * a prototype when `x` is an object. Automation values are always
+   * NUMBERS (`laneValue` returns `number | null`, and only the non-null
+   * case is ever assigned), and assigning a primitive through spread's
+   * `[[DefineOwnProperty]]` path can only ever create an inert OWN property
+   * literally named `"__proto__"` — it cannot reassign `params`'s actual
+   * prototype. Confirmed empirically, not just reasoned: this property
+   * passes at 200 runs. MUTATION-CHECK: same as modMatrix's equivalent
+   * proto-pollution suite, this pins behavior that is ALREADY safe by
+   * construction (a Map/Object.create(null)-and-spread combination
+   * mirrored across both files) — no realistic single-line mutation to
+   * THIS file makes a NUMBER-valued spread pollute a prototype, for the
+   * same reason removing `Object.create(null)` from `validModsByPreset`
+   * (modMatrixFuzz.test.ts) needed a genuinely OBJECT-valued write to
+   * demonstrate: this file never constructs one. Recorded as a verified
+   * pin, not a padded mutation.
+   */
+  it("an automation lane named after a prototype key pollutes nothing", () => {
+    const before = Object.keys(Object.prototype);
+    fc.assert(
+      fc.property(
+        fc.constantFrom("__proto__", "constructor", "prototype", "hasOwnProperty", "toString"),
+        fc.double({ min: -1000, max: 1000, noNaN: true }),
+        fc.double({ min: 0, max: 100, noNaN: true }),
+        (protoParam, value, t) => {
+          const tl: Timeline = {
+            enabled: true,
+            scenes: [],
+            lanes: [{ param: protoParam, keyframes: [{ t: 0, value, curve: "hold" }] }],
+          };
+          const input: FrameResolveInput = {
+            timeline: tl,
+            basePresetId: REAL_PRESET_IDS[0],
+            baseParams: { hue: 1 },
+            baseMods: [],
+            baseBg: { mode: 0, color: [0, 0, 0] },
+            paramsByPreset: {},
+            modsByPreset: {},
+          };
+          const rf = resolveActiveFrame(input, t);
+          expect(Object.getPrototypeOf(rf.params)).toBe(Object.prototype);
+          expect(Object.keys(Object.prototype)).toEqual(before);
+          expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+        },
+      ),
+      RUNS,
+    );
+    expect(Object.keys(Object.prototype)).toEqual(before);
+  });
 });
 
 describe(
