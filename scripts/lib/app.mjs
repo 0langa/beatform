@@ -18,7 +18,13 @@
 //   9980   av1-e2e.mjs
 //   10060  lyrics-e2e.mjs
 //   10140  installed-runtime-smoke.mjs
-//   10220  deepcolor-verify.mjs --prores
+//   10220  p11-smoke.mjs               (undocumented base, added retroactively)
+//   10300  gallery-builtin-shots.mjs   (CDP debug port only — Vite itself
+//                                       runs on :1427, --strictPort, a
+//                                       separate port this harness owns)
+//   10380  segment-parity-probe.mjs    (moved off 10220 — three scripts had
+//                                       independently claimed it)
+//   10460  deepcolor-verify.mjs --prores  (same collision, same move)
 //
 //   (gpu-pixel-matrix.mjs predates this map and rolls 9400 + pid % 500 —
 //   a span that overlaps several bases above. It accepts --port=<n>; pass

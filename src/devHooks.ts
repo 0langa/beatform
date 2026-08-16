@@ -17,6 +17,7 @@ import { getPrefs, setPrefs } from "./state/prefs";
 import { newUserPresetId, serializeUserPreset } from "./state/userPresets";
 import { serializeTheme, type ThemeMeta } from "./state/themes";
 import { presets } from "./render/presets";
+import { FACTORY_THEMES } from "./state/factoryThemes";
 import { APP_VERSION } from "./version";
 import { pcmFromAudioBuffer } from "./audio/offlineSource";
 import { wavFromPcm } from "./audio/dsp/wav";
@@ -282,6 +283,14 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
     };
     return serializeTheme(docFromState(s), themeMeta, APP_VERSION);
   };
+  // P-6 built-in-thumbnail capture (gallery-builtin-shots.mjs, the P-6
+  // follow-up): the factory pack's OWN data, so the capture script applies
+  // the exact same document a real Gallery "Apply" click would
+  // (`applyTheme`), never a hand-rolled copy of a theme's params that could
+  // quietly drift from what factoryThemes.ts actually ships — the drift the
+  // follow-up exists to close (the 13 committed .webp files were captured
+  // by hand and nothing re-renders them if a theme's tuning changes later).
+  (window as unknown as { __factoryThemes: unknown }).__factoryThemes = FACTORY_THEMES;
   (window as unknown as { __prefs: unknown }).__prefs = { get: getPrefs, set: setPrefs };
   // UI clipping auditor for the browser-pane harness (referenced by the
   // testing hand-off): walks a scope's visible DOM and reports horizontally
