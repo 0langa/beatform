@@ -172,9 +172,10 @@ export const DEFAULT_SYNC: SyncSettings = { mode: "kick", smooth: 0.5 };
 
 /**
  * The step for the sync-trio sliders (Smoothing/Attack/Release on the Sync
- * page) — all three share one grid, same as POST_MOD_TARGETS and
- * MOTION_MASTER_SPECS double their `step` as the persistence grid for
- * shipped content (a gallery registry theme's tuned value is "legal" only if
+ * page) — all three share one grid. Like the shared MAX_FREQ/MIN_FREQ
+ * constants in featurePipeline.ts, one exported value keeps the three call
+ * sites in lockstep; the step doubles as the persistence grid for shipped
+ * content (a gallery registry theme's tuned value is "legal" only if
  * it sits on this grid; off-grid survives verbatim until the user's first
  * touch of the slider rewrites it — see factoryThemes.test.ts's
  * `expectOnGrid`). Refined from 0.01 (C5(c), BACKLOG): the owner-approved
