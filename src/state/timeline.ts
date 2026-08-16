@@ -167,8 +167,17 @@ export function laneValue(lane: AutomationLane, t: number): number | null {
   }
   if (t <= ks[first].t) return ks[first].value;
   if (t >= ks[last].t) return ks[last].value;
-  // Both exist here: ks[first].t < t puts `first` in the lo set, and
-  // ks[last].t > t puts `last` in the hi set.
+  // Both exist here FOR ANY FINITE t: ks[first].t < t puts `first` in the lo
+  // set, and ks[last].t > t puts `last` in the hi set — proven by the two
+  // early returns just above having both already failed. A NaN t (nothing
+  // upstream of this function — resolveActiveFrame's `t` — guarantees a
+  // finite one) fails EVERY comparison above, including both of those early
+  // returns, so `lo`/`hi` can reach here still at their initial -1 and
+  // `interpolate(ks[-1], ...)` threw reading `.curve` off `undefined` — a
+  // white-screen crash on the render loop, not merely a wrong value. Hold
+  // the first keyframe instead, the same degrade `t <= ks[first].t` already
+  // uses for "before the timeline".
+  if (lo < 0 || hi < 0) return ks[first].value;
   return interpolate(ks[lo], ks[hi], t);
 }
 
