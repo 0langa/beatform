@@ -16,7 +16,7 @@ import { createReadStream, existsSync, mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { spawnApp, attachWithRecovery, waitHooks, killTree, TAURI_WARMUP } from "./lib/app.mjs";
+import { spawnApp, attachWithRecovery, waitHooks, killTree } from "./lib/app.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = (process.argv.find((a) => a.startsWith("--out=")) ?? "").slice("--out=".length);
@@ -86,16 +86,19 @@ try {
     profileName: "wv2-av1-profile",
   });
 
-  // Warm up the dynamic @tauri-apps/api import FIRST: on a cold Vite dep
-  // cache this triggers "new dependencies optimized — reloading page", which
-  // destroys the execution context. Absorb that here and re-attach, so the
-  // real run below never gets reloaded out from under the export.
-  const cdp = await attachWithRecovery(app, (c) => c.eval(TAURI_WARMUP), { retrySleepMs: 2000 });
+  // Probe with the hook wait, not TAURI_WARMUP (deleted — see lib/app.mjs):
+  // hooks appearing proves the module graph loaded, and a cold-cache Vite
+  // reload mid-poll still trips the recovery retry, which is all the old
+  // warmup ever actually delivered.
+  const cdp = await attachWithRecovery(
+    app,
+    (c) => waitHooks(c, ["__store", "__engine", "__loadFile", "__runExport"]),
+    { retrySleepMs: 2000 },
+  );
 
-  // Wait for hooks, load the track, pick a smooth-gradient preset (tunnel),
-  // then start the REAL av1 lane WITHOUT awaiting it (heap-soak pattern:
-  // a multi-minute awaited eval is fragile over the CDP socket) and poll.
-  await waitHooks(cdp, ["__store", "__engine", "__loadFile", "__runExport"]);
+  // Load the track, pick a smooth-gradient preset (tunnel), then start the
+  // REAL av1 lane WITHOUT awaiting it (heap-soak pattern: a multi-minute
+  // awaited eval is fragile over the CDP socket) and poll.
   await cdp.eval(`(async () => {
     await window.__loadFile(${JSON.stringify(`http://127.0.0.1:${wavPort}/${path.basename(wav)}`)}, "e2e.wav");
     window.__store.getState().pause?.();

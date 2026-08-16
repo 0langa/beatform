@@ -61,11 +61,16 @@ export function harnessPort(base) {
   return base + (process.pid % 80);
 }
 
-/** Expression that warms the dynamic @tauri-apps import. On a cold Vite dep
- * cache it triggers "new dependencies optimized — reloading page", which
- * destroys the eval context — run it as an attachWithRecovery probe so the
- * reload is absorbed BEFORE the real run. */
-export const TAURI_WARMUP = `import("@tauri-apps/api/core").then(() => true)`;
+// TAURI_WARMUP is GONE — it was `import("@tauri-apps/api/core")` eval'd over
+// raw CDP, and a raw Runtime.evaluate cannot resolve a bare specifier (no
+// import map; Vite's transform only touches modules IT serves). The original
+// av1-e2e wrapped that eval in try/catch, so its guaranteed failure was
+// harmlessly absorbed as "the cold-cache reload happened" — but this lib's
+// refactor promoted it to attachWithRecovery's REQUIRED probe, where a
+// probe that always throws kills the attach instead. Probe with
+// waitHooks(...) — it proves the module graph (and thus the @tauri-apps
+// dep) actually loaded, and a mid-poll reload still trips the recovery
+// retry exactly like the old probe intended.
 
 // STALE DEV SERVER (G9): no harness starts Vite — they spawn the debug shell,
 // which loads the `devUrl` baked into tauri.conf.json. On this machine
@@ -293,7 +298,8 @@ export async function attach(app, pageOpts) {
  * Attach, run `probe(cdp)`, and on failure re-attach ONCE and re-probe.
  * Vite pushes one reload shortly after a cold boot (dep re-optimize / ws
  * reconnect), which destroys the eval context mid-wait — this absorbs it
- * (the v2.68 lesson). Pass the hook wait or TAURI_WARMUP as the probe.
+ * (the v2.68 lesson). Pass a waitHooks(...) call as the probe; the probe
+ * must be something that can SUCCEED, or the second failure propagates.
  */
 export async function attachWithRecovery(app, probe, { retrySleepMs = 2500, pageOpts } = {}) {
   let cdp = await attach(app, pageOpts);

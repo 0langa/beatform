@@ -16,7 +16,7 @@ import { createServer as createHttpServer } from "node:http";
 import { createReadStream, existsSync, mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnApp, attachWithRecovery, waitHooks, killTree, TAURI_WARMUP } from "./lib/app.mjs";
+import { spawnApp, attachWithRecovery, waitHooks, killTree } from "./lib/app.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = (process.argv.find((a) => a.startsWith("--out=")) ?? "").slice("--out=".length);
@@ -78,9 +78,15 @@ try {
     portBase: 9460, // see the map in lib/app.mjs
     profileName: "wv2-v268-profile",
   });
-  const cdp = await attachWithRecovery(app, (c) => c.eval(TAURI_WARMUP), { retrySleepMs: 2000 });
-
-  await waitHooks(cdp, ["__store", "__engine", "__loadFile"]);
+  // Probe with the hook wait, not TAURI_WARMUP (deleted — see lib/app.mjs):
+  // a cold-cache Vite reload mid-poll still trips the recovery retry.
+  const cdp = await attachWithRecovery(
+    app,
+    (c) => waitHooks(c, ["__store", "__engine", "__loadFile"]),
+    {
+      retrySleepMs: 2000,
+    },
+  );
   await cdp.eval(
     `window.__loadFile(${JSON.stringify(`http://127.0.0.1:${wavPort}/${path.basename(wav)}`)}, "check.wav").then(() => true)`,
   );

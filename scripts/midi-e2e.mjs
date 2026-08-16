@@ -18,7 +18,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { spawnApp, attachWithRecovery, killTree, TAURI_WARMUP } from "./lib/app.mjs";
+import { spawnApp, attachWithRecovery, killTree, waitHooks } from "./lib/app.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT_NAME = "loopMIDI Beatform";
@@ -49,9 +49,11 @@ try {
     portBase: 9380, // see the map in lib/app.mjs
     profileName: "wv2-midi-profile",
   });
-  // Cold Vite dep cache reloads the page on the first dynamic @tauri-apps
-  // import ("new dependencies optimized") — absorb it before the real run.
-  const cdp = await attachWithRecovery(app, (c) => c.eval(TAURI_WARMUP), { retrySleepMs: 2000 });
+  // Probe with the hook wait, not TAURI_WARMUP (deleted — see lib/app.mjs):
+  // a cold-cache Vite reload mid-poll still trips the recovery retry.
+  const cdp = await attachWithRecovery(app, (c) => waitHooks(c, ["__store"]), {
+    retrySleepMs: 2000,
+  });
 
   // 1+2: enable MIDI (permission + access + discovery), install a change
   // counter for the duplicate checks, park on the particles preset (its

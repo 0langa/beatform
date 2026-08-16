@@ -440,15 +440,16 @@ async function runProresDeviceLeg() {
     // segment-parity-probe.mjs had also each claimed as "free".)
     app = spawnApp({ root, portBase: 10460, profileName: "wv2-prores-profile" });
 
-    // NOT TAURI_WARMUP: a raw CDP Runtime.evaluate of a bare-specifier
-    // dynamic import (`import("@tauri-apps/api/core")`) reproducibly throws
-    // "Failed to resolve module specifier" in this environment, on every
-    // attempt attachWithRecovery's retry gives it — devHooks.ts's own
-    // __invoke comment documents the general shape of this ("CDP
-    // Runtime.evaluate cannot resolve bare specifiers... the v2.68.1
-    // lesson"); av1-e2e.mjs's proven TAURI_WARMUP run (BACKLOG, 2026-08-03)
-    // predates two Vite major/minor bumps since (7.0.4 -> 8.1.5 -> 8.2.1,
-    // 07-27 and 08-12) that nothing using TAURI_WARMUP has exercised since.
+    // NOT TAURI_WARMUP (since deleted from lib/app.mjs): a raw CDP
+    // Runtime.evaluate of a bare-specifier dynamic import
+    // (`import("@tauri-apps/api/core")`) ALWAYS throws "Failed to resolve
+    // module specifier" — no import map exists, and Vite only transforms
+    // modules it serves ("the v2.68.1 lesson", per devHooks.ts's __invoke
+    // comment). It never worked: av1-e2e's proven 2026-08-03 run wrapped
+    // that eval in try/catch (failure harmlessly read as "the cold-cache
+    // reload happened"); the 2026-08-06 lib refactor promoted it to
+    // attachWithRecovery's REQUIRED probe, which no harness had exercised
+    // on device until this one found the corpse.
     // The IPC calls this leg actually needs (debug_allow_path, prores_begin/
     // write/finish/abort) happen inside __runExport's OWN module-graph
     // import in devHooks.ts, which Vite transforms normally when it SERVES
