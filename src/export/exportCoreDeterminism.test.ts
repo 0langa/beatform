@@ -86,6 +86,9 @@ vi.mock("../render/webgpuRenderer", async (importOriginal) => {
     setCoverArt() {
       rec("setCoverArt");
     }
+    setLyricPlate(p: unknown) {
+      rec("setLyricPlate", { plate: (p as { tag?: string } | null)?.tag ?? null });
+    }
     setBackgroundImage() {
       rec("setBackgroundImage");
     }
@@ -359,6 +362,20 @@ vi.mock("../render/dynamicOverlay", async (importOriginal) => {
   };
 });
 
+// The lyric plate's raster, intercepted the same way and for the same
+// reason: no canvas here, and the (lines, key) tuple is the contract under
+// test — the key/gating helpers stay REAL.
+vi.mock("../render/lyricPlate", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../render/lyricPlate")>();
+  return {
+    ...actual,
+    composeLyricPlate: vi.fn(async (_l, key: { fillQ: number; main: number }) => ({
+      tag: `plate@${key.main}/${key.fillQ}`,
+      close: () => {},
+    })),
+  };
+});
+
 const LINES: LyricLine[] = [
   { t: 0.05, end: 0.25, text: "hold the line" },
   { t: 0.3, end: 0.39, text: "second line here" },
@@ -446,5 +463,67 @@ describe("runExportJob overlay compose call (F4)", () => {
     }
     expect(timesA).toEqual(expected);
     expect(timesA.length).toBeLessThan(frames); // the cache really did skip work
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The EXPORT half of the lyric-plate contract (Lyric Stage's text input).
+// The live half lives in src/state/liveLyricPlate.test.ts and asserts the
+// identical (lines, key) tuple against the same key function.
+// ---------------------------------------------------------------------------
+
+describe("runExportJob lyric plate compose call", () => {
+  it("composes from the keyed clip time and output size, gated by the plate key", async () => {
+    const { composeLyricPlate, lyricPlateKeyAt, samePlateKey, NULL_PLATE_KEY } =
+      await import("../render/lyricPlate");
+    vi.mocked(composeLyricPlate).mockClear();
+
+    const j = overlayJob();
+    await walk(j);
+
+    const calls = vi.mocked(composeLyricPlate).mock.calls;
+    expect(calls.length).toBeGreaterThan(1);
+    // Every call passes the job's (segment-shifted) lines and a key computed
+    // by the SHARED key function at some frame time over the output size —
+    // and the sequence is exactly the key-change sequence, first frame
+    // included (the NULL sentinel matches nothing).
+    let prev = NULL_PLATE_KEY;
+    const expected: unknown[][] = [];
+    const frames = Math.round(j.pcm.duration * j.fps);
+    for (let n = 0; n < frames; n++) {
+      const key = lyricPlateKeyAt(LINES, n / j.fps, j.width, j.height);
+      if (!samePlateKey(key, prev)) {
+        expected.push([LINES, key]);
+        prev = key;
+      }
+    }
+    expect(calls).toEqual(expected);
+    expect(calls.length).toBeLessThan(frames); // the key gate really skipped work
+  });
+
+  it("feeds the plate even with the caption overlay OFF — and identically on a re-run", async () => {
+    // The plate is the PRESET's input; the caption toggle must not stop it.
+    // (The caption itself stays off: hasDynamics re-checks style.enabled.)
+    const { composeLyricPlate } = await import("../render/lyricPlate");
+    const { composeOverlayFrame } = await import("../render/dynamicOverlay");
+    const j = job({
+      lyrics: { lines: LINES, style: { ...STYLE, enabled: false } },
+    });
+
+    vi.mocked(composeLyricPlate).mockClear();
+    vi.mocked(composeOverlayFrame).mockClear();
+    const a = await walk(j);
+    const platesA = vi.mocked(composeLyricPlate).mock.calls.map((c) => c[1]);
+    expect(platesA.length).toBeGreaterThan(1);
+    expect(a.some((e) => e.call === "setLyricPlate")).toBe(true);
+    // The caption stays honest: with style.enabled false there is no dynamic
+    // overlay, so the per-frame caption compositor never runs (the one
+    // setOverlay in the trace is setup's static-overlay hand-off).
+    expect(composeOverlayFrame).not.toHaveBeenCalled();
+
+    vi.mocked(composeLyricPlate).mockClear();
+    const b = await walk(j);
+    expect(vi.mocked(composeLyricPlate).mock.calls.map((c) => c[1])).toEqual(platesA);
+    expect(b).toEqual(a);
   });
 });

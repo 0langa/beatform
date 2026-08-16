@@ -65,6 +65,13 @@ import {
   type OverlayDynamics,
   type OverlayFrameKey,
 } from "../render/dynamicOverlay";
+import {
+  composeLyricPlate,
+  lyricPlateKeyAt,
+  NULL_PLATE_KEY,
+  samePlateKey,
+  type LyricPlateKey,
+} from "../render/lyricPlate";
 import type { LyricLine, LyricStyle } from "../state/lyrics";
 import type { VocalSpan } from "../audio/vocalPresence";
 import type { AudiogramSettings } from "../state/audiogram";
@@ -654,6 +661,10 @@ export async function runExportJob(
     progressPx: -2,
     clockSec: -2,
   };
+  // The lyric plate's own key memo (Lyric Stage's text input). Separate from
+  // the overlay key on purpose: the plate travels with job.lyrics whether or
+  // not the caption overlay is enabled, and keys on its own grid.
+  let lastPlateKey: LyricPlateKey = NULL_PLATE_KEY;
   // E4a: declared OUTSIDE the try so the finally can always stop it; armed
   // only once setup completes (setup has its own staged heartbeats, AX-3).
   let stopLivenessPulse: () => void = () => {};
@@ -1062,6 +1073,18 @@ export async function runExportJob(
           renderer.setOverlay(
             await composeOverlayFrame(overlayBase, dynamics, t, job.width, job.height),
           );
+        }
+      }
+      // Lyric plate (Lyric Stage's text input): same discipline, its own key.
+      // The lines arrive segment-shifted with everything else, so keying on
+      // this frame's clip time resolves the plate the preview shows at the
+      // matching track moment. Ungated on the caption toggle — the plate
+      // serves the PRESET, and job.lyrics travels whenever lines exist.
+      if (job.lyrics) {
+        const plateKey = lyricPlateKeyAt(job.lyrics.lines, t, job.width, job.height);
+        if (!samePlateKey(plateKey, lastPlateKey)) {
+          lastPlateKey = plateKey;
+          renderer.setLyricPlate(await composeLyricPlate(job.lyrics.lines, plateKey));
         }
       }
       let transition: { params: ParamValues; mix: number; kind: number } | undefined;

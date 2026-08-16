@@ -519,10 +519,13 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
               beatGrid: get().beatGrid,
               sections: get().sections,
               stems: get().stems,
-              lyrics:
-                get().lyrics && get().lyricStyle.enabled
-                  ? { lines: get().lyrics!, style: get().lyricStyle }
-                  : undefined,
+              // Ungated on the caption toggle (since the lyric plate): the
+              // caption path re-checks style.enabled itself (hasDynamics /
+              // composeOverlayFrame draw nothing while it is off), and the
+              // Lyric Stage plate needs the LINES whether or not the caption
+              // draws — gating here made the mode's words vanish from
+              // exports the moment the user turned the caption off.
+              lyrics: get().lyrics ? { lines: get().lyrics!, style: get().lyricStyle } : undefined,
               // Ungated on purpose — see TrackInput.vocalLines.
               vocalLines: get().lyrics ?? undefined,
               audiogram: audiogramActive(get().audiogram)

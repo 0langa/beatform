@@ -266,12 +266,17 @@ describe("__runExport track-change guards", () => {
     const opts = fake.exportVideo.mock.calls[0]?.[1] as {
       sections?: number[];
       vocalSpans?: unknown[];
+      lyrics?: { lines: unknown[] };
     };
     expect(opts.sections).toEqual([0, 12.5, 25]);
     // Derived by buildExportOptions from vocalLines — present even though the
     // lyric OVERLAY is disabled, exactly as in the app.
     expect(Array.isArray(opts.vocalSpans)).toBe(true);
     expect(opts.vocalSpans!.length).toBeGreaterThan(0);
+    // The LINES travel ungated too (since the lyric plate): the caption
+    // toggle governs the caption, not the Lyric Stage mode's text input —
+    // mirroring runExport's own ungated hand-off.
+    expect(opts.lyrics?.lines).toHaveLength(1);
   });
 
   it("refuses a track that landed after the analysis wait — the E3d window", async () => {

@@ -66,7 +66,10 @@ export interface TrackInput {
    * batch queue — stem routes then read 0 and are silently inert. */
   stems?: StemEntry[];
   /** Timed lyrics + style (session-scoped, like stems). Omitted by the
-   * batch queue — batch tracks have no imported lyrics. */
+   * batch queue — batch tracks have no imported lyrics. Attached whenever
+   * lines exist, NOT only while the caption overlay is enabled: the caption
+   * path re-checks style.enabled itself, and the Lyric Stage plate reads the
+   * lines regardless (the mode replaces the caption, not the other way). */
   lyrics?: { lines: LyricLine[]; style: LyricStyle };
   /** The timed lines REGARDLESS of whether the overlay draws them — the
    * vocal-presence modulation source is about the singing, not the caption,

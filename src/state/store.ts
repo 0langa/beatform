@@ -52,6 +52,13 @@ import {
   sameOverlayFrame,
   type OverlayDynamics,
 } from "../render/dynamicOverlay";
+import {
+  composeLyricPlate,
+  lyricPlateKeyAt,
+  NULL_PLATE_KEY,
+  samePlateKey,
+  type LyricPlateKey,
+} from "../render/lyricPlate";
 import { audiogramActive, type AudiogramSettings } from "./audiogram";
 import type { MotionSettings, PostSettings } from "../render/types";
 import {
@@ -811,6 +818,20 @@ let videoBgFrames: VideoBgFrames | null = null;
 // Previous frame's track time, for beat-quantized switch takeover. Live-only.
 let lastQuantizeTick = -1;
 let overlayComposeToken = 0;
+/** Lyric plate (Lyric Stage's text input): last uploaded key + raster token.
+ * Its own memo pair, not shared.lastFrameKey's — the plate is ungated on the
+ * caption toggle and keys on its own grid (lyricPlate.ts). */
+let lastPlateKey: LyricPlateKey = NULL_PLATE_KEY;
+let plateToken = 0;
+/** Forget the uploaded plate and clear it off the renderer. The next frame
+ * tick recomposes from whatever lines then exist — one function for every
+ * "the plate I uploaded no longer describes the document" moment (lyrics
+ * identity change, renderer rebuild). */
+function resetLyricPlate(): void {
+  lastPlateKey = NULL_PLATE_KEY;
+  plateToken++;
+  getRenderer()?.setLyricPlate(null);
+}
 
 /** The per-frame overlay layers (lyrics + audiogram) assembled from state —
  * the SAME shape the export job carries, so live and export compose alike. */
@@ -1757,6 +1778,7 @@ export const useVizStore = create<VizState>((set, get) => {
           applyBgImage(); // ...and without a background image
           applyVideoBg(); // ...and without video frames (re-decode for it)
           get().refreshOverlay(); // new renderer starts without an overlay bound
+          resetLyricPlate(); // ...and without a lyric plate (next tick recomposes)
         },
         onResize: () => get().refreshOverlay(),
         onMeter: (lufs, stereoWidth) => set({ lufs, stereoWidth }),
@@ -1780,6 +1802,27 @@ export const useVizStore = create<VizState>((set, get) => {
             if (r instanceof WebGPURenderer) {
               const i = videoBgFrameIndex(videoBgFrames.frames.length, videoBgFrames.fps, t);
               r.updateBackgroundVideoFrame(videoBgFrames.frames[i]);
+            }
+          }
+          // Lyric plate (Lyric Stage's text input): recompose when ITS key
+          // moves — the same pure key + compose pair the export core calls
+          // with the job's clip time. Runs whenever timed lyrics exist, not
+          // only while the mode is active, so a timeline scene (or a beat-
+          // quantized switch) lands on Lyric Stage with the words already on
+          // stage; the raster is a handful of text draws on line changes and
+          // 1/32 fill steps, the caption compositor's own cadence.
+          if (s.lyrics && liveCanvas) {
+            const lines = s.lyrics;
+            const plateKey = lyricPlateKeyAt(lines, t, liveCanvas.width, liveCanvas.height);
+            if (!samePlateKey(plateKey, lastPlateKey)) {
+              lastPlateKey = plateKey;
+              const token = ++plateToken;
+              void composeLyricPlate(lines, plateKey)
+                .then((bmp) => {
+                  if (token === plateToken) getRenderer()?.setLyricPlate(bmp);
+                  else bmp.close();
+                })
+                .catch(() => undefined);
             }
           }
           const dyn = overlayDynamics(s);
@@ -3159,6 +3202,11 @@ useVizStore.subscribe((s) => {
   // peek, not get: this fires on state changes, including in tests and before
   // initServices — a missing analyzer is "nothing to feed yet", not an error.
   peekAnalyzer()?.setVocalSpans(s.lyrics ? vocalSpansFromLyrics(s.lyrics) : null);
+  // The lyric plate rides the same chokepoint for the same reason: nine
+  // writers, and a stale plate keeps the PREVIOUS sheet's words on stage.
+  // Clear it now; the next frame tick recomposes from the new lines (or
+  // leaves the stage to the mode's no-lyrics treatment).
+  resetLyricPlate();
 });
 
 /** True while an export is running — guards Escape-to-close and modal close. */

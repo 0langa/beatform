@@ -587,8 +587,10 @@ export function installDevHooks(store: typeof useVizStore.getState): void {
           // frame the shipped app never produces.
           sections: s.sections,
           stems: s.stems,
-          lyrics:
-            s.lyrics && s.lyricStyle.enabled ? { lines: s.lyrics, style: s.lyricStyle } : undefined,
+          // Ungated on the caption toggle, mirroring runExport (the lyric
+          // plate needs the lines whether or not the caption draws; the
+          // caption path re-checks style.enabled itself).
+          lyrics: s.lyrics ? { lines: s.lyrics, style: s.lyricStyle } : undefined,
           // Ungated on lyricStyle by design, mirroring runExport's own
           // "Ungated on purpose — see TrackInput.vocalLines".
           vocalLines: s.lyrics ?? undefined,
