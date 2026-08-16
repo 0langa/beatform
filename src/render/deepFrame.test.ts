@@ -206,12 +206,20 @@ describe("deepFrameToStraightRgba64 — un-premultiplies before quantizing to u1
 
   it("clamps the rare over-unity result from independent per-channel rounding", () => {
     // Two f16 patterns both "just under 1.0" but rounding to DIFFERENT u16
-    // endpoints (one to 65535, one to 65534) — a real case the LUT can
-    // produce since R and A are quantized independently. Colour must not
-    // overshoot 65535.
+    // endpoints — a real case the LUT can produce since R and A are
+    // quantized independently. 0x3bff decodes to 65503, 0x3bfe to 65471
+    // (R > A), so the unclamped ratio 65503*65535/65471 ≈ 65567.04 —
+    // 32 over the ceiling.
+    //
+    // Asserting merely `<= 65535` here would be VACUOUS: `out` is a
+    // Uint16Array, so ToUint16 wraps ANY write into [0, 65535] regardless of
+    // whether the Math.min clamp in the source ever ran — an unclamped
+    // 65567 would silently become 31 (65567 mod 65536), and 31 <= 65535
+    // passes too. The only assertion that actually exercises the clamp is
+    // the exact expected value.
     const src = paddedBuffer(1, 1, 256, (_y, i) => [0x3bff, 0x0000, 0x0000, 0x3bfe][i]);
     const out = deepFrameToStraightRgba64(src, 1, 1, 256);
-    expect(out[0]).toBeLessThanOrEqual(65535);
+    expect(out[0]).toBe(65535);
   });
 
   it("is a byte-identical no-op wherever alpha is fully opaque", () => {
