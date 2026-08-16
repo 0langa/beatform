@@ -106,16 +106,20 @@ function signatureChroma(a64) {
 }
 
 /**
- * The dock's REPORT-ONLY overflow diagnostic, flattened into lines a human
- * reads rather than a JSON blob nobody opens.
+ * The dock's overflow diagnostic, flattened into lines a human reads rather
+ * than a JSON blob nobody opens. Used two ways below: printed unconditionally
+ * by every caller (including the baseline-update path), so a run can never
+ * quietly swallow a finding, and folded into the thrown Error's message when
+ * `assertRuntime` fails the run over it.
  *
- * Deliberately not a failure: turning it into an assertion is BACKLOG Q8, an
- * owner decision, because it could light up pre-existing failures app-wide.
- * "Not asserted" is not "not printed", though, and the two are exactly what
- * this run used to confuse — the summary said `dock layout clean on 8 pages`
- * whatever this array held, which is the sentence that lets a real overflow be
- * waved through. Every caller below prints these lines, including the
- * baseline-update path, so no run can quietly swallow one.
+ * Promoted to a hard assertion in 2.100.0 (BACKLOG H16 Q8, owner verdict
+ * 2026-08-16: PROMOTE). Through 2.99.0 this was deliberately unasserted,
+ * because turning it on could light up pre-existing failures app-wide, which
+ * was a decision and not a fix. "Not asserted" was not "not printed", and the
+ * two used to be confused — the summary said `dock layout clean on 8 pages`
+ * whatever this array held, which is the sentence that let a real overflow
+ * ship. Now a non-empty result stops the matrix outright, same as every
+ * other leg.
  */
 function dockOverflowLines(dock) {
   const lines = [];
@@ -144,8 +148,8 @@ function printDockOverflow(dock) {
     return 0;
   }
   console.log(
-    `DOCK OVERFLOW: ${lines.length} REPORT-ONLY finding(s) — not asserted ` +
-      `(BACKLOG Q8), and NOT "clean". Each line is a defect to fix or to file:`,
+    `DOCK OVERFLOW: ${lines.length} finding(s) — FAILING the matrix ` +
+      `(BACKLOG H16 Q8, promoted 2.100.0). Each line is a defect to fix or to file:`,
   );
   for (const line of lines) console.log(line);
   return lines.length;
@@ -189,17 +193,25 @@ function assertRuntime(matrix) {
   // H4: row geometry plus the eight-page clipping audit at both ends of the
   // dock's range. Not a pixel assertion — the hashes cannot see the panel —
   // and it is the only gate in the tree that can look at a rendered row at
-  // all. Its `overflow` field is diagnostic, deliberately not asserted
-  // (BACKLOG Q8): read it, never wave it through.
+  // all. Its `overflow` field was diagnostic-only through 2.99.0; BACKLOG
+  // H16 Q8 (owner verdict 2026-08-16: PROMOTE) makes it a hard assertion
+  // below, same as `dock.passed` itself.
   const dock = matrix.dockLayoutSmoke;
-  // Printed BEFORE the throw below, and before the --update branch: a run that
-  // fails on a hash somewhere else, or one that re-blesses the baseline, must
-  // still surface the dock's overflow findings. The JSON in the failure message
-  // technically contains them and has never once been read.
+  // Printed BEFORE the throw below, and before the --update branch: a run
+  // that fails on a hash somewhere else, or one that re-blesses the
+  // baseline, must still surface the dock's overflow findings as readable
+  // lines, not just as a count buried in the failure text below.
   const dockOverflow = printDockOverflow(dock);
   if (!dock?.passed) failures.push(`dock layout audit failed: ${JSON.stringify(dock)}`);
+  // H16 Q8 (owner verdict 2026-08-16: PROMOTE) — nonzero overflow is now a
+  // matrix failure, same voice as every check above. The detail is the
+  // lines printDockOverflow just printed; this is what actually stops the
+  // run over them.
+  if (dockOverflow) {
+    failures.push(`dock overflow: ${dockOverflow} finding(s) — see the DOCK OVERFLOW lines above`);
+  }
   if (failures.length) throw new Error(failures.join("\n"));
-  return { blackExtremes, dockOverflow };
+  return { blackExtremes };
 }
 
 async function compare(matrix) {
@@ -805,7 +817,7 @@ try {
   }
 
   const matrix = await evaluateMatrix();
-  const { blackExtremes, dockOverflow } = assertRuntime(matrix);
+  const { blackExtremes } = assertRuntime(matrix);
 
   if (update) {
     const baseline = {
@@ -824,13 +836,16 @@ try {
         `spectrum smoke ${matrix.spectrumSmoke.displayBins} measured bins; ` +
         `modulation audit clean at ${matrix.modulationSmoke.narrow.dockWidth}px and ` +
         `${matrix.modulationSmoke.wide.dockWidth}px; ` +
-        // "audit clean", NOT "clean": the audit is one of two things this leg
-        // looks at, and the other one is report-only. Saying "clean" while the
-        // overflow diagnostic held entries is how a shipped defect reads as a
-        // pass, so the count rides along in the same sentence.
+        // Still "audit clean", not bare "clean" — dockOverflowLines' own doc
+        // comment explains why this file avoids that exact phrase. Through
+        // 2.99.0 the overflow count rode along here as a conditional
+        // warning, because it was unasserted and could be nonzero right at
+        // this line (BACKLOG H16 Q8). Promoted now: assertRuntime above
+        // throws first when it is, so reaching this line proves the literal
+        // "0" that follows, the same way it already proves "0 compile
+        // errors" above.
         `dock layout audit clean on 8 pages at ${matrix.dockLayoutSmoke.narrow.dockWidth}px ` +
-        `and ${matrix.dockLayoutSmoke.wide.dockWidth}px` +
-        (dockOverflow ? ` — SEE THE ${dockOverflow} DOCK OVERFLOW FINDING(S) ABOVE` : ""),
+        `and ${matrix.dockLayoutSmoke.wide.dockWidth}px, 0 dock overflow findings`,
     );
   }
   console.log(
