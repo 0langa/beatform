@@ -29,10 +29,13 @@ export interface OverlayDynamics {
  * quantized values, or the bitmap freezes whatever raw value existed on the
  * frame that happened to cross the boundary — a different frame at 30 fps than
  * at 60, so lyric fades stepped differently in preview vs export. These two
- * helpers are the single source of that quantization for both paths.
+ * helpers are the single source of that quantization for both paths — exported
+ * because the lyric PLATE (lyricPlate.ts, the Lyric Stage mode's text input)
+ * keys its own re-rasterization on the same grids; a second definition could
+ * drift a step size and split the two rasterizers' cadences.
  */
-const quantAlpha = (a: number): number => Math.round(a * 64) / 64;
-const quantProg = (p: number): number => Math.round(p * 32) / 32;
+export const quantAlpha = (a: number): number => Math.round(a * 64) / 64;
+export const quantProg = (p: number): number => Math.round(p * 32) / 32;
 
 export interface OverlayFrameKey {
   /** Active lyric line index (-1 = none). */
