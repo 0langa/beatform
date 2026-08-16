@@ -313,6 +313,19 @@ describe("setModRouteAmountsForParam (H13)", () => {
     expect(s().undoDepth).toBe(depth);
   });
 
+  it("is a no-op — no mutation, no history entry — when amount is non-finite (E2(b))", () => {
+    s().addModRoute("kick", liveParam);
+    const before = s().activeMods;
+    const depth = s().undoDepth;
+
+    s().setModRouteAmountsForParam(liveParam, NaN);
+    s().setModRouteAmountsForParam(liveParam, Infinity);
+    s().setModRouteAmountsForParam(liveParam, -Infinity);
+
+    expect(s().activeMods).toBe(before); // identity: nothing was even rebuilt
+    expect(s().undoDepth).toBe(depth);
+  });
+
   it("records ONE entry; undo restores the original amounts", () => {
     s().addModRoute("kick", liveParam);
     s().addModRoute("bass", liveParam);

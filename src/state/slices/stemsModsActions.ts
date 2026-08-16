@@ -231,6 +231,16 @@ export function stemsModsActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
      * muted route's amount as live, just not currently applied.
      */
     setModRouteAmountsForParam(param, amount) {
+      // E2(b) residual: `amount` is typed `number` at compile time only, and
+      // this is a public store action — updateModRoute above and setParam
+      // (store.ts) both already closed this exact gap for their own
+      // callers; this bulk sibling still merged `{ ...r, amount }` straight
+      // in with no check, so a non-finite amount could land in
+      // activeMods/modsByPreset and read straight into applyMods. Same
+      // reject-by-ignore idiom as setParam: silently return before
+      // record(), so a rejected call costs nothing and never reaches the
+      // undo stack.
+      if (!Number.isFinite(amount)) return;
       const s = get();
       if (!s.activeMods.some((r) => r.param === param)) return; // nothing to set
       // GROUPABLE, per-param (C1): the card's "All" depth row is a
