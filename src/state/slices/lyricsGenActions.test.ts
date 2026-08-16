@@ -50,6 +50,11 @@ const h = vi.hoisted(() => ({
   resolveGenerate: null as ((lrc: string) => void) | null,
   resolveAlign: null as
     ((words: { t: number; end: number; conf: number; text: string }[]) => void) | null,
+  // Captured so tests can feed synthetic progress/stageDone/result lines
+  // through the SAME onLine the real Tauri Channel would call — this is
+  // what lets stage-transition (a) and measured-RTF (b) be tested against
+  // the actual store wiring, not just the pure lyricsGen.ts reducers.
+  onLine: null as ((line: string) => void) | null,
 }));
 
 vi.mock("../platform", async (importOriginal) => {
@@ -61,9 +66,10 @@ vi.mock("../platform", async (importOriginal) => {
     writeAutosave: vi.fn(async () => {}),
     lyricsStageAudio: vi.fn(async () => {}),
     lyricsGenerate: vi.fn(
-      () =>
+      (_opts: unknown, onLine: (line: string) => void) =>
         new Promise<string>((resolve) => {
           h.resolveGenerate = resolve;
+          h.onLine = onLine;
         }),
     ),
     lyricsAlignLine: vi.fn(
@@ -82,6 +88,8 @@ const { getEngine } = await import("../services");
 const { shared } = await import("./shared");
 const { askConfirm, lyricsStageAudio } = await import("../platform");
 const { LYRICS_MAX_TRACK_SEC } = await import("./lyricsGenActions");
+const { getPrefs, setPrefs } = await import("../prefs");
+const { NO_MEASURED_RTF } = await import("../lyricsGen");
 
 const LRC =
   "[00:12.00]Out of my mind\n" + "[00:19.65]Plain fallback line\n" + "[00:24.00]Third line here\n";
@@ -113,8 +121,13 @@ beforeEach(() => {
   useVizStore.setState({ notice: null, error: null });
   h.resolveGenerate = null;
   h.resolveAlign = null;
+  h.onLine = null;
   vi.mocked(askConfirm).mockClear();
   vi.mocked(lyricsStageAudio).mockClear();
+  // measuredRtf is a module-level singleton (prefs.ts), not store state —
+  // reset it directly so one test's persisted RTF can never leak into the
+  // next one's estimate.
+  setPrefs({ measuredRtf: NO_MEASURED_RTF });
 });
 
 describe("generateLyrics track guard", () => {
@@ -208,5 +221,183 @@ describe("realignLyricLine track guard", () => {
 
     expect(JSON.stringify(s().lyrics)).toBe(before); // timings from track A never applied
     expect(s().lyricsRealign).toBeNull();
+  });
+});
+
+/**
+ * FEAT-004 follow-up (a): the store's onLine handler is thin wiring around
+ * lyricsGen.ts's pure reduceGenProgress (unit-tested directly in
+ * lyricsGen.test.ts). This is the wiring itself — real sidecar lines fed
+ * through the SAME onLine callback lyricsGenerate would call, proving the
+ * store actually reaches the reducer rather than, say, still running the
+ * old inline stageDone handling beside it.
+ */
+describe("generateLyrics stage-transition display", () => {
+  it('shows "starting <next stage>" the instant a stage completes, and clears once real progress arrives', async () => {
+    const done = s().generateLyrics("small", "auto");
+    await until(() => h.onLine !== null);
+
+    h.onLine!(JSON.stringify({ type: "stageDone", stage: "vad", wallSec: 12 }));
+    expect(s().lyricsGen.gen?.stage).toBe("transcribe");
+    expect(s().lyricsGen.gen?.starting).toBe(true);
+    expect(s().lyricsGen.gen?.pct).toBeNull();
+    expect(s().lyricsGen.gen?.etaSec).toBeNull();
+
+    h.onLine!(JSON.stringify({ type: "progress", stage: "transcribe", pct: 15, etaSec: 90 }));
+    expect(s().lyricsGen.gen?.stage).toBe("transcribe");
+    expect(s().lyricsGen.gen?.starting).toBe(false);
+    expect(s().lyricsGen.gen?.pct).toBe(15);
+    expect(s().lyricsGen.gen?.etaSec).toBe(90);
+
+    h.resolveGenerate!(LRC);
+    await done;
+    expect(s().lyricsGen.phase).toBe("idle");
+  });
+
+  it("the terminal stage (assemble) keeps the old 100%-and-done shape — nothing to transition to", async () => {
+    const done = s().generateLyrics("small", "auto");
+    await until(() => h.onLine !== null);
+
+    h.onLine!(JSON.stringify({ type: "stageDone", stage: "assemble", wallSec: 1 }));
+    expect(s().lyricsGen.gen?.stage).toBe("assemble");
+    expect(s().lyricsGen.gen?.starting).toBe(false);
+    expect(s().lyricsGen.gen?.pct).toBe(100);
+
+    h.resolveGenerate!(LRC);
+    await done;
+  });
+});
+
+/**
+ * FEAT-004 follow-up (b): measured RTF persisted after a completed run,
+ * through the real generateLyrics action end to end (staged isolate/
+ * transcribe/align stageDone events, a result event carrying `ep`, then the
+ * resolved LRC) — proving the wiring reaches setPrefs with the right keys.
+ * The blend arithmetic itself (EWMA, the estimate blend) is pinned with
+ * exact numbers in lyricsGen.test.ts; this file only owns "does the store
+ * actually call it, with the right key, at the right time."
+ */
+describe("generateLyrics measured-RTF persistence", () => {
+  function feedStageRtf() {
+    h.onLine!(
+      JSON.stringify({
+        type: "stageDone",
+        stage: "isolate",
+        wallSec: 30,
+        rtf: 0.5,
+        detail: "DirectML",
+      }),
+    );
+    h.onLine!(JSON.stringify({ type: "stageDone", stage: "vad", wallSec: 1 })); // no rtf — untracked stage
+    h.onLine!(JSON.stringify({ type: "stageDone", stage: "transcribe", wallSec: 18, rtf: 0.3 }));
+    h.onLine!(JSON.stringify({ type: "stageDone", stage: "align", wallSec: 9, rtf: 0.15 }));
+  }
+
+  it("blends isolate/transcribe/align RTF into the right MeasuredRtf keys (DML + small tier)", async () => {
+    const done = s().generateLyrics("small", "auto");
+    await until(() => h.onLine !== null);
+    feedStageRtf();
+    h.onLine!(
+      JSON.stringify({
+        type: "result",
+        lrcPath: "x.lrc",
+        lines: 3,
+        vocalSec: 50,
+        ep: "dml",
+        language: "en",
+      }),
+    );
+    h.resolveGenerate!(LRC);
+    await done;
+
+    const rtf = getPrefs().measuredRtf;
+    expect(rtf.isolateDml).toBe(0.5); // ep: "dml" -> the DML slot, not CPU
+    expect(rtf.isolateCpu).toBeNull();
+    expect(rtf.whisperSmall).toBe(0.3); // tier: "small" -> the small slot, not medium
+    expect(rtf.whisperMedium).toBeNull();
+    expect(rtf.align).toBe(0.15); // align never splits
+  });
+
+  it("keys isolate/whisper on CPU + medium when that is what the run actually used", async () => {
+    const done = s().generateLyrics("medium", "auto");
+    await until(() => h.onLine !== null);
+    feedStageRtf();
+    h.onLine!(
+      JSON.stringify({
+        type: "result",
+        lrcPath: "x.lrc",
+        lines: 3,
+        vocalSec: 50,
+        ep: "cpu",
+        language: "en",
+      }),
+    );
+    h.resolveGenerate!(LRC);
+    await done;
+
+    const rtf = getPrefs().measuredRtf;
+    expect(rtf.isolateCpu).toBe(0.5);
+    expect(rtf.isolateDml).toBeNull();
+    expect(rtf.whisperMedium).toBe(0.3);
+    expect(rtf.whisperSmall).toBeNull();
+  });
+
+  it("a second completed run blends (EWMA) rather than overwriting the first", async () => {
+    setPrefs({ measuredRtf: { ...NO_MEASURED_RTF, align: 0.2 } });
+    const done = s().generateLyrics("small", "auto");
+    await until(() => h.onLine !== null);
+    h.onLine!(JSON.stringify({ type: "stageDone", stage: "align", wallSec: 4, rtf: 0.3 }));
+    h.onLine!(
+      JSON.stringify({
+        type: "result",
+        lrcPath: "x.lrc",
+        lines: 1,
+        vocalSec: 10,
+        ep: "dml",
+        language: "en",
+      }),
+    );
+    h.resolveGenerate!(LRC);
+    await done;
+
+    // 0.2 + 0.3*(0.3-0.2) = 0.23 — same alpha=0.3 EWMA pinned exactly in
+    // lyricsGen.test.ts; here it only matters that it moved TOWARD the new
+    // sample without jumping straight to it.
+    expect(getPrefs().measuredRtf.align).toBeCloseTo(0.23, 9);
+  });
+
+  it("never persists anything when the run never produced a result event", async () => {
+    // A run that reaches loadLyricsText but whose result line was dropped —
+    // there is no `ep` to key isolate on, so nothing should be written at
+    // all rather than guessed.
+    const done = s().generateLyrics("small", "auto");
+    await until(() => h.onLine !== null);
+    feedStageRtf();
+    h.resolveGenerate!(LRC);
+    await done;
+
+    expect(getPrefs().measuredRtf).toEqual(NO_MEASURED_RTF);
+  });
+
+  it("discarded runs (track changed mid-generation) do not persist RTF either", async () => {
+    const done = s().generateLyrics("small", "auto");
+    await until(() => h.onLine !== null);
+    feedStageRtf();
+    h.onLine!(
+      JSON.stringify({
+        type: "result",
+        lrcPath: "x.lrc",
+        lines: 3,
+        vocalSec: 50,
+        ep: "dml",
+        language: "en",
+      }),
+    );
+    shared.trackLoadGen++;
+    useVizStore.setState({ lyrics: null, lyricFileName: null });
+    h.resolveGenerate!(LRC);
+    await done;
+
+    expect(getPrefs().measuredRtf).toEqual(NO_MEASURED_RTF);
   });
 });

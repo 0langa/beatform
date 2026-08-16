@@ -10,13 +10,15 @@
 import { wavFromPcm } from "../../audio/dsp/wav";
 import { pcmFromAudioBuffer } from "../../audio/offlineSource";
 import {
+  blendMeasuredRtf,
   missingModels,
-  overallProgress,
   parseDownloadProgress,
   parseSidecarEvent,
+  reduceGenProgress,
   tierDownloadBytes,
   TIER_WHISPER_ID,
   type LyricsTier,
+  type MeasuredRtf,
   type SidecarEvent,
 } from "../lyricsGen";
 import {
@@ -31,6 +33,7 @@ import {
   lyricsModelsState,
   lyricsStageAudio,
 } from "../platform";
+import { getPrefs, setPrefs } from "../prefs";
 import { getEngine } from "../services";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
@@ -182,45 +185,40 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         lyricsGen: {
           ...get().lyricsGen,
           phase: "generating",
-          gen: { stage: "decode", pct: null, etaSec: null, overall: 0 },
+          gen: { stage: "decode", pct: null, etaSec: null, overall: 0, starting: false },
         },
       });
       // The terminal result event carries the phase-3 word-timing stats
       // (words, low-confidence lines) — the LRC text itself only carries the
       // timings. Captured here for the post-load notice (an object property,
       // not a bare let: closure writes defeat TS's flow narrowing on locals).
-      const captured: { result: Extract<SidecarEvent, { type: "result" }> | null } = {
-        result: null,
-      };
+      // stageRtf (follow-up b) rides the same object: the isolate/transcribe/
+      // align stageDone events each carry a measured `rtf`, kept here until a
+      // successful run's end, where `stats.ep` (dml vs cpu) and `tier`
+      // resolve which persisted MeasuredRtf slot each sample blends into.
+      const captured: {
+        result: Extract<SidecarEvent, { type: "result" }> | null;
+        stageRtf: Partial<Record<"isolate" | "transcribe" | "align", number>>;
+      } = { result: null, stageRtf: {} };
       const onLine = (line: string) => {
         const ev = parseSidecarEvent(line);
         if (!ev) return;
         if (ev.type === "result") {
           captured.result = ev;
-        } else if (ev.type === "progress") {
-          set({
-            lyricsGen: {
-              ...get().lyricsGen,
-              gen: {
-                stage: ev.stage,
-                pct: ev.pct ?? null,
-                etaSec: ev.etaSec ?? null,
-                overall: overallProgress(ev.stage, ev.pct ?? null),
-              },
-            },
-          });
-        } else if (ev.type === "stageDone") {
-          set({
-            lyricsGen: {
-              ...get().lyricsGen,
-              gen: {
-                stage: ev.stage,
-                pct: 100,
-                etaSec: null,
-                overall: overallProgress(ev.stage, 100),
-              },
-            },
-          });
+        } else if (ev.type === "progress" || ev.type === "stageDone") {
+          if (
+            ev.type === "stageDone" &&
+            ev.rtf != null &&
+            (ev.stage === "isolate" || ev.stage === "transcribe" || ev.stage === "align")
+          ) {
+            captured.stageRtf[ev.stage] = ev.rtf;
+          }
+          // reduceGenProgress (follow-up a) is the pure stage-transition
+          // reducer: a stageDone with a next stage reports THAT stage,
+          // starting=true, pct/eta null — "starting <next stage>…" instead
+          // of a stale "<finished stage> — 100%" sitting for however long
+          // the next stage takes to emit its own first event.
+          set({ lyricsGen: { ...get().lyricsGen, gen: reduceGenProgress(ev) } });
         }
       };
       // One attempt = stage the decoded track as WAV (works for every source
@@ -244,10 +242,11 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           if (!/exited abnormally/.test(message)) throw e;
           ctx.flashNotice("Graphics acceleration crashed — retrying on CPU (slower)");
           captured.result = null; // no stale stats from the crashed attempt
+          captured.stageRtf = {}; // ...and no stale RTF (isolate reruns on CPU)
           set({
             lyricsGen: {
               ...get().lyricsGen,
-              gen: { stage: "decode", pct: null, etaSec: null, overall: 0 },
+              gen: { stage: "decode", pct: null, etaSec: null, overall: 0, starting: false },
             },
           });
           lrc = await attempt(false);
@@ -263,6 +262,26 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         // (low aligner confidence or failed alignment). Honest, not scary —
         // sung-lyrics ASR needing fixes is the documented normal.
         const stats = captured.result;
+        // Persist this run's measured RTF (follow-up b) — gated on `stats`
+        // existing at all, same as the notices below: a run that reached
+        // loadLyricsText but never got a parsed result event (a dropped
+        // stdout line, not a failure) has no `ep` to key the isolate slot
+        // on, so it contributes nothing rather than guessing.
+        if (stats != null) {
+          const samples: Partial<MeasuredRtf> = {};
+          if (captured.stageRtf.isolate != null) {
+            if (stats.ep === "dml") samples.isolateDml = captured.stageRtf.isolate;
+            else samples.isolateCpu = captured.stageRtf.isolate;
+          }
+          if (captured.stageRtf.transcribe != null) {
+            if (tier === "medium") samples.whisperMedium = captured.stageRtf.transcribe;
+            else samples.whisperSmall = captured.stageRtf.transcribe;
+          }
+          if (captured.stageRtf.align != null) samples.align = captured.stageRtf.align;
+          if (Object.keys(samples).length > 0) {
+            setPrefs({ measuredRtf: blendMeasuredRtf(getPrefs().measuredRtf, samples) });
+          }
+        }
         // Per-line confidence (phase 4): the LRC can't carry it, the result
         // event does — attach it to the parsed lines for the editor's flags.
         if (stats?.lineDetails && get().lyrics) {

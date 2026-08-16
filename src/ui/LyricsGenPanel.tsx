@@ -9,18 +9,20 @@
  * DirectML-vs-CPU difference probed, not guessed.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   estimateGenerateSeconds,
   formatBytes,
   formatEstimate,
   formatEta,
+  LYRICS_LANGUAGES,
   tierDownloadBytes,
   tierInstalled,
   type LyricsTier,
   type SidecarStage,
 } from "../state/lyricsGen";
 import { isTauri } from "../state/platform";
+import { getPrefs, subscribePrefs } from "../state/prefs";
 import { getEngine } from "../state/services";
 import { useVizStore } from "../state/store";
 import { SelectRow } from "./kit";
@@ -47,7 +49,12 @@ export function LyricsGenPanel() {
   const lyricsGen = useVizStore((s) => s.lyricsGen);
   const store = useVizStore.getState;
   const [tier, setTier] = useState<LyricsTier>("small");
+  const [language, setLanguage] = useState("auto");
   const desktop = isTauri();
+  // getPrefs() is a stable reference until setPrefs actually changes a
+  // field (samePrefs guards that) — safe to read directly, same pattern as
+  // App.tsx's own useSyncExternalStore(subscribePrefs, getPrefs).
+  const measuredRtf = useSyncExternalStore(subscribePrefs, getPrefs).measuredRtf;
 
   useEffect(() => {
     if (desktop) void store().refreshLyricsGen();
@@ -65,7 +72,9 @@ export function LyricsGenPanel() {
   const { models, dml, phase, download, gen } = lyricsGen;
   const duration = trackDuration();
   const estimate =
-    duration > 0 ? formatEstimate(estimateGenerateSeconds(duration, tier, dml === true)) : null;
+    duration > 0
+      ? formatEstimate(estimateGenerateSeconds(duration, tier, dml === true, measuredRtf))
+      : null;
 
   if (phase === "downloading" && download) {
     const pct = download.total > 0 ? Math.round((100 * download.received) / download.total) : 0;
@@ -96,9 +105,16 @@ export function LyricsGenPanel() {
         </div>
         <div className="export-status">
           <span>
-            {STAGE_LABELS[gen.stage]}
-            {gen.pct != null ? ` — ${Math.round(gen.pct)}%` : "…"}
-            {gen.etaSec != null && gen.etaSec > 1 ? ` · ${formatEta(gen.etaSec)} left` : ""}
+            {gen.starting
+              ? // Follow-up (a): the instant a stage completes, name the
+                // NEXT stage instead of leaving the finished one frozen at
+                // "— 100%" until its first real event arrives (medium's
+                // first-token latency is the worst case — minutes, per the
+                // owner's first-impressions note).
+                `Starting ${STAGE_LABELS[gen.stage].toLowerCase()}…`
+              : `${STAGE_LABELS[gen.stage]}${gen.pct != null ? ` — ${Math.round(gen.pct)}%` : "…"}${
+                  gen.etaSec != null && gen.etaSec > 1 ? ` · ${formatEta(gen.etaSec)} left` : ""
+                }`}
           </span>
           <button className="text-btn danger" onClick={() => store().cancelLyricsGenerate()}>
             Cancel
@@ -122,6 +138,13 @@ export function LyricsGenPanel() {
           { value: "medium" as const, label: "Medium — better words, much slower" },
         ]}
       />
+      <SelectRow
+        label="Language"
+        hint="Spoken language in the track — Auto-detect works well for clear vocals; naming it directly helps on quieter or accented singing"
+        value={language}
+        onChange={(v) => setLanguage(v)}
+        options={LYRICS_LANGUAGES}
+      />
       {ready ? (
         <button
           className="text-btn"
@@ -131,7 +154,7 @@ export function LyricsGenPanel() {
               ? "Load a track first"
               : "Isolate the vocals and transcribe them — fully on this PC"
           }
-          onClick={() => void store().generateLyrics(tier, "auto")}
+          onClick={() => void store().generateLyrics(tier, language)}
         >
           ♪ Generate lyrics{estimate ? ` (${estimate})` : ""}
         </button>

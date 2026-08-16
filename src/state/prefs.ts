@@ -1,3 +1,4 @@
+import { NO_MEASURED_RTF, type MeasuredRtf } from "./lyricsGen";
 import { isQuantizeMode, type QuantizeMode } from "./quantize";
 
 /** Corner the performance overlay anchors to (plain CSS anchor, no collision
@@ -122,6 +123,12 @@ export interface AppPrefs {
   perfOverlayColor: PerfOverlayColor;
   /** Per-stat visibility. */
   perfOverlayStats: PerfOverlayStats;
+  /** FEAT-004 follow-up (b): this machine's own measured lyrics-generation
+   * RTF per pipeline component, EWMA'd across completed runs and blended
+   * into the next run's time estimate (see lyricsGen.ts's blendMeasuredRtf/
+   * estimateGenerateSeconds for the two blend rules). Session-independent
+   * on purpose — it is a property of the hardware, not of one project. */
+  measuredRtf: MeasuredRtf;
 }
 
 export const DEFAULT_PREFS: AppPrefs = {
@@ -158,6 +165,7 @@ export const DEFAULT_PREFS: AppPrefs = {
     disk: false,
     gpu: false,
   },
+  measuredRtf: NO_MEASURED_RTF,
 };
 
 const LS_PREFS = "beatform.prefs.v1";
@@ -217,6 +225,26 @@ function validOverlayStats(raw: unknown): PerfOverlayStats {
     ram: bool(p.ram, d.ram),
     disk: bool(p.disk, d.disk),
     gpu: bool(p.gpu, d.gpu),
+  };
+}
+
+/** A finite, positive number or null — anything else (corrupted storage, a
+ * hand-edited blob, a stray 0 or negative) degrades to null ("no
+ * measurement yet"), never to NaN, which would otherwise poison every
+ * later blended estimate (same rule blendMeasuredRtf itself applies to a
+ * live sidecar sample). */
+function positiveOrNull(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+function validMeasuredRtf(raw: unknown): MeasuredRtf {
+  const p = (typeof raw === "object" && raw !== null ? raw : {}) as Partial<MeasuredRtf>;
+  return {
+    isolateDml: positiveOrNull(p.isolateDml),
+    isolateCpu: positiveOrNull(p.isolateCpu),
+    whisperSmall: positiveOrNull(p.whisperSmall),
+    whisperMedium: positiveOrNull(p.whisperMedium),
+    align: positiveOrNull(p.align),
   };
 }
 
@@ -323,6 +351,7 @@ function validPrefs(raw: unknown): AppPrefs {
       d.perfOverlayColor,
     ),
     perfOverlayStats: validOverlayStats(p.perfOverlayStats),
+    measuredRtf: validMeasuredRtf(p.measuredRtf),
   };
 }
 
@@ -454,6 +483,17 @@ function sameOverlayStats(a: PerfOverlayStats, b: PerfOverlayStats): boolean {
   );
 }
 
+/** Content equality for measuredRtf — same reason as sameOverlayStats. */
+function sameMeasuredRtf(a: MeasuredRtf, b: MeasuredRtf): boolean {
+  return (
+    a.isolateDml === b.isolateDml &&
+    a.isolateCpu === b.isolateCpu &&
+    a.whisperSmall === b.whisperSmall &&
+    a.whisperMedium === b.whisperMedium &&
+    a.align === b.align
+  );
+}
+
 /**
  * Field-wise comparison of two validated prefs blobs. Deliberately explicit
  * rather than a JSON.stringify: it is the compiler's job to fail this
@@ -483,7 +523,8 @@ function samePrefs(a: AppPrefs, b: AppPrefs): boolean {
     a.perfOverlayCorner === b.perfOverlayCorner &&
     a.perfOverlaySize === b.perfOverlaySize &&
     a.perfOverlayColor === b.perfOverlayColor &&
-    sameOverlayStats(a.perfOverlayStats, b.perfOverlayStats)
+    sameOverlayStats(a.perfOverlayStats, b.perfOverlayStats) &&
+    sameMeasuredRtf(a.measuredRtf, b.measuredRtf)
   );
 }
 

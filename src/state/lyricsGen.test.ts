@@ -1,17 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
+  blendMeasuredRtf,
   estimateGenerateSeconds,
   formatBytes,
   formatEstimate,
   formatEta,
+  LYRICS_LANGUAGES,
   missingModels,
+  NO_MEASURED_RTF,
+  nextStage,
   overallProgress,
   parseDownloadProgress,
   parseSidecarEvent,
+  reduceGenProgress,
   tierDownloadBytes,
   tierInstalled,
   tierModelIds,
   type LyricsModelsState,
+  type MeasuredRtf,
 } from "./lyricsGen";
 
 describe("sidecar protocol parsing", () => {
@@ -240,6 +246,37 @@ describe("tier math", () => {
   });
 });
 
+describe("language options (FEAT-004 follow-up c)", () => {
+  it("leads with auto-detect, then the common set alphabetically by label", () => {
+    expect(LYRICS_LANGUAGES[0]).toEqual({ value: "auto", label: "Auto-detect" });
+    const rest = LYRICS_LANGUAGES.slice(1);
+    const labels = rest.map((o) => o.label);
+    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b, "en")));
+  });
+
+  it("carries a real, curated set — not a stub and not the full ~100-language table", () => {
+    const rest = LYRICS_LANGUAGES.slice(1);
+    expect(rest.length).toBeGreaterThan(20);
+    expect(rest.length).toBeLessThan(80);
+  });
+
+  it("every value is unique and a plausible whisper.cpp code (lowercase, 2-3 letters)", () => {
+    const values = LYRICS_LANGUAGES.map((o) => o.value);
+    expect(new Set(values).size).toBe(values.length);
+    for (const v of values) {
+      if (v === "auto") continue;
+      expect(v, `"${v}" is not a lowercase 2-3 letter code`).toMatch(/^[a-z]{2,3}$/);
+    }
+  });
+
+  it("no flag emoji or other symbols in a label — plain text only", () => {
+    for (const { label } of LYRICS_LANGUAGES) {
+      // Printable ASCII only: every flag/emoji glyph lives well outside it.
+      expect(label, `"${label}" has a non-ASCII character`).toMatch(/^[ -~]+$/);
+    }
+  });
+});
+
 describe("time estimates (sustained-thermal — spike adjustment 1)", () => {
   it("a 4-minute song lands in the spike's measured windows", () => {
     const d = 240;
@@ -274,6 +311,102 @@ describe("time estimates (sustained-thermal — spike adjustment 1)", () => {
   });
 });
 
+/**
+ * FEAT-004 follow-up (b): persisting measured RTF into later estimates.
+ * Two independent blend rules — updating the persisted history
+ * (blendMeasuredRtf, an EWMA) and folding that history into ONE estimate
+ * (estimateGenerateSeconds' 4th argument, an even split against the static
+ * bound) — each pinned with hand-computed numbers, not just direction
+ * checks, per the deterministic-math requirement.
+ */
+describe("measured-RTF blending (FEAT-004 follow-up b)", () => {
+  it("estimateGenerateSeconds with no measured arg is byte-for-byte the old static-only call", () => {
+    // Every existing call site (and every test above this one) calls with
+    // 3 args — the 4th must default to "no measurement" so none of them
+    // silently change behavior.
+    const withDefault = estimateGenerateSeconds(240, "small", true);
+    const withExplicitNone = estimateGenerateSeconds(240, "small", true, NO_MEASURED_RTF);
+    expect(withDefault).toEqual(withExplicitNone);
+    // Hand-computed from the static table: d*(iso+wh+align)+overhead.
+    expect(withDefault.lowSec).toBeCloseTo(240 * (0.45 + 0.25 + 0.1) + 8, 9);
+    expect(withDefault.highSec).toBeCloseTo(240 * (0.7 + 0.45 + 0.4) + 25, 9);
+  });
+
+  it("blends a measured value into BOTH bounds by an even split, narrowing the range", () => {
+    const measured: MeasuredRtf = {
+      isolateDml: 0.6,
+      isolateCpu: null,
+      whisperSmall: 0.3,
+      whisperMedium: null,
+      align: 0.2,
+    };
+    const est = estimateGenerateSeconds(240, "small", true, measured);
+    // bound' = bound + 0.5*(measured-bound), summed across the 3 components,
+    // times duration, plus the untouched overhead — hand-computed:
+    //   iso  0.45->0.525, 0.7->0.65
+    //   wh   0.25->0.275, 0.45->0.375
+    //   align 0.1->0.15,  0.4->0.30
+    //   low  = 240*(0.525+0.275+0.15)+8  = 236
+    //   high = 240*(0.65+0.375+0.30)+25  = 343
+    expect(est.lowSec).toBeCloseTo(236, 9);
+    expect(est.highSec).toBeCloseTo(343, 9);
+    // And it must actually be NARROWER than the static-only range, not just
+    // different — that is the entire point of a "hardware-detected" feel.
+    const base = estimateGenerateSeconds(240, "small", true);
+    expect(est.highSec - est.lowSec).toBeLessThan(base.highSec - base.lowSec);
+  });
+
+  it("only consults the measured slot matching THIS run's device/tier split — no cross-talk", () => {
+    // isolateCpu is wildly different from the static DML range; if it leaked
+    // into a dmlAvailable=true call the result would move a lot. It must not.
+    const crossTalk: MeasuredRtf = { ...NO_MEASURED_RTF, isolateCpu: 5 };
+    const dmlRun = estimateGenerateSeconds(240, "small", true, crossTalk);
+    const dmlRunUnmeasured = estimateGenerateSeconds(240, "small", true);
+    expect(dmlRun).toEqual(dmlRunUnmeasured);
+    // Same story for tier: a medium sample must not move a small-tier call.
+    const tierCrossTalk: MeasuredRtf = { ...NO_MEASURED_RTF, whisperMedium: 5 };
+    const smallRun = estimateGenerateSeconds(240, "small", false, tierCrossTalk);
+    const smallRunUnmeasured = estimateGenerateSeconds(240, "small", false);
+    expect(smallRun).toEqual(smallRunUnmeasured);
+  });
+
+  it("blendMeasuredRtf: first sample seeds the EWMA exactly, later samples blend at alpha=0.3", () => {
+    const first = blendMeasuredRtf(NO_MEASURED_RTF, { isolateDml: 0.5 });
+    expect(first.isolateDml).toBe(0.5); // no prior value — the sample IS the estimate
+    expect(first.isolateCpu).toBeNull(); // untouched slots stay null
+    const second = blendMeasuredRtf(first, { isolateDml: 0.7 });
+    // 0.5 + 0.3*(0.7-0.5) = 0.56
+    expect(second.isolateDml).toBeCloseTo(0.56, 9);
+    const third = blendMeasuredRtf(second, { isolateDml: 0.4 });
+    // 0.56 + 0.3*(0.4-0.56) = 0.512
+    expect(third.isolateDml).toBeCloseTo(0.512, 9);
+  });
+
+  it("blendMeasuredRtf only touches the keys present in the sample — everything else is preserved", () => {
+    const prev: MeasuredRtf = {
+      isolateDml: 0.5,
+      isolateCpu: 2.0,
+      whisperSmall: 0.3,
+      whisperMedium: null,
+      align: 0.2,
+    };
+    const next = blendMeasuredRtf(prev, { align: 0.3 });
+    expect(next.isolateDml).toBe(0.5);
+    expect(next.isolateCpu).toBe(2.0);
+    expect(next.whisperSmall).toBe(0.3);
+    expect(next.whisperMedium).toBeNull();
+    expect(next.align).toBeCloseTo(0.2 + 0.3 * (0.3 - 0.2), 9);
+  });
+
+  it("blendMeasuredRtf drops a non-finite or non-positive sample instead of poisoning the EWMA", () => {
+    const prev: MeasuredRtf = { ...NO_MEASURED_RTF, align: 0.25 };
+    for (const bad of [NaN, Infinity, -Infinity, 0, -1]) {
+      const next = blendMeasuredRtf(prev, { align: bad });
+      expect(next.align, `sample ${bad} should have been rejected`).toBe(0.25);
+    }
+  });
+});
+
 describe("overall progress", () => {
   it("is monotonic across the stage sequence", () => {
     const points = [
@@ -295,5 +428,93 @@ describe("overall progress", () => {
     expect(overallProgress("isolate", 50)).toBeCloseTo(0.02 + 0.26, 5);
     // The align stage slots between transcribe and assemble.
     expect(overallProgress("align", 0)).toBeCloseTo(0.02 + 0.52 + 0.01 + 0.36, 5);
+  });
+});
+
+describe("nextStage (FEAT-004 follow-up a)", () => {
+  it("walks the pipeline in order", () => {
+    expect(nextStage("decode")).toBe("isolate");
+    expect(nextStage("isolate")).toBe("vad");
+    expect(nextStage("vad")).toBe("transcribe");
+    expect(nextStage("transcribe")).toBe("align");
+    expect(nextStage("align")).toBe("assemble");
+  });
+
+  it("the last stage has no next", () => {
+    expect(nextStage("assemble")).toBeNull();
+  });
+});
+
+describe("reduceGenProgress (FEAT-004 follow-up a)", () => {
+  it("a progress event always reports its own stage with starting=false, even with no pct", () => {
+    expect(reduceGenProgress({ type: "progress", stage: "isolate", pct: 40, etaSec: 12 })).toEqual({
+      stage: "isolate",
+      pct: 40,
+      etaSec: 12,
+      starting: false,
+      overall: overallProgress("isolate", 40),
+    });
+    // No pct at all (a stage that never reports one) is still "running", not
+    // "starting" — the whole point of the flag is to distinguish this from
+    // the gap right after a stageDone.
+    expect(reduceGenProgress({ type: "progress", stage: "align", pct: undefined })).toEqual({
+      stage: "align",
+      pct: null,
+      etaSec: null,
+      starting: false,
+      overall: overallProgress("align", null),
+    });
+  });
+
+  it("stageDone reports the NEXT stage, starting=true, no pct/eta — the transitional state", () => {
+    // The exact pain point from the owner's first-impressions note: vad
+    // (labeled "Finding vocal lines") finishes, transcribe has not sent
+    // its first event yet (whisper-medium's worst-case first-token
+    // latency), so the stage must already read "transcribe", not "vad".
+    expect(reduceGenProgress({ type: "stageDone", stage: "vad", wallSec: 12 })).toEqual({
+      stage: "transcribe",
+      pct: null,
+      etaSec: null,
+      starting: true,
+      // The overall bar still advances the full weight of the finished
+      // stage — "before next" and "before + 100% of vad" are the same sum.
+      overall: overallProgress("vad", 100),
+    });
+  });
+
+  it("the overall fraction at a stageDone transition equals overallProgress(finishedStage, 100)", () => {
+    // Property, not just the one hand-picked case above — every
+    // intermediate stage's transition must agree with the pre-existing
+    // formula, since STAGE_WEIGHTS could be retuned later.
+    for (const stage of ["decode", "isolate", "vad", "transcribe", "align"] as const) {
+      const next = nextStage(stage);
+      expect(next).not.toBeNull();
+      const reduced = reduceGenProgress({ type: "stageDone", stage, wallSec: 1 });
+      expect(reduced.stage).toBe(next);
+      expect(reduced.starting).toBe(true);
+      expect(reduced.overall).toBeCloseTo(overallProgress(stage, 100), 9);
+    }
+  });
+
+  it("the LAST stage (assemble) has no next — keeps the old 100%-and-done shape", () => {
+    expect(reduceGenProgress({ type: "stageDone", stage: "assemble", wallSec: 2 })).toEqual({
+      stage: "assemble",
+      pct: 100,
+      etaSec: null,
+      starting: false,
+      overall: overallProgress("assemble", 100),
+    });
+  });
+
+  it("a real progress event for the new stage clears starting, even before any pct arrives", () => {
+    const transitioning = reduceGenProgress({ type: "stageDone", stage: "vad", wallSec: 12 });
+    expect(transitioning.starting).toBe(true);
+    const arrived = reduceGenProgress({
+      type: "progress",
+      stage: transitioning.stage,
+      pct: undefined,
+    });
+    expect(arrived.starting).toBe(false);
+    expect(arrived.stage).toBe("transcribe");
   });
 });

@@ -454,3 +454,98 @@ describe("prefs: per-group Advanced (P-9)", () => {
     expect(JSON.parse(legacy.getItem(KEY)!)).not.toHaveProperty("advancedOpen");
   });
 });
+
+/**
+ * FEAT-004 follow-up (b): the persisted per-stage measured-RTF history that
+ * blendMeasuredRtf/estimateGenerateSeconds read (lyricsGen.ts). Property of
+ * the hardware, not of a project, so it lives here rather than in the
+ * document — same reasoning as perfOverlay.
+ */
+describe("prefs: measuredRtf (FEAT-004 follow-up b)", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("defaults to all-null on a blob that predates the field", async () => {
+    seed(JSON.stringify({ volume: 0.5 }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().measuredRtf).toEqual({
+      isolateDml: null,
+      isolateCpu: null,
+      whisperSmall: null,
+      whisperMedium: null,
+      align: null,
+    });
+    expect(getPrefs().volume).toBe(0.5);
+  });
+
+  it("round-trips a stored measurement", async () => {
+    seed(JSON.stringify({ measuredRtf: { isolateDml: 0.52, align: 0.14 } }));
+    const { getPrefs } = await importFresh();
+    // Present keys survive, absent ones default to null — validMeasuredRtf
+    // reads each field independently, same as validOverlayStats.
+    expect(getPrefs().measuredRtf).toEqual({
+      isolateDml: 0.52,
+      isolateCpu: null,
+      whisperSmall: null,
+      whisperMedium: null,
+      align: 0.14,
+    });
+  });
+
+  it("degrades a wrong-typed or non-positive stored value to null, keeping the rest of the blob", async () => {
+    // Every kind of bad value JSON can actually carry: wrong type, zero,
+    // negative. (A NaN/Infinity sample can only ever reach this validator
+    // from a live sidecar event, not a stored blob — JSON.stringify already
+    // turns those into `null` before they would be written — so that guard
+    // is pinned directly against positiveOrNull's caller, blendMeasuredRtf,
+    // in lyricsGen.test.ts instead.)
+    seed(
+      JSON.stringify({
+        volume: 0.3,
+        measuredRtf: { isolateDml: "fast", isolateCpu: 0, whisperSmall: -1 },
+      }),
+    );
+    const { getPrefs } = await importFresh();
+    const rtf = getPrefs().measuredRtf;
+    expect(rtf.isolateDml).toBeNull();
+    expect(rtf.isolateCpu).toBeNull();
+    expect(rtf.whisperSmall).toBeNull();
+    expect(rtf.whisperMedium).toBeNull(); // absent from the blob
+    expect(getPrefs().volume).toBe(0.3);
+  });
+
+  it("persists a write AND notifies subscribers (the samePrefs guard)", async () => {
+    // Same regression P-A4 guards for advancedGroups: samePrefs is a plain
+    // && chain, not compiler-enforced, so omitting measuredRtf there would
+    // make every setPrefs({measuredRtf: ...}) a silent no-op — nothing
+    // persists, no listener fires — while typecheck/lint/every other test
+    // stays green. The listener count is what actually catches that.
+    seed(undefined);
+    const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
+    const before = getPrefs();
+    let calls = 0;
+    subscribePrefs(() => {
+      calls++;
+    });
+    setPrefs({ measuredRtf: { ...before.measuredRtf, align: 0.2 } });
+    expect(calls).toBe(1);
+    expect(getPrefs()).not.toBe(before);
+    expect(getPrefs().measuredRtf.align).toBe(0.2);
+  });
+
+  it("compares the nested measuredRtf object by CONTENT, not identity", async () => {
+    seed(undefined);
+    const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
+    const before = getPrefs();
+    let calls = 0;
+    subscribePrefs(() => {
+      calls++;
+    });
+    expect(setPrefs({ measuredRtf: { ...before.measuredRtf } })).toBe(before);
+    expect(calls).toBe(0);
+    setPrefs({ measuredRtf: { ...before.measuredRtf, whisperMedium: 1.8 } });
+    expect(calls).toBe(1);
+    expect(getPrefs().measuredRtf.whisperMedium).toBe(1.8);
+  });
+});

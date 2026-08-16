@@ -54,6 +54,20 @@ function isStage(v: unknown): v is SidecarStage {
   return typeof v === "string" && (STAGES as string[]).includes(v);
 }
 
+/** The stage that follows `stage`, or null after the last one (`assemble`,
+ * which rolls straight into the terminal `result` event rather than another
+ * stage). FEAT-004 follow-up (a): a `stageDone` event names the stage that
+ * just FINISHED — the store used to keep showing that stage frozen at 100%
+ * until the next stage's own first `progress` tick, which can be minutes
+ * away (whisper-medium's first-token latency is the worst case, per the
+ * owner's first-impressions note). Naming the upcoming stage here is what
+ * lets the UI show "starting <next stage>…" the instant the previous one
+ * completes, instead of a stale "<finished stage> — 100%". */
+export function nextStage(stage: SidecarStage): SidecarStage | null {
+  const i = STAGES.indexOf(stage);
+  return i >= 0 && i + 1 < STAGES.length ? STAGES[i + 1] : null;
+}
+
 /** Lenient LineDetail[] reader: anything malformed degrades to undefined —
  * confidence is an enhancement, never a reason to reject a result. */
 function parseLineDetails(v: unknown): LineDetail[] | undefined {
@@ -209,6 +223,92 @@ export function tierDownloadBytes(
 }
 
 // ---------------------------------------------------------------------------
+// Language picker (FEAT-004 follow-up c)
+
+export interface LyricsLanguageOption {
+  /** Passed straight through as whisper-cli's --language value (main.rs
+   * forwards it as-is, no whitelist) — must match whisper.cpp's own g_lang
+   * table exactly, or the sidecar silently mistranscribes instead of
+   * erroring. */
+  value: string;
+  label: string;
+}
+
+/**
+ * Auto-detect first (the default), then a CURATED subset of whisper.cpp
+ * v1.9.1's ~100-language table (the pinned runtime — scripts/fetch-
+ * whisper.mjs), alphabetical by English name. Plain text, no flag icons —
+ * matching every other picker in this app (AI model, image fit, etc.), and
+ * sidestepping the fact that several of whisper's supported languages have
+ * no single obvious national flag.
+ *
+ * "Curated" means deliberately short of the full list: whisper.cpp also
+ * carries genuinely low-resource entries (Breton, Occitan, Nynorsk,
+ * Faroese, Sanskrit, Hawaiian, Bashkir, Javanese, Sundanese, Sindhi,
+ * Tatar, ...) that would roughly double this dropdown for languages almost
+ * no user will pick. This set favors official/national languages of large
+ * populations and major recorded-music industries — the practical
+ * "someone is actually going to sing in this" list — and is revisable: add
+ * an entry if a real user needs a language that's missing, matching it
+ * against whisper.cpp's g_lang table (src/whisper.cpp) for the exact code.
+ */
+export const LYRICS_LANGUAGES: LyricsLanguageOption[] = [
+  { value: "auto", label: "Auto-detect" },
+  { value: "af", label: "Afrikaans" },
+  { value: "ar", label: "Arabic" },
+  { value: "bn", label: "Bengali" },
+  { value: "bg", label: "Bulgarian" },
+  { value: "yue", label: "Cantonese" },
+  { value: "ca", label: "Catalan" },
+  { value: "zh", label: "Chinese" },
+  { value: "hr", label: "Croatian" },
+  { value: "cs", label: "Czech" },
+  { value: "da", label: "Danish" },
+  { value: "nl", label: "Dutch" },
+  { value: "en", label: "English" },
+  { value: "et", label: "Estonian" },
+  { value: "fi", label: "Finnish" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "el", label: "Greek" },
+  { value: "he", label: "Hebrew" },
+  { value: "hi", label: "Hindi" },
+  { value: "hu", label: "Hungarian" },
+  { value: "is", label: "Icelandic" },
+  { value: "id", label: "Indonesian" },
+  { value: "it", label: "Italian" },
+  { value: "ja", label: "Japanese" },
+  { value: "kn", label: "Kannada" },
+  { value: "ko", label: "Korean" },
+  { value: "lv", label: "Latvian" },
+  { value: "lt", label: "Lithuanian" },
+  { value: "ms", label: "Malay" },
+  { value: "ml", label: "Malayalam" },
+  { value: "mr", label: "Marathi" },
+  { value: "no", label: "Norwegian" },
+  { value: "fa", label: "Persian" },
+  { value: "pl", label: "Polish" },
+  { value: "pt", label: "Portuguese" },
+  { value: "pa", label: "Punjabi" },
+  { value: "ro", label: "Romanian" },
+  { value: "ru", label: "Russian" },
+  { value: "sr", label: "Serbian" },
+  { value: "sk", label: "Slovak" },
+  { value: "sl", label: "Slovenian" },
+  { value: "es", label: "Spanish" },
+  { value: "sw", label: "Swahili" },
+  { value: "sv", label: "Swedish" },
+  { value: "tl", label: "Tagalog" },
+  { value: "ta", label: "Tamil" },
+  { value: "te", label: "Telugu" },
+  { value: "th", label: "Thai" },
+  { value: "tr", label: "Turkish" },
+  { value: "uk", label: "Ukrainian" },
+  { value: "ur", label: "Urdu" },
+  { value: "vi", label: "Vietnamese" },
+];
+
+// ---------------------------------------------------------------------------
 // Time estimates — sustained-thermal numbers (spike adjustment 1)
 
 /**
@@ -240,17 +340,108 @@ export interface EstimateRange {
   highSec: number;
 }
 
+// ---------------------------------------------------------------------------
+// Measured-RTF persistence (FEAT-004 follow-up b)
+//
+// The table above is fixed — one reference machine, measured once. The
+// owner's first-impressions note asked if the estimate is hardware-detected;
+// today it is only split by the DML probe. This is the refinement already
+// recorded there: fold each completed run's OWN measured RTF (the sidecar
+// reports `rtf` on the isolate/transcribe/align stageDone events — see
+// main.rs's three `rtf: Some(wall / duration)` emissions) into a persisted
+// per-stage history, then blend that history into later estimates so a
+// machine that is consistently faster or slower than the reference one
+// converges toward its own honest number instead of the reference machine's
+// forever.
+
+/** One persisted realtime-factor sample per estimate component. Keyed
+ * exactly like the static tables above: isolate splits on DML-vs-CPU
+ * (ISOLATE_RTF), whisper splits on tier (WHISPER_RTF), align does not
+ * split. null = no completed run has reported this one yet. */
+export interface MeasuredRtf {
+  isolateDml: number | null;
+  isolateCpu: number | null;
+  whisperSmall: number | null;
+  whisperMedium: number | null;
+  align: number | null;
+}
+
+export const NO_MEASURED_RTF: MeasuredRtf = {
+  isolateDml: null,
+  isolateCpu: null,
+  whisperSmall: null,
+  whisperMedium: null,
+  align: null,
+};
+
+/**
+ * Blend rule 1 of 2 — updating the persisted history: an exponential moving
+ * average, `next = prev + ALPHA * (sample - prev)`. 0.3 favors recent runs
+ * (thermal state and background load drift within a session, so last run is
+ * more informative than the tenth-oldest one) without letting one outlier
+ * run (a thermally-throttled background export, a cold vs. warm cache)
+ * override an entire history the way a bare "most recent value wins" would.
+ */
+const RTF_EWMA_ALPHA = 0.3;
+
+function ewma(prev: number | null, sample: number): number {
+  return prev == null ? sample : prev + RTF_EWMA_ALPHA * (sample - prev);
+}
+
+/**
+ * Fold one completed run's per-stage RTF samples into the persisted
+ * history. Pure — the store slice reads/writes the actual prefs blob;
+ * this just computes the next one. A sample that is missing, non-finite or
+ * non-positive (a garbled sidecar line) leaves that slot untouched rather
+ * than poisoning the EWMA with a NaN that would then self-propagate through
+ * every later estimate.
+ */
+export function blendMeasuredRtf(prev: MeasuredRtf, samples: Partial<MeasuredRtf>): MeasuredRtf {
+  const next = { ...prev };
+  for (const key of Object.keys(samples) as (keyof MeasuredRtf)[]) {
+    const s = samples[key];
+    if (s != null && Number.isFinite(s) && s > 0) next[key] = ewma(prev[key], s);
+  }
+  return next;
+}
+
+/**
+ * Blend rule 2 of 2 — folding the history into ONE estimate: an even split
+ * between the static reference-machine bound and this machine's own
+ * measured value, `bound' = bound + 0.5 * (measured - bound)`. Applied to
+ * BOTH the low and high bound of a component with the same weight, so the
+ * range narrows symmetrically around the measured value instead of just
+ * sliding — the more this machine's history agrees with (or diverges from)
+ * the reference machine, the tighter the estimate gets, which is the
+ * intended "hardware-detected" feel without discarding the static table
+ * the first time this machine runs (no measurement yet = bound' = bound).
+ */
+const RTF_BLEND_WEIGHT = 0.5;
+
+function blendBound(staticBound: number, measured: number | null): number {
+  return measured == null ? staticBound : staticBound + RTF_BLEND_WEIGHT * (measured - staticBound);
+}
+
 export function estimateGenerateSeconds(
   durationSec: number,
   tier: LyricsTier,
   dmlAvailable: boolean,
+  measured: MeasuredRtf = NO_MEASURED_RTF,
 ): EstimateRange {
   const d = Math.max(0, durationSec);
   const iso = dmlAvailable ? ISOLATE_RTF.dml : ISOLATE_RTF.cpu;
   const wh = WHISPER_RTF[tier];
+  const isoMeasured = dmlAvailable ? measured.isolateDml : measured.isolateCpu;
+  const whMeasured = tier === "medium" ? measured.whisperMedium : measured.whisperSmall;
+  const isoLow = blendBound(iso.low, isoMeasured);
+  const isoHigh = blendBound(iso.high, isoMeasured);
+  const whLow = blendBound(wh.low, whMeasured);
+  const whHigh = blendBound(wh.high, whMeasured);
+  const alignLow = blendBound(ALIGN_RTF.low, measured.align);
+  const alignHigh = blendBound(ALIGN_RTF.high, measured.align);
   return {
-    lowSec: d * (iso.low + wh.low + ALIGN_RTF.low) + OVERHEAD_SEC.low,
-    highSec: d * (iso.high + wh.high + ALIGN_RTF.high) + OVERHEAD_SEC.high,
+    lowSec: d * (isoLow + whLow + alignLow) + OVERHEAD_SEC.low,
+    highSec: d * (isoHigh + whHigh + alignHigh) + OVERHEAD_SEC.high,
   };
 }
 
@@ -316,6 +507,13 @@ export interface LyricsGenState {
     etaSec: number | null;
     /** Weighted 0..1 across all stages, for the single progress bar. */
     overall: number;
+    /** True for the gap between a stageDone event and the NEXT stage's own
+     * first event (FEAT-004 follow-up a) — `stage` already names the
+     * upcoming stage, but there is no real pct/eta for it yet. The panel
+     * reads this to show "Starting <stage>…" instead of a bare "<stage>…",
+     * which would otherwise look identical to a stage that is genuinely
+     * running but simply never reports a percent. */
+    starting: boolean;
   } | null;
 }
 
@@ -326,3 +524,52 @@ export const IDLE_LYRICS_GEN: LyricsGenState = {
   download: null,
   gen: null,
 };
+
+type GenState = NonNullable<LyricsGenState["gen"]>;
+
+/**
+ * Reduces one progress/stageDone sidecar event into the next `gen` UI
+ * state — pure, so the transition (a) can be unit-tested directly instead
+ * of only through the store's mocked sidecar plumbing. The store's onLine
+ * handler is thin wiring around this.
+ *
+ * `progress` always means "this stage is genuinely running": starting
+ * clears, even when the event itself carries no pct (still real signal,
+ * still not "starting"). `stageDone` looks up nextStage() and, when one
+ * exists, reports it with starting=true and no pct/eta — the transitional
+ * state. The overall bar still advances the full weight of the JUST-
+ * finished stage either way, since "before next" and "before+100% of the
+ * finished stage" are the same sum by construction. The last stage
+ * (assemble) has no next: it keeps the old 100%-and-done shape, since the
+ * terminal `result` event follows immediately, not another stage.
+ */
+export function reduceGenProgress(
+  ev: Extract<SidecarEvent, { type: "progress" | "stageDone" }>,
+): GenState {
+  if (ev.type === "progress") {
+    return {
+      stage: ev.stage,
+      pct: ev.pct ?? null,
+      etaSec: ev.etaSec ?? null,
+      starting: false,
+      overall: overallProgress(ev.stage, ev.pct ?? null),
+    };
+  }
+  const next = nextStage(ev.stage);
+  if (next) {
+    return {
+      stage: next,
+      pct: null,
+      etaSec: null,
+      starting: true,
+      overall: overallProgress(ev.stage, 100),
+    };
+  }
+  return {
+    stage: ev.stage,
+    pct: 100,
+    etaSec: null,
+    starting: false,
+    overall: overallProgress(ev.stage, 100),
+  };
+}
