@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.99.0] - 2026-08-16
+
 ### Added
 
 - **Pick the lyrics language.** Automatic lyrics gain a language dropdown
@@ -2827,7 +2829,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.98.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.99.0...HEAD
+[2.99.0]: https://github.com/0langa/beatform/compare/v2.98.0...v2.99.0
 [2.98.0]: https://github.com/0langa/beatform/compare/v2.97.1...v2.98.0
 [2.97.1]: https://github.com/0langa/beatform/compare/v2.97.0...v2.97.1
 [2.97.0]: https://github.com/0langa/beatform/compare/v2.96.0...v2.97.0
