@@ -3065,7 +3065,7 @@ spectrogram-_lite_ that led-matrix's Waterfall display already ships.
   offline with naga 30 (standalone validator on devstorage) — that check is
   what caught a WGSL **reserved word** (`layout`) before it could reach a
   device.
-- Shader-golden diff is **additive only** (351 inserted lines, zero deleted):
+- Shader-golden diff is **additive only** (+361/-0):
   no existing preset body, no shared prelude line and no param ABI moved, so
   the 269 existing GPU pixel cases must not move.
 - Verified ON DEVICE before commit: rendered in the worktree dev server

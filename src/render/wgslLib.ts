@@ -72,9 +72,9 @@ export function wgslAcesTonemap(name: string): string {
  * The full-preset colour-control preamble: every authored HSL colour routes
  * through `presetColor`, whose saturation/lightness ride the shared
  * `P_saturation()` / `P_lightness()` params (pixel-neutral at their default
- * of 1). Used by the four "full colour controls" presets — spectrum-bars,
- * bass-circle, radial-burst, led-matrix — and asserted per preset by
- * colorControls.test.ts.
+ * of 1). Used by the five "full colour controls" presets — spectrum-bars,
+ * bass-circle, radial-burst, led-matrix, spectro-falls — and asserted per
+ * preset by colorControls.test.ts.
  */
 export const WGSL_COLOR_CONTROLS = `fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }

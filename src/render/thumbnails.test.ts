@@ -161,7 +161,7 @@ describe("renderPresetThumbnails publishes the eager slice before the tail", () 
     const handed: Array<Record<string, string>> = [];
     await mod.renderPresetThumbnails({ order: ORDER, onBatch: (t) => handed.push(t) });
     // Read LATER, not inside the callback: passing the live accumulator would
-    // leave a consumer holding an object that grew all sixteen entries behind
+    // leave a consumer holding an object that grew all seventeen entries behind
     // its back — invisible to any assertion made at call time.
     expect(Object.keys(handed[0])).toHaveLength(mod.EAGER_THUMB_COUNT);
     expect(Object.keys(handed[1])).toHaveLength(ORDER.length);

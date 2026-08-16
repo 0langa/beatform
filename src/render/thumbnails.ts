@@ -17,7 +17,7 @@ import type { AudioFeatures } from "../audio/types";
  * chips a new user is actually looking at (the strip's first few) are rendered
  * near the END of registry order — `echo-trails` is 3rd on the strip and 10th
  * in the registry, `bass-circle` 4th and 15th — and nothing at all appeared
- * until all sixteen modes plus all sixteen PNG encodes had finished. So a
+ * until all seventeen modes plus all seventeen PNG encodes had finished. So a
  * brand-new user's first minute was a row of text chips no matter how fast the
  * first thumbnail was ready. The run now walks the STRIP's order and publishes
  * the first {@link EAGER_THUMB_COUNT} as soon as they exist; the tail follows

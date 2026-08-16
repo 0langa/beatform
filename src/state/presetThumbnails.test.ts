@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * `loadPresetThumbnails()` publishes PER BATCH, not once at the end.
  *
  * The old action awaited the whole run and set `presetThumbs` from the
- * resolved promise, so nothing appeared on the mode strip until all sixteen
+ * resolved promise, so nothing appeared on the mode strip until all seventeen
  * modes had rendered AND encoded — a chip finished at 200 ms stayed a text
  * label for the length of the entire run. P-3 replaced that with an
  * `onBatch` callback, and this pins the difference, because the two are

@@ -390,7 +390,7 @@ export default function App() {
 
   // Preset thumbnails (P-3). The GENERATION is what became eager, not the
   // start of it: the run publishes its first ten chips as soon as they exist
-  // instead of holding all sixteen back until the last PNG is encoded, and it
+  // instead of holding all seventeen back until the last PNG is encoded, and it
   // walks the strip's own order so those ten are the ten on screen
   // (render/thumbnails.ts owns both rules).
   //
