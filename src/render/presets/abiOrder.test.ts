@@ -9,7 +9,7 @@ import { allParams, type PresetDef } from "../types";
  * `params` and `advanced` are the GPU ABI: `allParams` packs them in that
  * order and a spec's position IS its shader accessor index, so moving one spec
  * between the two arrays repacks the whole uniform buffer and moves every one
- * of the 213 pixel hashes. The tier a knob RENDERS in is a separate axis
+ * of the 280 pixel hashes. The tier a knob RENDERS in is a separate axis
  * (`ParamSpec.tier`, read only by `advancedKeys`), precisely so presentation
  * work can never reach the ABI.
  *
