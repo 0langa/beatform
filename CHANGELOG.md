@@ -11,6 +11,18 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Re-saving a custom shader is undoable now.** Editing an active custom
+  shader and hitting Compile + update used to bake the change into
+  history, so Ctrl+Z reverted nothing. One save is one undo step, and
+  undo genuinely restores the previous shader code.
+- **A slow Gallery install can no longer overwrite a theme you applied
+  after it.** If you clicked a built-in theme while a remote install was
+  still downloading, the install could finish later and silently replace
+  your choice. The later action wins now; the download still completes
+  and the entry stays installed.
+
 ### Changed
 
 - **The factory theme pack moved into the Gallery.** All 13 built-in themes
