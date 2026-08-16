@@ -335,18 +335,33 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
 
 ### Track C — Seed set v2 (after B lands for the modes involved)
 
-- [ ] C1 Flagship themes (3–5), built as full productions: modulation
-      routes, overlay layers (text/logo), backgrounds, post chain, scene
-      timeline where it serves the piece — each one demonstrably touching
-      the surfaces the current two ignore. Replaces deep-current /
-      sunset-circuit (registry `replacedBy` or in-place update — IDs
-      stay, content re-pins).
-- [ ] C2 Look pass 2: deepen the nine live looks where B raises a mode's
-      ceiling (looks carry params + sync ONLY by design — full-capability
-      showcase is the themes' job; the explainer from A2 makes that
-      visible to users too).
-- [ ] C3 Aurora hand-tuned look (needs B first — the mode, not the tuner,
-      was the limit) + seeds for any mode whose upgrade unlocks one.
+- [x] C1 **DONE — folded into C4's 2026-08-14 merge; this checkbox was
+      never flipped when it shipped, caught in the 2026-08-16 ledger
+      truth sweep.** C4's "5 flagship themes" below is this work: built
+      on branch `c1-themes`, owner-approved entry-by-entry, merged live
+      2026-08-14 (registry now serves 13 looks + 5 themes). See C4 for
+      the full writeup. ORIGINAL — Flagship themes (3–5), built as full
+      productions: modulation routes, overlay layers (text/logo),
+      backgrounds, post chain, scene timeline where it serves the piece —
+      each one demonstrably touching the surfaces the current two ignore.
+      Replaces deep-current / sunset-circuit (registry `replacedBy` or
+      in-place update — IDs stay, content re-pins).
+- [x] C2 **DONE — folded into C4's 2026-08-14 merge; this checkbox was
+      never flipped when it shipped, caught in the 2026-08-16 ledger
+      truth sweep.** C4's "9 look deltas" below is this pass,
+      owner-approved entry-by-entry in the same round as C1/C3. See C4
+      for the full writeup. ORIGINAL — Look pass 2: deepen the nine live
+      looks where B raises a mode's ceiling (looks carry params + sync
+      ONLY by design — full-capability showcase is the themes' job; the
+      explainer from A2 makes that visible to users too).
+- [x] C3 **DONE — folded into C4's 2026-08-14 merge; this checkbox was
+      never flipped when it shipped, caught in the 2026-08-16 ledger
+      truth sweep.** C4's "4 new looks" below includes the Aurora target:
+      `ember-veil` ("Ember Veil"), a warm-palette Aurora look — confirmed
+      live on the registry today by fetching the index directly during
+      this sweep. See C4 for the full writeup. ORIGINAL — Aurora
+      hand-tuned look (needs B first — the mode, not the tuner, was the
+      limit) + seeds for any mode whose upgrade unlocks one.
 - [x] C4 **RUN AND PASSED 2026-08-14.** The full candidate set (5 flagship
       themes, 9 look deltas, 4 new looks — built on branch `c1-themes`,
       adversarially reviewed, 28 evidence stills) went to the owner as a
@@ -385,12 +400,26 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       0.02-step sliders cannot express; needs a per-param step-retune pass
       (refinements only, same integer-divisor rule), after which the
       params/scenes/keyframes leg joins the factoryThemes grid test
-      (inventory + test shape are in this entry's session);
-      (b) registry-side rule extension = owner decision #6;
+      (inventory + test shape are in this entry's session).
+      **Already fixed, uncredited — cross-referenced to E5 in the
+      2026-08-16 ledger truth sweep.** E5 (Track E, DONE 2026-08-15, same
+      day) independently found and closed this exact remainder: same
+      10-theme count, same worst offenders (Cover Story, On Air), the
+      identical step-refinement mechanism, and `themes.test.ts` now
+      asserts exactly what this sub-item asked for. No further work
+      needed here — see E5's own entry for the fix.
+      (b) registry-side rule extension. **RESOLVED 2026-08-16 — decision
+      #6 below: EXTENDS to the post/motion/mod-amount grids, byte-neutral
+      (no re-emit, no re-approval of the 18 live entries). Scheduled
+      2.100.0**, registry-side (`beatform-app/gallery`'s
+      `scripts/validate.mjs` + `gen-param-specs.mjs`) — see "Ledger-
+      clearance release plan."
       (c) blacklight `sync.attack = 0.012` sits off the sync trio's 0.01
       grid — the one approved value the app-side pass does NOT legalize
-      (sync table untouched here; 0.002 would be the conforming
-      refinement).
+      (sync table untouched here). **RESOLVED 2026-08-16 — decision #6
+      below: the sync-trio step refines to 0.002. Scheduled 2.99.0**,
+      app-side, via the concurrent lane — see "Ledger-clearance release
+      plan."
 - [x] P-6 **Factory themes become built-in Gallery entries. DONE 2026-08-15**
       (branch `p6-builtin-gallery`). The 13-chip row on the Visuals panel's
       Looks & themes page is gone; the factory pack now lives in the
@@ -456,7 +485,7 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       The Modulation paragraph was rewritten for v2.83.0 — target-first
       cards, depth, curve/rise/fall, six recipes, LFO sources, the **Driven
       by** meters and the **driven** mark on the sliders themselves.
-- [ ] D2 README + docs/ site + gallery-repo docs same sweep. **README,
+- [x] D2 README + docs/ site + gallery-repo docs same sweep. **README,
       `docs/index.md`, `docs/guide.md` and `docs/templates.md` done in
       v2.80.0** (surface names + Template→Theme residue + the Preferences
       tab inventory, which had never listed Modes or Performance; the
@@ -496,6 +525,10 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       The `/templates` URL rename is RESOLVED (owner, 2026-08-13): the URL is
       KEPT FOREVER as a deliberate survivor — external links win, and the
       page's content already speaks current vocabulary. Never rename it.
+      **D2 closed 2026-08-16 (ledger truth sweep)** — every sub-part named
+      above was already DONE (v2.80.0 first pass, 2026-08-09 second pass,
+      gallery-repo push `9e8a132`) and the one open decision (`/templates`)
+      RESOLVED 2026-08-13; only this checkbox had lagged behind.
 - [x] D3 **DONE (2026-08-09) — repo-wide string audit is clean in the
       surfaces this track owns.** No rendered "Inspector" label remains in
       `src/`, `docs/` or README; the sole current `src/` hit is a negative
@@ -882,6 +915,12 @@ Execution plan: **Wave 0 DONE 2026-08-06** (F5 + RP-14 schema `taper`/`mod`
       remainder** wave 1 named and did not cover: `modMatrix`,
       `frameResolve` and the store slices have not had the adversarial
       pass persistence and the document model got.
+      **Gap (b) is now the LAST open thread keeping E2's checkbox open**
+      (verdict recorded 2026-08-16, ledger truth sweep) — gap (a) closed
+      2026-08-14 immediately below; gap (b)'s fuzz/mutation pass over
+      `src/state/modMatrix.ts`, `src/state/frameResolve.ts` and
+      `src/state/store.ts` is scheduled for **2.100.0**'s hardening close
+      (see "Ledger-clearance release plan").
       **Wave 2 (UI) — gap (a) CLOSED, DONE 2026-08-14.** Re-derived against
       the current tree per the accounting note above — the archived
       register is unreachable and no wave-2 findings block existed. Full
@@ -1513,6 +1552,11 @@ buf` — immediately before the job is built, with nothing awaitable
       their param's grid — completing the set with the existing
       presetStyles.test.ts style-grid law, so all three kinds of shipped
       content now answer to the same reachability rule.
+      **Cross-reference (2026-08-16 ledger truth sweep):** this closes
+      Track C's C5(a) sub-item too — the 19 factory-theme values here ARE
+      C5(a)'s "19 off-grid across 10 themes"; C5(a) named the same
+      remainder independently and was never marked against it. See C5 for
+      that entry's own text.
 
 - [x] E2-R1 **DONE 2026-08-10 — with option (f), on the owner's approval.**
       Designed by a workflow: four parallel investigations, a three-lens judge
@@ -1867,7 +1911,10 @@ nothing else from that release is outstanding.
       turns it red.
       Follow-up left open on purpose: `ModulationPage.tsx:247` still subscribes
       whole `activeParams` for its cards' resting values. Not on the drag path
-      (that page and Mode are never mounted together).
+      (that page and Mode are never mounted together). **Accepted as-is
+      (2026-08-16, owner sweep)** — the harmlessness reasoning above
+      stands unchanged; this is not reopened, just converted from a
+      dangling note into an explicit close.
       ORIGINAL — Push subscriptions down to `ParamRow` — the real slider-drag fix
       (`setParam` writes `activeParams` on every pointermove). Requires
       `ParamGroups`/`paramControls` to become store-aware, which invalidates
@@ -2290,6 +2337,13 @@ buys and what it does not.
       page, a text snippet per finding, and `printDockOverflow()` called from
       inside `assertRuntime` so it prints on EVERY path including `--update`.
       The summary line no longer says "dock layout clean" unconditionally.
+      **Verdict recorded 2026-08-16 (owner sweep): PROMOTE.**
+      `dockLayoutSmoke`'s dock-overflow audit becomes a hard-failing gate
+      assertion in **2.100.0**, accepting the risk this entry itself
+      named — it may immediately surface pre-existing overflow instances
+      app-wide that have not been triaged yet — with the owner's
+      instruction that any fallout gets fixed in the SAME release, not
+      deferred. Scheduled in "Ledger-clearance release plan."
       ORIGINAL — **two harness gaps that let a 0px slider ship for three
       releases.** (a) `.panel-scroll` declares `overflow-y: auto`, so the other
       axis computes to `auto` too and `__auditUI`'s `outside-scope-x` walk
@@ -2820,6 +2874,22 @@ Execution sequence around the running Track B program:
    the button in the completion toast with its failure path tested.
    Sixteen mutations, all red, including a renamed persisted format id caught by
    the `loadStoredExportSettings` round-trip.
+   **P-11 DONE 2026-08-15** — shipped as its own dedicated release,
+   exactly as scheduled above.
+   `chore(release): 2.97.0 — The document that survives everything`
+   (`dcc0b9b`) replaced the 15-key localStorage document cache with the
+   already-written atomic autosave `.bfproj` as the desktop boot source
+   (one `parseProject` at startup); `CHANGELOG.md`'s `[2.97.0]` "Changed"
+   entry ("Your work now lives in one crash-safe file") is the
+   user-facing record. A same-day data-loss patch followed:
+   `chore(release): 2.97.1 — Nothing is ever silently discarded`
+   (`863d4c9`) fixed a slow-project-load-vs-early-edit race that could
+   silently save an older project version over a newer one;
+   `CHANGELOG.md`'s `[2.97.1]` "Fixed" entry covers it. (2.97.0's own
+   "Fixed" entry that same release is unrelated to P-11 — it is E5's
+   off-grid-slider fix, which happened to ship in the same version.)
+   This line item was never flipped despite shipping; corrected in the
+   2026-08-16 ledger truth sweep.
 
 **THE v14 SIBLING-STORE PACKET — RESOLVED 2026-08-10, three different ways.**
 Designed by a workflow (four parallel investigations, a three-lens judge panel
@@ -3037,7 +3107,7 @@ ranked roster (spectrogram waterfall first) at its head unless reordered.
 `.bfpreset` `appVersion` and Gallery-tombstone decisions were taken and
 shipped earlier in the same day's sessions.
 
-### P-19 lane 1 — Spectro Falls (spectrogram waterfall archetype) — CODE COMPLETE, device gate pending
+### P-19 lane 1 — Spectro Falls (spectrogram waterfall archetype) — CODE COMPLETE, matrix re-blessed, release pending
 
 The head of P-19's ranked roster, executed on branch `p19-waterfall`. A
 first-class mode (`spectro-falls`, "Spectro Falls") whose entire identity is
@@ -3075,12 +3145,16 @@ spectrogram-_lite_ that led-matrix's Waterfall display already ships.
   that left the bass pinned at full heat, a linear brightness ramp with no
   dark space to read against, and a spill halo three times too wide — and
   re-tuned every factory look to the corrected scale. Details in the lane log.
-- **Outstanding, owner/controller side:** `npm run test:gpu` adds 11 cases
-  (`@defaults`, six styles, two colour cases, two extremes) and therefore
-  fails as `matrix case drift; added=...` until re-blessed with
-  `npm run test:gpu:update`. Verify the new frames visually before blessing;
-  the mode's defaults are designed to render non-black at every point in the
-  matrix walk (the ground is a lit surface, never a hole).
+- **Re-bless DONE 2026-08-16 (caught in the ledger truth sweep — HEAD had
+  already carried it since `9494ba8`, "test(render): bless the matrix
+  baseline — Spectro Falls adds eleven cases").** `npm run test:gpu` added
+  the 11 cases this lane predicted (`@defaults`, six styles, two colour
+  cases, two extremes); the new frames were verified visually before
+  blessing with `npm run test:gpu:update`, per this entry's own note that
+  the mode's defaults are designed to render non-black at every point in
+  the matrix walk (the ground is a lit surface, never a hole). Nothing
+  left on this lane but the release itself — see "Ledger-clearance
+  release plan" (2.99.0).
 
 ### Decision points for the owner
 
@@ -3100,17 +3174,24 @@ spectrogram-_lite_ that led-matrix's Waterfall display already ships.
    `2575652`. `PROPOSALS.md` now carries a current execution-status table.
    Its original P-1 body predates both renames; the shipped surface is
    **Visuals**, not Inspector.
-6. **OPEN — extend the registry step-grid rule beyond preset params?** The
-   gallery `schema/README.md` scope note ("the post chain, the motion
-   masters and modulation route amounts … are out of scope") predates the
-   app-side grid closure (C5, 2026-08-15): every approved entry is now
-   legal on the post/motion/amount grids, so extending
-   `scripts/validate.mjs` + `gen-param-specs.mjs` to emit and check those
-   three tables is **byte-neutral** — no re-emit, no re-approval of the 18
-   entries. Sync stays genuinely open either way: blacklight's
-   `sync.attack = 0.012` is off the 0.01 sync grid, so covering sync means
-   refining the app's sync-trio step (0.002) first, or scoping sync out
-   explicitly in the README.
+6. **RESOLVED 2026-08-16 (owner sweep) — extend the registry step-grid
+   rule beyond preset params, AND refine the sync-trio step.** Verdict:
+   both halves of the question are YES, and both are now scheduled work,
+   not open questions. (1) `scripts/validate.mjs` + `gen-param-specs.mjs`
+   (in `beatform-app/gallery`) extend to emit and check the
+   post/motion/mod-amount grids too — byte-neutral, no re-emit, no
+   re-approval of the 18 live entries. Registry-side; scheduled
+   **2.100.0**. (2) The app's sync-trio step refines to 0.002, legalizing
+   blacklight's `sync.attack = 0.012` the same way C5 legalized the
+   post/motion grids — this is C5(c). App-side; scheduled **2.99.0**, via
+   the concurrent app-side lane. See "Ledger-clearance release plan" for
+   the release mapping; see C5 (Track C) for the app-side item's own
+   entry. Original open question, kept for record: the gallery
+   `schema/README.md` scope note ("the post chain, the motion masters and
+   modulation route amounts … are out of scope") predated the app-side
+   grid closure (C5, 2026-08-15) — every approved entry was already legal
+   on the post/motion/amount grids, which is what made extending the rule
+   byte-neutral.
 
 ### Parked (do not start)
 
@@ -3126,6 +3207,57 @@ v2.72.0 gave it the top-bar dialog surface; 11 owner-approved seeds live on
 registry `main` (content pinned a795bac). Open follow-ups live in the
 program tracks (A gallery correctness, C seed v2). Full record: ARCHIVE at
 the bottom of this file.
+
+## Ledger-clearance release plan (owner-granted 2026-08-16)
+
+Sequencing verdict from the 2026-08-16 ledger truth sweep, covering every
+row this sweep left scheduled-but-not-yet-executed (rather than closed or
+gated). This supersedes the informal forward pointers that used to be
+scattered across "Approved program extension," the P-19 roster note, and
+individual Track entries — those stay put as the historical record of what
+was already decided; this section is where "what ships when" now lives.
+
+- **2.99.0** — Spectro Falls release (P-19 entry 1: code-complete, GPU
+  matrix re-blessed at `9494ba8`; only the release ritual remains) + this
+  ledger truth sweep + smalls: P-10's toast-stack max-height residual
+  (`src/App.css` `.toast-stack`), the sync-trio step refinement to 0.002
+  (C5(c) / decision point #6), and the FEAT-004 recorded follow-up bundle
+  (stage-transition progress display, persisted measured-RTF estimates,
+  whisper Vulkan benchmark, language picker).
+- **2.100.0** — Hardening close: the registry-side step-grid rule
+  extension to the post/motion/mod-amount grids (decision point #6,
+  `beatform-app/gallery`'s `scripts/validate.mjs` + `gen-param-specs.mjs`),
+  `dockLayoutSmoke`'s dock-overflow audit promoted to a hard-failing gate
+  with any fallout it surfaces fixed in the same release (H16 Q8), the E2
+  gap (b) deep-state adversarial fuzz pass (`modMatrix`, `frameResolve`,
+  the store slices), FEAT-005's ProRes deep-color pipe (`rgba64le`,
+  matching the AV1 lane), and the P-6 built-in-thumbnail capture script.
+  **Track E and C5 both close** in this release — no open threads left in
+  either afterward.
+- **2.101.0** — Lyric Stage (P-19 roster entry 2: typography/lyric-stage
+  mode, pairs with the lyrics engine).
+- **2.102.0** — Cover-art-first mode + waveform terrain (P-19 roster
+  entries 3 and 4; waveform terrain is a spectrum-scape layout enum,
+  ships cheaply alongside the larger cover-art-first work).
+- **2.103.0** — Fluid/reaction-diffusion (P-19 roster entry 5 — saved for
+  last, the most expensive).
+- **2.104.0** — FEAT-009 true second-display performance window + P-4
+  Perform drawer, un-parked together as originally specified (P-4 is
+  FEAT-009's operator console).
+- **Outreach-kit lane, parallel, no release** — launch-kit materials
+  (copy, screenshots, post drafts) get prepared for community
+  seeding/outreach starting now. This lane never ships a version bump on
+  its own and does not authorize posting: posting/representing the
+  project publicly stays exclusively the owner's action.
+
+**End condition** for this plan, and functionally for the whole quality-
+consolidation program: every ledger row is either shipped, or carries one
+of **KNOWN LIMITATION**, **SOMEDAY**, or an explicit trigger gate
+(VERIFY-002 on NLE availability, Spout/NDI on demand, macOS/Linux on
+demand, DSP-001/DSP-002 on a reproducible report). One item this plan
+cannot schedule, because only the owner can run it: **the owner's own
+FEAT-004 clean-boot retest**, recorded pending since the 2026-08-04
+overloaded-PC session.
 
 ## Immediate stabilization and maintenance
 
@@ -3283,8 +3415,12 @@ rejected web/prefix cases. Full record: ARCHIVE at the bottom of this file.
 
 ### VIS-001 — Aurora mirrored hue spread
 
-**Status:** DECISION  
-**Owner choice required before changing shipped visuals.**
+**Status:** KNOWN LIMITATION  
+**Verdict (owner, 2026-08-16): PRESERVE — closed as documented identity.**
+Mirrored Aurora's folded hue spread STAYS. The shipped looks (Cathedral and
+the rest of the mirrored-style family, including every mirrored entry
+approved through C4) were approved as they render today; this behavior is
+part of their identity, not a defect to fix out from under them.
 
 Current behavior:
 
@@ -3293,20 +3429,18 @@ Current behavior:
   range and a one-sided offset.
 - Spectrum indexing uses separately rescaled `specX` and is already corrected.
 
-Decision:
+Decision record (RESOLVED 2026-08-16 — kept for history, not reopened):
 
-- **Preserve:** treat current palette behavior as part of shipped mirrored
-  styles.
-- **Change:** rescale palette coordinate in mirrored mode, knowingly altering
-  existing Cathedral and other mirrored looks.
+- **Preserve** (CHOSEN): treat current palette behavior as part of shipped
+  mirrored styles.
+- Rejected alternative: rescale palette coordinate in mirrored mode,
+  knowingly altering existing Cathedral and other mirrored looks — would
+  have required new golden coverage, a review of every factory Aurora
+  style, and a changelog migration note. Moot now that Preserve is the
+  verdict.
 
-If changed:
-
-- Add golden coverage for mirrored and unmirrored styles.
-- Review every factory Aurora style.
-- Document intentional visual migration in changelog.
-
-No action until owner chooses or a user-facing defect provides new evidence.
+Reopen only with a new user-facing defect report, not by re-litigating this
+verdict.
 
 ### DSP-001 — DC-offset waveform and trigger behavior
 
@@ -3352,15 +3486,15 @@ visible seek artifact and a deterministic reproduction.
 
 These are valid ideas but not active work:
 
-| Item                                          | Status     | Re-entry gate                                                                              |
-| --------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------ |
-| macOS/Linux installers, signing, notarization | SOMEDAY    | Sustained demand plus hardware and release-maintenance capacity                            |
-| Spout/NDI native output                       | GATED      | User demand, Windows capture hardware/software, native-library plan, end-to-end validation |
-| More factory modes/styles/themes              | SOMEDAY    | Specific quality concept; never add filler for count                                       |
-| Community seeding/outreach                    | GATED      | Owner action; agents must never post or represent owner without explicit approval          |
-| `v3.0.0`                                      | DECISION   | Owner conviction that product merits milestone; no checklist auto-trigger                  |
-| Full multi-resolution FFT/CQT default         | NOT QUEUED | Fresh measured deficiency not solved by shipped opt-in display FFT                         |
-| Separate stem-separation feature              | FOLDED     | Part of FEAT-004 automatic-lyrics pipeline                                                 |
+| Item                                          | Status                             | Re-entry gate                                                                                                                                                                                                                                                                                                                           |
+| --------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS/Linux installers, signing, notarization | SOMEDAY                            | Sustained demand plus hardware and release-maintenance capacity                                                                                                                                                                                                                                                                         |
+| Spout/NDI native output                       | GATED                              | User demand, Windows capture hardware/software, native-library plan, end-to-end validation                                                                                                                                                                                                                                              |
+| More factory modes/styles/themes              | SOMEDAY                            | Specific quality concept; never add filler for count                                                                                                                                                                                                                                                                                    |
+| Community seeding/outreach                    | GATED — prep authorized 2026-08-16 | Owner verdict (2026-08-16 ledger sweep): launch-kit materials (copy, screenshots, post drafts) may be prepared now as a no-release lane — see "Ledger-clearance release plan." Posting/representing the project publicly stays exclusively the owner's action; agents must never post or represent the owner without explicit approval. |
+| `v3.0.0`                                      | DECISION                           | Owner conviction that product merits milestone; no checklist auto-trigger                                                                                                                                                                                                                                                               |
+| Full multi-resolution FFT/CQT default         | NOT QUEUED                         | Fresh measured deficiency not solved by shipped opt-in display FFT                                                                                                                                                                                                                                                                      |
+| Separate stem-separation feature              | FOLDED                             | Part of FEAT-004 automatic-lyrics pipeline                                                                                                                                                                                                                                                                                              |
 
 ## Cleared work — do not reopen without evidence
 
