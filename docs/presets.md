@@ -128,6 +128,12 @@ enforces that and `abiOrder.test.ts` catches a moved spec in seconds.
 - `hsl2rgb(h°, s, l)`, `hash21(p)`, `hash11(x)`, `noise2(p)`, `fbm(p)`,
   `rot2(a)`, `centered(uv)` (aspect-corrected, origin center), `TAU`.
 - `coverSample(uv)` / `hasCover()` — the track's embedded album art.
+- `lyricSample(uv)` / `hasLyrics()` — the lyric plate: the current lyric
+  moment pre-rasterized by the host (three bands — previous / current / next
+  line; channels are classes, R glyph / G karaoke-lit / B active word, plus a
+  4 px status corner carrying line presence). This is how Lyric Stage draws
+  words; `hasLyrics()` is false when no timed lyrics are loaded, so degrade
+  to a no-lyrics look instead of an empty frame.
 - `feedbackSample(uv)` — previous frame (referencing it opts into the
   trails/feedback path).
 

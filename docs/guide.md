@@ -29,7 +29,7 @@ One bit of vocabulary that comes up throughout the rest of this guide: a **Style
 
 ## Visual modes
 
-Seventeen modes live on the strip — from classic spectrum bars to 120k-particle flow fields, a full 3D bar city and a scrolling spectrogram that draws the whole song as it plays. Every mode except Builder, which stacks its own layers instead, has:
+Eighteen modes live on the strip — from classic spectrum bars to 120k-particle flow fields, a full 3D bar city, a scrolling spectrogram that draws the whole song as it plays, and a lyric stage that puts the words themselves front and centre. Every mode except Builder, which stacks its own layers instead, has:
 
 - **Styles** — six to fourteen curated one-click looks, in a row of chips at the top of the Mode page. The header above the page names the style you are on; the chip row reads _Custom_ once you move a control away from it.
 - **Grouped controls** — Shape, Color, Motion, Reaction, Glow, Image, Camera, Backdrop, and _More_ for anything that fits none of them. Every group a visual uses is on the page, and each one leads with the handful of controls that change the look.
@@ -169,7 +169,7 @@ The Scene page's Layers section adds text and image overlays. Text supports `{ti
 
 ### Lyrics
 
-Drop an `.lrc` or `.srt` file onto the window — the current line follows the music karaoke-style, live and in every export. Position, size, color, fade timing and an _Animation_ (Plain, Slide up, Pop, or Karaoke — the line fills bright left to right as it is sung) live on the Text page. Drop the lyrics alongside the track or after it — they attach to the loaded track just like an imported stem does.
+Drop an `.lrc` or `.srt` file onto the window — the current line follows the music karaoke-style, live and in every export. Position, size, color, fade timing and an _Animation_ (Plain, Slide up, Pop, or Karaoke — the line fills bright left to right as it is sung) live on the Text page. Drop the lyrics alongside the track or after it — they attach to the loaded track just like an imported stem does. And when the words deserve the whole frame, the **Lyric Stage** visual mode puts them centre stage: big audio-reactive type with the same word-by-word fill, the sung word carrying the light — no caption needed.
 
 ### Generate lyrics (desktop)
 

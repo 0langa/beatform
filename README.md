@@ -30,9 +30,11 @@ Free and open source. Built to become a professional-grade tool for producers an
   file picker; whole-track or draggable A-B region looping with sample-accurate
   Web Audio endpoints
 - Configurable log/linear spectrum analysis with 85/171/341 ms-class drawn-spectrum resolution, optional measured FFT bins with no interpolation, asymmetric smoothing, peak hold, band energies, spectral-flux beat detection, slow energy envelope, phase-locked waveform. Longer display FFTs never retune onset detectors
-- **17 visual modes** (WebGPU shader presets): Spectrum Bars, Radial Burst,
+- **18 visual modes** (WebGPU shader presets): Spectrum Bars, Radial Burst,
   Oscilloscope, Particles, Tunnel, Kaleido Nebula, Metaballs, LED Matrix,
-  **Spectro Falls** (scrolling spectrogram waterfall), Voice Orb (narration
+  **Spectro Falls** (scrolling spectrogram waterfall), **Lyric Stage**
+  (typography-first — the words are the visual, word-level karaoke fill from
+  the lyrics engine), Voice Orb (narration
   mode), Echo Trails (feedback), Particle Flow (120k GPU
   compute particles), Spectrum Scape (3D), Aurora, Synthwave,
   **Bass Circle** (circular bass visualizer with album art), and **Builder** — a real

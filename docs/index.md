@@ -16,7 +16,7 @@ GitHub is the only channel and everything is free forever.
 2. **Drop your track** anywhere on the window (MP3/FLAC/WAV/OGG/M4A). The app
    reads its tags, detects BPM + key, and locks grid-synced visuals to the
    real beats.
-3. **Pick a look.** Seventeen visual modes across the top; each ships six to
+3. **Pick a look.** Eighteen visual modes across the top; each ships six to
    fourteen curated styles (Builder ships six whole-stack starting points
    instead). Or open _Visuals ▸ Looks & themes_ and click a factory
    theme — Cover Story, Hyperlane, Chrome Sunset, Ion Storm, and more — for a
