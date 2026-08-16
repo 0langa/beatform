@@ -197,22 +197,40 @@ export function newRouteId(): string {
   return `mr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * `undefined`/non-number/non-finite all read as "no signal" (0), never pass
+ * through. `?? 0` alone (the pre-E2(b) form) only replaces null/undefined —
+ * it does NOT stop a NaN or ±Infinity, and both are reachable here even
+ * though `source` is typed `ModSource`: the type is erased at runtime, and
+ * `route.source` on a LIVE route is not re-validated once it is in
+ * `activeMods` (`updateModRoute`'s patch merge — see store.ts). Two real
+ * callers hand this function a route's raw, store-held `source` directly —
+ * `ModMeters.tsx`'s live meters and `services.ts`'s per-route value
+ * publisher — so a hostile `source` reaches here independent of whether
+ * `applyMods`/`applyPostMods` themselves were ever called with it.
+ */
+function finiteOr0(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
 export function sourceValue(
   features: AudioFeatures,
   source: ModSource,
   stems?: Record<string, number>,
 ): number {
-  if (source.startsWith("stem")) return stems?.[source] ?? 0;
+  if (source.startsWith("stem")) return finiteOr0(stems?.[source]);
   if (source.startsWith("lfo:")) {
     const p = LFO_PARSED.get(source);
     return p ? lfoValue(p.wave, p.rate, features) : 0;
   }
-  // `?? 0`, not a bare cast: the P-15 fields are optional on AudioFeatures
-  // (hand-built frames in tests and older callers may omit them), and an
-  // undefined here would poison the route arithmetic into NaN for the rest
-  // of the frame. A missing feature reads as "no signal", like an unloaded
-  // stem does.
-  return (features[source as keyof AudioFeatures & ModSource] as number | undefined) ?? 0;
+  // Bracket access on a live AudioFeatures object, keyed by a string that is
+  // NOT guaranteed (at runtime) to be one of MOD_SOURCES: an unrecognized key
+  // reads as `undefined` (finiteOr0 -> 0, same as a missing P-15 field ever
+  // did) EXCEPT for a prototype key ("__proto__", "constructor",
+  // "toString", ...), which resolves through the inherited property instead
+  // and returns an object/function, not a number — finiteOr0 catches that
+  // too, the same guard, not a special case.
+  return finiteOr0(features[source as keyof AudioFeatures & ModSource]);
 }
 
 /**
