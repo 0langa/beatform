@@ -13,6 +13,30 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ### Added
 
+- **Pick the lyrics language.** Automatic lyrics gain a language dropdown
+  — auto-detect stays the default, with the full set of commonly
+  supported languages available when you know better than the detector.
+
+### Changed
+
+- **Lyrics time estimates learn from your machine.** Finished generation
+  runs record how fast your hardware actually was, and later estimates
+  blend that in — the numbers get more honest every run.
+- **Stage changes show immediately.** The lyrics progress no longer sits
+  at a stale "100%" while the next stage warms up — it says which stage
+  is starting the moment the previous one finishes.
+
+### Fixed
+
+- **Toasts can no longer pile off the top of the window.** The
+  notification stack caps its height and scrolls, so every message stays
+  reachable no matter how many arrive at once.
+- **One approved Gallery value was unreachable by its slider.** The sync
+  sliders' grid is finer now, so the Blacklight theme's tuned attack sits
+  exactly where its author put it.
+
+### Added
+
 - **Spectro Falls — a new visual mode: the song draws itself.** A scrolling
   spectrogram where every moment of the spectrum prints as one thin slice
   and then flows away from the live edge — kick drums as bars along the
