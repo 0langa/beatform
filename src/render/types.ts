@@ -667,8 +667,15 @@ export interface Renderer {
    * tightly-packed rgba64le-order u16 (R,G,B,A per pixel, row-major, no
    * padding), length = width×height×4, value = round(clamp(c, 0, 1)×65535).
    * Requires setDeepCapture(true) and a rendered frame; rejects otherwise.
+   *
+   * `straightAlpha` (FEAT-005 ProRes lane, default false): un-premultiply RGB
+   * by A before packing — the render graph's internal convention is
+   * premultiplied alpha, but ProRes 4444's yuva444p10le (unlike AV1's
+   * alpha-less yuv420p10le) decodes its alpha plane straight, matching what
+   * the 8-bit PNG lane always delivered (the browser un-premultiplies during
+   * PNG encoding). Leave false/omitted for every other caller.
    */
-  readbackDeepFrame(): Promise<Uint16Array>;
+  readbackDeepFrame(straightAlpha?: boolean): Promise<Uint16Array>;
   /** Global motion masters (rotation / pulse / detail), applied across modes. */
   setMotion(motion: MotionSettings): void;
   /** Post-processing chain (bloom, tonemap, vignette, grain, chromatic). */

@@ -195,9 +195,21 @@ export async function proresSetAudio(wav: Uint8Array): Promise<void> {
   await invoke("prores_audio_end");
 }
 
-export async function proresBegin(fps: number, outPath: string): Promise<void> {
+/**
+ * Begin a ProRes 4444 (.mov) session. FEAT-005: frames piped in are RAW
+ * rgba64le from the deep-color tap (straight alpha), not encoded PNGs — same
+ * reason av1Begin below needs width/height pinned at spawn time: ffmpeg
+ * slices the stdin stream purely by `-s WxH`, no per-frame header to infer
+ * it from.
+ */
+export async function proresBegin(
+  fps: number,
+  width: number,
+  height: number,
+  outPath: string,
+): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("prores_begin", { fps, outPath });
+  await invoke("prores_begin", { fps, width, height, outPath });
 }
 
 /** Begin a 10-bit AV1 (.mp4) session. Same staged-WAV handshake and the same

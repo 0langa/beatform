@@ -1875,6 +1875,87 @@ export function deepFrameToRgba64(
   return out;
 }
 
+/**
+ * ProRes-only sibling of deepFrameToRgba64: same fused strip+LUT pass, but
+ * also un-premultiplies each pixel's RGB by its own alpha before packing.
+ *
+ * fs_final's transparent-delivery output is PREMULTIPLIED (see POST_WGSL's
+ * `p.transparent` doc comment: "PNG+alpha, VP9-alpha, ProRes 4444"). The PNG
+ * lane never actually shipped that convention to disk — OffscreenCanvas.
+ * convertToBlob() un-premultiplies internally before PNG encoding, because
+ * PNG has no premultiplied representation — so every PNG/ProRes frame this
+ * app ever wrote carried STRAIGHT alpha. Piping fs_final's raw premultiplied
+ * floats into ffmpeg's yuva444p10le (also a straight-alpha format) would
+ * silently flip that convention: same container, same "has alpha" tag, wrong
+ * colour under every semi-transparent pixel.
+ *
+ * deepFrameToRgba64 itself must NOT gain this step: AV1's yuv420p10le has no
+ * alpha plane at all, so premultiplied-vs-straight is invisible in ITS output
+ * and changing its default would move the deep-capture seam AV1 already
+ * proved on device (byte-identical double-run .mp4s). Hence a separate
+ * function rather than a flag on the shared one.
+ *
+ * Division happens in already-quantized u16 space (straight = round(premul ×
+ * 65535 / alpha), alpha passed through unchanged, alpha=0 → 0), not on the
+ * f16 floats before quantizing. f16's ~10-bit mantissa is already the real
+ * precision ceiling here, so integer-space division adds no meaningful error
+ * over float-space division — and it lets this reuse the exact same
+ * per-channel LUT deepFrameToRgba64 built, one pass, one allocation.
+ *
+ * A fully opaque pixel (alpha ≡ 65535 — every export whose background is not
+ * literally the Transparent mode, since composite() hardcodes alpha=1 on
+ * every opaque bg branch) is a mathematically exact no-op: c×65535/65535==c.
+ * So this is byte-identical to deepFrameToRgba64 for the overwhelming common
+ * case, and only diverges where alpha genuinely is not fully opaque — exactly
+ * the case ProRes 4444's alpha channel exists to carry.
+ */
+export function deepFrameToStraightRgba64(
+  src: Uint16Array,
+  width: number,
+  height: number,
+  paddedBytesPerRow: number,
+): Uint16Array {
+  if (!f16Lut) {
+    f16Lut = new Uint16Array(0x10000);
+    for (let i = 0; i < 0x10000; i++) f16Lut[i] = f16ToUnorm16(i);
+  }
+  const lut = f16Lut;
+  const rowWords = width * 4;
+  const srcRowWords = paddedBytesPerRow >> 1;
+  const out = new Uint16Array(rowWords * height);
+  for (let y = 0; y < height; y++) {
+    const s = y * srcRowWords;
+    const d = y * rowWords;
+    for (let x = 0; x < width; x++) {
+      const si = s + x * 4;
+      const di = d + x * 4;
+      const r = lut[src[si]];
+      const g = lut[src[si + 1]];
+      const b = lut[src[si + 2]];
+      const a = lut[src[si + 3]];
+      if (a === 0) {
+        // No coverage: nothing to recover, and an unguarded divide would
+        // produce Infinity -> clamp to 65535, i.e. a FALSE bright pixel
+        // where the frame is meant to be invisible.
+        out[di] = 0;
+        out[di + 1] = 0;
+        out[di + 2] = 0;
+      } else {
+        // Clamp: R and A are quantized independently, so a pixel meant to be
+        // exactly at full coverage can see R round up while A rounds down,
+        // pushing the raw ratio a hair past 65535 — left unclamped that
+        // wraps a Uint16Array around to a near-zero value, not a harmless
+        // near-white one.
+        out[di] = Math.min(65535, Math.round((r * 65535) / a));
+        out[di + 1] = Math.min(65535, Math.round((g * 65535) / a));
+        out[di + 2] = Math.min(65535, Math.round((b * 65535) / a));
+      }
+      out[di + 3] = a;
+    }
+  }
+  return out;
+}
+
 export class WebGPURenderer implements Renderer {
   readonly kind = "webgpu" as const;
 
@@ -3172,6 +3253,12 @@ export class WebGPURenderer implements Renderer {
    * rgba64le-order u16: R,G,B,A per pixel, row-major, no padding, length
    * width×height×4, value = round(clamp(f16, 0, 1) × 65535).
    *
+   * `straightAlpha` (FEAT-005 ProRes lane, default false): un-premultiply RGB
+   * by A before packing, via deepFrameToStraightRgba64 instead of
+   * deepFrameToRgba64 — see that function's doc for why. Defaulting to false
+   * keeps every existing caller (AV1) byte-for-byte unchanged; only the
+   * ProRes lane passes true.
+   *
    * Caller sequence (exportCore): render(...present...) → gpuDone() → this.
    * gpuDone() is NOT required for correctness — the copy below is queued
    * after the frame's passes, so the mapAsync resolves with this frame's
@@ -3179,7 +3266,7 @@ export class WebGPURenderer implements Renderer {
    * detection. One staging buffer is reused across frames; only a resize
    * recreates it.
    */
-  async readbackDeepFrame(): Promise<Uint16Array> {
+  async readbackDeepFrame(straightAlpha = false): Promise<Uint16Array> {
     if (!this.deepCapture) {
       throw new Error("readbackDeepFrame() requires setDeepCapture(true)");
     }
@@ -3210,7 +3297,9 @@ export class WebGPURenderer implements Renderer {
     // Convert while mapped (one pass over the padded words), then unmap so
     // the same buffer is free for the next frame's copy.
     const raw = new Uint16Array(this.deepReadBuf.getMappedRange());
-    const out = deepFrameToRgba64(raw, w, h, bytesPerRow);
+    const out = straightAlpha
+      ? deepFrameToStraightRgba64(raw, w, h, bytesPerRow)
+      : deepFrameToRgba64(raw, w, h, bytesPerRow);
     this.deepReadBuf.unmap();
     return out;
   }

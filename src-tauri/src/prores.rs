@@ -2,16 +2,16 @@
 //! binary — see binaries/FFMPEG-LICENSE.txt): ProRes 4444 (.mov), 10-bit AV1
 //! (.mp4), GIF and animated WebP loops.
 //!
-//! The webview renders frames exactly as the PNG-sequence export does and
-//! streams each encoded PNG here; ffmpeg reads them over stdin (image2pipe)
-//! and writes the output file (muxing the pre-written PCM WAV for ProRes;
-//! GIF/WebP carry no audio). The AV1 lane pipes RAW rgba64le frames instead
-//! of PNGs — PNG would quantize the deep-color tap back to 8 bits before
-//! ffmpeg ever saw it. Args are built HERE from structured parameters —
-//! the webview can never pass raw arguments to a process. Blocking stdin
-//! writes give natural backpressure: the IPC call doesn't return until
-//! ffmpeg accepted the frame. One session at a time; prores_write/finish/
-//! abort drive every format.
+//! GIF/WebP render frames exactly as the PNG-sequence export does and stream
+//! each encoded PNG here; ffmpeg reads them over stdin (image2pipe). ProRes
+//! 4444 and 10-bit AV1 (FEAT-005) instead pipe RAW rgba64le frames straight
+//! from the renderer's deep-color tap — PNG would quantize that tap back to
+//! 8 bits before ffmpeg ever saw it. Every lane muxes the pre-written PCM WAV
+//! for its audio track except GIF/WebP, which carry none. Args are built HERE
+//! from structured parameters — the webview can never pass raw arguments to a
+//! process. Blocking stdin writes give natural backpressure: the IPC call
+//! doesn't return until ffmpeg accepted the frame. One session at a time;
+//! prores_write/finish/abort drive every format.
 //!
 //! The output file is whatever the user picked in the save dialog, and it is
 //! bound to that pick by the fs plugin scope (see `check_out_path`) — not just
@@ -122,12 +122,30 @@ fn ffmpeg_path() -> Result<PathBuf, String> {
 }
 
 /// Build the exact ffmpeg invocation. Kept separate and pure for testing.
-fn prores_args(fps: u32, wav: &str, out: &str) -> Vec<String> {
+///
+/// FEAT-005: the input is RAW video — `-f rawvideo -pix_fmt rgba64le -s WxH`
+/// — the same shape av1_args uses below, because this is the same deep-color
+/// tap: an 8-bit PNG in between would quantize it right back down before
+/// ffmpeg ever saw it. rgba64le is little-endian u16 R,G,B,A per pixel,
+/// tightly packed, matching the webview's Uint16Array frames on this
+/// platform, and it carries STRAIGHT (not premultiplied) alpha — the same
+/// convention the 8-bit PNG lane this replaces always delivered (the browser
+/// un-premultiplies while encoding PNG; the deep-color tap's TypeScript side
+/// now does the equivalent un-premultiply before this pipe ever sees the
+/// bytes, see webgpuRenderer.ts's deepFrameToStraightRgba64). Everything past
+/// the input spec — codec, profile, pix_fmt, vendor tag, audio codec — is
+/// UNCHANGED from the 8-bit-PNG-in-disguise contract this pipe used to carry:
+/// only the source precision moved, not the encoded result's shape.
+fn prores_args(fps: u32, width: u32, height: u32, wav: &str, out: &str) -> Vec<String> {
     [
         "-hide_banner",
         "-y",
         "-f",
-        "image2pipe",
+        "rawvideo",
+        "-pix_fmt",
+        "rgba64le",
+        "-s",
+        &format!("{width}x{height}"),
         "-framerate",
         &fps.to_string(),
         "-i",
@@ -447,11 +465,22 @@ fn begin_guards(
     check_out_path(scope_allows, out, ext)
 }
 
-/// The AV1 lane's extra rejections on top of begin_guards. Raw video has no
-/// per-frame header: ffmpeg slices the stdin stream purely by `-s WxH`, so a
-/// wrong dimension doesn't fail — it renders garbage. Bound and even-check
-/// here rather than trusting the webview. Even dims are a yuv420p10le
-/// requirement (2x2 chroma subsampling); every offered resolution is even.
+/// Bounds-check raw-video dimensions, shared by every `-f rawvideo` lane
+/// (ProRes's rgba64le pipe and AV1's). Raw video has no per-frame header:
+/// ffmpeg slices the stdin stream purely by `-s WxH`, so a wrong dimension
+/// doesn't fail — it renders garbage. Bound it here rather than trusting the
+/// webview.
+fn raw_dims_guard(width: u32, height: u32) -> Result<(), String> {
+    if !(16..=7680).contains(&width) || !(16..=7680).contains(&height) {
+        return Err(format!("Unreasonable dimensions: {width}x{height}"));
+    }
+    Ok(())
+}
+
+/// The AV1 lane's extra rejections on top of begin_guards. Even dims are a
+/// yuv420p10le requirement (2x2 chroma subsampling) that ProRes's own guards
+/// below do NOT share — every offered resolution is even in practice, but the
+/// rule itself is AV1-specific, not a raw-video-in-general one.
 fn av1_begin_guards(
     job_running: bool,
     fps: u32,
@@ -461,9 +490,7 @@ fn av1_begin_guards(
     out: &Path,
 ) -> Result<(), String> {
     begin_guards(job_running, fps, scope_allows, out, "mp4")?;
-    if !(16..=7680).contains(&width) || !(16..=7680).contains(&height) {
-        return Err(format!("Unreasonable dimensions: {width}x{height}"));
-    }
+    raw_dims_guard(width, height)?;
     if !width.is_multiple_of(2) || !height.is_multiple_of(2) {
         return Err(format!(
             "Dimensions must be even for 4:2:0 output: {width}x{height}"
@@ -472,11 +499,33 @@ fn av1_begin_guards(
     Ok(())
 }
 
+/// The ProRes lane's extra rejections on top of begin_guards (FEAT-005).
+/// Mirrors av1_begin_guards minus the even-dimension rule: yuva444p10le is
+/// 4:4:4 (no chroma subsampling), so ProRes has no evenness requirement to
+/// enforce — an odd width/height is perfectly valid raw-video input here.
+fn prores_begin_guards(
+    job_running: bool,
+    fps: u32,
+    width: u32,
+    height: u32,
+    scope_allows: bool,
+    out: &Path,
+) -> Result<(), String> {
+    begin_guards(job_running, fps, scope_allows, out, "mov")?;
+    raw_dims_guard(width, height)
+}
+
+/// Begin a ProRes 4444 (.mov) session. FEAT-005: the frames piped in are RAW
+/// rgba64le from the renderer's deep-color tap, not encoded PNGs — see
+/// prores_args — so width/height must be pinned at spawn time exactly like
+/// av1_begin below.
 #[tauri::command]
 pub fn prores_begin(
     app: tauri::AppHandle,
     state: tauri::State<'_, ProresState>,
     fps: u32,
+    width: u32,
+    height: u32,
     out_path: String,
 ) -> Result<(), String> {
     let mut job_guard = state.job.lock().map_err(|_| "state poisoned")?;
@@ -490,14 +539,15 @@ pub fn prores_begin(
     // for an hour of 48 kHz stereo, abandoned on the SYSTEM drive: the exact
     // drive whose exhaustion the export pre-flight exists to catch. Four
     // orphans were observed accumulating in one session where check_out_path
-    // rejected the destination. The guards live in begin_guards() so a new one
-    // physically cannot be added on a path that forgets this cleanup.
-    if let Err(e) = begin_guards(
+    // rejected the destination. The guards live in prores_begin_guards() so a
+    // new one physically cannot be added on a path that forgets this cleanup.
+    if let Err(e) = prores_begin_guards(
         job_guard.is_some(),
         fps,
+        width,
+        height,
         app.fs_scope().is_allowed(&out),
         &out,
-        "mov",
     ) {
         drop_stale_audio(&state);
         return Err(e);
@@ -513,6 +563,8 @@ pub fn prores_begin(
     // failure must not leak it in %TEMP% (pending_wav was already taken).
     let (mut child, log_path) = match spawn_sidecar(prores_args(
         fps,
+        width,
+        height,
         &wav_path.to_string_lossy(),
         &out.to_string_lossy(),
     )) {
@@ -881,14 +933,20 @@ mod tests {
 
     #[test]
     fn args_are_exactly_the_proven_contract() {
-        let args = prores_args(30, "C:/t/a.wav", "C:/t/out.mov");
+        let args = prores_args(30, 1920, 1080, "C:/t/a.wav", "C:/t/out.mov");
         assert_eq!(
             args,
             vec![
                 "-hide_banner",
                 "-y",
+                // FEAT-005: RAW frames in, like av1_args — the deep-color tap
+                // must reach the encoder without an 8-bit PNG in between.
                 "-f",
-                "image2pipe",
+                "rawvideo",
+                "-pix_fmt",
+                "rgba64le",
+                "-s",
+                "1920x1080",
                 "-framerate",
                 "30",
                 "-i",
@@ -1005,6 +1063,55 @@ mod tests {
         assert!(
             av1_begin_guards(false, 60, 1920, 1081, true, ok).is_err(),
             "odd height breaks 4:2:0 chroma subsampling"
+        );
+    }
+
+    #[test]
+    fn prores_begin_guards_pin_extension_and_dimensions() {
+        // FEAT-005: mirrors av1_begin_guards_pin_extension_and_dimensions
+        // above, MINUS the evenness rule — the deliberate difference this
+        // test exists to pin. yuva444p10le is 4:4:4 (no chroma subsampling),
+        // so ProRes must NOT inherit AV1's 4:2:0-only restriction.
+        let ok = Path::new(r"C:\out\x.mov");
+        // Happy path first, so the rejections below mean something.
+        assert!(prores_begin_guards(false, 60, 1920, 1080, true, ok).is_ok());
+        // Everything begin_guards rejects still rejects here (same WAV-leak
+        // pairing with drop_stale_audio in the caller).
+        assert!(
+            prores_begin_guards(true, 60, 1920, 1080, true, ok).is_err(),
+            "already running"
+        );
+        assert!(
+            prores_begin_guards(false, 0, 1920, 1080, true, ok).is_err(),
+            "fps 0"
+        );
+        assert!(
+            prores_begin_guards(false, 60, 1920, 1080, false, ok).is_err(),
+            "outside fs scope"
+        );
+        assert!(
+            prores_begin_guards(false, 60, 1920, 1080, true, Path::new(r"C:\out\x.mp4")).is_err(),
+            "the ProRes lane writes .mov, not .mp4"
+        );
+        // Raw-video specifics shared with AV1: ffmpeg slices stdin purely by
+        // -s WxH, so a bad dimension renders garbage instead of failing.
+        assert!(
+            prores_begin_guards(false, 60, 0, 1080, true, ok).is_err(),
+            "zero width"
+        );
+        assert!(
+            prores_begin_guards(false, 60, 1920, 100_000, true, ok).is_err(),
+            "absurd height"
+        );
+        // The actual divergence from AV1: 4:4:4 has no subsampling to break,
+        // so odd dimensions are legal raw-video input here.
+        assert!(
+            prores_begin_guards(false, 60, 1921, 1080, true, ok).is_ok(),
+            "odd width is fine for 4:4:4 (no chroma subsampling to break)"
+        );
+        assert!(
+            prores_begin_guards(false, 60, 1920, 1081, true, ok).is_ok(),
+            "odd height is fine for 4:4:4 (no chroma subsampling to break)"
         );
     }
 

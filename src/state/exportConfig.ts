@@ -70,11 +70,13 @@ export interface ExportSettings {
   /**
    * "mp4" = H.264 + audio in one file. "png" = PNG image sequence into a
    * folder, keeping alpha when the background is Transparent (for editors).
-   * "prores" = ProRes 4444 .mov via the ffmpeg sidecar. "av1-10" = genuine
-   * 10-bit AV1 .mp4 via the same sidecar, fed raw rgba64le frames from the
-   * renderer's deep-color tap (a FORMAT, not a codec: codec ids route through
-   * the WebCodecs probe and its 8-bit lane). "gif"/"webp" = animated loop
-   * files via the same sidecar (no audio; pair with Canvas loop mode for
+   * "prores" = ProRes 4444 .mov via the ffmpeg sidecar, fed raw rgba64le
+   * frames from the renderer's deep-color tap (straight alpha) — genuinely
+   * deep, not an 8-bit PNG widened by ffmpeg. "av1-10" = genuine 10-bit AV1
+   * .mp4 via the same sidecar and tap (premultiplied alpha, discarded — AV1
+   * carries no alpha channel at all; a FORMAT, not a codec: codec ids route
+   * through the WebCodecs probe and its 8-bit lane). "gif"/"webp" = animated
+   * loop files via the same sidecar (no audio; pair with Canvas loop mode for
    * seamless loops).
    */
   format: "mp4" | "png" | "prores" | "av1-10" | "gif" | "webp";

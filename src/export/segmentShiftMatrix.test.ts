@@ -110,6 +110,7 @@ const TIMELESS = [
   "bitrate",
   "codec",
   "deepColor",
+  "deepStraightAlpha",
   "presetId",
   "params",
   "bg",

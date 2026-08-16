@@ -172,6 +172,9 @@ export class Canvas2DRenderer implements Renderer {
   readbackDeepFrame(): Promise<Uint16Array> {
     // Unreachable through honest callers (setDeepCapture(true) already threw),
     // kept explicit so a future caller cannot mistake silence for support.
+    // straightAlpha (ProRes) is irrelevant here — there is no frame to have
+    // an alpha convention at all — so the param is deliberately omitted, not
+    // just unused, matching the interface's optional signature.
     return Promise.reject(new Error("Deep-colour capture requires the WebGPU renderer"));
   }
 

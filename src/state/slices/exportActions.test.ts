@@ -119,6 +119,20 @@ vi.mock("../platform", async (importOriginal) => {
     diskSpace: vi.fn(async () => null),
     scratchDir: vi.fn(async () => null),
     animBegin: vi.fn(async () => {}),
+    // FEAT-005: proresSetAudio/proresBegin/av1Begin/proresWrite are unmocked
+    // by default (the ...actual spread above), which means the REAL wrapper
+    // — an @tauri-apps/api/core invoke() call — runs unless a test opts in
+    // here. That is fine for every OTHER test in this file (none of them
+    // reach the proresMode/av1Mode branches: the sidecar-lane test above
+    // uses "webp", deliberately staying on the already-mocked animBegin —
+    // GIF/WebP carry no audio, so they never call proresSetAudio either),
+    // but the new ProRes describe block below DOES reach them, and invoke()
+    // has no Tauri bridge to call in this environment — so they need real
+    // mocks, not just an opt-out.
+    proresSetAudio: vi.fn(async () => {}),
+    proresBegin: vi.fn(async () => {}),
+    av1Begin: vi.fn(async () => {}),
+    proresWrite: vi.fn(async () => {}),
     proresFinish: vi.fn(async () => {}),
     // Real askConfirm goes through @tauri-apps/plugin-dialog (Tauri lane) or
     // window.confirm (browser lane, and `window` here is the plain stub
@@ -154,7 +168,16 @@ const { analyzeTrack } = await import("../../audio/analysis/trackAnalysis");
 const { ANALYSIS_TIMEOUT_MS } = await import("../batchRunner");
 const { ANALYSIS_TIMEOUT_REASON } = await import("./exportActions");
 const { shared } = await import("./shared");
-const { isTauri, pickSavePath, pickFolder, diskSpace, askConfirm } = await import("../platform");
+const {
+  isTauri,
+  pickSavePath,
+  pickFolder,
+  diskSpace,
+  askConfirm,
+  proresBegin,
+  av1Begin,
+  proresWrite,
+} = await import("../platform");
 
 const s = () => useVizStore.getState();
 
@@ -192,6 +215,13 @@ function startAnalysis() {
 beforeEach(() => {
   vi.mocked(exportVideo).mockClear();
   vi.mocked(analyzeTrack).mockReset();
+  // FEAT-005: cleared like exportVideo above (not left to survive file-wide,
+  // unlike pickSavePath/diskSpace/etc.) because the new tests below assert on
+  // CALL ARGUMENTS (mock.calls[0]), not just outcomes — a call left over from
+  // an earlier test would make calls[0] point at the wrong test.
+  vi.mocked(proresBegin).mockClear();
+  vi.mocked(av1Begin).mockClear();
+  vi.mocked(proresWrite).mockClear();
   // Back to "track A is loaded and playing".
   engineBuffer = TRACK_A;
   engineTrackName = "probe.wav";
@@ -598,6 +628,132 @@ describe("exportDonePath — the machine-readable companion to exportDone", () =
     await s().runExport();
 
     expect(s().exportDonePath).toBeNull();
+  });
+});
+
+/**
+ * FEAT-005 — ProRes 4444 switches from the 8-bit PNG lane to the same
+ * raw-rgba64le deep-color tap the AV1 10-bit lane already used, so ProRes's
+ * "10-bit" pixels are no longer an 8-bit PNG ffmpeg merely widened.
+ *
+ * These are the first tests in this file to reach the proresMode/av1Mode
+ * sidecar branches at all — every existing sidecar-lane test deliberately
+ * used "webp" instead (see its own comment), because proresBegin/av1Begin/
+ * proresWrite were unmocked: a real @tauri-apps/api/core invoke() call with
+ * no Tauri bridge present. The platform mock above now covers all three.
+ */
+describe("FEAT-005 — ProRes 4444 deep-color lane", () => {
+  it("stages audio and begins the sidecar session with width/height pinned, exactly like av1Begin", async () => {
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: {
+        ...s().exportSettings,
+        mode: "video",
+        format: "prores",
+        codec: "h264",
+        resIdx: 2, // 1440p (2560x1440) — a deliberately non-default choice
+      },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\deep.mov");
+
+    await s().runExport();
+
+    // Raw video has no per-frame header — ffmpeg slices stdin purely by
+    // `-s WxH` — so proresBegin needed the same width/height-at-spawn shape
+    // av1Begin already has. A dropped width/height here renders garbage on
+    // the very first frame, not a visible failure at export time.
+    expect(proresBegin).toHaveBeenCalledTimes(1);
+    expect(proresBegin).toHaveBeenCalledWith(60, 2560, 1440, "C:\\exports\\deep.mov");
+    // Mutually exclusive with AV1's own begin command.
+    expect(av1Begin).not.toHaveBeenCalled();
+
+    expect(s().exportDonePath).toBe("C:\\exports\\deep.mov");
+    expect(s().exportDone).toContain("ProRes 4444");
+  });
+
+  it("feeds the core deepColor + deepStraightAlpha and wires onRawFrame instead of onPngFrame", async () => {
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format: "prores", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\deep.mov");
+
+    await s().runExport();
+
+    const opts = jobOptions();
+    // The actual FEAT-005 switch: was onPngFrame (8-bit PNG, widened to
+    // "10-bit" by ffmpeg), now onRawFrame off the same tap AV1 uses.
+    expect(opts.deepColor).toBe(true);
+    expect(opts.deepStraightAlpha).toBe(true);
+    expect(opts.onPngFrame).toBeUndefined();
+    expect(typeof opts.onRawFrame).toBe("function");
+  });
+
+  it("streams a raw frame through onRawFrame -> proresWrite as an exact byte view (rgba64le shape, correct stride)", async () => {
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format: "prores", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\deep.mov");
+
+    await s().runExport();
+
+    // A 2x1 rgba64le-shaped frame: width*height*4 = 8 u16 words (16 bytes).
+    const frame = new Uint16Array([0, 32768, 65535, 40000, 111, 222, 333, 444]);
+    await jobOptions().onRawFrame!(frame);
+
+    expect(proresWrite).toHaveBeenCalledTimes(1);
+    const written = vi.mocked(proresWrite).mock.calls[0][0];
+    // Exact byte VIEW of the same buffer, not a re-encoded or truncated copy
+    // — this is the "raw byte view IS the rgba64le stream" assumption the
+    // production code's own comment documents, pinned here.
+    expect(written).toBeInstanceOf(Uint8Array);
+    expect(written.buffer).toBe(frame.buffer);
+    expect(written.byteOffset).toBe(frame.byteOffset);
+    expect(written.byteLength).toBe(frame.byteLength);
+    expect(
+      Array.from(new Uint16Array(written.buffer, written.byteOffset, written.byteLength / 2)),
+    ).toEqual(Array.from(frame));
+  });
+
+  it("still writes av1Begin (not proresBegin) with deepStraightAlpha absent, unaffected by the ProRes switch", async () => {
+    // Regression guard for the shared rawSidecarMode/pngSidecarMode refactor
+    // this feature required: AV1's own branch must come out exactly as it
+    // was, byte for byte, not just "still present".
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: {
+        ...s().exportSettings,
+        mode: "video",
+        format: "av1-10",
+        codec: "h264",
+        resIdx: 1, // 1080p — distinct from the ProRes test's resIdx above
+      },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\deep.mp4");
+
+    await s().runExport();
+
+    expect(av1Begin).toHaveBeenCalledTimes(1);
+    expect(av1Begin).toHaveBeenCalledWith(60, 1920, 1080, "C:\\exports\\deep.mp4");
+    expect(proresBegin).not.toHaveBeenCalled();
+    const opts = jobOptions();
+    expect(opts.deepColor).toBe(true);
+    expect(opts.deepStraightAlpha).toBeUndefined();
+    expect(opts.onPngFrame).toBeUndefined();
+    expect(typeof opts.onRawFrame).toBe("function");
   });
 });
 

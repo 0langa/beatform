@@ -88,10 +88,16 @@ export interface ExportIo {
   /** Ask the core for the deep-color tap (post-tonemap rgba16float target
    * instead of the 8-bit canvas readback). Wired by the renderer-tap branch. */
   deepColor?: boolean;
-  /** Per-frame raw sink for the deep-color lane (AV1 10-bit sidecar feed):
-   * tightly-packed rgba64le u16 (R,G,B,A row-major, length w*h*4). The core
-   * awaits it — that is the backpressure. Wired by the renderer-tap branch. */
+  /** Per-frame raw sink for the deep-color lane (AV1 10-bit / ProRes 4444
+   * sidecar feed): tightly-packed rgba64le u16 (R,G,B,A row-major, length
+   * w*h*4). The core awaits it — that is the backpressure. Wired by the
+   * renderer-tap branch. */
   onRawFrame?: (data: Uint16Array) => Promise<void> | void;
+  /** ProRes 4444 only: un-premultiply alpha in the deep-color tap before it
+   * reaches onRawFrame — see ExportJob.deepStraightAlpha. Undefined/false for
+   * every other deepColor caller (AV1), which needs the raw premultiplied
+   * bytes unchanged. */
+  deepStraightAlpha?: boolean;
   loudness?: LoudnessJob;
   segment?: { start: number; duration: number };
   loopCrossfadeSec?: number;
@@ -187,6 +193,7 @@ export function buildExportOptions(
     onPngFrame: io.onPngFrame,
     deepColor: io.deepColor,
     onRawFrame: io.onRawFrame,
+    deepStraightAlpha: io.deepStraightAlpha,
     loudness: io.loudness,
     segment: io.segment,
     loopCrossfadeSec: io.loopCrossfadeSec,

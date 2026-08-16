@@ -101,9 +101,12 @@ export interface ExportOptions {
   /** Deep-color tap request (AV1 10-bit lane): render through the offscreen
    * rgba16float target instead of the swapchain and deliver raw frames. */
   deepColor?: boolean;
-  /** Raw rgba64le u16 frame sink (AV1 10-bit lane). Awaited per frame — the
-   * ffmpeg sidecar's write speed is what paces the render. */
+  /** Raw rgba64le u16 frame sink (AV1 10-bit / ProRes 4444 lanes). Awaited
+   * per frame — the ffmpeg sidecar's write speed is what paces the render. */
   onRawFrame?: (data: Uint16Array) => Promise<void> | void;
+  /** ProRes 4444 only: un-premultiply alpha in the deep-color tap before
+   * onRawFrame sees it — see ExportJob.deepStraightAlpha (exportCore.ts). */
+  deepStraightAlpha?: boolean;
   /**
    * Normalize the delivered audio to a loudness target with a true-peak
    * ceiling. Audio-only: toggling this does not change this export job's
@@ -313,6 +316,7 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     bitrate: o.bitrate,
     codec: o.codec,
     deepColor: o.deepColor,
+    deepStraightAlpha: o.deepStraightAlpha,
     presetId: o.presetId,
     params: o.params,
     bg: o.bg,

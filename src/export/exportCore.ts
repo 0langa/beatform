@@ -208,6 +208,17 @@ export interface ExportJob {
    */
   deepColor?: boolean;
   /**
+   * Deep-colour lane, straight-alpha variant (FEAT-005 ProRes 4444 lane).
+   * Only meaningful alongside deepColor: true. The renderer's internal
+   * convention is premultiplied alpha; ProRes 4444's yuva444p10le decodes its
+   * alpha plane straight (unlike AV1's alpha-less yuv420p10le), matching what
+   * the 8-bit PNG lane it replaces always delivered (the browser
+   * un-premultiplies while encoding PNG). Setting this un-premultiplies each
+   * raw frame before it reaches hooks.onRawFrame. Undefined/false keeps the
+   * AV1 lane's exact existing premultiplied-passthrough bytes.
+   */
+  deepStraightAlpha?: boolean;
+  /**
    * Loudness normalization for the delivered audio. Undefined = off (the track
    * is encoded at its own level).
    *
@@ -296,7 +307,9 @@ export interface ExportCoreHooks {
    * Deep-colour lane (job.deepColor): one raw frame per video frame, in
    * order — tightly-packed rgba64le-order u16 (R,G,B,A per pixel, row-major,
    * no padding), length = width×height×4. Feed it to ffmpeg as
-   * `-f rawvideo -pix_fmt rgba64le -s WxH`.
+   * `-f rawvideo -pix_fmt rgba64le -s WxH`. Shared by the AV1 and ProRes
+   * lanes; the alpha channel's convention (premultiplied vs straight)
+   * depends on job.deepStraightAlpha — see its doc.
    *
    * MAY return a promise, and the core AWAITS it — the same backpressure
    * contract as onFrame, and it matters MORE here: a raw 1080p frame is
@@ -1142,7 +1155,7 @@ export async function runExportJob(
         // holds nothing in deep mode (the final pass rendered into the
         // offscreen deep target instead of the swapchain), so `source` is
         // deliberately never touched here.
-        const raw = await renderer.readbackDeepFrame();
+        const raw = await renderer.readbackDeepFrame(job.deepStraightAlpha === true);
         bytesOut += raw.byteLength;
         tReadbackDone = phaseSample ? performance.now() : 0;
         // Awaited: the deep lane's backpressure (see onRawFrame's docs — at

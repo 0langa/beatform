@@ -89,11 +89,31 @@ describe("buildExportOptions", () => {
     });
     expect(o.deepColor).toBe(true);
     expect(o.onRawFrame).toBe(onRawFrame);
+    // AV1 must NOT pick up straight-alpha behind the caller's back — its
+    // yuv420p10le has no alpha channel, and this lane's own tests pin the
+    // premultiplied-passthrough bytes exactly.
+    expect(o.deepStraightAlpha).toBeUndefined();
     // And absent stays absent — the 8-bit lanes must not accidentally ask
     // the core for the deep-color tap.
     const off = buildExportOptions(doc(), FMT, track, undefined, {});
     expect(off.deepColor).toBeUndefined();
     expect(off.onRawFrame).toBeUndefined();
+  });
+
+  it("passes deepStraightAlpha through the same chokepoint (ProRes 4444, FEAT-005)", () => {
+    // ProRes rides the identical deepColor/onRawFrame fields as AV1 above,
+    // plus deepStraightAlpha — a dropped field here would silently flip
+    // ProRes's alpha channel from straight to premultiplied, corrupting
+    // every semi-transparent pixel while every other check still passes.
+    const onRawFrame = (_data: Uint16Array) => undefined;
+    const o = buildExportOptions(doc(), FMT, track, undefined, {
+      deepColor: true,
+      deepStraightAlpha: true,
+      onRawFrame,
+    });
+    expect(o.deepColor).toBe(true);
+    expect(o.deepStraightAlpha).toBe(true);
+    expect(o.onRawFrame).toBe(onRawFrame);
   });
 
   it("passes the timeline only when it is enabled", () => {

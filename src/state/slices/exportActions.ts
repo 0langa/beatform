@@ -212,10 +212,13 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // silently destroyed every non-ASCII title ("夜に駆ける" -> "").
       const baseName = `${safeName(engine.state.trackName ?? "visualization")}${canvasMode ? "-canvas" : ""}`;
       const pngMode = settings.format === "png" && !canvasMode;
-      // ProRes goes through the ffmpeg sidecar; canvas loops stay MP4.
+      // ProRes 4444 (FEAT-005): the ffmpeg sidecar, fed raw rgba64le frames
+      // from the deep-color tap (straight alpha) — genuinely deep, like AV1
+      // below, not an 8-bit PNG widened by ffmpeg. Canvas loops stay MP4.
       const proresMode = settings.format === "prores" && !canvasMode;
       // AV1 10-bit: the same sidecar session commands, but fed raw rgba64le
-      // frames from the deep-color tap instead of encoded PNGs.
+      // frames from the deep-color tap instead of encoded PNGs (premultiplied
+      // alpha — irrelevant to AV1's alpha-less yuv420p10le output).
       const av1Mode = settings.format === "av1-10" && !canvasMode;
       // GIF/WebP loops go through the same sidecar — allowed in canvas mode
       // too (a seamless 3-8 s loop is the format's whole point).
@@ -375,11 +378,16 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // analysis can't see on a plain let (it narrows the reads to null).
       // `unknown`, not Error: Tauri command rejections are raw strings.
       const proresFail: { err: unknown } = { err: null };
-      // GIF/WebP share the ProRes frame pipe (one sidecar session at a time),
-      // and so does AV1 — but AV1 is fed raw rgba64le frames (onRawFrame),
-      // not encoded PNGs, so the PNG-frame sink is gated separately below.
-      const pngSidecarMode = proresMode || !!animFormat;
-      const sidecarMode = pngSidecarMode || av1Mode;
+      // GIF/WebP are the only formats still fed encoded PNGs (onPngFrame) —
+      // FEAT-005 moved ProRes onto the same raw rgba64le deep-color tap AV1
+      // already used (onRawFrame below), so it no longer belongs here.
+      const pngSidecarMode = !!animFormat;
+      // ProRes and AV1 share one sidecar-session shape (staged WAV, raw
+      // rgba64le frames) — they differ only in deepStraightAlpha (ProRes
+      // un-premultiplies; AV1's alpha-less yuv420p10le doesn't care) and in
+      // which Rust `*_begin` command spawns the session.
+      const rawSidecarMode = proresMode || av1Mode;
+      const sidecarMode = pngSidecarMode || rawSidecarMode;
       // Tauri invoke() rejects with the Rust command's raw STRING, not an
       // Error — reading .message off it yields undefined, which is what the
       // export error toast used to show for every sidecar failure.
@@ -414,8 +422,11 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         }
         if (proresMode && savePath) {
           // Original (un-normalized) audio: a mezzanine keeps source levels.
+          // FEAT-005: raw rgba64le frames need width/height pinned at spawn
+          // time, same as AV1 below — ffmpeg slices the stdin stream purely
+          // by `-s WxH`, no per-frame header to infer it from.
           await proresSetAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
-          await proresBegin(fps, savePath);
+          await proresBegin(fps, res.w, res.h, savePath);
         } else if (av1Mode && savePath) {
           // Same staged-WAV handshake as ProRes (ffmpeg re-encodes it to AAC
           // in the .mp4); raw frames need width/height pinned at spawn time.
@@ -523,7 +534,8 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
             {
               // Desktop: stream straight to the picked file (flat memory);
               // browser dev falls back to an in-memory blob + download.
-              // ProRes renders PNG frames into the sidecar instead.
+              // GIF/WebP render PNG frames into the sidecar; ProRes/AV1 use
+              // the raw deep-color tap (onRawFrame below) instead.
               streamToPath: sidecarMode ? undefined : (savePath ?? undefined),
               pngDir: pngDir ?? undefined,
               onPngFrame: pngSidecarMode
@@ -536,16 +548,22 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                       });
                     // RETURN the chain: the core awaits it, so the render is
                     // paced by ffmpeg's blocking stdin write instead of piling
-                    // 4K PNGs up in memory. Without this the Rust-side
+                    // frames up in memory. Without this the Rust-side
                     // backpressure was discarded here.
                     return proresChain;
                   }
                 : undefined,
-              // AV1 10-bit: ask the core for the deep-color tap, and feed the
-              // raw frames down the same serialized sidecar chain as ProRes'
-              // PNGs — same ordering guarantee, same ffmpeg backpressure.
-              deepColor: av1Mode ? true : undefined,
-              onRawFrame: av1Mode
+              // ProRes 4444 (FEAT-005) and AV1 10-bit: ask the core for the
+              // deep-color tap, and feed the raw frames down the same
+              // serialized sidecar chain GIF/WebP's PNGs use above — same
+              // ordering guarantee, same ffmpeg backpressure. ProRes alone
+              // sets deepStraightAlpha: yuva444p10le decodes its alpha plane
+              // straight (like the 8-bit PNG lane it replaces), while AV1's
+              // yuv420p10le carries no alpha at all, so its raw premultiplied
+              // bytes must stay exactly as they were.
+              deepColor: rawSidecarMode ? true : undefined,
+              deepStraightAlpha: proresMode ? true : undefined,
+              onRawFrame: rawSidecarMode
                 ? (data: Uint16Array) => {
                     proresChain = proresChain
                       .then(() =>
