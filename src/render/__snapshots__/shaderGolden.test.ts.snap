@@ -1030,6 +1030,7 @@ exports[`shader golden baseline > covers exactly the registered preset set 1`] =
   "spectro-falls",
   "lyric-stage",
   "gatefold",
+  "overgrowth",
   "builder2",
 ]
 `;
@@ -4192,6 +4193,543 @@ exports[`shader golden baseline > oscilloscope: param ABI (key + default, in ord
   {
     "default": 0,
     "key": "xyRotate",
+  },
+]
+`;
+
+exports[`shader golden baseline > overgrowth: accessors + body are stable 1`] = `
+"fn P_form() -> f32 { return params[0u]; }
+fn P_scale() -> f32 { return params[1u]; }
+fn P_speed() -> f32 { return params[2u]; }
+fn P_hue() -> f32 { return params[3u]; }
+fn P_hueSpread() -> f32 { return params[4u]; }
+fn P_saturation() -> f32 { return params[5u]; }
+fn P_lightness() -> f32 { return params[6u]; }
+fn P_duo() -> f32 { return params[7u]; }
+fn P_growth() -> f32 { return params[8u]; }
+fn P_etch() -> f32 { return params[9u]; }
+fn P_surge() -> f32 { return params[10u]; }
+fn P_seeds() -> f32 { return params[11u]; }
+fn P_glow() -> f32 { return params[12u]; }
+fn P_relief() -> f32 { return params[13u]; }
+fn P_flow() -> f32 { return params[14u]; }
+fn P_contrast() -> f32 { return params[15u]; }
+fn P_seedSize() -> f32 { return params[16u]; }
+fn P_barSurge() -> f32 { return params[17u]; }
+fn P_paper() -> f32 { return params[18u]; }
+fn P_haze() -> f32 { return params[19u]; }
+fn P_floorLevel() -> f32 { return params[20u]; }
+fn P_bassGlow() -> f32 { return params[21u]; }
+fn P_vignette() -> f32 { return params[22u]; }
+fn P_grain() -> f32 { return params[23u]; }
+
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
+
+// ---------------------------------------------------------------------------
+// The logical field. RD_NX x RD_NY CELLS in UV space at every canvas size —
+// resolution independence is this pair of constants, nothing else. State is
+// piecewise-constant per cell; every state tap reads a cell CENTRE, so cell
+// centres resample cell centres exactly and the sim walks one trajectory at
+// every canvas from ~640x360 up (below that, reads bleed — deterministic per
+// resolution, and only ever a touch of extra diffusion).
+// ---------------------------------------------------------------------------
+const RD_NX: f32 = 320.0;
+const RD_NY: f32 = 180.0;
+
+fn clampCell(c: vec2f) -> vec2f {
+  return clamp(c, vec2f(0.0), vec2f(RD_NX - 1.0, RD_NY - 1.0));
+}
+
+/** Centre of a cell, in field UV. */
+fn cellCenter(c: vec2f) -> vec2f {
+  return (c + vec2f(0.5)) / vec2f(RD_NX, RD_NY);
+}
+
+// The two chemicals share the alpha plane as vertical tiles: substrate A in
+// the top half, activator B in the bottom half. The composite pass derives
+// its own alpha and never reads this lane, so the tiles are pure data.
+//
+// STATE reads are textureLoad — the exact-texel idiom, not the filtered
+// sampler. The tiles stack 360 data rows into the frame, so at canvas
+// heights under ~720 a FILTERED tap at a row centre straddles texels and
+// mixes neighbouring rows: extra vertical diffusion the horizontal axis
+// does not get, and the whole culture collapsed into horizontal banding
+// (caught on device at 960x540, the first walk of this lane). textureLoad
+// reads the one texel that holds the cell — exact at every canvas that
+// gives each data row a texel (>= 360 rows tall), bit-stable across
+// preview and export sizes, and merely coarser (never anisotropic) below.
+fn stateA(c: vec2f) -> f32 {
+  let dims = vec2f(textureDimensions(feedbackTex));
+  let cc = cellCenter(clampCell(c));
+  let p = clamp(vec2f(cc.x, cc.y * 0.5) * dims, vec2f(0.0), dims - vec2f(1.0));
+  return textureLoad(feedbackTex, vec2i(p), 0).a;
+}
+fn stateB(c: vec2f) -> f32 {
+  let dims = vec2f(textureDimensions(feedbackTex));
+  let cc = cellCenter(clampCell(c));
+  let p = clamp(vec2f(cc.x, 0.5 + cc.y * 0.5) * dims, vec2f(0.0), dims - vec2f(1.0));
+  return textureLoad(feedbackTex, vec2i(p), 0).a;
+}
+
+/** Distance between a cell and a field-UV point, in CELLS — the metric every
+ * seed radius is written in, aspect-true on the field's own 16:9 grid. */
+fn cellDist(c: vec2f, p: vec2f) -> f32 {
+  return length(c + vec2f(0.5) - p * vec2f(RD_NX, RD_NY));
+}
+
+/**
+ * The R2 low-discrepancy sequence (plastic constant): seed #i's position.
+ * Deterministic and well spread — consecutive beats never clump, and the
+ * same beat count lands the same seed in the live walk, the export's
+ * replay-from-zero walk and the GPU matrix.
+ */
+fn r2pos(i: f32) -> vec2f {
+  return fract(vec2f(0.5 + i * 0.7548776662, 0.5 + i * 0.5698402910));
+}
+
+/**
+ * Continuous beat position, anchored to the detected grid through beatPhase
+ * (the Spectro Falls beat-mark derivation). Tracks with no grid yet fall
+ * back to a fixed virtual 100 BPM lattice so seeding stays deterministic
+ * and musical-ish either way.
+ */
+fn beatPosAt(t: f32) -> f32 {
+  if (u.bpm >= 1.0) { return t * u.bpm / 60.0 - u.beatPhase; }
+  return t * 1.6667;
+}
+
+// ---------------------------------------------------------------------------
+// The chemistry. Karl Sims' Gray-Scott: normalized 3x3 Laplacian, Du = the
+// Pattern-scale knob, Dv = Du/2. Each Form is a (feed, kill) anchor in the
+// living band; audio wiggles AROUND the anchor in small absolute deltas, so
+// every reachable point stays alive.
+// ---------------------------------------------------------------------------
+// Anchors tuned ON DEVICE against this exact grid, not copied from the
+// Pearson map: the 320x180 discretization shifts every regime a little.
+// The book's mitosis point (f .0367 / k .0649) sat close enough to the
+// death line here that the constellation extinguished to a handful of
+// dots in twenty seconds, and the book's coral point grew closed rings
+// instead of reaching fingers — both re-anchored by walking the field and
+// looking, the only tuning instrument this mode respects.
+fn formFeed() -> f32 {
+  let f = P_form();
+  if (f < 0.5) { return 0.0460; } // Coral — the worm band: fingers, not rings
+  if (f < 1.5) { return 0.0310; } // Mitosis — dividing blobs that SUSTAIN
+  if (f < 2.5) { return 0.0290; } // Labyrinth
+  if (f < 3.5) { return 0.0300; } // Polyps
+  return 0.0140;                  // Ripples
+}
+fn formKill() -> f32 {
+  let f = P_form();
+  if (f < 0.5) { return 0.0630; }
+  if (f < 1.5) { return 0.0625; }
+  if (f < 2.5) { return 0.0570; }
+  if (f < 3.5) { return 0.0620; }
+  return 0.0500;
+}
+
+/** Feed rate this tick: the track's energy farms the field. Clamped to the
+ * band where SOME regime lives, whatever the knobs say. */
+fn feedNow() -> f32 {
+  return clamp(formFeed() + P_growth() * 0.012 * (u.energy - 0.45), 0.006, 0.09);
+}
+
+/** Kill rate this tick: treble etches the structure finer. The small depth
+ * is deliberate — the living band is narrow, and +-0.006 already morphs
+ * worms into filament without crossing the death line. */
+fn killNow() -> f32 {
+  return clamp(formKill() + P_etch() * 0.006 * (u.treble - 0.4), 0.043, 0.071);
+}
+
+/**
+ * Integration step for this tick. u.dt is the fixed 60 Hz feedback step on a
+ * state advance and ZERO on presentation-only frames — every state change
+ * multiplies by this, so presentation is an exact pass-through by
+ * construction. The clamp is the stability bound: the Laplacian stencil's
+ * worst eigenvalue is -1.6, so D*dt must stay comfortably under 1.25;
+ * capping at 1.1 keeps the worst mode damped at every reachable setting —
+ * which is why big patterns (large Du) honestly grow slower.
+ */
+fn stepDt() -> f32 {
+  return min(P_speed(), 1.1 / max(P_scale(), 0.0001)) * u.dt * 60.0;
+}
+
+/**
+ * Whole-cell vertical drift (the Current): the same floor-difference idiom
+ * as Spectro Falls' scroll, in cells — the field only ever moves by WHOLE
+ * cells per tick, so drifting costs no resampling and the record never
+ * blurs. Positive current rises like ink; the boundary row stretches.
+ */
+fn flowShift() -> f32 {
+  let rate = P_flow() * 14.0;
+  return floor(u.time * rate) - floor((u.time - u.dt) * rate);
+}
+
+/**
+ * THE VIRGIN CONSTELLATION — what a freshly cleared field grows from. A
+ * cleared history reads A = B = 0, a state no evolved field can reach
+ * (feed pulls A up everywhere), so the first advance detects it and lays
+ * this designed seed set: fourteen R2-placed discs with growing radii, a
+ * centre pair, and per-cell hash dither to break the symmetry organically.
+ * Pure functions of the cell index — never Math.random.
+ */
+fn seedField(c: vec2f) -> f32 {
+  let q = cellCenter(clampCell(c));
+  var b = 0.0;
+  for (var i = 0; i < 14; i++) {
+    let fi = f32(i);
+    let r = P_seedSize() * (3.0 + 2.2 * fract(fi * 0.381966)) * mix(0.7, 1.3, fract(fi * 0.618034));
+    let d = cellDist(clampCell(c), r2pos(fi));
+    b = max(b, (1.0 - smoothstep(r * 0.45, r, d)) * 0.9);
+  }
+  // The centre pair: two touching discs just off-centre, so the very first
+  // bar already shows a composed subject growing outward.
+  let dc1 = cellDist(clampCell(c), vec2f(0.47, 0.5));
+  let dc2 = cellDist(clampCell(c), vec2f(0.53, 0.52));
+  let rc = P_seedSize() * 6.5;
+  b = max(b, (1.0 - smoothstep(rc * 0.5, rc, min(dc1, dc2))) * 0.95);
+  return clamp(b + (hash21(c) - 0.5) * 0.08, 0.0, 1.0);
+}
+
+/**
+ * Beat seeding for this tick. The beat COUNT is the index: the crossing
+ * window floor(pos(t)) != floor(pos(t - u.dt)) fires exactly once per beat
+ * on the fixed clock (and never on a dt = 0 presentation frame, where the
+ * window is empty). Bars plant bigger (Bar bloom), and every bar carries a
+ * whisper-level pilot even at Beat seeds 0 — the culture can never die.
+ */
+fn beatStamp(c: vec2f) -> f32 {
+  let bHere = floor(beatPosAt(u.time));
+  if (bHere == floor(beatPosAt(u.time - u.dt))) { return 0.0; }
+  let isBar = fract(bHere * 0.25) < 0.125;
+  var strength = P_seeds();
+  if (isBar) { strength = max(strength, 0.22); }
+  if (strength < 0.001) { return 0.0; }
+  // Radius tracks sqrt(Pattern scale) — the regime's own wavelength law
+  // (wavelength ~ sqrt(D)). A radius fixed in cells was SUPER-critical at
+  // fine scales: every stamp ignited a filled front and the culture
+  // flooded into a featureless lake within a couple of minutes (caught on
+  // the 150 s device walk). Tracking the wavelength keeps a seed the same
+  // size RELATIVE to the life around it at every scale — and the injection
+  // is a modest push, not a saturated disc, so a stamp ignites growth
+  // without ever being a flood nucleus itself.
+  let radius = P_seedSize() * sqrt(max(P_scale(), 0.1))
+             * (3.2 + select(0.0, 3.0 * P_barSurge(), isBar));
+  let d = cellDist(clampCell(c), r2pos(bHere + 7.0));
+  return (1.0 - smoothstep(radius * 0.45, radius, d)) * (0.42 + 0.33 * strength);
+}
+
+/**
+ * One Gray-Scott step for THIS pixel's tile, returning the new stored value
+ * (A in the top tile, B in the bottom). All taps go through the virgin
+ * branch together: a cleared field integrates its first step FROM the
+ * constellation, so seed and chemistry share one code path.
+ */
+fn advance(c0: vec2f, tileA: bool) -> f32 {
+  // Virgin = the WHOLE history was just cleared, so the probe pairs the own
+  // cell with the field's CENTRE cell — a cell the A/B tile seam can never
+  // corrupt. Probing only the own cell made seam-corrupted EDGE cells (on
+  // sub-grid canvases, where several field rows share a texel) read as
+  // forever-virgin: they re-initialized to the hot constellation every
+  // single tick and burned a bright hairline along the frame edge.
+  let centre = vec2f(RD_NX * 0.5, RD_NY * 0.5);
+  let virgin = stateA(c0) + stateB(c0) < 0.001 && stateA(centre) + stateB(centre) < 0.001;
+  let c = c0 + vec2f(0.0, flowShift());
+
+  // Gather the 3x3 neighbourhood of this pixel's own chemical plus the
+  // partner chemical at the centre — ten taps, the whole cost of the sim.
+  var lap = 0.0;
+  var self0 = 0.0;
+  var partner = 0.0;
+  for (var dy = -1; dy <= 1; dy++) {
+    for (var dx = -1; dx <= 1; dx++) {
+      let n = c + vec2f(f32(dx), f32(dy));
+      var v: f32;
+      if (virgin) {
+        v = select(seedField(n), 1.0, tileA);
+      } else {
+        v = select(stateB(n), stateA(n), tileA);
+      }
+      if (dx == 0 && dy == 0) {
+        self0 = v;
+        lap -= v;
+      } else if (dx == 0 || dy == 0) {
+        lap += v * 0.2;
+      } else {
+        lap += v * 0.05;
+      }
+    }
+  }
+  if (virgin) {
+    partner = select(1.0, seedField(c), tileA);
+  } else {
+    partner = select(stateA(c), stateB(c), tileA);
+  }
+
+  let a = select(partner, self0, tileA);
+  let b = select(self0, partner, tileA);
+  let dt = stepDt();
+  // Bass surges the CHEMISTRY, not the integrator: reaction and feed/kill
+  // run on a bass-accelerated clock while diffusion keeps the stability
+  // bound — colonies swell and split on the low end without ever exploding.
+  let chem = dt * (1.0 + P_surge() * u.bass * 0.9);
+  let react = a * b * b;
+  var next: f32;
+  if (tileA) {
+    next = a + P_scale() * lap * dt + (feedNow() * (1.0 - a) - react) * chem;
+  } else {
+    next = b + P_scale() * 0.5 * lap * dt + (react - (feedNow() + killNow()) * b) * chem;
+    next = max(next, beatStamp(c0) * step(0.0001, u.dt));
+  }
+  return clamp(next, 0.0, 1.0);
+}
+
+// ---------------------------------------------------------------------------
+// The darkroom. Display is developed fresh from the field every frame — the
+// state stays raw chemistry, so contrast, palette, relief and paper re-print
+// the WHOLE living field, not just what grows after the knob moved.
+// ---------------------------------------------------------------------------
+
+/** The develop window: activator concentration -> heat. */
+fn develop(b: f32) -> f32 {
+  let lo = mix(0.10, 0.035, P_contrast());
+  let hi = mix(0.42, 0.24, P_contrast());
+  return smoothstep(lo, hi, b);
+}
+
+fn preset(uv: vec2f) -> vec4f {
+  // -------- state advance for THIS pixel's tile ---------------------------
+  let tileA = uv.y < 0.5;
+  var q = uv;
+  if (tileA) { q = vec2f(uv.x, uv.y * 2.0); }
+  else { q = vec2f(uv.x, (uv.y - 0.5) * 2.0); }
+  let ownCell = floor(clamp(q, vec2f(0.0), vec2f(0.9999)) * vec2f(RD_NX, RD_NY));
+  let stored = advance(ownCell, tileA);
+
+  // -------- display: manual bilinear over cell centres --------------------
+  // Four B taps + four A taps reconstruct a smooth field from the piecewise-
+  // constant cells; the same four B taps also yield the gradient the relief
+  // light shades with, so smoothing and lighting share their reads. The y
+  // range is inset from the BOTTOM edge because the A/B tile seam poisons
+  // it on sub-grid canvases: A-tile reads for the last field rows resolve
+  // to the texel row that stores B row 0, so the substrate read ~0 there
+  // and the interior tint burned a hairline along the frame's bottom. The
+  // inset scales with how many field rows share one texel (520/canvas
+  // height, ~1.4x the sharing ratio) — at every real canvas (>= 360 rows)
+  // it stays the constant 1.5 rows, so full-size pixels are untouched;
+  // only the degraded sizes trade a few duplicated edge rows for a clean
+  // frame.
+  let seamInset = max(1.5, 520.0 / vec2f(textureDimensions(feedbackTex)).y);
+  let fi = vec2f(
+    uv.x * RD_NX - 0.5,
+    clamp(uv.y * RD_NY - 0.5, 0.5, RD_NY - seamInset),
+  );
+  let c0 = floor(fi);
+  let fr = fi - c0;
+  let b00 = stateB(c0);
+  let b10 = stateB(c0 + vec2f(1.0, 0.0));
+  let b01 = stateB(c0 + vec2f(0.0, 1.0));
+  let b11 = stateB(c0 + vec2f(1.0, 1.0));
+  let bS = mix(mix(b00, b10, fr.x), mix(b01, b11, fr.x), fr.y);
+  let aS = mix(
+    mix(stateA(c0), stateA(c0 + vec2f(1.0, 0.0)), fr.x),
+    mix(stateA(c0 + vec2f(0.0, 1.0)), stateA(c0 + vec2f(1.0, 1.0)), fr.x),
+    fr.y,
+  );
+  let grad = vec2f(
+    mix(b10 - b00, b11 - b01, fr.y),
+    mix(b01 - b00, b11 - b10, fr.x),
+  );
+
+  let heat = develop(bS);
+  // Substrate depletion = how deep inside a colony this point sits. The
+  // interior body of the look, distinct from the growing edge.
+  let deep = clamp(1.0 - aS, 0.0, 1.0);
+  let beatP = max(u.driveBeat, gridPulse(7.0));
+  let pump = 1.0 + beatP * 0.35 * u.pulse;
+
+  // The ground: open field is a lit surface breathing with the bass —
+  // never a hole, so an empty culture reads as quiet rather than broken.
+  var col = presetColor(P_hue(), 0.5, P_floorLevel() * (0.8 + 0.4 * (1.0 - uv.y)));
+  col += presetColor(P_hue() + P_hueSpread() * 0.4, 0.7, 0.2)
+       * u.bass * P_bassGlow() * (1.0 - 0.5 * heat);
+
+  // Colony interiors: the duotone body, drifting toward the second hue with
+  // depth. Haze is the flesh of the look; the edges below are its light.
+  col += presetColor(P_hue() + P_hueSpread() * (0.2 + 0.55 * P_duo() * deep), 0.85, 0.32)
+       * deep * P_haze() * (0.7 + 0.3 * heat);
+
+  // A soft veil of the activator field, read through the hardware filter —
+  // the ONE sampled feedback read (state goes through textureLoad, see
+  // stateA). Display-only softness that never feeds back into chemistry;
+  // it is also what opts the preset into the renderer's feedback path
+  // (presetUsesFeedback statically scans for this call). The v range is
+  // inset past the tile seam: a filtered tap AT v = 0.5 mixes the A tile's
+  // bottom texels into the veil — substrate reads ~1, so the top edge of
+  // the frame grew a bright hairline.
+  let mist = feedbackSample(vec2f(uv.x, clamp(0.5 + uv.y * 0.5, 0.5042, 0.9958))).a;
+  col += presetColor(P_hue() + P_hueSpread() * 0.35, 0.7, 0.28) * mist * P_haze() * 0.25;
+
+  // The growing FRONT: the band where the field crosses the develop window
+  // — literally the line between colony and open ground, i.e. where life
+  // is happening right now.
+  let front = heat * (1.0 - heat) * 4.0;
+
+  // The membrane: heat squared for luminance (the Spectro Falls lesson —
+  // reserve the bright end for genuine peaks), peaks whiting out so a hot
+  // rim reads as lit rather than painted. The hue is keyed on the FRONT,
+  // not on raw heat: the first device walks ran the ramp on heat alone and
+  // every style painted itself wall-to-wall in its TIP colour, because
+  // inside a worm heat saturates to 1 — the fill and the edge were the
+  // same colour. Keying on front puts the coral's FLESH on the base hue
+  // and spends the spread on the growing edges and genuine peaks, which is
+  // the two-tone organism the mode is named for.
+  let white = pow(heat, 3.2) * 0.7;
+  col += presetColor(P_hue() + P_hueSpread() * (0.12 + 0.55 * front + 0.33 * white),
+                     0.92 - 0.62 * white, 0.5)
+       * heat * heat * pump;
+
+  // And the front's own light: the living edge flares on the beat
+  // (Pulse-gated), in the tip colour the membrane ramp reaches for.
+  col += presetColor(P_hue() + P_hueSpread() * 0.8, 0.6, 0.55)
+       * front * front * P_glow() * (0.55 + 0.45 * beatP * u.pulse);
+
+  // Relief: embossed side-light from the field's own gradient, lit from the
+  // upper-left like a print. Highlights add, shadows multiply down — the
+  // difference between raised growth and a flat stain.
+  let gm = clamp(length(grad) * 6.0, 0.0, 1.0);
+  let shade = dot(grad * 6.0, vec2f(-0.6, -0.8));
+  col += presetColor(P_hue() + P_hueSpread(), 0.35, 0.6)
+       * clamp(shade, 0.0, 1.0) * gm * P_relief() * 0.6;
+  col *= 1.0 - clamp(-shade, 0.0, 1.0) * gm * P_relief() * 0.35;
+
+  // Paper: the print negative. Ink density from heat + interior depth on a
+  // warm page in the same palette family, relief highlights kept so the ink
+  // still sits IN the paper. A cross-fade, so half-paper looks are real.
+  if (P_paper() > 0.001) {
+    let inkAmt = clamp(heat * 1.15 + deep * 0.5 * P_haze(), 0.0, 1.0);
+    let page = presetColor(P_hue(), 0.1, 0.85 - 0.1 * uv.y);
+    let ink = presetColor(P_hue() + P_hueSpread() * 0.3, 0.55, 0.14);
+    var pcol = mix(page, ink, inkAmt);
+    pcol += presetColor(P_hue(), 0.2, 0.5) * clamp(shade, 0.0, 1.0) * gm * P_relief() * 0.25;
+    pcol *= 1.0 - beatP * 0.1 * u.pulse;
+    col = mix(col, pcol, P_paper());
+  }
+
+  col *= vignette(uv, P_vignette());
+  col = tonemap(col * 1.04);
+  col += grain(uv, 0.008 + P_grain() * 0.03 * (0.4 + 0.6 * u.energy));
+  // Alpha is this pixel's DATA lane, not its opacity: the tile's chemical
+  // as advanced this tick, read back by the next advance one tick later.
+  return vec4f(max(col, vec3f(0.0)), stored);
+}
+"
+`;
+
+exports[`shader golden baseline > overgrowth: param ABI (key + default, in order) is stable 1`] = `
+[
+  {
+    "default": 0,
+    "key": "form",
+  },
+  {
+    "default": 1,
+    "key": "scale",
+  },
+  {
+    "default": 1,
+    "key": "speed",
+  },
+  {
+    "default": 205,
+    "key": "hue",
+  },
+  {
+    "default": 155,
+    "key": "hueSpread",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
+  },
+  {
+    "default": 0.55,
+    "key": "duo",
+  },
+  {
+    "default": 0.5,
+    "key": "growth",
+  },
+  {
+    "default": 0.35,
+    "key": "etch",
+  },
+  {
+    "default": 0.4,
+    "key": "surge",
+  },
+  {
+    "default": 0.6,
+    "key": "seeds",
+  },
+  {
+    "default": 0.6,
+    "key": "glow",
+  },
+  {
+    "default": 0.7,
+    "key": "relief",
+  },
+  {
+    "default": 0.1,
+    "key": "flow",
+  },
+  {
+    "default": 0.5,
+    "key": "contrast",
+  },
+  {
+    "default": 1,
+    "key": "seedSize",
+  },
+  {
+    "default": 0.5,
+    "key": "barSurge",
+  },
+  {
+    "default": 0,
+    "key": "paper",
+  },
+  {
+    "default": 0.35,
+    "key": "haze",
+  },
+  {
+    "default": 0.04,
+    "key": "floorLevel",
+  },
+  {
+    "default": 0.12,
+    "key": "bassGlow",
+  },
+  {
+    "default": 0.35,
+    "key": "vignette",
+  },
+  {
+    "default": 0.25,
+    "key": "grain",
   },
 ]
 `;

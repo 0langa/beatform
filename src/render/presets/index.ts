@@ -12,6 +12,7 @@ import { ledMatrix } from "./ledMatrix";
 import { spectroFalls } from "./spectroFalls";
 import { lyricStage } from "./lyricStage";
 import { gatefold } from "./gatefold";
+import { overgrowth } from "./overgrowth";
 import { voiceOrb } from "./voiceOrb";
 import { echoTrails } from "./echoTrails";
 import { particleFlow } from "./particleFlow";
@@ -41,6 +42,7 @@ export const presets: PresetDef[] = [
   spectroFalls,
   lyricStage,
   gatefold,
+  overgrowth,
   // ONE Builder on the strip (the layer compositor);
   // rendering resolves through presetById -> currentBuilder2Def().
   currentBuilder2Def(),

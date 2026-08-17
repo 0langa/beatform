@@ -54,6 +54,10 @@ const ABI_BASELINE: Record<string, string> = {
   // P-19 entry 3: the cover-art-first mode. First baseline, same contract.
   gatefold:
     "layout,artSize,reflection,hue,hueSpread,saturation,lightness,drift,breathe,beatZoom,flare,glow,skirt,wash,cover,coverHue,border,coverFit,coverZoom,coverX,coverY,roomLevel,grain,reflectFade,emblem,vignette",
+  // P-19 entry 5 (the roster's last): the reaction-diffusion mode. First
+  // baseline, same contract.
+  overgrowth:
+    "form,scale,speed,hue,hueSpread,saturation,lightness,duo,growth,etch,surge,seeds,glow,relief,flow,contrast,seedSize,barSurge,paper,haze,floorLevel,bassGlow,vignette,grain",
   "voice-orb":
     "hue,size,satellites,ring,ringStyle,mirror,texture,response,voiceFocus,wobble,sparkle,flare,rmsBlend,growth,idleBreath,wobScale,mode1,mode2,mode3,coreGlow,breathGlow,rimGlow,ringDist,ringWave,ringCount,satSize,satDist,satOrbit,sparkleScale,bgLevel,vignette",
   "echo-trails":

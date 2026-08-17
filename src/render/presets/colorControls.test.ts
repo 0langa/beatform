@@ -3,12 +3,13 @@ import { bassCircle } from "./bassCircle";
 import { gatefold } from "./gatefold";
 import { ledMatrix } from "./ledMatrix";
 import { lyricStage } from "./lyricStage";
+import { overgrowth } from "./overgrowth";
 import { radialBurst } from "./radialBurst";
 import { spectroFalls } from "./spectroFalls";
 import { spectrumBars } from "./spectrumBars";
 
-// P-19 joined the club three times: Spectro Falls, Lyric Stage and Gatefold
-// are modes whose identity rides on colour, so the global
+// P-19 joined the club four times: Spectro Falls, Lyric Stage, Gatefold and
+// Overgrowth are modes whose identity rides on colour, so the global
 // saturation/lightness pair belongs on them — and routing every authored
 // colour through presetColor is what lets the GPU matrix's color/grayscale
 // case prove the palette is honest.
@@ -20,6 +21,7 @@ const COLOR_PRESETS = [
   spectroFalls,
   lyricStage,
   gatefold,
+  overgrowth,
 ];
 
 describe("full preset color controls", () => {
