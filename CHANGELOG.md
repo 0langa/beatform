@@ -11,6 +11,23 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- **Gatefold — a new visual mode: the artwork is the show.** Your track's
+  cover art takes the whole stage — framed in a gallery with a bass-lit
+  reflection, blown up soft behind a sharp copy, or full bleed — and the
+  room is lit by the artwork itself: the mode reads the sleeve's own
+  colors and washes the scene with them, no settings needed. The
+  spectrum skirts the frame, kicks zoom the camera, energy grains the
+  print. Six looks ship with it: Gatefold, Museum, Poster, Neon Sleeve,
+  Echo Room and Zine. A track with no artwork gets a generated sleeve —
+  a duotone sun-disc design that breathes with the music — so the mode
+  never sits empty.
+- **Waveform terrain in Spectrum Scape.** The 3D mode's layout picker
+  gains a fourth option: the track's actual waveform as a mountain
+  range the camera rides over — peaks where the music peaks. Comes with
+  its own look, Waveride, and a terrain-smoothing control.
+
 ## [2.101.0] - 2026-08-17
 
 ### Added

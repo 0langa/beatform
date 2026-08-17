@@ -3286,9 +3286,27 @@ was already decided; this section is where "what ships when" now lives.
   found+fixed glow echo and rehearsal strobe pre-review. Two export
   walks byte-identical (80/80 frame hashes). Matrix 280→291,
   structural diff 0 removed / 0 changed / 11 added. Suite 2731.
-- **2.102.0** — Cover-art-first mode + waveform terrain (P-19 roster
-  entries 3 and 4; waveform terrain is a spectrum-scape layout enum,
-  ships cheaply alongside the larger cover-art-first work).
+- **2.102.0 — SHIPPED 2026-08-17** — Gatefold + Waveform terrain (P-19
+  roster entries 3 and 4). **Gatefold** (19th mode; renamed from "Cover
+  Story" mid-lane — the factory theme pack already ships a Cover Story
+  theme, caught before the id persisted anywhere): artwork-first
+  compositions (Gallery/Backdrop/Full bleed), room lit by four
+  in-shader taps of the art itself, bass-lit reflection, spectrum
+  skirt, kick zoom + parallax; NO new binding (existing cover surface
+  sufficed); literal `cover`/`coverHue` main-tier keys light the
+  existing Center-image picker + Match-cover-colors contracts; no-art
+  degrade = generated duotone sleeve (never blank). 16+10 params
+  on-grid, 6 styles. **Waveform terrain**: spectrum-scape layout enum
+  value 3 — Rows raster addressing the phase-locked waveform window
+  (rectify-then-filter five-tap tent, sqrt calibration), bit-exact
+  bins path on layouts 0-2, M3U 31 lanes/192 bytes machine-checked,
+  +1 style Waveride. Review MERGEABLE with zero fix rounds. Matrix
+  291→303: structural diff matched the lane's prediction EXACTLY —
+  12 added, 1 changed (spectrum-scape/extreme/max, the enum edge),
+  0 removed; the one changed case is the device confirming the enum
+  extension's only visible effect. Suite 2771. Follow-up queued:
+  beatform-app/gallery param-spec regen (17→19 presets) before any
+  new-mode look submission.
 - **2.103.0** — Fluid/reaction-diffusion (P-19 roster entry 5 — saved for
   last, the most expensive).
 - **2.104.0** — FEAT-009 true second-display performance window + P-4
