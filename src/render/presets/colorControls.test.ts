@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { bassCircle } from "./bassCircle";
 import { ledMatrix } from "./ledMatrix";
+import { lyricStage } from "./lyricStage";
 import { radialBurst } from "./radialBurst";
 import { spectroFalls } from "./spectroFalls";
 import { spectrumBars } from "./spectrumBars";
 
-// P-19 joined the club: Spectro Falls is a mode whose entire identity is
-// colour, so the global saturation/lightness pair belongs on it — and routing
-// every authored colour through presetColor is what lets the GPU matrix's
-// color/grayscale case prove the palette is honest.
-const COLOR_PRESETS = [spectrumBars, bassCircle, radialBurst, ledMatrix, spectroFalls];
+// P-19 joined the club twice: Spectro Falls and Lyric Stage are modes whose
+// identity rides on colour, so the global saturation/lightness pair belongs
+// on them — and routing every authored colour through presetColor is what
+// lets the GPU matrix's color/grayscale case prove the palette is honest.
+const COLOR_PRESETS = [spectrumBars, bassCircle, radialBurst, ledMatrix, spectroFalls, lyricStage];
 
 describe("full preset color controls", () => {
   for (const preset of COLOR_PRESETS) {
@@ -46,5 +47,13 @@ describe("full preset color controls", () => {
     // desaturation mixes (one per display branch: Bars and Waterfall).
     expect(ledMatrix.wgsl.match(/presetRgb\(/g)).toHaveLength(5);
     expect(ledMatrix.wgsl).toContain("let gray = vec3f(dot(rgb");
+  });
+
+  it("Lyric Stage routes its chromatic-fringe tints through the controls", () => {
+    // Definition + the two fringe call sites. The fringe is the mode's one
+    // authored-RGB paint; a raw literal there fringed red/blue over a
+    // grayscale stage (saturation 0), contradicting the control's own hint.
+    expect(lyricStage.wgsl.match(/presetRgb\(/g)).toHaveLength(3);
+    expect(lyricStage.wgsl).toContain("let gray = vec3f(dot(rgb");
   });
 });

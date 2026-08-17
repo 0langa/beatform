@@ -2026,6 +2026,22 @@ fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
   return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
 }
 
+/** Authored-RGB counterpart of presetColor, for the one place this mode
+ * paints a literal tint (the chromatic fringe): led-matrix's exact
+ * desaturation-mix idiom, so saturation 0 collapses the fringe to its own
+ * luminance instead of leaving red/blue ghosts on a grayscale stage. */
+fn presetRgb(rgb: vec3f) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let saturation = P_saturation();
+  var adjusted = mix(gray, rgb, saturation);
+  if (saturation > 1.0) {
+    adjusted = rgb + (rgb - gray) * (saturation - 1.0);
+  }
+  let lightness = P_lightness();
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
 // ---------------------------------------------------------------------------
 // Plate geometry — MIRRORS lyricPlate.ts (PLATE_*_BAND / the 4px status
 // block). lyricStage.test.ts asserts these numbers against the module's
@@ -2105,13 +2121,15 @@ fn textStack(uv: vec2f, mainScale: f32, skew: f32) -> vec3f {
   let mainC = mainCenterY();
   var col = glyphColor(bandTap(uv, BAND_MAIN_LO, BAND_MAIN_HI, mainC, mainScale, skew), uv);
   // Chromatic fringe: coverage-only side taps tint the edges rather than
-  // re-running the full colour pipeline three times.
+  // re-running the full colour pipeline three times. The tints are authored
+  // RGB, so they route through presetRgb — a raw literal here ignored the
+  // saturation control and fringed red/blue over a grayscale stage.
   let split = P_chromaSplit() * (0.3 + 0.7 * u.treble) * 0.006;
   if (split > 1e-5) {
     let covR = bandTap(uv + vec2f(split, 0.0), BAND_MAIN_LO, BAND_MAIN_HI, mainC, mainScale, skew).r;
     let covB = bandTap(uv - vec2f(split, 0.0), BAND_MAIN_LO, BAND_MAIN_HI, mainC, mainScale, skew).r;
-    col += vec3f(0.8, 0.06, 0.10) * covR * 0.5;
-    col += vec3f(0.10, 0.06, 0.8) * covB * 0.5;
+    col += presetRgb(vec3f(0.8, 0.06, 0.10)) * covR * 0.5;
+    col += presetRgb(vec3f(0.10, 0.06, 0.8)) * covB * 0.5;
   }
   // Supporting cast: the sung line above, the coming line below, both in the
   // base hue at context presence. Their plate alpha already carries their

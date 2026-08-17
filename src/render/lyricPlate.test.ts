@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { shiftLyricsForSegment, type LyricLine } from "../state/lyrics";
+import { lyricProgressAt, shiftLyricsForSegment, type LyricLine } from "../state/lyrics";
+import { quantProg } from "./dynamicOverlay";
 import {
   composeLyricPlate,
   lyricPlateKeyAt,
@@ -235,16 +236,22 @@ describe("lyric plate raster", { timeout: 30_000 }, () => {
 
   it("timeForFill is the grid-exact inverse of the keyed fill position", () => {
     // For every 1/32 step of the timed line, re-deriving t from the key and
-    // re-quantizing lands on the same step — the raster can never disagree
-    // with the key that scheduled it.
+    // pushing it back through the FORWARD mapping (lyricProgressAt, the
+    // function the key was quantized from) must land on the exact same step
+    // — the round trip is what "inverse" means, and it is what guarantees
+    // the raster can never disagree with the key that scheduled it. Both
+    // sides are dyadic rationals (s/32), so toBe is exact, not approximate.
     for (let s = 0; s <= 32; s++) {
       const key = { ...keyAt(12), fillQ: s / 32 };
       const t = timeForFill(LINES, key);
       expect(t).toBeGreaterThanOrEqual(LINES[0].t);
       expect(t).toBeLessThanOrEqual(14 + 1e-9);
+      expect(quantProg(lyricProgressAt(LINES, key.main, t)), `step ${s}/32`).toBe(key.fillQ);
     }
-    // An untimed line inverts linearly across its window.
+    // An untimed line inverts linearly across its window — and round-trips
+    // through the same forward mapping.
     const k1 = { ...keyAt(17), fillQ: 0.5 };
     expect(timeForFill(LINES, k1)).toBeCloseTo(17.5, 10);
+    expect(quantProg(lyricProgressAt(LINES, k1.main, timeForFill(LINES, k1)))).toBe(0.5);
   });
 });

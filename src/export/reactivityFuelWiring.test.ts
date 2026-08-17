@@ -71,11 +71,14 @@ describe("P-15 fuel reaches the export job", () => {
   });
 
   it("keeps vocal presence alive when the lyric OVERLAY is off", () => {
-    // The regression this guards: `lyrics` only travels when the overlay is
-    // enabled (it is what gets composited), so deriving presence from that
-    // field would silently zero the modulation source for anyone who loads
-    // lyrics without drawing them — while the live path, fed straight from
-    // store state, kept modulating. `vocalLines` is deliberately separate.
+    // The regression this guards: presence must derive from `vocalLines`,
+    // never from `lyrics`. Since the lyric plate, `lyrics` travels whenever
+    // lines exist (the caption path re-checks style.enabled itself) — but a
+    // caller may still attach vocalLines alone, exactly as below, and the
+    // modulation source must keep working there. Deriving presence from
+    // `lyrics` would silently zero it for that caller — while the live
+    // path, fed straight from store state, kept modulating. `vocalLines`
+    // stays deliberately separate.
     const drawn = buildExportOptions(
       doc(),
       FMT,
