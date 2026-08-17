@@ -112,7 +112,7 @@ export const GUIDE: readonly GuideSection[] = [
     blocks: [
       {
         p: [
-          "Nineteen modes live on the strip — from classic spectrum bars to 120k-particle flow fields, a full 3D bar city, a scrolling spectrogram that draws the whole song as it plays, a lyric stage that puts the words themselves front and centre, and a gatefold that stages the track's own cover art. Every mode except Builder, which stacks its own layers instead, has:",
+          "Twenty modes live on the strip — from classic spectrum bars to 120k-particle flow fields, a full 3D bar city, a scrolling spectrogram that draws the whole song as it plays, a lyric stage that puts the words themselves front and centre, a gatefold that stages the track's own cover art, and a living reaction-diffusion culture the music farms. Every mode except Builder, which stacks its own layers instead, has:",
         ],
       },
       {

@@ -36,6 +36,7 @@ describe("default order", () => {
       "spectro-falls",
       "gatefold",
       "lyric-stage",
+      "overgrowth",
       "tunnel-rings",
       "oscilloscope",
       "nebula",

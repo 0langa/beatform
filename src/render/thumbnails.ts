@@ -204,6 +204,29 @@ const THUMB_PARAMS: Record<string, Record<string, number>> = {
     ghostBars: 0.45,
     flare: 0.5,
   },
+  // Overgrowth: fifteen warm ticks grow the virgin constellation only a
+  // step or two, and at 144x81 the logical field is sub-pixel — so the chip
+  // is mostly the seed constellation under the develop stage. Pattern scale
+  // and seed size at their ceilings turn that constellation into readable
+  // organic blobs instead of scattered lit pixels (verified against the
+  // real 144x81 warm walk); the hotter develop window and lifted lights
+  // make it read as a living culture. Safe to touch sim-side knobs here:
+  // the thumbnail renderer owns its own feedback textures, so nothing
+  // leaks into the preview's or an export's field (the particle-sim rule
+  // guards a shared-buffer hazard fragment feedback does not have).
+  overgrowth: {
+    scale: 1.7,
+    speed: 1.8,
+    seedSize: 3,
+    seeds: 1,
+    contrast: 0.3,
+    glow: 1.5,
+    relief: 0.9,
+    haze: 1,
+    duo: 1,
+    floorLevel: 0.1,
+    bassGlow: 0.4,
+  },
 };
 
 /** A flattering, deterministic feature frame: full spectrum, a beat mid-decay. */

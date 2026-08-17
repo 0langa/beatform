@@ -31,6 +31,7 @@ export const DEFAULT_PRESET_ORDER: readonly string[] = [
   "spectro-falls",
   "gatefold",
   "lyric-stage",
+  "overgrowth",
   "tunnel-rings",
   "oscilloscope",
   "nebula",
