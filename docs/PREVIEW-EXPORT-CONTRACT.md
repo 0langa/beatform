@@ -140,6 +140,11 @@ compile errors and zero uncaptured WebGPU errors.
 - A preview rendered at one fps is not expected to equal an export sampled at a
   different timestamp between fixed state ticks.
 - Encoded files are not byte-reproducible across hardware encoders.
+- Feedback-path modes (Spectro Falls, Overgrowth) do not promise that a
+  preview which has been seeked mid-track matches a fresh walk pixel-for-pixel
+  — their on-screen state carries pre-seek history (finite for Spectro
+  Falls, indefinitely for Overgrowth). Exports always replay from the clip
+  start and match a fresh, unseeked preview exactly.
 
 ## Release gates
 
