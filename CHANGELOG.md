@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.103.0] - 2026-08-17
+
 ### Added
 
 - **Overgrowth — a new visual mode: the music grows a living thing.** A
@@ -2893,7 +2895,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.102.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.103.0...HEAD
+[2.103.0]: https://github.com/0langa/beatform/compare/v2.102.0...v2.103.0
 [2.102.0]: https://github.com/0langa/beatform/compare/v2.101.0...v2.102.0
 [2.101.0]: https://github.com/0langa/beatform/compare/v2.100.0...v2.101.0
 [2.100.0]: https://github.com/0langa/beatform/compare/v2.99.0...v2.100.0
