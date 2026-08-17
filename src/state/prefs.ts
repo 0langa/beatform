@@ -129,6 +129,17 @@ export interface AppPrefs {
    * estimateGenerateSeconds for the two blend rules). Session-independent
    * on purpose — it is a property of the hardware, not of one project. */
   measuredRtf: MeasuredRtf;
+  /** FEAT-009: preset-name flash on the performance OUTPUT window. Default
+   * off — clean output is the whole point of the second display. */
+  performHud: boolean;
+  /** FEAT-009: open the performance window fullscreen (vs a movable
+   * window). */
+  performFullscreen: boolean;
+  /** FEAT-009: target monitor INDEX for the performance window, or null =
+   * auto (largest non-primary, else primary). An index is only a hint —
+   * hotplug can invalidate it between sessions, so the Rust side clamps a
+   * stale value at open time (perform_window::resolve_monitor). */
+  performMonitor: number | null;
 }
 
 export const DEFAULT_PREFS: AppPrefs = {
@@ -166,6 +177,9 @@ export const DEFAULT_PREFS: AppPrefs = {
     gpu: false,
   },
   measuredRtf: NO_MEASURED_RTF,
+  performHud: false,
+  performFullscreen: true,
+  performMonitor: null,
 };
 
 const LS_PREFS = "beatform.prefs.v1";
@@ -352,6 +366,17 @@ function validPrefs(raw: unknown): AppPrefs {
     ),
     perfOverlayStats: validOverlayStats(p.perfOverlayStats),
     measuredRtf: validMeasuredRtf(p.measuredRtf),
+    performHud: bool(p.performHud, d.performHud),
+    performFullscreen: bool(p.performFullscreen, d.performFullscreen),
+    // A non-negative integer index or null (= auto). Fractions, negatives
+    // and junk degrade to auto rather than to a wrong monitor.
+    performMonitor:
+      typeof p.performMonitor === "number" &&
+      Number.isInteger(p.performMonitor) &&
+      p.performMonitor >= 0 &&
+      p.performMonitor < 64
+        ? p.performMonitor
+        : null,
   };
 }
 
@@ -524,7 +549,10 @@ function samePrefs(a: AppPrefs, b: AppPrefs): boolean {
     a.perfOverlaySize === b.perfOverlaySize &&
     a.perfOverlayColor === b.perfOverlayColor &&
     sameOverlayStats(a.perfOverlayStats, b.perfOverlayStats) &&
-    sameMeasuredRtf(a.measuredRtf, b.measuredRtf)
+    sameMeasuredRtf(a.measuredRtf, b.measuredRtf) &&
+    a.performHud === b.performHud &&
+    a.performFullscreen === b.performFullscreen &&
+    a.performMonitor === b.performMonitor
   );
 }
 

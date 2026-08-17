@@ -165,6 +165,25 @@ import { crossedBoundary, hasFutureBoundary, type QuantizeMode } from "./quantiz
 import { type MidiBinding, type MidiLearn } from "./midi";
 import type { SliceCtx } from "./slices/ctx";
 import { NULL_FRAME_KEY, shared } from "./slices/shared";
+import {
+  buildPerformAssets,
+  buildPerformLive,
+  buildPerformScene,
+  performActions,
+  performAssetsSig,
+  performLiveSig,
+  performSceneSig,
+  sameSig,
+  type PerformMonitorInfo,
+} from "./slices/performActions";
+import {
+  initPerformPublisher,
+  notePerformWindowClosed,
+  performMirrorActive,
+  publishPerformAssets,
+  publishPerformLive,
+  publishPerformScene,
+} from "./performBridge";
 import { batchActions } from "./slices/batchActions";
 import { builderActions } from "./slices/builderActions";
 import { customShaderActions } from "./slices/customShaderActions";
@@ -193,6 +212,7 @@ export {
   SIMPLIFIED_EXPORT_REASON,
 } from "./exportConfig";
 export type { ExportProgress, ExportSettings } from "./exportConfig";
+export type { PerformMonitorInfo } from "./slices/performActions";
 
 /**
  * Document state: everything that describes *the user's work* — serializable,
@@ -475,6 +495,13 @@ interface SessionSlice {
   audiogram: AudiogramSettings;
   /** A video background is decoding (spinner in the bg controls). */
   videoBgLoading: boolean;
+  /** FEAT-009: the second-display performance window exists (Rust-owned;
+   * flips on the perform:opened/closed lifecycle events). */
+  performOpen: boolean;
+  /** Monitor list for the drawer's picker; re-enumerated on drawer open. */
+  performMonitors: PerformMonitorInfo[];
+  /** P-4: the Perform drawer (operator console) is visible. */
+  showPerform: boolean;
 }
 
 interface Actions {
@@ -680,6 +707,22 @@ interface Actions {
   hideBootVeil(): void;
   setStageMode(v: boolean): void;
   setBlackout(v: boolean): void;
+  /** P-4: toggle the Perform drawer (operator console). Opening re-queries
+   * the monitor list for the second-display picker. */
+  setShowPerform(v: boolean): void;
+  /** FEAT-009: enumerate displays for the drawer's picker (desktop only). */
+  refreshPerformMonitors(): Promise<void>;
+  /** Open (or re-place) the performance window per the stored monitor/
+   * fullscreen prefs. The `performOpen` flag flips via the Rust lifecycle
+   * event, not here — the window is the source of truth. */
+  openPerformWindow(): Promise<void>;
+  closePerformWindow(): Promise<void>;
+  /** Persist + apply fullscreen for the performance window. */
+  setPerformFullscreen(v: boolean): Promise<void>;
+  /** Persist the target monitor (null = auto) and move an open window. */
+  setPerformMonitor(index: number | null): Promise<void>;
+  /** Output HUD (preset-name flash) on the performance window. */
+  setPerformHud(v: boolean): void;
   setShowExport(v: boolean): void;
   setExportSettings(patch: Partial<ExportSettings>): void;
   runExport(): Promise<void>;
@@ -1700,6 +1743,9 @@ export const useVizStore = create<VizState>((set, get) => {
     exportError: null,
     exportDone: null,
     exportDonePath: null,
+    performOpen: false,
+    performMonitors: [],
+    showPerform: false,
 
     // --- actions ---
     // Per-domain action groups (behavior-identical to the inline versions they
@@ -1718,6 +1764,7 @@ export const useVizStore = create<VizState>((set, get) => {
     ...midiActions(set, get, ctx),
     ...projectIOActions(set, get, ctx),
     ...galleryActions(set, get, ctx),
+    ...performActions(set, get, ctx),
 
     initApp(canvas) {
       liveCanvas = canvas;
@@ -1866,6 +1913,36 @@ export const useVizStore = create<VizState>((set, get) => {
       // of leaking a listener bound to a torn-down closure.
       let closeRequestedDisposed = false;
       let unlistenCloseRequested: (() => void) | null = null;
+      /** FEAT-009: perform-window lifecycle listeners (same late-arrival
+       * discipline as the close handler below). */
+      let performListenersDisposed = false;
+      let unlistenPerform: (() => void)[] = [];
+      if (isTauri()) {
+        void (async () => {
+          const { listen } = await import("@tauri-apps/api/event");
+          const unOpened = await listen("perform:opened", () => {
+            set({ performOpen: true });
+          });
+          const unClosed = await listen("perform:closed", () => {
+            set({ performOpen: false });
+            // destroy() can skip the page's own pagehide "bye" — make the
+            // publisher stop regardless.
+            notePerformWindowClosed();
+          });
+          if (performListenersDisposed) {
+            unOpened();
+            unClosed();
+          } else {
+            unlistenPerform = [unOpened, unClosed];
+          }
+          // A dev-server reload of THIS window can leave the performance
+          // window alive and the fresh store ignorant of it — ask the Rust
+          // owner (the publisher's `hi` handshake re-arms the mirror side).
+          const { invoke } = await import("@tauri-apps/api/core");
+          const open = await invoke<boolean>("perform_is_open");
+          if (open) set({ performOpen: true });
+        })().catch((e) => console.warn("[perform] lifecycle listeners failed", e));
+      }
       if (isTauri()) {
         void (async () => {
           const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -1915,6 +1992,9 @@ export const useVizStore = create<VizState>((set, get) => {
         dispose();
         closeRequestedDisposed = true;
         unlistenCloseRequested?.();
+        performListenersDisposed = true;
+        for (const un of unlistenPerform) un();
+        unlistenPerform = [];
         // The rest of teardown: services.dispose() above only owns the
         // engine/analyzer/renderer/loop. Everything the STORE itself
         // retained outside React state was left dangling here — a stale
@@ -2777,7 +2857,11 @@ export const useVizStore = create<VizState>((set, get) => {
       // panelOpen: true for users who never opened the dock. Layout
       // suppression is stateless, so there is nothing to restore.
       if (stageMode) set({ stageMode, showTimeline: false, showHelp: false });
-      else set({ stageMode, blackout: false });
+      // Leaving stage clears blackout — UNLESS the performance window is
+      // running (FEAT-009): blackout then belongs to the OUTPUT surface the
+      // audience sees, and exiting the operator's local stage view must not
+      // silently un-black the projector.
+      else set({ stageMode, ...(get().performOpen ? {} : { blackout: false }) });
     },
 
     setBlackout(blackout) {
@@ -3216,3 +3300,43 @@ export function isExporting(): boolean {
   // the next track decodes, and a batch is still very much exporting there.
   return s.exporting !== null || s.batchStatus === "running";
 }
+
+/**
+ * FEAT-009 — the mirror publisher's state side, wired at module scope like
+ * the vocal-span chokepoint above and for the same reason: the fields that
+ * feed the performance window are written from dozens of actions, and a
+ * subscription is the one shape none of them can forget to call.
+ *
+ * The publisher itself no-ops until a performance surface says hello, so
+ * in tests, the browser build and every session that never opens the
+ * second window, this whole block costs one signature-array build per
+ * store write and nothing else. Only the MAIN window evaluates this module
+ * (main.tsx's entry branch), so exactly one publisher exists per app.
+ */
+initPerformPublisher({
+  getLive: () => buildPerformLive(useVizStore.getState()),
+  getScene: () => buildPerformScene(useVizStore.getState()),
+  getAssets: () => buildPerformAssets(useVizStore.getState()),
+});
+let lastPerformSigs: { live: unknown[]; scene: unknown[]; assets: unknown[] } | null = null;
+useVizStore.subscribe((s) => {
+  if (!performMirrorActive()) {
+    // Drop the seed so the first write after a (re)connect re-baselines —
+    // the hello response already carried the full state.
+    lastPerformSigs = null;
+    return;
+  }
+  const sigs = {
+    live: performLiveSig(s),
+    scene: performSceneSig(s),
+    assets: performAssetsSig(s),
+  };
+  if (lastPerformSigs) {
+    // Assets first: a scene that names a new background wants its payload
+    // already cached on the receiving side when it applies.
+    if (!sameSig(sigs.assets, lastPerformSigs.assets)) publishPerformAssets();
+    if (!sameSig(sigs.scene, lastPerformSigs.scene)) publishPerformScene();
+    if (!sameSig(sigs.live, lastPerformSigs.live)) publishPerformLive();
+  }
+  lastPerformSigs = sigs;
+});

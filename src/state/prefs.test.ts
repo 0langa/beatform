@@ -549,3 +549,58 @@ describe("prefs: measuredRtf (FEAT-004 follow-up b)", () => {
     expect(getPrefs().measuredRtf.whisperMedium).toBe(1.8);
   });
 });
+
+describe("prefs: performance window (FEAT-009 / P-4)", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("defaults: HUD off, fullscreen on, monitor auto — on a blob predating the fields", async () => {
+    seed(JSON.stringify({ volume: 0.5 }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().performHud).toBe(false);
+    expect(getPrefs().performFullscreen).toBe(true);
+    expect(getPrefs().performMonitor).toBeNull();
+    expect(getPrefs().volume).toBe(0.5);
+  });
+
+  it("round-trips stored values", async () => {
+    seed(JSON.stringify({ performHud: true, performFullscreen: false, performMonitor: 1 }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().performHud).toBe(true);
+    expect(getPrefs().performFullscreen).toBe(false);
+    expect(getPrefs().performMonitor).toBe(1);
+  });
+
+  it("degrades a junk monitor index to auto — fraction, negative, huge, wrong type", async () => {
+    for (const bad of [1.5, -1, 64, "two", true, null]) {
+      seed(JSON.stringify({ performMonitor: bad, volume: 0.4 }));
+      const { getPrefs } = await importFresh();
+      expect(getPrefs().performMonitor).toBeNull();
+      expect(getPrefs().volume).toBe(0.4);
+    }
+  });
+
+  it("persists writes AND notifies subscribers (the samePrefs guard, per field)", async () => {
+    // Same regression class measuredRtf pins above: a field missing from
+    // samePrefs makes its setPrefs a silent no-op while everything else
+    // stays green. One write per new field, one notification each.
+    seed(undefined);
+    const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
+    let calls = 0;
+    subscribePrefs(() => {
+      calls++;
+    });
+    setPrefs({ performHud: true });
+    setPrefs({ performFullscreen: false });
+    setPrefs({ performMonitor: 2 });
+    expect(calls).toBe(3);
+    expect(getPrefs().performHud).toBe(true);
+    expect(getPrefs().performFullscreen).toBe(false);
+    expect(getPrefs().performMonitor).toBe(2);
+    // No-op writes stay no-ops.
+    const before = getPrefs();
+    expect(setPrefs({ performMonitor: 2 })).toBe(before);
+    expect(calls).toBe(3);
+  });
+});
