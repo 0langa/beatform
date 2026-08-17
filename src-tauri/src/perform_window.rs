@@ -300,8 +300,8 @@ mod tests {
         let m = mon(1, 1920, 1080, false);
         let (x, y, w, h) = windowed_rect(&m);
         assert_eq!((w, h), (1152, 648));
-        assert_eq!(x, 2560 + (1920 - 1152) as i32 / 2);
-        assert_eq!(y, (1080 - 648) as i32 / 2);
+        assert_eq!(x, 2560 + (1920 - 1152) / 2);
+        assert_eq!(y, (1080 - 648) / 2);
     }
 
     #[test]

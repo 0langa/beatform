@@ -212,9 +212,10 @@ export function PerformDrawer() {
             </div>
             <div className="perform-row">
               <span className="row-label">Mode HUD</span>
+              {/* Not desktop-gated: the browser two-tab flow (/?perform=1)
+                  honors it too — it is a pref write + a live-tier publish. */}
               <Switch
                 checked={prefs.performHud}
-                disabled={!desktop && !prefs.performHud}
                 label="Preset-name flash on the output"
                 title="Flash the mode name on the output when it changes (off = fully clean feed)"
                 onChange={(v) => store().setPerformHud(v)}
