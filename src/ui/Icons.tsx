@@ -163,6 +163,17 @@ export const IconBroadcast = ({ size }: IconProps) =>
     </>,
   );
 
+/** P-4 Perform: a second display beside a smaller primary. */
+export const IconPerform = ({ size }: IconProps) =>
+  svg(
+    size,
+    <>
+      <rect x={2} y={5} width={12} height={9} rx={1.5} />
+      <rect x={16} y={8} width={6} height={6} rx={1} />
+      <path d="M8 14v4M5.5 18h5" />
+    </>,
+  );
+
 export const IconChevronLeft = ({ size }: IconProps) => svg(size, <path d="M15 18l-6-6 6-6" />);
 
 export const IconChevronRight = ({ size }: IconProps) => svg(size, <path d="M9 6l6 6-6 6" />);

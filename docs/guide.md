@@ -314,8 +314,9 @@ Press <kbd>H</kbd> for the full list — that overlay is also where the button t
 - <kbd>1–9</kbd> — Jump straight to the mode at that strip position (jumps are beat-quantized when quantize is on)
 - <kbd>S</kbd> — Toggle Stage mode (chrome-free output)
 - <kbd>\</kbd> — Toggle Stage mode (physical key — layout-independent)
-- <kbd>0</kbd> — Cut to black (Stage mode only)
-- <kbd>.</kbd> — Cut to black (Stage mode only — legacy alias for 0)
+- <kbd>0</kbd> — Cut to black (in Stage mode or with the performance window open)
+- <kbd>.</kbd> — Cut to black (legacy alias for 0)
+- <kbd>D</kbd> — Toggle the Perform drawer (mode pads, blackout, second display)
 
 ### Panels & dialogs
 

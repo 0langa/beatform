@@ -72,6 +72,7 @@ describe("Escape", () => {
       setShowLibrary: vi.fn(),
       setShowGallery: vi.fn(),
       setShowTimeline: vi.fn(),
+      setShowPerform: vi.fn(),
     };
   }
 
@@ -87,6 +88,7 @@ describe("Escape", () => {
     expect(state.setShowTimeline).toHaveBeenCalledWith(false);
     expect(state.setShowHelp).toHaveBeenCalledWith(false);
     expect(state.setShowExport).toHaveBeenCalledWith(false);
+    expect(state.setShowPerform).toHaveBeenCalledWith(false);
   });
 
   /**
@@ -139,6 +141,46 @@ describe("Escape", () => {
 
     expect(state.setShowPanel).toHaveBeenCalledTimes(1);
     expect(state.setShowPanel).toHaveBeenCalledWith(false);
+  });
+});
+
+/**
+ * P-4 / FEAT-009: the Perform drawer's key and the widened blackout gate.
+ * Blackout used to arm in Stage mode only; with the second-display output
+ * window running it must arm there too — the audience surface is exactly
+ * what 0 exists to cut.
+ */
+describe("Perform drawer + blackout gating", () => {
+  it("D toggles the Perform drawer", () => {
+    const state = { showPerform: false, setShowPerform: vi.fn() };
+    render(<Harness state={state} />);
+    fireEvent.keyDown(window, { key: "d", code: "KeyD" });
+    expect(state.setShowPerform).toHaveBeenCalledWith(true);
+  });
+
+  it("0 cuts to black with the performance window open, outside Stage mode", () => {
+    const state = {
+      stageMode: false,
+      performOpen: true,
+      blackout: false,
+      setBlackout: vi.fn(),
+    };
+    render(<Harness state={state} />);
+    fireEvent.keyDown(window, { key: "0", code: "Digit0" });
+    expect(state.setBlackout).toHaveBeenCalledWith(true);
+  });
+
+  it("0 stays inert with neither Stage mode nor the performance window", () => {
+    const state = {
+      stageMode: false,
+      performOpen: false,
+      blackout: false,
+      setBlackout: vi.fn(),
+    };
+    render(<Harness state={state} />);
+    fireEvent.keyDown(window, { key: "0", code: "Digit0" });
+    fireEvent.keyDown(window, { key: ".", code: "Period" });
+    expect(state.setBlackout).not.toHaveBeenCalled();
   });
 });
 

@@ -4758,3 +4758,213 @@ kbd {
 .gallery-chip {
   gap: 7px;
 }
+
+/* ---------- Perform drawer (P-4) + performance window (FEAT-009) ---------- */
+
+/* The operator console. Deliberately NOT `.chrome`: it is summoned from
+   inside Stage mode (D), where every .chrome node is display:none — and it
+   sits at z-index 70, above the blackout overlay's 60, because the control
+   that undoes a blackout must never be hidden by one. */
+.perform-drawer {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 72px;
+  width: min(880px, calc(100vw - 24px));
+  max-height: min(52vh, 460px);
+  overflow-y: auto;
+  background: var(--glass-heavy);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.perform-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.perform-drawer-head .panel-heading {
+  flex: 0 0 auto;
+}
+.perform-drawer-head .icon-btn {
+  margin-left: auto;
+}
+
+.perform-drawer-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.perform-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Big touch/MIDI-friendly pads, strip order, 1-9. */
+.perform-pads {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 6px;
+}
+@media (max-width: 760px) {
+  .perform-pads {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.perform-pad {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  align-items: flex-end;
+}
+.perform-pad:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.perform-pad.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.perform-pad.pending {
+  animation: perform-pad-pulse 0.8s ease-in-out infinite;
+}
+@keyframes perform-pad-pulse {
+  0%,
+  100% {
+    border-color: var(--border);
+  }
+  50% {
+    border-color: var(--accent);
+  }
+}
+.perform-pad-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.85;
+}
+.perform-pad-num {
+  position: absolute;
+  top: 3px;
+  left: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.75);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.perform-pad-name {
+  position: relative;
+  width: 100%;
+  padding: 2px 4px;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.perform-columns {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.perform-section {
+  flex: 1 1 220px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.perform-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.perform-row .row-label {
+  flex: 0 0 auto;
+  min-width: 68px;
+}
+.perform-row .select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The cut itself: oversized on purpose — this is the button an operator
+   finds without looking. */
+.perform-blackout-btn {
+  width: 100%;
+  padding: 12px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+}
+.perform-blackout-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.perform-blackout-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.perform-blackout-btn.engaged {
+  background: #000;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.perform-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  flex: 0 0 auto;
+}
+.perform-dot.live {
+  background: #62d996;
+  box-shadow: 0 0 6px rgba(98, 217, 150, 0.8);
+}
+
+.perform-midi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 110px;
+  overflow-y: auto;
+}
+.perform-midi-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.perform-midi-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -81,6 +81,7 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         s.setShowLibrary(false);
         s.setShowGallery(false);
         s.setShowTimeline(false);
+        s.setShowPerform(false);
         return;
       }
       if (isTextEntry) return;
@@ -194,8 +195,9 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
           break;
         case "0":
           // 0 = blackout completes the digit row: 1-9 pick a mode, 0 cuts to
-          // black (Stage mode only, like the legacy "." binding).
-          if (s.stageMode) s.setBlackout(!s.blackout);
+          // black. Armed whenever a performance surface is up: Stage mode,
+          // or the second-display output window (FEAT-009).
+          if (s.stageMode || s.performOpen) s.setBlackout(!s.blackout);
           break;
         case "m":
         case "M":
@@ -235,8 +237,14 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         case "Q":
           s.setShowLibrary(!s.showLibrary);
           break;
+        case "d":
+        case "D":
+          // P-4: the Perform drawer — reachable from inside Stage mode too,
+          // where the top-bar toggle is hidden with the rest of the chrome.
+          s.setShowPerform(!s.showPerform);
+          break;
         case ".":
-          if (s.stageMode) s.setBlackout(!s.blackout);
+          if (s.stageMode || s.performOpen) s.setBlackout(!s.blackout);
           break;
       }
     };
@@ -322,14 +330,21 @@ export const SHORTCUT_SHEET: readonly ShortcutRow[] = [
     literals: ["0"],
     action: "Cut to black",
     group: "Performance",
-    note: "Stage mode only",
+    note: "in Stage mode or with the performance window open",
   },
   {
     keys: ["."],
     literals: ["."],
     action: "Cut to black",
     group: "Performance",
-    note: "Stage mode only — legacy alias for 0",
+    note: "legacy alias for 0",
+  },
+  {
+    keys: ["D"],
+    literals: ["d", "D"],
+    action: "Toggle the Perform drawer",
+    group: "Performance",
+    note: "mode pads, blackout, second display",
   },
 
   // Panels & dialogs

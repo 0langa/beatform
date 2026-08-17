@@ -36,6 +36,7 @@ import { GalleryDialog } from "./ui/GalleryDialog";
 import { PerfOverlay } from "./ui/PerfOverlay";
 import { UpdatePrompt } from "./ui/UpdatePrompt";
 import { GuideDialog } from "./ui/GuideDialog";
+import { PerformDrawer } from "./ui/PerformDrawer";
 import {
   IconBatch,
   IconClose,
@@ -47,6 +48,7 @@ import {
   IconHelp,
   IconBroadcast,
   IconMusic,
+  IconPerform,
   IconSettings,
   IconStage,
 } from "./ui/Icons";
@@ -249,6 +251,8 @@ export default function App() {
   const batchStatus = useVizStore((s) => s.batchStatus);
   const showLibrary = useVizStore((s) => s.showLibrary);
   const liveInputActive = useVizStore((s) => s.liveInputActive);
+  const showPerform = useVizStore((s) => s.showPerform);
+  const performOpen = useVizStore((s) => s.performOpen);
   const showBatch = useVizStore((s) => s.showBatch);
   const showShaderEditor = useVizStore((s) => s.showShaderEditor);
   const showShadertoyImport = useVizStore((s) => s.showShadertoyImport);
@@ -759,6 +763,15 @@ export default function App() {
           >
             <IconStage size={18} />
           </button>
+          <button
+            className={`icon-btn ${showPerform || performOpen ? "active" : ""} ${performOpen ? "live-pulse" : ""}`}
+            title="Perform — mode pads, blackout, second display (D)"
+            aria-label="Perform drawer"
+            aria-pressed={showPerform}
+            onClick={() => store().setShowPerform(!showPerform)}
+          >
+            <IconPerform size={18} />
+          </button>
           {/* Labelled, not a bare glyph: it now toggles a persistent dock that
               takes real estate away from the visual, and `.ghost-btn` is the
               established labelled-button idiom. Same slot, so the other eight
@@ -849,6 +862,11 @@ export default function App() {
       {showPanel && <ParamsPanel />}
 
       {showTimeline && <TimelinePanel />}
+
+      {/* P-4: mounted OUTSIDE the stage-mode display:none sweep and above
+          the blackout overlay — the operator console must stay reachable in
+          exactly the modes it exists for. */}
+      {showPerform && <PerformDrawer />}
 
       <PlayerBar />
 
