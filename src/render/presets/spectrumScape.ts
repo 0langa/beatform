@@ -375,11 +375,15 @@ export const spectrumScape: PresetDef = {
       },
     },
     // Waveride — the Waveform layout as its showcase (P-19 entry 4): the
-    // track's own waveform rolls under a low, slowly orbiting camera as a
-    // green-to-violet mountain range. Wide bars on tight spacing fuse the
-    // columns into ground; the phase-locked window keeps a held chord
-    // standing as a stable ridge while the mix's transients stream through
-    // it. Moderate smoothing: dunes with detail, not gravel and not gel.
+    // track's own waveform rolls under a low, slowly orbiting camera. Wide
+    // bars on tight spacing fuse the columns into ground; the phase-locked
+    // window keeps a held chord standing as a stable ridge while the mix's
+    // transients stream through it. Moderate smoothing: dunes with detail,
+    // not gravel and not gel. The palette rides loudness through the default
+    // hue-by-height (verified on the house demo): a quiet passage is a
+    // teal-green range, and rising ridges ignite through magenta toward
+    // ember — the mode's own heat idiom, left ON here on purpose where
+    // Obsidian Spires pins it down.
     {
       id: "waveride",
       name: "Waveride",
