@@ -9,8 +9,9 @@ import { spectrumScape } from "./presets/spectrumScape";
 // leave the renderer's copy stale. paramOr() is the single source of truth
 // fix: it reads the fallback straight from the preset's own spec, so this
 // test exercises the EXACT function renderMesh3d now calls, not a parallel
-// reimplementation. The W1 depth wave grew the map from 13 keys to 27; every
-// key renderMesh3d packs into the M3U uniform must appear here.
+// reimplementation. The W1 depth wave grew the map from 13 keys to 27, the
+// Waveform terrain layout (P-19 entry 4) to 28; every key renderMesh3d packs
+// into the M3U uniform must appear here.
 describe("paramOr", () => {
   it("falls back to spectrum-scape's own ParamSpec default for every key renderMesh3d reads", () => {
     const expected: Record<string, number> = {
@@ -41,6 +42,7 @@ describe("paramOr", () => {
       fillLight: 0.35,
       ambientLight: 1,
       fogDensity: 0.045,
+      terrainSmooth: 0.3,
     };
     for (const [key, value] of Object.entries(expected)) {
       expect(paramOr(spectrumScape, {}, key)).toBe(value);

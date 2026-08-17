@@ -5998,10 +5998,14 @@ struct M3U {
   hueLift: f32, driveHeight: f32, hotDrive: f32, hotBeat: f32,
   hotWindow: f32, glowBeat: f32, fillLight: f32, ambientLight: f32,
   fogDensity: f32, bandGlow: f32, bass: f32, mid: f32,
-  treble: f32,
+  treble: f32, waveCount: f32, terrainSmooth: f32,
 }
 @group(0) @binding(0) var<uniform> m: M3U;
 @group(0) @binding(1) var<storage, read> bins: array<f32>;
+// The shared fixed-size waveform buffer (the fragment ABI's binding 4), for
+// the Waveform terrain layout: heights read TIME-domain samples there
+// instead of spectrum bins.
+@group(0) @binding(2) var<storage, read> wave: array<f32>;
 
 fn hsl2rgb(h: f32, s: f32, l: f32) -> vec3f {
   let c = (1.0 - abs(2.0 * l - 1.0)) * s;
@@ -6060,6 +6064,41 @@ fn m3_tonemap(x: vec3f) -> vec3f {
   return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
 }
 
+/** Waveform sampled at x in 0..1, linear interpolation, -1..1 — the fragment
+ * prelude's waveAt(), embedded because the mesh module is its own compilation
+ * unit with its own tiny ABI (the hsl2rgb/tonemap arrangement). */
+fn m3_waveAt(x: f32) -> f32 {
+  let n = m.waveCount;
+  let fi = clamp(x, 0.0, 0.999) * (n - 1.0);
+  let i = u32(fi);
+  let j = min(i + 1u, u32(n) - 1u);
+  return mix(wave[i], wave[j], fract(fi));
+}
+
+/**
+ * The Waveform layout's ground level at a raster position: a five-tap tent
+ * filter of the RECTIFIED waveform, then a square root.
+ *
+ * Rectified, because a mesh column can only extrude UP — the signed wave
+ * folds into ridges where the music is loud and a plain where it is silent
+ * (silence must read as flat ground, never a half-height plateau). Filtered
+ * BEFORE the shaping so opposite-sign neighbours cannot cancel: the tent
+ * averages an envelope, not a signal. The radius rides Terrain smoothing —
+ * at 0 all five taps collapse onto one sample (weights sum to 1, an exact
+ * pass-through) and cymbal-band content stands as raw spikes; wider settings
+ * roll it into dunes. And the square root is the terrain's own calibration,
+ * the way Spectro Falls squares its brightness: bins are already perceptual,
+ * raw PCM is linear amplitude, and without the lift a -14 LUFS master reads
+ * as foothills on an empty plain.
+ */
+fn terrainLevel(t: f32) -> f32 {
+  let d = m.terrainSmooth * 0.01;
+  let a = abs(m3_waveAt(t)) * 0.4
+        + (abs(m3_waveAt(t - d)) + abs(m3_waveAt(t + d))) * 0.2
+        + (abs(m3_waveAt(t - d * 2.0)) + abs(m3_waveAt(t + d * 2.0))) * 0.1;
+  return sqrt(clamp(a, 0.0, 1.0));
+}
+
 @vertex
 fn vs_mesh(
   @location(0) inPos: vec3f,
@@ -6072,24 +6111,37 @@ fn vs_mesh(
   let half = (m.grid - 1.0) * 0.5;
   let dx = col - half;
   let dz = row - half;
-  // Frequency position 0..1 of this column — the Layout enum picks the
+  // Spectral position 0..1 of this column — the Layout enum picks the
   // mapping (its lane is binMap: 'layout' is a WGSL reserved word). Rings
   // (the default) is the original radial index: concentric rings pulse with
   // frequency, and fr is the untouched radial expression so the default
   // frame cannot move. Rows reads the grid like a raster (ii sweeps columns
   // then rows), a bass ridge sweeping to treble. Spiral winds the spectrum
-  // around the centre; fract wraps it into Archimedean arms.
+  // around the centre; fract wraps it into Archimedean arms. Waveform is the
+  // raster mapping AGAIN — but fr addresses TIME through the triggered
+  // window rather than frequency, so the wave snakes across the grid row by
+  // row and a bass cycle spans many rows: genuine 2D relief, not a wall.
   let rr = length(vec2f(dx, dz)) / max(m.grid * 0.5, 1.0);
   var fr = rr;
-  if (m.binMap > 1.5) {
+  if (m.binMap > 2.5) {
+    fr = f32(ii) / max(m.grid * m.grid - 1.0, 1.0);
+  } else if (m.binMap > 1.5) {
     fr = fract(rr - atan2(dz, dx) * 0.15915494);
   } else if (m.binMap > 0.5) {
     fr = f32(ii) / max(m.grid * m.grid - 1.0, 1.0);
   }
   let bi = u32(clamp(fr, 0.0, 0.999) * m.binCount);
+  // The cell's LEVEL: the spectrum bin on the three spectrum layouts, the
+  // rectified waveform on Terrain. One value that everything downstream —
+  // height, shading height, hue lift, band mix, hot tops — reads, so the
+  // terrain inherits the whole lighting/reaction rig unchanged, and the
+  // spectrum layouts keep the identical load and multiply chain (level IS
+  // bins[bi] there — bit-exact with the pre-terrain expression).
+  var level = bins[bi];
+  if (m.binMap > 2.5) { level = terrainLevel(fr); }
   // Overall height rides the selected sync source so the Sync panel matters.
   // The drive gain is the Loudness rise param (default = the old 0.7).
-  let h = bins[bi] * m.heightScale * (0.7 + m.drive * m.driveHeight) + 0.03;
+  let h = level * m.heightScale * (0.7 + m.drive * m.driveHeight) + 0.03;
   // Axis-only scale + translate => axis-aligned normals pass through.
   let world = vec3f(
     inPos.x * m.barWidth + dx * m.spacing,
@@ -6108,7 +6160,7 @@ fn vs_mesh(
   // mean, and leaves the single explicit drive multiplier in the fragment as
   // the one place loudness brightens the scene. At drive == 0 hLit == h, so
   // this is an exact no-op on silence and scales in smoothly from there.
-  let hLit = bins[bi] * m.heightScale * 0.7 + 0.03;
+  let hLit = level * m.heightScale * 0.7 + 0.03;
   var out: VOut;
   out.pos = m.viewProj * vec4f(world, 1.0);
   // Box normals are axis-aligned, so the non-uniform (barWidth, h, barWidth)
@@ -7354,6 +7406,7 @@ fn P_hueLift() -> f32 { return params[23u]; }
 fn P_fillLight() -> f32 { return params[24u]; }
 fn P_ambientLight() -> f32 { return params[25u]; }
 fn P_fogDensity() -> f32 { return params[26u]; }
+fn P_terrainSmooth() -> f32 { return params[27u]; }
 
 fn preset(uv: vec2f) -> vec4f { return vec4f(0.0); }
 "
@@ -7468,6 +7521,10 @@ exports[`shader golden baseline > spectrum-scape: param ABI (key + default, in o
   {
     "default": 0.045,
     "key": "fogDensity",
+  },
+  {
+    "default": 0.3,
+    "key": "terrainSmooth",
   },
 ]
 `;

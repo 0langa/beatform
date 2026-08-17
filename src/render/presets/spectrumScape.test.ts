@@ -89,8 +89,10 @@ describe("default neutrality: every new lane's default is the literal it replace
   it("the drive-free shading height and the hot-window base stay literal", () => {
     // hLit is DOCUMENTED as the height without the drive gain — Loudness
     // rise must not touch it, or shading would double-count loudness again
-    // (the exact wash the 2.53 fix removed).
-    expect(M).toContain("let hLit = bins[bi] * m.heightScale * 0.7 + 0.03;");
+    // (the exact wash the 2.53 fix removed). Both heights read the shared
+    // `level`, which IS bins[bi] on every spectrum layout (asserted below),
+    // so the pre-terrain arithmetic is unchanged where it always ran.
+    expect(M).toContain("let hLit = level * m.heightScale * 0.7 + 0.03;");
     expect(M).toContain("let hotLo = 0.55 + m.drive * 0.6;");
   });
 
@@ -99,12 +101,48 @@ describe("default neutrality: every new lane's default is the literal it replace
     expect(M).toContain("var fr = rr;");
     expect(M).toContain("let bi = u32(clamp(fr, 0.0, 0.999) * m.binCount);");
     // The non-default mappings live behind explicit uniform branches (on the
-    // binMap lane — 'layout' itself is a WGSL reserved word).
-    expect(M).toContain("if (m.binMap > 1.5) {");
+    // binMap lane — 'layout' itself is a WGSL reserved word), Waveform
+    // checked FIRST so the older branches keep their shipped order.
+    expect(M).toContain("if (m.binMap > 2.5) {");
+    expect(M).toContain("} else if (m.binMap > 1.5) {");
     expect(M).toContain("} else if (m.binMap > 0.5) {");
     expect(M).toContain("fr = fract(rr - atan2(dz, dx) * 0.15915494);");
     expect(M).toContain("fr = f32(ii) / max(m.grid * m.grid - 1.0, 1.0);");
     expect(dflt("layout")).toBe(0);
+  });
+
+  it("terrain (P-19 entry 4): the waveform swaps in as `level`, spectrum paths bit-exact", () => {
+    // The one place the Waveform layout diverges: level = bins[bi] on the
+    // three spectrum layouts (same load, same multiply chain — the identity
+    // argument for every existing pixel hash except extreme/max, whose
+    // layout EDGE moves 2 -> 3 by definition of extending the enum), and the
+    // rectified waveform on Terrain only.
+    expect(M).toContain("var level = bins[bi];");
+    expect(M).toContain("if (m.binMap > 2.5) { level = terrainLevel(fr); }");
+    // The raster mapping addresses the SAME fr both places; Waveform reads
+    // it as time through the triggered window.
+    const rasters = M.match(/fr = f32\(ii\) \/ max\(m\.grid \* m\.grid - 1\.0, 1\.0\);/g);
+    expect(rasters).toHaveLength(2); // Waveform + Rows
+  });
+
+  it("terrain: rectified-then-filtered, sqrt-shaped, smoothing an exact pass-through at 0", () => {
+    // Rectify BEFORE the tent so opposite-sign neighbours cannot cancel (the
+    // filter averages an envelope, not a signal); sqrt lifts linear PCM the
+    // way Spectro Falls' square reins in perceptual bins. At smoothing 0 the
+    // five taps collapse onto one sample and the weights sum to 1 — an exact
+    // pass-through, no branch needed for neutrality.
+    expect(M).toContain("let d = m.terrainSmooth * 0.01;");
+    expect(M).toContain("let a = abs(m3_waveAt(t)) * 0.4");
+    expect(M).toContain("+ (abs(m3_waveAt(t - d)) + abs(m3_waveAt(t + d))) * 0.2");
+    expect(M).toContain("+ (abs(m3_waveAt(t - d * 2.0)) + abs(m3_waveAt(t + d * 2.0))) * 0.1;");
+    expect(M).toContain("return sqrt(clamp(a, 0.0, 1.0));");
+    expect(0.4 + 0.2 * 2 + 0.1 * 2).toBeCloseTo(1, 12);
+    // The mesh module carries its own waveAt (own compilation unit, own tiny
+    // ABI — the hsl2rgb/tonemap arrangement), reading the shared fixed-size
+    // wave buffer at its own binding 2.
+    expect(M).toContain("@group(0) @binding(2) var<storage, read> wave: array<f32>;");
+    expect(M).toContain("fn m3_waveAt(x: f32) -> f32 {");
+    expect(M).toContain("return mix(wave[i], wave[j], fract(fi));");
   });
 
   it("the box keeps the exact normal passthrough; only non-box shapes inverse-scale", () => {
@@ -193,6 +231,11 @@ describe("M3U ABI: struct order == pack order == spec keys", () => {
     ["bass", "f.bass"],
     ["mid", "f.mid"],
     ["treble", "f.treble"],
+    // The terrain pair (P-19 entry 4). waveCount packs the CONSTANT: the
+    // mesh binds the shared fixed-size waveBuf, not f.waveform (which is the
+    // pre-downsample source and varies by analyser window).
+    ["waveCount", "WAVE_POINTS"],
+    ["terrainSmooth", 'g("terrainSmooth")'],
   ];
 
   it("the struct declares viewProj then exactly the documented scalar lanes, in order", () => {
@@ -355,10 +398,14 @@ describe("geometry: shared shape buffer", () => {
 });
 
 describe("param model: lenses, hints, mod metadata", () => {
-  it("27 params: 12 curated + 15 advanced", () => {
+  it("28 params: 12 curated + 16 advanced (terrainSmooth appended, never inserted)", () => {
     expect(spectrumScape.params).toHaveLength(12);
-    expect(spectrumScape.advanced).toHaveLength(15);
-    expect(allParams(spectrumScape)).toHaveLength(27);
+    expect(spectrumScape.advanced).toHaveLength(16);
+    expect(allParams(spectrumScape)).toHaveLength(28);
+    // The ABI rule made explicit: the new spec sits at the very END, so
+    // every pre-terrain accessor index is unchanged.
+    const advanced = spectrumScape.advanced ?? [];
+    expect(advanced[advanced.length - 1]?.key).toBe("terrainSmooth");
   });
 
   it("the curated tier covers the mode's five lenses", () => {
@@ -374,16 +421,28 @@ describe("param model: lenses, hints, mod metadata", () => {
     }
   });
 
-  it("the enums are mod:off mode choices with three named options each", () => {
-    for (const key of ["layout", "barShape"]) {
-      const spec = specs.get(key)!;
-      expect(spec.control).toBe("enum");
-      expect(spec.mod).toBe("off");
-      if (spec.control === "enum") {
-        expect(spec.options).toHaveLength(3);
-        expect(spec.options.map((o) => o.value)).toEqual([0, 1, 2]);
-        for (const o of spec.options) expect(o.hint, `${key}/${o.label}`).toBeTruthy();
-      }
+  it("the enums are mod:off mode choices, every option named and hinted", () => {
+    // layout grew its fourth value (Waveform, P-19 entry 4) — an enum
+    // EXTENSION: the three shipped values keep their numbers forever.
+    const layout = specs.get("layout")!;
+    expect(layout.control).toBe("enum");
+    expect(layout.mod).toBe("off");
+    if (layout.control === "enum") {
+      expect(layout.options.map((o) => o.value)).toEqual([0, 1, 2, 3]);
+      expect(layout.options.map((o) => o.label)).toEqual([
+        "Rings",
+        "Rows",
+        "Spiral",
+        "Waveform",
+      ]);
+      for (const o of layout.options) expect(o.hint, `layout/${o.label}`).toBeTruthy();
+    }
+    const shape = specs.get("barShape")!;
+    expect(shape.control).toBe("enum");
+    expect(shape.mod).toBe("off");
+    if (shape.control === "enum") {
+      expect(shape.options.map((o) => o.value)).toEqual([0, 1, 2]);
+      for (const o of shape.options) expect(o.hint, `barShape/${o.label}`).toBeTruthy();
     }
   });
 
@@ -401,6 +460,7 @@ describe("param model: lenses, hints, mod metadata", () => {
       "fillLight",
       "ambientLight",
       "fogDensity",
+      "terrainSmooth",
     ]) {
       expect(specs.get(key)?.mod, `${key} must stay smooth`).toBeUndefined();
     }
@@ -413,7 +473,7 @@ describe("param model: lenses, hints, mod metadata", () => {
   });
 });
 
-describe("deck: the pre-wave seven are untouched; the new five use the territory", () => {
+describe("deck: the pre-wave seven are untouched; the new six use the territory", () => {
   const styles = spectrumScape.styles ?? [];
   const NEW_KEYS = [
     "layout",
@@ -430,6 +490,7 @@ describe("deck: the pre-wave seven are untouched; the new five use the territory
     "fillLight",
     "ambientLight",
     "fogDensity",
+    "terrainSmooth",
   ];
 
   it("the seven shipped styles write no new key — their device hashes cannot move", () => {
@@ -446,12 +507,12 @@ describe("deck: the pre-wave seven are untouched; the new five use the territory
     expect(styles[0]?.values).toEqual({});
   });
 
-  it("the five new identities exist", () => {
+  it("the six post-wave identities exist", () => {
     const ids = styles.map((s) => s.id);
-    for (const id of ["terrain", "galaxy", "spires", "flashpoint", "harbor"]) {
+    for (const id of ["terrain", "galaxy", "spires", "flashpoint", "harbor", "waveride"]) {
       expect(ids).toContain(id);
     }
-    expect(styles).toHaveLength(12);
+    expect(styles).toHaveLength(13);
   });
 
   it("the deck exercises every enum option and both beat-response axes", () => {
@@ -460,6 +521,7 @@ describe("deck: the pre-wave seven are untouched; the new five use the territory
     );
     expect(resolved.some((v) => v.layout === 1)).toBe(true); // rows
     expect(resolved.some((v) => v.layout === 2)).toBe(true); // spiral
+    expect(resolved.some((v) => v.layout === 3)).toBe(true); // waveform terrain
     expect(resolved.some((v) => v.barShape === 1)).toBe(true); // pyramid
     expect(resolved.some((v) => v.barShape === 2)).toBe(true); // round
     expect(resolved.some((v) => v.bandGlow > 0)).toBe(true); // band response

@@ -60,8 +60,11 @@ const ABI_BASELINE: Record<string, string> = {
     "hue,decay,zoom,swirl,radius,source,react,inject,beatZoom,flowSwirl,thick,hueSpin,hueDrift,kickFlash,vignette,mirror,echoHue,sides,beatStar,warp,centerX,centerY",
   "particle-flow":
     "hue,saturation,lightness,field,flowStrength,swirl,beatBurst,size,brightness,density,ribbon,flowScale,damping,gravity,attractor,audioFlow,midSwirl,trebleJitter,sizePulse,hueSpread,speedColor,sat,spawnRadius,vignette,bgLevel",
+  // 2.102.0: ",terrainSmooth" APPENDED for the Waveform terrain layout
+  // (P-19 entry 4) — additive at the end of advanced[], so every existing
+  // accessor index is unchanged and no shipped pixel hash moves for it.
   "spectrum-scape":
-    "hue,heightScale,camPitch,camDist,camSpin,emissive,layout,barShape,saturation,lightness,hotBeat,bandGlow,fov,hueRange,barWidth,spacing,light,camYaw,targetY,driveHeight,hotDrive,glowBeat,hotWindow,hueLift,fillLight,ambientLight,fogDensity",
+    "hue,heightScale,camPitch,camDist,camSpin,emissive,layout,barShape,saturation,lightness,hotBeat,bandGlow,fov,hueRange,barWidth,spacing,light,camYaw,targetY,driveHeight,hotDrive,glowBeat,hotWindow,hueLift,fillLight,ambientLight,fogDensity,terrainSmooth",
   aurora:
     "hue,bright,react,flow,thick,baseY,wave,layers,beatPulse,palWarm,moon,ground,specAmt,bassSwell,drift,reflect,horizon,reflectFade,hueStep,hueSpread,palSpan,rays,sat,stars,bgGlow,mirror,groundRough,moonX,moonY,moonGlow",
   synthwave:

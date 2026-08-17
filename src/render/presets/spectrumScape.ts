@@ -2,9 +2,12 @@ import type { PresetDef } from "../types";
 
 /**
  * Spectrum Scape — a 3D pass. A depth-tested grid of instanced columns whose
- * heights follow the spectrum — as concentric rings by default, or raster
- * rows / spiral arms via the Layout enum — lit by a key/fill/ambient rig and
- * viewed through an orbiting perspective camera.
+ * heights follow the spectrum — as concentric rings by default, raster rows /
+ * spiral arms via the Layout enum, or the track's WAVEFORM as rolling terrain
+ * (P-19 roster entry 4: the raster mapping addressing the phase-locked
+ * time-domain window instead of bins, so a bass cycle spans many rows and the
+ * camera rides a landscape that streams with the song) — lit by a
+ * key/fill/ambient rig and viewed through an orbiting perspective camera.
  *
  * Rendered by the renderer's built-in 3D path (MESH3D_WGSL); the `wgsl`
  * fragment body below is an unused stub. The camera params (orbit/pitch/
@@ -371,6 +374,34 @@ export const spectrumScape: PresetDef = {
         driveHeight: 0.45,
       },
     },
+    // Waveride — the Waveform layout as its showcase (P-19 entry 4): the
+    // track's own waveform rolls under a low, slowly orbiting camera as a
+    // green-to-violet mountain range. Wide bars on tight spacing fuse the
+    // columns into ground; the phase-locked window keeps a held chord
+    // standing as a stable ridge while the mix's transients stream through
+    // it. Moderate smoothing: dunes with detail, not gravel and not gel.
+    {
+      id: "waveride",
+      name: "Waveride",
+      values: {
+        layout: 3,
+        hue: 165,
+        hueRange: 155,
+        heightScale: 9,
+        camPitch: 22,
+        camDist: 19,
+        camSpin: 6,
+        fov: 60,
+        targetY: 1.2,
+        barWidth: 0.62,
+        spacing: 0.5,
+        emissive: 0.3,
+        light: 1.25,
+        bandGlow: 0.6,
+        terrainSmooth: 0.45,
+        fogDensity: 0.06,
+      },
+    },
     // Harbor Mist — the fog and rig params as the subject: a tall skyline
     // seen low and far through dense haze, ambient pulled down and the fill
     // pushed up so the shaded faces glow softly out of the mist instead of
@@ -467,7 +498,11 @@ export const spectrumScape: PresetDef = {
       control: "enum",
       mod: "off",
       min: 0,
-      max: 2,
+      // Extending the max is the enum-extension contract: additive only, the
+      // existing values untouched — but the GPU matrix's extreme/max case
+      // pins EVERY param at its max, so that one case legitimately moves
+      // from Spiral to Waveform on the next test:gpu re-bless.
+      max: 3,
       step: 1,
       default: 0,
       options: [
@@ -486,8 +521,13 @@ export const spectrumScape: PresetDef = {
           label: "Spiral",
           hint: "The spectrum winds around the center in spiral arms",
         },
+        {
+          value: 3,
+          label: "Waveform",
+          hint: "The track's waveform as rolling terrain — time snakes across the grid row by row",
+        },
       ],
-      hint: "How the spectrum maps onto the grid — rings from the center, raster rows, or a spiral",
+      hint: "What the grid reads — spectrum rings, raster rows, spiral arms, or the waveform as terrain",
     },
     {
       key: "barShape",
@@ -700,6 +740,18 @@ export const spectrumScape: PresetDef = {
       step: 0.005,
       default: 0.045,
       hint: "How quickly distance melts into the blue haze — 0 keeps the far edge crisp",
+    },
+    // Appended (never inserted): params[]/advanced[] are the ABI, so a new
+    // spec may only ever land at the END of advanced (abiOrder.test.ts).
+    {
+      key: "terrainSmooth",
+      label: "Terrain smoothing",
+      group: "shape",
+      min: 0,
+      max: 1,
+      step: 0.05,
+      default: 0.3,
+      hint: "Waveform layout only: rolls the raw samples into dunes — 0 keeps every spike",
     },
   ],
   // Unused: 3D presets render via the built-in mesh path. Stub keeps the shared
