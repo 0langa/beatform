@@ -429,12 +429,7 @@ describe("param model: lenses, hints, mod metadata", () => {
     expect(layout.mod).toBe("off");
     if (layout.control === "enum") {
       expect(layout.options.map((o) => o.value)).toEqual([0, 1, 2, 3]);
-      expect(layout.options.map((o) => o.label)).toEqual([
-        "Rings",
-        "Rows",
-        "Spiral",
-        "Waveform",
-      ]);
+      expect(layout.options.map((o) => o.label)).toEqual(["Rings", "Rows", "Spiral", "Waveform"]);
       for (const o of layout.options) expect(o.hint, `layout/${o.label}`).toBeTruthy();
     }
     const shape = specs.get("barShape")!;

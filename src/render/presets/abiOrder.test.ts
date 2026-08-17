@@ -52,7 +52,7 @@ const ABI_BASELINE: Record<string, string> = {
   "lyric-stage":
     "layout,size,context,tilt,hue,hueSpread,saturation,lightness,drift,entrance,beatPunch,wordGlow,chromaSplit,glow,flare,ghostBars,stageLevel,unsungDim,contextScale,greekRows,glowReach,bassStage,flutter,rehearse,vignette",
   // P-19 entry 3: the cover-art-first mode. First baseline, same contract.
-  "gatefold":
+  gatefold:
     "layout,artSize,reflection,hue,hueSpread,saturation,lightness,drift,breathe,beatZoom,flare,glow,skirt,wash,cover,coverHue,border,coverFit,coverZoom,coverX,coverY,roomLevel,grain,reflectFade,emblem,vignette",
   "voice-orb":
     "hue,size,satellites,ring,ringStyle,mirror,texture,response,voiceFocus,wobble,sparkle,flare,rmsBlend,growth,idleBreath,wobScale,mode1,mode2,mode3,coreGlow,breathGlow,rimGlow,ringDist,ringWave,ringCount,satSize,satDist,satOrbit,sparkleScale,bgLevel,vignette",
