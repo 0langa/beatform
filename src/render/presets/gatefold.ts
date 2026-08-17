@@ -2,7 +2,7 @@ import type { PresetDef } from "../types";
 import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
- * COVER STORY — the artwork as the composition (P-19 roster entry 3).
+ * GATEFOLD — the artwork as the composition (P-19 roster entry 3).
  *
  * VISUAL IDENTITY. The track's cover art IS the picture, not a garnish inside
  * one. The art stands framed on a lit stage: it breathes with the slow energy,
@@ -37,15 +37,15 @@ import { WGSL_COLOR_CONTROLS } from "../wgslLib";
  * texture in-shader — no CPU analysis sits on the render path, so preview and
  * export resolve identical frames by construction.
  */
-export const coverStory: PresetDef = {
-  id: "cover-story",
-  name: "Cover Story",
+export const gatefold: PresetDef = {
+  id: "gatefold",
+  name: "Gatefold",
   description:
     "The artwork is the show: the track's cover stands framed on a lit stage — the room glows in the art's own colors, the floor mirrors it back, a spectrum skirt runs below, and the frame pumps with the kick. No artwork? A generated abstract sleeve takes the stage instead.",
   styles: [
-    // Cover Story — the defaults: the framed art over its reflection, the
+    // Gatefold — the defaults: the framed art over its reflection, the
     // room lit in the sleeve's own colors, the spectrum as a low skirt.
-    { id: "story", name: "Cover Story", values: {} },
+    { id: "fold", name: "Gatefold", values: {} },
     // Museum — editorial. Whole art letterboxed on a mat, gilded frame, warm
     // low light, almost still: the white-glove hang.
     {

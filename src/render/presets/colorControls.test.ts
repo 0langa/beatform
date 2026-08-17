@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { bassCircle } from "./bassCircle";
-import { coverStory } from "./coverStory";
+import { gatefold } from "./gatefold";
 import { ledMatrix } from "./ledMatrix";
 import { lyricStage } from "./lyricStage";
 import { radialBurst } from "./radialBurst";
 import { spectroFalls } from "./spectroFalls";
 import { spectrumBars } from "./spectrumBars";
 
-// P-19 joined the club three times: Spectro Falls, Lyric Stage and Cover
-// Story are modes whose identity rides on colour, so the global
+// P-19 joined the club three times: Spectro Falls, Lyric Stage and Gatefold
+// are modes whose identity rides on colour, so the global
 // saturation/lightness pair belongs on them — and routing every authored
 // colour through presetColor is what lets the GPU matrix's color/grayscale
 // case prove the palette is honest.
@@ -19,7 +19,7 @@ const COLOR_PRESETS = [
   ledMatrix,
   spectroFalls,
   lyricStage,
-  coverStory,
+  gatefold,
 ];
 
 describe("full preset color controls", () => {
@@ -67,11 +67,11 @@ describe("full preset color controls", () => {
     expect(lyricStage.wgsl).toContain("let gray = vec3f(dot(rgb");
   });
 
-  it("Cover Story routes the artwork itself through the controls", () => {
+  it("Gatefold routes the artwork itself through the controls", () => {
     // Definition + the one cover call site. The art is this mode's whole
     // authored-RGB surface; a raw coverSample().rgb would leave a
     // full-colour sleeve standing in a grayscale room at saturation 0.
-    expect(coverStory.wgsl.match(/presetRgb\(/g)).toHaveLength(2);
-    expect(coverStory.wgsl).toContain("let gray = vec3f(dot(rgb");
+    expect(gatefold.wgsl.match(/presetRgb\(/g)).toHaveLength(2);
+    expect(gatefold.wgsl).toContain("let gray = vec3f(dot(rgb");
   });
 });

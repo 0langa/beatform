@@ -1010,357 +1010,6 @@ exports[`shader golden baseline > builder2: param ABI (key + default, in order) 
 ]
 `;
 
-exports[`shader golden baseline > cover-story: accessors + body are stable 1`] = `
-"fn P_layout() -> f32 { return params[0u]; }
-fn P_artSize() -> f32 { return params[1u]; }
-fn P_reflection() -> f32 { return params[2u]; }
-fn P_hue() -> f32 { return params[3u]; }
-fn P_hueSpread() -> f32 { return params[4u]; }
-fn P_saturation() -> f32 { return params[5u]; }
-fn P_lightness() -> f32 { return params[6u]; }
-fn P_drift() -> f32 { return params[7u]; }
-fn P_breathe() -> f32 { return params[8u]; }
-fn P_beatZoom() -> f32 { return params[9u]; }
-fn P_flare() -> f32 { return params[10u]; }
-fn P_glow() -> f32 { return params[11u]; }
-fn P_skirt() -> f32 { return params[12u]; }
-fn P_wash() -> f32 { return params[13u]; }
-fn P_cover() -> f32 { return params[14u]; }
-fn P_coverHue() -> f32 { return params[15u]; }
-fn P_border() -> f32 { return params[16u]; }
-fn P_coverFit() -> f32 { return params[17u]; }
-fn P_coverZoom() -> f32 { return params[18u]; }
-fn P_coverX() -> f32 { return params[19u]; }
-fn P_coverY() -> f32 { return params[20u]; }
-fn P_roomLevel() -> f32 { return params[21u]; }
-fn P_grain() -> f32 { return params[22u]; }
-fn P_reflectFade() -> f32 { return params[23u]; }
-fn P_emblem() -> f32 { return params[24u]; }
-fn P_vignette() -> f32 { return params[25u]; }
-
-fn colorScale(value: f32, control: f32) -> f32 {
-  if (control <= 1.0) { return value * control; }
-  return min(value * control, 1.0);
-}
-
-fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
-  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
-}
-
-/** Authored-RGB counterpart of presetColor, for the artwork itself: the
- * led-matrix/lyric-stage desaturation-mix idiom, so saturation 0 collapses
- * the cover to its own luminance instead of leaving a full-colour sleeve
- * standing in a grayscale room. */
-fn presetRgb(rgb: vec3f) -> vec3f {
-  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
-  let saturation = P_saturation();
-  var adjusted = mix(gray, rgb, saturation);
-  if (saturation > 1.0) {
-    adjusted = rgb + (rgb - gray) * (saturation - 1.0);
-  }
-  let lightness = P_lightness();
-  if (lightness <= 1.0) { return adjusted * lightness; }
-  return min(adjusted * lightness, vec3f(1.0));
-}
-
-/**
- * THE GENERATED SLEEVE — the no-artwork degrade. A designed abstract cover,
- * not a placeholder fill: a duotone field falling toward the floor, a low sun
- * disc that breathes with the drive, and three strata riding bass/mid/treble.
- * Pure math of (uv, features, params), composed in the SAME box the real art
- * uses, so every treatment around it (frame, reflection, wash, skirt) is
- * identical with and without a cover — and it is exactly what the GPU matrix
- * and the strip thumbnail pin, since neither ever binds art.
- */
-fn sleeveArt(buv: vec2f, boxAspect: f32) -> vec3f {
-  // Square-true coordinates: x scaled by the box aspect so the disc stays a
-  // disc when the sleeve fills a 16:9 frame (Full bleed).
-  let q = vec2f((buv.x - 0.5) * boxAspect, buv.y - 0.5);
-  // Duotone field: the base hue high, the spread hue sinking to the floor.
-  let g = clamp(0.5 + q.x * 0.35 + q.y * 1.1, 0.0, 1.0);
-  var art = mix(
-    presetColor(P_hue(), 0.62, 0.34),
-    presetColor(P_hue() + P_hueSpread(), 0.55, 0.10),
-    g,
-  );
-  let emblem = P_emblem();
-  if (emblem > 0.001) {
-    // The sun: a low disc breathing with the drive, haloed so it reads as
-    // lit. Its centre sits in the upper third, publishing's favourite spot.
-    let d = length(q - vec2f(0.0, -0.16));
-    let radius = 0.16 + u.drive * 0.02;
-    let disc = smoothstep(0.008, -0.008, d - radius);
-    let sunCol = presetColor(P_hue() + P_hueSpread() * 0.55, 0.75, 0.62);
-    art = mix(art, sunCol, disc * emblem);
-    art += sunCol * exp(-max(d - radius, 0.0) * 14.0) * 0.35 * emblem;
-    // Strata: three horizon bands under the sun, one per spectral region —
-    // the sleeve's own band response (bass nearest the floor reads loudest).
-    let bandE = array<f32, 3>(u.treble, u.mid, u.bass);
-    for (var k = 0; k < 3; k++) {
-      let cy = 0.12 + f32(k) * 0.11;
-      let band = smoothstep(0.030, 0.024, abs(q.y - cy));
-      art += presetColor(P_hue() + P_hueSpread() * (0.3 + f32(k) * 0.25), 0.6, 0.30)
-           * band * (0.25 + 0.75 * bandE[k]) * emblem;
-    }
-  }
-  return art;
-}
-
-/**
- * The artwork at one box position: the real cover through the shared fitUV
- * (fit/zoom/pan quartet, letterbox painted as a mat board — never a hole),
- * or the generated sleeve when no art is shown. The ONE gate for "is there
- * art", so every consumer — box, blur, reflection, wash — degrades together.
- */
-fn artAt(buv: vec2f, boxAspect: f32) -> vec3f {
-  if (P_cover() > 0.5 && hasCover()) {
-    let cuv = fitUV(buv, coverAspect(), boxAspect, P_coverFit(), P_coverZoom(),
-                    vec2f(P_coverX(), P_coverY()));
-    if (inBox(cuv)) {
-      return presetRgb(coverSample(cuv).rgb);
-    }
-    // The mat: a deep tint of the room hue behind a letterboxed fit.
-    return presetColor(P_hue(), 0.3, 0.075);
-  }
-  return sleeveArt(buv, boxAspect);
-}
-
-/** The light the room borrows from the art: four fixed quadrant taps,
- * averaged. Sampled from the artwork ITSELF (through artAt, so the sleeve
- * lights the room the same way) — the palette extraction lives in-shader,
- * deterministic, with no CPU analysis on the render path. */
-fn washColor() -> vec3f {
-  return (artAt(vec2f(0.3, 0.3), 1.0) + artAt(vec2f(0.7, 0.3), 1.0)
-        + artAt(vec2f(0.3, 0.7), 1.0) + artAt(vec2f(0.7, 0.7), 1.0)) * 0.25;
-}
-
-/** The Backdrop composition's soft blow-up: a nine-tap ring average — an
- * echo of the art, not a true gaussian; the dim and the wash over it carry
- * the rest of the softness. */
-fn artBlur(buv: vec2f, boxAspect: f32) -> vec3f {
-  var acc = artAt(buv, boxAspect) * 0.2;
-  for (var k = 0; k < 8; k++) {
-    let a = f32(k) * 0.7853981634; // TAU / 8
-    acc += artAt(buv + vec2f(cos(a), sin(a)) * 0.045, boxAspect) * 0.1;
-  }
-  return acc;
-}
-
-fn preset(uv: vec2f) -> vec4f {
-  let beat = max(u.driveBeat, gridPulse(7.0));
-  // The kick lands in the ART: the frame scales on the beat (Pulse-gated),
-  // and swells slowly with the energy envelope on top.
-  let pump = 1.0 + beat * P_beatZoom() * 0.045 * u.pulse;
-  let swell = 1.0 + (u.energy - 0.5) * P_breathe() * 0.06;
-  // Slow room sway — backdrop only (a swaying frame reads as broken), riding
-  // the energy envelope and the Rotation master, from TRACK time.
-  let sway = vec2f(sin(u.time * 0.31), cos(u.time * 0.23))
-           * 0.025 * P_drift() * (0.35 + 0.65 * u.energy) * u.spin;
-  let washRgb = washColor();
-  let comp = P_layout();
-
-  // The frame's box, in centered space (y down, like the texture's v — the
-  // Bass Circle rule: no flip, or the cover hangs upside down). Square: album
-  // sleeves are square, and a non-square image resolves through the user fit.
-  let p = centered(uv);
-  let boxC = vec2f(0.0, -0.035);
-  let half = 0.30 * P_artSize() * pump * swell;
-  let buv = (p - boxC) / (2.0 * half) + vec2f(0.5);
-  let cd = max(abs(p.x - boxC.x), abs(p.y - boxC.y)) - half;
-
-  var col = vec3f(0.0);
-  if (comp > 1.5) {
-    // FULL BLEED: the art is the frame. The beat zoom pumps the whole crop
-    // about the centre; drift pans it; a scrim grades the floor down so the
-    // skirt and the flare have dark to read against.
-    let fb = (uv - vec2f(0.5)) / (pump * swell) + vec2f(0.5) + sway * 0.5;
-    col = artAt(fb, u.aspect);
-    col *= 1.0 - smoothstep(0.45, 1.0, uv.y) * 0.5;
-  } else {
-    if (comp > 0.5) {
-      // BACKDROP: the art blown up soft behind itself. The blur field drifts
-      // WITH the sway while the sharp frame stays planted — and the beat
-      // zoom shifts it against the frame, which is what makes the pump read
-      // as parallax rather than scale.
-      let bb = (uv - vec2f(0.5)) * 0.92 + vec2f(0.5)
-             + sway * 0.6 + vec2f(0.0, (pump - 1.0) * 0.35);
-      col = artBlur(bb, u.aspect) * (0.22 + 0.10 * u.energy);
-    } else {
-      // GALLERY: the room. A lit floor graded toward the bottom, never a
-      // hole, swaying gently with the track.
-      col = presetColor(P_hue(), 0.45,
-                        P_roomLevel() * (0.55 + 0.9 * (uv.y + sway.y * 2.0)));
-    }
-    // The wash: the room lit by the artwork's own colors, falling off with
-    // distance from the frame and breathing with the bass.
-    col += washRgb * exp(-max(cd, 0.0) * 2.4) * P_wash()
-         * (0.42 + 0.32 * u.bass + 0.26 * beat * u.pulse);
-  }
-
-  // The skirt: the spectrum as a run of bars along the bottom edge. binAt
-  // keeps it on the shared Spectrum-smooth master; Detail thins the columns.
-  if (P_skirt() > 0.001) {
-    let cols = max(floor(64.0 * mix(0.4, 1.0, u.detail)), 8.0);
-    let cx = (floor(uv.x * cols) + 0.5) / cols;
-    let fx = fract(uv.x * cols);
-    let gapMask = smoothstep(0.0, 0.10, fx) * smoothstep(1.0, 0.90, fx);
-    let lv = binAt(cx);
-    let ht = lv * 0.26 * P_skirt();
-    let inSkirt = smoothstep(1.0 - ht - 0.006, 1.0 - ht + 0.006, uv.y);
-    col += presetColor(P_hue() + cx * P_hueSpread(), 0.75, 0.42)
-         * inSkirt * gapMask * (0.4 + 0.6 * lv) * P_skirt();
-  }
-
-  if (comp < 1.5) {
-    // The reflection: the floor mirrors the art below the frame, sinking
-    // with distance (Reflection reach) — the waterline shimmers sideways
-    // with the bass, from track time.
-    if (P_reflection() > 0.001 && buv.y > 1.0 && buv.y < 2.0
-        && buv.x > 0.0 && buv.x < 1.0) {
-      let sink = (buv.y - 1.0) / max(P_reflectFade(), 0.1);
-      let fade = max(1.0 - sink, 0.0);
-      let shimmer = sin(buv.y * 34.0 + u.time * 1.4) * 0.006 * u.bass;
-      let rart = artAt(vec2f(buv.x + shimmer, 2.0 - buv.y), 1.0);
-      col = mix(col, rart * 0.55, fade * fade * P_reflection() * 0.8);
-    }
-
-    // Rim light: the artwork's own light spilling from behind the frame,
-    // answering the kick.
-    col += washRgb * exp(-max(cd, 0.0) * 7.0) * P_glow()
-         * 0.5 * (0.55 + 0.45 * beat * u.pulse) * step(0.0, cd);
-
-    // The art itself, soft-edged into the room, then the thin lit frame
-    // line just outside it.
-    let boxMask = smoothstep(0.003, -0.003, cd);
-    col = mix(col, artAt(buv, 1.0), boxMask);
-    let line = smoothstep(0.006, 0.002, abs(cd - 0.004));
-    col += presetColor(P_hue(), 0.2, 0.85) * line * P_border();
-  }
-
-  // Beat flare: the room's own light answering the kick, brightest at the
-  // floor so it reads as house lights rather than a screen flash.
-  col += presetColor(P_hue() + P_hueSpread() * 0.5, 0.45, 0.5)
-       * beat * P_flare() * 0.16 * u.pulse * (1.3 - uv.y);
-
-  col *= vignette(uv, P_vignette());
-  col = tonemap(col * 1.05);
-  // Print grain: energy-live film grain over the whole frame, never zero —
-  // the same floor dither every mode in the roster carries.
-  col += grain(uv, 0.006 + P_grain() * 0.05 * (0.35 + 0.65 * u.energy));
-  return vec4f(max(col, vec3f(0.0)), 1.0);
-}
-"
-`;
-
-exports[`shader golden baseline > cover-story: param ABI (key + default, in order) is stable 1`] = `
-[
-  {
-    "default": 0,
-    "key": "layout",
-  },
-  {
-    "default": 1,
-    "key": "artSize",
-  },
-  {
-    "default": 0.45,
-    "key": "reflection",
-  },
-  {
-    "default": 230,
-    "key": "hue",
-  },
-  {
-    "default": 40,
-    "key": "hueSpread",
-  },
-  {
-    "default": 1,
-    "key": "saturation",
-  },
-  {
-    "default": 1,
-    "key": "lightness",
-  },
-  {
-    "default": 0.25,
-    "key": "drift",
-  },
-  {
-    "default": 0.4,
-    "key": "breathe",
-  },
-  {
-    "default": 0.35,
-    "key": "beatZoom",
-  },
-  {
-    "default": 0.25,
-    "key": "flare",
-  },
-  {
-    "default": 0.6,
-    "key": "glow",
-  },
-  {
-    "default": 0.35,
-    "key": "skirt",
-  },
-  {
-    "default": 0.55,
-    "key": "wash",
-  },
-  {
-    "default": 1,
-    "key": "cover",
-  },
-  {
-    "default": 0,
-    "key": "coverHue",
-  },
-  {
-    "default": 0.25,
-    "key": "border",
-  },
-  {
-    "default": 0,
-    "key": "coverFit",
-  },
-  {
-    "default": 1,
-    "key": "coverZoom",
-  },
-  {
-    "default": 0,
-    "key": "coverX",
-  },
-  {
-    "default": 0,
-    "key": "coverY",
-  },
-  {
-    "default": 0.045,
-    "key": "roomLevel",
-  },
-  {
-    "default": 0.3,
-    "key": "grain",
-  },
-  {
-    "default": 0.5,
-    "key": "reflectFade",
-  },
-  {
-    "default": 1,
-    "key": "emblem",
-  },
-  {
-    "default": 0.4,
-    "key": "vignette",
-  },
-]
-`;
-
 exports[`shader golden baseline > covers exactly the registered preset set 1`] = `
 [
   "spectrum-bars",
@@ -1380,7 +1029,7 @@ exports[`shader golden baseline > covers exactly the registered preset set 1`] =
   "bass-circle",
   "spectro-falls",
   "lyric-stage",
-  "cover-story",
+  "gatefold",
   "builder2",
 ]
 `;
@@ -1952,6 +1601,357 @@ exports[`shader golden baseline > echo-trails: param ABI (key + default, in orde
   {
     "default": 0,
     "key": "centerY",
+  },
+]
+`;
+
+exports[`shader golden baseline > gatefold: accessors + body are stable 1`] = `
+"fn P_layout() -> f32 { return params[0u]; }
+fn P_artSize() -> f32 { return params[1u]; }
+fn P_reflection() -> f32 { return params[2u]; }
+fn P_hue() -> f32 { return params[3u]; }
+fn P_hueSpread() -> f32 { return params[4u]; }
+fn P_saturation() -> f32 { return params[5u]; }
+fn P_lightness() -> f32 { return params[6u]; }
+fn P_drift() -> f32 { return params[7u]; }
+fn P_breathe() -> f32 { return params[8u]; }
+fn P_beatZoom() -> f32 { return params[9u]; }
+fn P_flare() -> f32 { return params[10u]; }
+fn P_glow() -> f32 { return params[11u]; }
+fn P_skirt() -> f32 { return params[12u]; }
+fn P_wash() -> f32 { return params[13u]; }
+fn P_cover() -> f32 { return params[14u]; }
+fn P_coverHue() -> f32 { return params[15u]; }
+fn P_border() -> f32 { return params[16u]; }
+fn P_coverFit() -> f32 { return params[17u]; }
+fn P_coverZoom() -> f32 { return params[18u]; }
+fn P_coverX() -> f32 { return params[19u]; }
+fn P_coverY() -> f32 { return params[20u]; }
+fn P_roomLevel() -> f32 { return params[21u]; }
+fn P_grain() -> f32 { return params[22u]; }
+fn P_reflectFade() -> f32 { return params[23u]; }
+fn P_emblem() -> f32 { return params[24u]; }
+fn P_vignette() -> f32 { return params[25u]; }
+
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
+
+/** Authored-RGB counterpart of presetColor, for the artwork itself: the
+ * led-matrix/lyric-stage desaturation-mix idiom, so saturation 0 collapses
+ * the cover to its own luminance instead of leaving a full-colour sleeve
+ * standing in a grayscale room. */
+fn presetRgb(rgb: vec3f) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let saturation = P_saturation();
+  var adjusted = mix(gray, rgb, saturation);
+  if (saturation > 1.0) {
+    adjusted = rgb + (rgb - gray) * (saturation - 1.0);
+  }
+  let lightness = P_lightness();
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
+/**
+ * THE GENERATED SLEEVE — the no-artwork degrade. A designed abstract cover,
+ * not a placeholder fill: a duotone field falling toward the floor, a low sun
+ * disc that breathes with the drive, and three strata riding bass/mid/treble.
+ * Pure math of (uv, features, params), composed in the SAME box the real art
+ * uses, so every treatment around it (frame, reflection, wash, skirt) is
+ * identical with and without a cover — and it is exactly what the GPU matrix
+ * and the strip thumbnail pin, since neither ever binds art.
+ */
+fn sleeveArt(buv: vec2f, boxAspect: f32) -> vec3f {
+  // Square-true coordinates: x scaled by the box aspect so the disc stays a
+  // disc when the sleeve fills a 16:9 frame (Full bleed).
+  let q = vec2f((buv.x - 0.5) * boxAspect, buv.y - 0.5);
+  // Duotone field: the base hue high, the spread hue sinking to the floor.
+  let g = clamp(0.5 + q.x * 0.35 + q.y * 1.1, 0.0, 1.0);
+  var art = mix(
+    presetColor(P_hue(), 0.62, 0.34),
+    presetColor(P_hue() + P_hueSpread(), 0.55, 0.10),
+    g,
+  );
+  let emblem = P_emblem();
+  if (emblem > 0.001) {
+    // The sun: a low disc breathing with the drive, haloed so it reads as
+    // lit. Its centre sits in the upper third, publishing's favourite spot.
+    let d = length(q - vec2f(0.0, -0.16));
+    let radius = 0.16 + u.drive * 0.02;
+    let disc = smoothstep(0.008, -0.008, d - radius);
+    let sunCol = presetColor(P_hue() + P_hueSpread() * 0.55, 0.75, 0.62);
+    art = mix(art, sunCol, disc * emblem);
+    art += sunCol * exp(-max(d - radius, 0.0) * 14.0) * 0.35 * emblem;
+    // Strata: three horizon bands under the sun, one per spectral region —
+    // the sleeve's own band response (bass nearest the floor reads loudest).
+    let bandE = array<f32, 3>(u.treble, u.mid, u.bass);
+    for (var k = 0; k < 3; k++) {
+      let cy = 0.12 + f32(k) * 0.11;
+      let band = smoothstep(0.030, 0.024, abs(q.y - cy));
+      art += presetColor(P_hue() + P_hueSpread() * (0.3 + f32(k) * 0.25), 0.6, 0.30)
+           * band * (0.25 + 0.75 * bandE[k]) * emblem;
+    }
+  }
+  return art;
+}
+
+/**
+ * The artwork at one box position: the real cover through the shared fitUV
+ * (fit/zoom/pan quartet, letterbox painted as a mat board — never a hole),
+ * or the generated sleeve when no art is shown. The ONE gate for "is there
+ * art", so every consumer — box, blur, reflection, wash — degrades together.
+ */
+fn artAt(buv: vec2f, boxAspect: f32) -> vec3f {
+  if (P_cover() > 0.5 && hasCover()) {
+    let cuv = fitUV(buv, coverAspect(), boxAspect, P_coverFit(), P_coverZoom(),
+                    vec2f(P_coverX(), P_coverY()));
+    if (inBox(cuv)) {
+      return presetRgb(coverSample(cuv).rgb);
+    }
+    // The mat: a deep tint of the room hue behind a letterboxed fit.
+    return presetColor(P_hue(), 0.3, 0.075);
+  }
+  return sleeveArt(buv, boxAspect);
+}
+
+/** The light the room borrows from the art: four fixed quadrant taps,
+ * averaged. Sampled from the artwork ITSELF (through artAt, so the sleeve
+ * lights the room the same way) — the palette extraction lives in-shader,
+ * deterministic, with no CPU analysis on the render path. */
+fn washColor() -> vec3f {
+  return (artAt(vec2f(0.3, 0.3), 1.0) + artAt(vec2f(0.7, 0.3), 1.0)
+        + artAt(vec2f(0.3, 0.7), 1.0) + artAt(vec2f(0.7, 0.7), 1.0)) * 0.25;
+}
+
+/** The Backdrop composition's soft blow-up: a nine-tap ring average — an
+ * echo of the art, not a true gaussian; the dim and the wash over it carry
+ * the rest of the softness. */
+fn artBlur(buv: vec2f, boxAspect: f32) -> vec3f {
+  var acc = artAt(buv, boxAspect) * 0.2;
+  for (var k = 0; k < 8; k++) {
+    let a = f32(k) * 0.7853981634; // TAU / 8
+    acc += artAt(buv + vec2f(cos(a), sin(a)) * 0.045, boxAspect) * 0.1;
+  }
+  return acc;
+}
+
+fn preset(uv: vec2f) -> vec4f {
+  let beat = max(u.driveBeat, gridPulse(7.0));
+  // The kick lands in the ART: the frame scales on the beat (Pulse-gated),
+  // and swells slowly with the energy envelope on top.
+  let pump = 1.0 + beat * P_beatZoom() * 0.045 * u.pulse;
+  let swell = 1.0 + (u.energy - 0.5) * P_breathe() * 0.06;
+  // Slow room sway — backdrop only (a swaying frame reads as broken), riding
+  // the energy envelope and the Rotation master, from TRACK time.
+  let sway = vec2f(sin(u.time * 0.31), cos(u.time * 0.23))
+           * 0.025 * P_drift() * (0.35 + 0.65 * u.energy) * u.spin;
+  let washRgb = washColor();
+  let comp = P_layout();
+
+  // The frame's box, in centered space (y down, like the texture's v — the
+  // Bass Circle rule: no flip, or the cover hangs upside down). Square: album
+  // sleeves are square, and a non-square image resolves through the user fit.
+  let p = centered(uv);
+  let boxC = vec2f(0.0, -0.035);
+  let half = 0.30 * P_artSize() * pump * swell;
+  let buv = (p - boxC) / (2.0 * half) + vec2f(0.5);
+  let cd = max(abs(p.x - boxC.x), abs(p.y - boxC.y)) - half;
+
+  var col = vec3f(0.0);
+  if (comp > 1.5) {
+    // FULL BLEED: the art is the frame. The beat zoom pumps the whole crop
+    // about the centre; drift pans it; a scrim grades the floor down so the
+    // skirt and the flare have dark to read against.
+    let fb = (uv - vec2f(0.5)) / (pump * swell) + vec2f(0.5) + sway * 0.5;
+    col = artAt(fb, u.aspect);
+    col *= 1.0 - smoothstep(0.45, 1.0, uv.y) * 0.5;
+  } else {
+    if (comp > 0.5) {
+      // BACKDROP: the art blown up soft behind itself. The blur field drifts
+      // WITH the sway while the sharp frame stays planted — and the beat
+      // zoom shifts it against the frame, which is what makes the pump read
+      // as parallax rather than scale.
+      let bb = (uv - vec2f(0.5)) * 0.92 + vec2f(0.5)
+             + sway * 0.6 + vec2f(0.0, (pump - 1.0) * 0.35);
+      col = artBlur(bb, u.aspect) * (0.22 + 0.10 * u.energy);
+    } else {
+      // GALLERY: the room. A lit floor graded toward the bottom, never a
+      // hole, swaying gently with the track.
+      col = presetColor(P_hue(), 0.45,
+                        P_roomLevel() * (0.55 + 0.9 * (uv.y + sway.y * 2.0)));
+    }
+    // The wash: the room lit by the artwork's own colors, falling off with
+    // distance from the frame and breathing with the bass.
+    col += washRgb * exp(-max(cd, 0.0) * 2.4) * P_wash()
+         * (0.42 + 0.32 * u.bass + 0.26 * beat * u.pulse);
+  }
+
+  // The skirt: the spectrum as a run of bars along the bottom edge. binAt
+  // keeps it on the shared Spectrum-smooth master; Detail thins the columns.
+  if (P_skirt() > 0.001) {
+    let cols = max(floor(64.0 * mix(0.4, 1.0, u.detail)), 8.0);
+    let cx = (floor(uv.x * cols) + 0.5) / cols;
+    let fx = fract(uv.x * cols);
+    let gapMask = smoothstep(0.0, 0.10, fx) * smoothstep(1.0, 0.90, fx);
+    let lv = binAt(cx);
+    let ht = lv * 0.26 * P_skirt();
+    let inSkirt = smoothstep(1.0 - ht - 0.006, 1.0 - ht + 0.006, uv.y);
+    col += presetColor(P_hue() + cx * P_hueSpread(), 0.75, 0.42)
+         * inSkirt * gapMask * (0.4 + 0.6 * lv) * P_skirt();
+  }
+
+  if (comp < 1.5) {
+    // The reflection: the floor mirrors the art below the frame, sinking
+    // with distance (Reflection reach) — the waterline shimmers sideways
+    // with the bass, from track time.
+    if (P_reflection() > 0.001 && buv.y > 1.0 && buv.y < 2.0
+        && buv.x > 0.0 && buv.x < 1.0) {
+      let sink = (buv.y - 1.0) / max(P_reflectFade(), 0.1);
+      let fade = max(1.0 - sink, 0.0);
+      let shimmer = sin(buv.y * 34.0 + u.time * 1.4) * 0.006 * u.bass;
+      let rart = artAt(vec2f(buv.x + shimmer, 2.0 - buv.y), 1.0);
+      col = mix(col, rart * 0.55, fade * fade * P_reflection() * 0.8);
+    }
+
+    // Rim light: the artwork's own light spilling from behind the frame,
+    // answering the kick.
+    col += washRgb * exp(-max(cd, 0.0) * 7.0) * P_glow()
+         * 0.5 * (0.55 + 0.45 * beat * u.pulse) * step(0.0, cd);
+
+    // The art itself, soft-edged into the room, then the thin lit frame
+    // line just outside it.
+    let boxMask = smoothstep(0.003, -0.003, cd);
+    col = mix(col, artAt(buv, 1.0), boxMask);
+    let line = smoothstep(0.006, 0.002, abs(cd - 0.004));
+    col += presetColor(P_hue(), 0.2, 0.85) * line * P_border();
+  }
+
+  // Beat flare: the room's own light answering the kick, brightest at the
+  // floor so it reads as house lights rather than a screen flash.
+  col += presetColor(P_hue() + P_hueSpread() * 0.5, 0.45, 0.5)
+       * beat * P_flare() * 0.16 * u.pulse * (1.3 - uv.y);
+
+  col *= vignette(uv, P_vignette());
+  col = tonemap(col * 1.05);
+  // Print grain: energy-live film grain over the whole frame, never zero —
+  // the same floor dither every mode in the roster carries.
+  col += grain(uv, 0.006 + P_grain() * 0.05 * (0.35 + 0.65 * u.energy));
+  return vec4f(max(col, vec3f(0.0)), 1.0);
+}
+"
+`;
+
+exports[`shader golden baseline > gatefold: param ABI (key + default, in order) is stable 1`] = `
+[
+  {
+    "default": 0,
+    "key": "layout",
+  },
+  {
+    "default": 1,
+    "key": "artSize",
+  },
+  {
+    "default": 0.45,
+    "key": "reflection",
+  },
+  {
+    "default": 230,
+    "key": "hue",
+  },
+  {
+    "default": 40,
+    "key": "hueSpread",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
+  },
+  {
+    "default": 0.25,
+    "key": "drift",
+  },
+  {
+    "default": 0.4,
+    "key": "breathe",
+  },
+  {
+    "default": 0.35,
+    "key": "beatZoom",
+  },
+  {
+    "default": 0.25,
+    "key": "flare",
+  },
+  {
+    "default": 0.6,
+    "key": "glow",
+  },
+  {
+    "default": 0.35,
+    "key": "skirt",
+  },
+  {
+    "default": 0.55,
+    "key": "wash",
+  },
+  {
+    "default": 1,
+    "key": "cover",
+  },
+  {
+    "default": 0,
+    "key": "coverHue",
+  },
+  {
+    "default": 0.25,
+    "key": "border",
+  },
+  {
+    "default": 0,
+    "key": "coverFit",
+  },
+  {
+    "default": 1,
+    "key": "coverZoom",
+  },
+  {
+    "default": 0,
+    "key": "coverX",
+  },
+  {
+    "default": 0,
+    "key": "coverY",
+  },
+  {
+    "default": 0.045,
+    "key": "roomLevel",
+  },
+  {
+    "default": 0.3,
+    "key": "grain",
+  },
+  {
+    "default": 0.5,
+    "key": "reflectFade",
+  },
+  {
+    "default": 1,
+    "key": "emblem",
+  },
+  {
+    "default": 0.4,
+    "key": "vignette",
   },
 ]
 `;

@@ -29,7 +29,7 @@ export const DEFAULT_PRESET_ORDER: readonly string[] = [
   "bass-circle",
   "led-matrix",
   "spectro-falls",
-  "cover-story",
+  "gatefold",
   "lyric-stage",
   "tunnel-rings",
   "oscilloscope",

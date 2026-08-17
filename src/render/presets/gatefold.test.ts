@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { presetUsesFeedback } from "../webgpuRenderer";
 import { allParams, defaultParams, presetMasters } from "../types";
 import { presets } from "./index";
-import { coverStory } from "./coverStory";
+import { gatefold } from "./gatefold";
 
 /**
- * COVER STORY (P-19 roster entry 3) — the artwork as the composition.
+ * GATEFOLD (P-19 roster entry 3) — the artwork as the composition.
  *
  * What is pinned here is what no other gate can see: that the art arrives
  * through the shared cover ABI (never a raw texture read), that the room's
@@ -15,19 +15,19 @@ import { coverStory } from "./coverStory";
  * cases pin the generated-sleeve degrade; this file pins the sentences
  * behind the art path itself.
  */
-describe("cover-story", { timeout: 30_000 }, () => {
-  const main = new Map(coverStory.params.map((p) => [p.key, p]));
-  const advanced = new Map((coverStory.advanced ?? []).map((p) => [p.key, p]));
-  const styles = coverStory.styles ?? [];
+describe("gatefold", { timeout: 30_000 }, () => {
+  const main = new Map(gatefold.params.map((p) => [p.key, p]));
+  const advanced = new Map((gatefold.advanced ?? []).map((p) => [p.key, p]));
+  const styles = gatefold.styles ?? [];
   // Comment-stripped, exactly as the renderer's own static scans read it — a
   // property proven by prose in a comment is not proven at all.
-  const code = coverStory.wgsl.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  const code = gatefold.wgsl.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 
   it("is registered under its persisted id", () => {
     // Preset ids are persisted forever (projects, looks, localStorage). This
     // is the one line that makes renaming it a deliberate, visible act.
-    expect(presets.map((p) => p.id)).toContain("cover-story");
-    expect(coverStory.id).toBe("cover-story");
+    expect(presets.map((p) => p.id)).toContain("gatefold");
+    expect(gatefold.id).toBe("gatefold");
   });
 
   it("samples the art through the shared cover ABI, gated on the toggle AND hasCover()", () => {
@@ -80,7 +80,7 @@ describe("cover-story", { timeout: 30_000 }, () => {
     // every time-dependent term (sway, waterline shimmer, grain seed) rides
     // u.time. A stray feedbackSample( would put the mode on the fixed-tick
     // state walk for nothing.
-    expect(presetUsesFeedback(coverStory)).toBe(false);
+    expect(presetUsesFeedback(gatefold)).toBe(false);
     expect(code).not.toMatch(/feedbackSample\s*\(/);
   });
 
@@ -88,7 +88,7 @@ describe("cover-story", { timeout: 30_000 }, () => {
     // Rotation sways the room drift, Pulse scales beat zoom/rim/flare,
     // Detail thins the skirt columns, and the skirt reads the spectrum
     // through binAt — all four masters honest.
-    expect(presetMasters(coverStory)).toEqual({
+    expect(presetMasters(gatefold)).toEqual({
       rotation: true,
       pulse: true,
       detail: true,
@@ -97,13 +97,13 @@ describe("cover-story", { timeout: 30_000 }, () => {
   });
 
   it("curates all seven lenses from params[], leaving the ABI untouched by curation", () => {
-    const groups = new Set(coverStory.params.map((p) => p.group));
+    const groups = new Set(gatefold.params.map((p) => p.group));
     for (const lens of ["shape", "color", "motion", "reaction", "glow", "backdrop", "image"]) {
       expect(groups.has(lens), `main tier missing ${lens}`).toBe(true);
     }
-    expect(coverStory.params.length).toBe(16);
-    expect(coverStory.advanced?.length).toBe(10);
-    expect((coverStory.advanced ?? []).every((s) => s.tier === undefined)).toBe(true);
+    expect(gatefold.params.length).toBe(16);
+    expect(gatefold.advanced?.length).toBe(10);
+    expect((gatefold.advanced ?? []).every((s) => s.tier === undefined)).toBe(true);
   });
 
   it("is never a blank canvas: floor lit, sleeve emblem on, by default", () => {
@@ -135,7 +135,7 @@ describe("cover-story", { timeout: 30_000 }, () => {
   });
 
   it("every option of every enum is exercised by a shipped look", () => {
-    for (const spec of allParams(coverStory)) {
+    for (const spec of allParams(gatefold)) {
       if (spec.control !== "enum") continue;
       const reached = new Set<number>([spec.default]);
       for (const style of styles) {
@@ -157,7 +157,7 @@ describe("cover-story", { timeout: 30_000 }, () => {
     expect(styles.length).toBeGreaterThanOrEqual(6);
     const comps = new Set(styles.map((s) => s.values.layout ?? 0));
     expect(comps).toEqual(new Set([0, 1, 2]));
-    const zooms = styles.map((s) => s.values.beatZoom ?? defaultParams(coverStory).beatZoom);
+    const zooms = styles.map((s) => s.values.beatZoom ?? defaultParams(gatefold).beatZoom);
     expect(Math.min(...zooms)).toBeLessThanOrEqual(0.1);
     expect(Math.max(...zooms)).toBeGreaterThanOrEqual(0.65);
   });
