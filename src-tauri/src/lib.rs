@@ -3,6 +3,7 @@ mod loopback;
 mod lyrics;
 #[cfg(windows)]
 mod midi_permission;
+mod perform_window;
 mod perfstats;
 mod prores;
 mod shadertoy;
@@ -187,6 +188,13 @@ pub fn run() {
             // denies requestMIDIAccess inside WebView2 (VERIFY-003 finding).
             // on_page_load, NOT setup: the window doesn't exist yet in setup.
             // Fires on every navigation; install exactly once.
+            //
+            // FEAT-009 decision: the performance window deliberately gets NO
+            // MIDI permission handler. The main window always loads first
+            // (the perform window is created by a user action from it), so
+            // the once-guard pins the handler to the operator webview; the
+            // perform page runs no MIDI code — operator controls stay on the
+            // primary display by design.
             #[cfg(windows)]
             {
                 use std::sync::atomic::{AtomicBool, Ordering};
@@ -213,11 +221,39 @@ pub fn run() {
         // chosen path, so it must die AND its partial output must go. Window
         // destruction is the reliable shutdown signal here (RunEvent::Exit
         // never fires for the plain `.run(ctx)` shape this app uses).
+        //
+        // Label-gated since FEAT-009: with a second (performance) window in
+        // the app, "any window destroyed" would have killed a running export
+        // ffmpeg the moment the OUTPUT window closed mid-show. The MAIN
+        // window's destruction is the app-shutdown signal; it also takes the
+        // performance window down with it so no orphan output survives the
+        // operator (the close-flush hold in store.ts delays main's destroy,
+        // not this). The performance window's own destruction only notifies
+        // the operator UI, which flips its state and stops the mirror.
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 use tauri::Manager;
-                lyrics::kill_running_job(&window.state::<lyrics::LyricsState>());
-                prores::kill_running_job(&window.state::<prores::ProresState>());
+                match window.label() {
+                    perform_window::MAIN_LABEL => {
+                        lyrics::kill_running_job(&window.state::<lyrics::LyricsState>());
+                        prores::kill_running_job(&window.state::<prores::ProresState>());
+                        if let Some(perform) = window
+                            .app_handle()
+                            .get_webview_window(perform_window::PERFORM_LABEL)
+                        {
+                            let _ = perform.destroy();
+                        }
+                    }
+                    perform_window::PERFORM_LABEL => {
+                        use tauri::Emitter;
+                        let _ = window.app_handle().emit_to(
+                            perform_window::MAIN_LABEL,
+                            "perform:closed",
+                            (),
+                        );
+                    }
+                    _ => {}
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -252,7 +288,14 @@ pub fn run() {
             lyrics::lyrics_generate,
             lyrics::lyrics_generate_cancel,
             lyrics::lyrics_align_line,
-            lyrics::debug_set_lyrics_models_dir
+            lyrics::debug_set_lyrics_models_dir,
+            perform_window::perform_monitors,
+            perform_window::perform_open,
+            perform_window::perform_set_fullscreen,
+            perform_window::perform_toggle_fullscreen,
+            perform_window::perform_escape,
+            perform_window::perform_close,
+            perform_window::perform_is_open
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
