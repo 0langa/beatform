@@ -1,0 +1,131 @@
+/* FEAT-009 — performance-output window. Deliberately NOT App.css: this
+ * window is a projection surface, and pulling the 3000-line app stylesheet
+ * in would couple its layout to operator-UI refactors. Everything it needs
+ * fits here. */
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+}
+
+.perform-root {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: none;
+  user-select: none;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+
+/* The letterbox: same container-query idiom as the app's .stage, so a
+ * fixed-aspect project letterboxes on any output shape. */
+.perform-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+}
+
+.perform-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.perform-stage.fixed-aspect .perform-canvas {
+  width: min(100cqw, calc(100cqh * var(--ar)));
+  height: min(100cqh, calc(100cqw / var(--ar)));
+}
+
+/* VJ cut — above everything, including the HUD. */
+.perform-blackout {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 60;
+}
+
+/* Preset-name flash on switch, opt-in via the drawer's HUD toggle. Same
+ * fade choreography as the primary's stage HUD. */
+.perform-hud {
+  position: fixed;
+  left: 50%;
+  bottom: 8%;
+  transform: translateX(-50%);
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  z-index: 55;
+  pointer-events: none;
+  animation: perform-hud-fade 1.6s ease forwards;
+}
+@keyframes perform-hud-fade {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  12%,
+  70% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Idle card while no primary window is feeding frames. Muted on purpose —
+ * this can be on a projector while the operator is still setting up. */
+.perform-waiting {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #555;
+  z-index: 40;
+}
+.perform-waiting-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #666;
+}
+.perform-waiting-text {
+  font-size: 13px;
+}
+
+.perform-warning {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  max-width: 60ch;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(40, 20, 0, 0.7);
+  color: #e0a860;
+  font-size: 12px;
+  z-index: 50;
+}
