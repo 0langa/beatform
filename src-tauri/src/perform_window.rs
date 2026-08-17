@@ -150,8 +150,17 @@ pub fn perform_monitors(app: AppHandle) -> Result<Vec<PerformMonitor>, String> {
 
 /// Open (or re-place) the performance window on the chosen monitor.
 /// Idempotent: an existing window is moved/fullscreened, never duplicated.
+///
+/// `async fn` on every command below that touches the window, deliberately:
+/// a synchronous command runs ON the main thread, and
+/// WebviewWindowBuilder::build() (plus tao's window setters) round-trips
+/// through the main-thread event loop — from the main thread that wait
+/// deadlocks the whole app (the documented Windows create-window-in-command
+/// rule; caught live by this lane's device harness, where perform_open hung
+/// the shell). Async commands run on the runtime's pool, where the
+/// round-trip is safe.
 #[tauri::command]
-pub fn perform_open(
+pub async fn perform_open(
     app: AppHandle,
     monitor: Option<usize>,
     fullscreen: bool,
@@ -185,7 +194,7 @@ pub fn perform_open(
 }
 
 #[tauri::command]
-pub fn perform_set_fullscreen(app: AppHandle, fullscreen: bool) -> Result<(), String> {
+pub async fn perform_set_fullscreen(app: AppHandle, fullscreen: bool) -> Result<(), String> {
     let window = app
         .get_webview_window(PERFORM_LABEL)
         .ok_or("performance window is not open")?;
@@ -194,7 +203,7 @@ pub fn perform_set_fullscreen(app: AppHandle, fullscreen: bool) -> Result<(), St
 
 /// Double-click on the output surface.
 #[tauri::command]
-pub fn perform_toggle_fullscreen(app: AppHandle) -> Result<(), String> {
+pub async fn perform_toggle_fullscreen(app: AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window(PERFORM_LABEL)
         .ok_or("performance window is not open")?;
@@ -207,7 +216,7 @@ pub fn perform_toggle_fullscreen(app: AppHandle) -> Result<(), String> {
 /// fires WindowEvent::Destroyed, which lib.rs turns into `perform:closed`
 /// for the operator UI.
 #[tauri::command]
-pub fn perform_escape(app: AppHandle) -> Result<(), String> {
+pub async fn perform_escape(app: AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window(PERFORM_LABEL)
         .ok_or("performance window is not open")?;
@@ -219,7 +228,7 @@ pub fn perform_escape(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn perform_close(app: AppHandle) -> Result<(), String> {
+pub async fn perform_close(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(PERFORM_LABEL) {
         window.close().map_err(|e| e.to_string())?;
     }
