@@ -11,6 +11,18 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- **Overgrowth — a new visual mode: the music grows a living thing.** A
+  real reaction-diffusion simulation — the chemistry behind coral,
+  lichen and fingerprints — runs live on your GPU, and the music feeds
+  it: bass sets how fast the culture spreads, kicks plant new seeds on
+  the beat, energy develops the color. Five forms (Coral, Mitosis,
+  Labyrinth, Polyps, Ripples) and six looks — Overgrowth, Reef, Lichen,
+  Sumi ink, Mitosis and Veins. It never sits still: quiet passages keep
+  the culture alive and growing, and every export replays the whole
+  growth from the first frame, so what renders is exactly what grew.
+
 ## [2.102.0] - 2026-08-17
 
 ### Added

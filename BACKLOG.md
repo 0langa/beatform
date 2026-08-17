@@ -3304,11 +3304,35 @@ was already decided; this section is where "what ships when" now lives.
   291→303: structural diff matched the lane's prediction EXACTLY —
   12 added, 1 changed (spectrum-scape/extreme/max, the enum edge),
   0 removed; the one changed case is the device confirming the enum
-  extension's only visible effect. Suite 2771. Follow-up queued:
-  beatform-app/gallery param-spec regen (17→19 presets) before any
-  new-mode look submission.
-- **2.103.0** — Fluid/reaction-diffusion (P-19 roster entry 5 — saved for
-  last, the most expensive).
+  extension's only visible effect. Suite 2771. Follow-up DONE
+  2026-08-17: beatform-app/gallery param-spec regen merged (PR #3,
+  17→19 presets, 18/18 live entries still validate, CI green) — and
+  needs one more additive regen (19→20) now that Overgrowth shipped.
+- **2.103.0 — SHIPPED 2026-08-17** — Overgrowth (P-19 roster entry 5,
+  the 20th mode and the roster's close): Gray-Scott reaction-diffusion
+  on the Spectro Falls feedback mechanism (FixedFeedbackClock, dt-gated
+  state, export = full replay from clip t=0 — measured 3.18 ms/tick,
+  ~34 s replay cost spread over a 3-min 30fps export). A/B chemicals
+  tile the feedback texture's alpha plane over a fixed 320×180 logical
+  grid, textureLoad exact-texel state reads (the filtered-sampler
+  stripe collapse was caught on device), R2 beat-indexed seeds,
+  virtual 100 BPM lattice keeps gridless tracks alive. 15+9 params
+  on-grid, 5 forms + 6 styles. Twin-renderer 600-tick bit-identity +
+  present-only-interlude bit-identity proven on device. Review
+  MERGEABLE-WITH-FIXES → F1 (docs-site mode count) + F2 (the
+  preview/export contract now names the stateful-feedback seek
+  carve-out for BOTH feedback modes) fixed pre-merge. Matrix 303→314,
+  exact prediction (11/0/0). Suite 2811.
+  **Review's inherited finding, filed here (F3): the live timeline
+  crossfade poisons the alpha data lane for every feedback preset** —
+  M14's fadeTexA→histTex copy stores the composited frame and
+  composite() replaces alpha in every branch, so a live fade INTO a
+  feedback mode feeds it corrupt state (SF: record reads full-loud for
+  a fade; Overgrowth: field collapses + regrows). Export path clean
+  (advance-only ticks skip the fade copy). Candidate fix half-exists:
+  the fps-cap path already advances correctly during fades
+  (services.ts advance-only). Not a 2.103.0 defect; schedule with the
+  next hardening pass.
 - **2.104.0** — FEAT-009 true second-display performance window + P-4
   Perform drawer, un-parked together as originally specified (P-4 is
   FEAT-009's operator console).
