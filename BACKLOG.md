@@ -3269,8 +3269,23 @@ was already decided; this section is where "what ships when" now lives.
   byte-identical runs), P-6 thumbnail capture script, plus the port-base
   collision fix the reviews surfaced (three scripts on 10220).
   **Track E and C5 both CLOSED** — no open threads left in either.
-- **2.101.0** — Lyric Stage (P-19 roster entry 2: typography/lyric-stage
-  mode, pairs with the lyrics engine).
+- **2.101.0 — SHIPPED 2026-08-17** — Lyric Stage (P-19 roster entry 2),
+  the 18th mode. Words reach the shader as the **lyric plate**: a
+  host-rasterized texture (new binding 12, cover-art lifecycle
+  pattern), pure function of (lines, quantized key) on the caption
+  compositor's own 1/64-fade + 1/32-fill grids, same key+compose pair
+  in both loops — no AudioFeatures change, no new census key
+  (`job.lyrics` was already TIME_BEARING; its caption-toggle gate
+  removed as redundant, verified consumer-by-consumer). 16 curated +
+  9 advanced params all on-grid, 6 looks, 3 anchors; degrades to a
+  type-specimen rehearsal when a track has no lyrics (never blank —
+  matrix extremes hold non-black). Adversarial review
+  MERGEABLE-WITH-FIXES → 4-fix round (chromatic fringe now honors
+  saturation via presetRgb desaturation, color-club enrollment,
+  real inverse round-trip test, stale-comment truth); device pass
+  found+fixed glow echo and rehearsal strobe pre-review. Two export
+  walks byte-identical (80/80 frame hashes). Matrix 280→291,
+  structural diff 0 removed / 0 changed / 11 added. Suite 2731.
 - **2.102.0** — Cover-art-first mode + waveform terrain (P-19 roster
   entries 3 and 4; waveform terrain is a spectrum-scape layout enum,
   ships cheaply alongside the larger cover-art-first work).

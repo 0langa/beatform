@@ -11,6 +11,20 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- **Lyric Stage — a new visual mode: the words take the stage.** A
+  typography-first visual built for the lyrics engine: the current line
+  stands as the centerpiece, filling word by word exactly as they're
+  sung — karaoke timing from the same word-level alignment your lyrics
+  already carry — while the previous and next lines wait in the wings.
+  The type itself plays the music: beats punch the weight, the bass
+  washes the floor, glow and chromatic edges ride the energy. Anchor it
+  center, lower-third or teleprompter-top; six looks ship with it —
+  Lyric Stage, Neon Marquee, Teleprompter, Stadium, Velvet and Ink.
+  No lyrics on the track? The stage rehearses: a type-specimen sweep
+  keeps the mode alive on any song, so it never sits blank.
+
 ## [2.100.0] - 2026-08-16
 
 ### Changed
