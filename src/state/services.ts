@@ -14,6 +14,8 @@ import { resolveActiveFrame, type FrameResolveInput } from "./frameResolve";
 import { presetById } from "../render/presets";
 import { BUILDER2_ID, currentBuilderStack, packBuilderFrame, sameF32 } from "../render/builder2";
 import { getPrefs, subscribePrefs } from "./prefs";
+import { performMirrorActive, publishPerformFrame } from "./performBridge";
+import type { FeedbackRenderMode } from "../render/types";
 import type { PlaybackState, SyncSettings } from "../audio/types";
 
 /**
@@ -379,6 +381,25 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       fadeFromPreset = null;
       lastBuilderPack = null;
     };
+    /**
+     * Re-arm the rAF starvation fallback. 300 ms keeps a hidden window's
+     * transport alive at negligible cost — but while the performance window
+     * mirror is ACTIVE (FEAT-009) the fallback IS the frame clock whenever
+     * rAF starves (operator minimizes the primary mid-show), so it tightens
+     * to ~60 Hz. Chromium exempts audibly-playing pages from background
+     * timer throttling, which is exactly the live-performance case; with no
+     * audio playing a minimized window still throttles to ~1 Hz, which is
+     * an accepted idle behavior, not a show-stopper.
+     */
+    const armFallback = () => {
+      fallback = setTimeout(
+        () => {
+          cancelAnimationFrame(raf);
+          loop(performance.now());
+        },
+        performMirrorActive() ? 16 : 300,
+      );
+    };
     const loop = (tMs: number) => {
       if (disposed) return;
       clearTimeout(fallback);
@@ -438,10 +459,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       // canonical 60 Hz ticks; those ticks render history offscreen below.
       if (capSkipped && !ana.feedbackTicked) {
         raf = requestAnimationFrame(loop);
-        fallback = setTimeout(() => {
-          cancelAnimationFrame(raf);
-          loop(performance.now());
-        }, 300);
+        armFallback();
         if (eng.playing && t - lastUiUpdate > 0.25 && !hooks.isSeeking()) {
           lastUiUpdate = t;
           hooks.onPlayback(eng.state);
@@ -457,10 +475,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         // rAF does not fire in a hidden window — so without this, pausing for a
         // batch in a backgrounded window kills the loop for good, and the
         // preview never comes back even after the batch finishes.
-        fallback = setTimeout(() => {
-          cancelAnimationFrame(raf);
-          loop(performance.now());
-        }, 300);
+        armFallback();
         if (eng.playing && t - lastUiUpdate > 0.25 && !hooks.isSeeking()) {
           lastUiUpdate = t;
           hooks.onPlayback(eng.state);
@@ -545,22 +560,38 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
           lastBuilderPack = packed;
         }
       }
-      renderer?.render(features, trackTime, frameParams, transition, {
-        feedback: capSkipped
-          ? "advance-only"
-          : ana.feedbackTicked
-            ? "advance-and-present"
-            : "present-only",
-      });
+      const feedbackMode: FeedbackRenderMode = capSkipped
+        ? "advance-only"
+        : ana.feedbackTicked
+          ? "advance-and-present"
+          : "present-only";
+      renderer?.render(features, trackTime, frameParams, transition, { feedback: feedbackMode });
+      // FEAT-009 mirror publish — the ONE bridge call site, fed the exact
+      // arguments the render call above consumed (feedback directive
+      // included, so capped advance-only ticks keep the mirror's texture-
+      // feedback state in lockstep). Inactive = one boolean check, no work.
+      if (performMirrorActive()) {
+        publishPerformFrame(
+          features,
+          trackTime,
+          rf.presetId,
+          frameParams,
+          rf.prev ? rf.prev.presetId : null,
+          transition ? transition.params : null,
+          transition ? transition.mix : 1,
+          transition ? transition.kind : 0,
+          rf.bg,
+          livePost,
+          rf.presetId === BUILDER2_ID ? lastBuilderPack : null,
+          feedbackMode,
+        );
+      }
       if (renderer && !capSkipped) presentedFrames++;
       if (capSkipped) {
         // State advanced offscreen; keep presentation cadence and UI cadence
         // exactly as before.
         raf = requestAnimationFrame(loop);
-        fallback = setTimeout(() => {
-          cancelAnimationFrame(raf);
-          loop(performance.now());
-        }, 300);
+        armFallback();
         if (eng.playing && t - lastUiUpdate > 0.25 && !hooks.isSeeking()) {
           lastUiUpdate = t;
           hooks.onPlayback(eng.state);
@@ -579,20 +610,15 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       }
       raf = requestAnimationFrame(loop);
       // rAF starves in hidden/occluded tabs; keep rendering (throttled by
-      // the browser to ~1fps) so background use and captures stay live
-      fallback = setTimeout(() => {
-        cancelAnimationFrame(raf);
-        loop(performance.now());
-      }, 300);
+      // the browser to ~1fps, or near-full rate while the mirror is live —
+      // see armFallback) so background use and captures stay live
+      armFallback();
     };
     raf = requestAnimationFrame(loop);
     // Arm the starvation fallback for the FIRST tick too: in a tab that is
     // hidden from launch (background window, capture setups), rAF never fires
     // at all — without this the loop would never start.
-    fallback = setTimeout(() => {
-      cancelAnimationFrame(raf);
-      loop(performance.now());
-    }, 300);
+    armFallback();
   })();
 
   // Stops THIS instance's own rAF loop / resize observer. A plain local
