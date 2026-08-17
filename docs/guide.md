@@ -29,7 +29,7 @@ One bit of vocabulary that comes up throughout the rest of this guide: a **Style
 
 ## Visual modes
 
-Eighteen modes live on the strip — from classic spectrum bars to 120k-particle flow fields, a full 3D bar city, a scrolling spectrogram that draws the whole song as it plays, and a lyric stage that puts the words themselves front and centre. Every mode except Builder, which stacks its own layers instead, has:
+Nineteen modes live on the strip — from classic spectrum bars to 120k-particle flow fields, a full 3D bar city, a scrolling spectrogram that draws the whole song as it plays, a lyric stage that puts the words themselves front and centre, and a gatefold that stages the track's own cover art. Every mode except Builder, which stacks its own layers instead, has:
 
 - **Styles** — six to fourteen curated one-click looks, in a row of chips at the top of the Mode page. The header above the page names the style you are on; the chip row reads _Custom_ once you move a control away from it.
 - **Grouped controls** — Shape, Color, Motion, Reaction, Glow, Image, Camera, Backdrop, and _More_ for anything that fits none of them. Every group a visual uses is on the page, and each one leads with the handful of controls that change the look.
@@ -37,9 +37,9 @@ Eighteen modes live on the strip — from classic spectrum bars to 120k-particle
 
 Hover any control to see a plain-language hint in the Visuals footer. The search box at the top of Visuals finds any control by name, across every page of the dock — expert controls included, whether their line is open or not.
 
-### Center images
+### Cover art and center images
 
-Bass Circle and Radial Burst can display artwork in their center: by default the track's embedded cover art, or any image you choose (look for _Center image_ in the Image group on the Mode page). Both also carry a _Match cover colors_ toggle, which reads the dominant color of that artwork and sets Hue and Hue spread to fit — automatically again for every new track. Two more modes use cover art their own way: Tunnel can paper the tunnel wall with it (the **Cover wall** control), and Echo Trails can use it as the shape it echoes (**Source shape**).
+The **Gatefold** mode makes the artwork the whole show: the track's cover framed on a lit stage — the room glows in the art's own colors, the floor mirrors it back, and a spectrum skirt runs along the bottom. A track with no artwork gets a generated abstract sleeve instead, so the stage is never empty. Bass Circle and Radial Burst display artwork in their center: by default the track's embedded cover art, or any image you choose (look for _Center image_ in the Image group on the Mode page — Gatefold takes one too). All three carry a _Match cover colors_ toggle, which reads the dominant color of that artwork and sets Hue and Hue spread to fit — automatically again for every new track. Two more modes use cover art their own way: Tunnel can paper the tunnel wall with it (the **Cover wall** control), and Echo Trails can use it as the shape it echoes (**Source shape**).
 
 ### Your own shaders
 

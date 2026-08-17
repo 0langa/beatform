@@ -112,7 +112,7 @@ export const GUIDE: readonly GuideSection[] = [
     blocks: [
       {
         p: [
-          "Eighteen modes live on the strip — from classic spectrum bars to 120k-particle flow fields, a full 3D bar city, a scrolling spectrogram that draws the whole song as it plays, and a lyric stage that puts the words themselves front and centre. Every mode except Builder, which stacks its own layers instead, has:",
+          "Nineteen modes live on the strip — from classic spectrum bars to 120k-particle flow fields, a full 3D bar city, a scrolling spectrogram that draws the whole song as it plays, a lyric stage that puts the words themselves front and centre, and a gatefold that stages the track's own cover art. Every mode except Builder, which stacks its own layers instead, has:",
         ],
       },
       {
@@ -148,12 +148,14 @@ export const GUIDE: readonly GuideSection[] = [
           "Hover any control to see a plain-language hint in the Visuals footer. The search box at the top of Visuals finds any control by name, across every page of the dock — expert controls included, whether their line is open or not.",
         ],
       },
-      { h4: "Center images" },
+      { h4: "Cover art and center images" },
       {
         p: [
-          "Bass Circle and Radial Burst can display artwork in their center: by default the track's embedded cover art, or any image you choose (look for ",
+          "The ",
+          { strong: "Gatefold" },
+          " mode makes the artwork the whole show: the track's cover framed on a lit stage — the room glows in the art's own colors, the floor mirrors it back, and a spectrum skirt runs along the bottom. A track with no artwork gets a generated abstract sleeve instead, so the stage is never empty. Bass Circle and Radial Burst display artwork in their center: by default the track's embedded cover art, or any image you choose (look for ",
           { em: "Center image" },
-          " in the Image group on the Mode page). Both also carry a ",
+          " in the Image group on the Mode page — Gatefold takes one too). All three carry a ",
           { em: "Match cover colors" },
           " toggle, which reads the dominant color of that artwork and sets Hue and Hue spread to fit — automatically again for every new track. Two more modes use cover art their own way: Tunnel can paper the tunnel wall with it (the ",
           { strong: "Cover wall" },
