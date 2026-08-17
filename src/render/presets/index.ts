@@ -11,6 +11,7 @@ import { metaballs } from "./metaballs";
 import { ledMatrix } from "./ledMatrix";
 import { spectroFalls } from "./spectroFalls";
 import { lyricStage } from "./lyricStage";
+import { coverStory } from "./coverStory";
 import { voiceOrb } from "./voiceOrb";
 import { echoTrails } from "./echoTrails";
 import { particleFlow } from "./particleFlow";
@@ -39,6 +40,7 @@ export const presets: PresetDef[] = [
   bassCircle,
   spectroFalls,
   lyricStage,
+  coverStory,
   // ONE Builder on the strip (the layer compositor);
   // rendering resolves through presetById -> currentBuilder2Def().
   currentBuilder2Def(),
