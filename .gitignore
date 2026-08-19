@@ -50,3 +50,6 @@ src-tauri/binaries/lyrics-sidecar-*.exe
 
 # agent skill drafts (untracked, under review)
 /.claude/skills-draft/
+
+# local planning docs (owner-private, never tracked)
+/archive/local-planning/

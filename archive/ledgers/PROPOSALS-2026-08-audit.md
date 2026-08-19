@@ -1,3 +1,11 @@
+> [!IMPORTANT]
+> **ARCHIVED 2026-08-20 — historical record, frozen.** Every row in this file
+> is terminal (shipped, closed, rejected, superseded, or by-design gated) as of
+> v2.104.2. Do NOT reopen, re-derive, or work rows from this file. The LIVE
+> ledger is [/BACKLOG.md](../../BACKLOG.md) — it carries the only open items
+> and links back here for history. If an archived row seems to contradict the
+> live ledger or the code, the live ledger and code win.
+
 # PROPOSALS — the opinionated half of the 2026-08 quality audit
 
 This file is deliberately separate from `BACKLOG.md`: the ledger holds
