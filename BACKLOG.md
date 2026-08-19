@@ -3388,6 +3388,43 @@ was already decided; this section is where "what ships when" now lives.
   acceptance matrix (7 written steps in the lane report — this machine
   has one display); FEAT-009's hardware acceptance gate is otherwise
   device-proven (17/17 lifecycle checks).
+  **DUAL-MONITOR MATRIX — PROGRAMMATIC LEGS PASSED 2026-08-19** on a
+  real second display (DISPLAY2 1920×1080 @1.0x beside the primary
+  2160×1440 @1.5x — a natural mixed-DPI pair): monitor enumeration
+  reports both with correct physical coords + scale; the perform
+  window lands EXACTLY on DISPLAY2's left edge across the DPI boundary
+  (logical x=1440 = physical 2160); fullscreen fills 1920×1080 at
+  native devicePixelRatio 1 (sharpness by construction); real frames
+  flow on the output with a playing track (canvas sampled twice,
+  differs); Esc ladder fullscreen→windowed(532×398)→closed; reopen
+  re-syncs; drawer close clean. Evidence:
+  `F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\feat009-matrix-2026-08-19\`
+  (RESULT.json + screenshots of both windows). REMAINING FOR EYES
+  ONLY: hotplug yank/replug, long-session frame-stability impression,
+  subjective sharpness — the steps needing hands or taste, not
+  instrumentation.
+  **FEAT-004 cold-boot retest — INSTRUMENTED HALF DONE 2026-08-19**
+  (cold machine, real library track "Adele – Set Fire to the Rain"):
+  generation 2:45 total cold (isolate 78 s → transcribe 70 s → align
+  15 s), stage transitions instant (the 2.99.0 fix observed live),
+  ETAs converge honestly, 30 lines / 356 words with per-word
+  confidences, and the measured-RTF learning PERSISTS (second run
+  blended isolateDml 0.36 / whisperSmall 0.29 / align 0.06 into
+  prefs — round-trip proven; an initial null read was the harness
+  killing the webview before localStorage flushed, plus a wrong probe
+  key). Evidence: `artifacts\feat004-cold-2026-08-19\` +
+  `feat004-warm-2026-08-19\`. REMAINING: the owner's subjective
+  word-timing/feel verdict on screen.
+  **midi-e2e RE-PROVEN on device 2026-08-19** (post-TAURI_WARMUP-fix,
+  loopMIDI): permission, discovery, CC learn, exactly-once apply,
+  note apply, reconnect without duplicate handlers — all pass.
+  **VERIFY-002 STAGED 2026-08-19**: free Resolve blocks external
+  scripting by default (UI preference), so the NLE import stays a
+  ~3-minute owner step — everything staged + written at
+  `artifacts\verify002-2026-08-19\OWNER-STEPS.md` (byte-verified
+  ProRes file + red contrast clip + click path + the one-time
+  "External scripting: Local" pref flip that unlocks scripted Resolve
+  for future sessions).
 - **Outreach-kit lane, parallel, no release** — launch-kit materials
   (copy, screenshots, post drafts) get prepared for community
   seeding/outreach starting now. This lane never ships a version bump on
