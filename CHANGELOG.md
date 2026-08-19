@@ -11,6 +11,19 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pausing freezes the picture — all of it, honestly.** Modes with
+  memory (Spectro Falls' record, Overgrowth's culture, Echo Trails and
+  the other trail effects) kept running on the wall clock while
+  playback was paused: the waterfall drained itself empty within
+  seconds, cultures kept churning, trails faded out. Paused now means
+  held — the record keeps every slice, the culture holds its shape,
+  trails stay put — and everything continues exactly where it left off
+  on resume. This also matches what an export of the same moment
+  renders. (Reaching the natural end of a track now holds the picture
+  the same way instead of quietly draining it.)
+
 ## [2.104.1] - 2026-08-19
 
 ### Fixed

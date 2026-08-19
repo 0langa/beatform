@@ -3339,12 +3339,31 @@ was already decided; this section is where "what ships when" now lives.
   flat dead field), gone post-fix (fade-built state within
   uninterrupted-walk run-to-run variance). 10 new tests, red 6/10 on
   shipped code. Matrix 314/314 zero changes post-merge.
-  **NEW FINDING from the F3 lane, filed for the next hardening pass:
-  paused playback drains feedback state** — `feedbackTicked` is
-  wall-clock driven, so paused frames advance SF/OG at frozen track
-  time (SF's record visibly drains within ~3 s of pausing;
-  device-confirmed). Same determinism family; session chip filed with
-  pointers.
+  **NEW FINDING from the F3 lane — FIXED 2026-08-19 (2.104.2):
+  paused playback drained feedback state** (`feedbackTicked` was
+  wall-clock driven; SF's record drained empty in ~3 s of pause).
+  Fix (`3616de0`, owner-launched chip): one-line gate at the analyzer
+  — `lastUpdateTicked = analysisTick && playing` — where
+  `engine.playing` (`_playing || liveNode`) settles every carve-out by
+  construction: live capture always ticks, natural track END now holds
+  instead of draining (same defect, fixed free), a paused seek can
+  never leak an advance (the contract's seek carve-out preserved), A-B
+  wraps never freeze (native loop, `_playing` never flips), the
+  perform mirror inherits via replayed directives (degrade can never
+  invent an advance). Detector/meter decay deliberately NOT gated —
+  paused meters still decay honestly; only feedback state holds. All
+  six feedback presets (SF, Overgrowth, Echo Trails, Oscilloscope
+  phosphor, Metaballs smear, LED Matrix ghost/waterfall) inherit hold
+  uniformly. Review truth-tabled the getter across every transition
+  incl. auto-advance and export suppression: MERGEABLE, zero fix
+  rounds. Red-first with exact defect counts (paused 180→0 advances);
+  device: byte-identical paused screenshots 10 s apart, resume clean,
+  paused fps-cap path now does strictly LESS background GPU work.
+  Renderer byte-untouched (F3 discipline); matrix structurally
+  unaffected (audio-side caller change, GATES §3). Suite 2872.
+  Non-blocking follow-ups noted in review: fps-cap+paused combined
+  unit test, live-capture async-setup window test — both pre-existing
+  coverage gaps adjacent to, not introduced by, the fix.
 - **2.104.0 — SHIPPED 2026-08-19** — FEAT-009 second-display
   performance window + P-4 Perform drawer, un-parked together as
   specified. Render-mirror architecture: one engine/analyzer/store; the
