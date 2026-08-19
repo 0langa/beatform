@@ -133,6 +133,13 @@ async function invokePerform<T>(cmd: string, args?: Record<string, unknown>): Pr
   return invoke<T>(cmd, args);
 }
 
+/** Double-open dedupe (review F3): a queued double-click (or D + drawer
+ * button) fires openPerformWindow twice before the first invoke settles.
+ * The Rust side tolerates the duplicate-label race too (perform_open adopts
+ * the winner's window); this guard just stops the second IPC round-trip
+ * from ever leaving. Module state, same idiom as galleryActions' timers. */
+let openInFlight = false;
+
 export function performActions(set: SetFn, get: GetFn, _ctx: SliceCtx) {
   return {
     setShowPerform(v: boolean) {
@@ -166,6 +173,8 @@ export function performActions(set: SetFn, get: GetFn, _ctx: SliceCtx) {
         });
         return;
       }
+      if (openInFlight) return;
+      openInFlight = true;
       try {
         const prefs = getPrefs();
         await invokePerform("perform_open", {
@@ -176,6 +185,8 @@ export function performActions(set: SetFn, get: GetFn, _ctx: SliceCtx) {
         // (initApp's listener) — the Rust window is the source of truth.
       } catch (e) {
         set({ error: `Could not open the performance window: ${String(e)}` });
+      } finally {
+        openInFlight = false;
       }
     },
 

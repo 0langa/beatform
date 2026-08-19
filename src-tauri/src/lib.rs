@@ -30,12 +30,45 @@ const AUDIO_EXTS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"]
 /// Backstop against scanning a whole drive by accident; the UI says so when hit.
 const MAX_TRACKS: usize = 5000;
 
+/// FEAT-009 hardening: app commands are not capability-gated, so with the
+/// performance window in the app EVERY registered command became callable
+/// from a second webview that exists only to draw pixels. The capability
+/// file already denies it all plugin/core surface (fs, dialog, updater);
+/// this guard closes the app-command half for the categories that matter —
+/// anything that spawns a process (ffmpeg, the lyrics sidecar, loopback
+/// capture) or reads/writes through the app-global fs scope. Read-only
+/// telemetry (perf_stats, disk_space, transpile_shadertoy) and the
+/// perform_* window-management family stay intentionally open.
+///
+/// Guarded commands take `window: tauri::WebviewWindow` as their first
+/// parameter (injected by the IPC layer, invisible to the JS callers) and
+/// call this first. The label-string core is split out so the policy is
+/// unit-testable without a window handle.
+pub(crate) fn assert_main_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+    main_only_label(window.label())
+}
+
+fn main_only_label(label: &str) -> Result<(), String> {
+    if label == perform_window::MAIN_LABEL {
+        Ok(())
+    } else {
+        Err(format!(
+            "this command is only available to the main window (called from '{label}')"
+        ))
+    }
+}
+
 /// DEBUG BUILDS ONLY: widen the fs scope to one explicit file path, standing
 /// in for the save dialog's `allow_file` so the E2E harness can drive the
 /// sidecar export lanes headlessly. Compiled to a hard error in release —
 /// the dialog stays the only scope-widening path users ever run.
 #[tauri::command]
-fn debug_allow_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
+fn debug_allow_path(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<(), String> {
+    assert_main_window(&window)?;
     #[cfg(debug_assertions)]
     {
         app.fs_scope()
@@ -59,7 +92,12 @@ fn debug_allow_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
 /// filesystem-inventory primitive available to any script running in the
 /// webview.
 #[tauri::command]
-fn scan_audio_library(app: tauri::AppHandle, dir: String) -> Result<Vec<LibraryTrack>, String> {
+fn scan_audio_library(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    dir: String,
+) -> Result<Vec<LibraryTrack>, String> {
+    assert_main_window(&window)?;
     let root = std::path::Path::new(&dir);
     if !app.fs_scope().is_allowed(root) {
         return Err(format!("Folder not permitted: {dir}"));
@@ -131,7 +169,12 @@ fn scan_dir(root: &std::path::Path) -> Result<Vec<LibraryTrack>, String> {
 /// compromised renderer invents on its own does not — the error names the
 /// path.
 #[tauri::command]
-fn show_in_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+fn show_in_folder(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<(), String> {
+    assert_main_window(&window)?;
     if !app.fs_scope().is_allowed(std::path::Path::new(&path)) {
         return Err(format!("Path not permitted: {path}"));
     }
@@ -327,6 +370,20 @@ mod tests {
     #[test]
     fn scan_rejects_non_directories() {
         assert!(scan_dir(std::path::Path::new("Z:/definitely/not/a/dir")).is_err());
+    }
+
+    #[test]
+    fn main_window_guard_rejects_every_other_label() {
+        // FEAT-009 hardening: process-spawning / fs-scope commands are
+        // main-window-only. The performance window is the label that exists
+        // today; the guard must also hold for any window a future feature
+        // (or a bug) might mint.
+        assert!(main_only_label(perform_window::MAIN_LABEL).is_ok());
+        let err = main_only_label(perform_window::PERFORM_LABEL).unwrap_err();
+        assert!(err.contains("perform"), "error names the caller: {err}");
+        assert!(main_only_label("").is_err());
+        assert!(main_only_label("main2").is_err());
+        assert!(main_only_label("Main").is_err()); // labels are case-sensitive
     }
 
     #[test]

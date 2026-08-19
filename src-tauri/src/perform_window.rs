@@ -3,11 +3,21 @@
 //! render mirror (see src/perform/ on the frontend); everything here is
 //! lifecycle.
 //!
-//! Ownership model: the RUST side owns the window. The frontend never gets
-//! window-management ACL grants — the perform webview has NO capability
-//! entry at all, and both windows drive lifecycle exclusively through these
-//! app commands (app commands are not capability-gated; the perform window
-//! can therefore ask to close itself, but cannot touch fs/dialog/updater).
+//! Ownership model: the RUST side owns the window, and both windows drive
+//! lifecycle exclusively through these app commands.
+//!
+//! Security model of the perform webview, stated precisely (review F2):
+//! - PLUGIN/CORE surface (fs, dialog, updater, window ops): denied — the
+//!   capability file has no entry for the "perform" label.
+//! - App commands are NOT capability-gated, so every registered command is
+//!   reachable from this webview's IPC. The ones that spawn processes or
+//!   read/write through the app-global fs scope (the prores/av1/anim
+//!   family, the lyrics family, loopback start/stop, scan_audio_library,
+//!   show_in_folder, the debug scope-wideners) therefore carry
+//!   `crate::assert_main_window` and refuse any non-main label.
+//! - The rest — read-only telemetry (perf_stats, disk_space,
+//!   transpile_shadertoy) and this perform_* family — stays intentionally
+//!   open, which is what lets the output window Esc itself closed.
 //!
 //! Positioning is done in PHYSICAL coordinates end to end. Mixed-DPI setups
 //! are exactly where logical math goes wrong: a logical position is relative
@@ -173,7 +183,7 @@ pub async fn perform_open(
         return Ok(());
     }
 
-    let window = tauri::WebviewWindowBuilder::new(
+    let built = tauri::WebviewWindowBuilder::new(
         &app,
         PERFORM_LABEL,
         tauri::WebviewUrl::App("index.html".into()),
@@ -185,8 +195,22 @@ pub async fn perform_open(
     // The operator keeps keyboard focus (mode keys, blackout) — the output
     // window never steals it on open.
     .focused(false)
-    .build()
-    .map_err(|e| e.to_string())?;
+    .build();
+    let window = match built {
+        Ok(w) => w,
+        // Double-open race (review F3): two rapid opens both pass the
+        // exists-check above; the loser's build() fails on the duplicate
+        // label AFTER the winner created the window. That is success, not
+        // an error — adopt the winner's window and place it. Only when no
+        // window exists either is the failure real.
+        Err(e) => match app.get_webview_window(PERFORM_LABEL) {
+            Some(existing) => {
+                place(&existing, target.as_ref(), fullscreen)?;
+                return Ok(());
+            }
+            None => return Err(e.to_string()),
+        },
+    };
     place(&window, target.as_ref(), fullscreen)?;
     window.show().map_err(|e| e.to_string())?;
     let _ = app.emit_to(MAIN_LABEL, "perform:opened", ());

@@ -1,15 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildPerformAssets,
   buildPerformLive,
   buildPerformScene,
   monitorLabel,
+  performActions,
   performAssetsSig,
   performLiveSig,
   performSceneSig,
   sameSig,
   type PerformMonitorInfo,
 } from "./performActions";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(() => Promise.resolve()) }));
 import { BG_IMAGE, BG_VIDEO, DEFAULT_MOTION } from "../../render/types";
 import type { VizState } from "../store";
 
@@ -123,6 +126,34 @@ describe("perform change signatures", () => {
     expect(sameSig(performAssetsSig(s1), performAssetsSig(s4))).toBe(false);
     expect(sameSig(performLiveSig(s1), performLiveSig(s4))).toBe(true);
     expect(sameSig(performSceneSig(s1), performSceneSig(s4))).toBe(true);
+  });
+});
+
+describe("openPerformWindow double-open dedupe (review F3)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("a second call while the first invoke is in flight never leaves JS", async () => {
+    // Desktop context for isTauri(); node env has no window at all.
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+    const { invoke } = await import("@tauri-apps/api/core");
+    const set = vi.fn();
+    const get = vi.fn();
+    const actions = performActions(set as never, get as never, {} as never);
+
+    // Queued double-click: both calls fire before the first settles. The
+    // in-flight flag is taken SYNCHRONOUSLY, before any await, so the
+    // second call must return without its own IPC round-trip.
+    const p1 = actions.openPerformWindow();
+    const p2 = actions.openPerformWindow();
+    await Promise.all([p1, p2]);
+    expect(invoke).toHaveBeenCalledTimes(1);
+
+    // Not a permanent latch: once settled, opening again works.
+    await actions.openPerformWindow();
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(set).not.toHaveBeenCalled(); // no error surfaced anywhere
   });
 });
 

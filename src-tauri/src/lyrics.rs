@@ -253,9 +253,11 @@ pub struct ModelsState {
 /// can be re-run explicitly via lyrics_model_verify.
 #[tauri::command]
 pub fn lyrics_models_state(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, LyricsState>,
 ) -> Result<ModelsState, String> {
+    crate::assert_main_window(&window)?;
     let dir = models_dir(&app, &state)?;
     let models = MODELS
         .iter()
@@ -318,10 +320,12 @@ fn sha256_file(path: &Path) -> Result<String, String> {
 /// this; the UI uses it for a "verify" affordance on suspicion.
 #[tauri::command(async)]
 pub fn lyrics_model_verify(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, LyricsState>,
     id: String,
 ) -> Result<bool, String> {
+    crate::assert_main_window(&window)?;
     let spec = spec_by_id(&id)?;
     let path = models_dir(&app, &state)?.join(spec.file_name);
     if !path.is_file() {
@@ -332,10 +336,12 @@ pub fn lyrics_model_verify(
 
 #[tauri::command]
 pub fn lyrics_model_remove(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, LyricsState>,
     id: String,
 ) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let spec = spec_by_id(&id)?;
     let dir = models_dir(&app, &state)?;
     for name in [
@@ -351,8 +357,13 @@ pub fn lyrics_model_remove(
 }
 
 #[tauri::command]
-pub fn lyrics_download_cancel(state: tauri::State<'_, LyricsState>) {
+pub fn lyrics_download_cancel(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, LyricsState>,
+) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     state.download_cancel.store(true, Ordering::SeqCst);
+    Ok(())
 }
 
 /// RAII guard so the one-download-at-a-time flag can never stay stuck on an
@@ -369,11 +380,13 @@ impl Drop for DownloadGuard<'_> {
 /// `{"id","received","total"}`. Cancel keeps the .part for a later resume.
 #[tauri::command]
 pub async fn lyrics_model_download(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, LyricsState>,
     id: String,
     on_progress: tauri::ipc::Channel<String>,
 ) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let spec = *spec_by_id(&id)?;
     if state.downloading.swap(true, Ordering::SeqCst) {
         return Err("A model download is already running".into());
@@ -504,7 +517,11 @@ fn drop_stale_staging(state: &LyricsState) {
 }
 
 #[tauri::command]
-pub fn lyrics_audio_begin(state: tauri::State<'_, LyricsState>) -> Result<(), String> {
+pub fn lyrics_audio_begin(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, LyricsState>,
+) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     drop_stale_staging(&state);
     let (f, path) = crate::prores::create_temp_new("lyrics-audio.wav")?;
     *state.staging.lock().map_err(|_| "state poisoned")? = Some((f, path));
@@ -513,9 +530,11 @@ pub fn lyrics_audio_begin(state: tauri::State<'_, LyricsState>) -> Result<(), St
 
 #[tauri::command]
 pub fn lyrics_audio_chunk(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, LyricsState>,
     request: tauri::ipc::Request<'_>,
 ) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
         return Err("expected raw audio body".into());
     };
@@ -527,7 +546,11 @@ pub fn lyrics_audio_chunk(
 }
 
 #[tauri::command]
-pub fn lyrics_audio_end(state: tauri::State<'_, LyricsState>) -> Result<(), String> {
+pub fn lyrics_audio_end(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, LyricsState>,
+) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let mut guard = state.staging.lock().map_err(|_| "state poisoned")?;
     let Some((f, path)) = guard.take() else {
         return Err("No audio staging in progress — call lyrics_audio_begin first".into());
@@ -707,9 +730,11 @@ mod proc_tree {
 /// Drives the honest time estimate BEFORE any model download.
 #[tauri::command(async)]
 pub fn lyrics_gpu_probe(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, LyricsState>,
 ) -> Result<bool, String> {
+    crate::assert_main_window(&window)?;
     if let Some(cached) = *state.gpu_probe.lock().map_err(|_| "state poisoned")? {
         return Ok(cached);
     }
@@ -829,9 +854,11 @@ const CANCEL_KILL_GRACE: Duration = Duration::from_secs(10);
 /// nothing is running.
 #[tauri::command]
 pub fn lyrics_generate_cancel(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, LyricsState>,
 ) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let wrote = {
         let mut guard = state.job_stdin.lock().map_err(|_| "state poisoned")?;
         match guard.as_mut() {
@@ -932,6 +959,7 @@ fn claim_job_slot(state: &LyricsState) -> Result<MutexGuard<'_, Option<LyricsJob
 #[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn lyrics_generate(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, LyricsState>,
     whisper_model_id: String,
@@ -939,6 +967,7 @@ pub fn lyrics_generate(
     language: String,
     on_event: tauri::ipc::Channel<String>,
 ) -> Result<String, String> {
+    crate::assert_main_window(&window)?;
     // Model + input preconditions, all BEFORE any spawn.
     let whisper_spec = spec_by_id(&whisper_model_id)?;
     if !whisper_spec.role.starts_with("whisper") {
@@ -1172,6 +1201,7 @@ pub struct AlignedWordOut {
 /// lyrics_generate_cancel / app shutdown reach this child too.
 #[tauri::command(async)]
 pub fn lyrics_align_line(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, LyricsState>,
     line_t: f64,
@@ -1179,6 +1209,7 @@ pub fn lyrics_align_line(
     text: String,
     use_gpu: bool,
 ) -> Result<Vec<AlignedWordOut>, String> {
+    crate::assert_main_window(&window)?;
     // The text reaches a child argv: normalize whitespace and bound it.
     // (No shell involved — std::process quotes — but a 10 kB argv or
     // embedded newlines have no business in a lyric line either way.)
@@ -1392,9 +1423,11 @@ pub fn lyrics_align_line(
 /// Compiled to a hard error in release, exactly like debug_allow_path.
 #[tauri::command]
 pub fn debug_set_lyrics_models_dir(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, LyricsState>,
     dir: String,
 ) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     #[cfg(debug_assertions)]
     {
         *state

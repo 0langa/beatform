@@ -405,7 +405,11 @@ fn drop_stale_audio(state: &ProresState) {
 /// arrives in chunks (`prores_audio_chunk`) and is sealed by
 /// `prores_audio_end`; a fresh begin replaces any stale staging.
 #[tauri::command]
-pub fn prores_audio_begin(state: tauri::State<'_, ProresState>) -> Result<(), String> {
+pub fn prores_audio_begin(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, ProresState>,
+) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     drop_stale_audio(&state);
     // create_new + explicit writes, NOT fs::write: the latter truncates
     // through a symlink planted at this predictable path. See create_temp_new.
@@ -420,9 +424,11 @@ pub fn prores_audio_begin(state: tauri::State<'_, ProresState>) -> Result<(), St
 /// Append one chunk of the WAV being staged (raw body).
 #[tauri::command]
 pub fn prores_audio_chunk(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, ProresState>,
     request: tauri::ipc::Request<'_>,
 ) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
         return Err("expected raw audio body".into());
     };
@@ -438,7 +444,11 @@ pub fn prores_audio_chunk(
 
 /// Seal the staged WAV; `prores_begin` consumes it.
 #[tauri::command]
-pub fn prores_audio_end(state: tauri::State<'_, ProresState>) -> Result<(), String> {
+pub fn prores_audio_end(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, ProresState>,
+) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let mut guard = state
         .pending_wav_file
         .lock()
@@ -527,6 +537,7 @@ fn prores_begin_guards(
 /// av1_begin below.
 #[tauri::command]
 pub fn prores_begin(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, ProresState>,
     fps: u32,
@@ -534,6 +545,7 @@ pub fn prores_begin(
     height: u32,
     out_path: String,
 ) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let mut job_guard = state.job.lock().map_err(|_| "state poisoned")?;
     let out = PathBuf::from(&out_path);
     // ONE rejection point, so the cleanup cannot be forgotten. Every guard runs
@@ -597,6 +609,7 @@ pub fn prores_begin(
 /// spawn time.
 #[tauri::command]
 pub fn av1_begin(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, ProresState>,
     fps: u32,
@@ -604,6 +617,7 @@ pub fn av1_begin(
     height: u32,
     out_path: String,
 ) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let mut job_guard = state.job.lock().map_err(|_| "state poisoned")?;
     let out = PathBuf::from(&out_path);
     // ONE rejection point paired with ONE cleanup, same as prores_begin: the
@@ -656,12 +670,14 @@ pub fn av1_begin(
 /// same prores_write/finish/abort commands — one sidecar session at a time.
 #[tauri::command]
 pub fn anim_begin(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, ProresState>,
     format: String,
     fps: u32,
     out_path: String,
 ) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let mut job_guard = state.job.lock().map_err(|_| "state poisoned")?;
     if job_guard.is_some() {
         return Err("A sidecar export is already running".into());
@@ -695,9 +711,11 @@ pub fn anim_begin(
 /// never block `prores_abort`. See ProresState::stdin.
 #[tauri::command(async)]
 pub fn prores_write(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, ProresState>,
     request: tauri::ipc::Request<'_>,
 ) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
         return Err("expected raw frame body".into());
     };
@@ -834,7 +852,11 @@ fn await_finalize(job: &Mutex<Option<ProresJob>>, timeout: Duration) -> Result<F
 /// multi-GB ProRes movie or running GIF `paletteuse`. As a blocking command
 /// that ran inline on the IPC handler and froze the UI.
 #[tauri::command(async)]
-pub fn prores_finish(state: tauri::State<'_, ProresState>) -> Result<(), String> {
+pub fn prores_finish(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, ProresState>,
+) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     {
         // Don't close the pipe of a session that isn't there.
         let guard = state.job.lock().map_err(|_| "state poisoned")?;
@@ -887,7 +909,11 @@ pub fn prores_finish(state: tauri::State<'_, ProresState>) -> Result<(), String>
 /// one. When that happens the finish call sees the job gone and reports the
 /// cancel rather than claiming success.
 #[tauri::command(async)]
-pub fn prores_abort(state: tauri::State<'_, ProresState>) -> Result<(), String> {
+pub fn prores_abort(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, ProresState>,
+) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let mut guard = state.job.lock().map_err(|_| "state poisoned")?;
     if let Some(mut job) = guard.take() {
         let _ = job.child.kill();

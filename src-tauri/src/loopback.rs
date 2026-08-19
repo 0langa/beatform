@@ -212,9 +212,11 @@ fn admit_start(guard: &mut Option<mpsc::Sender<()>>, dead: &AtomicBool) -> Resul
 
 #[tauri::command]
 pub fn start_loopback(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, LoopbackCtl>,
     on_samples: Channel<String>,
 ) -> Result<LoopbackInfo, String> {
+    crate::assert_main_window(&window)?;
     let mut guard = state.inner.lock().map_err(|_| "loopback state poisoned")?;
     admit_start(&mut guard, &state.dead)?;
 
@@ -324,7 +326,11 @@ pub fn start_loopback(
 }
 
 #[tauri::command]
-pub fn stop_loopback(state: tauri::State<'_, LoopbackCtl>) -> Result<(), String> {
+pub fn stop_loopback(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, LoopbackCtl>,
+) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
     let mut guard = state.inner.lock().map_err(|_| "loopback state poisoned")?;
     state.dead.store(false, Ordering::SeqCst);
     if let Some(tx) = guard.take() {
