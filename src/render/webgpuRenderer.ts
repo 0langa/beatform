@@ -2551,14 +2551,12 @@ export class WebGPURenderer implements Renderer {
       this.device.createTexture({
         size: [w, h],
         format: SCENE_FORMAT,
-        // COPY_SRC: a feedback preset crossfading IN copies its own fresh
-        // fadeTexA output into histTex every frame during the fade (see the
-        // `fading` branch of render()), so its trail keeps evolving instead
-        // of freezing for the whole transition and snapping after (M14).
-        usage:
-          GPUTextureUsage.RENDER_ATTACHMENT |
-          GPUTextureUsage.TEXTURE_BINDING |
-          GPUTextureUsage.COPY_SRC,
+        // Presentation-only targets: drawn and sampled, never copied. M14's
+        // fadeTexA -> histTex copy needed COPY_SRC here; F3 removed that
+        // copy (composited fade output must never become feedback history —
+        // mid-fade state advances from raw visTex frames instead, see the
+        // split at the top of render()).
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       });
     this.fadeTexA = make();
     this.fadeTexB = make();
@@ -3767,6 +3765,39 @@ export class WebGPURenderer implements Renderer {
     const feedbackPresent = feedbackMode !== "advance-only";
     // Hidden fixed-clock ticks exist only for texture-feedback presets.
     if (!feedbackPresent && !this.presetUsesFeedback) return;
+    // F3: a live frame that both ADVANCES feedback state and PRESENTS a
+    // crossfade must never exist as one pass over the fade targets. In the
+    // fading branch below the active preset draws inline-composited
+    // (u.feedbackOn = 0), and composite() replaces the alpha lane in every
+    // branch (forced 1.0 over opaque backgrounds, luma-derived over
+    // transparent) while baking background + overlay into RGB — but the RAW
+    // alpha lane IS the state for Spectro Falls' record and Overgrowth's
+    // chemistry. M14 used to copy that composited fadeTexA into histTex on
+    // every ticked fade frame, feeding the recurrence its own composited
+    // picture (record reads full-loud for the fade; the reaction-diffusion
+    // field collapses). Re-issue the call as the export walk's own two-call
+    // shape instead (exportCore.ts): a raw advance-only tick with NO
+    // transition — the preset draws uncomposited into visTex and only that
+    // becomes history — then a present-only fade frame, a dt=0 evaluation
+    // of the freshly advanced state that never writes history. The fps-cap
+    // path already runs exactly this advance discipline for capped fade
+    // frames (services.ts); this extends it to the presented ones. The
+    // perform-window mirror replays the primary's per-frame directives
+    // through its own renderer instance, so the split covers it unchanged.
+    if (
+      feedbackMode === "advance-and-present" &&
+      this.presetUsesFeedback &&
+      !this.particleSpec &&
+      !this.mesh3dSpec &&
+      !this.shadertoySpec &&
+      transition &&
+      this.transitionPipeline &&
+      this.transitionPreset
+    ) {
+      this.render(f, time, params, undefined, { ...options, feedback: "advance-only" });
+      this.render(f, time, params, transition, { ...options, feedback: "present-only" });
+      return;
+    }
     this.ensureBinBuffers(f.bins.length);
 
     // Slots 1 (beatIntensity), 19 (width), 24 (snare) and 25 (hat) are unread
@@ -3829,9 +3860,11 @@ export class WebGPURenderer implements Renderer {
     this.uniformF32[33] = bgFit?.zoom ?? 1;
     this.uniformF32[34] = bgFit?.offsetX ?? 0;
     this.uniformF32[35] = bgFit?.offsetY ?? 0;
-    // Feedback path is active only when the preset opts in AND we're not
-    // mid-crossfade (feedback pauses during transitions). fs_main branches on
-    // this: 1 => emit raw visual for the composite pass, 0 => inline composite.
+    // Feedback path is active only when the preset opts in AND this call is
+    // not presenting a crossfade — mid-fade, state advances through the F3
+    // split's raw advance-only call above, never through the fading branch.
+    // fs_main branches on this: 1 => emit raw visual for the composite pass,
+    // 0 => inline composite.
     // Particle and 3D presets take dedicated draw paths and ignore the
     // fragment/feedback/crossfade machinery (they cut, not crossfade).
     const particlesActive = !!this.particleSpec;
@@ -4042,12 +4075,18 @@ export class WebGPURenderer implements Renderer {
       // encoded PNG size — the trail vanishing, not a crossfade.
       //
       // When the incoming preset uses feedback, clearing is still right: it
-      // needs a clean slate, and the fadeTexA -> histTex copy below keeps its
-      // trail alive from there. When only the OUTGOING one does, the history
-      // must survive the fade — it IS that preset's picture. Nothing writes
-      // histTex in that case, so the trail holds still for the fade; frozen
-      // for a few hundred ms under a falling blend weight is invisible next
-      // to a hard cut to black.
+      // needs a clean slate, and the F3 split above keeps its trail alive
+      // from there — advanced from RAW frames by advance-only calls (ticked
+      // frames re-enter through the split; capped ones already arrived as
+      // advance-only). When only the OUTGOING preset uses feedback, the
+      // history must survive the fade — it IS that preset's picture. Nothing
+      // writes histTex in that case, so the trail holds still for the fade;
+      // frozen for a few hundred ms under a falling blend weight is
+      // invisible next to a hard cut to black.
+      //
+      // This clear still lives here (not only in the raw branch) because the
+      // fade's FIRST rendered frame can be a non-tick present-only frame:
+      // the preset would otherwise sample whatever the previous mode left.
       if (this.feedbackClearPending && this.presetUsesFeedback) this.clearFeedbackHistory(encoder);
       // The outgoing pass (below) samples histTex as it stood at the END of
       // the PREVIOUS frame — still the outgoing preset's own last real trail
@@ -4060,15 +4099,13 @@ export class WebGPURenderer implements Renderer {
         this.getTransitionBindGroup(),
         this.fadeTexB!.createView(),
       );
-      if (this.presetUsesFeedback && feedbackAdvance) {
-        // Keep the incoming preset's trail alive through the whole fade so
-        // it continues smoothly once the transition ends, instead of
-        // resuming from a stale pre-fade snapshot with a hard snap.
-        encoder.copyTextureToTexture({ texture: this.fadeTexA! }, { texture: this.histTex! }, [
-          this.feedbackSize[0],
-          this.feedbackSize[1],
-        ]);
-      }
+      // NEVER copy the fade targets into histTex. They hold COMPOSITED
+      // frames — alpha replaced, background baked in — and feedback history
+      // must only ever receive raw preset output (the visTex copy in the
+      // useFeedback branch). The F3 split above guarantees this branch runs
+      // with feedbackAdvance = false whenever the active preset uses
+      // feedback, so the incoming trail keeps evolving (no pre-M14 freeze
+      // and post-fade snap) without the fade output ever becoming state.
       if (!this.blendBindGroup) {
         this.blendBindGroup = this.device.createBindGroup({
           layout: this.blendPipeline!.getBindGroupLayout(0),
