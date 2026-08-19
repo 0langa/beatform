@@ -590,10 +590,16 @@ export const GUIDE: readonly GuideSection[] = [
             ") hides every piece of chrome and the cursor for a clean full-bleed output — project it, capture it, or screen-share it. The mode name flashes briefly on each switch so you can drive blind.",
           ],
           [
+            { strong: "Second display" },
+            " (the Perform drawer, ",
+            { kbd: "D" },
+            "): open a dedicated output window on a projector or TV while every control stays on your screen — mode pads, quantize, blackout, the monitor picker and fullscreen all live in the drawer. A feedback mode (Spectro Falls, Overgrowth) opened on the output mid-song builds its trail history from that moment on, like starting a capture. During a batch render the output window pauses on its last frame until the batch finishes.",
+          ],
+          [
             { strong: "Blackout" },
             " (",
             { kbd: "0" },
-            " in Stage mode) cuts to black — the classic VJ cut. ",
+            " in Stage mode or with the performance window open) cuts to black — the classic VJ cut. ",
             { kbd: "Esc" },
             " exits everything.",
           ],
