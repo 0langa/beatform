@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.104.1] - 2026-08-19
+
 ### Fixed
 
 - **Crossfading into Spectro Falls or Overgrowth no longer scrambles
@@ -2924,7 +2926,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.104.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.104.1...HEAD
+[2.104.1]: https://github.com/0langa/beatform/compare/v2.104.0...v2.104.1
 [2.104.0]: https://github.com/0langa/beatform/compare/v2.103.0...v2.104.0
 [2.103.0]: https://github.com/0langa/beatform/compare/v2.102.0...v2.103.0
 [2.102.0]: https://github.com/0langa/beatform/compare/v2.101.0...v2.102.0
