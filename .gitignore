@@ -47,3 +47,6 @@ src-tauri/binaries/lyrics-sidecar-*.exe
 
 # superpowers SDD plan workspaces (local orchestration artifacts)
 /.superpowers/
+
+# agent skill drafts (untracked, under review)
+/.claude/skills-draft/
