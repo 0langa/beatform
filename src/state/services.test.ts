@@ -39,6 +39,9 @@ vi.mock("../audio/realtimeSource", () => {
     ) {}
     setSync = vi.fn();
     update = vi.fn(() => ({ lufs: 0, width: 0 }) as unknown);
+    /** Mutable stand-in for the real getter — the loop's only license to
+     * advance texture-feedback state (see the feedback-directive suite). */
+    feedbackTicked = false;
   }
   return { RealtimeAnalyzer };
 });
@@ -578,5 +581,83 @@ describe("services.ts frame loop — live route-value publication (H9)", () => {
     // session ended must not read a stale entry from a loop that is gone.
     dispose();
     expect(getLiveRouteValues().size).toBe(0);
+  });
+});
+
+/**
+ * Pause-tick gate wiring (2.104.2): the loop's texture-feedback advance
+ * directives derive from `ana.feedbackTicked` and from NOTHING else — no
+ * wall-clock, frame-count or rAF-cadence source of its own. The analyzer
+ * gates that report on `engine.playing` (realtimeSource.test.ts pins the
+ * gate itself); this suite pins the mapping so a paused analyzer — which
+ * never reports a tick — can never see an advance directive leave the loop,
+ * on the presented path or toward the perform mirror (which replays these
+ * exact directives).
+ */
+describe("services.ts frame loop — feedback directives follow the analyzer's tick report", () => {
+  const PRESET_ID = "custom-feedback-directive-test";
+
+  afterEach(() => {
+    unregisterCustomPreset(PRESET_ID);
+  });
+
+  it("ticked frames advance-and-present; untick-ed frames present-only — never advance", async () => {
+    registerCustomPreset({
+      id: PRESET_ID,
+      name: "F",
+      params: [],
+      wgsl: "// f",
+    } as unknown as PresetDef);
+
+    const rafBox: { cb: ((t: number) => void) | null } = { cb: null };
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((cb: (t: number) => void) => {
+        rafBox.cb = cb;
+        return 1;
+      }),
+    );
+
+    const dispose = initServices(
+      fakeCanvas(),
+      fakeHooks({
+        getFrameInput: () =>
+          ({
+            timeline: EMPTY_TIMELINE,
+            basePresetId: PRESET_ID,
+            baseParams: {},
+            baseMods: [],
+            baseBg: {} as BgSettings,
+            paramsByPreset: {},
+            modsByPreset: {},
+          }) as FrameResolveInput,
+      }),
+    );
+    await flush();
+
+    const ana = getAnalyzer() as unknown as { feedbackTicked: boolean };
+    const render = (getRenderer() as unknown as { render: ReturnType<typeof vi.fn> }).render;
+    const directiveOf = (call: unknown[]) => (call[4] as { feedback: string }).feedback;
+    const lastDirective = () => directiveOf(render.mock.calls[render.mock.calls.length - 1]);
+
+    // A ticked frame is the canonical 60 Hz state step: advance-and-present.
+    ana.feedbackTicked = true;
+    rafBox.cb?.(16);
+    expect(lastDirective()).toBe("advance-and-present");
+
+    // Un-ticked frames — a paused analyzer reports every frame this way —
+    // present the existing state and must NEVER advance it, no matter how
+    // many wall-clock frames go by.
+    ana.feedbackTicked = false;
+    for (let n = 0; n < 10; n++) rafBox.cb?.(32 + n * 16);
+    const unticked = render.mock.calls.slice(-10).map(directiveOf);
+    expect(unticked).toEqual(Array(10).fill("present-only"));
+
+    // Ticks resume (the resume-after-pause path): advance returns.
+    ana.feedbackTicked = true;
+    rafBox.cb?.(200);
+    expect(lastDirective()).toBe("advance-and-present");
+
+    dispose();
   });
 });

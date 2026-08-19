@@ -192,7 +192,23 @@ export class RealtimeAnalyzer {
     this.vocalSpans = spans;
   }
 
-  /** Whether latest update advanced canonical 60 Hz detector/state clock. */
+  /**
+   * Whether the latest update advanced the canonical 60 Hz feedback-state
+   * clock — the live loop's ONLY license to advance texture-feedback state
+   * (an advance directive steps Spectro Falls' record / Overgrowth's
+   * chemistry by the fixed FEEDBACK_DT). Reported only while the engine is
+   * playing: the internal detector clock keeps stepping on the wall clock
+   * regardless (meters and bins keep decaying honestly), but a paused frame
+   * must present, never advance — pre-gate, ~60 wall-clock ticks/s at frozen
+   * track time scrolled one silence-recording slice each and drained the
+   * whole record in ~3 s of pause (BACKLOG 2.103.0's filed finding).
+   * `engine.playing` is `_playing || liveNode !== null`, so live capture
+   * (no pause concept) always ticks, natural track end holds the record
+   * like a pause, paused seeks can never advance (the seek carve-out KEEPS
+   * on-screen history — PREVIEW-EXPORT-CONTRACT.md "Not promised"), and an
+   * A-B wrap — playing throughout — cannot freeze the stream: there is no
+   * track-time comparison to mishandle the backward jump.
+   */
   get feedbackTicked(): boolean {
     return this.lastUpdateTicked;
   }
@@ -237,7 +253,14 @@ export class RealtimeAnalyzer {
       // window of audio, firing repeatedly on a spectrum it has already seen.
       if (this.sinceTick > ANALYSIS_DT) this.sinceTick = 0;
     }
-    this.lastUpdateTicked = analysisTick;
+    // The tick is REPORTED as a feedback tick only while playback (or live
+    // capture) is running — see feedbackTicked. The detectors below still
+    // step on `analysisTick` itself while paused: their firing is already
+    // gated on `playing` inside the pipeline, and the decay keeps paused
+    // meters honest. Feedback state, by contrast, must hold at frozen track
+    // time, so the advance license dries up the moment playback stops.
+    const playing = this.engine.playing;
+    this.lastUpdateTicked = analysisTick && playing;
     this.engine.analyser.getFloatTimeDomainData(this.timeData);
     this.engine.analyserL.getFloatTimeDomainData(this.timeL);
     this.engine.analyserR.getFloatTimeDomainData(this.timeR);
@@ -294,13 +317,13 @@ export class RealtimeAnalyzer {
       time: trackTime,
       dt,
       analysisTick,
-      playing: this.engine.playing,
+      playing,
       duration: this.engine.duration,
       // A noise floor's channels are uncorrelated, so stereoWidth reads it as
       // a WIDE signal — the one feature that would keep moving behind an
       // otherwise silent picture.
       width: gated ? 0 : stereoWidth(this.timeL, this.timeR),
-      lufs: this.engine.playing ? this.meter.momentary : undefined,
+      lufs: playing ? this.meter.momentary : undefined,
       ...(this.grid ? { bpm: this.grid.bpm, ...gridPhase(this.grid, trackTime) } : {}),
       ...(this.sections ? sectionStateAt(this.sections, trackTime) : {}),
       ...(this.vocalSpans ? { vocal: vocalPresenceAt(this.vocalSpans, trackTime) } : {}),

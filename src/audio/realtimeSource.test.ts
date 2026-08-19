@@ -28,20 +28,27 @@ function fakeEngine(signal: (t: number) => number, liveInput = false) {
       fill(buf);
     },
   };
+  const raw = {
+    analyser,
+    displayAnalyser,
+    analyserL: analyser,
+    analyserR: analyser,
+    ctx: { sampleRate: SR },
+    playing: true,
+    liveInput,
+    duration: 60,
+    currentTime: 0,
+  };
   return {
-    engine: {
-      analyser,
-      displayAnalyser,
-      analyserL: analyser,
-      analyserR: analyser,
-      ctx: { sampleRate: SR },
-      playing: true,
-      liveInput,
-      duration: 60,
-      currentTime: 0,
-    } as unknown as AudioEngine,
+    engine: raw as unknown as AudioEngine,
     setNow: (t: number) => {
       now = t;
+    },
+    // The real engine's getter is `_playing || liveNode !== null` (live input
+    // COUNTS as playing) and flips false on pause() and on natural track end
+    // (onended). Tests drive the flag directly.
+    setPlaying: (v: boolean) => {
+      raw.playing = v;
     },
     getDisplayReads: () => displayReads,
   };
@@ -389,5 +396,155 @@ describe("RealtimeAnalyzer live-input silence gate", SUITE, () => {
     // 2 s is frame 120; allow the analyser's own 4096-sample window to fill.
     expect(firstAudible).toBeGreaterThanOrEqual(120);
     expect(firstAudible).toBeLessThan(126);
+  });
+});
+
+/**
+ * The feedback tick pause gate (2.104.2). `feedbackTicked` is the live
+ * loop's ONLY license to advance texture-feedback state (Spectro Falls'
+ * record, Overgrowth's chemistry) — the renderer steps those by a fixed
+ * FEEDBACK_DT on every advance directive. The tick used to be pure wall
+ * clock, so paused frames kept advancing state at frozen track time:
+ * Spectro Falls scrolled one silence-recording slice per tick and drained
+ * its whole 180-slice record in ~3 s of pause (device-confirmed, filed in
+ * BACKLOG's 2.103.0 entry). The gate: a tick is only REPORTED while the
+ * engine is playing. `engine.playing` is `_playing || liveNode !== null`,
+ * so live capture stays alive, natural track end holds the record like a
+ * pause, and an A-B wrap (playing throughout) can never freeze the stream —
+ * no track-time comparison exists to mishandle the backward jump.
+ *
+ * The DETECTOR clock is deliberately not gated: paused frames still step
+ * the pipeline (whose detectors already gate their FIRING on `playing`), so
+ * meters and bins keep decaying to silence exactly as shipped.
+ */
+describe("RealtimeAnalyzer feedback tick pause gate", SUITE, () => {
+  /** Drive one frame at 60 Hz wall clock and report whether it ticked. */
+  function frame(
+    ana: RealtimeAnalyzer,
+    setNow: (t: number) => void,
+    n: number,
+    trackTime: number,
+  ): boolean {
+    const t = n / 60;
+    setNow(t);
+    ana.update(t, trackTime);
+    return ana.feedbackTicked;
+  }
+
+  it("reports no feedback ticks while paused — the record must hold, not drain", () => {
+    const { engine, setNow, setPlaying } = fakeEngine(dense);
+    const ana = new RealtimeAnalyzer(engine);
+    let playingTicks = 0;
+    for (let n = 0; n < 60; n++) if (frame(ana, setNow, n, n / 60)) playingTicks++;
+    expect(playingTicks, "fixture sanity: the live clock ticks every 60 Hz frame").toBe(60);
+
+    // Pause: track time freezes, the rAF loop keeps calling update on the
+    // wall clock. The fake keeps handing back LOUD audio on purpose — even a
+    // hot analyser window must not advance feedback while paused (the real
+    // tap decays to silence, which is what made the drain record emptiness).
+    setPlaying(false);
+    const frozen = 1;
+    let pausedTicks = 0;
+    for (let n = 60; n < 60 * 4; n++) if (frame(ana, setNow, n, frozen)) pausedTicks++;
+    expect(pausedTicks, "paused frames reported feedback ticks — the record drains").toBe(0);
+  });
+
+  it("a paused seek or scrub never advances feedback (the record is kept, not replayed)", () => {
+    const { engine, setNow, setPlaying } = fakeEngine(dense);
+    const ana = new RealtimeAnalyzer(engine);
+    for (let n = 0; n < 30; n++) frame(ana, setNow, n, n / 60);
+    setPlaying(false);
+
+    let ticks = 0;
+    // Forward scrub: the seek bar dragged right — track time advances in
+    // steps while paused. Deliberately WITHOUT reset("seek") so the gate
+    // itself is what's under test (a "time advanced?" comparison would leak
+    // one tick per scrub step and drain the record while scrubbing).
+    let pos = 0.5;
+    for (let n = 30; n < 90; n++) {
+      if (n % 5 === 0) pos += 0.4;
+      if (frame(ana, setNow, n, pos)) ticks++;
+    }
+    // Backward seek: the store fires reset("seek") on every seek, and the
+    // loop does too for backward jumps — mirror the callers.
+    pos = 0.25;
+    ana.reset("seek");
+    for (let n = 90; n < 150; n++) if (frame(ana, setNow, n, pos)) ticks++;
+    expect(ticks, "a paused seek/scrub advanced feedback state").toBe(0);
+  });
+
+  it("an A-B loop wrap does not freeze the tick stream (backward jump while playing)", () => {
+    const { engine, setNow } = fakeEngine(dense);
+    const ana = new RealtimeAnalyzer(engine);
+    for (let n = 0; n < 60; n++) frame(ana, setNow, n, 4 + n / 60);
+    // The wrap: track time jumps BACKWARD while playing stays true. The live
+    // loop detects it (loopEpoch / backward jump) and calls reset("seek")
+    // before the next update — reproduce that exact call order here.
+    ana.reset("seek");
+    let ticksAfterWrap = 0;
+    let firstTickFrame = -1;
+    for (let n = 60; n < 120; n++) {
+      if (frame(ana, setNow, n, 1 + (n - 60) / 60)) {
+        ticksAfterWrap++;
+        if (firstTickFrame < 0) firstTickFrame = n - 60;
+      }
+    }
+    // reset() zeroes the accumulator, so the first post-wrap tick owes one
+    // full ANALYSIS_DT — arriving within two frames, then every frame.
+    expect(firstTickFrame, "first tick after the wrap").toBeLessThanOrEqual(2);
+    expect(ticksAfterWrap).toBeGreaterThanOrEqual(58);
+  });
+
+  it("resume after pause: the first tick lands within two frames and cadence continues", () => {
+    const { engine, setNow, setPlaying } = fakeEngine(dense);
+    const ana = new RealtimeAnalyzer(engine);
+    for (let n = 0; n < 30; n++) frame(ana, setNow, n, n / 60);
+    setPlaying(false);
+    let pausedTicks = 0;
+    for (let n = 30; n < 90; n++) if (frame(ana, setNow, n, 0.5)) pausedTicks++;
+    expect(pausedTicks).toBe(0);
+    setPlaying(true);
+    let firstTickFrame = -1;
+    let resumedTicks = 0;
+    for (let n = 90; n < 150; n++) {
+      if (frame(ana, setNow, n, 0.5 + (n - 90) / 60)) {
+        resumedTicks++;
+        if (firstTickFrame < 0) firstTickFrame = n - 90;
+      }
+    }
+    expect(firstTickFrame, "first tick after resume").toBeLessThanOrEqual(2);
+    expect(resumedTicks).toBeGreaterThanOrEqual(58);
+  });
+
+  it("playback cadence is untouched: every frame at 60 Hz, the 60/s subset at 144 Hz, live included", () => {
+    // 60 Hz track playback: exactly one tick per frame (matches export).
+    const track = fakeEngine(dense);
+    const anaTrack = new RealtimeAnalyzer(track.engine);
+    let at60 = 0;
+    for (let n = 0; n < 60; n++) if (frame(anaTrack, track.setNow, n, n / 60)) at60++;
+    expect(at60).toBe(60);
+
+    // Live capture: engine.playing is true by the getter's definition
+    // (`_playing || liveNode !== null`) — the gate must never dry up a
+    // live session, which has no pause concept at all.
+    const live = fakeEngine(dense, true);
+    const anaLive = new RealtimeAnalyzer(live.engine);
+    let liveTicks = 0;
+    for (let n = 0; n < 60; n++) if (frame(anaLive, live.setNow, n, n / 60)) liveTicks++;
+    expect(liveTicks).toBe(60);
+
+    // 144 Hz display: ticks on the ~60/s subset of frames, exactly as the
+    // analysis-cadence suite above pins for the detectors.
+    const hi = fakeEngine(dense);
+    const anaHi = new RealtimeAnalyzer(hi.engine);
+    let at144 = 0;
+    for (let n = 0; n < 288; n++) {
+      const t = n / 144;
+      hi.setNow(t);
+      anaHi.update(t, t);
+      if (anaHi.feedbackTicked) at144++;
+    }
+    expect(at144).toBeGreaterThanOrEqual(118);
+    expect(at144).toBeLessThanOrEqual(121);
   });
 });
