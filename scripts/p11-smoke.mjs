@@ -47,7 +47,7 @@ const IDENTIFIER = "com.olanga.audiovisualizer.p11smoke";
 const exeArg = process.argv.find((a) => a.startsWith("--exe="));
 const CARGO_TARGET_DIR =
   process.env.CARGO_TARGET_DIR ??
-  "F:\\agent-devstorage\\shared-cache\\audio-visualizer\\cache\\cargo-target-worktree";
+  "F:\\agent-devstorage\\shared-cache\\Beatform\\cache\\cargo-target-worktree";
 const EXE_PATH = exeArg
   ? path.resolve(exeArg.slice("--exe=".length))
   : path.join(CARGO_TARGET_DIR, "release", "beatform.exe");

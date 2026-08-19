@@ -66,7 +66,7 @@ function scratchDir() {
           stdio: "ignore",
         },
       );
-      return `${d}:/agent-devstorage/shared-cache/audio-visualizer/cache/deepcolor-verify`;
+      return `${d}:/agent-devstorage/shared-cache/Beatform/cache/deepcolor-verify`;
     } catch {
       /* try next */
     }
@@ -234,7 +234,7 @@ function proresArtifactsDir() {
         ["/c", `if not exist ${d}:\\agent-devstorage\\DRIVE-IDENTITY.json exit 1`],
         { stdio: "ignore" },
       );
-      const dir = `${d}:/agent-devstorage/shared-cache/audio-visualizer/artifacts/feat005-smoke`;
+      const dir = `${d}:/agent-devstorage/shared-cache/Beatform/artifacts/feat005-smoke`;
       mkdirSync(dir, { recursive: true });
       return dir;
     } catch {

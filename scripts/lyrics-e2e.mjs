@@ -67,12 +67,12 @@ const outDir =
   (process.argv.find((a) => a.startsWith("--out=")) ?? "").slice("--out=".length) ||
   // p3: phase-2's artifacts under feat004-p2-e2e are frozen ledger evidence —
   // word-timing runs land in their own directory.
-  "F:/agent-devstorage/shared-cache/audio-visualizer/artifacts/feat004-p3-e2e";
+  "F:/agent-devstorage/shared-cache/Beatform/artifacts/feat004-p3-e2e";
 mkdirSync(outDir, { recursive: true });
 
 const exe = process.env.BEATFORM_EXE ?? debugExe(root);
-const CACHE = "F:/agent-devstorage/shared-cache/audio-visualizer/cache/feat004-models";
-const CORPUS = "F:/agent-devstorage/shared-cache/audio-visualizer/artifacts/feat004-spike/corpus";
+const CACHE = "F:/agent-devstorage/shared-cache/Beatform/cache/feat004-models";
+const CORPUS = "F:/agent-devstorage/shared-cache/Beatform/artifacts/feat004-spike/corpus";
 const MADNESS = "F:/agent-devstorage/claude-cache/beatform/bf-test/media/Muse - Madness.flac";
 const E2E_MODELS = path.join(CACHE, "e2e-app-models");
 const port = harnessPort(10060); // see the map in lib/app.mjs

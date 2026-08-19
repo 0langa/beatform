@@ -184,12 +184,12 @@ function verifyDownloadDir() {
   if (ds) {
     // Layout per <drive>:\agent-devstorage\README.md contract:
     // shared-cache\<repo>\cache for regenerable downloads.
-    const dir = path.join(ds, "shared-cache", "audio-visualizer", "cache", "release-verify", tag);
+    const dir = path.join(ds, "shared-cache", "Beatform", "cache", "release-verify", tag);
     mkdirSync(dir, { recursive: true });
     try {
       appendFileSync(
         path.join(ds, "_janitor", "routing.log"),
-        `${new Date().toISOString()} claude-code audio-visualizer ${dir} release-verify downloads\n`,
+        `${new Date().toISOString()} claude-code Beatform ${dir} release-verify downloads\n`,
       );
     } catch {
       /* routing log is best-effort */
