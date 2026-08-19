@@ -3606,22 +3606,19 @@ the bottom of this file.
 
 ### VERIFY-002 — ProRes 4444 NLE interoperability
 
-**Status:** GATED  
-**Gate:** DaVinci Resolve or another target NLE must be installed.
-
-Existing evidence:
-
-- ProRes 4444 alpha export decodes back successfully.
-- Alpha round-trip is covered outside an NLE.
-
-Remaining check:
-
-- Import representative alpha export into target NLE.
-- Place above contrasting footage.
-- Check alpha edges, premultiplication, color, duration, frame rate, and seek.
-- Re-export or render a short composite and inspect.
-
-This does not block current releases. Close when target software is available.
+**Status:** CLOSED — PASSED 2026-08-19 (owner, DaVinci Resolve 21).
+The gate lifted (Resolve installed post-2.104.2); the owner imported the
+byte-verified FEAT-005 ProRes 4444 export (`prores-a-msw7f21a.mov` —
+yuva444p12le, straight alpha 1.997, 2441 luma levels) and placed it on
+V2 above a red solid on V1. Viewer: transparency honored (red through
+everywhere the visual is transparent), no matte, no halo/fringe at the
+glow edges — the straight-alpha un-premultiply composites cleanly —
+and it holds in motion across the timeline (screenshots in the session
+record; staging + result at
+`F:\agent-devstorage\shared-cache\audio-visualizer\artifacts\verify002-2026-08-19\`).
+Version note: free Resolve 21 has NO external-scripting preference
+(Studio-only in 21, unlike older free versions) — NLE checks on this
+install stay manual.
 
 ### VERIFY-003 — Web MIDI browser-to-adapter transport
 
