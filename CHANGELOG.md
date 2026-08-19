@@ -11,6 +11,17 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Crossfading into Spectro Falls or Overgrowth no longer scrambles
+  their memory.** Switching scenes with a crossfade fed the incoming
+  mode's history a washed-out copy of the blended picture — Spectro
+  Falls' record read as a solid loud wall for the fade, and Overgrowth's
+  culture collapsed and had to regrow. During a fade both modes now
+  build their history from the real frames underneath, exactly as
+  exports always did — what you see growing during the transition is
+  what stays.
+
 ## [2.104.0] - 2026-08-19
 
 ### Added

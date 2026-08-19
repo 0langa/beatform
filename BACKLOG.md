@@ -3323,16 +3323,28 @@ was already decided; this section is where "what ships when" now lives.
   preview/export contract now names the stateful-feedback seek
   carve-out for BOTH feedback modes) fixed pre-merge. Matrix 303→314,
   exact prediction (11/0/0). Suite 2811.
-  **Review's inherited finding, filed here (F3): the live timeline
-  crossfade poisons the alpha data lane for every feedback preset** —
-  M14's fadeTexA→histTex copy stores the composited frame and
-  composite() replaces alpha in every branch, so a live fade INTO a
-  feedback mode feeds it corrupt state (SF: record reads full-loud for
-  a fade; Overgrowth: field collapses + regrows). Export path clean
-  (advance-only ticks skip the fade copy). Candidate fix half-exists:
-  the fps-cap path already advances correctly during fades
-  (services.ts advance-only). Not a 2.103.0 defect; schedule with the
-  next hardening pass.
+  **Review's inherited finding, filed here (F3) — FIXED 2026-08-19
+  (2.104.1):** the live timeline crossfade poisoned the alpha data
+  lane for every feedback preset (M14's fadeTexA→histTex copy stored
+  the composited frame; composite() replaces alpha in every branch).
+  Fix (`60e6bf9`, webgpuRenderer.ts only): a fading feedback tick
+  re-issues itself as the export walk's own two-call shape —
+  advance-only from RAW frames (visTex→histTex copy) then present-only
+  (dt=0, no copy); the M14 composited copy is DELETED and fade
+  textures lost COPY_SRC. Reentrancy provably impossible (hardcoded
+  literal feedback modes on both inner calls); export unreachable on
+  two independent grounds; the perform mirror inherits the fix free
+  (replays directives through its own renderer). Device: poisoning
+  reproduced pre-fix (SF full-loud wall 63–186 luma every cell; OG
+  flat dead field), gone post-fix (fade-built state within
+  uninterrupted-walk run-to-run variance). 10 new tests, red 6/10 on
+  shipped code. Matrix 314/314 zero changes post-merge.
+  **NEW FINDING from the F3 lane, filed for the next hardening pass:
+  paused playback drains feedback state** — `feedbackTicked` is
+  wall-clock driven, so paused frames advance SF/OG at frozen track
+  time (SF's record visibly drains within ~3 s of pausing;
+  device-confirmed). Same determinism family; session chip filed with
+  pointers.
 - **2.104.0 — SHIPPED 2026-08-19** — FEAT-009 second-display
   performance window + P-4 Perform drawer, un-parked together as
   specified. Render-mirror architecture: one engine/analyzer/store; the
@@ -3368,9 +3380,16 @@ was already decided; this section is where "what ships when" now lives.
   6-animated screenshot shot-list, FAQ answers, owner checklist; 8
   [VERIFY] flags inline). Its doc-gaps report produced the docs-truth
   commit `34ca8c1` (README platform facts, CHANGELOG single Added,
-  guide 'browser build' rewrite). REMAINING in this lane: capture the
-  shot-list on device (candidates for the owner's pick — README hero
-  shots included), and the owner-only steps in README-kit.md.
+  guide 'browser build' rewrite).
+  **Capture DONE 2026-08-19**: 34 stills (1920×1080) + 3 real app-export
+  loops + 3 preview GIFs in `beatform-launch-kit\shots\` (+ new-modes
+  heroes for all five 2.99–2.103 additions; Gatefold shot with a real
+  ID3-APIC cover built for the purpose), `CAPTURE-NOTES.md` records
+  deviations, shot-list staleness findings, and the skipped set.
+  **REMAINING — owner-only:** pick the README hero + commit it, the
+  screen-recording animated items (A3/A4/A5), desktop-only dialogs
+  (model download, library/loopback, ProRes/AV1 tiles), and everything
+  in README-kit.md's checklist (venues, [SLOT]s, posting).
 
 **End condition** for this plan, and functionally for the whole quality-
 consolidation program: every ledger row is either shipped, or carries one
