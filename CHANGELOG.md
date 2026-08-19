@@ -11,6 +11,22 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- **A true second-display performance window.** Send clean, fullscreen
+  visuals to a projector or second monitor while the full app stays on
+  your screen as the operator console. One engine drives both — the
+  output window mirrors the exact frames the preview renders, beat for
+  beat, with nothing else on it: no controls, no cursor, no HUD unless
+  you want one. Pick the monitor, Esc steps it down (fullscreen →
+  windowed → closed), and closing it never touches your session.
+- **The Perform drawer.** Press **D** (or the top-bar button) for a
+  performance console in one place: mode pads 1–9 with thumbnails and
+  beat-quantized switching, blackout, the second-display controls,
+  output HUD toggle, sync source, and your MIDI mappings shown live —
+  with note-learn straight from the drawer. Works inside Stage mode
+  too, so a blacked-out operator screen always keeps its controls.
+
 ## [2.103.0] - 2026-08-17
 
 ### Added

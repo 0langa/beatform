@@ -3333,9 +3333,30 @@ was already decided; this section is where "what ships when" now lives.
   the fps-cap path already advances correctly during fades
   (services.ts advance-only). Not a 2.103.0 defect; schedule with the
   next hardening pass.
-- **2.104.0** — FEAT-009 true second-display performance window + P-4
-  Perform drawer, un-parked together as originally specified (P-4 is
-  FEAT-009's operator console).
+- **2.104.0 — SHIPPED 2026-08-19** — FEAT-009 second-display
+  performance window + P-4 Perform drawer, un-parked together as
+  specified. Render-mirror architecture: one engine/analyzer/store; the
+  output window receives post-resolve frames over a same-origin
+  BroadcastChannel (4 payload tiers, 0.129 ms/frame publish, structured
+  clone snapshots same-tick so no torn frames), feedback modes advance
+  in lockstep via the shipped clock. Rust owns the window (async
+  commands — the Windows create-in-command deadlock was caught on
+  device; Esc ladder; monitor resolve by physical coords; label-gated
+  sidecar kills fix the pre-existing any-window-close-kills-export
+  hazard). Security model recorded honestly after review: plugin/core
+  permissions denied to the perform webview by capability; all 26
+  process/fs app commands now main-window-only via assert_main_window
+  (verified end-to-end in the built shell: refused from perform,
+  invisible to main); telemetry + perform_* commands intentionally
+  open. Review MERGEABLE-WITH-FIXES → 4-fix round: the
+  first-write-after-activation publish swallow (wiring test proven
+  red→green), the guard family, double-open race tolerated, docs.
+  Suite 2856 web + 92/51 cargo. Matrix 314/314 ZERO deltas (no render
+  code — the mirror provably touches no pixel). Export chokepoints
+  untouched. REMAINS OWNER-MANUAL: the dual-monitor + mixed-DPI
+  acceptance matrix (7 written steps in the lane report — this machine
+  has one display); FEAT-009's hardware acceptance gate is otherwise
+  device-proven (17/17 lifecycle checks).
 - **Outreach-kit lane, parallel, no release** — launch-kit materials
   (copy, screenshots, post drafts) get prepared for community
   seeding/outreach starting now. This lane never ships a version bump on
@@ -3469,7 +3490,15 @@ premul bug reads ~1.0); byte-identical files across runs
 
 ### FEAT-009 — True second-display performance window
 
-**Status:** CONSIDERING  
+**Status:** DONE — shipped v2.104.0 (2026-08-19) together with P-4's
+Perform drawer. Render-mirror architecture (one engine, post-resolve
+frame stream, lockstep feedback), Rust-owned window lifecycle, Esc
+ladder, monitor picker, main-window-only guards on process/fs commands.
+Every acceptance bullet below is device-proven EXCEPT the parts needing
+a second physical display: **the dual-monitor + mixed-DPI manual matrix
+(7 steps, in the 2.104.0 release-plan entry's lane report) is the
+owner's remaining action.** Design record: the release-plan entry.
+ORIGINAL SPEC (kept as the acceptance reference):
 **Existing foundation:** Stage mode, blackout, HUD, beat-quantized switching,
 and Web MIDI are shipped.
 
