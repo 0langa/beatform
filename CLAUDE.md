@@ -60,7 +60,7 @@ No `src/audio/` suite is flaky: their only failure mode was vitest's 5 s per-tes
 
 ## Project rules
 
-- `BACKLOG.md` is the canonical work ledger — read it before starting feature work, update it when finishing. `CHANGELOG.md` is **user-facing UI** (the update dialog imports it): entries must read as release notes, and editing it while the dev server runs reloads the app.
+- `BACKLOG.md` is the canonical work ledger — read it before starting feature work, update it when finishing. Completed eras are frozen verbatim under `archive/ledgers/` (read-only history; never reopen archived rows — the live ledger wins on any conflict). `CHANGELOG.md` is **user-facing UI** (the update dialog imports it): entries must read as release notes, and editing it while the dev server runs reloads the app.
 - Never use `window.confirm`/`alert` — blocked by the Tauri dialog-plugin ACL. Use `askConfirm()` (`src/state/platform.ts`); an eslint rule enforces this.
 - Web MIDI: never extract `navigator.requestMIDIAccess` into a local (Illegal invocation, silently swallowed); WebView2 permission is granted in `src-tauri/src/midi_permission.rs`, installed from `on_page_load` (windows don't exist yet in `setup`).
 - Release ritual: `node scripts/release.mjs X.Y.Z --title "..."` — one resumable command (bump → changelog scaffold → commit+tag+push → CI watch → publish → verify). The full checklist it automates is GATES.md §4; `gh` on this machine needs the env PAT stripped (the script does it — equivalent of `env -u GITHUB_TOKEN`).
