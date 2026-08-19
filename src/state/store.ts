@@ -183,6 +183,7 @@ import {
   publishPerformAssets,
   publishPerformLive,
   publishPerformScene,
+  publishPerformState,
 } from "./performBridge";
 import { batchActions } from "./slices/batchActions";
 import { builderActions } from "./slices/builderActions";
@@ -3337,6 +3338,16 @@ useVizStore.subscribe((s) => {
     if (!sameSig(sigs.assets, lastPerformSigs.assets)) publishPerformAssets();
     if (!sameSig(sigs.scene, lastPerformSigs.scene)) publishPerformScene();
     if (!sameSig(sigs.live, lastPerformSigs.live)) publishPerformLive();
+  } else {
+    // Review F1: this write is the one SEEDING the baseline while the
+    // mirror is already live — and it may itself carry the change (hello's
+    // full-state push predates it; the sigs below are POST-change). Seeding
+    // silently swallowed exactly one write per activation: paused + idle,
+    // open the output, press 0 — the operator read "Blacked out" while the
+    // audience kept rendering. Push the full state instead of guessing
+    // which tier moved; the receiver's appliers are keyed/idempotent, so a
+    // redundant resend costs a few dedupe checks and nothing else.
+    publishPerformState();
   }
   lastPerformSigs = sigs;
 });
