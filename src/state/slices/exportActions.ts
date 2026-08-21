@@ -54,6 +54,19 @@ let speedWindow: Array<{ t: number; done: number }> = [];
  * (exportCore.ts), so 5 s covers several samples even on a fast 60 fps job. */
 const SPEED_WINDOW_MS = 5000;
 
+/**
+ * R2-11: pixel budget for the in-RAM loop encoders. GIF's single-pass
+ * palettegen graph makes ffmpeg buffer EVERY decoded frame until EOF (audit
+ * E2), and animated WebP's libwebp_anim assembles the whole animation in RAM
+ * before the muxer sees a byte — so what exhausts memory is total PIXELS,
+ * not frame count. The old cap was 5400 frames flat, which modeled memory
+ * only at the 1080p it was measured at: 4K quadrupled the real cost under
+ * the same cap while a tiny loop was refused at footage it could easily
+ * hold. This is exactly the budget that cap implied at 1080p —
+ * 5400 × 1920 × 1080 ≈ 11.2e9 px — expressed in the unit that fills RAM.
+ */
+const ANIM_PIXEL_BUDGET = 5400 * 1920 * 1080;
+
 /** The refusal when analysis never lands — one sentence, one place. */
 export const ANALYSIS_TIMEOUT_REASON =
   `The track's beat analysis did not finish within ${ANALYSIS_TIMEOUT_MS / 1000}s. ` +
@@ -444,15 +457,25 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           await proresSetAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
           await av1Begin(fps, res.w, res.h, savePath);
         } else if (animFormat && savePath) {
-          // GIF's single-pass palettegen graph makes ffmpeg buffer EVERY
-          // decoded frame until EOF (audit E2) — a long track at full fps is
-          // a guaranteed sidecar OOM, not a slow export. Cap GIF at ~3
-          // minutes of frames with a clear pointer to the formats built for
-          // long content; WebP streams and is unaffected.
-          const gifFrames = (canvasMode ? settings.canvasDuration : buf.duration) * fps;
-          if (animFormat === "gif" && gifFrames > 5400) {
+          // R2-11: BOTH loop encoders hold the whole animation in memory —
+          // GIF's palettegen buffers every decoded frame until EOF (audit
+          // E2), and WebP's libwebp_anim assembles the full animation before
+          // writing (the old "WebP streams" note here was wrong) — so a long
+          // track at full fps/resolution is a guaranteed sidecar OOM, not a
+          // slow export. Refuse on the pixel budget (see ANIM_PIXEL_BUDGET)
+          // and tell the user which knobs shrink it.
+          const animSeconds = canvasMode ? settings.canvasDuration : buf.duration;
+          if (animSeconds * fps * res.w * res.h > ANIM_PIXEL_BUDGET) {
+            const capSeconds = ANIM_PIXEL_BUDGET / (fps * res.w * res.h);
+            const capText =
+              capSeconds >= 120
+                ? `${Math.floor(capSeconds / 60)} minutes`
+                : `${Math.floor(capSeconds)} seconds`;
             throw new Error(
-              "GIF exports are limited to ~3 minutes (the encoder holds every frame in memory). For longer clips use animated WebP or MP4; for loops, Canvas loop mode.",
+              `${animFormat === "gif" ? "GIF" : "Animated WebP"} exports are limited to ` +
+                `~${capText} at ${res.w}x${res.h}@${fps} (the encoder holds every frame in ` +
+                `memory). Reduce the length, resolution or frame rate; for longer clips use ` +
+                `MP4; for loops, Canvas loop mode.`,
             );
           }
           await animBegin(animFormat, fps, savePath);

@@ -181,6 +181,7 @@ const {
   dirNonEmpty,
   diskSpace,
   askConfirm,
+  animBegin,
   proresBegin,
   av1Begin,
   proresWrite,
@@ -234,6 +235,8 @@ beforeEach(() => {
   // R2-10: the finalize-cancel tests assert call COUNTS on these two.
   vi.mocked(proresFinish).mockClear();
   vi.mocked(proresAbort).mockClear();
+  // R2-11: the pixel-budget tests assert whether animBegin ran at all.
+  vi.mocked(animBegin).mockClear();
   // Back to "track A is loaded and playing".
   engineBuffer = TRACK_A;
   engineTrackName = "probe.wav";
@@ -787,6 +790,67 @@ describe("FEAT-005 — ProRes 4444 deep-color lane", () => {
     expect(opts.deepStraightAlpha).toBeUndefined();
     expect(opts.onPngFrame).toBeUndefined();
     expect(typeof opts.onRawFrame).toBe("function");
+  });
+});
+
+/**
+ * R2-11 — the GIF/WebP refusal caps PIXELS, not frames.
+ *
+ * Both loop encoders hold the whole animation in RAM (GIF palettegen buffers
+ * every frame until EOF; libwebp_anim assembles the full animation before
+ * writing), so what exhausts memory is frames × width × height. The old flat
+ * 5400-frame cap modeled that only at the 1080p it was measured at — 4K cost
+ * 4× the memory under the same cap — and it never covered WebP at all. The
+ * budget is pinned to exactly what the old cap implied at 1080p.
+ */
+describe("GIF/WebP loop exports refuse on the pixel budget (R2-11)", () => {
+  function armAnim(
+    format: "gif" | "webp",
+    resIdx: number,
+    fps: number,
+    durationSec: number,
+    savePath: string,
+  ) {
+    engineBuffer = decoded(durationSec);
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format, codec: "h264", resIdx, fps },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce(savePath);
+  }
+
+  it("keeps the exact old 1080p budget: 181 s @30 is refused, 179 s runs", async () => {
+    armAnim("gif", 1, 30, 181, "C:\\exports\\loop.gif"); // 5430 frames > old 5400
+    await s().runExport();
+    expect(s().exportError).toContain("GIF exports are limited to ~3 minutes at 1920x1080@30");
+    // The message must say what to reduce, like the cap it replaces did.
+    expect(s().exportError).toContain("Reduce the length, resolution or frame rate");
+    expect(animBegin).not.toHaveBeenCalled();
+
+    armAnim("gif", 1, 30, 179, "C:\\exports\\loop.gif"); // 5370 frames — inside
+    await s().runExport();
+    expect(animBegin).toHaveBeenCalledTimes(1);
+    expect(s().exportError).toBeNull();
+  });
+
+  it("4K exhausts the same budget 4x sooner — and WebP is capped too now", async () => {
+    // One minute at 4K@30 is ~14.9e9 px (over budget); the SAME minute at
+    // 1080p is ~3.7e9 px (comfortably inside). A frame-count cap cannot
+    // tell these apart — that is the whole finding.
+    armAnim("webp", 3, 30, 60, "C:\\exports\\loop.webp");
+    await s().runExport();
+    expect(s().exportError).toContain(
+      "Animated WebP exports are limited to ~45 seconds at 3840x2160@30",
+    );
+    expect(animBegin).not.toHaveBeenCalled();
+
+    armAnim("webp", 1, 30, 60, "C:\\exports\\loop.webp");
+    await s().runExport();
+    expect(animBegin).toHaveBeenCalledTimes(1);
+    expect(s().exportError).toBeNull();
   });
 });
 
