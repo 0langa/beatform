@@ -139,7 +139,10 @@ vi.mock("../platform", async (importOriginal) => {
     proresFinish: vi.fn(async () => {}),
     // R2-10: the finalize-span Cancel listener calls this; like the mocks
     // above, the real wrapper is a bridgeless invoke() in this environment.
-    proresAbort: vi.fn(async () => {}),
+    // Resolves with the sidecar log tail (R2-30e) — "" means "no session".
+    proresAbort: vi.fn(async () => ""),
+    // R2-30c: the buffered Canvas lane writes its finished blob here.
+    writeBinaryToPath: vi.fn(async () => {}),
     // Real askConfirm goes through @tauri-apps/plugin-dialog (Tauri lane) or
     // window.confirm (browser lane, and `window` here is the plain stub
     // above with no `confirm`) — neither works in this environment. No
@@ -187,6 +190,7 @@ const {
   proresWrite,
   proresFinish,
   proresAbort,
+  writeBinaryToPath,
 } = await import("../platform");
 
 const s = () => useVizStore.getState();
@@ -237,6 +241,8 @@ beforeEach(() => {
   vi.mocked(proresAbort).mockClear();
   // R2-11: the pixel-budget tests assert whether animBegin ran at all.
   vi.mocked(animBegin).mockClear();
+  // R2-30c: the Canvas-lane tests assert calls[0] on this.
+  vi.mocked(writeBinaryToPath).mockClear();
   // Back to "track A is loaded and playing".
   engineBuffer = TRACK_A;
   engineTrackName = "probe.wav";
@@ -576,6 +582,11 @@ describe("exportDonePath — the machine-readable companion to exportDone", () =
 
     expect(s().exportDonePath).toBe("C:\\exports\\video.mp4");
     expect(s().exportDone).toContain("C:\\exports\\video.mp4");
+    // R2-30c pins the boundary from the other side: ordinary full-track
+    // desktop exports still STREAM to the picked file (flat memory) — the
+    // buffered-blob write is the Canvas lane's alone.
+    expect(jobOptions().streamToPath).toBe("C:\\exports\\video.mp4");
+    expect(writeBinaryToPath).not.toHaveBeenCalled();
   });
 
   it("carries the PNG sequence folder, not the (null) save path", async () => {
@@ -794,6 +805,68 @@ describe("FEAT-005 — ProRes 4444 deep-color lane", () => {
 });
 
 /**
+ * R2-30c/d — the Canvas-loop lane.
+ *
+ * (c) Canvas loops render BUFFERED (progressive fastStart MP4) instead of
+ * streaming fragmented MP4 to disk — owner verdict: the picky upload ingests
+ * these loops exist for choke on fragmented files, and a ≤8 s clip fits in
+ * memory trivially. The desktop save-dialog flow is unchanged: same picked
+ * path, the finished blob written there once at the end.
+ * (d) A track shorter than the 3 s spec floor is refused before any dialog.
+ */
+describe("Canvas loop exports (R2-30c/d)", () => {
+  it("refuses a track shorter than 3 s before any dialog opens", async () => {
+    engineBuffer = decoded(2.5);
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "canvas", format: "mp4", codec: "h264" },
+    });
+    vi.mocked(pickSavePath).mockClear();
+
+    await s().runExport();
+
+    expect(s().exportError).toBe("Spotify Canvas needs a 3-8 s loop; this track is 2.5 s");
+    expect(pickSavePath).not.toHaveBeenCalled();
+    expect(exportVideo).not.toHaveBeenCalled();
+    // The claim is released — the next export is not blocked.
+    expect(s().exportPreparing).toBe(false);
+    expect(shared.exportStarting).toBe(false);
+  });
+
+  it("renders buffered (no streamToPath) and writes the finished blob to the picked path", async () => {
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "canvas", format: "mp4", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\clip-canvas.mp4");
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: "video/mp4" });
+    vi.mocked(exportVideo).mockResolvedValueOnce({
+      blob,
+      bytes: 3,
+      seconds: 8,
+      audioCodec: "aac",
+    });
+
+    await s().runExport();
+
+    const opts = jobOptions();
+    // The actual R2-30c switch: buffered mode (blob out), not stream-to-disk.
+    expect(opts.streamToPath).toBeUndefined();
+    expect(opts.segment).toBeDefined();
+    expect(writeBinaryToPath).toHaveBeenCalledTimes(1);
+    expect(writeBinaryToPath).toHaveBeenCalledWith("C:\\exports\\clip-canvas.mp4", blob);
+    expect(s().exportDonePath).toBe("C:\\exports\\clip-canvas.mp4");
+    expect(s().exportDone).toContain("saved to C:\\exports\\clip-canvas.mp4");
+    expect(s().exportError).toBeNull();
+  });
+});
+
+/**
  * R2-11 — the GIF/WebP refusal caps PIXELS, not frames.
  *
  * Both loop encoders hold the whole animation in RAM (GIF palettegen buffers
@@ -903,6 +976,38 @@ describe("cancel during sidecar finalize reaches proresAbort (R2-10)", () => {
     expect(s().exportError).toBeNull();
     expect(s().exportDone).toBeNull();
     expect(s().exporting).toBeNull();
+  });
+
+  it("a dead sidecar's log tail reaches the export error (R2-30e)", async () => {
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format: "webp", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\loop.webp");
+    // The frame write into a dead ffmpeg: the pipe error says THAT it died,
+    // only the stderr log (returned by the abort, read before cleanup
+    // unlinks it) says WHY.
+    vi.mocked(proresWrite).mockRejectedValueOnce("ffmpeg pipe write failed: os error 232");
+    vi.mocked(proresAbort).mockResolvedValueOnce("[libwebp_anim @ 0x1] Conversion failed!");
+    vi.mocked(exportVideo).mockImplementationOnce(async (_buf, o) => {
+      // One frame into the dead sidecar: the chain records the failure and
+      // trips the export's abort; the core then surfaces the AbortError,
+      // exactly as the real render loop would.
+      await o.onPngFrame!(new Uint8Array([1]), 0);
+      const err = new Error("Export cancelled");
+      err.name = "AbortError";
+      throw err;
+    });
+
+    await s().runExport();
+
+    expect(proresAbort).toHaveBeenCalledTimes(1);
+    // Both halves surface: what broke, and ffmpeg's own account of why.
+    expect(s().exportError).toContain("os error 232");
+    expect(s().exportError).toContain("Conversion failed!");
   });
 
   it("a finalize that completes normally never arms an abort and still reports success", async () => {

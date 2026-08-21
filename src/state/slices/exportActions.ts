@@ -24,6 +24,7 @@ import {
   proresSetAudio,
   proresWrite,
   scratchDir,
+  writeBinaryToPath,
 } from "../platform";
 import {
   estimateExportBytes,
@@ -209,6 +210,19 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       };
       const settings = get().exportSettings;
       const canvasMode = settings.mode === "canvas";
+      // R2-30d: a track shorter than the spec's floor cannot yield a valid
+      // loop — the segment math below would just clamp it into a too-short
+      // clip and the platform would reject the upload. Refuse BEFORE the
+      // save dialog, with the number that explains itself.
+      if (canvasMode && buf.duration < 3) {
+        set({
+          exportError: `Spotify Canvas needs a 3-8 s loop; this track is ${buf.duration.toFixed(1)} s`,
+          exportDone: null,
+          exportDonePath: null,
+        });
+        endExportPreparing();
+        return;
+      }
       // Canvas loops are fixed to the Spotify spec: 9:16, 30 fps, 3-8 s
       const res = canvasMode ? { w: 1080, h: 1920 } : RESOLUTIONS[settings.resIdx];
       const fps = canvasMode ? 30 : settings.fps;
@@ -399,9 +413,10 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       const proresFail: { err: unknown } = { err: null };
       // R2-10: the abort issued by the finalize-span Cancel listener below,
       // held so the catch can await THAT call instead of issuing a second
-      // one — a session is aborted exactly once. Object holder for the same
-      // flow-analysis reason as proresFail above.
-      const finalizeAbort: { p: Promise<void> | null } = { p: null };
+      // one — a session is aborted exactly once. Resolves with the sidecar
+      // log tail (R2-30e), like every proresAbort call. Object holder for
+      // the same flow-analysis reason as proresFail above.
+      const finalizeAbort: { p: Promise<string | undefined> | null } = { p: null };
       // GIF/WebP are the only formats still fed encoded PNGs (onPngFrame) —
       // FEAT-005 moved ProRes onto the same raw rgba64le deep-color tap AV1
       // already used (onRawFrame below), so it no longer belongs here.
@@ -573,7 +588,14 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
               // browser dev falls back to an in-memory blob + download.
               // GIF/WebP render PNG frames into the sidecar; ProRes/AV1 use
               // the raw deep-color tap (onRawFrame below) instead.
-              streamToPath: sidecarMode ? undefined : (savePath ?? undefined),
+              // Canvas loops deliberately DON'T stream (R2-30c, owner
+              // verdict): buffered mode produces a progressive fastStart
+              // MP4 — maximum ingest compatibility for the picky upload
+              // targets these loops exist for, where fragmented MP4 is
+              // exactly what chokes — and a ≤8 s clip fits in memory
+              // trivially. The blob is written to the same picked path
+              // after the render (see below).
+              streamToPath: sidecarMode || canvasMode ? undefined : (savePath ?? undefined),
               pngDir: pngDir ?? undefined,
               onPngFrame: pngSidecarMode
                 ? (data) => {
@@ -669,9 +691,7 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           // side tolerates mid-finalize by design (prores_finish then
           // reports the cancel instead of success; see await_finalize).
           const onFinalizeAbort = () => {
-            finalizeAbort.p = proresAbort()
-              .then(() => undefined)
-              .catch(() => undefined);
+            finalizeAbort.p = proresAbort().catch(() => undefined);
           };
           ac.signal.addEventListener("abort", onFinalizeAbort, { once: true });
           // A cancel that landed between the render loop's last abort check
@@ -708,7 +728,14 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
             exportDonePath: savePath,
           });
         } else {
-          if (result.blob) downloadBlob(result.blob, fileName);
+          if (result.blob) {
+            // Desktop buffered lane (today: Canvas loops, R2-30c): the blob
+            // is complete in memory, so this is one write of finished bytes
+            // to the dialog-picked path — the write-once-at-the-end shape,
+            // not a truncate-then-trickle. Browser dev keeps its download.
+            if (savePath) await writeBinaryToPath(savePath, result.blob);
+            else downloadBlob(result.blob, fileName);
+          }
           set({
             exportDone: pngDir
               ? `${(result.bytes / 1e6).toFixed(1)} MB PNG sequence saved to ${pngDir}`
@@ -724,7 +751,11 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       } catch (e) {
         // R2-10: the finalize-span listener may already have aborted the
         // session — await that call rather than issuing a second one.
-        if (sidecarMode) await (finalizeAbort.p ?? proresAbort().catch(() => undefined));
+        // R2-30e: whichever call ran, it resolved with the tail of ffmpeg's
+        // stderr log, read before the Rust side unlinked it.
+        const sidecarTail = sidecarMode
+          ? await (finalizeAbort.p ?? proresAbort().catch(() => undefined))
+          : undefined;
         // A dead sidecar aborts the render, so the surfaced error arrives
         // wearing an AbortError coat — check the sidecar failure FIRST or a
         // mid-render ffmpeg death reads as a user cancel and shows nothing.
@@ -735,10 +766,19 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         // raw text when it is not a disk problem.
         const raw = proresFail.err ?? e;
         if (proresFail.err != null || (e as Error)?.name !== "AbortError") {
+          // R2-30e: when the sidecar itself died, its log tail is the only
+          // record of WHY — "ffmpeg pipe write failed" alone says nothing.
+          // Folded in BEFORE translation, so the disk translator below can
+          // recognize ffmpeg's own "No space left on device" phrasing that
+          // only ever appears in the log, never in the pipe error.
+          const withTail =
+            proresFail.err != null && sidecarTail
+              ? `${errText(raw)} — ffmpeg log: ${sidecarTail}`
+              : raw;
           // NotReadableError is ambiguous. Re-measure scratch NOW instead of
           // turning a stale preflight snapshot into a confident disk diagnosis.
           const scratchNow = scratchPathForError ? await diskSpace(scratchPathForError) : null;
-          set({ exportError: translateExportError(raw, scratchNow) ?? errText(raw) });
+          set({ exportError: translateExportError(withTail, scratchNow) ?? errText(withTail) });
         }
       } finally {
         overlayBitmap?.close();

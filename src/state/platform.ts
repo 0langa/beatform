@@ -261,9 +261,13 @@ export async function proresFinish(): Promise<void> {
   await invoke("prores_finish");
 }
 
-export async function proresAbort(): Promise<void> {
+/** Cancel the sidecar session. Resolves with the tail of ffmpeg's stderr
+ * log, read Rust-side BEFORE cleanup unlinks it (R2-30e) — on the
+ * broken-frame-pipe failure path this is the only record of why ffmpeg
+ * died. Empty string when no session was running. */
+export async function proresAbort(): Promise<string> {
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("prores_abort");
+  return invoke<string>("prores_abort");
 }
 
 // --- Local automatic lyrics (desktop only, FEAT-004) ---

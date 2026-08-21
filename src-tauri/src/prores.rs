@@ -753,6 +753,27 @@ fn log_tail(path: &PathBuf) -> String {
         .unwrap_or_default()
 }
 
+/// Byte cap for the abort path's returnable tail (R2-30e). Bigger than
+/// `log_tail`'s 8 lines because an abort-after-error is the ONE chance to
+/// read the log before cleanup unlinks it; bounded so the IPC reply never
+/// hauls a whole verbose ffmpeg log across the boundary.
+const ABORT_TAIL_BYTES: usize = 2048;
+
+/// Last ~ABORT_TAIL_BYTES of the log, char-boundary safe. A missing or
+/// unreadable log reads as empty — the abort itself must never fail over
+/// diagnostics.
+fn log_tail_capped(path: &PathBuf) -> String {
+    std::fs::read_to_string(path)
+        .map(|s| {
+            let mut start = s.len().saturating_sub(ABORT_TAIL_BYTES);
+            while !s.is_char_boundary(start) {
+                start += 1;
+            }
+            s[start..].trim().to_string()
+        })
+        .unwrap_or_default()
+}
+
 fn cleanup(job: &ProresJob) {
     if let Some(wav) = &job.wav_path {
         let _ = std::fs::remove_file(wav);
@@ -912,7 +933,10 @@ pub fn prores_finish(
     }
 }
 
-/// Cancel: kill ffmpeg and remove the partial output.
+/// Cancel: kill ffmpeg, remove the partial output, and hand back the tail of
+/// its stderr log (R2-30e) — read BEFORE cleanup unlinks it. On the
+/// broken-frame-pipe failure path `prores_finish` never runs, so this reply
+/// is the only record of WHY ffmpeg died; an idle abort returns "".
 ///
 /// Deliberately kills BEFORE reclaiming the pipe. A frame write may be blocked
 /// in `prores_write` holding the `stdin` mutex; killing the child breaks the
@@ -928,9 +952,16 @@ pub fn prores_finish(
 pub fn prores_abort(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, ProresState>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     crate::assert_main_window(&window)?;
+    abort_job(&state)
+}
+
+/// The abort itself, window-free so a unit test can drive it end to end
+/// (R2-30e) — same split as the guards above.
+fn abort_job(state: &ProresState) -> Result<String, String> {
     let mut guard = state.job.lock().map_err(|_| "state poisoned")?;
+    let mut tail = String::new();
     if let Some(mut job) = guard.take() {
         let _ = job.child.kill();
         // Bounded: reaping a killed process is immediate, but an unbounded wait
@@ -941,10 +972,12 @@ pub fn prores_abort(
         if let Ok(mut s) = state.stdin.lock() {
             drop(s.take());
         }
+        // The log's dying words, BEFORE cleanup() unlinks the file.
+        tail = log_tail_capped(&job.log_path);
         let _ = std::fs::remove_file(&job.out_path);
         cleanup(&job);
     }
-    Ok(())
+    Ok(tail)
 }
 
 /// Kill a running export and discard its output — app shutdown (lib.rs
@@ -1455,6 +1488,65 @@ mod tests {
             await_finalize(&bad, Duration::from_secs(30)).unwrap(),
             Finalize::Failed(_)
         ));
+    }
+
+    #[test]
+    fn abort_returns_the_log_tail_before_cleanup_removes_it() {
+        // R2-30e: on the broken-frame-pipe failure path prores_finish never
+        // runs, so the stderr log is the only record of WHY ffmpeg died —
+        // and abort used to unlink it unread. The tail must come back AND
+        // every cleanup obligation must still hold.
+        use std::io::Write as _;
+        let state = ProresState::default();
+        let (mut f, log_path) = create_temp_new("test-abort-tail.log").unwrap();
+        writeln!(f, "[libwebp_anim @ 0x1] Conversion failed!").unwrap();
+        drop(f);
+        let (f, out_path) = create_temp_new("test-abort-tail-out.mov").unwrap();
+        drop(f);
+        let mut child = spawn_wedged();
+        *state.stdin.lock().unwrap() = child.stdin.take();
+        *state.job.lock().unwrap() = Some(ProresJob {
+            child,
+            wav_path: None,
+            log_path: log_path.clone(),
+            out_path: out_path.clone(),
+        });
+
+        let tail = abort_job(&state).unwrap();
+
+        assert!(
+            tail.contains("Conversion failed!"),
+            "the tail must carry the log's dying words: {tail:?}"
+        );
+        assert!(!log_path.exists(), "cleanup still unlinks the log");
+        assert!(!out_path.exists(), "the partial output is still removed");
+        assert!(state.job.lock().unwrap().is_none(), "job slot cleared");
+        assert!(state.stdin.lock().unwrap().is_none(), "frame pipe released");
+    }
+
+    #[test]
+    fn an_idle_abort_returns_an_empty_tail() {
+        // No session: nothing to kill, nothing to report — and no error.
+        let state = ProresState::default();
+        assert_eq!(abort_job(&state).unwrap(), "");
+    }
+
+    #[test]
+    fn the_capped_tail_keeps_the_last_bytes_of_a_long_log() {
+        use std::io::Write as _;
+        let (mut f, path) = create_temp_new("test-tail-cap.log").unwrap();
+        // Well past the cap, with a marker only at the very end: the tail
+        // must be the END of the log (where ffmpeg prints its error), never
+        // the banner at the top.
+        write!(f, "BANNER{}END-MARKER", "x".repeat(4 * ABORT_TAIL_BYTES)).unwrap();
+        drop(f);
+
+        let tail = log_tail_capped(&path);
+
+        assert!(tail.len() <= ABORT_TAIL_BYTES);
+        assert!(tail.ends_with("END-MARKER"));
+        assert!(!tail.contains("BANNER"));
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

@@ -65,6 +65,28 @@ describe("runExportJob deepColor validation", () => {
     );
   });
 
+  it("rejects PNG mode without an onFrame sink, mirroring this lane's own sink guard (R2-30a)", async () => {
+    // The identical silent-discard hazard one lane over: a PNG job whose
+    // caller forgot the sink would render every frame into the void and
+    // "succeed" while producing nothing.
+    await expect(runExportJob(deepJob({ mode: "png", deepColor: false }), {})).rejects.toThrow(
+      /PNG mode requires hooks\.onFrame/,
+    );
+  });
+
+  it("a sinked PNG job passes validation and never probes a WebCodecs encoder", async () => {
+    const videoProbe = vi.fn();
+    const audioProbe = vi.fn();
+    vi.stubGlobal("VideoEncoder", { isConfigSupported: videoProbe });
+    vi.stubGlobal("AudioEncoder", { isConfigSupported: audioProbe });
+
+    await expect(
+      runExportJob(deepJob({ mode: "png", deepColor: false }), { onFrame: () => {} }),
+    ).rejects.toThrow(/OffscreenCanvas/);
+    expect(videoProbe).not.toHaveBeenCalled();
+    expect(audioProbe).not.toHaveBeenCalled();
+  });
+
   it("valid deep jobs pass validation and never probe a WebCodecs encoder", async () => {
     // Deep mode must take the sidecar lane: no VideoEncoder/AudioEncoder
     // config probe, no mediabunny output — even when the job carries a codec

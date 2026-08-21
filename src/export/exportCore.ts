@@ -405,6 +405,12 @@ export async function runExportJob(
       throw new Error("deepColor requires hooks.onRawFrame");
     }
   }
+  if (job.mode === "png" && !hooks.onFrame) {
+    // Same reason as the deep guard directly above: without a sink every
+    // rendered frame would be silently discarded and the job would "succeed"
+    // while producing nothing (R2-30a).
+    throw new Error("PNG mode requires hooks.onFrame");
+  }
 
   // Custom WGSL presets: the worker is a fresh module instance with an empty
   // registry — re-register (re-validated; a job is still untrusted input).
@@ -501,8 +507,9 @@ export async function runExportJob(
 
   if (isWebm) {
     audioCodec = "opus";
+    const webmCodecString = codecString("vp9a", job.width, job.height, job.fps);
     const vSupport = await VideoEncoder.isConfigSupported({
-      codec: codecString("vp9a", job.width, job.height, job.fps),
+      codec: webmCodecString,
       width: job.width,
       height: job.height,
       bitrate: job.bitrate,
@@ -519,6 +526,12 @@ export async function runExportJob(
       codec: "vp9",
       bitrate: job.bitrate,
       alpha: "keep",
+      // The exact string codecProbe just gated this job with, not
+      // mediabunny's own bitrate-derived guess — the MP4 lane's rule
+      // (below), applied here too (R2-30b): encoding at a different level
+      // than the one isConfigSupported approved is how a job that "probed
+      // fine" fails at frame 0 on a marginal VP9 encoder.
+      fullCodecString: webmCodecString,
       keyFrameInterval: 2, // seconds — matches the MP4 lane's fps*2 frames
       latencyMode: "quality",
     });

@@ -174,6 +174,25 @@ describe("MP4 codec plumbing", () => {
         ).not.toThrow();
       }
     }
+    // R2-30b: the WebM lane pins its level string the exact same way now
+    // (exportCore's isWebm branch) — the vp09.* strings must validate for
+    // the "vp9" codec family too, alpha config included.
+    for (const [w, h, fps] of [
+      [1920, 1080, 60],
+      [3840, 2160, 60],
+    ]) {
+      expect(
+        () =>
+          new VideoSampleSource({
+            codec: "vp9",
+            bitrate: 8_000_000,
+            alpha: "keep",
+            fullCodecString: codecString("vp9a", w, h, fps),
+            keyFrameInterval: 2,
+            latencyMode: "quality",
+          }),
+      ).not.toThrow();
+    }
   });
 
   it("pins AAC-LC rather than letting mediabunny pick HE-AAC", () => {
