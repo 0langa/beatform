@@ -35,6 +35,9 @@ export const shared: {
   midiHandle: MidiHandle | null;
   /** enableMidi claimed but not yet resolved (S3 re-entrancy guard). */
   midiStarting: boolean;
+  /** Bumped by disableMidi so it outruns an enable still parked on the
+   * permission await (R2-31b) — the enable compares and stands down. */
+  midiGen: number;
 } = {
   trackLoadGen: 0,
   exportAbort: null,
@@ -43,4 +46,5 @@ export const shared: {
   libraryPrefetch: null,
   midiHandle: null,
   midiStarting: false,
+  midiGen: 0,
 };

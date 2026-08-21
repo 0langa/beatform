@@ -15,6 +15,9 @@ export function midiActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // guard, attached two onmidimessage handlers and leaked the first
       // handle — every message then fired twice for the session.
       shared.midiStarting = true;
+      // R2-31b: a disable during the permission await must WIN. Capture the
+      // generation this claim belongs to; disableMidi bumps it.
+      const gen = shared.midiGen;
       const handle = await startMidi(
         (data) => get().handleMidiMessage(data),
         (names) => set({ midiDevices: names }),
@@ -24,11 +27,19 @@ export function midiActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         ctx.flashNotice("MIDI isn't available here (needs a Chromium-based build)");
         return;
       }
+      if (gen !== shared.midiGen) {
+        // Disabled while the permission prompt was open: the fresh listener
+        // must not outlive the answer the user already gave (stop() also
+        // clears the device list it published while attaching).
+        handle.stop();
+        return;
+      }
       shared.midiHandle = handle;
       set({ midiEnabled: true });
     },
 
     disableMidi() {
+      shared.midiGen++; // R2-31b: outruns an enable parked on its await
       shared.midiHandle?.stop();
       shared.midiHandle = null;
       set({ midiEnabled: false, midiDevices: [], midiLearn: null });

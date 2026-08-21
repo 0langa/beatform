@@ -192,6 +192,56 @@ describe("store initApp teardown", { timeout: 30_000 }, () => {
 });
 
 /**
+ * R2-31b: enableMidi awaits the browser's permission prompt; a disableMidi
+ * issued while that prompt is open used to LOSE — the late grant installed
+ * the handle and flipped midiEnabled back on. The disable bumps a generation
+ * the enable re-checks after its await: state ends disabled, handle stopped.
+ */
+describe("disableMidi during the permission await wins (R2-31b)", () => {
+  it("the late handle is stopped and the state stays disabled", async () => {
+    const { useVizStore } = await import("./store");
+    const { startMidi } = await import("./midiInput");
+    const { shared } = await import("./slices/shared");
+    // Clean slate: earlier tests may have left the enabled flag or claim set.
+    useVizStore.setState({ midiEnabled: false });
+    shared.midiHandle = null;
+    shared.midiStarting = false;
+
+    const stop = vi.fn();
+    let grant!: (h: { stop: () => void } | null) => void;
+    vi.mocked(startMidi).mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          grant = r;
+        }),
+    );
+
+    const enable = useVizStore.getState().enableMidi();
+    useVizStore.getState().disableMidi(); // changed their mind mid-prompt
+    grant({ stop }); // the permission grant lands late
+    await enable;
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(useVizStore.getState().midiEnabled).toBe(false);
+    expect(shared.midiHandle).toBeNull();
+  });
+
+  it("an undisturbed enable still installs the handle (control)", async () => {
+    const { useVizStore } = await import("./store");
+    const { shared } = await import("./slices/shared");
+    useVizStore.setState({ midiEnabled: false });
+    shared.midiHandle = null;
+    shared.midiStarting = false;
+
+    await useVizStore.getState().enableMidi();
+
+    expect(useVizStore.getState().midiEnabled).toBe(true);
+    expect(shared.midiHandle).not.toBeNull();
+    useVizStore.getState().disableMidi(); // leave the module state clean
+  });
+});
+
+/**
  * L11 regression: `[`/`]` (stepPreset) used to call switchPreset directly,
  * bypassing the beat-quantize takeover that the number-key path
  * (queuePreset) already honoured — pressing `]` during quantized playback
