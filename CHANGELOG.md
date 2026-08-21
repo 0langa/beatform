@@ -11,6 +11,38 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.106.0] - 2026-08-21
+
+### Fixed
+
+- **Batch renders now react to song sections and draw the audiogram —
+  exactly like single exports.** The batch lane computed section
+  boundaries and then threw them away, and never passed the audiogram: a
+  modulation routed on "section pulse" read zero for the whole night, and
+  audiogram elements simply weren't drawn. Batch output of a document now
+  matches a single export of the same document, feature for feature.
+- **"Retry failed" can no longer start twice.** A double-click on the
+  retry button could race two batch runs into the same output files. The
+  second activation now waits its turn — one click, one run.
+- **Exports use the GPU you chose.** With Preferences ▸ Performance ▸ GPU
+  set (dual-GPU laptops), the export worker could still land on the other
+  adapter and render subtly different pixels than the preview. The choice
+  now travels with every export job — batch included.
+- **A corrupted audio file can no longer poison the meters for the whole
+  session.** One non-finite sample in a damaged float WAV made the stereo
+  width and loudness readouts stick at NaN until restart — spreading
+  through any modulation routed on stereo width. Every layer now guards
+  and heals: the next clean audio brings correct readings back.
+
+### Changed
+
+- **The GPU pixel gate is strict now.** Any raw pixel-hash change fails
+  the release gate (previously only coarse perceptual tolerances did),
+  and the matrix grew 18 cases covering what it never exercised: the
+  export-shaped feedback walk for all six history-carrying modes, all
+  seven scene transitions mid-fade, non-default backgrounds, deep-color
+  capture, and the legacy Builder visual old projects still reference.
+
 ## [2.105.0] - 2026-08-21
 
 ### Fixed
