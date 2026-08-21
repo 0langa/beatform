@@ -819,6 +819,14 @@ export class FeaturePipeline {
       this.features.sectionPulse = 0;
       this.features.vocal = 0;
       this.chromaSmooth.fill(0);
+      // R2-32a: the grid readouts join them. The keep-previous convention
+      // otherwise held the DEAD track's BPM/phases across a load or live
+      // toggle, so tempo-locked LFOs kept pulsing at the old tempo until the
+      // new analysis landed — bpm 0 is the documented no-grid state
+      // (modMatrix's lfoValue falls back to its 120-BPM-equivalent).
+      this.features.bpm = 0;
+      this.features.beatPhase = 0;
+      this.features.barPhase = 0;
     }
   }
 

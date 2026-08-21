@@ -272,23 +272,37 @@ describe("RealtimeAnalyzer P-15 fuel fields", SUITE, () => {
   it("detaching the analyses stops driving the fields (they hold, like bpm)", () => {
     const { engine, setNow } = fakeEngine(dense);
     const ana = new RealtimeAnalyzer(engine);
+    ana.setBeatGrid({
+      bpm: 174,
+      beatTimes: new Float32Array(Array.from({ length: 8 }, (_, i) => i * 0.5)),
+      hopSec: 0.01,
+    });
     ana.setSections([0.5]);
     ana.setVocalSpans([{ start: 0, end: 10 }]);
     setNow(1);
     const f = ana.update(1, 1);
     expect(f.sectionIndex).toBe(1);
     expect(f.vocal).toBe(1);
+    expect(f.bpm).toBe(174);
+    ana.setBeatGrid(null);
     ana.setSections(null);
     ana.setVocalSpans(null);
     setNow(1 + 1 / 60);
     const g = ana.update(1 + 1 / 60, 1 + 1 / 60);
     expect(g.sectionIndex).toBe(1); // held — the keep-previous convention
     expect(g.vocal).toBe(1);
+    expect(g.bpm).toBe(174); // detach mid-track HOLDS: same audio, same tempo
     ana.reset("source"); // a source change clears them to the honest unknowns
     setNow(1 + 2 / 60);
     const h = ana.update(1 + 2 / 60, 1 + 2 / 60);
     expect(h.sectionIndex).toBe(-1);
     expect(h.vocal).toBe(0);
+    // R2-32a: the grid readouts clear too — tempo-locked LFOs must fall back
+    // to their documented no-grid behaviour instead of running the dead
+    // track's BPM until the new track's analysis lands.
+    expect(h.bpm).toBe(0);
+    expect(h.beatPhase).toBe(0);
+    expect(h.barPhase).toBe(0);
   });
 });
 

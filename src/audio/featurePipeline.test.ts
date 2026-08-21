@@ -617,9 +617,21 @@ describe("P-15 reactivity-fuel fields", () => {
     const magDb = new Float32Array(FFT_BINS).fill(MIN_DB);
     fillBand(magDb, 430, 450, MAX_DB);
     for (let i = 0; i < 30; i++) {
-      p.update(makeInput({ magDb, beatIndex: 9, sectionIndex: 1, vocal: 1, time: i * DT }));
+      p.update(
+        makeInput({
+          magDb,
+          beatIndex: 9,
+          sectionIndex: 1,
+          vocal: 1,
+          bpm: 174,
+          beatPhase: 0.75,
+          barPhase: 0.3,
+          time: i * DT,
+        }),
+      );
     }
     expect(p.features.chroma![9]).toBeGreaterThan(0.1); // 440 Hz = A
+    expect(p.features.bpm).toBe(174); // fixture sanity: the grid was driving
     p.reset("source");
     expect(p.features.beatIndex).toBe(-1);
     expect(p.features.barIndex).toBe(-1);
@@ -627,6 +639,25 @@ describe("P-15 reactivity-fuel fields", () => {
     expect(p.features.sectionPulse).toBe(0);
     expect(p.features.vocal).toBe(0);
     expect(Math.max(...Array.from(p.features.chroma!))).toBe(0);
+    // R2-32a: the grid readouts too. A NEW source has no grid yet, and the
+    // keep-previous convention would otherwise run tempo-locked LFOs on the
+    // DEAD track's BPM until analysis lands — bpm 0 is the documented
+    // no-grid state (modMatrix's lfoValue falls back to its 120-equivalent).
+    expect(p.features.bpm).toBe(0);
+    expect(p.features.beatPhase).toBe(0);
+    expect(p.features.barPhase).toBe(0);
+  });
+
+  it("a seek keeps the grid readouts — same track, sources re-resolve them from time", () => {
+    // Clearing on seek would snap tempo-locked LFOs to the no-grid fallback
+    // for a frame on every scrub — the same flash reset()'s docblock forbids
+    // for bins/peaks. Only a SOURCE change may forget the grid (R2-32a).
+    const p = makePipeline();
+    p.update(makeInput({ bpm: 174, beatPhase: 0.75, barPhase: 0.3 }));
+    p.reset("seek");
+    expect(p.features.bpm).toBe(174);
+    expect(p.features.beatPhase).toBe(0.75);
+    expect(p.features.barPhase).toBe(0.3);
   });
 
   it("folds a 440 Hz tone into pitch class A and nowhere stronger", () => {
