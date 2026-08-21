@@ -2829,12 +2829,19 @@ export const useVizStore = create<VizState>((set, get) => {
       // is no longer adjacent, and diffing across the jump fires a phantom
       // beat/kick/snare/hat on the next frame.
       getAnalyzer().reset("seek");
+      // R2-31c: the quantize bookkeeping jumps WITH the playhead — a pending
+      // switch may only fire on a boundary the track NATURALLY crosses after
+      // the seek, never because the jump leapt over one. (Backward jumps were
+      // already inert: crossedBoundary requires cur > prev.)
+      lastQuantizeTick = Math.max(0, time);
     },
 
     seekBy(delta) {
       const engine = getEngine();
-      engine.seek(engine.currentTime + delta);
+      const target = engine.currentTime + delta;
+      engine.seek(target);
       getAnalyzer().reset("seek");
+      lastQuantizeTick = Math.max(0, target); // R2-31c — see seekEnd
     },
 
     toggleLoop() {

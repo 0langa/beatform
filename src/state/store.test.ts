@@ -40,11 +40,12 @@ vi.mock("./services", () => ({
     currentTime: 0,
     duration: 0,
     playing: false,
+    seek: vi.fn(),
     setVolume: vi.fn(),
     onEnded: null,
     dispose: vi.fn(),
   })),
-  getAnalyzer: vi.fn(() => ({ setSync: vi.fn() })),
+  getAnalyzer: vi.fn(() => ({ setSync: vi.fn(), reset: vi.fn() })),
   peekAnalyzer: vi.fn(() => null),
   getRenderer: vi.fn(() => null),
   setLiveRenderPaused: vi.fn(),
@@ -559,6 +560,49 @@ describe("preset display order", () => {
     expect(useVizStore.getState().presetId).toBe("aurora");
 
     useVizStore.getState().resetPresetOrder();
+  });
+});
+
+/**
+ * R2-31c: a forward seek used to leave the quantize bookkeeping at the
+ * PRE-seek time, so the first frame tick after the jump saw every boundary
+ * between the two positions as "crossed" and fired the queued switch off a
+ * scrub instead of the music. The seek actions advance lastQuantizeTick to
+ * the seek target; only a boundary the track then naturally crosses fires.
+ */
+describe("a forward seek cannot fire a queued switch (R2-31c)", () => {
+  it("the jump swallows the leapt-over boundaries; the next natural crossing still fires", async () => {
+    const { useVizStore } = await import("./store");
+    const { initServices } = await import("./services");
+    const { orderedPresets } = await import("./presetOrder");
+    const strip = orderedPresets(useVizStore.getState().presetOrder, []);
+    const dispose = useVizStore.getState().initApp(fakeCanvas());
+    try {
+      const calls = vi.mocked(initServices).mock.calls;
+      const tick = calls[calls.length - 1][1].onFrameTick!;
+      useVizStore.setState({
+        presetId: strip[0].id,
+        customDefs: [],
+        switchQuantize: "beat",
+        playback: { ...useVizStore.getState().playback, playing: true },
+        beatGrid: { bpm: 120, beatTimes: Float32Array.from([0, 0.5, 1, 1.5, 2]), hopSec: 0.0116 },
+        pendingPresetId: null,
+      });
+      tick(0.1); // baseline the bookkeeping just past the first boundary
+      useVizStore.getState().queuePreset(strip[1].id);
+      expect(useVizStore.getState().pendingPresetId).toBe(strip[1].id);
+
+      useVizStore.getState().seekEnd(1.2); // leaps over the 0.5 and 1.0 boundaries
+      tick(1.25); // first tick after the seek — no boundary in (1.2, 1.25]
+      expect(useVizStore.getState().presetId).toBe(strip[0].id); // no fire off the jump
+      expect(useVizStore.getState().pendingPresetId).toBe(strip[1].id); // still queued
+
+      tick(1.55); // the track naturally crosses 1.5
+      expect(useVizStore.getState().presetId).toBe(strip[1].id);
+      expect(useVizStore.getState().pendingPresetId).toBeNull();
+    } finally {
+      dispose();
+    }
   });
 });
 
