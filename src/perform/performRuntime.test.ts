@@ -475,9 +475,21 @@ describe("perform runtime", () => {
     const head = "data:image/png;base64,";
     const a = `${head}${"A".repeat(60)}X${"A".repeat(60)}`;
     const b = `${head}${"A".repeat(60)}Y${"A".repeat(60)}`;
-    channel.deliver({ type: "assets", coverUrl: a, bgImageUrl: null, bgVideoUrl: null, overlayAssets: {} });
+    channel.deliver({
+      type: "assets",
+      coverUrl: a,
+      bgImageUrl: null,
+      bgVideoUrl: null,
+      overlayAssets: {},
+    });
     await flush();
-    channel.deliver({ type: "assets", coverUrl: b, bgImageUrl: null, bgVideoUrl: null, overlayAssets: {} });
+    channel.deliver({
+      type: "assets",
+      coverUrl: b,
+      bgImageUrl: null,
+      bgVideoUrl: null,
+      overlayAssets: {},
+    });
     await flush();
 
     // Both covers were decoded and bound — the second was not deduped away.

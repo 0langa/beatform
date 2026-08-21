@@ -1708,9 +1708,7 @@ describe("Visuals section rail", { timeout: 30_000 }, () => {
 
   it("navigating off the Live page disarms a pending MIDI learn (R2-31a)", () => {
     setPrefs({ visualsPage: "live" });
-    act(() =>
-      useVizStore.setState({ midiLearn: { kind: "cc", param: "hue", min: 0, max: 360 } }),
-    );
+    act(() => useVizStore.setState({ midiLearn: { kind: "cc", param: "hue", min: 0, max: 360 } }));
     render(<ParamsPanel />);
 
     fireEvent.click(screen.getByRole("button", { name: "Mode" }));
