@@ -144,15 +144,13 @@ describe("pickSequenceDir collision walking", () => {
       taken.includes(dir);
 
   it("uses the preferred name when it is free (missing or empty)", async () => {
-    await expect(pickSequenceDir("out/track_frames", takenSet())).resolves.toBe(
-      "out/track_frames",
-    );
+    await expect(pickSequenceDir("out/track_frames", takenSet())).resolves.toBe("out/track_frames");
   });
 
   it("walks to -2, then -3, past non-empty folders — never reusing one", async () => {
-    await expect(
-      pickSequenceDir("out/track_frames", takenSet("out/track_frames")),
-    ).resolves.toBe("out/track_frames-2");
+    await expect(pickSequenceDir("out/track_frames", takenSet("out/track_frames"))).resolves.toBe(
+      "out/track_frames-2",
+    );
     await expect(
       pickSequenceDir("out/track_frames", takenSet("out/track_frames", "out/track_frames-2")),
     ).resolves.toBe("out/track_frames-3");

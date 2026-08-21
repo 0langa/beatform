@@ -219,7 +219,19 @@ function verifyLane(lane, dir, wav) {
   // codes the encoder wrote.
   const dec = spawnSync(
     ffmpeg,
-    ["-i", out, "-frames:v", "1", "-ss", String((FRAMES / FPS) * 0.5), "-f", "rawvideo", "-pix_fmt", "yuv444p10le", "-"],
+    [
+      "-i",
+      out,
+      "-frames:v",
+      "1",
+      "-ss",
+      String((FRAMES / FPS) * 0.5),
+      "-f",
+      "rawvideo",
+      "-pix_fmt",
+      "yuv444p10le",
+      "-",
+    ],
     { stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 },
   );
   if (dec.status !== 0 || !dec.stdout?.length) {
