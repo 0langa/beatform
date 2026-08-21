@@ -1,5 +1,6 @@
 import type { SyncSettings } from "../audio/types";
 import { pcmFromAudioBuffer } from "../audio/offlineSource";
+import { getPrefs } from "../state/prefs";
 import type { BgSettings, ParamValues } from "../render/types";
 import {
   runExportJob,
@@ -510,6 +511,12 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
         : o.vocalSpans,
     mode: isPng ? "png" : o.streamToPath ? "stream" : "buffer",
     loudness: o.loudness,
+    // Renderer-environment config, captured HERE — the main-thread job
+    // assembly both lanes (interactive and batch) flow through — because the
+    // export worker cannot read prefs (no localStorage) and silently fell
+    // back to "default" on dual-GPU machines (R2-14). Always emitted: an
+    // absent key would put the worker right back on its blind prefs read.
+    powerPreference: getPrefs().powerPreference,
   });
 
   // H5: a disk-write failure must stop the render NOW, not at close(). The

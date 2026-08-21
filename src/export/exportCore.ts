@@ -25,6 +25,7 @@ import { integratedLufs, normalizationGainDb } from "../audio/dsp/lufs";
 import { TruePeakLimiter } from "../audio/dsp/truepeak";
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import { presetUsesFeedback } from "../render/webgpuRenderer";
+import type { AppPrefs } from "../state/prefs";
 import { FixedFeedbackClock, isFeedbackTick } from "../render/fixedFeedback";
 import {
   BG_IMAGE,
@@ -235,6 +236,14 @@ export interface ExportJob {
    * file). Normalization is a delivery step, not a creative one.
    */
   loudness?: LoudnessJob;
+  /**
+   * GPU adapter power preference (Preferences ▸ Performance), captured on the
+   * main thread when the job is assembled. Renderer-environment config, not
+   * document state — it rides the job because the worker has no localStorage:
+   * reading prefs there always answered "default", so on a dual-GPU machine
+   * the preview and the export could land on different adapters (R2-14).
+   */
+  powerPreference?: AppPrefs["powerPreference"];
 }
 
 export interface LoudnessJob {
@@ -629,7 +638,9 @@ export async function runExportJob(
   const headFrames: ImageBitmap[] = [];
   let renderer: WebGPURenderer;
   try {
-    renderer = await WebGPURenderer.create(canvas);
+    // The job's captured pref, never prefs: this may be running in the export
+    // worker, where localStorage (and so the user's choice) is invisible.
+    renderer = await WebGPURenderer.create(canvas, job.powerPreference);
   } catch (e) {
     // Keep the cause: this fires both when the system genuinely has no WebGPU
     // and when a device is transiently unavailable (e.g. just after a driver

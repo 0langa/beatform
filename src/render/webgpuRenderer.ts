@@ -1,6 +1,6 @@
 import type { AudioFeatures } from "../audio/types";
 import { BUILDER_MAX_LAYERS } from "./builder2";
-import { getPrefs } from "../state/prefs";
+import { getPrefs, type AppPrefs } from "../state/prefs";
 import { FEEDBACK_DT } from "./fixedFeedback";
 import { allParams, BG_VIDEO, DEFAULT_MOTION, DEFAULT_POST, paramOr } from "./types";
 import { WGSL_HSL2RGB, wgslAcesTonemap } from "./wgslLib";
@@ -2259,12 +2259,16 @@ export class WebGPURenderer implements Renderer {
   }
   private disposed = false;
 
-  static async create(canvas: HTMLCanvasElement | OffscreenCanvas): Promise<WebGPURenderer> {
+  static async create(
+    canvas: HTMLCanvasElement | OffscreenCanvas,
+    powerPreference?: AppPrefs["powerPreference"],
+  ): Promise<WebGPURenderer> {
     if (!navigator.gpu) throw new Error("WebGPU not available");
     // GPU preference (Preferences ▸ Performance) — a hint for dual-GPU machines.
-    // In the export worker localStorage is absent, so prefs resolve to
-    // "default" there; the live choice is what matters.
-    const pref = getPrefs().powerPreference;
+    // The export worker has no localStorage, so prefs read "default" there —
+    // it passes the job's value instead (captured on the main thread, R2-14).
+    // Only the live/preview path, which CAN see prefs, omits the argument.
+    const pref = powerPreference ?? getPrefs().powerPreference;
     const adapter = await navigator.gpu.requestAdapter(
       pref === "default" ? undefined : { powerPreference: pref },
     );
