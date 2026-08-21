@@ -172,10 +172,19 @@ export class RealFFT {
     // Magnitude -> dB. Scale: 2/N for one-sided spectrum times the window's
     // coherent gain — see the constructor for why the symmetric case keeps the
     // historical literal 4/N.
+    //
+    // sqrt(re²+im²), NOT Math.hypot (R2-08): hypot's overflow/underflow
+    // guards cost ~43x per call on this hot instruction, and they guard
+    // against inputs this loop can never see. re/im are sums of at most N
+    // windowed PCM samples (|x| ≤ 1, window weights ≤ 1), so |re|,|im| ≤ N ≤
+    // 32768 — squares stay below ~1.1e9, astronomically far from float64's
+    // ~1.8e308 overflow and from squared-subnormal underflow mattering (a
+    // magnitude that tiny is -Infinity dB either way). sqrt and hypot agree
+    // to ≤1 ulp on this domain.
     const scale = this.scale;
     const bins = n >> 1;
     for (let i = 0; i < bins; i++) {
-      const m = Math.hypot(re[i], im[i]) * scale;
+      const m = Math.sqrt(re[i] * re[i] + im[i] * im[i]) * scale;
       outDb[i] = m > 1e-10 ? 20 * Math.log10(m) : -Infinity;
     }
   }
