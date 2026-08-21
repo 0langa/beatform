@@ -91,7 +91,8 @@ devUrl as 127.0.0.1 and waited forever, blaming the server that was READY.
 The server stays off the LAN; consumers that dial `http://localhost:1420`
 (the built-shell harnesses' WebView2, browsers) reach it through address
 fallback — `[::1]` refuses fast, `127.0.0.1` answers. Proven on device
-against this exact default: bare `test:gpu` (matrix 269/269),
+against this exact default: bare `test:gpu` (the full matrix green — 269
+cases then; the baseline has since grown),
 `test:shadertoy:built` (60 deterministic frames) and `test:loopback:built`
 all green with no `TAURI_DEV_HOST` set. `TAURI_DEV_HOST` remains an
 OVERRIDE for LAN/device work, not a prerequisite.

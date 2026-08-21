@@ -110,10 +110,11 @@ import { validTimeline, type Timeline } from "./timeline";
  *        inspection (the same 1.0 is a v13 ceiling and a v14 neutral), so
  *        only a reader that knows the file's schema can apply it. Recorded
  *        honestly: sibling stores that validate WITHOUT their version
- *        reaching this module — the localStorage last-session cache,
- *        .bfpreset looks, and .bftheme documents (parseTheme holds a
- *        projectSchemaVersion but does not thread it into validation) —
- *        cannot ride this migration without plumbing of their own.
+ *        reaching this module — the localStorage last-session cache and
+ *        .bfpreset looks — cannot ride this migration without plumbing of
+ *        their own. (.bftheme documents DO thread their stored
+ *        projectSchemaVersion through validation and ride it; themes.ts,
+ *        pinned by themes.test.ts.)
  */
 
 export const PROJECT_VERSION = 14;

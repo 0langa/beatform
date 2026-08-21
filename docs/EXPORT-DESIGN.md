@@ -2,7 +2,7 @@
 
 Goal: user picks preset + params, clicks Export, gets a high-quality MP4 with
 visuals frame-perfectly synced to the music. Resolution/fps selectable
-(1080p/1440p/4K, 30/60 fps).
+(720p→4K per aspect, plus vertical/square frames, 30/60 fps).
 
 ## Why offline rendering (not screen capture)
 
@@ -73,9 +73,9 @@ Shipped since this document was first written (it described the v1 pipeline):
   holding the whole target.
 - **VP9-alpha (WebM) and PNG sequence** for true-alpha deliverables, plus
   **ProRes 4444** via the sidecar below.
-- **Rust/ffmpeg sidecar** — bundled LGPL build driving ProRes 4444, GIF and
-  animated WebP. Args are built in Rust from structured parameters; the webview
-  can never pass raw arguments to a process.
+- **Rust/ffmpeg sidecar** — bundled LGPL build driving ProRes 4444, 10-bit
+  AV1, GIF and animated WebP. Args are built in Rust from structured
+  parameters; the webview can never pass raw arguments to a process.
 - **HEVC / AV1** behind a runtime capability probe, with fallback.
 - **LUFS normalization**, **loop crossfade**, **timeline-driven scene
   resolution**, **lyric overlays**, **audiogram elements** and **batch render**.
@@ -83,8 +83,9 @@ Shipped since this document was first written (it described the v1 pipeline):
 Still open (deliberately):
 
 - Hardware-encoder selection (VideoEncoder picks its own backend today).
-- A second-display / multi-window performance output — see the Stage-mode
-  notes in the roadmap.
+
+(The second-display performance output shipped in v2.104.0 — it is a live
+mirror surface, not an export lane; see the perform window sources.)
 
 ## Quality defaults
 

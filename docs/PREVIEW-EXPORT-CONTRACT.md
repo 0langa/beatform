@@ -140,11 +140,19 @@ compile errors and zero uncaptured WebGPU errors.
 - A preview rendered at one fps is not expected to equal an export sampled at a
   different timestamp between fixed state ticks.
 - Encoded files are not byte-reproducible across hardware encoders.
-- Feedback-path modes (Spectro Falls, Overgrowth) do not promise that a
-  preview which has been seeked mid-track matches a fresh walk pixel-for-pixel
-  — their on-screen state carries pre-seek history (finite for Spectro
-  Falls, indefinitely for Overgrowth). Exports always replay from the clip
-  start and match a fresh, unseeked preview exactly.
+- Modes with cross-frame state (Spectro Falls, Overgrowth, Echo Trails and
+  the other trail effects, Particle Flow's simulation) do not promise that a
+  preview which has been seeked mid-track matches a fresh walk
+  pixel-for-pixel — their on-screen state carries pre-seek history (finite
+  for the bounded effects, indefinite for Overgrowth; Particle Flow re-seeds
+  on any jump over two seconds). Exports always replay from the clip start:
+  structurally the same walk as a fresh, unseeked preview (same events, same
+  seeds, same state regime), within the pixel carve-outs above — not a
+  per-pixel identity claim.
+- Canvas-loop exports crossfade the audio tail into the head **before**
+  analysis, so visuals near the seam react to the blended audio the encoded
+  file actually plays — deliberately, and only in the export (the preview
+  never plays the blend).
 
 ## Release gates
 

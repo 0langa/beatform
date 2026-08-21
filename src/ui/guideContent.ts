@@ -119,7 +119,7 @@ export const GUIDE: readonly GuideSection[] = [
         ul: [
           [
             { strong: "Styles" },
-            " — six to fourteen curated one-click looks, in a row of chips at the top of the Mode page. The header above the page names the style you are on; the chip row reads ",
+            " — six to fifteen curated one-click looks, in a row of chips at the top of the Mode page. The header above the page names the style you are on; the chip row reads ",
             { em: "Custom" },
             " once you move a control away from it.",
           ],

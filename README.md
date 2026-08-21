@@ -45,8 +45,8 @@ Free and open source. Built to become a professional-grade tool for producers an
   **Bass Circle** (circular bass visualizer with album art), and **Builder** — a real
   layer compositor: stack up to twelve layers, each with its own blend mode,
   color and parameters; share stacks as `.bfbuilder` files
-- Every mode but Builder: 6-14 curated factory **styles**, plus its controls
-  sorted into groups (~430 app-wide). Each group leads with the controls that change the
+- Every mode but Builder: 6-15 curated factory **styles**, plus its controls
+  sorted into groups (over 550 app-wide). Each group leads with the controls that change the
   look and folds its internal constants behind its own **expert line**, closed
   by default and counting what you have changed; **Show every control** opens
   them all at once. Plain-language **hint** for every control (tooltip + live
@@ -162,7 +162,8 @@ Free and open source. Built to become a professional-grade tool for producers an
   current line renders karaoke-style over the visual — position, size, color
   and fades configurable from the same timed definition in every export
 - **Music library** (desktop): pick your music folder once — every track
-  listed with its real tags (title/artist/duration via lofty), one click to
+  listed with its real tags (title/artist/duration via lofty; scans
+  mp3/flac/wav/ogg/m4a plus aac/opus), one click to
   play, and finished tracks flow into the next near-gaplessly (the next file
   is read and decoded while the current one plays)
 - **Listen to the system** (desktop): WASAPI loopback visualizes whatever the
@@ -174,6 +175,12 @@ Free and open source. Built to become a professional-grade tool for producers an
   chrome-free full-bleed output with blackout and a mode-name HUD; **Web MIDI**
   maps knobs to any parameter and notes to modes (local, no drivers). Preview-only
   — never affects exports
+- **Second-display output window**: a chrome-free performance window on any
+  monitor (fullscreen or movable), mirroring the live visual for the audience
+  while you keep the full workstation — plus the **Perform drawer** (**D**):
+  mode pads, blackout, monitor picker and live MIDI mappings in one operator
+  console. Escape steps fullscreen down before it closes; hotplugging
+  monitors re-clamps the window
 - Product chrome: auto-hides while playing (the Visuals dock stays lit),
   keyboard shortcuts (press H — every performance shortcut has a letter or
   digit as its primary binding, so it works on every keyboard layout; the
@@ -253,18 +260,20 @@ silently skips the lyrics-sidecar member.
 ## Roadmap
 
 The foundations → workstation → visual-ceiling → pro-delivery → ecosystem →
-storytelling → motion arc is **complete and shipped**; live-performance
-("Stage") is the current frontier — beat-quantized switching, Web MIDI and
-Stage mode have landed, with a true second-display output window still to come.
+storytelling → motion → live-performance ("Stage") arc is **complete and
+shipped** — beat-quantized switching, Web MIDI, Stage mode, and the
+second-display output window with its Perform drawer all landed (v2.104.0).
 Everything stays free and open source, GitHub-only, with no monetization.
 
 Current work, evidence gaps, feature candidates and explicit non-goals are kept
 in [`BACKLOG.md`](BACKLOG.md). That ledger is the canonical detailed queue;
 older local roadmap and plan files are historical records.
 
-The full on-hardware acceptance pass is **complete** — every item in
-`TESTING.md` is green, including real-hardware drag-and-drop, a physical
-non-US keyboard, a two-hour export soak and ProRes 4444 alpha round-trip.
+The full on-hardware acceptance pass (2026-07-27) is **complete** — every item
+in its scope green, including real-hardware drag-and-drop, a physical
+non-US keyboard, a two-hour export soak and a ProRes 4444 alpha round-trip in
+DaVinci Resolve; `TESTING.md` records the pass and the few surfaces added
+since it ran.
 **v3.0.0 is not a version bump waiting on a checklist.** It is the point where
 this is exactly the app it should be — every feature something to stand behind,
 not merely something that works. Passing the acceptance pass is evidence toward

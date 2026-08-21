@@ -1,4 +1,5 @@
-// Fetch the pinned LGPL ffmpeg build for the ProRes export sidecar.
+// Fetch the pinned LGPL ffmpeg build for the export sidecar
+// (ProRes 4444, 10-bit AV1, GIF, animated WebP).
 // The binary is ~110 MB and deliberately NOT in git — run this once after
 // cloning (and in CI) before `npm run tauri build`:
 //

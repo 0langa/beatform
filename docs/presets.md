@@ -45,7 +45,7 @@ export const myMode: PresetDef = {
   name: "My Mode",
   description: "One user-facing line.",
   styles: [
-    // curated looks; first = defaults. The shipped modes carry 6–14 each
+    // curated looks; first = defaults. The shipped modes carry 6–15 each
     { id: "default", name: "Default", values: {} },
     { id: "ember", name: "Ember", values: { hue: 20, glow: 0.8 } },
   ],

@@ -53,12 +53,14 @@ in this repository) that orchestrates the following third-party components:
 ## FFmpeg (sidecar binary)
 
 The desktop app bundles an **FFmpeg** executable as a separate sidecar binary
-(`ffmpeg.exe`, next to the app executable). It is used exclusively for the
-ProRes 4444 export path; the app spawns it as an external process and pipes
-rendered frames to it. It is not linked into the application.
+(`ffmpeg.exe`, next to the app executable). It drives the ProRes 4444, 10-bit
+AV1, GIF and animated-WebP export paths; the app spawns it as an external
+process and pipes rendered frames to it. It is not linked into the
+application.
 
 - Build: BtbN FFmpeg-Builds, **LGPL** win64 build of FFmpeg 8.1
-  (no GPL components — ProRes uses FFmpeg's native `prores_ks` encoder).
+  (no GPL components — ProRes uses FFmpeg's native `prores_ks` encoder,
+  AV1 uses the BSD-licensed SVT-AV1 encoder).
 - License: GNU Lesser General Public License v2.1 or later.
   The full license text ships alongside the binary as
   `FFMPEG-LICENSE.txt` and is included in the repository at
@@ -84,17 +86,23 @@ JavaScript like any other npm dependency.
 
 ## Rust crates (statically linked into the desktop binary)
 
-The desktop app (`src-tauri`) links a Rust dependency tree of ~450 crates,
+The desktop app (`src-tauri`) links a Rust dependency tree of ~540 crates,
 locked in `src-tauri/Cargo.lock`. The direct dependencies are:
 
 | Crate                                             | Purpose                                                | License           |
 | ------------------------------------------------- | ------------------------------------------------------ | ----------------- |
 | `tauri`, `tauri-plugin-dialog`, `tauri-plugin-fs` | Desktop shell, native dialogs, filesystem access       | MIT OR Apache-2.0 |
+| `tauri-plugin-updater`, `tauri-plugin-process`    | Signed auto-updates and the post-update restart        | MIT OR Apache-2.0 |
 | `cpal`                                            | Cross-platform audio I/O (WASAPI loopback capture)     | Apache-2.0        |
 | `lofty`                                           | Audio metadata/tag reading for the library scanner     | MIT OR Apache-2.0 |
 | `walkdir`                                         | Recursive directory traversal for the library scanner  | MIT OR Unlicense  |
 | `serde`, `serde_json`                             | Serialization                                          | MIT OR Apache-2.0 |
 | `reqwest`, `rustls`, `sha2`                       | Verified lyrics-model downloads (also used by updater) | MIT OR Apache-2.0 |
+| `naga`                                            | WGSL validation for the Shadertoy import transpiler    | MIT OR Apache-2.0 |
+| `base64`                                          | Loopback audio frames over the IPC bridge              | MIT OR Apache-2.0 |
+| `sysinfo`                                         | Performance-overlay CPU/memory sampling                | MIT               |
+| `webview2-com`, `windows-core`                    | WebView2 COM interop (Web MIDI permission grant)       | MIT               |
+| `winreg`                                          | Uninstall-entry version alignment after auto-update    | MIT               |
 | `ort` (lyrics sidecar)                            | ONNX Runtime bindings for MDX-Net vocal isolation      | MIT OR Apache-2.0 |
 | `realfft` (lyrics sidecar)                        | Real-signal STFT for the MDX-Net pipeline              | MIT               |
 | `rustfft` (lyrics sidecar)                        | FFT engine under `realfft`                             | MIT OR Apache-2.0 |

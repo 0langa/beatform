@@ -284,11 +284,12 @@ export class OfflineAnalyzer {
   /**
    * Warm the pipeline so frame 0 is not beat-blind.
    *
-   * `FeaturePipeline` gates every detector on `clock >= WARMUP_SEC`, where the
-   * clock counts from CONSTRUCTION. Live that is minutes-since-analyzer-start,
-   * so the preview is always warm; offline it is zero, so the first ~0.2 s of
-   * every export had no beat, kick, snare, hat or driveBeat pulse while the
-   * preview fired them at the same track moment.
+   * `FeaturePipeline` gates every detector on `clock >= WARMUP_SEC`, where
+   * the clock counts from CONSTRUCTION and restarts on every source reset.
+   * Live the preview is warm except for the first WARMUP_SEC (~0.2 s) after
+   * a track load or live-input toggle; offline the clock started at zero, so
+   * the first ~0.2 s of every export had no beat, kick, snare, hat or
+   * driveBeat pulse even where a warmed-up preview fired them.
    *
    * The pre-roll runs the frames leading UP TO t=0 with `playing: false`. That
    * flag is the key: flux history, the adaptive means and the peak-hold EMAs

@@ -155,7 +155,8 @@ Export artifact:
 > When the next batch opens, reset the boxes, update the "State as of" line
 > below, and replace this banner — do not start a parallel document.
 
-State as of **v2.51.0/v2.52.0** (batch run 2026-07-26/27; app now at v2.53.0).
+State as of **v2.51.0/v2.52.0** (batch run 2026-07-26/27; the app has moved
+well past that since — the batch below is the frozen record of that run).
 Written so a computer-controlling agent with full PC access can execute it;
 items that genuinely need human senses or hardware are marked **HUMAN**. Mark
 each item ✅/❌ with a one-line note.
@@ -457,8 +458,9 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   5.000 s, plus `pcm_s16le` 48 kHz audio. Bundled ffmpeg decoded frame 1
   to `C:\bf-test\out\alpha.png`; all four corner alpha values are 1
   (<255), while center `(640,360)` alpha is 108 (>0). Real transparency
-  therefore survives file decode-back. NLE UI round-trip remains
-  POSTPONED until Resolve is installed; not a v3 blocker.
+  therefore survives file decode-back. NLE UI round-trip: CLOSED —
+  PASSED 2026-08-19 in DaVinci Resolve 21 (VERIFY-002; the archived
+  ledger holds the full record).
 - [✅] **MIDI binding chain.** PASS 2026-07-25 on v2.47.0 via SPOOFED
   messages (no controller needed): raw bytes injected through the
   real store entry point `handleMidiMessage(Uint8Array)` exercised
@@ -484,3 +486,7 @@ release matrix.**
 
 When a current retest is green, record its evidence here. v3.0.0 remains an
 owner conviction decision, not an automatic checklist outcome.
+
+- 2026-08-19 — VERIFY-002 (ProRes 4444 alpha NLE round-trip) PASSED by the
+  owner in DaVinci Resolve 21; the last open hardware leg of the 2026-07-27
+  batch. Evidence: archive/ledgers/BACKLOG-through-v2.104.2.md.

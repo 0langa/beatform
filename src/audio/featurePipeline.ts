@@ -653,8 +653,10 @@ export class FeaturePipeline {
         f.beatIntensity = 1;
       }
     }
-    // The pulse envelope decays on the RENDER clock so it stays smooth between
-    // ticks on a high-refresh display.
+    // The pulse envelope decays on the fixed ANALYSIS clock (per tick, by
+    // ANALYSIS_DT) — frame-rate independent by design, so preview matches
+    // export at any refresh rate. High-refresh displays see the decay step at
+    // the 60 Hz tick rate; that is the deterministic choice, not an accident.
     if (tick && !f.beat) f.beatIntensity *= Math.exp(-ANALYSIS_DT * BEAT_DECAY);
 
     f.voice = bandMean(mag, this.voiceRange);
@@ -953,9 +955,9 @@ export class FeaturePipeline {
       return;
     }
 
-    // Onset pulse over the selected band. The FIRING decision steps on the
-    // fixed analysis clock; the envelope decays on the render clock so it stays
-    // smooth between ticks.
+    // Onset pulse over the selected band. Both the FIRING decision and the
+    // envelope decay step on the fixed analysis clock (per tick, by
+    // ANALYSIS_DT) — frame-rate independence is the contract here.
     let fired = false;
     if (tick) {
       const [lo, hi] = this.syncBand(mode);

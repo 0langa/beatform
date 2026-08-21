@@ -67,7 +67,8 @@ are pure functions of `(features, time, params)` declared as a schema
 helpers (`binAt`, `waveAt`, `gridPulse`, `hsl2rgb`, …); use `u.drive` /
 `u.driveBeat` so the Sync panel matters; use `gridPulse()`/`u.beatPhase` for
 tempo-locked motion (it falls back to onset pulses when a track has no beat
-grid). Ship 5–7 curated styles — structural variety, not just hue swaps.
+grid). Ship at least 6 curated styles (shipped modes carry 6–15) —
+structural variety, not just hue swaps.
 
 ## Tests
 
