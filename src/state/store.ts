@@ -961,8 +961,10 @@ const CLOSE_FLUSH_TIMEOUT_MS = 4000;
  * finish before proceeding to the ordinary flush+destroy anyway. The teardown
  * is a couple of file removes and a process kill, so this is generous; the
  * bound exists for exactly the reason CLOSE_FLUSH_TIMEOUT_MS does — a wedged
- * teardown must never make the window unclosable, and lib.rs's Destroyed hook
- * still kills a surviving sidecar (partial output included) as the backstop.
+ * teardown must never make the window unclosable. lib.rs's Destroyed hook
+ * backstops the SIDECAR lanes only (it kills ffmpeg and removes ITS partial
+ * output); a stream-lane `.partial` whose discard outlives this bound simply
+ * survives on disk until the next export to the same target reuses the name.
  */
 const EXPORT_TEARDOWN_TIMEOUT_MS = 2000;
 
