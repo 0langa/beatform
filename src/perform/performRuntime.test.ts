@@ -449,6 +449,40 @@ describe("perform runtime", () => {
     // ...and the frame stream composes nothing further.
     expect(setOverlay).toHaveBeenCalledTimes(2);
   });
+
+  /**
+   * R2-31i: the asset fingerprint used to sample length+head+tail, which
+   * collides for same-length data URLs differing only in the middle (two
+   * crops of one image, two re-encodes of one frame) — the receiver then
+   * kept showing the OLD asset. The key is now FNV-1a over the full string.
+   */
+  it("same-length different-middle asset URLs get different keys (R2-31i)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ blob: async () => ({}) })),
+    );
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ close: vi.fn() })),
+    );
+    const r = fakeRenderer();
+    const { channel } = start(r);
+    await flush();
+    // Boot pushed the initial null clear — only the decode path counts.
+    (r.setCoverArt as ReturnType<typeof vi.fn>).mockClear();
+
+    // Same length, same first 48 chars, same last 16 — only the middle moves.
+    const head = "data:image/png;base64,";
+    const a = `${head}${"A".repeat(60)}X${"A".repeat(60)}`;
+    const b = `${head}${"A".repeat(60)}Y${"A".repeat(60)}`;
+    channel.deliver({ type: "assets", coverUrl: a, bgImageUrl: null, bgVideoUrl: null, overlayAssets: {} });
+    await flush();
+    channel.deliver({ type: "assets", coverUrl: b, bgImageUrl: null, bgVideoUrl: null, overlayAssets: {} });
+    await flush();
+
+    // Both covers were decoded and bound — the second was not deduped away.
+    expect(r.setCoverArt).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("present policy (pure)", () => {

@@ -205,11 +205,22 @@ export function startPerformRuntime(
     cb.onStatus({ phase, renderer: rendererKind, warning: rendererWarning });
   };
 
-  /** A data-URL's cheap value fingerprint — full compares on multi-MB
-   * strings are avoidable, and length+head+tail collisions are not a real
-   * risk for base64 payloads of different content. */
-  const urlKey = (url: string | null): string =>
-    url === null ? "" : `${url.length}|${url.slice(0, 48)}|${url.slice(-16)}`;
+  /** A data-URL's value fingerprint — FNV-1a over the FULL string (R2-31i).
+   * The old length+head+tail sample collided for same-length payloads
+   * differing only in the middle (two crops of one image, two re-encodes of
+   * one frame), and the receiver then kept showing the old asset. The
+   * string is already resident (structured-cloned in with the message), one
+   * pass over ~1 MB of chars is cheap off the frame path, and the length
+   * rides along so a hash collision would ALSO need matching length. */
+  const urlKey = (url: string | null): string => {
+    if (url === null) return "";
+    let h = 0x811c9dc5;
+    for (let i = 0; i < url.length; i++) {
+      h ^= url.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return `${url.length}|${(h >>> 0).toString(36)}`;
+  };
 
   /** Canvas2D on a canvas WebGPU ever claimed throws (context mode is
    * permanent) — same sibling-canvas fallback services.ts uses. */
