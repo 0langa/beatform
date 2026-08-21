@@ -142,6 +142,76 @@ describe("Escape", () => {
     expect(state.setShowPanel).toHaveBeenCalledTimes(1);
     expect(state.setShowPanel).toHaveBeenCalledWith(false);
   });
+
+  it("Escape disarms a pending MIDI learn with the rest of the cascade (R2-31a)", () => {
+    const state = {
+      ...escState(),
+      midiLearn: { kind: "cc", param: "hue", min: 0, max: 1 },
+      setMidiLearn: vi.fn(),
+    };
+    render(<Harness state={state} />);
+
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+
+    expect(state.setMidiLearn).toHaveBeenCalledWith(null);
+  });
+
+  /**
+   * R2-18 (owner verdict): Stage is a MODE, not a dialog. Esc inside it steps
+   * back out and does nothing else — the old cascade also tore down the dock,
+   * library and timeline (writing their prefs), so leaving Stage cost the
+   * operator their workspace layout.
+   */
+  it("in Stage mode, Escape ONLY exits Stage — panels and dialogs stay put", () => {
+    const state = { ...escState(), stageMode: true };
+    render(<Harness state={state} />);
+
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+
+    expect(state.setStageMode).toHaveBeenCalledWith(false);
+    expect(state.setShowPanel).not.toHaveBeenCalled();
+    expect(state.setShowLibrary).not.toHaveBeenCalled();
+    expect(state.setShowTimeline).not.toHaveBeenCalled();
+    expect(state.setShowGallery).not.toHaveBeenCalled();
+    expect(state.setShowHelp).not.toHaveBeenCalled();
+    expect(state.setShowGuide).not.toHaveBeenCalled();
+    expect(state.setShowSettings).not.toHaveBeenCalled();
+    expect(state.setShowExport).not.toHaveBeenCalled();
+    expect(state.setShowBatch).not.toHaveBeenCalled();
+    expect(state.setShowPerform).not.toHaveBeenCalled();
+  });
+
+  it("Esc inside Stage also disarms a pending MIDI learn — nothing else (D3)", () => {
+    const state = {
+      ...escState(),
+      stageMode: true,
+      midiLearn: { kind: "cc", param: "hue", min: 0, max: 1 },
+      setMidiLearn: vi.fn(),
+    };
+    render(<Harness state={state} />);
+
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+
+    // The Perform drawer arms inside Stage (D key); the R2-18 early return
+    // must not carry an armed learn out of Stage with it.
+    expect(state.setMidiLearn).toHaveBeenCalledWith(null);
+    expect(state.setStageMode).toHaveBeenCalledWith(false);
+    expect(state.setShowPanel).not.toHaveBeenCalled(); // still ONLY exits Stage
+    expect(state.setShowPerform).not.toHaveBeenCalled();
+  });
+
+  it("the next Escape, outside Stage, runs the cascade as before", () => {
+    const state = { ...escState(), stageMode: true };
+    render(<Harness state={state} />);
+
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" }); // leaves Stage
+    state.stageMode = false; // what setStageMode(false) does in the real store
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+
+    expect(state.setStageMode).toHaveBeenCalledTimes(1); // only the first Esc
+    expect(state.setShowPanel).toHaveBeenCalledWith(false);
+    expect(state.setShowLibrary).toHaveBeenCalledWith(false);
+  });
 });
 
 /**

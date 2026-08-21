@@ -315,8 +315,24 @@ export function retryFailed(
    * same folder) — this run's own done files are excluded automatically. */
   alsoTaken: ReadonlySet<string> = new Set(),
 ): BatchRun {
+  // Frames finished before this (re)start: excluded from the new rate window
+  // so the ETA reflects rendering speed since NOW, not old-work / new-elapsed.
+  // Computed up front because BOTH exits below need it.
+  let preDoneFrames = 0;
+  for (const j of run.jobs) {
+    if (j.status.k === "done" && j.totalFrames != null) preDoneFrames += j.totalFrames;
+  }
   const failed = run.jobs.filter((j) => j.status.k === "failed");
-  if (failed.length === 0) return run;
+  if (failed.length === 0) {
+    // Nothing failed AND nothing queued: nothing to resume — unchanged.
+    if (!run.jobs.some((j) => j.status.k === "queued")) return run;
+    // R2-31d — the RESUME path: a cancel left queued jobs behind and the
+    // runner will pick them straight up, but the run still carried the
+    // ORIGINAL startedAt/preDoneFrames, so runStats measured the resumed
+    // work against the whole pause. Restamp the rate window; the jobs
+    // themselves are untouched.
+    return { ...run, startedAt: nowMs, preDoneFrames };
+  }
   const taken = takenPaths(run);
   for (const n of alsoTaken) taken.add(n);
   const byId = new Map(run.tracks.map((t) => [t.id, t]));
@@ -337,12 +353,6 @@ export function retryFailed(
     return { ...j, outPath, status: { k: "queued" } as JobStatus };
   });
   const requeuedIds = new Set(requeued.map((j) => j.id));
-  // Frames finished before this retry: excluded from the retry's rate so the
-  // ETA reflects rendering speed since NOW, not old-work / new-elapsed.
-  let preDoneFrames = 0;
-  for (const j of run.jobs) {
-    if (j.status.k === "done" && j.totalFrames != null) preDoneFrames += j.totalFrames;
-  }
   return {
     ...run,
     startedAt: nowMs,

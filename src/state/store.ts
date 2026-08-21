@@ -797,6 +797,9 @@ interface Actions {
   deleteUserPreset(id: string): void;
   exportUserPreset(id: string): Promise<void>;
   importUserPreset(): Promise<void>;
+  /** Import a look from text the caller already has — the drag-drop path
+   *  (same split as openProjectText / importThemeText, R2-31e). */
+  importUserPresetText(contents: string): void;
   addTextLayer(): void;
   addImageLayer(): Promise<void>;
   addAlbumArtLayer(): void;
@@ -1140,9 +1143,18 @@ export const useVizStore = create<VizState>((set, get) => {
    * undo step instead of one per inner action. */
   let recordSuspended = false;
 
-  const record = (key: string) => {
+  const record = (key: string, extraDefs?: PresetDef[]) => {
     if (recordSuspended) return;
-    pushHistory(docOf(get()), key);
+    const doc = docOf(get());
+    // R2-20: a snapshot that must outlive a DELETE embeds the doomed defs —
+    // referencedCustomDefs (deliberately) trims unreferenced ones from every
+    // snapshot, and a snapshot without the def cannot restore the shader it
+    // exists to undo.
+    if (extraDefs && extraDefs.length > 0) {
+      const have = new Set(doc.customDefs.map((d) => d.id));
+      doc.customDefs = [...doc.customDefs, ...extraDefs.filter((d) => !have.has(d.id))];
+    }
+    pushHistory(doc, key);
     const d = historyDepths();
     set({ undoDepth: d.undo, redoDepth: d.redo });
     scheduleAutosave();
@@ -1532,6 +1544,13 @@ export const useVizStore = create<VizState>((set, get) => {
    * check it against `analysisId` and drop its result if superseded.
    */
   const invalidateAnalysis = (): number => {
+    // R2-19: a queued beat-quantized switch waits on THIS track's grid — any
+    // path that voids per-track analysis state (loadFile, loadDemo, the
+    // library advance, a re-analysis) unqueues it and resets the boundary
+    // bookkeeping, so a stale queue can never fire on the next track's grid
+    // (and a fresh queue's first boundary isn't suppressed by the old t).
+    if (get().pendingPresetId) set({ pendingPresetId: null });
+    lastQuantizeTick = -1;
     // An invalidation no job has claimed yet IS the current one: a load path
     // invalidates and then calls analyzeCurrentTrack, and opening a second
     // barrier there would release the very waiter the first one exists to hold.
@@ -1912,7 +1931,13 @@ export const useVizStore = create<VizState>((set, get) => {
       getEngine().setVolume(get().muted ? 0 : get().volume);
       // Library auto-advance: when a library track finishes naturally, play
       // the next one (the action checks the toggle + current-track membership).
-      getEngine().onEnded = () => void get().advanceLibrary();
+      getEngine().onEnded = () => {
+        // R2-19: the track that ran out takes its queued switch with it — the
+        // boundary it was waiting for no longer exists. The advance path's
+        // invalidation also clears, but only when it actually advances.
+        if (get().pendingPresetId) set({ pendingPresetId: null });
+        void get().advanceLibrary();
+      };
       get().pokeChrome();
 
       // Whole-lane-review fix C1: an OS-level quit (or the window's own
@@ -2091,7 +2116,16 @@ export const useVizStore = create<VizState>((set, get) => {
       // are "the next chip along", and stepping in a different sequence from
       // the one on screen is the kind of thing you only notice on stage.
       const all = orderedPresets(get().presetOrder, get().customDefs);
-      const i = all.findIndex((p) => p.id === get().presetId);
+      // From the PENDING target when one exists (R2-22, owner verdict):
+      // stepping is a walk, so `]]` under quantize means "two chips along" —
+      // computing from the current mode re-targeted the pending chip and
+      // queuePreset's cancel-toggle ate the queue. Stepping back onto the
+      // current mode still cancels (queuePreset's same-mode branch), and a
+      // direct chip tap keeps its cancel-toggle — only steps route around it.
+      const s = get();
+      const baseId = s.pendingPresetId ?? s.presetId;
+      let i = all.findIndex((p) => p.id === baseId);
+      if (i < 0) i = all.findIndex((p) => p.id === s.presetId); // stale pending
       // Through queuePreset, not switchPreset: [ and ] are live-performance
       // controls exactly like the number keys, and it was inconsistent for
       // 1-9 to honour beat-quantize while the step keys jumped instantly.
@@ -2798,12 +2832,19 @@ export const useVizStore = create<VizState>((set, get) => {
       // is no longer adjacent, and diffing across the jump fires a phantom
       // beat/kick/snare/hat on the next frame.
       getAnalyzer().reset("seek");
+      // R2-31c: the quantize bookkeeping jumps WITH the playhead — a pending
+      // switch may only fire on a boundary the track NATURALLY crosses after
+      // the seek, never because the jump leapt over one. (Backward jumps were
+      // already inert: crossedBoundary requires cur > prev.)
+      lastQuantizeTick = Math.max(0, time);
     },
 
     seekBy(delta) {
       const engine = getEngine();
-      engine.seek(engine.currentTime + delta);
+      const target = engine.currentTime + delta;
+      engine.seek(target);
       getAnalyzer().reset("seek");
+      lastQuantizeTick = Math.max(0, target); // R2-31c — see seekEnd
     },
 
     toggleLoop() {
@@ -2853,7 +2894,10 @@ export const useVizStore = create<VizState>((set, get) => {
 
     setShowPanel(v) {
       const next = typeof v === "function" ? v(get().showPanel) : v;
-      set({ showPanel: next });
+      // Review D3 (R2-31a family): closing the dock hides the Live page — a
+      // pending MIDI Learn armed there loses its surface and must disarm, or
+      // the next control touched on the device silently mints a binding.
+      set(next || !get().midiLearn ? { showPanel: next } : { showPanel: next, midiLearn: null });
       saveStoredPanelOpen(next);
     },
 
@@ -2903,7 +2947,17 @@ export const useVizStore = create<VizState>((set, get) => {
       // Do NOT "fix" that with setShowPanel(true) on exit either: that writes
       // panelOpen: true for users who never opened the dock. Layout
       // suppression is stateless, so there is nothing to restore.
-      if (stageMode) set({ stageMode, showTimeline: false, showHelp: false });
+      // Review D3 (R2-31a family): entering stage hides the dock (layout
+      // suppression above) and with it the Live page — a pending MIDI Learn
+      // armed there loses its surface and must disarm with the chrome.
+      if (stageMode) {
+        set({
+          stageMode,
+          showTimeline: false,
+          showHelp: false,
+          ...(get().midiLearn ? { midiLearn: null } : {}),
+        });
+      }
       // Leaving stage clears blackout — UNLESS the performance window is
       // running (FEAT-009): blackout then belongs to the OUTPUT surface the
       // audience sees, and exiting the operator's local stage view must not
@@ -2993,6 +3047,12 @@ export const useVizStore = create<VizState>((set, get) => {
         // unrelated undo/redo today — closing it blind risked a silent
         // behavior change this round did not ask for.
         recoveredNotice: false,
+        // R2-19: the whole visual document is being replaced (open/undo/redo/
+        // theme/new) and presetId is set directly below — never through
+        // switchPreset, whose own supersede rule would have cleared this. A
+        // queued switch aimed at the outgoing document must not land on the
+        // incoming one.
+        pendingPresetId: null,
         // Keep the export resolution consistent with the incoming aspect
         // (covers project-open AND undo/redo of aspect changes).
         exportSettings: {
@@ -3263,7 +3323,17 @@ export const useVizStore = create<VizState>((set, get) => {
           { name: "Beatform look", extensions: [USER_PRESET_EXTENSION] },
         ]);
         if (!picked) return;
-        const preset = parseUserPreset(picked.contents);
+        get().importUserPresetText(picked.contents);
+      } catch (e) {
+        set({ error: `Could not import look: ${(e as Error).message}` });
+      }
+    },
+
+    /** The text half of importUserPreset — shared with the drag-drop
+     *  dispatch (R2-31e), same split as openProject/openProjectText. */
+    importUserPresetText(contents) {
+      try {
+        const preset = parseUserPreset(contents);
         const userPresets = [preset, ...get().userPresets];
         set({ userPresets });
         saveUserPresets(userPresets);

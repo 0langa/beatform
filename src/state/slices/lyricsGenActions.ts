@@ -94,19 +94,11 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       const missing = missingModels(models, tier);
       if (missing.length === 0) return;
 
-      // Disk pre-flight on the models volume (warn-and-override, the export
-      // pre-flight's contract — never a silent hard block).
-      const { remaining } = tierDownloadBytes(models, tier);
-      const disk = await diskSpace(models.modelsDir);
-      if (disk && disk.freeBytes < remaining + DISK_MARGIN_BYTES) {
-        const proceed = await askConfirm(
-          `This download needs ${Math.round(remaining / 1e6)} MB and drive ${disk.root} has ` +
-            `${Math.round(disk.freeBytes / 1e6)} MB free. Download anyway?`,
-          "Low disk space",
-        );
-        if (!proceed) return;
-      }
-
+      // R2-31g: claim the phase SYNCHRONOUSLY — the disk probe below awaits,
+      // and two rapid clicks both passed the idle check above and started
+      // the same multi-hundred-MB download twice (enableMidi's midiStarting
+      // claim, in phase form). Every exit from here runs the finally, which
+      // restores idle — a declined confirm included.
       set({
         lyricsGen: {
           ...get().lyricsGen,
@@ -115,6 +107,18 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         },
       });
       try {
+        // Disk pre-flight on the models volume (warn-and-override, the export
+        // pre-flight's contract — never a silent hard block).
+        const { remaining } = tierDownloadBytes(models, tier);
+        const disk = await diskSpace(models.modelsDir);
+        if (disk && disk.freeBytes < remaining + DISK_MARGIN_BYTES) {
+          const proceed = await askConfirm(
+            `This download needs ${Math.round(remaining / 1e6)} MB and drive ${disk.root} has ` +
+              `${Math.round(disk.freeBytes / 1e6)} MB free. Download anyway?`,
+            "Low disk space",
+          );
+          if (!proceed) return;
+        }
         for (const model of missing) {
           await lyricsModelDownload(model.id, (line) => {
             const p = parseDownloadProgress(line);

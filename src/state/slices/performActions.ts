@@ -143,7 +143,10 @@ let openInFlight = false;
 export function performActions(set: SetFn, get: GetFn, _ctx: SliceCtx) {
   return {
     setShowPerform(v: boolean) {
-      set({ showPerform: v });
+      // R2-31a: closing the drawer disarms a pending MIDI Learn in the same
+      // set — armed with no surface showing it, the next control touched on
+      // the device would silently mint a binding.
+      set(v || !get().midiLearn ? { showPerform: v } : { showPerform: v, midiLearn: null });
       // The picker re-enumerates on every drawer open — that re-query plus
       // the Rust-side clamp at open time IS the monitor-hotplug story.
       if (v) void get().refreshPerformMonitors();

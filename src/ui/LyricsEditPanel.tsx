@@ -307,6 +307,19 @@ export function LyricsEditPanel() {
           ? "Wait for the running lyrics job"
           : null;
 
+  // R2-21: while a line re-align is in flight, structural edits (split/merge/
+  // insert/delete — and, review D2, undo/redo, which replay whole sheets)
+  // would renumber the lines under the sidecar's await — the apply guard
+  // matches index+text (lyricsEditActions.ts), and a renumbered sheet can
+  // put a DIFFERENT line with identical text (repeated chorus lines) at the
+  // awaited index. Locked the same way the align buttons already disable;
+  // text and time edits stay allowed — an edit to the awaited line changes
+  // its text and correctly voids the apply.
+  const structuralLocked = realign !== null;
+  const structuralWhy = structuralLocked
+    ? "Wait for the running line re-align — adding or removing lines would confuse it"
+    : null;
+
   const flagged = flaggedCount(lyrics);
   const wordCount = lyrics.reduce((n, l) => n + (l.words?.length ?? 0), 0);
 
@@ -322,11 +335,16 @@ export function LyricsEditPanel() {
         if (e.key === "z" || e.key === "Z") {
           e.preventDefault();
           e.stopPropagation();
+          // Review D2: undo/redo replay whole sheets — they renumber lines
+          // under a running re-align exactly like the structural buttons.
+          // Still swallowed (the editor owns Ctrl+Z here), just inert.
+          if (structuralLocked) return;
           if (e.shiftKey) store().redoLyricsEdit();
           else store().undoLyricsEdit();
         } else if (e.key === "y" || e.key === "Y") {
           e.preventDefault();
           e.stopPropagation();
+          if (structuralLocked) return; // D2 — same as Ctrl+Z above
           store().redoLyricsEdit();
         }
       }}
@@ -354,8 +372,8 @@ export function LyricsEditPanel() {
           <button
             type="button"
             className="text-btn"
-            disabled={undoDepth === 0}
-            title="Undo the last lyric edit (Ctrl+Z inside this editor)"
+            disabled={structuralLocked || undoDepth === 0}
+            title={structuralWhy ?? "Undo the last lyric edit (Ctrl+Z inside this editor)"}
             onClick={() => store().undoLyricsEdit()}
           >
             ↶
@@ -363,8 +381,8 @@ export function LyricsEditPanel() {
           <button
             type="button"
             className="text-btn"
-            disabled={redoDepth === 0}
-            title="Redo (Ctrl+Y)"
+            disabled={structuralLocked || redoDepth === 0}
+            title={structuralWhy ?? "Redo (Ctrl+Y)"}
             onClick={() => store().redoLyricsEdit()}
           >
             ↷
@@ -386,7 +404,12 @@ export function LyricsEditPanel() {
           const aligning = realign?.index === i;
           return (
             <div
-              key={i}
+              // Line identity, not index (R2-31k): with index keys, deleting
+              // a row above remapped every React instance below — an
+              // uncommitted text draft then showed on the WRONG line. Lines
+              // that never passed the load chokepoint (older sessions, bare
+              // setState in tests) fall back to the index.
+              key={line.uid ?? i}
               data-lyr-row={i}
               className={`lyr-row ${sev ?? ""} ${active ? "active" : ""}`}
               title={
@@ -452,8 +475,11 @@ export function LyricsEditPanel() {
                   <button
                     type="button"
                     className="text-btn"
-                    disabled={line.text.trim().split(/\s+/).length < 2}
-                    title="Split this line in two at the text cursor (words keep their timing)"
+                    disabled={structuralLocked || line.text.trim().split(/\s+/).length < 2}
+                    title={
+                      structuralWhy ??
+                      "Split this line in two at the text cursor (words keep their timing)"
+                    }
                     onClick={() => {
                       store().splitLyricLine(
                         i,
@@ -466,8 +492,11 @@ export function LyricsEditPanel() {
                   <button
                     type="button"
                     className="text-btn"
-                    disabled={i + 1 >= lyrics.length}
-                    title="Merge with the next line (word timing survives when both lines have it)"
+                    disabled={structuralLocked || i + 1 >= lyrics.length}
+                    title={
+                      structuralWhy ??
+                      "Merge with the next line (word timing survives when both lines have it)"
+                    }
                     onClick={() => store().mergeLyricLineWithNext(i)}
                   >
                     ⤵
@@ -475,7 +504,8 @@ export function LyricsEditPanel() {
                   <button
                     type="button"
                     className="text-btn"
-                    title="Insert an empty line above this one"
+                    disabled={structuralLocked}
+                    title={structuralWhy ?? "Insert an empty line above this one"}
                     onClick={() => {
                       store().insertLyricLineAfter(i - 1);
                       setFocusIdx(i);
@@ -486,7 +516,8 @@ export function LyricsEditPanel() {
                   <button
                     type="button"
                     className="text-btn"
-                    title="Insert an empty line below this one"
+                    disabled={structuralLocked}
+                    title={structuralWhy ?? "Insert an empty line below this one"}
                     onClick={() => {
                       store().insertLyricLineAfter(i);
                       setSel(i + 1);
@@ -498,7 +529,8 @@ export function LyricsEditPanel() {
                   <button
                     type="button"
                     className="text-btn danger"
-                    title="Delete this line (Ctrl+Z brings it back)"
+                    disabled={structuralLocked}
+                    title={structuralWhy ?? "Delete this line (Ctrl+Z brings it back)"}
                     onClick={() => {
                       store().deleteLyricLine(i);
                       setSel(-1);

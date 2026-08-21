@@ -126,6 +126,37 @@ describe("saveCustomPreset — signal abort", () => {
   });
 });
 
+/**
+ * Review O2 (R2-19's theme): a beat-quantized switch queued TO a shader that
+ * then gets deleted must die with it — left pending, the next boundary fired
+ * the switch and presetById's registry fallback landed it on the default
+ * mode mid-set.
+ */
+describe("deleteCustomPreset unqueues a pending switch to itself (review O2)", () => {
+  it("a queued switch to the deleted visual dies with it", async () => {
+    useVizStore.setState({ checkCustomPreset: vi.fn(async () => []), switchPreset: vi.fn() });
+    const def = fixtureDef("custom-doomqueue");
+    await useVizStore.getState().saveCustomPreset(def);
+    useVizStore.setState({ presetId: "spectrum-bars", pendingPresetId: "custom-doomqueue" });
+
+    useVizStore.getState().deleteCustomPreset("custom-doomqueue");
+
+    expect(useVizStore.getState().pendingPresetId).toBeNull();
+    expect(useVizStore.getState().customDefs.some((d) => d.id === "custom-doomqueue")).toBe(false);
+  });
+
+  it("a queue to a DIFFERENT target survives the delete", async () => {
+    useVizStore.setState({ checkCustomPreset: vi.fn(async () => []), switchPreset: vi.fn() });
+    const def = fixtureDef("custom-doomqueue2");
+    await useVizStore.getState().saveCustomPreset(def);
+    useVizStore.setState({ presetId: "spectrum-bars", pendingPresetId: "aurora" });
+
+    useVizStore.getState().deleteCustomPreset("custom-doomqueue2");
+
+    expect(useVizStore.getState().pendingPresetId).toBe("aurora");
+  });
+});
+
 describe("importShadertoyGlsl — signal abort", () => {
   it("skips saveCustomPreset entirely when aborted right as the transpile resolves", async () => {
     vi.mocked(isTauri).mockReturnValue(true);

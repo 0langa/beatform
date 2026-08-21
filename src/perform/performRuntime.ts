@@ -205,11 +205,46 @@ export function startPerformRuntime(
     cb.onStatus({ phase, renderer: rendererKind, warning: rendererWarning });
   };
 
-  /** A data-URL's cheap value fingerprint — full compares on multi-MB
-   * strings are avoidable, and length+head+tail collisions are not a real
-   * risk for base64 payloads of different content. */
-  const urlKey = (url: string | null): string =>
-    url === null ? "" : `${url.length}|${url.slice(0, 48)}|${url.slice(-16)}`;
+  /** A data-URL's value fingerprint — FNV-1a over the FULL string (R2-31i).
+   * The old length+head+tail sample collided for same-length payloads
+   * differing only in the middle (two crops of one image, two re-encodes of
+   * one frame), and the receiver then kept showing the old asset. The
+   * length rides along so a hash collision would ALSO need matching length.
+   * NOT cheap on its own — the full pass measured ~18 ms at a 6 MB image
+   * and ~670 ms at the 192 MB video cap — which is why every callsite goes
+   * through a memo (below) and only a genuinely new string pays it. */
+  const urlKey = (url: string | null): string => {
+    if (url === null) return "";
+    let h = 0x811c9dc5;
+    for (let i = 0; i < url.length; i++) {
+      h ^= url.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return `${url.length}|${(h >>> 0).toString(36)}`;
+  };
+
+  /** Per-callsite memo over urlKey (review D1): applyBgImage/applyBgVideo
+   * re-run on EVERY scene message (edit-rate), not only when assets change,
+   * and an unmemoized full-string hash put the cost above on this thread per
+   * message. Asset strings keep their identity across scene messages (only
+   * an assets message replaces them), so string REFERENCE equality is the
+   * memo key — a re-delivered assets tier re-hashes once, legitimately. One
+   * memo per callsite: the three lanes hold different strings and must not
+   * evict each other. */
+  const memoUrlKey = () => {
+    let lastUrl: string | null = null;
+    let lastKey = "";
+    return (url: string | null): string => {
+      if (url !== lastUrl) {
+        lastUrl = url;
+        lastKey = urlKey(url);
+      }
+      return lastKey;
+    };
+  };
+  const coverUrlKey = memoUrlKey();
+  const bgImageUrlKey = memoUrlKey();
+  const bgVideoUrlKey = memoUrlKey();
 
   /** Canvas2D on a canvas WebGPU ever claimed throws (context mode is
    * permanent) — same sibling-canvas fallback services.ts uses. */
@@ -330,7 +365,7 @@ export function startPerformRuntime(
 
   const applyCover = () => {
     const url = assets?.coverUrl ?? null;
-    const key = urlKey(url);
+    const key = coverUrlKey(url);
     if (key === coverKey) return;
     coverKey = key;
     const token = ++coverToken;
@@ -353,7 +388,7 @@ export function startPerformRuntime(
   const applyBgImage = () => {
     const url = assets?.bgImageUrl ?? null;
     const params = scene?.bgImageParams ?? null;
-    const key = url && params ? `${urlKey(url)}|${params.blur}|${params.dim}` : "";
+    const key = url && params ? `${bgImageUrlKey(url)}|${params.blur}|${params.dim}` : "";
     if (key === bgImageKey) return;
     bgImageKey = key;
     const token = ++bgImageToken;
@@ -376,7 +411,7 @@ export function startPerformRuntime(
   const applyBgVideo = () => {
     const url = assets?.bgVideoUrl ?? null;
     const params = scene?.bgVideoParams ?? null;
-    const key = url && params ? `${urlKey(url)}|${params.blur}|${params.dim}` : "";
+    const key = url && params ? `${bgVideoUrlKey(url)}|${params.blur}|${params.dim}` : "";
     if (key === bgVideoKey) return;
     bgVideoKey = key;
     const token = ++bgVideoToken;
@@ -406,7 +441,14 @@ export function startPerformRuntime(
   const applyOverlay = () => {
     if (!scene) return;
     const overlayAssets = assets?.overlayAssets ?? {};
-    const key = `${canvas.width}x${canvas.height}|${JSON.stringify(scene.overlay.layers)}|${JSON.stringify(
+    // Dynamics-active bit (R2-03): when captions/audiogram flip OFF the key
+    // must move, or the early-out below would leave the renderer presenting
+    // the last COMPOSED frame (a baked caption) forever — this re-raster is
+    // what pushes the one dynamics-free overlay, mirroring the main window's
+    // refreshOverlay. The ON flip rides the same bit: the re-raster re-retains
+    // the base the frame-stream compose path draws on.
+    const dynOn = hasDynamics(dynamicsOf()) ? 1 : 0;
+    const key = `${canvas.width}x${canvas.height}|dyn:${dynOn}|${JSON.stringify(scene.overlay.layers)}|${JSON.stringify(
       scene.overlay.meta,
     )}|${Object.keys(overlayAssets).sort().join(",")}`;
     if (key === overlayKey) return;

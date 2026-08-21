@@ -5,7 +5,8 @@
 // so this needs a DOM environment even though raceBootVeilDrop itself
 // touches neither React nor the store.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { armBootVeilRace, raceBootVeilDrop } from "./App";
+import { armBootVeilRace, dispatchDroppedFiles, raceBootVeilDrop } from "./App";
+import type { useVizStore } from "./state/store";
 
 /**
  * Owner ruling E (final round) — the boot veil's drop race, tested in
@@ -91,6 +92,71 @@ describe("raceBootVeilDrop", () => {
 
     await vi.advanceTimersByTimeAsync(1000);
     expect(onDrop).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * R2-31e — the drop dispatch, tested at the dispatch level (the extracted
+ * helper, no React render). The app EXPORTS .bfpreset (looks) and .bfbuilder
+ * (builder stacks) but the drop handler only routed .bfshader/.bftheme/
+ * .bfproj — a look or stack dragged back in fell through to the audio
+ * decoder and died as "Unable to decode audio data".
+ */
+describe("dispatchDroppedFiles", () => {
+  /** A dropped file the dispatch can read — jsdom's File lacks Blob.text
+   * consistency, so the fixture carries its own. */
+  function dropped(name: string, contents = "payload"): File {
+    return { name, text: async () => contents } as unknown as File;
+  }
+
+  function fakeStore() {
+    const state = {
+      showBatch: false,
+      importCustomPresetText: vi.fn(),
+      importThemeText: vi.fn(),
+      importUserPresetText: vi.fn(),
+      importBuilderStackText: vi.fn(),
+      openProjectText: vi.fn(),
+      loadLyricsText: vi.fn(),
+      addBatchTracks: vi.fn(async () => {}),
+      loadFile: vi.fn(async () => {}),
+    };
+    return { state, store: (() => state) as unknown as typeof useVizStore.getState };
+  }
+
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it("routes a .bfpreset to the look importer", async () => {
+    const { state, store } = fakeStore();
+    dispatchDroppedFiles([dropped("My Look.BFPRESET", "look-json")], store);
+    await flush();
+    expect(state.importUserPresetText).toHaveBeenCalledWith("look-json");
+    expect(state.loadFile).not.toHaveBeenCalled();
+  });
+
+  it("routes a .bfbuilder to the builder-stack importer", async () => {
+    const { state, store } = fakeStore();
+    dispatchDroppedFiles([dropped("stack.bfbuilder", "stack-json")], store);
+    await flush();
+    expect(state.importBuilderStackText).toHaveBeenCalledWith("stack-json");
+    expect(state.loadFile).not.toHaveBeenCalled();
+  });
+
+  it("still routes a .bftheme to the theme importer (control)", async () => {
+    const { state, store } = fakeStore();
+    dispatchDroppedFiles([dropped("night.bftheme", "theme-json")], store);
+    await flush();
+    expect(state.importThemeText).toHaveBeenCalledWith("theme-json");
+  });
+
+  it("plain audio still reaches loadFile (nothing over-matched)", async () => {
+    const { state, store } = fakeStore();
+    const audio = dropped("song.mp3");
+    dispatchDroppedFiles([audio], store);
+    await flush();
+    expect(state.loadFile).toHaveBeenCalledWith(audio);
+    expect(state.importUserPresetText).not.toHaveBeenCalled();
+    expect(state.importBuilderStackText).not.toHaveBeenCalled();
   });
 });
 

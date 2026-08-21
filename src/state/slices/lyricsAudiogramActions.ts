@@ -1,4 +1,5 @@
 import { LyricParseError, parseLyrics } from "../lyrics";
+import { withLineUids } from "../lyricsEdit";
 import { saveStoredAudiogram, saveStoredLyricStyle } from "../persistence";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
@@ -8,7 +9,10 @@ export function lyricsAudiogramActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
     loadLyricsText(fileName, contents) {
       try {
-        const lyrics = parseLyrics(fileName, contents);
+        // withLineUids (R2-31k): every parsed line gets a session row id at
+        // the ONE load chokepoint (imports and generation both land here),
+        // so the correction editor's rows have stable identities.
+        const lyrics = withLineUids(parseLyrics(fileName, contents));
         set({ lyrics, lyricFileName: fileName, error: null });
         get().resetLyricsEditHistory(); // a fresh document, a fresh editor
         shared.lastFrameKey = NULL_FRAME_KEY; // force the first recompose

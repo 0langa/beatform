@@ -28,6 +28,18 @@ import { ShadertoyImport } from "./ShadertoyImport";
  * assertion green with the subscription re-added.
  */
 
+const askConfirmMock = vi.fn(async (_message: string, _title: string) => true);
+vi.mock("../state/platform", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../state/platform")>();
+  return {
+    ...actual,
+    writeAutosave: vi.fn(async () => {}),
+    // The shader chip's delete is confirm-guarded since R2-20; jsdom has no
+    // native dialog, so the mock answers "yes" unless a test overrides it.
+    askConfirm: (message: string, title: string) => askConfirmMock(message, title),
+  };
+});
+
 vi.mock("../state/services", () => ({
   initServices: vi.fn(() => vi.fn()),
   getEngine: vi.fn(() => ({
@@ -300,10 +312,13 @@ describe("ShaderEditor is store-direct (P-12 wave 2)", () => {
     );
   });
 
-  it("deletes through the real store action", () => {
+  it("deletes through the real store action, behind the R2-20 confirm", async () => {
     act(() => useVizStore.setState({ customDefs: [WGSL_DEF], presetId: "nebula" }));
     render(<ShaderEditor />);
+    askConfirmMock.mockClear();
     fireEvent.click(screen.getByRole("button", { name: 'Delete "My Visual"' }));
+    await act(async () => {});
+    expect(askConfirmMock).toHaveBeenCalledTimes(1);
     expect(useVizStore.getState().customDefs).toHaveLength(0);
   });
 });

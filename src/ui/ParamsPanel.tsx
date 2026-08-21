@@ -711,6 +711,10 @@ export function ParamsPanel() {
   const [collapsed, setCollapsed] = useState<string[]>(() => getPrefs().collapsedSections);
   const railRef = useRef<HTMLElement | null>(null);
   const changePage = (p: VisualsPageId) => {
+    // R2-31a: navigating off the Live page disarms a pending MIDI Learn —
+    // armed with no surface showing it, the next control touched on the
+    // device would silently mint a binding.
+    if (page === "live" && p !== "live" && store().midiLearn) store().setMidiLearn(null);
     setPage(p);
     setPrefs({ visualsPage: p });
   };

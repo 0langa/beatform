@@ -314,8 +314,16 @@ if (typeof window !== "undefined") {
  * would silently boot the mode at its defaults. */
 
 export function loadStoredPresetId(): string | null {
-  const id = localStorage.getItem(LS_PRESET);
-  return id === null ? null : canonicalPresetId(id);
+  // Guarded like readJson (R2-31h): these three loaders are the only raw
+  // getItem calls left, and all run at store-module scope — blocked storage
+  // (privacy mode, a hostile embedder) threw during boot and white-screened
+  // the app before anything rendered. Blocked reads as absent.
+  try {
+    const id = localStorage.getItem(LS_PRESET);
+    return id === null ? null : canonicalPresetId(id);
+  } catch {
+    return null;
+  }
 }
 
 export function saveStoredPresetId(id: string): void {
@@ -570,7 +578,12 @@ export function saveStoredMods(mods: Record<string, ModRoute[]>): void {
 }
 
 export function loadStoredAspect(): Aspect {
-  return validAspect(localStorage.getItem(LS_ASPECT));
+  // Same guard as loadStoredPresetId (R2-31h) — module-scope read.
+  try {
+    return validAspect(localStorage.getItem(LS_ASPECT));
+  } catch {
+    return validAspect(null);
+  }
 }
 
 export function saveStoredAspect(aspect: Aspect): void {
@@ -583,7 +596,12 @@ export function saveStoredAspect(aspect: Aspect): void {
 const LS_SMOOTH_SPECTRUM = "viz.smoothSpectrum";
 
 export function loadStoredSmoothSpectrum(): boolean {
-  return localStorage.getItem(LS_SMOOTH_SPECTRUM) === "1";
+  // Same guard as loadStoredPresetId (R2-31h) — module-scope read.
+  try {
+    return localStorage.getItem(LS_SMOOTH_SPECTRUM) === "1";
+  } catch {
+    return false;
+  }
 }
 
 export function saveStoredSmoothSpectrum(v: boolean): void {

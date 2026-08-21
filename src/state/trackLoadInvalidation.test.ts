@@ -755,6 +755,133 @@ describe("`analyzing` is never left stuck by the earlier invalidation", () => {
   });
 });
 
+/**
+ * R2-19 — a queued beat-quantized switch belongs to the track (and grid) it
+ * was queued against. Every path that brings NEW content must unqueue it:
+ * the load paths (via the same invalidation that voids the grid), a document
+ * replacement (applyDocument sets presetId directly, bypassing switchPreset's
+ * own supersede rule), and a natural track end (where the library may decline
+ * to advance and no invalidation ever runs). `initApp` is driven for real so
+ * the assertions run through the actual onFrameTick firing logic and the
+ * actual engine.onEnded handler, not a re-implementation.
+ */
+describe("a queued quantized switch cannot survive onto new content (R2-19)", () => {
+  const fakeCanvas = () =>
+    ({
+      width: 1,
+      height: 1,
+      getBoundingClientRect: () => ({ width: 1, height: 1 }),
+    }) as unknown as HTMLCanvasElement;
+
+  /** The REAL onFrameTick initApp handed to (mocked) initServices. */
+  async function frameTick(): Promise<(t: number) => void> {
+    const { initServices } = await import("./services");
+    const calls = vi.mocked(initServices).mock.calls;
+    const tick = calls[calls.length - 1][1].onFrameTick;
+    expect(tick).toBeDefined(); // initApp always wires the frame tick
+    return tick!;
+  }
+
+  it("loadDemo unqueues, and the landed grid only serves a FRESH queue", async () => {
+    const { presets } = await import("../render/presets");
+    const dispose = s().initApp(fakeCanvas());
+    try {
+      const tick = await frameTick();
+      await loadAndAnalysePreviousTrack();
+      useVizStore.setState({
+        presetId: presets[0].id,
+        customDefs: [],
+        switchQuantize: "beat",
+        playback: { ...s().playback, playing: true },
+        pendingPresetId: null,
+      });
+      tick(5.0); // park the boundary bookkeeping deep into the OLD track
+      s().queuePreset(presets[2].id);
+      expect(s().pendingPresetId).toBe(presets[2].id);
+
+      const { load } = await loadDemoIntoTheWindow();
+      // Unqueued at the invalidation — the moment the new audio landed.
+      expect(s().pendingPresetId).toBeNull();
+
+      const analysis = armAnalysis();
+      engineState.play.resolve();
+      await flush();
+      analysis.resolve({ grid: NEW_GRID, key: NEW_KEY, sections: NEW_SECTIONS });
+      await load;
+      await flush();
+      expect(s().beatGrid).toEqual(NEW_GRID);
+
+      // A fresh queue fires at the new track's FIRST boundary: the reset
+      // bookkeeping (not the old track's t=5.0) decides what has been
+      // crossed — and the old queue's target is never what lands.
+      useVizStore.setState({ playback: { ...s().playback, playing: true } });
+      s().queuePreset(presets[1].id);
+      expect(s().pendingPresetId).toBe(presets[1].id);
+      tick(0.7); // crosses the new grid's 0 / 0.667 boundaries
+      expect(s().presetId).toBe(presets[1].id);
+      expect(s().pendingPresetId).toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
+  it("applyDocument (open/undo/theme) unqueues — a later boundary cannot fire it", async () => {
+    const { presets } = await import("../render/presets");
+    const { validateDocument } = await import("./project");
+    const dispose = s().initApp(fakeCanvas());
+    try {
+      const tick = await frameTick();
+      await loadAndAnalysePreviousTrack();
+      useVizStore.setState({
+        presetId: presets[0].id,
+        customDefs: [],
+        switchQuantize: "beat",
+        playback: { ...s().playback, playing: true },
+        pendingPresetId: null,
+      });
+      s().queuePreset(presets[1].id);
+      expect(s().pendingPresetId).toBe(presets[1].id);
+
+      const doc = validateDocument({});
+      s().applyDocument(doc);
+      expect(s().pendingPresetId).toBeNull();
+
+      // The old track's grid is still live (applyDocument leaves analysis
+      // alone) — crossing its next boundary must not fire the dead queue.
+      tick(0.5); // crosses OLD_GRID's 0 / 0.469 boundaries
+      expect(s().presetId).toBe(doc.presetId);
+    } finally {
+      dispose();
+    }
+  });
+
+  it("a natural track end unqueues even when the library declines to advance", async () => {
+    const { presets } = await import("../render/presets");
+    const dispose = s().initApp(fakeCanvas());
+    try {
+      await loadAndAnalysePreviousTrack();
+      useVizStore.setState({
+        presetId: presets[0].id,
+        customDefs: [],
+        switchQuantize: "beat",
+        playback: { ...s().playback, playing: true },
+        pendingPresetId: null,
+        library: null, // advanceLibrary no-ops: no invalidation will run
+        libraryActivePath: null,
+      });
+      s().queuePreset(presets[1].id);
+      expect(s().pendingPresetId).toBe(presets[1].id);
+
+      // The handler initApp installed (the literal's declared `null` is what
+      // the store overwrote — read it back through the assigned shape).
+      (engine as { onEnded: (() => void) | null }).onEnded?.();
+      expect(s().pendingPresetId).toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+});
+
 describe("a superseding load releases the waiter it inherits", () => {
   // Explicit budget, deliberately larger than `until`'s 5 s: the failure this
   // test exists to catch is a waiter nobody releases, and it should report that

@@ -198,6 +198,98 @@ describe("E2-U4 — ShaderEditor discard during an in-flight compile", () => {
 });
 
 /**
+ * R2-20 — the shader chip's ✕ used to delete with no question asked: a
+ * misclick on a 9-px target destroyed the shader silently. Same UI-level
+ * guard as ParamsPanel's deleteLook — the raw deleteCustomPreset action
+ * stays prompt-free; the chip wraps it.
+ */
+describe("R2-20 — shader chip delete asks first", () => {
+  const chipDef = {
+    id: "custom-chip1",
+    name: "Chip visual",
+    params: [],
+    wgsl: "fn preset() {}",
+  };
+
+  it("declining the confirm deletes nothing", async () => {
+    askConfirmMock.mockImplementation(async () => false);
+    const deleteCustomPresetMock = vi.fn();
+    act(() =>
+      useVizStore.setState({ customDefs: [chipDef], deleteCustomPreset: deleteCustomPresetMock }),
+    );
+    render(<ShaderEditor />);
+
+    fireEvent.click(screen.getByRole("button", { name: 'Delete "Chip visual"' }));
+    await act(async () => {});
+
+    expect(askConfirmMock).toHaveBeenCalledTimes(1);
+    expect(String(askConfirmMock.mock.calls[0][0])).toContain('Delete the visual "Chip visual"');
+    expect(deleteCustomPresetMock).not.toHaveBeenCalled();
+  });
+
+  it("accepting the confirm deletes exactly that shader", async () => {
+    const deleteCustomPresetMock = vi.fn();
+    act(() =>
+      useVizStore.setState({ customDefs: [chipDef], deleteCustomPreset: deleteCustomPresetMock }),
+    );
+    render(<ShaderEditor />);
+
+    fireEvent.click(screen.getByRole("button", { name: 'Delete "Chip visual"' }));
+    await act(async () => {});
+
+    expect(deleteCustomPresetMock).toHaveBeenCalledWith("custom-chip1");
+  });
+});
+
+/**
+ * R2-31j — chip-load and New replace the draft exactly like closing does,
+ * but used to do it with no question asked: a dirty WGSL draft vanished on a
+ * stray chip click. Both now route through the same guardDirty the three
+ * dismissal paths use.
+ */
+describe("R2-31j — chip-load and New route through the dirty confirm", () => {
+  const chipDef = {
+    id: "custom-chipload",
+    name: "Loadable visual",
+    params: [],
+    wgsl: "fn preset() {}",
+  };
+
+  it("declining keeps the dirty draft; accepting loads the chip", async () => {
+    act(() => useVizStore.setState({ customDefs: [chipDef] }));
+    render(<ShaderEditor />);
+    const nameInput = screen.getByPlaceholderText("Visual name…") as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: "Changed" } }); // dirty
+
+    askConfirmMock.mockImplementationOnce(async () => false);
+    fireEvent.click(screen.getByRole("button", { name: "Loadable visual" }));
+    await act(async () => {});
+    expect(askConfirmMock).toHaveBeenCalledTimes(1);
+    expect(nameInput.value).toBe("Changed"); // declined: nothing replaced
+
+    fireEvent.click(screen.getByRole("button", { name: "Loadable visual" }));
+    await act(async () => {});
+    expect(nameInput.value).toBe("Loadable visual"); // accepted: chip loaded
+  });
+
+  it("New over a dirty draft asks; a clean editor resets with no confirm", async () => {
+    render(<ShaderEditor />);
+    const nameInput = screen.getByPlaceholderText("Visual name…") as HTMLInputElement;
+
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    await act(async () => {});
+    expect(askConfirmMock).not.toHaveBeenCalled(); // clean: instant reset
+
+    fireEvent.change(nameInput, { target: { value: "Changed" } });
+    askConfirmMock.mockImplementationOnce(async () => false);
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    await act(async () => {});
+    expect(askConfirmMock).toHaveBeenCalledTimes(1);
+    expect(nameInput.value).toBe("Changed"); // declined: draft intact
+  });
+});
+
+/**
  * CRITICAL, whole-lane review — the busy-gate above has no escape hatch on
  * its own: `apply()` had no try/catch or timeout around the awaited
  * compile, so a REJECTED promise left `busy` stuck exactly like a hang

@@ -368,6 +368,192 @@ describe("perform runtime", () => {
     expect(channel.closed).toBe(true);
     expect(r.dispose).toHaveBeenCalled();
   });
+
+  /**
+   * R2-03: the overlay dedupe key used to omit lyric/audiogram state, so when
+   * dynamics stopped (captions toggled off, lyrics removed, audiogram
+   * disabled) applyOverlay early-outed on an unchanged key and the renderer
+   * kept presenting the last COMPOSED frame — a baked caption, forever
+   * (applySceneToRenderer clears only the lyric plate). The inactive
+   * transition must push one dynamics-free overlay, mirroring the main
+   * window's refreshOverlay else-branch.
+   */
+  it("captions off replaces the composed overlay with a clean one, not a stale key hit", async () => {
+    // The compose path rasterizes through OffscreenCanvas; a minimal 2D
+    // stand-in is enough — the assertions are about setOverlay traffic.
+    const ctx2d = {
+      measureText: () => ({ width: 10 }),
+      save() {},
+      restore() {},
+      translate() {},
+      scale() {},
+      beginPath() {},
+      rect() {},
+      clip() {},
+      strokeText() {},
+      fillText() {},
+      fillRect() {},
+      drawImage() {},
+    };
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        constructor(
+          public width: number,
+          public height: number,
+        ) {}
+        getContext() {
+          return ctx2d;
+        }
+        transferToImageBitmap() {
+          return { close: vi.fn() };
+        }
+      },
+    );
+    const r = fakeRenderer();
+    const { channel } = start(r);
+    await flush();
+    const setOverlay = r.setOverlay as ReturnType<typeof vi.fn>;
+
+    const lyrics = {
+      lines: [{ t: 0, end: 10, text: "hello world" }],
+      style: {
+        enabled: true,
+        position: "bottom" as const,
+        size: 1,
+        color: "#ffffff",
+        fadeSec: 0.15,
+        anim: "plain" as const,
+      },
+    };
+    channel.deliver(sceneMsg({ lyrics }));
+    await flush();
+    // No overlay layers: the raster is null and the compose path owns pushes.
+    expect(setOverlay).not.toHaveBeenCalled();
+
+    channel.deliver(frameMsg({ t: 1 }));
+    await flush();
+    // Captions on: a composed overlay (caption baked in) reached the renderer.
+    expect(setOverlay).toHaveBeenCalledTimes(1);
+    expect(setOverlay.mock.calls[0][0]).not.toBeNull();
+
+    channel.deliver(sceneMsg({ lyrics: null }));
+    await flush();
+    // Captions off: a NEW setOverlay lands, and it is the clean (caption-free)
+    // overlay — with no static layers that means null, which clears.
+    expect(setOverlay).toHaveBeenCalledTimes(2);
+    expect(setOverlay.mock.calls[1][0]).toBeNull();
+
+    channel.deliver(frameMsg({ t: 2 }));
+    await flush();
+    // ...and the frame stream composes nothing further.
+    expect(setOverlay).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * R2-31i: the asset fingerprint used to sample length+head+tail, which
+   * collides for same-length data URLs differing only in the middle (two
+   * crops of one image, two re-encodes of one frame) — the receiver then
+   * kept showing the OLD asset. The key is now FNV-1a over the full string.
+   */
+  it("same-length different-middle asset URLs get different keys (R2-31i)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ blob: async () => ({}) })),
+    );
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ close: vi.fn() })),
+    );
+    const r = fakeRenderer();
+    const { channel } = start(r);
+    await flush();
+    // Boot pushed the initial null clear — only the decode path counts.
+    (r.setCoverArt as ReturnType<typeof vi.fn>).mockClear();
+
+    // Same length, same first 48 chars, same last 16 — only the middle moves.
+    const head = "data:image/png;base64,";
+    const a = `${head}${"A".repeat(60)}X${"A".repeat(60)}`;
+    const b = `${head}${"A".repeat(60)}Y${"A".repeat(60)}`;
+    channel.deliver({
+      type: "assets",
+      coverUrl: a,
+      bgImageUrl: null,
+      bgVideoUrl: null,
+      overlayAssets: {},
+    });
+    await flush();
+    channel.deliver({
+      type: "assets",
+      coverUrl: b,
+      bgImageUrl: null,
+      bgVideoUrl: null,
+      overlayAssets: {},
+    });
+    await flush();
+
+    // Both covers were decoded and bound — the second was not deduped away.
+    expect(r.setCoverArt).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * Review D1: the full-string FNV pass is real money at data-URL sizes
+   * (~18 ms at 6 MB, ~670 ms at the 192 MB video cap) and the appliers
+   * re-run on every scene message — the fingerprint must be memoized on
+   * string REFERENCE identity, which is stable across scene messages (only
+   * an assets message replaces the strings, and re-hashes once).
+   */
+  it("memoizes the fingerprint by string reference — a re-run never re-walks the URL (D1)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ blob: async () => ({}) })),
+    );
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ close: vi.fn() })),
+    );
+    const r = fakeRenderer();
+    const { channel } = start(r);
+    await flush();
+
+    // A "string" that counts full-hash walks: only urlKey reads chars, so
+    // charCodeAt(0) firing IS the hash starting a pass over the payload.
+    const countingUrl = (payload: string) => {
+      const url = new String(payload);
+      const counter = { walks: 0 };
+      const native = String.prototype.charCodeAt;
+      Object.defineProperty(url, "charCodeAt", {
+        value(i: number) {
+          if (i === 0) counter.walks++;
+          return native.call(this as string, i);
+        },
+      });
+      return { url: url as unknown as string, counter };
+    };
+
+    const a = countingUrl("data:image/png;base64,QUJD");
+    const assetsMsg = (coverUrl: string) => ({
+      type: "assets",
+      coverUrl,
+      bgImageUrl: null,
+      bgVideoUrl: null,
+      overlayAssets: {},
+    });
+
+    channel.deliver(assetsMsg(a.url));
+    await flush();
+    expect(a.counter.walks).toBe(1); // hashed once on arrival
+
+    channel.deliver(assetsMsg(a.url)); // the same reference re-delivered
+    await flush();
+    expect(a.counter.walks).toBe(1); // memo hit — no second full pass
+
+    const b = countingUrl("data:image/png;base64,QUJE");
+    channel.deliver(assetsMsg(b.url)); // a genuinely new string
+    await flush();
+    expect(b.counter.walks).toBe(1); // re-hashed exactly once
+    expect(a.counter.walks).toBe(1); // ...and the old one stayed cold
+  });
 });
 
 describe("present policy (pure)", () => {

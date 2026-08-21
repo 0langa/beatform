@@ -63,6 +63,18 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
           el?.blur();
           return;
         }
+        // R2-18 (owner verdict): Stage is a MODE, not a dialog — Esc inside
+        // it ONLY steps back out (also clearing blackout). Running the rest
+        // of the cascade here tore down the dock/library/timeline and wrote
+        // their prefs, so leaving Stage cost the operator their workspace.
+        if (s.stageMode) {
+          // Review D3: the way out disarms a pending MIDI Learn here too —
+          // the Perform drawer arms inside Stage (D key), and this early
+          // return would otherwise skip the cascade's own disarm below.
+          if (s.midiLearn) s.setMidiLearn(null);
+          s.setStageMode(false);
+          return;
+        }
         s.setShowHelp(false);
         s.setShowGuide(false);
         s.setShowSettings(false);
@@ -74,7 +86,6 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         if (!s.exporting && !s.exportPreparing) s.setShowExport(false);
         // Never let Escape dismiss a running queue out from under itself.
         if (s.batchStatus !== "running") s.setShowBatch(false);
-        if (s.stageMode) s.setStageMode(false); // also clears blackout
         // The shader editor handles its own Escape (confirm-before-discard)
         // and stops propagation before this handler sees it.
         s.setShowPanel(false);
@@ -82,6 +93,9 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         s.setShowGallery(false);
         s.setShowTimeline(false);
         s.setShowPerform(false);
+        // R2-31a: a pending MIDI Learn is an open surface too — the way out
+        // disarms it rather than leaving the next touched control to bind.
+        if (s.midiLearn) s.setMidiLearn(null);
         return;
       }
       if (isTextEntry) return;

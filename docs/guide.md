@@ -220,7 +220,7 @@ The broadcast icon in the top bar visualizes whatever Windows is playing — Spo
 - **Switch hands-free.** Number keys <kbd>1</kbd>–<kbd>9</kbd> jump to a mode. With _Live ▸ Quantize_ set to Beat or Bar, the switch waits and lands exactly on the grid — the queued chip pulses until it takes over.
 - **Stage mode** (<kbd>S</kbd>) hides every piece of chrome and the cursor for a clean full-bleed output — project it, capture it, or screen-share it. The mode name flashes briefly on each switch so you can drive blind.
 - **Second display** (the Perform drawer, <kbd>D</kbd>): open a dedicated output window on a projector or TV while every control stays on your screen — mode pads, quantize, blackout, the monitor picker and fullscreen all live in the drawer. A feedback mode (Spectro Falls, Overgrowth) opened on the output mid-song builds its trail history from that moment on, like starting a capture. During a batch render the output window pauses on its last frame until the batch finishes.
-- **Blackout** (<kbd>0</kbd> in Stage mode or with the performance window open) cuts to black — the classic VJ cut. <kbd>Esc</kbd> exits everything.
+- **Blackout** (<kbd>0</kbd> in Stage mode or with the performance window open) cuts to black — the classic VJ cut. <kbd>Esc</kbd> steps back out of Stage mode and leaves the rest of your workspace exactly as it was.
 - **MIDI** (the Live page): map a controller's knobs to any parameter and pads to modes. _Learn CC_, then move a knob, binds it to the selected parameter. The _Learn note →_ button always names whichever mode you currently have open — switch to that mode first, click it, then play a pad to bind that note to switching there (note switches obey the beat-quantize too). Bindings are remembered.
 
 Everything here is preview-only — a live session never changes what an export renders.
@@ -337,7 +337,7 @@ Press <kbd>H</kbd> for the full list — that overlay is also where the button t
 - <kbd>Ctrl/Cmd+Shift+Z</kbd> — Redo the last undone change (same key as Undo, plus Shift)
 - <kbd>Ctrl/Cmd+Y</kbd> — Redo the last undone change
 
-Every performance shortcut has a letter or digit as its main binding, so it sits on the same labeled key on every keyboard layout — QWERTZ and AZERTY included. The punctuation keys some of them also answer to (<kbd>[</kbd>, <kbd>]</kbd>, <kbd>\</kbd>, <kbd>.</kbd>) are kept for US-layout muscle memory and are bound by physical position, not by the character printed on them. And <kbd>Esc</kbd>, wherever you are, closes whatever's open.
+Every performance shortcut has a letter or digit as its main binding, so it sits on the same labeled key on every keyboard layout — QWERTZ and AZERTY included. The punctuation keys some of them also answer to (<kbd>[</kbd>, <kbd>]</kbd>, <kbd>\</kbd>, <kbd>.</kbd>) are kept for US-layout muscle memory and are bound by physical position, not by the character printed on them. And <kbd>Esc</kbd> closes whatever's open — except in Stage mode, where it only steps back out of Stage and leaves your panels as they were.
 
 <a id="faq"></a>
 

@@ -75,7 +75,23 @@ function cloneLine(l: LyricLine): LyricLine {
     text: l.text,
     ...(l.words ? { words: l.words.map(cloneWord) } : {}),
     ...(l.conf !== undefined ? { conf: l.conf } : {}),
+    // Row identity survives every edit (R2-31k) — see LyricLine.uid.
+    ...(l.uid !== undefined ? { uid: l.uid } : {}),
   };
+}
+
+let uidSeq = 0;
+/** Session-unique row id (R2-31k) — the one deliberately impure mint in this
+ * otherwise-pure module; ids never reach a file, so purity of the persisted
+ * artifact is untouched. See LyricLine.uid. */
+export const newLineUid = (): string => `lyr-${++uidSeq}`;
+
+/** Fill missing row ids, idempotently — the load chokepoint
+ * (loadLyricsText) runs every parsed sheet through this so the editor's
+ * rows have identities before their first render. */
+export function withLineUids(lines: LyricLine[]): LyricLine[] {
+  if (lines.every((l) => l.uid !== undefined)) return lines;
+  return lines.map((l) => (l.uid !== undefined ? l : { ...l, uid: newLineUid() }));
 }
 
 /** Deep copy — the undo stack's snapshot and every op's working copy. */
@@ -312,11 +328,15 @@ export function splitLine(lines: LyricLine[], i: number, charPos: number): Lyric
     t: orig.t,
     end: null,
     text: tokens.slice(0, m).join(" "),
+    // The first half IS the line the user split (R2-31k) — it keeps the row
+    // identity; the second half is a new row and mints its own.
+    ...(orig.uid !== undefined ? { uid: orig.uid } : {}),
   };
   const second: LyricLine = {
     t: t2,
     end: orig.end,
     text: tokens.slice(m).join(" "),
+    uid: newLineUid(),
   };
   if (hasWords) {
     const w1 = normalizeWords(orig.words!.slice(0, m).map((w) => ({ ...w, end: null })));
@@ -353,6 +373,9 @@ export function mergeWithNext(lines: LyricLine[], i: number): LyricLine[] | null
     t: a.t,
     end: b.end,
     text: [a.text, b.text].filter((t) => t.length > 0).join(" "),
+    // The merged row carries the FIRST line's identity (R2-31k) — the user
+    // pulled b up into a, so a's row is the one that persists.
+    ...(a.uid !== undefined ? { uid: a.uid } : {}),
   };
   if (a.words && a.words.length > 0 && b.words && b.words.length > 0) {
     const words = normalizeWords([...a.words.map((w) => ({ ...w, end: null })), ...b.words]);
@@ -382,7 +405,7 @@ export function insertLineAfter(lines: LyricLine[], i: number): LyricLine[] {
   } else {
     t = lineWindow(lines, i).end;
   }
-  out.splice(i + 1, 0, { t, end: null, text: "" });
+  out.splice(i + 1, 0, { t, end: null, text: "", uid: newLineUid() });
   return out;
 }
 

@@ -22,9 +22,12 @@ import type { ProjectDocument } from "./project";
  * `= null` assignment identical in shape to the ones proven below.
  */
 
+// setItem is a spy so persistence-restoring assertions (R2-20's undo test)
+// can read what was written; behavior is unchanged (still a swallow-all stub).
+const setItemMock = vi.fn();
 vi.stubGlobal("localStorage", {
   getItem: () => null,
-  setItem: () => {},
+  setItem: setItemMock,
   removeItem: () => {},
 });
 vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
@@ -37,11 +40,12 @@ vi.mock("./services", () => ({
     currentTime: 0,
     duration: 0,
     playing: false,
+    seek: vi.fn(),
     setVolume: vi.fn(),
     onEnded: null,
     dispose: vi.fn(),
   })),
-  getAnalyzer: vi.fn(() => ({ setSync: vi.fn() })),
+  getAnalyzer: vi.fn(() => ({ setSync: vi.fn(), reset: vi.fn() })),
   peekAnalyzer: vi.fn(() => null),
   getRenderer: vi.fn(() => null),
   setLiveRenderPaused: vi.fn(),
@@ -189,6 +193,100 @@ describe("store initApp teardown", { timeout: 30_000 }, () => {
 });
 
 /**
+ * Review D3 (R2-31a family): the Live page's MIDI Learn surface also
+ * disappears when the Visuals dock closes (G key / panel ✕) and when Stage
+ * mode hides the chrome — both must disarm a pending Learn, or the next
+ * control touched on the device silently mints a binding.
+ */
+describe("MIDI learn disarms on the remaining surfaces (review D3)", () => {
+  const LEARN = { kind: "cc" as const, param: "hue", min: 0, max: 360 };
+
+  it("closing the Visuals dock disarms (functional-updater form included)", async () => {
+    const { useVizStore } = await import("./store");
+    useVizStore.setState({ midiLearn: { ...LEARN }, showPanel: true, stageMode: false });
+
+    useVizStore.getState().setShowPanel((v) => !v); // the G-key toggle path
+
+    expect(useVizStore.getState().showPanel).toBe(false);
+    expect(useVizStore.getState().midiLearn).toBeNull();
+  });
+
+  it("opening the dock leaves an armed learn alone", async () => {
+    const { useVizStore } = await import("./store");
+    useVizStore.setState({ midiLearn: { ...LEARN }, showPanel: false });
+
+    useVizStore.getState().setShowPanel(true);
+
+    expect(useVizStore.getState().midiLearn).toEqual(LEARN);
+  });
+
+  it("entering Stage disarms; leaving through the action does not (the drawer may still show it)", async () => {
+    const { useVizStore } = await import("./store");
+    useVizStore.setState({ midiLearn: { ...LEARN }, stageMode: false, performOpen: false });
+
+    useVizStore.getState().setStageMode(true);
+    expect(useVizStore.getState().midiLearn).toBeNull();
+
+    // Inside Stage the Perform drawer (D key) can arm again; leaving Stage
+    // brings the chrome back, so that learn keeps its surface and survives.
+    useVizStore.setState({ midiLearn: { ...LEARN } });
+    useVizStore.getState().setStageMode(false);
+    expect(useVizStore.getState().midiLearn).toEqual(LEARN);
+    useVizStore.setState({ midiLearn: null });
+  });
+});
+
+/**
+ * R2-31b: enableMidi awaits the browser's permission prompt; a disableMidi
+ * issued while that prompt is open used to LOSE — the late grant installed
+ * the handle and flipped midiEnabled back on. The disable bumps a generation
+ * the enable re-checks after its await: state ends disabled, handle stopped.
+ */
+describe("disableMidi during the permission await wins (R2-31b)", () => {
+  it("the late handle is stopped and the state stays disabled", async () => {
+    const { useVizStore } = await import("./store");
+    const { startMidi } = await import("./midiInput");
+    const { shared } = await import("./slices/shared");
+    // Clean slate: earlier tests may have left the enabled flag or claim set.
+    useVizStore.setState({ midiEnabled: false });
+    shared.midiHandle = null;
+    shared.midiStarting = false;
+
+    const stop = vi.fn();
+    let grant!: (h: { stop: () => void } | null) => void;
+    vi.mocked(startMidi).mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          grant = r;
+        }),
+    );
+
+    const enable = useVizStore.getState().enableMidi();
+    useVizStore.getState().disableMidi(); // changed their mind mid-prompt
+    grant({ stop }); // the permission grant lands late
+    await enable;
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(useVizStore.getState().midiEnabled).toBe(false);
+    expect(shared.midiHandle).toBeNull();
+  });
+
+  it("an undisturbed enable still installs the handle (control)", async () => {
+    const { useVizStore } = await import("./store");
+    const { shared } = await import("./slices/shared");
+    useVizStore.setState({ midiEnabled: false });
+    shared.midiHandle = null;
+    shared.midiStarting = false;
+
+    await useVizStore.getState().enableMidi();
+
+    expect(useVizStore.getState().midiEnabled).toBe(true);
+    expect(shared.midiHandle).not.toBeNull();
+    useVizStore.getState().disableMidi(); // leave the module state clean
+  });
+});
+
+/**
  * L11 regression: `[`/`]` (stepPreset) used to call switchPreset directly,
  * bypassing the beat-quantize takeover that the number-key path
  * (queuePreset) already honoured — pressing `]` during quantized playback
@@ -232,6 +330,65 @@ describe("stepPreset honours beat-quantize like the number-key path (L11)", () =
     useVizStore.getState().stepPreset(1);
 
     expect(useVizStore.getState().presetId).toBe(presets[1].id);
+    expect(useVizStore.getState().pendingPresetId).toBeNull();
+  });
+});
+
+/**
+ * R2-22 (owner verdict): stepping is a WALK, not a toggle. stepPreset used to
+ * compute from the CURRENT mode even with a queue pending, so the second `]`
+ * re-targeted the already-pending chip and queuePreset's cancel-toggle ate it
+ * — `]]` under quantize meant "queue, then cancel" instead of "two along".
+ * Steps now compute from the pending target when one exists (bypassing the
+ * cancel branch by construction); a direct chip tap on the pending target
+ * keeps its cancel-toggle untouched.
+ */
+describe("stepPreset walks from the pending target under quantize (R2-22)", () => {
+  /** Steps walk the STRIP order, which diverges from the registry array —
+   * expectations must come from the same orderedPresets the action reads. */
+  async function queuedPosture() {
+    const { useVizStore } = await import("./store");
+    const { orderedPresets } = await import("./presetOrder");
+    const strip = orderedPresets(useVizStore.getState().presetOrder, []);
+    useVizStore.setState({
+      presetId: strip[0].id,
+      customDefs: [],
+      switchQuantize: "beat",
+      playback: { ...useVizStore.getState().playback, playing: true },
+      beatGrid: { bpm: 120, beatTimes: Float32Array.from([0, 0.5, 1, 1.5, 2]), hopSec: 0.0116 },
+      pendingPresetId: null,
+    });
+    return { useVizStore, strip };
+  }
+
+  it("two steps queue two modes ahead, not a cancel", async () => {
+    const { useVizStore, strip } = await queuedPosture();
+
+    useVizStore.getState().stepPreset(1);
+    useVizStore.getState().stepPreset(1);
+
+    expect(useVizStore.getState().presetId).toBe(strip[0].id); // still queued
+    expect(useVizStore.getState().pendingPresetId).toBe(strip[2].id);
+  });
+
+  it("a step back after a step forward cancels the queue (back where you are)", async () => {
+    const { useVizStore, strip } = await queuedPosture();
+
+    useVizStore.getState().stepPreset(1);
+    useVizStore.getState().stepPreset(-1);
+
+    expect(useVizStore.getState().presetId).toBe(strip[0].id);
+    expect(useVizStore.getState().pendingPresetId).toBeNull();
+  });
+
+  it("a chip tap on the pending target still cancel-toggles (chip semantics preserved)", async () => {
+    const { useVizStore, strip } = await queuedPosture();
+
+    useVizStore.getState().stepPreset(1);
+    expect(useVizStore.getState().pendingPresetId).toBe(strip[1].id);
+    useVizStore.getState().queuePreset(strip[1].id); // the chip's own tap
+
+    expect(useVizStore.getState().presetId).toBe(strip[0].id);
     expect(useVizStore.getState().pendingPresetId).toBeNull();
   });
 });
@@ -447,5 +604,85 @@ describe("preset display order", () => {
     expect(useVizStore.getState().presetId).toBe("aurora");
 
     useVizStore.getState().resetPresetOrder();
+  });
+});
+
+/**
+ * R2-31c: a forward seek used to leave the quantize bookkeeping at the
+ * PRE-seek time, so the first frame tick after the jump saw every boundary
+ * between the two positions as "crossed" and fired the queued switch off a
+ * scrub instead of the music. The seek actions advance lastQuantizeTick to
+ * the seek target; only a boundary the track then naturally crosses fires.
+ */
+describe("a forward seek cannot fire a queued switch (R2-31c)", () => {
+  it("the jump swallows the leapt-over boundaries; the next natural crossing still fires", async () => {
+    const { useVizStore } = await import("./store");
+    const { initServices } = await import("./services");
+    const { orderedPresets } = await import("./presetOrder");
+    const strip = orderedPresets(useVizStore.getState().presetOrder, []);
+    const dispose = useVizStore.getState().initApp(fakeCanvas());
+    try {
+      const calls = vi.mocked(initServices).mock.calls;
+      const tick = calls[calls.length - 1][1].onFrameTick!;
+      useVizStore.setState({
+        presetId: strip[0].id,
+        customDefs: [],
+        switchQuantize: "beat",
+        playback: { ...useVizStore.getState().playback, playing: true },
+        beatGrid: { bpm: 120, beatTimes: Float32Array.from([0, 0.5, 1, 1.5, 2]), hopSec: 0.0116 },
+        pendingPresetId: null,
+      });
+      tick(0.1); // baseline the bookkeeping just past the first boundary
+      useVizStore.getState().queuePreset(strip[1].id);
+      expect(useVizStore.getState().pendingPresetId).toBe(strip[1].id);
+
+      useVizStore.getState().seekEnd(1.2); // leaps over the 0.5 and 1.0 boundaries
+      tick(1.25); // first tick after the seek — no boundary in (1.2, 1.25]
+      expect(useVizStore.getState().presetId).toBe(strip[0].id); // no fire off the jump
+      expect(useVizStore.getState().pendingPresetId).toBe(strip[1].id); // still queued
+
+      tick(1.55); // the track naturally crosses 1.5
+      expect(useVizStore.getState().presetId).toBe(strip[1].id);
+      expect(useVizStore.getState().pendingPresetId).toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+});
+
+/**
+ * R2-20 — undo honesty for shader deletion. docOf's customDefs is
+ * referencedCustomDefs (active + timeline only, by design), so deleting an
+ * UNREFERENCED shader used to record a snapshot that did not contain the def
+ * — Ctrl+Z said "Undone" while the shader stayed gone, from the session AND
+ * from the localStorage library. The delete's snapshot now embeds the doomed
+ * def, so undo genuinely restores both.
+ */
+describe("deleteCustomPreset undo restores an unreferenced shader (R2-20)", () => {
+  it("undo brings back the def and its localStorage copy", async () => {
+    const { useVizStore } = await import("./store");
+    const { clearHistory } = await import("./history");
+    const { NEW_SHADER_TEMPLATE } = await import("../render/presets/custom");
+    clearHistory();
+
+    const def = { id: "custom-r220", name: "Doomed", params: [], wgsl: NEW_SHADER_TEMPLATE };
+    useVizStore.setState({ checkCustomPreset: vi.fn(async () => []) });
+    await useVizStore.getState().saveCustomPreset(def);
+    // UNREFERENCED: the active mode moves off it (directly — no history
+    // entry) and no timeline scene names it.
+    useVizStore.setState({ presetId: "spectrum-bars" });
+    expect(useVizStore.getState().customDefs.some((d) => d.id === def.id)).toBe(true);
+
+    useVizStore.getState().deleteCustomPreset(def.id);
+    expect(useVizStore.getState().customDefs.some((d) => d.id === def.id)).toBe(false);
+
+    setItemMock.mockClear();
+    useVizStore.getState().undo();
+
+    expect(useVizStore.getState().customDefs.some((d) => d.id === def.id)).toBe(true);
+    // ...and the library's persisted copy came back with it.
+    const write = setItemMock.mock.calls.filter((c) => c[0] === "viz.customPresets.v1").pop();
+    expect(write).toBeDefined();
+    expect(String(write![1])).toContain("custom-r220");
   });
 });
