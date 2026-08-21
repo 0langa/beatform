@@ -135,7 +135,15 @@ fn ffmpeg_path() -> Result<PathBuf, String> {
 /// bytes, see webgpuRenderer.ts's deepFrameToStraightRgba64). Everything past
 /// the input spec — codec, profile, pix_fmt, vendor tag, audio codec — is
 /// UNCHANGED from the 8-bit-PNG-in-disguise contract this pipe used to carry:
-/// only the source precision moved, not the encoded result's shape.
+/// only the source precision moved, not the encoded result's shape. (R2-01
+/// later added the explicit bt709/tv color tags below; nothing else moved.)
+///
+/// Explicit bt709 primaries/trc/matrix + tv range (R2-01), same rationale as
+/// av1_args below verbatim: the RGB→YUV conversion happens in swscale, and
+/// untagged output would leave players guessing — the tags make the
+/// documented conversion part of the file (the .mov's color atom). AV1 had
+/// them from day one; this lane shipped untagged, so the SAME pixels could
+/// grade differently in an NLE than the .mp4 next to them.
 ///
 /// One truth about that shape, measured on device (FEAT-005 smoke): the
 /// `yuva444p10le` below is a REQUEST, and prores_ks quietly ignores it —
@@ -164,6 +172,14 @@ fn prores_args(fps: u32, width: u32, height: u32, wav: &str, out: &str) -> Vec<S
         "4444",
         "-pix_fmt",
         "yuva444p10le",
+        "-color_primaries",
+        "bt709",
+        "-color_trc",
+        "bt709",
+        "-colorspace",
+        "bt709",
+        "-color_range",
+        "tv",
         "-vendor",
         "apl0",
         "-c:a",
@@ -991,6 +1007,19 @@ mod tests {
                 "4444",
                 "-pix_fmt",
                 "yuva444p10le",
+                // R2-01: the same explicit tags av1_args always carried, in
+                // the same form and order — the RGB->YUV conversion in
+                // swscale must be declared in the file, not guessed by the
+                // player. scripts/export-color-verify.mjs proves the tags
+                // land AND that the conversion itself is bt709.
+                "-color_primaries",
+                "bt709",
+                "-color_trc",
+                "bt709",
+                "-colorspace",
+                "bt709",
+                "-color_range",
+                "tv",
                 "-vendor",
                 "apl0",
                 "-c:a",
