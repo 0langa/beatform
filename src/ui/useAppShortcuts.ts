@@ -68,6 +68,10 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         // of the cascade here tore down the dock/library/timeline and wrote
         // their prefs, so leaving Stage cost the operator their workspace.
         if (s.stageMode) {
+          // Review D3: the way out disarms a pending MIDI Learn here too —
+          // the Perform drawer arms inside Stage (D key), and this early
+          // return would otherwise skip the cascade's own disarm below.
+          if (s.midiLearn) s.setMidiLearn(null);
           s.setStageMode(false);
           return;
         }

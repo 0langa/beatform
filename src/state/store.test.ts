@@ -193,6 +193,50 @@ describe("store initApp teardown", { timeout: 30_000 }, () => {
 });
 
 /**
+ * Review D3 (R2-31a family): the Live page's MIDI Learn surface also
+ * disappears when the Visuals dock closes (G key / panel ✕) and when Stage
+ * mode hides the chrome — both must disarm a pending Learn, or the next
+ * control touched on the device silently mints a binding.
+ */
+describe("MIDI learn disarms on the remaining surfaces (review D3)", () => {
+  const LEARN = { kind: "cc" as const, param: "hue", min: 0, max: 360 };
+
+  it("closing the Visuals dock disarms (functional-updater form included)", async () => {
+    const { useVizStore } = await import("./store");
+    useVizStore.setState({ midiLearn: { ...LEARN }, showPanel: true, stageMode: false });
+
+    useVizStore.getState().setShowPanel((v) => !v); // the G-key toggle path
+
+    expect(useVizStore.getState().showPanel).toBe(false);
+    expect(useVizStore.getState().midiLearn).toBeNull();
+  });
+
+  it("opening the dock leaves an armed learn alone", async () => {
+    const { useVizStore } = await import("./store");
+    useVizStore.setState({ midiLearn: { ...LEARN }, showPanel: false });
+
+    useVizStore.getState().setShowPanel(true);
+
+    expect(useVizStore.getState().midiLearn).toEqual(LEARN);
+  });
+
+  it("entering Stage disarms; leaving through the action does not (the drawer may still show it)", async () => {
+    const { useVizStore } = await import("./store");
+    useVizStore.setState({ midiLearn: { ...LEARN }, stageMode: false, performOpen: false });
+
+    useVizStore.getState().setStageMode(true);
+    expect(useVizStore.getState().midiLearn).toBeNull();
+
+    // Inside Stage the Perform drawer (D key) can arm again; leaving Stage
+    // brings the chrome back, so that learn keeps its surface and survives.
+    useVizStore.setState({ midiLearn: { ...LEARN } });
+    useVizStore.getState().setStageMode(false);
+    expect(useVizStore.getState().midiLearn).toEqual(LEARN);
+    useVizStore.setState({ midiLearn: null });
+  });
+});
+
+/**
  * R2-31b: enableMidi awaits the browser's permission prompt; a disableMidi
  * issued while that prompt is open used to LOSE — the late grant installed
  * the handle and flipped midiEnabled back on. The disable bumps a generation

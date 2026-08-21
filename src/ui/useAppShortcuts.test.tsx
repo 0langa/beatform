@@ -181,6 +181,25 @@ describe("Escape", () => {
     expect(state.setShowPerform).not.toHaveBeenCalled();
   });
 
+  it("Esc inside Stage also disarms a pending MIDI learn — nothing else (D3)", () => {
+    const state = {
+      ...escState(),
+      stageMode: true,
+      midiLearn: { kind: "cc", param: "hue", min: 0, max: 1 },
+      setMidiLearn: vi.fn(),
+    };
+    render(<Harness state={state} />);
+
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+
+    // The Perform drawer arms inside Stage (D key); the R2-18 early return
+    // must not carry an armed learn out of Stage with it.
+    expect(state.setMidiLearn).toHaveBeenCalledWith(null);
+    expect(state.setStageMode).toHaveBeenCalledWith(false);
+    expect(state.setShowPanel).not.toHaveBeenCalled(); // still ONLY exits Stage
+    expect(state.setShowPerform).not.toHaveBeenCalled();
+  });
+
   it("the next Escape, outside Stage, runs the cascade as before", () => {
     const state = { ...escState(), stageMode: true };
     render(<Harness state={state} />);

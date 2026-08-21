@@ -2894,7 +2894,12 @@ export const useVizStore = create<VizState>((set, get) => {
 
     setShowPanel(v) {
       const next = typeof v === "function" ? v(get().showPanel) : v;
-      set({ showPanel: next });
+      // Review D3 (R2-31a family): closing the dock hides the Live page — a
+      // pending MIDI Learn armed there loses its surface and must disarm, or
+      // the next control touched on the device silently mints a binding.
+      set(
+        next || !get().midiLearn ? { showPanel: next } : { showPanel: next, midiLearn: null },
+      );
       saveStoredPanelOpen(next);
     },
 
@@ -2944,7 +2949,17 @@ export const useVizStore = create<VizState>((set, get) => {
       // Do NOT "fix" that with setShowPanel(true) on exit either: that writes
       // panelOpen: true for users who never opened the dock. Layout
       // suppression is stateless, so there is nothing to restore.
-      if (stageMode) set({ stageMode, showTimeline: false, showHelp: false });
+      // Review D3 (R2-31a family): entering stage hides the dock (layout
+      // suppression above) and with it the Live page — a pending MIDI Learn
+      // armed there loses its surface and must disarm with the chrome.
+      if (stageMode) {
+        set({
+          stageMode,
+          showTimeline: false,
+          showHelp: false,
+          ...(get().midiLearn ? { midiLearn: null } : {}),
+        });
+      }
       // Leaving stage clears blackout — UNLESS the performance window is
       // running (FEAT-009): blackout then belongs to the OUTPUT surface the
       // audience sees, and exiting the operator's local stage view must not
