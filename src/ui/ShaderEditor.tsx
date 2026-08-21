@@ -114,16 +114,21 @@ export function ShaderEditor() {
       // Imported visuals are edited as GLSL in the import dialog; their
       // `wgsl` is generated output no one should hand-edit. (An imported def
       // carries a transpiled module, not a snippet, so THIS editor must never
-      // load one.)
+      // load one.) The dialog opens OVER the editor, so the draft survives —
+      // no dirty gate on this branch.
       store().openShadertoyImport(def.id);
       return;
     }
-    setEditingId(def.id);
-    setName(def.name);
-    setRows(specsToRows([...(def.params ?? []), ...(def.advanced ?? [])]));
-    setWgsl(def.wgsl);
-    setErrors([]);
-    setDirty(false);
+    // R2-31j: loading a chip replaces the draft exactly like closing does —
+    // route through the same dirty confirm (busy rule included).
+    guardDirty(() => {
+      setEditingId(def.id);
+      setName(def.name);
+      setRows(specsToRows([...(def.params ?? []), ...(def.advanced ?? [])]));
+      setWgsl(def.wgsl);
+      setErrors([]);
+      setDirty(false);
+    });
   };
 
   // askConfirm, not window.confirm — same ACL trap as ShadertoyImport: the
@@ -132,9 +137,10 @@ export function ShaderEditor() {
   // in every installed build since it was added (L12); the Shadertoy smoke
   // finally exercised the path.
   //
-  // E2-U4: blocked outright while `busy` — ALL THREE dismissal paths
-  // (backdrop, header ✕, the local Escape handler below) call this one
-  // function, so gating it here is enough for all of them, matching how
+  // E2-U4: blocked outright while `busy` — every draft-replacing path (the
+  // three dismissals: backdrop, header ✕, the local Escape handler below —
+  // plus, since R2-31j, chip-load and New) routes through this one function,
+  // so gating it here is enough for all of them, matching how
   // ExportDialog disables its own close control during work (E2-U5). Before
   // this, "Discard" during an in-flight compile unmounted the dialog but not
   // the promise: saveCustomPreset (customShaderActions.ts) still registered,
@@ -144,14 +150,16 @@ export function ShaderEditor() {
   // resume; a failed compile never reached saveCustomPreset's persist/switch
   // step in the first place, so there is nothing left to wrongly "keep" by
   // discarding after a failure.
-  const requestClose = () => {
+  const guardDirty = (proceed: () => void) => {
     if (busy) return;
     void (async () => {
       if (dirty && !(await askConfirm("Discard unsaved changes to this shader?", "Shader editor")))
         return;
-      store().setShowShaderEditor(false);
+      proceed();
     })();
   };
+
+  const requestClose = () => guardDirty(() => store().setShowShaderEditor(false));
 
   /** Destructive: a misclick on the 9-px ✕ threw a shader away with no
    * question asked (R2-20) — same UI-level guard as ParamsPanel's deleteLook,
@@ -292,14 +300,17 @@ export function ShaderEditor() {
           <button
             className="text-btn"
             title="Start a fresh visual from the starter shader"
-            onClick={() => {
-              setEditingId(null);
-              setName("My Visual");
-              setRows(starterRows());
-              setWgsl(NEW_SHADER_TEMPLATE);
-              setErrors([]);
-              setDirty(false);
-            }}
+            onClick={() =>
+              // R2-31j: New replaces the draft — same dirty gate as closing.
+              guardDirty(() => {
+                setEditingId(null);
+                setName("My Visual");
+                setRows(starterRows());
+                setWgsl(NEW_SHADER_TEMPLATE);
+                setErrors([]);
+                setDirty(false);
+              })
+            }
           >
             New
           </button>
