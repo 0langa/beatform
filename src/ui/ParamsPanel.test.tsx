@@ -1706,6 +1706,20 @@ describe("Visuals section rail", { timeout: 30_000 }, () => {
     expect(screen.getByRole("heading", { name: "Live" })).toBeTruthy();
   });
 
+  it("navigating off the Live page disarms a pending MIDI learn (R2-31a)", () => {
+    setPrefs({ visualsPage: "live" });
+    act(() =>
+      useVizStore.setState({ midiLearn: { kind: "cc", param: "hue", min: 0, max: 360 } }),
+    );
+    render(<ParamsPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mode" }));
+
+    // Armed with no surface showing it, the next control touched on the
+    // device would silently mint a binding — leaving Live disarms.
+    expect(useVizStore.getState().midiLearn).toBeNull();
+  });
+
   it("R6: roving tabindex — the rail is ONE tab stop", () => {
     render(<ParamsPanel />);
     const items = railItems();

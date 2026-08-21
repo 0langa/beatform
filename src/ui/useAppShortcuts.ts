@@ -89,6 +89,9 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         s.setShowGallery(false);
         s.setShowTimeline(false);
         s.setShowPerform(false);
+        // R2-31a: a pending MIDI Learn is an open surface too — the way out
+        // disarms it rather than leaving the next touched control to bind.
+        if (s.midiLearn) s.setMidiLearn(null);
         return;
       }
       if (isTextEntry) return;

@@ -143,6 +143,19 @@ describe("Escape", () => {
     expect(state.setShowPanel).toHaveBeenCalledWith(false);
   });
 
+  it("Escape disarms a pending MIDI learn with the rest of the cascade (R2-31a)", () => {
+    const state = {
+      ...escState(),
+      midiLearn: { kind: "cc", param: "hue", min: 0, max: 1 },
+      setMidiLearn: vi.fn(),
+    };
+    render(<Harness state={state} />);
+
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+
+    expect(state.setMidiLearn).toHaveBeenCalledWith(null);
+  });
+
   /**
    * R2-18 (owner verdict): Stage is a MODE, not a dialog. Esc inside it steps
    * back out and does nothing else — the old cascade also tore down the dock,

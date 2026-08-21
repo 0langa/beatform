@@ -173,3 +173,40 @@ describe("monitorLabel", () => {
     expect(monitorLabel({ ...m, index: 0, primary: true })).toBe("Display 1 — 1920×1080 (primary)");
   });
 });
+
+/**
+ * R2-31a: closing the Perform drawer disarms a pending MIDI Learn — the
+ * drawer is one of Learn's two arming surfaces, and an armed learn with no
+ * surface showing it silently binds the next control the device sends.
+ * Driven at the factory level (set/get fakes) — the action's whole contract
+ * is which patch it writes.
+ */
+describe("setShowPerform disarms a pending MIDI learn on close (R2-31a)", () => {
+  function drive(midiLearn: unknown, v: boolean) {
+    const writes: Record<string, unknown>[] = [];
+    const state = { midiLearn, refreshPerformMonitors: vi.fn(async () => {}) };
+    const actions = performActions(
+      ((patch: Record<string, unknown>) => void writes.push(patch)) as never,
+      (() => state) as never,
+      {} as never,
+    );
+    actions.setShowPerform(v);
+    return writes;
+  }
+
+  it("closing with a learn armed clears it in the same set", () => {
+    expect(drive({ kind: "cc", param: "hue", min: 0, max: 1 }, false)).toEqual([
+      { showPerform: false, midiLearn: null },
+    ]);
+  });
+
+  it("closing with no learn writes only the flag (no churn)", () => {
+    expect(drive(null, false)).toEqual([{ showPerform: false }]);
+  });
+
+  it("opening never touches the learn", () => {
+    expect(drive({ kind: "cc", param: "hue", min: 0, max: 1 }, true)).toEqual([
+      { showPerform: true },
+    ]);
+  });
+});
