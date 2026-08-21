@@ -46,6 +46,12 @@ const UNGROUPABLE = new Set([
   // silently drop the intermediate version from history, the same
   // un-undoable-edit shape this key exists to fix in the first place.
   "shader-save",
+  // R2-23: auditioning two looks/themes/styles in quick succession is two
+  // discrete whole-document applications — grouped, the first became
+  // unreachable by undo.
+  "look",
+  "theme",
+  "style",
 ]);
 
 export function snapshotForHistory(doc: ProjectDocument): ProjectDocument {

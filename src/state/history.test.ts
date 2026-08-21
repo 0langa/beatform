@@ -123,6 +123,20 @@ describe("history", () => {
     expect(historyDepths().undo).toBe(6);
   });
 
+  it("does NOT group look/theme/style applications (R2-23)", () => {
+    // Auditioning two styles (or looks, or themes) 40 ms apart is two
+    // discrete whole-document applications — grouping collapsed them into
+    // one undo that skipped straight past the first, so "back to the
+    // previous style" was unreachable.
+    pushHistory(doc(1), "style", 1000);
+    pushHistory(doc(2), "style", 1040);
+    pushHistory(doc(3), "look", 1080);
+    pushHistory(doc(4), "look", 1120);
+    pushHistory(doc(5), "theme", 1160);
+    pushHistory(doc(6), "theme", 1200);
+    expect(historyDepths().undo).toBe(6);
+  });
+
   it("still groups a continuous slider drag", () => {
     pushHistory(doc(1), "param:hue", 1000);
     pushHistory(doc(2), "param:hue", 1100);
