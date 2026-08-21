@@ -352,9 +352,13 @@ mod tests {
     use super::*;
 
     fn samples(bytes: &[u8]) -> Vec<i16> {
+        // as_chunks over chunks_exact: constant chunk size, and clippy 1.98
+        // (CI toolchain) denies the latter under -D warnings.
         bytes
-            .chunks_exact(2)
-            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| i16::from_le_bytes(*b))
             .collect()
     }
 
