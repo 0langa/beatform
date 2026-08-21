@@ -11,6 +11,51 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.107.0] - 2026-08-21
+
+### Fixed
+
+- **The performance window lets go of dead captions.** Turning lyrics or
+  the audiogram off mid-show left the last caption line (or the progress
+  strip) burned into the audience output until something unrelated redrew
+  it. The output window now heals the moment the dynamics stop.
+- **A queued visual switch dies with the moment it was meant for.** With
+  beat/bar quantize on, a pending switch used to survive track changes,
+  project opens, undo — even the track ending — then fire at the first
+  boundary of content it was never aimed at. It now clears on every one
+  of those, and seeking forward no longer counts as crossing a musical
+  boundary.
+- **Stepping modes under quantize goes somewhere.** Pressing next (] or
+  N) twice used to silently cancel the queued switch; it now queues two
+  modes ahead, Ableton-style. Tapping the same mode chip still un-queues
+  it.
+- **Escape in Stage mode exits Stage — and nothing else.** It used to
+  also close the Visuals dock, Library and Timeline and remember them
+  closed across restarts. Your workspace now survives the demo.
+- **Deleting a custom shader asks first — and undo really brings it
+  back.** The delete chip removed WGSL permanently with no confirmation
+  while Ctrl+Z pretended otherwise. Both fixed; a queued switch to the
+  deleted visual is un-queued too.
+- **A/B-comparing looks keeps every step undoable.** Two look, theme or
+  style applications in quick succession used to collapse into one undo
+  entry; each is now its own step.
+- **MIDI Learn disarms when its surface goes away** — closing the Perform
+  drawer or the Visuals dock, leaving the Live page, entering Stage, or
+  pressing Escape all cancel a pending Learn instead of leaving it armed
+  to swallow the next knob you touch. Enabling then quickly disabling
+  MIDI can no longer end up secretly enabled.
+- **Dropping a look or Builder stack file on the window imports it** —
+  `.bfpreset` and `.bfbuilder` drops used to fall through to the audio
+  decoder and fail with "could not decode".
+- Smaller live-surface fixes: lyrics re-align locks structural edits (and
+  their undo) while the aligner runs, so word timings cannot attach to
+  the wrong repeated line; the batch "resume" estimate no longer counts
+  the hours the queue sat cancelled; editing lyrics keeps uncommitted
+  text on the same line when rows are inserted or deleted above it; the
+  shader editor asks before replacing an unsaved draft; cover art on the
+  second display updates reliably for same-size images; model downloads
+  can't be double-started.
+
 ## [2.106.0] - 2026-08-21
 
 ### Fixed

@@ -71,12 +71,13 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       exact-file grant to the sibling. PNG variant closed by R2-12's
       collision-free folders (nothing pre-existing is ever written into); the
       buffered Canvas lane writes complete bytes once at the end (R2-30c).
-- [ ] **R2-03 Perform window freezes the last lyric caption / audiogram** —
+- [x] **R2-03 Perform window freezes the last lyric caption / audiogram** —
       receiver overlay dedupe key omits lyric/audiogram state
       (src/perform/performRuntime.ts:406-441); once dynamics stop, nothing
       pushes a clean overlay (main window heals via refreshOverlay, receiver
       has no equivalent). Scenario: live show, toggle captions off mid-set →
       audience projector keeps the stale line indefinitely.
+      **FIXED 2026-08-21, v2.107.0 (7b08fe4)**: dynamics-active bit in the receiver overlay key + a clean overlay push on the OFF transition, mirroring refreshOverlay; ON-flip re-retains. Test pins the exact transition.
 - [x] **R2-04 Batch "Retry failed" double-activation runs two batches into the
       same files** — retryFailedBatch (src/state/slices/batchActions.ts:255-307)
       takes no synchronous claim; `batchStatus` flips only after an awaited
@@ -113,10 +114,11 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       Mutation-verified: re-applying exactly that mutant fails only the new
       test ("expected 100 to be 42", 1 failed | 12 passed); restored, 13
       pass.
-- [ ] **R2-07 README claims the second-display output window is "still to
+- [x] **R2-07 README claims the second-display output window is "still to
       come"** — it shipped in v2.104.0 (perform_window.rs, D drawer);
       README:256-258 roadmap + missing Features bullet. Scenario: a user
       evaluating from README concludes the flagship live feature doesn't exist.
+      **FIXED 2026-08-21, wave 0 (be38754)**: README roadmap + a dedicated second-display/Perform-drawer features bullet.
 - [ ] **R2-08 `Math.hypot` is ~70% of every FFT call** — fft.ts:178; measured
       537 µs → ~165 µs per 4096-pt call with `Math.sqrt(a*a+b*b)` (43× on the
       hot instruction). Runs once per rAF on the UI thread + per export tick;
@@ -223,30 +225,36 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       exactly-current accepted, whitelist tolerance (junk dropped/clamped),
       missing stack → empty. Mutation-verified: `>` → `>=` fails the suite 4
       ways; restored, all 7 pass.
-- [ ] **R2-18 Escape after Stage mode closes and persists away the workspace** —
+- [x] **R2-18 Escape after Stage mode closes and persists away the workspace** —
       the Esc cascade (useAppShortcuts.ts:55-85) also runs
       setShowPanel(false)/setShowLibrary(false)/setShowTimeline(false),
       contradicting the recorded P-1 rationale in store.ts:2846 ("leaving
       Stage must not cost the workspace"); prefs persist the loss across
       restarts.
-- [ ] **R2-19 Queued quantized switch survives track loads / project opens /
+      **FIXED 2026-08-21, v2.107.0 (fccf0b7)**: Esc inside Stage exits Stage only (also disarms MIDI learn first — review D3); the cascade is untouched outside Stage. Guide regenerated.
+- [x] **R2-19 Queued quantized switch survives track loads / project opens /
       undo / track end** — pendingPresetId cleared in only 3 places; a stale
       switch fires at the next boundary of content it was never aimed at
       (mid-set surprise).
-- [ ] **R2-20 Custom-shader delete: no confirm, undo cannot restore
+      **FIXED 2026-08-21, v2.107.0 (4b6a75b)**: pendingPresetId (and lastQuantizeTick) cleared via the invalidateAnalysis/applyDocument/onEnded chokepoints; three red-proven tests through the real initApp tick.
+- [x] **R2-20 Custom-shader delete: no confirm, undo cannot restore
       unreferenced defs** — ShaderEditor.tsx:253; history snapshots embed only
       referenced defs → a misclick permanently destroys WGSL while the undo
       toast implies otherwise.
-- [ ] **R2-21 Lyrics re-align can attach word timings to a duplicate-text line
+      **FIXED 2026-08-21, v2.107.0 (df4d3ca)**: delete behind askConfirm; history snapshots embed the doomed def so undo genuinely restores it (localStorage write-back pinned). Deleting also un-queues a pending switch to it (review O2, 70937bd).
+- [x] **R2-21 Lyrics re-align can attach word timings to a duplicate-text line
       at the same index** — guard is index+text (lyricsEditActions.ts:254-266);
       edits are not blocked during the sidecar run; choruses make collisions
       normal.
-- [ ] **R2-22 Step-under-quantize double-press cancels instead of stepping** —
+      **FIXED 2026-08-21, v2.107.0 (c1523e1 + b2e4361)**: structural edits (split included) AND their undo/redo lock while the aligner runs; text edits stay live and correctly void the apply.
+- [x] **R2-22 Step-under-quantize double-press cancels instead of stepping** —
       stepPreset routes through queuePreset's cancel-on-same-target branch
       (store.ts:2043-2081); double-tap of `]` mid-set nets nothing pending.
-- [ ] **R2-23 Undo groups two look/theme/style applications within 800 ms into
+      **FIXED 2026-08-21, v2.107.0 (aa34200)**: step keys walk from the pending target (]] queues two ahead); chip cancel-toggle preserved.
+- [x] **R2-23 Undo groups two look/theme/style applications within 800 ms into
       one entry** — UNGROUPABLE (history.ts:34-49) lacks the three keys; A/B
       comparing two looks then Ctrl+Z jumps past both.
+      **FIXED 2026-08-21, v2.107.0 (fa754e6)**: look/theme/style joined UNGROUPABLE; six rapid applications = six undo entries.
 - [x] **R2-24 NaN poisoning of width/LUFS is permanent for the session** — one
       non-finite sample in a float-PCM WAV → stereoWidth NaN → width EMA and
       the LUFS biquad/ring never recover (stereo.ts:6-21,
@@ -274,7 +282,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       pretty-printed) on the UI thread** — store.ts:1456 → project.ts:192
       `JSON.stringify(file, null, 2)`; measured 3.3 ms/739 KB, linear ⇒
       150-250 ms hitches per autosave on embedded-video projects.
-- [ ] **R2-27 Records drift (memory layer)** — five wrongs telling yesterday's
+- [x] **R2-27 Records drift (memory layer)** — five wrongs telling yesterday's
       story: roadmap-progress.md missing its 2.104.2 entry while MEMORY.md
       claims it; quality-consolidation card still "ACTIVE/paused" though the
       program completed; post-restart-battery card still reads armed though
@@ -285,7 +293,8 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       instruction-shaped diagnostic prompts stored as VALIDATED requirements
       and re-injected into sessions by the prompt hook — memory contamination;
       deprecate.
-- [ ] **R2-28 Licensing/docs truth cluster** — THIRD_PARTY_LICENSES.md:
+      **FIXED 2026-08-21, wave 0**: all five memory-layer wrongs corrected (roadmap 2.104.2+audit entries, consolidation card COMPLETED, battery card EXECUTED, RECALL rule → supersede-by-claim-key, owner notes FEAT-004/005 → HISTORY with outcomes); RECALL #92-94 deprecated with lifecycle notes.
+- [x] **R2-28 Licensing/docs truth cluster** — THIRD_PARTY_LICENSES.md:
       "exclusively ProRes" false (same sidecar drives AV1 10-bit/GIF/WebP) and
       the direct-deps table omits 8 crates (count stale: 541);
       style/control counts stale on four surfaces ("6-14 styles" → 6-15,
@@ -299,7 +308,8 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
 
 ### P3 (clusters; full detail in the audit reports)
 
-- [ ] **R2-29 Security defense-in-depth (4)** — perform-window-reachable
+      **FIXED 2026-08-21, wave 0 (be38754)**: THIRD_PARTY ffmpeg scope + 8 crates + ~540 count; style/control counts on all four surfaces (6-15, 550+); README TESTING claim scoped; CLAUDE.md changelog mechanism truth; EXPORT-DESIGN second display + AV1 + resolutions; TESTING.md stale lines + VERIFY-002 sign-off.
+- [x] **R2-29 Security defense-in-depth (4)** — perform-window-reachable
       telemetry (`scratch_dir` leaks username path, `disk_space` is a mounted-
       volume oracle → add `assert_main_window`); gallery size check runs after
       full buffering (pre-check Content-Length); `style-src 'unsafe-inline'`;
@@ -309,6 +319,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       handle, one atomic bool), and verifiedFetch refuses a header-declared
       oversize before buffering (byte-count backstop kept). REMAINING:
       `style-src 'unsafe-inline'`, cargo-audit cadence.
+      **CLOSED 2026-08-21, v2.105.0 (10df960)**: the two actionable items landed (assert_main_window on disk_space/scratch_dir/perf_stats — loopback_died takes no window; gallery Content-Length pre-cap with byte-count backstop). The two residuals are accepted posture, recorded here: style-src unsafe-inline (no injection sink exists; nonce infeasible with the bundler today) and the lofty parser surface (mitigation = cargo-audit cadence in CI audit job).
 - [ ] **R2-30 Export delivery nits (10)** — AAC priming/Opus pre-skip
       unsignaled (~20-45 ms late audio; device-probe then edit-list fix);
       mediabunny WebM writes CodecDelay=0 / misuses SeekPreRoll (upstream bug —
@@ -334,7 +345,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       scratchpad aac-priming-probe; evidence report archived with the lane).
       REMAINING: mediabunny CodecDelay upstream report, codecProbe level
       ladders, WebCodecs-lane 601/709 tagging probe.
-- [ ] **R2-31 Live/state nits (11)** — MIDI learn stays armed after its
+- [x] **R2-31 Live/state nits (11)** — MIDI learn stays armed after its
       surfaces close; enable/disable MIDI race; quantized switch fires
       immediately on forward seek across a boundary; batch resume ETA uses the
       original startedAt; dropped .bfpreset/.bfbuilder files fall through to
@@ -344,6 +355,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       fingerprint can length-collide; ShaderEditor chip-load replaces a dirty
       draft without the confirm its close path has; lyrics editor rows keyed
       by index.
+      **10/11 LANDED 2026-08-21, v2.107.0** (learn disarm incl. dock-close/Stage-entry/Esc-in-Stage; MIDI enable/disable generation guard; forward-seek quantize guard; batch resume ETA restamp; .bfpreset/.bfbuilder drop import; download claim; localStorage guards; FNV cover fingerprint memoized by reference — review D1; dirty-draft confirm on chip-load/New; stable lyric row uids, session-only, provably never persisted). REMAINING (hardening): 31f batchScanning concurrent counter (deferred by the lane to avoid a cross-lane batchActions conflict — now safe to do).
 - [ ] **R2-32 Audio/DSP nits (9)** — reset("source") keeps bpm/beatPhase (live
       sessions run the dead track's BPM for tempo-locked LFOs); gapless
       auto-advance skips the source reset (stale beat/section indices over the
@@ -357,11 +369,12 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       loopback ring can wrap on multi-second render stalls (self-heals) +
       pre-priming inflates underrun stats. Cosmetics: dead `void prevUpdate`,
       loopback.rs 2× reserve, half-sample latency readout.
-- [ ] **R2-33 Determinism contract docs (3)** — PREVIEW-EXPORT-CONTRACT
+- [x] **R2-33 Determinism contract docs (3)** — PREVIEW-EXPORT-CONTRACT
       overclaims "exactly" for feedback replay; canvas-loop audio crossfade
       feeding the analyzers is undocumented; the cross-frame-state carve-out
       names two modes but applies to Particle Flow and the other feedback
       modes.
+      **FIXED 2026-08-21, wave 0 (be38754)**: contract carve-out names every stateful mode, replay claim is structural, canvas-loop audio crossfade documented.
 - [ ] **R2-34 Test hygiene (3)** — parserFuzz describes lack the 30 s budgets;
       buildExportOptions test title promises "the full surface" but asserts
       ~18/35 fields; project.ts docblock still denies the theme-v14 threading
@@ -373,10 +386,11 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       (measured harmless); dB→linear round-trip costs ~50-166 µs/frame on
       detailed/precise displays. Undo snapshot 4.3 ms/push on a 120-scene doc
       (bounded, fine).
-- [ ] **R2-36 Docs small (3)** — fetch-ffmpeg.mjs header names only ProRes;
+- [x] **R2-36 Docs small (3)** — fetch-ffmpeg.mjs header names only ProRes;
       README format list omits aac/opus the library scanner accepts; GATES.md
       §3 cites "matrix 269/269" while the baseline holds 314 cases.
-- [ ] **R2-37 Ledger small (4)** — "nine releases 2.99.0→2.104.2" is eight;
+      **FIXED 2026-08-21, wave 0 (be38754)**: fetch-ffmpeg header names all four lanes; README library formats include aac/opus; GATES E3f note no longer implies a frozen 269.
+- [x] **R2-37 Ledger small (4)** — "nine releases 2.99.0→2.104.2" is eight;
       MEMORY.md hardcodes `D:\beatform-archive` against its own probe-the-
       letter rule; pre-rename `audio-visualizer` devstorage paths linger in
       live memory guidance; BACKLOG's FEAT-004 guide pointer is ambiguous
@@ -404,6 +418,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
 
 ## Next hardening pass (agent-ready, not scheduled — small, non-blocking)
 
+      **FIXED 2026-08-21, wave 0**: eight-releases correction, drive-letter probe wording, devstorage rename note in the consolidation card, BACKLOG guide pointer names the sibling dir.
 - [ ] Unit test for the fps-cap + paused interaction (the `advance-only`
       branch under `capSkipped` is device-proven but has no vitest pin —
       2.104.2 review noted it; both consumers read one shared boolean, so
