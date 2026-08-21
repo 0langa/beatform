@@ -63,6 +63,14 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
           el?.blur();
           return;
         }
+        // R2-18 (owner verdict): Stage is a MODE, not a dialog — Esc inside
+        // it ONLY steps back out (also clearing blackout). Running the rest
+        // of the cascade here tore down the dock/library/timeline and wrote
+        // their prefs, so leaving Stage cost the operator their workspace.
+        if (s.stageMode) {
+          s.setStageMode(false);
+          return;
+        }
         s.setShowHelp(false);
         s.setShowGuide(false);
         s.setShowSettings(false);
@@ -74,7 +82,6 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         if (!s.exporting && !s.exportPreparing) s.setShowExport(false);
         // Never let Escape dismiss a running queue out from under itself.
         if (s.batchStatus !== "running") s.setShowBatch(false);
-        if (s.stageMode) s.setStageMode(false); // also clears blackout
         // The shader editor handles its own Escape (confirm-before-discard)
         // and stops propagation before this handler sees it.
         s.setShowPanel(false);

@@ -601,7 +601,7 @@ export const GUIDE: readonly GuideSection[] = [
             { kbd: "0" },
             " in Stage mode or with the performance window open) cuts to black — the classic VJ cut. ",
             { kbd: "Esc" },
-            " exits everything.",
+            " steps back out of Stage mode and leaves the rest of your workspace exactly as it was.",
           ],
           [
             { strong: "MIDI" },
@@ -856,7 +856,7 @@ export const GUIDE: readonly GuideSection[] = [
           { kbd: "." },
           ") are kept for US-layout muscle memory and are bound by physical position, not by the character printed on them. And ",
           { kbd: "Esc" },
-          ", wherever you are, closes whatever's open.",
+          " closes whatever's open — except in Stage mode, where it only steps back out of Stage and leaves your panels as they were.",
         ],
       },
     ],
