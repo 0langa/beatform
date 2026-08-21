@@ -4,6 +4,7 @@ import { buildExportOptions } from "../export/buildExportOptions";
 import { rasterizeOverlay } from "../render/overlay";
 import { analyzeTrack } from "../audio/analysis/trackAnalysis";
 import { getEngine, setLiveRenderPaused } from "./services";
+import { audiogramActive, waveformOverviewOf } from "./audiogram";
 import { classifyError, type BatchRun, type JobStatus } from "./batch";
 import { extractCoverPalette } from "./coverPalette";
 import { presetById } from "../render/presets";
@@ -189,6 +190,7 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
 
       let buf: AudioBuffer;
       let grid: Awaited<ReturnType<typeof analyzeTrack>["result"]>["grid"];
+      let sections: number[];
       try {
         // Decode on the engine's context, NOT a fresh OfflineAudioContext:
         // decodeAudioData resamples to the context rate, so decoding at 44.1k
@@ -202,7 +204,12 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
         // first renders against track 1's beat grid and is silently off-beat.
         // Note analyzeTrack returns { id, result } — it is not awaitable itself.
         const { result } = analyzeTrack(buf);
-        grid = (await raceAgainstStop(result, isStopped)).grid;
+        const analysis = await raceAgainstStop(result, isStopped);
+        grid = analysis.grid;
+        // Sections are analysis output like the grid (R2-05): dropping them
+        // left features.sectionIndex / sectionPulse dead in every batched
+        // render while a single export of the same track reacted.
+        sections = analysis.sections;
       } catch (e) {
         // A file that cannot be decoded fails its jobs and nothing else.
         // classifyError maps our own AbortError the same way it maps a real
@@ -213,6 +220,16 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
         }
         continue;
       }
+
+      // R2-05: the audiogram is DOCUMENT state — the frozen run.doc already
+      // holds the settings the export panel promised — but its waveform strip
+      // draws a per-track overview, so compute one here from the decoded PCM
+      // with the same helper analyzeCurrentTrack feeds the live strip. Gated
+      // on audiogramActive exactly like the interactive lane: all-off stays
+      // undefined, active settings ride with this track's own waveform.
+      const audiogram = audiogramActive(run.doc.audiogram)
+        ? { settings: run.doc.audiogram, waveform: waveformOverviewOf(buf.getChannelData(0)) }
+        : undefined;
 
       for (const job of jobs) {
         if (hooks.shouldStop()) return;
@@ -259,6 +276,8 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
                 meta: track.meta,
                 coverArt: track.coverArt,
                 beatGrid: grid,
+                sections,
+                audiogram,
                 // Frozen with the run: without the defs, a custom-preset doc
                 // resolves to the default visual inside the worker's empty
                 // registry and every job silently renders the wrong thing.

@@ -59,7 +59,7 @@ import {
   samePlateKey,
   type LyricPlateKey,
 } from "../render/lyricPlate";
-import { audiogramActive, type AudiogramSettings } from "./audiogram";
+import { audiogramActive, waveformOverviewOf, type AudiogramSettings } from "./audiogram";
 import type { MotionSettings, PostSettings } from "../render/types";
 import {
   askConfirm,
@@ -3156,23 +3156,10 @@ export const useVizStore = create<VizState>((set, get) => {
       // `waveformOverview`, and doing it after would wipe the fresh one.
       const id = invalidateAnalysis();
       unclaimedAnalysisId = null; // claimed: from here a job is responsible
-      // Peak-envelope overview for the timeline (cheap; ~4k buckets)
-      {
-        const data = buf.getChannelData(0);
-        const buckets = 4096;
-        const overview = new Float32Array(buckets);
-        const per = Math.max(1, Math.floor(data.length / buckets));
-        for (let b = 0; b < buckets; b++) {
-          let peak = 0;
-          const base = b * per;
-          for (let i = 0; i < per && base + i < data.length; i++) {
-            const v = Math.abs(data[base + i]);
-            if (v > peak) peak = v;
-          }
-          overview[b] = peak;
-        }
-        set({ waveformOverview: overview });
-      }
+      // Peak-envelope overview for the timeline (cheap; ~4k buckets) — the
+      // shared helper the batch runner also uses (R2-05), so live and batch
+      // cannot drift on what the audiogram strip draws.
+      set({ waveformOverview: waveformOverviewOf(buf.getChannelData(0)) });
       // `analyzing` is a GATE now, not a label — runExport waits on it — so
       // every exit from here has to clear it. That includes the one exit this
       // function never had: `analyzeTrack` copies the whole PCM before it

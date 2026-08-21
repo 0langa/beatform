@@ -75,7 +75,9 @@ export interface TrackInput {
    * vocal-presence modulation source is about the singing, not the caption,
    * so it must not switch off with the overlay toggle (P-15). */
   vocalLines?: LyricLine[];
-  /** Audiogram elements + waveform overview (session-scoped). */
+  /** Audiogram elements + waveform overview. The settings are document
+   * state; the waveform is per-track (live: analyzeCurrentTrack's overview,
+   * batch: the runner computes one from each decoded track — R2-05). */
   audiogram?: { settings: AudiogramSettings; waveform: Float32Array | null };
   /** User-authored WGSL presets the document may reference. */
   customPresets?: PresetDef[];
