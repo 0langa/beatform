@@ -11,6 +11,49 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.108.0] - 2026-08-21
+
+### Changed
+
+- **The analyzer's hottest instruction got 1.8× faster — with pixels
+  proven identical.** The FFT magnitude loop dropped an overflow-guarded
+  library call it never needed; the change is bit-identical on real audio
+  (verified bin-for-bin, and the full 332-case pixel gate passed with
+  zero hash deltas). High-refresh displays and every export simply spend
+  less CPU.
+- **The frame-rate cap now saves the work, not just the frames.** Capping
+  the preview to 30 fps used to keep analyzing audio at full display
+  refresh — the battery knob barely helped. Analysis now skips the
+  frames the cap skips (the fixed 60 Hz detector beat is untouched, so
+  nothing about the picture changes).
+- **Autosaves write leaner.** The crash-safety autosave no longer
+  pretty-prints megabytes nobody reads — projects with embedded media
+  autosave with noticeably less main-thread work. Your manually saved
+  .bfproj files keep their readable formatting.
+- **The app starts lighter.** Half a megabyte of video-codec code left
+  the startup path and now loads only when a decode or export first
+  needs it (a test pins it out of the boot graph for good).
+
+### Fixed
+
+- **Tempo-locked motion no longer runs on a dead track's clock.** After
+  loading a new track — or switching to live system audio — beat-locked
+  movement kept cycling at the PREVIOUS track's BPM until analysis
+  landed (for live input: for the whole session). Everything now falls
+  back honestly until the real tempo is known, and the near-gapless
+  library auto-advance resets the analysis state like every other load.
+- **Toggling the A-B loop from outside the region no longer flashes a
+  phantom beat** — and can no longer fire a queued quantized switch off
+  the jump.
+- **The loudness readout survives pauses.** Pausing used to drain the
+  meter with silence so it read several LU low for a moment after
+  resume; it now freezes with the music and resumes accurately.
+- **Listening to the system holds up under stalls.** If the app's render
+  thread stalls for seconds while music keeps playing, the capture ring
+  no longer wraps over unread audio (analysis resumes clean instead of
+  scrambled), and the capture statistics no longer count the idle time
+  before the first audio ever arrived.
+
 ## [2.107.0] - 2026-08-21
 
 ### Fixed
