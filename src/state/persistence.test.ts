@@ -306,3 +306,35 @@ describe("autosave flush registration on pagehide", () => {
     expect(firePagehide).not.toThrow();
   });
 });
+
+/**
+ * R2-31h: loadStoredPresetId / loadStoredAspect / loadStoredSmoothSpectrum
+ * were the only loaders reading localStorage raw (everything else routes
+ * through readJson's try/catch), and all three run at store-module scope —
+ * blocked storage (privacy mode, a hostile embedder) threw during boot and
+ * white-screened the app before anything rendered. Blocked reads as absent.
+ */
+describe("module-scope loaders survive blocked storage", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("a throwing localStorage yields the defaults instead of a boot crash", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("SecurityError: storage is disabled");
+      },
+      setItem: () => {
+        throw new Error("SecurityError: storage is disabled");
+      },
+      removeItem: () => {},
+    });
+    vi.stubGlobal("window", { addEventListener: () => {} });
+    vi.stubGlobal("document", { addEventListener: () => {}, visibilityState: "visible" });
+    const mod = await importFresh();
+
+    expect(mod.loadStoredPresetId()).toBeNull();
+    expect(mod.loadStoredAspect()).toBe("free");
+    expect(mod.loadStoredSmoothSpectrum()).toBe(false);
+  });
+});
