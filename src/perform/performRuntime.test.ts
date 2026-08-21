@@ -495,6 +495,65 @@ describe("perform runtime", () => {
     // Both covers were decoded and bound — the second was not deduped away.
     expect(r.setCoverArt).toHaveBeenCalledTimes(2);
   });
+
+  /**
+   * Review D1: the full-string FNV pass is real money at data-URL sizes
+   * (~18 ms at 6 MB, ~670 ms at the 192 MB video cap) and the appliers
+   * re-run on every scene message — the fingerprint must be memoized on
+   * string REFERENCE identity, which is stable across scene messages (only
+   * an assets message replaces the strings, and re-hashes once).
+   */
+  it("memoizes the fingerprint by string reference — a re-run never re-walks the URL (D1)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ blob: async () => ({}) })),
+    );
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ close: vi.fn() })),
+    );
+    const r = fakeRenderer();
+    const { channel } = start(r);
+    await flush();
+
+    // A "string" that counts full-hash walks: only urlKey reads chars, so
+    // charCodeAt(0) firing IS the hash starting a pass over the payload.
+    const countingUrl = (payload: string) => {
+      const url = new String(payload);
+      const counter = { walks: 0 };
+      const native = String.prototype.charCodeAt;
+      Object.defineProperty(url, "charCodeAt", {
+        value(i: number) {
+          if (i === 0) counter.walks++;
+          return native.call(this as string, i);
+        },
+      });
+      return { url: url as unknown as string, counter };
+    };
+
+    const a = countingUrl("data:image/png;base64,QUJD");
+    const assetsMsg = (coverUrl: string) => ({
+      type: "assets",
+      coverUrl,
+      bgImageUrl: null,
+      bgVideoUrl: null,
+      overlayAssets: {},
+    });
+
+    channel.deliver(assetsMsg(a.url));
+    await flush();
+    expect(a.counter.walks).toBe(1); // hashed once on arrival
+
+    channel.deliver(assetsMsg(a.url)); // the same reference re-delivered
+    await flush();
+    expect(a.counter.walks).toBe(1); // memo hit — no second full pass
+
+    const b = countingUrl("data:image/png;base64,QUJE");
+    channel.deliver(assetsMsg(b.url)); // a genuinely new string
+    await flush();
+    expect(b.counter.walks).toBe(1); // re-hashed exactly once
+    expect(a.counter.walks).toBe(1); // ...and the old one stayed cold
+  });
 });
 
 describe("present policy (pure)", () => {
