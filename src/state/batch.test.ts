@@ -387,6 +387,62 @@ describe("retryFailed", () => {
     };
     expect(retryFailed(r, 1).jobs[0].status).toEqual({ k: "skipped" });
   });
+
+  it("resuming a cancelled run (queued-only, no failures) restamps the rate window (R2-31d)", () => {
+    // A cancel leaves queued jobs behind and retryFailedBatch resumes them —
+    // but with no failures the old early return kept the ORIGINAL
+    // startedAt/preDoneFrames, so runStats measured the resumed run against
+    // the whole pause: old work over new elapsed, a nonsense ETA.
+    const r: BatchRun = {
+      ...run(
+        [
+          {
+            id: "a",
+            trackId: "t1",
+            formatId: "16:9",
+            outPath: "/out/A.mp4",
+            totalFrames: 300,
+            status: { k: "done", bytes: 1, path: "/out/A.mp4" },
+          },
+          {
+            id: "b",
+            trackId: "t2",
+            formatId: "16:9",
+            outPath: "/out/B.mp4",
+            totalFrames: 300,
+            status: { k: "queued" },
+          },
+        ],
+        1_000, // the original start, long before the pause
+      ),
+      tracks: [track("t1", "A"), track("t2", "B")],
+    };
+    const again = retryFailed(r, 600_000); // resumed after a ten-minute pause
+    expect(again.startedAt).toBe(600_000);
+    expect(again.preDoneFrames).toBe(300); // a's frames precede the resume
+    expect(again.jobs).toBe(r.jobs); // nothing re-queued — statuses untouched
+    // The rate window is genuinely fresh: no frames finished since the
+    // resume, so the ETA honestly says "don't know yet" instead of scaling
+    // pre-pause work across the pause.
+    expect(runStats(again, 600_500).etaMs).toBeNull();
+  });
+
+  it("a run with nothing failed and nothing queued is returned unchanged", () => {
+    const r: BatchRun = {
+      ...run([
+        {
+          id: "a",
+          trackId: "t1",
+          formatId: "16:9",
+          outPath: "/out/A.mp4",
+          totalFrames: 300,
+          status: { k: "done", bytes: 1, path: "/out/A.mp4" },
+        },
+      ]),
+      tracks: [track("t1", "A")],
+    };
+    expect(retryFailed(r, 99)).toBe(r);
+  });
 });
 
 describe("clock domain", () => {
