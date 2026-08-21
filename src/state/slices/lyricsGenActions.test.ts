@@ -64,6 +64,13 @@ vi.mock("../platform", async (importOriginal) => {
     isTauri: () => true,
     askConfirm: vi.fn(async () => true),
     writeAutosave: vi.fn(async () => {}),
+    // The tier-download surface (R2-31g): probe answers "unknown volume" by
+    // default (no confirm), downloads settle instantly, and the state
+    // refresh hands back whatever a test staged in the store.
+    diskSpace: vi.fn(async () => null),
+    lyricsModelDownload: vi.fn(async () => {}),
+    lyricsModelsState: vi.fn(async () => useVizStore.getState().lyricsGen.models!),
+    lyricsDownloadCancel: vi.fn(async () => {}),
     lyricsStageAudio: vi.fn(async () => {}),
     lyricsGenerate: vi.fn(
       (_opts: unknown, onLine: (line: string) => void) =>
@@ -399,5 +406,73 @@ describe("generateLyrics measured-RTF persistence", () => {
     await done;
 
     expect(getPrefs().measuredRtf).toEqual(NO_MEASURED_RTF);
+  });
+});
+
+/**
+ * R2-31g: downloadLyricsTier checked `phase === "idle"` and only THEN awaited
+ * the disk probe before flipping the phase — two rapid clicks both passed the
+ * check and started the same multi-hundred-MB download twice. The phase is
+ * now claimed synchronously before the first await (enableMidi's midiStarting
+ * claim, in phase form), and every exit restores idle through the finally.
+ */
+describe("downloadLyricsTier double-activation (R2-31g)", () => {
+  function modelInfo(id: string, installed: boolean) {
+    return {
+      id,
+      fileName: `${id}.bin`,
+      bytes: 100,
+      sha256: "x",
+      role: "isolation",
+      installed,
+      partBytes: 0,
+    };
+  }
+  const modelsFixture = () => ({
+    modelsDir: "C:/models",
+    models: [
+      modelInfo("mdx-voc-ft", false), // the one missing file
+      modelInfo("wav2vec2-align", true),
+      modelInfo("wav2vec2-vocab", true),
+      modelInfo("whisper-small", true),
+    ],
+  });
+
+  it("a second click during the disk probe is refused — one download, not two", async () => {
+    const { diskSpace, lyricsModelDownload } = await import("../platform");
+    vi.mocked(lyricsModelDownload).mockClear();
+    useVizStore.setState({
+      lyricsGen: { ...s().lyricsGen, phase: "idle", download: null, models: modelsFixture() },
+    });
+    let releaseProbe!: (v: null) => void;
+    vi.mocked(diskSpace).mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          releaseProbe = r;
+        }),
+    );
+
+    const first = s().downloadLyricsTier("small");
+    const second = s().downloadLyricsTier("small"); // the double click
+    releaseProbe(null);
+    await Promise.all([first, second]);
+
+    expect(lyricsModelDownload).toHaveBeenCalledTimes(1);
+    expect(s().lyricsGen.phase).toBe("idle"); // the finally restored it
+  });
+
+  it("declining the low-disk confirm releases the claim", async () => {
+    const { askConfirm, diskSpace, lyricsModelDownload } = await import("../platform");
+    vi.mocked(lyricsModelDownload).mockClear();
+    vi.mocked(askConfirm).mockResolvedValueOnce(false);
+    vi.mocked(diskSpace).mockResolvedValueOnce({ root: "C:", freeBytes: 0 });
+    useVizStore.setState({
+      lyricsGen: { ...s().lyricsGen, phase: "idle", download: null, models: modelsFixture() },
+    });
+
+    await s().downloadLyricsTier("small");
+
+    expect(lyricsModelDownload).not.toHaveBeenCalled();
+    expect(s().lyricsGen.phase).toBe("idle"); // a decline never wedges the UI
   });
 });
