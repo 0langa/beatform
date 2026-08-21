@@ -57,10 +57,13 @@ export function spectrumDiagnostics(
 ): SpectrumDiagnostics {
   const safeRate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000;
   const fftSize = displaySpectrumFftSize(safeRate, spectrumResolution(sync));
-  // Responsive shares the detector transform (symmetric Hann, half-window
-  // latency); the longer display-only transforms use the asymmetric window.
+  // Responsive shares the detector transform (symmetric Hann): its peak
+  // weight sits at (N−1)/2, matching RealFFT.peakOffsetSamples exactly
+  // rather than a rounded-up N/2 (R2-32f — half-sample honesty; the UI
+  // rounds to whole ms, so only the number's truthfulness changes). The
+  // longer display-only transforms use the asymmetric window's peak offset.
   const latencySamples =
-    fftSize === analysisFftSize(safeRate) ? fftSize / 2 : asymmetricWindowFallLength(fftSize);
+    fftSize === analysisFftSize(safeRate) ? (fftSize - 1) / 2 : asymmetricWindowFallLength(fftSize);
   const hzPerBin = safeRate / fftSize;
   const nyquist = safeRate / 2;
   const loHz = Math.max(0, sync.freqMin ?? 30);

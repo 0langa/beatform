@@ -430,7 +430,6 @@ export class OfflineAnalyzer {
     const displayMagDb = this.updateDisplaySpectrum(end, analysisTick);
     const prevUpdate = this.lastUpdateTime;
     this.lastUpdateTime = t;
-    void prevUpdate;
     // Meter gets the contiguous new samples up to this tick's true end —
     // loudness stays on the un-shifted timeline, only analysis looks ahead
     const meterEnd = Math.min(this.mono.length, Math.round(t * this.sampleRate));

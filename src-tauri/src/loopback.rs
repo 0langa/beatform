@@ -91,7 +91,9 @@ fn fill_stereo_le_bytes(out: &mut Vec<u8>, data: &[f32], channels: usize) {
     // device does hand us an unusually large period this grows ONCE per pooled
     // buffer — BlockSink::take preserves the grown capacity when it refills the
     // pool — instead of reallocating on every callback forever.
-    out.reserve(frames * 2 * 4);
+    // 2 channels × 2 bytes of PCM16 per frame (R2-32f: the old `* 4` sized
+    // for f32 output and reserved double what a block can ever hold).
+    out.reserve(frames * 2 * 2);
     for f in 0..frames {
         let base = f * ch;
         let l = data[base];
