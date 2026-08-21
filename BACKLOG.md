@@ -119,7 +119,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       README:256-258 roadmap + missing Features bullet. Scenario: a user
       evaluating from README concludes the flagship live feature doesn't exist.
       **FIXED 2026-08-21, wave 0 (be38754)**: README roadmap + a dedicated second-display/Perform-drawer features bullet.
-- [ ] **R2-08 `Math.hypot` is ~70% of every FFT call** — fft.ts:178; measured
+- [x] **R2-08 `Math.hypot` is ~70% of every FFT call** — fft.ts:178; measured
       537 µs → ~165 µs per 4096-pt call with `Math.sqrt(a*a+b*b)` (43× on the
       hot instruction). Runs once per rAF on the UI thread + per export tick;
       "precise" display spectrum pays 2.81 ms/frame. Scenario: high-refresh
@@ -128,6 +128,8 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       (last-ulp shifts).
 
 ### P2
+
+      **FIXED 2026-08-21, v2.108.0 (b281319)**: sqrt(re*re+im*im) — 1.80x whole-call measured, output BIT-IDENTICAL over 65,531 bins; golden trace untouched; strict 332-case matrix re-run on device with the swap live: zero raw hash deltas. No re-bless was needed anywhere.
 
 - [x] **R2-09 Killed app leaves truncated media at the destination** — JS lanes
       have no destroy-cleanup (sidecar lanes do: lib.rs:276-288) and no
@@ -274,14 +276,16 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       featurePipelineFuzz now generates width/lufs with occasional
       NaN/±Infinity (mutation-checked: dropping the width guard reds both
       properties with width=NaN).
-- [ ] **R2-25 fpsCap caps presentation, not DSP** — ana.update runs per rAF
+- [x] **R2-25 fpsCap caps presentation, not DSP** — ana.update runs per rAF
       before the cap check (services.ts:434 vs 456-468); 144 Hz + cap 30 still
       pays ~99 ms/s of DSP for 30 presented frames. The battery knob barely
       touches the dominant cost.
-- [ ] **R2-26 Autosave stringifies the full document (assets included,
+      **FIXED 2026-08-21, v2.108.0 (acaaf86)**: RealtimeAnalyzer.willTick prediction (branch-identical to update by construction); capped tickless frames skip ana.update; tick frames proven identical to uncapped by a twin-analyzer pin driving the real loop.
+- [x] **R2-26 Autosave stringifies the full document (assets included,
       pretty-printed) on the UI thread** — store.ts:1456 → project.ts:192
       `JSON.stringify(file, null, 2)`; measured 3.3 ms/739 KB, linear ⇒
       150-250 ms hitches per autosave on embedded-video projects.
+      **FIXED 2026-08-21, v2.108.0 (ca7eb9e)**: autosave writes compact JSON (0.62→0.43 ms structural / 11.9→10.0 ms on an 8 MB-asset doc; manual saves stay pretty). The asset-splice variant was prototyped, measured cost-neutral-at-best and correctness-risky, and rejected with the reasoning in code.
 - [x] **R2-27 Records drift (memory layer)** — five wrongs telling yesterday's
       story: roadmap-progress.md missing its 2.104.2 entry while MEMORY.md
       claims it; quality-consolidation card still "ACTIVE/paused" though the
@@ -344,8 +348,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       measured 0.00 ms offset on every click: the platform encoder
       pre-compensates its timestamps, no edit-list fix needed (probe:
       scratchpad aac-priming-probe; evidence report archived with the lane).
-      REMAINING: mediabunny CodecDelay upstream report, codecProbe level
-      ladders, WebCodecs-lane 601/709 tagging probe.
+      REMAINING (hardening): mediabunny CodecDelay/SeekPreRoll upstream report (issue text drafted in the audit reports — POSTING is an owner action, external account); codecProbe AV1/VP9 level-ladder accuracy; WebCodecs-lane 601/709 tagging probe.
 - [x] **R2-31 Live/state nits (11)** — MIDI learn stays armed after its
       surfaces close; enable/disable MIDI race; quantized switch fires
       immediately on forward seek across a boundary; batch resume ETA uses the
@@ -357,7 +360,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       draft without the confirm its close path has; lyrics editor rows keyed
       by index.
       **10/11 LANDED 2026-08-21, v2.107.0** (learn disarm incl. dock-close/Stage-entry/Esc-in-Stage; MIDI enable/disable generation guard; forward-seek quantize guard; batch resume ETA restamp; .bfpreset/.bfbuilder drop import; download claim; localStorage guards; FNV cover fingerprint memoized by reference — review D1; dirty-draft confirm on chip-load/New; stable lyric row uids, session-only, provably never persisted). REMAINING (hardening): 31f batchScanning concurrent counter (deferred by the lane to avoid a cross-lane batchActions conflict — now safe to do).
-- [ ] **R2-32 Audio/DSP nits (9)** — reset("source") keeps bpm/beatPhase (live
+- [x] **R2-32 Audio/DSP nits (9)** — reset("source") keeps bpm/beatPhase (live
       sessions run the dead track's BPM for tempo-locked LFOs); gapless
       auto-advance skips the source reset (stale beat/section indices over the
       next track's opening); loop-toggle teleport fires one phantom onset;
@@ -370,23 +373,26 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       loopback ring can wrap on multi-second render stalls (self-heals) +
       pre-priming inflates underrun stats. Cosmetics: dead `void prevUpdate`,
       loopback.rs 2× reserve, half-sample latency readout.
+      **8/9 LANDED 2026-08-21, v2.108.0 (cc575f7..d5996d9)**: source-reset clears bpm/beatPhase/barPhase (live-toggle scenario fixed; detach-HOLD vs reset-CLEAR pinned three ways), gapless advance resets, loop-toggle teleport resets + gets the quantize bookkeeping (7d68e59, cross-lane review F3, red-proven), LUFS pause freeze (0.5 LU on first resumed frame), worklet ring overflow-drop + stats arming (device-proven by both loopback smokes post-merge), comment-truth fixes rode wave 0, cosmetics landed. NOT DONE (recorded, by design): the oscilloscope sample-span stays samples per the owner verdict — documented in the charac test and analyzer docs.
 - [x] **R2-33 Determinism contract docs (3)** — PREVIEW-EXPORT-CONTRACT
       overclaims "exactly" for feedback replay; canvas-loop audio crossfade
       feeding the analyzers is undocumented; the cross-frame-state carve-out
       names two modes but applies to Particle Flow and the other feedback
       modes.
       **FIXED 2026-08-21, wave 0 (be38754)**: contract carve-out names every stateful mode, replay claim is structural, canvas-loop audio crossfade documented.
-- [ ] **R2-34 Test hygiene (3)** — parserFuzz describes lack the 30 s budgets;
+- [x] **R2-34 Test hygiene (3)** — parserFuzz describes lack the 30 s budgets;
       buildExportOptions test title promises "the full surface" but asserts
       ~18/35 fields; project.ts docblock still denies the theme-v14 threading
       that exists and is tested.
-- [ ] **R2-35 Perf residuals (4)** — exportWorker bundle duplicates ~1.0 MB of
+      **1/3 done (wave 0: project.ts theme-v14 docblock). REMAINING (hardening)**: parserFuzz 30 s describe budgets; buildExportOptions test title vs its ~18/35 asserted fields.
+- [x] **R2-35 Perf residuals (4)** — exportWorker bundle duplicates ~1.0 MB of
       codec+renderer stacks; boot graph eagerly parses the 511 KB codec stack
       (dynamic-import at three call sites would defer it); ~15-25 small
       allocations/frame against the loop's allocation-free doctrine
       (measured harmless); dB→linear round-trip costs ~50-166 µs/frame on
       detailed/precise displays. Undo snapshot 4.3 ms/push on a 120-scene doc
       (bounded, fine).
+      **2/4 LANDED 2026-08-21, v2.108.0 (f82a8e1 + guard 7d68e59)**: mediabunny left the boot graph (entry preload -511 KB, appMain 494→439 kB) and a guard test pins the import form. REMAINING (hardening): exportWorker bundle still duplicates the codec+renderer stacks (~1.0 MB, lazy-loaded — cost is disk + one parse per export session); the residual frame-loop micro-allocations are measured harmless and stay.
 - [x] **R2-36 Docs small (3)** — fetch-ffmpeg.mjs header names only ProRes;
       README format list omits aac/opus the library scanner accepts; GATES.md
       §3 cites "matrix 269/269" while the baseline holds 314 cases.
@@ -417,6 +423,32 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
   gate-reopen onset flash (real onset), decodeAudioData long-file ceiling
   (mediabunny fallback verified).
 
+## Audit round 2 — execution record (2026-08-21)
+
+The owner approved the five-wave plan in full; all four release waves shipped
+the same day, each through the house discipline (isolated worktree lane,
+fresh implementer, adversarial review, full gates, device gates for the
+touched areas, `release.mjs`, silent-install verification against HKCU and
+the runtime smoke, RECALL claim superseded per release):
+
+- **Wave 0 (be38754, commits only)** — records truth: repo docs, memory
+  layer, owner notes, RECALL contamination (#92-94 deprecated).
+- **v2.105.0 "Exports you can trust"** — R2-01/02/09/10/11/12/13 + security
+  and export nit folds; new colorimetry gate; AAC priming closed negative.
+- **v2.106.0 "One document, one render"** — R2-04/05/06/14/15/16/17/24;
+  strict matrix + 18 new cases blessed on device (missing=∅ proof).
+- **v2.107.0 "Live set holds"** — R2-03/18/19/20/21/22/23 + 10/11 of R2-31.
+- **v2.108.0 "Fast where it counts"** — R2-08/25/26 + 8/9 of R2-32 + boot
+  slice; sqrt bit-identity device-proven (332/332 zero deltas).
+
+Ship turbulence, all resolved and recorded: CI clippy 1.98 grew a lint the
+local 1.96 could not see (fix 69a1503 + tag re-point); a scripted ledger
+edit broke prettier on the tag (prettier pass 1a29b2a + tag re-point —
+lesson: format:check after ANY scripted markdown edit); release.mjs's
+commit step is not idempotent when the bump commit exists but the tag does
+not, and its watch step re-watches a stale run id from state (worked around
+via manual tag + --from=watch/publish; hardening row below).
+
 ## Next hardening pass (agent-ready, not scheduled — small, non-blocking)
 
       **FIXED 2026-08-21, wave 0**: eight-releases correction, drive-letter probe wording, devstorage rename note in the consolidation card, BACKLOG guide pointer names the sibling dir.
@@ -434,6 +466,29 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       comment explaining why the un-dt-gated visTex-alpha write is harmless.
 - [ ] Perform drawer: dedicated fullscreen MIDI-learn overlay (P-4's one
       not-built possible follow-up; the drawer shows mappings live instead).
+- [ ] Batch add-tracks concurrent scans: make `batchScanning` an aggregated
+      counter (R2-31f — deferred by the 2.107 lane to avoid a cross-lane
+      conflict; now safe).
+- [ ] release.mjs robustness: idempotent commit/tag step (bump-committed but
+      untagged resumes cleanly) and a watch step that never re-watches a
+      completed failed run for the same tag (observed twice this round).
+- [ ] parserFuzz 30 s describe budgets + buildExportOptions test title vs its
+      asserted-field list (R2-34 remainder).
+- [ ] exportWorker bundle duplicates the codec+renderer stacks (~1.0 MB,
+      lazy-parsed per export session — R2-35 remainder; worth a shared-chunk
+      pass someday, not user-visible today).
+- [ ] mediabunny upstream: WebM CodecDelay=0 / SeekPreRoll misuse — issue
+      text drafted in the audit reports; POSTING is an owner action.
+- [ ] codecProbe AV1/VP9 level-ladder accuracy + WebCodecs-lane 601/709
+      tagging device probe (R2-30 remainder).
+- [ ] Review nanos, recorded: toggleLoop's 1 ms jump detector can misfire on
+      an AudioContext quantum tick (sibling-consistent, pre-existing);
+      loopback worklet arms `delivered` on a zero-frame delivery (Rust never
+      sends one); redo after shader-delete-undo does not re-delete
+      (applyDocument merges defs — pre-existing library semantics); Esc with
+      Stage active AND a dialog open exits Stage first (owner-glance:
+      consistent with the verdict, only reachable by entering Stage with a
+      dialog already open).
 
 ## Trigger-gated (activate on the named trigger, not before)
 
