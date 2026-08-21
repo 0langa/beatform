@@ -127,6 +127,25 @@ describe("project files (.bfproj)", () => {
     expect(typeof file.savedAt).toBe("string");
   });
 
+  /** R2-26: the autosave writer asks for compact output — same document,
+   * same schema stamping, just no indentation walk. The user-facing "Save
+   * project" path keeps the pretty default, so only the two writeAutosave
+   * call sites opt in. */
+  it("compact mode round-trips identically to the pretty form, assets included", () => {
+    const compact = serializeProject(doc, "1.2.0", { compact: true });
+    expect(parseProject(compact)).toEqual(doc);
+    expect(parseProject(compact)).toEqual(parseProject(serializeProject(doc, "1.2.0")));
+    // The compact file carries the identical metadata + version floor.
+    const file = JSON.parse(compact);
+    expect(file.kind).toBe("bfproj");
+    expect(file.schemaVersion).toBe(11);
+  });
+
+  it("compact mode emits no indentation; the default stays pretty", () => {
+    expect(serializeProject(doc, "x", { compact: true })).not.toContain("\n");
+    expect(serializeProject(doc, "x")).toContain('{\n  "schemaVersion"');
+  });
+
   it("rejects non-JSON", () => {
     expect(() => parseProject("not json {")).toThrow(ProjectParseError);
   });

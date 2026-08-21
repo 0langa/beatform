@@ -119,6 +119,28 @@ describe("scheduleAutosave's max-latency cap", () => {
   });
 });
 
+describe("the autosave payload (R2-26)", () => {
+  it("is the COMPACT serialization — parseable, newline-free — not the pretty save-file form", async () => {
+    vi.useFakeTimers();
+    const { useVizStore } = await import("./store");
+    const { writeAutosave } = await import("./platform");
+    const { parseProject } = await import("./project");
+    const s = useVizStore.getState();
+    const other = s.presetId === "spectrum-bars" ? "particle-flow" : "spectrum-bars";
+
+    s.switchPreset(other);
+    await vi.advanceTimersByTimeAsync(5001);
+
+    expect(writeAutosave).toHaveBeenCalledTimes(1);
+    const payload = vi.mocked(writeAutosave).mock.calls[0][0];
+    // Nobody reads autosaves: the pretty indentation walk (and its extra
+    // structural bytes) bought nothing on a file written every few seconds.
+    expect(payload).not.toContain("\n");
+    // Still the full, valid document — compactness must cost zero fidelity.
+    expect(parseProject(payload).presetId).toBe(other);
+  });
+});
+
 describe("flushAutosave — immediate, awaited, cancels pending timers", () => {
   it("writes immediately without waiting for the debounce", async () => {
     vi.useFakeTimers();

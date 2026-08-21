@@ -167,7 +167,11 @@ export interface ProjectFile {
   document: ProjectDocument;
 }
 
-export function serializeProject(document: ProjectDocument, appVersion: string): string {
+export function serializeProject(
+  document: ProjectDocument,
+  appVersion: string,
+  opts?: { compact?: boolean },
+): string {
   // Write the OLDEST schema that can represent the document (see the
   // v12/v13/v14 history notes): a shadertoy def forces v12; an ACTIVE
   // reference to the renamed "particles" id (presetId or a scene) forces
@@ -190,7 +194,17 @@ export function serializeProject(document: ProjectDocument, appVersion: string):
     savedAt: new Date().toISOString(),
     document,
   };
-  return JSON.stringify(file, null, 2);
+  // R2-26: `compact` drops the pretty-print for the autosave writer — that
+  // file is written every few seconds and read only by parseProject, so the
+  // indentation walk and the doubled structural bytes bought nothing there.
+  // Measured on a doc-shaped fixture (node 24): 200-scene/4-lane structural
+  // doc 0.62 ms & 0.20 MB pretty -> 0.43 ms & 0.10 MB compact; with 8 MB of
+  // asset data URLs 11.9 ms -> 10.0 ms (the asset bytes dominate either way
+  // — a placeholder-splice variant was measured too, and the escape-safety
+  // scan it must run over the same megabytes costs what stringify's own
+  // escape walk does, so compact is the honest stopping point). The
+  // user-facing "Save project" file keeps the readable default.
+  return opts?.compact ? JSON.stringify(file) : JSON.stringify(file, null, 2);
 }
 
 export class ProjectParseError extends Error {}

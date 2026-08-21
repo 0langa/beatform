@@ -1467,7 +1467,9 @@ export const useVizStore = create<VizState>((set, get) => {
           scheduleAutosave();
           return;
         }
-        return writeAutosave(serializeProject(docOf(get()), APP_VERSION));
+        // Compact on purpose (R2-26): nobody reads autosaves — see
+        // serializeProject. The manual Save path keeps the pretty form.
+        return writeAutosave(serializeProject(docOf(get()), APP_VERSION, { compact: true }));
       })
       .catch((e) => {
         console.error("[autosave]", e);
