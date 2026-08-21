@@ -18,8 +18,11 @@ export interface SliceCtx {
   docOf: (s: VizState) => ProjectDocument;
   /** The custom defs the document actually references (active + timeline). */
   referencedCustomDefs: (s: VizState) => PresetDef[];
-  /** Record the current document before a mutation (gesture-grouped). */
-  record: (key: string) => void;
+  /** Record the current document before a mutation (gesture-grouped).
+   * `extraDefs` (R2-20): custom defs to EMBED in the snapshot beyond the
+   * referenced ones — a delete's snapshot must carry the def being deleted
+   * even when nothing references it, or undo cannot restore it. */
+  record: (key: string, extraDefs?: PresetDef[]) => void;
   /** Record ONE history entry for `key`, then run `fn` with inner record()
    * calls suppressed — a compound action must cost exactly one Ctrl+Z. */
   asOneGesture: (key: string, fn: () => void) => void;

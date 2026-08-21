@@ -198,6 +198,50 @@ describe("E2-U4 — ShaderEditor discard during an in-flight compile", () => {
 });
 
 /**
+ * R2-20 — the shader chip's ✕ used to delete with no question asked: a
+ * misclick on a 9-px target destroyed the shader silently. Same UI-level
+ * guard as ParamsPanel's deleteLook — the raw deleteCustomPreset action
+ * stays prompt-free; the chip wraps it.
+ */
+describe("R2-20 — shader chip delete asks first", () => {
+  const chipDef = {
+    id: "custom-chip1",
+    name: "Chip visual",
+    params: [],
+    wgsl: "fn preset() {}",
+  };
+
+  it("declining the confirm deletes nothing", async () => {
+    askConfirmMock.mockImplementation(async () => false);
+    const deleteCustomPresetMock = vi.fn();
+    act(() =>
+      useVizStore.setState({ customDefs: [chipDef], deleteCustomPreset: deleteCustomPresetMock }),
+    );
+    render(<ShaderEditor />);
+
+    fireEvent.click(screen.getByRole("button", { name: 'Delete "Chip visual"' }));
+    await act(async () => {});
+
+    expect(askConfirmMock).toHaveBeenCalledTimes(1);
+    expect(String(askConfirmMock.mock.calls[0][0])).toContain('Delete the visual "Chip visual"');
+    expect(deleteCustomPresetMock).not.toHaveBeenCalled();
+  });
+
+  it("accepting the confirm deletes exactly that shader", async () => {
+    const deleteCustomPresetMock = vi.fn();
+    act(() =>
+      useVizStore.setState({ customDefs: [chipDef], deleteCustomPreset: deleteCustomPresetMock }),
+    );
+    render(<ShaderEditor />);
+
+    fireEvent.click(screen.getByRole("button", { name: 'Delete "Chip visual"' }));
+    await act(async () => {});
+
+    expect(deleteCustomPresetMock).toHaveBeenCalledWith("custom-chip1");
+  });
+});
+
+/**
  * CRITICAL, whole-lane review — the busy-gate above has no escape hatch on
  * its own: `apply()` had no try/catch or timeout around the awaited
  * compile, so a REJECTED promise left `busy` stuck exactly like a hang

@@ -22,9 +22,12 @@ import type { ProjectDocument } from "./project";
  * `= null` assignment identical in shape to the ones proven below.
  */
 
+// setItem is a spy so persistence-restoring assertions (R2-20's undo test)
+// can read what was written; behavior is unchanged (still a swallow-all stub).
+const setItemMock = vi.fn();
 vi.stubGlobal("localStorage", {
   getItem: () => null,
-  setItem: () => {},
+  setItem: setItemMock,
   removeItem: () => {},
 });
 vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
@@ -506,5 +509,42 @@ describe("preset display order", () => {
     expect(useVizStore.getState().presetId).toBe("aurora");
 
     useVizStore.getState().resetPresetOrder();
+  });
+});
+
+/**
+ * R2-20 — undo honesty for shader deletion. docOf's customDefs is
+ * referencedCustomDefs (active + timeline only, by design), so deleting an
+ * UNREFERENCED shader used to record a snapshot that did not contain the def
+ * — Ctrl+Z said "Undone" while the shader stayed gone, from the session AND
+ * from the localStorage library. The delete's snapshot now embeds the doomed
+ * def, so undo genuinely restores both.
+ */
+describe("deleteCustomPreset undo restores an unreferenced shader (R2-20)", () => {
+  it("undo brings back the def and its localStorage copy", async () => {
+    const { useVizStore } = await import("./store");
+    const { clearHistory } = await import("./history");
+    const { NEW_SHADER_TEMPLATE } = await import("../render/presets/custom");
+    clearHistory();
+
+    const def = { id: "custom-r220", name: "Doomed", params: [], wgsl: NEW_SHADER_TEMPLATE };
+    useVizStore.setState({ checkCustomPreset: vi.fn(async () => []) });
+    await useVizStore.getState().saveCustomPreset(def);
+    // UNREFERENCED: the active mode moves off it (directly — no history
+    // entry) and no timeline scene names it.
+    useVizStore.setState({ presetId: "spectrum-bars" });
+    expect(useVizStore.getState().customDefs.some((d) => d.id === def.id)).toBe(true);
+
+    useVizStore.getState().deleteCustomPreset(def.id);
+    expect(useVizStore.getState().customDefs.some((d) => d.id === def.id)).toBe(false);
+
+    setItemMock.mockClear();
+    useVizStore.getState().undo();
+
+    expect(useVizStore.getState().customDefs.some((d) => d.id === def.id)).toBe(true);
+    // ...and the library's persisted copy came back with it.
+    const write = setItemMock.mock.calls.filter((c) => c[0] === "viz.customPresets.v1").pop();
+    expect(write).toBeDefined();
+    expect(String(write![1])).toContain("custom-r220");
   });
 });

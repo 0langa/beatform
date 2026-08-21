@@ -153,6 +153,17 @@ export function ShaderEditor() {
     })();
   };
 
+  /** Destructive: a misclick on the 9-px ✕ threw a shader away with no
+   * question asked (R2-20) — same UI-level guard as ParamsPanel's deleteLook,
+   * except the wording promises no less than the truth: since the delete's
+   * snapshot embeds the def, Ctrl+Z genuinely restores it. */
+  const deleteShaderGuarded = async (id: string) => {
+    const name = customDefs.find((d) => d.id === id)?.name;
+    if (name === undefined) return;
+    const ok = await askConfirm(`Delete the visual "${name}"?`, "Delete visual");
+    if (ok) store().deleteCustomPreset(id);
+  };
+
   /**
    * Whole-lane review, CRITICAL on top of E2-U4: `busy` now hard-gates every
    * dismissal path (requestClose above), so an awaited compile that never
@@ -250,7 +261,7 @@ export function ShaderEditor() {
                   className="chip-x"
                   title="Delete"
                   aria-label={`Delete "${d.name}"`}
-                  onClick={() => store().deleteCustomPreset(d.id)}
+                  onClick={() => void deleteShaderGuarded(d.id)}
                 >
                   ✕
                 </button>

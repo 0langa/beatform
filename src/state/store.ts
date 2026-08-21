@@ -1140,9 +1140,18 @@ export const useVizStore = create<VizState>((set, get) => {
    * undo step instead of one per inner action. */
   let recordSuspended = false;
 
-  const record = (key: string) => {
+  const record = (key: string, extraDefs?: PresetDef[]) => {
     if (recordSuspended) return;
-    pushHistory(docOf(get()), key);
+    const doc = docOf(get());
+    // R2-20: a snapshot that must outlive a DELETE embeds the doomed defs —
+    // referencedCustomDefs (deliberately) trims unreferenced ones from every
+    // snapshot, and a snapshot without the def cannot restore the shader it
+    // exists to undo.
+    if (extraDefs && extraDefs.length > 0) {
+      const have = new Set(doc.customDefs.map((d) => d.id));
+      doc.customDefs = [...doc.customDefs, ...extraDefs.filter((d) => !have.has(d.id))];
+    }
+    pushHistory(doc, key);
     const d = historyDepths();
     set({ undoDepth: d.undo, redoDepth: d.redo });
     scheduleAutosave();

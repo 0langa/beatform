@@ -135,7 +135,11 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // This mutates document state (timeline scenes below), so it has to join
       // the undo history like every other document write — without it the next
       // Ctrl+Z restored a timeline referencing a preset that no longer exists.
-      ctx.record("delete-preset");
+      // The doomed def rides INTO the snapshot (R2-20): an unreferenced shader
+      // is trimmed from docOf's customDefs, and a snapshot without the def
+      // "undid" the delete while the shader stayed gone.
+      const doomed = get().customDefs.find((d) => d.id === id);
+      ctx.record("delete-preset", doomed ? [doomed] : undefined);
       unregisterCustomPreset(id);
       const customDefs = get().customDefs.filter((d) => d.id !== id);
       set({ customDefs });
