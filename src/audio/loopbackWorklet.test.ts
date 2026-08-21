@@ -153,6 +153,7 @@ describe("loopback worklet ring depth", () => {
         skippedFrames: 0,
         hardSkippedFrames: 0,
         adaptiveSkippedFrames: 0,
+        overflowDroppedFrames: 0,
         underrunFrames: 0,
         underrunEvents: 0,
         maxUnderrunFrames: 0,
@@ -205,5 +206,127 @@ describe("loopback worklet ring depth", () => {
     const { settledLag } = runRing({ seconds: 6, hitch: 0.03, sampleRate: 96000 });
     const avgMs = (mean(settledLag) / 96000) * 1000;
     expect(avgMs, `mean ring latency ${avgMs.toFixed(1)} ms at 96 kHz`).toBeLessThan(110);
+  });
+});
+
+/**
+ * R2-32e — writer-side overflow honesty. The capture side keeps delivering
+ * whether or not the render thread runs, and the old writer wrapped straight
+ * over unread frames once depth passed the 2 s ring capacity: `w - rd` kept
+ * climbing past cap (an accounting lie — only cap frames exist) while the
+ * data `rd` pointed at was silently replaced by audio from seconds later, so
+ * a recovered graph read a garbled splice. The writer now drops the part of
+ * the INCOMING block that has no room and counts it (`overflowDroppedFrames`);
+ * the existing drain/hard-skip machinery fast-forwards through the bounded
+ * backlog once the graph runs again.
+ *
+ * Second half: underrun stats and CREDIT must not arm before the first
+ * delivery. The pre-delivery idle (worklet started, capture IPC not flowing
+ * yet) is not an underrun — and credit earned there let the first real
+ * delivery be hard-skipped as "stale", discarding genuine audio.
+ */
+describe("stalled-graph overflow protection (R2-32e)", () => {
+  /** Deliver `frames` frames whose VALUES are their absolute capture index —
+   * same encoding as runRing, offset so index 0 is never confused with the
+   * silence the ring emits on underrun. */
+  function makePush(node: Processor) {
+    return (from: number, frames: number) => {
+      const buf = new ArrayBuffer(frames * 2 * 4);
+      const view = new Float32Array(buf);
+      for (let i = 0; i < frames; i++) {
+        view[i * 2] = from + i;
+        view[i * 2 + 1] = from + i;
+      }
+      node.port.onmessage?.({ data: buf });
+    };
+  }
+
+  function statsOf(node: Processor): Record<string, number> {
+    let out: Record<string, number> | null = null;
+    const prev = node.port.postMessage;
+    node.port.postMessage = (data) => {
+      out = data as Record<string, number>;
+    };
+    node.port.onmessage?.({ data: { type: "stats", requestId: 1 } });
+    node.port.postMessage = prev;
+    return out!;
+  }
+
+  it("a 3 s stall never wraps over unread audio: depth caps at the ring, the tail is dropped and counted", () => {
+    const Ctor = loadWorklet();
+    const node = new Ctor();
+    const push = makePush(node);
+    const chunk = Math.round(SR * 0.01);
+    const L = new Float32Array(QUANTUM);
+    const R = new Float32Array(QUANTUM);
+
+    // Normal running start: 0.5 s delivered and consumed in lockstep.
+    let written = 1000; // offset: value 0 stays unambiguous underrun silence
+    let consumedQuanta = 0;
+    for (let t = 0; t < SR * 0.5; t += chunk) {
+      push(written, chunk);
+      written += chunk;
+      while ((consumedQuanta + 1) * QUANTUM < written - 1000) {
+        node.process(null, [[L, R]]);
+        consumedQuanta++;
+      }
+    }
+
+    // The stall: 3 s of capture arrives, the graph never runs once.
+    for (let t = 0; t < SR * 3; t += chunk) {
+      push(written, chunk);
+      written += chunk;
+    }
+
+    const stats = statsOf(node);
+    // Depth is bounded by the ring's real capacity — the accounting can no
+    // longer claim more frames than exist.
+    expect(stats.depthFrames).toBeLessThanOrEqual(SR * 2);
+    expect(stats.maxDepthFrames).toBeLessThanOrEqual(SR * 2);
+    // Everything that had no room was dropped from the incoming tail, and
+    // every dropped frame is on the books.
+    expect(stats.overflowDroppedFrames).toBeGreaterThan(SR * 0.9);
+    expect(stats.overflowDroppedFrames).toBeLessThanOrEqual(SR * 1.6);
+
+    // The graph recovers: emitted frame indices must be strictly monotonic —
+    // the wrap-over bug spliced seconds-later audio under old read indices,
+    // which reads back as values jumping around the wrap seam.
+    let last = -Infinity;
+    for (let q = 0; q < Math.round((SR * 2.5) / QUANTUM); q++) {
+      node.process(null, [[L, R]]);
+      for (let i = 0; i < L.length; i++) {
+        if (L[i] === 0) continue; // underrun silence once the ring drains
+        expect(L[i], `frame after ${last}`).toBeGreaterThan(last);
+        last = L[i];
+      }
+    }
+    expect(last).toBeGreaterThan(1000); // fixture sanity: data actually flowed
+  });
+
+  it("pre-delivery idle arms nothing: zero underrun stats, zero credit to hard-skip real audio with", () => {
+    const Ctor = loadWorklet();
+    const node = new Ctor();
+    const push = makePush(node);
+    const L = new Float32Array(QUANTUM);
+    const R = new Float32Array(QUANTUM);
+
+    // A full second of graph time before capture IPC ever delivers.
+    for (let q = 0; q < Math.round(SR / QUANTUM); q++) node.process(null, [[L, R]]);
+    const idle = statsOf(node);
+    expect(idle.underrunFrames).toBe(0);
+    expect(idle.underrunEvents).toBe(0);
+    expect(idle.maxUnderrunFrames).toBe(0);
+
+    // First delivery lands late and large (0.5 s > the 120 ms hard ceiling).
+    // With no credit armed, the ceiling must NOT discard any of it — every
+    // frame is genuine, nothing was ever emitted as silence in its place.
+    push(1000, Math.round(SR * 0.5));
+    const after = statsOf(node);
+    expect(after.hardSkippedFrames).toBe(0);
+    expect(after.skippedFrames).toBe(0);
+
+    // Underruns count normally once delivery has begun and the ring drains.
+    for (let q = 0; q < Math.round(SR / QUANTUM); q++) node.process(null, [[L, R]]);
+    expect(statsOf(node).underrunFrames).toBeGreaterThan(0);
   });
 });

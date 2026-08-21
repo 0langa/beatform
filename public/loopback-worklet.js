@@ -53,10 +53,16 @@ class LoopbackFeed extends AudioWorkletProcessor {
     this.totalSkipped = 0;
     this.hardSkipped = 0;
     this.adaptiveSkipped = 0;
+    this.overflowDropped = 0;
     this.underrunFrames = 0;
     this.underrunEvents = 0;
     this.underrunRun = 0;
     this.maxUnderrunRun = 0;
+    // Underrun stats/credit arm only once capture has actually delivered
+    // (R2-32e): the idle between worklet start and the first IPC chunk is
+    // not an underrun, and credit "earned" there let the hard-skip ceiling
+    // discard the genuine audio of a late-arriving first batch.
+    this.delivered = false;
     // Frames already emitted as silence while an IPC delivery was late. When
     // that delayed batch arrives, exactly this many captured frames are stale
     // and may be discarded without creating a future hole. A plain depth
@@ -76,6 +82,7 @@ class LoopbackFeed extends AudioWorkletProcessor {
           skippedFrames: this.totalSkipped,
           hardSkippedFrames: this.hardSkipped,
           adaptiveSkippedFrames: this.adaptiveSkipped,
+          overflowDroppedFrames: this.overflowDropped,
           underrunFrames: this.underrunFrames,
           underrunEvents: this.underrunEvents,
           maxUnderrunFrames: Math.max(this.maxUnderrunRun, this.underrunRun),
@@ -86,6 +93,7 @@ class LoopbackFeed extends AudioWorkletProcessor {
           this.totalSkipped = 0;
           this.hardSkipped = 0;
           this.adaptiveSkipped = 0;
+          this.overflowDropped = 0;
           this.underrunFrames = 0;
           this.underrunEvents = 0;
           this.underrunRun = 0;
@@ -99,12 +107,22 @@ class LoopbackFeed extends AudioWorkletProcessor {
       const s = pcm16 ? new Int16Array(d.data) : new Float32Array(d);
       const scale = pcm16 ? 1 / 32768 : 1;
       const frames = s.length >> 1;
-      for (let i = 0; i < frames; i++) {
+      this.delivered = true;
+      // Never wrap over unread frames (R2-32e). On a stalled graph `rd`
+      // freezes while capture keeps delivering; the old writer wrapped and
+      // silently REPLACED the audio `rd` pointed at, while `w - rd` kept
+      // climbing past the ring's real capacity — corrupt data under a lying
+      // depth. The part of the incoming block that has no room is dropped
+      // and counted instead; the hard-skip/adaptive drain below fast-forward
+      // through the bounded backlog once the graph runs again.
+      const writable = Math.min(frames, Math.max(0, this.cap - (this.w - this.rd)));
+      for (let i = 0; i < writable; i++) {
         const idx = this.w % this.cap;
         this.l[idx] = s[i * 2] * scale;
         this.r[idx] = s[i * 2 + 1] * scale;
         this.w++;
       }
+      this.overflowDropped += frames - writable;
       // Ceiling only. The gradual drain in process() handles the ordinary case;
       // this catches the pathological one (a long stall recovering in a single
       // delivery) so the ring cannot hold more than MAX_LAG_SEC even for the
@@ -140,10 +158,15 @@ class LoopbackFeed extends AudioWorkletProcessor {
         this.primed = false;
         L[i] = 0;
         R[i] = 0;
-        this.underrunFrames++;
-        if (this.underrunRun === 0) this.underrunEvents++;
-        this.underrunRun++;
-        this.underrunCredit++;
+        // Stats and credit only once capture has delivered (R2-32e): the
+        // pre-delivery idle is expected silence, not an underrun, and credit
+        // from it would let the ceiling discard the first real batch.
+        if (this.delivered) {
+          this.underrunFrames++;
+          if (this.underrunRun === 0) this.underrunEvents++;
+          this.underrunRun++;
+          this.underrunCredit++;
+        }
       }
     }
     // Measured AFTER consuming, so this is the depth the next quantum starts
