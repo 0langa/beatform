@@ -398,7 +398,12 @@ export function LyricsEditPanel() {
           const aligning = realign?.index === i;
           return (
             <div
-              key={i}
+              // Line identity, not index (R2-31k): with index keys, deleting
+              // a row above remapped every React instance below — an
+              // uncommitted text draft then showed on the WRONG line. Lines
+              // that never passed the load chokepoint (older sessions, bare
+              // setState in tests) fall back to the index.
+              key={line.uid ?? i}
               data-lyr-row={i}
               className={`lyr-row ${sev ?? ""} ${active ? "active" : ""}`}
               title={

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 
 /**
  * Lyrics correction editor — component wiring tests.
@@ -98,5 +98,43 @@ describe("R2-21 — structural edits lock while a re-align is in flight", () => 
     expect(isDisabled(within(row).getByRole("button", { name: "+↑" }))).toBe(false);
     expect(isDisabled(within(row).getByRole("button", { name: "+↓" }))).toBe(false);
     expect(isDisabled(within(row).getByRole("button", { name: "✕" }))).toBe(false);
+  });
+});
+
+/**
+ * R2-31k — rows key on LINE IDENTITY, not index. With index keys, deleting a
+ * row above remapped every React instance below one slot: an uncommitted
+ * text draft (typed, not yet blurred) then showed on the WRONG line. Row ids
+ * are UI-session state (minted at the load chokepoint, carried through every
+ * edit by cloneLine); the document schema is untouched.
+ */
+describe("R2-31k — stable row keys", () => {
+  it("deleting a row above keeps an uncommitted draft attached to the same logical line", () => {
+    // Through the real load path so the lines carry their session row ids.
+    act(() =>
+      useVizStore
+        .getState()
+        .loadLyricsText(
+          "song.lrc",
+          "[00:00.00]same words\n[00:02.00]in the middle\n[00:04.00]same words\n",
+        ),
+    );
+    const { container } = render(<LyricsEditPanel />);
+    const rowInput = (i: number) =>
+      within(container.querySelectorAll("[data-lyr-row]")[i] as HTMLElement).getByLabelText(
+        "Line text",
+      ) as HTMLInputElement;
+
+    // Type into row 1 WITHOUT blurring — an uncommitted draft.
+    fireEvent.focus(rowInput(1));
+    fireEvent.change(rowInput(1), { target: { value: "edited draft" } });
+    expect(rowInput(1).value).toBe("edited draft");
+
+    act(() => useVizStore.getState().deleteLyricLine(0));
+
+    // The logical line "in the middle" is row 0 now — the draft follows it…
+    expect(rowInput(0).value).toBe("edited draft");
+    // …and the untouched line below shows its own text, not the draft.
+    expect(rowInput(1).value).toBe("same words");
   });
 });

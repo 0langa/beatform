@@ -26,6 +26,12 @@ export interface LyricLine {
    * feeds the correction editor's red/amber flags. Absent = no data (an
    * imported file, or the user reviewed the line — edits clear it). */
   conf?: number;
+  /** SESSION-ONLY row identity for the correction editor (R2-31k): minted on
+   * load/insert (lyricsEdit.ts), carried through every edit by cloneLine, so
+   * a React row keeps its uncommitted draft when lines above it come and go.
+   * Never serialized — the LRC writer doesn't know it exists, and lyrics are
+   * not part of .bfproj, so the document schema is untouched. */
+  uid?: string;
 }
 
 /** One timed word. `end` is null when the word runs until the next word's

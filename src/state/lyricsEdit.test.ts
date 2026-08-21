@@ -23,6 +23,7 @@ import {
   setWordText,
   setWordTime,
   splitLine,
+  withLineUids,
   writeLrc,
 } from "./lyricsEdit";
 import { activeLyricIndex, parseLrc, type LyricLine, type LyricWord } from "./lyrics";
@@ -543,5 +544,47 @@ describe("time input + window", () => {
     expect(lineWindow(lines, 2)).toEqual({ start: 24, end: 28 }); // +4s tail
     const srt: LyricLine[] = [{ t: 1, end: 2.5, text: "explicit" }];
     expect(lineWindow(srt, 0)).toEqual({ start: 1, end: 2.5 });
+  });
+});
+
+/**
+ * R2-31k — session row ids: minted at load (withLineUids) and on the two
+ * ops that create rows, carried through every other op by cloneLine. The
+ * editor keys its rows on them; nothing here ever reaches a file.
+ */
+describe("session row ids (uid)", () => {
+  it("withLineUids fills only the missing ids and is idempotent", () => {
+    const lines: LyricLine[] = [
+      { t: 0, end: null, text: "a", uid: "keep-me" },
+      { t: 1, end: null, text: "b" },
+    ];
+    const withIds = withLineUids(lines);
+    expect(withIds[0].uid).toBe("keep-me");
+    expect(withIds[1].uid).toBeDefined();
+    expect(withLineUids(withIds)).toBe(withIds); // fully-id'd: same array back
+  });
+
+  it("edits keep a row's id; split keeps the first half's; merge keeps the first line's; insert mints", () => {
+    const lines = withLineUids([
+      { t: 0, end: null, text: "one two" },
+      { t: 4, end: null, text: "next line" },
+    ]);
+    const [idA, idB] = [lines[0].uid, lines[1].uid];
+
+    expect(setLineText(lines, 0, "one too")[0].uid).toBe(idA);
+    expect(nudgeLine(lines, 0, 0.1)[0].uid).toBe(idA);
+
+    const split = splitLine(lines, 0, 4)!;
+    expect(split[0].uid).toBe(idA); // the split row IS the original
+    expect(split[1].uid).toBeDefined();
+    expect(split[1].uid).not.toBe(idA);
+    expect(split[2].uid).toBe(idB); // untouched rows keep theirs
+
+    const merged = mergeWithNext(lines, 0)!;
+    expect(merged[0].uid).toBe(idA);
+
+    const inserted = insertLineAfter(lines, 0);
+    expect(inserted[1].uid).toBeDefined();
+    expect([idA, idB]).not.toContain(inserted[1].uid);
   });
 });
