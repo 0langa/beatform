@@ -309,6 +309,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
 ### P3 (clusters; full detail in the audit reports)
 
       **FIXED 2026-08-21, wave 0 (be38754)**: THIRD_PARTY ffmpeg scope + 8 crates + ~540 count; style/control counts on all four surfaces (6-15, 550+); README TESTING claim scoped; CLAUDE.md changelog mechanism truth; EXPORT-DESIGN second display + AV1 + resolutions; TESTING.md stale lines + VERIFY-002 sign-off.
+
 - [x] **R2-29 Security defense-in-depth (4)** — perform-window-reachable
       telemetry (`scratch_dir` leaks username path, `disk_space` is a mounted-
       volume oracle → add `assert_main_window`); gallery size check runs after
@@ -419,6 +420,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
 ## Next hardening pass (agent-ready, not scheduled — small, non-blocking)
 
       **FIXED 2026-08-21, wave 0**: eight-releases correction, drive-letter probe wording, devstorage rename note in the consolidation card, BACKLOG guide pointer names the sibling dir.
+
 - [ ] Unit test for the fps-cap + paused interaction (the `advance-only`
       branch under `capSkipped` is device-proven but has no vitest pin —
       2.104.2 review noted it; both consumers read one shared boolean, so
