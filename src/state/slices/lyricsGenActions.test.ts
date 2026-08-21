@@ -210,7 +210,6 @@ describe("generateLyrics track length ceiling", () => {
 describe("realignLyricLine track guard", () => {
   it("drops a stale alignment even when the new lyrics repeat the text at the same index", async () => {
     s().loadLyricsText("song.lrc", LRC);
-    const before = JSON.stringify(s().lyrics);
 
     const done = s().realignLyricLine(2); // "Third line here"
     await until(() => h.resolveAlign !== null);
@@ -219,6 +218,9 @@ describe("realignLyricLine track guard", () => {
     // the line-text check alone would let these words through.
     shared.trackLoadGen++;
     s().loadLyricsText("song.lrc", LRC);
+    // The freshly loaded sheet (fresh session row ids and all, R2-31k) is
+    // the exact state the stale result must leave untouched.
+    const reloaded = JSON.stringify(s().lyrics);
     h.resolveAlign!([
       { t: 0.7, end: 1.0, conf: 0.9, text: "Third" },
       { t: 1.0, end: 1.3, conf: 0.9, text: "line" },
@@ -226,7 +228,8 @@ describe("realignLyricLine track guard", () => {
     ]);
     await done;
 
-    expect(JSON.stringify(s().lyrics)).toBe(before); // timings from track A never applied
+    expect(JSON.stringify(s().lyrics)).toBe(reloaded); // timings from track A never applied
+    expect(s().lyrics![2].words).toBeUndefined(); // ...word-for-word: nothing attached
     expect(s().lyricsRealign).toBeNull();
   });
 });
@@ -465,7 +468,7 @@ describe("downloadLyricsTier double-activation (R2-31g)", () => {
     const { askConfirm, diskSpace, lyricsModelDownload } = await import("../platform");
     vi.mocked(lyricsModelDownload).mockClear();
     vi.mocked(askConfirm).mockResolvedValueOnce(false);
-    vi.mocked(diskSpace).mockResolvedValueOnce({ root: "C:", freeBytes: 0 });
+    vi.mocked(diskSpace).mockResolvedValueOnce({ root: "C:", freeBytes: 0, totalBytes: 1 });
     useVizStore.setState({
       lyricsGen: { ...s().lyricsGen, phase: "idle", download: null, models: modelsFixture() },
     });
