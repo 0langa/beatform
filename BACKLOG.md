@@ -77,24 +77,42 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       pushes a clean overlay (main window heals via refreshOverlay, receiver
       has no equivalent). Scenario: live show, toggle captions off mid-set →
       audience projector keeps the stale line indefinitely.
-- [ ] **R2-04 Batch "Retry failed" double-activation runs two batches into the
+- [x] **R2-04 Batch "Retry failed" double-activation runs two batches into the
       same files** — retryFailedBatch (src/state/slices/batchActions.ts:255-307)
       takes no synchronous claim; `batchStatus` flips only after an awaited
       readDir. Scenario: double-click "Retry N failed" → two concurrent export
       loops on identical outPaths, cancel reaches only one.
-- [ ] **R2-05 Batch export lane drops `sections` and `audiogram`** —
+      **FIXED 2026-08-21 (565f084)**: retryFailedBatch takes startBatch's
+      synchronous `batchStarting` claim before ANY await (the readDir and the
+      R2-13 pre-flight), checks it in its own guard (retry and start now
+      exclude each other), and releases it in an outer finally on every exit.
+      Tests: two synchronous back-to-back calls launch exactly one run (red
+      before: two); declined and throwing pre-flights both release the claim.
+- [x] **R2-05 Batch export lane drops `sections` and `audiogram`** —
       batchRunner.ts:204-266 discards the sections analyzeTrack returns and
       never passes document audiogram; the interactive lane passes both
       (exportActions.ts:520,531). Scenario: sectionPulse modulation route or
       audiogram enabled → batch output differs from interactive output of the
       same document, silently. Violates the one-document-one-render law across
       lanes.
-- [ ] **R2-06 Determinism chokepoint guard hole: crossfade prev-side automation
+      **FIXED 2026-08-21 (affb4ae)**: TrackInput now carries the analysis
+      `sections` and the frozen doc's audiogram (gated on audiogramActive
+      exactly like the interactive lane); the 4096-bucket waveform overview
+      moved into the shared `audiogram.waveformOverviewOf` so live and batch
+      draw from one implementation, computed per decoded track. batchRunner
+      suite pins the built job (sections, settings, per-track waveform,
+      all-off → undefined).
+- [x] **R2-06 Determinism chokepoint guard hole: crossfade prev-side automation
       merge unguarded** — deleting `{ ...pParams, ...frame.automation }`
       (src/state/frameResolve.ts:105-109) survives the FULL 2872-test suite
       (mutation-proven). Scenario for the guarded regression: automation lane
       live during any scene crossfade — outgoing side renders stale params and
       no gate catches it.
+      **CLOSED 2026-08-21 (0d6fc3a)**: frameResolve.test.ts gains the
+      mid-crossfade automation case asserting on `prev.params`.
+      Mutation-verified: re-applying exactly that mutant fails only the new
+      test ("expected 100 to be 42", 1 failed | 12 passed); restored, 13
+      pass.
 - [ ] **R2-07 README claims the second-display output window is "still to
       come"** — it shipped in v2.104.0 (perform_window.rs, D drawer);
       README:256-258 roadmap + missing Features bullet. Scenario: a user
@@ -151,23 +169,60 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       estimateExportBytes (new sumDiskNeeds) over the queued jobs and runs
       the identical warn-and-override askConfirm before flipping to running;
       silently skipped when diskSpace answers null (browser/unqueryable).
-- [ ] **R2-14 Export worker can pick a different GPU adapter than the preview** —
+- [x] **R2-14 Export worker can pick a different GPU adapter than the preview** —
       powerPreference pref is not carried into the job; worker resolves
       "default" (webgpuRenderer.ts:2264-2270). Dual-GPU laptops: preview dGPU,
       export iGPU → same-machine pixel divergence.
-- [ ] **R2-15 Hidden legacy `builder` preset has zero guard coverage** — kept
+      **FIXED 2026-08-21 (06f20e7)**: buildJob — the main-thread job assembly
+      both lanes flow through, so batch inherits — always emits
+      `powerPreference` into the ExportJob; the worker's
+      WebGPURenderer.create takes the job's value and only the live path
+      (which can see prefs) falls back. Tests pin the job field (including
+      an explicit "default" — an absent key would re-blind the worker) and
+      the create() argument; the segment-shift census classifies the field
+      TIMELESS.
+- [x] **R2-15 Hidden legacy `builder` preset has zero guard coverage** — kept
       renderable forever (presets/index.ts:72-82) but excluded from
       shaderGolden and all 314 matrix cases; its byte-identity promise is
       unguarded (mutation-adjacent: proven absent from both loops).
-- [ ] **R2-16 GPU matrix blind spots + soft verdict** — matrix never exercises
+      **FIXED 2026-08-21 (5e79d2d), pending device bless**: shaderGolden
+      iterates [...presets, builder] — WGSL accessors+body and param ABI
+      snapshot-pinned, census updated (snapshot diff pure additions) — and
+      the matrix enumerates `builder/@defaults`, appended at the run's end so
+      no existing hash can move. The new case correctly fails a device run
+      with the existing "matrix case drift" error until the orchestrator
+      blesses on device; baseline JSON untouched here.
+- [x] **R2-16 GPU matrix blind spots + soft verdict** — matrix never exercises
       the feedback two-call shape, transitions, bg modes 1-4, overlays, or deep
       capture (gpuMatrix.ts:157-170,242); and it passes on raw hash deltas
       (fails only on 16×9-thumbnail tolerances) while GATES.md §3 tells the
       hash-delta re-bless story. The renderer's most intricate machinery has no
       device-pixel guard.
-- [ ] **R2-17 `.bfbuilder` parse gate has zero tests** — version-gate mutant
+      **FIXED 2026-08-21 (29c9fbc), pending device bless** (owner verdict:
+      strict): any raw hash delta now FAILS — the comparison lives in
+      scripts/gpu-pixel-verdict.mjs (pure, Node-tested), perceptual metrics
+      demoted to per-failure diagnostics, `--update` the only bless path,
+      GATES.md §3 rewritten. 17 deterministic cases appended after the
+      existing sequence (6 + 7 + 3 + 1): feedback/export-walk for all six
+      feedbackSample presets (the exportCore advance+present shape), all 7
+      transition kinds frozen mid-fade on spectrum-bars/radial-burst, bg
+      solid/transparent/image (synthesized gradient; video skipped — no
+      deterministic fixture), deep/spectrum-bars via readbackDeepFrame +
+      pure deepCaseMetrics. expectedMatrixCaseIds() locks enumeration
+      (runner self-check + Node census: the 314 baseline ids reproduced in
+      order + the 18 new ids — these 17 plus R2-15's builder/@defaults, the
+      whole pending-bless set). Device run fails with case drift until the
+      orchestrator blesses. Overlay cases remain uncovered (need a bitmap
+      fixture — deliberately out of this pass).
+- [x] **R2-17 `.bfbuilder` parse gate has zero tests** — version-gate mutant
       survived the full suite; a `>=` slip refuses every valid file
       (builder2.ts:441-459). Sibling formats all pin their gates.
+      **CLOSED 2026-08-21 (c210b0e)**: builder2File.test.ts pins the gate
+      matrix mirroring custom.test.ts — round-trip, non-JSON refused, wrong
+      kind refused, current+1 refused with the newer-app message,
+      exactly-current accepted, whitelist tolerance (junk dropped/clamped),
+      missing stack → empty. Mutation-verified: `>` → `>=` fails the suite 4
+      ways; restored, all 7 pass.
 - [ ] **R2-18 Escape after Stage mode closes and persists away the workspace** —
       the Esc cascade (useAppShortcuts.ts:55-85) also runs
       setShowPanel(false)/setShowLibrary(false)/setShowTimeline(false),
@@ -192,12 +247,25 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
 - [ ] **R2-23 Undo groups two look/theme/style applications within 800 ms into
       one entry** — UNGROUPABLE (history.ts:34-49) lacks the three keys; A/B
       comparing two looks then Ctrl+Z jumps past both.
-- [ ] **R2-24 NaN poisoning of width/LUFS is permanent for the session** — one
+- [x] **R2-24 NaN poisoning of width/LUFS is permanent for the session** — one
       non-finite sample in a float-PCM WAV → stereoWidth NaN → width EMA and
       the LUFS biquad/ring never recover (stereo.ts:6-21,
       featurePipeline.ts:734-737, lufs.ts:68-140); "Stereo width" is a stock
       mod source, so NaN reaches params/uniforms and persists across clean
       tracks until restart.
+      **FIXED 2026-08-21 (8650b64)**: stereoWidth reads any window whose
+      summed accumulators go non-finite as silent (0); the pipeline holds
+      the previous width/lufs on non-finite input (a glitched frame costs
+      one frame, not the session); the LUFS biquads reset-to-silence on a
+      non-finite output and the meter clamps a non-finite block power to 0
+      at the ring's door — prevention policy: the incremental sum stays
+      exact and a poisoned reading ages out within one ring length.
+      integratedLufs inherits the biquad guard (it used to lose everything
+      after the glitch to the absolute gate). Tests written FIRST (all red
+      pre-fix); corrupt-track integrated within 0.5 LU of clean;
+      featurePipelineFuzz now generates width/lufs with occasional
+      NaN/±Infinity (mutation-checked: dropping the width guard reds both
+      properties with width=NaN).
 - [ ] **R2-25 fpsCap caps presentation, not DSP** — ana.update runs per rAF
       before the cap check (services.ts:434 vs 456-468); 144 Hz + cap 30 still
       pays ~99 ms/s of DSP for 30 presented frames. The battery knob barely

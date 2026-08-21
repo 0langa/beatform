@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BatchRun, BatchTrack, JobStatus } from "./batch";
 import type { FormatPreset } from "../export/buildExportOptions";
 import type { ProjectDocument } from "./project";
@@ -29,7 +29,9 @@ import { runBatch, ANALYSIS_TIMEOUT_MS, type BatchRunnerHooks } from "./batchRun
 import { getEngine } from "./services";
 import { analyzeTrack } from "../audio/analysis/trackAnalysis";
 import { exportVideo } from "../export/videoExporter";
+import { buildExportOptions } from "../export/buildExportOptions";
 import { isRunComplete, retryFailed } from "./batch";
+import { DEFAULT_AUDIOGRAM } from "./audiogram";
 
 /**
  * M12 regression: neither decodeAudioData nor analyzeTrack ever saw
@@ -79,7 +81,9 @@ function fakeRun(tracks: BatchTrack[]): BatchRun {
     status: { k: "queued" } as JobStatus,
   }));
   return {
-    doc: {} as unknown as ProjectDocument, // never read on the paths under test
+    // Only what the runner reads off the doc itself (R2-05 made the
+    // audiogram one of those reads); everything else stays absent.
+    doc: { audiogram: DEFAULT_AUDIOGRAM } as unknown as ProjectDocument,
     tracks,
     formats: [fmt],
     jobs,
@@ -295,6 +299,72 @@ describe("runBatch cancel leaves a coherent state", () => {
     };
     expect(isRunComplete(finalRun)).toBe(true);
     expect(retryFailed(finalRun, Date.now())).toBe(finalRun); // no failed jobs -> no-op
+  });
+});
+
+/**
+ * R2-05: the batch lane dropped two inputs the interactive export carries —
+ * the analysis `sections` (drives features.sectionIndex / sectionPulse in the
+ * export walk) and the document's audiogram overlay — so a batched track
+ * rendered with section reactions dead and the audiogram missing while a
+ * single export of the same track/document showed both. One document, one
+ * render: assert the built job receives them.
+ */
+describe("runBatch carries sections + audiogram into the job build (R2-05)", () => {
+  beforeEach(() => {
+    // Earlier describes in this file also drive buildExportOptions; these
+    // tests read mock.calls[0], so start each from a clean call log.
+    vi.mocked(buildExportOptions).mockClear();
+  });
+  afterEach(() => {
+    vi.mocked(getEngine).mockReset();
+    vi.mocked(analyzeTrack).mockReset();
+    vi.mocked(exportVideo).mockReset();
+  });
+
+  function primeDecodeAnalyse(sections: number[], channel: Float32Array) {
+    vi.mocked(getEngine).mockReturnValue({
+      ctx: {
+        decodeAudioData: () =>
+          Promise.resolve({ getChannelData: () => channel } as unknown as AudioBuffer),
+      },
+    } as unknown as ReturnType<typeof getEngine>);
+    vi.mocked(analyzeTrack).mockReturnValue({
+      id: 1,
+      result: Promise.resolve({ grid: null, key: null, sections }),
+    });
+    vi.mocked(exportVideo).mockResolvedValue({ bytes: 1, seconds: 1, audioCodec: "aac" });
+  }
+
+  it("passes the track's analysis sections and the doc audiogram with a per-track waveform", async () => {
+    const sections = [0, 12.5, 34.9];
+    primeDecodeAnalyse(sections, new Float32Array([0, 0.5, -1, 0.25]));
+
+    const run = fakeRun([fakeTrack("t1")]);
+    run.doc = {
+      audiogram: { ...DEFAULT_AUDIOGRAM, waveformStrip: true },
+    } as unknown as ProjectDocument;
+    await runBatch(run, hooks().hooks);
+
+    expect(vi.mocked(buildExportOptions)).toHaveBeenCalledTimes(1);
+    const track = vi.mocked(buildExportOptions).mock.calls[0][2];
+    expect(track.sections).toEqual(sections);
+    // The document's audiogram settings ride through as-is...
+    expect(track.audiogram?.settings).toEqual(run.doc.audiogram);
+    // ...and the waveform is THIS track's peak-envelope overview: the same
+    // 4096-bucket |peak| shape analyzeCurrentTrack feeds the live strip.
+    const wf = track.audiogram?.waveform;
+    expect(wf).toBeInstanceOf(Float32Array);
+    expect(wf).toHaveLength(4096);
+    expect(Array.from(wf!.slice(0, 4))).toEqual([0, 0.5, 1, 0.25]);
+    expect(wf![4]).toBe(0);
+  });
+
+  it("an audiogram with every element off stays undefined, like the interactive lane", async () => {
+    primeDecodeAnalyse([], new Float32Array(4));
+    const run = fakeRun([fakeTrack("t1")]);
+    await runBatch(run, hooks().hooks);
+    expect(vi.mocked(buildExportOptions).mock.calls[0][2].audiogram).toBeUndefined();
   });
 });
 

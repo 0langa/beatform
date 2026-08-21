@@ -20,7 +20,9 @@ import { shared } from "./shared";
 /** Stops the whole batch; separate from the per-job controller so that
  * skipping one job never ends the night. */
 let batchAbort: AbortController | null = null;
-/** Claimed synchronously by startBatch, before the folder dialog awaits. */
+/** Claimed synchronously by startBatch (before the folder dialog awaits) and
+ * by retryFailedBatch (before its readDir/pre-flight awaits, R2-04) — one
+ * variable, so the two entry points also exclude each other. */
 let batchStarting = false;
 
 /** One sentence for the single-export-running refusal (F2): the store guard
@@ -318,7 +320,7 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
 
     async retryFailedBatch() {
       const b = get().batch;
-      if (!b || get().batchStatus === "running") return;
+      if (!b || get().batchStatus === "running" || batchStarting) return;
       // Same single-render rule as startBatch: never race a running export.
       if (get().exporting || shared.exportStarting) {
         set({ batchError: "Finish (or cancel) the running export before retrying the batch" });
@@ -330,53 +332,64 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         set({ batchError: SIMPLIFIED_EXPORT_REASON });
         return;
       }
-      // Retry names must also avoid files OTHER runs left in this folder —
-      // the run object only knows its own; the disk knows them all.
-      const again = retryFailed(b, Date.now(), await ctx.fileNamesInDir(b.outDir));
-      // Nothing failed AND nothing queued -> nothing to resume (L19: queued
-      // jobs after a cancel are picked straight up by the runner below).
-      if (!again.jobs.some((j) => j.status.k === "failed" || j.status.k === "queued")) return;
-      // R2-13 (review fix 3): the retry lane needs the pre-flight MOST — it
-      // re-runs exactly the jobs that may have just failed on a full disk.
-      // A decline leaves the store's run untouched (`again` was never
-      // committed), so the panel keeps showing the done/failed state it had.
+      // R2-04: batchStatus stays off "running" through the readDir and
+      // pre-flight awaits below, so a double-activation passed the guard
+      // above twice and launched two runs into the same folder. Claim the
+      // slot synchronously — before ANY await — exactly like startBatch;
+      // the outer finally releases it on every exit (decline, nothing to
+      // resume, throw, run finished).
+      batchStarting = true;
       try {
-        if (!(await batchDiskPreflight(again))) return;
-      } catch (e) {
-        set({ batchError: `Could not check disk space: ${(e as Error)?.message ?? String(e)}` });
-        return;
-      }
-      const ac = new AbortController();
-      batchAbort = ac;
-      set({ batch: again, batchStatus: "running", batchError: null });
-      try {
-        await runBatch(again, {
-          onJobStart: (_id, jobAc) => {
-            shared.exportAbort = jobAc;
-          },
-          // A retry re-decodes/re-analyses any track whose failed job it
-          // just re-queued — same window, same need for Skip to reach it.
-          onTrackStart: (_trackId, trackAc) => {
-            shared.exportAbort = trackAc;
-          },
-          onJobUpdate: (id, status) => {
-            const cur = get().batch;
-            if (!cur) return;
-            set({
-              batch: { ...cur, jobs: cur.jobs.map((j) => (j.id === id ? { ...j, status } : j)) },
-              exporting:
-                status.k === "running"
-                  ? { done: status.done, total: Math.max(1, status.total), speed: status.fps }
-                  : null,
-            });
-          },
-          shouldStop: () => ac.signal.aborted,
-        });
+        // Retry names must also avoid files OTHER runs left in this folder —
+        // the run object only knows its own; the disk knows them all.
+        const again = retryFailed(b, Date.now(), await ctx.fileNamesInDir(b.outDir));
+        // Nothing failed AND nothing queued -> nothing to resume (L19: queued
+        // jobs after a cancel are picked straight up by the runner below).
+        if (!again.jobs.some((j) => j.status.k === "failed" || j.status.k === "queued")) return;
+        // R2-13 (review fix 3): the retry lane needs the pre-flight MOST — it
+        // re-runs exactly the jobs that may have just failed on a full disk.
+        // A decline leaves the store's run untouched (`again` was never
+        // committed), so the panel keeps showing the done/failed state it had.
+        try {
+          if (!(await batchDiskPreflight(again))) return;
+        } catch (e) {
+          set({ batchError: `Could not check disk space: ${(e as Error)?.message ?? String(e)}` });
+          return;
+        }
+        const ac = new AbortController();
+        batchAbort = ac;
+        set({ batch: again, batchStatus: "running", batchError: null });
+        try {
+          await runBatch(again, {
+            onJobStart: (_id, jobAc) => {
+              shared.exportAbort = jobAc;
+            },
+            // A retry re-decodes/re-analyses any track whose failed job it
+            // just re-queued — same window, same need for Skip to reach it.
+            onTrackStart: (_trackId, trackAc) => {
+              shared.exportAbort = trackAc;
+            },
+            onJobUpdate: (id, status) => {
+              const cur = get().batch;
+              if (!cur) return;
+              set({
+                batch: { ...cur, jobs: cur.jobs.map((j) => (j.id === id ? { ...j, status } : j)) },
+                exporting:
+                  status.k === "running"
+                    ? { done: status.done, total: Math.max(1, status.total), speed: status.fps }
+                    : null,
+              });
+            },
+            shouldStop: () => ac.signal.aborted,
+          });
+        } finally {
+          shared.exportAbort = null;
+          batchAbort = null;
+          const cur = get().batch;
+          set({ exporting: null, batchStatus: cur && isRunComplete(cur) ? "done" : "idle" });
+        }
       } finally {
-        shared.exportAbort = null;
-        batchAbort = null;
-        const cur = get().batch;
-        set({ exporting: null, batchStatus: cur && isRunComplete(cur) ? "done" : "idle" });
+        batchStarting = false;
       }
     },
   } satisfies Partial<VizState>;

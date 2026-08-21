@@ -129,6 +129,7 @@ const TIMELESS = [
   "loopCrossfadeSec",
   "mode",
   "loudness",
+  "powerPreference",
 ] as const;
 
 // --- fixture ---------------------------------------------------------------

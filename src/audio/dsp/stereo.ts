@@ -14,6 +14,13 @@ export function stereoWidth(l: Float32Array, r: Float32Array): number {
     ll += l[i] * l[i];
     rr += r[i] * r[i];
   }
+  // R2-24: one non-finite sample (decoder glitch) otherwise rides the
+  // accumulators into the output — NaN through the correlation, or a bogus
+  // "wide" from an Infinity-swamped denominator — and the width EMA
+  // downstream never forgets. One check on the sums covers every sample
+  // (NaN/±Infinity all leave the total non-finite); "silent" is the honest
+  // reading of a window we cannot trust.
+  if (!Number.isFinite(ll + rr + lr)) return 0;
   const denom = Math.sqrt(ll * rr);
   if (denom < 1e-9) return 0; // silence (or one dead channel)
   const corr = lr / denom; // -1..1

@@ -38,4 +38,24 @@ describe("stereoWidth", () => {
     expect(w).toBeGreaterThan(0.02);
     expect(w).toBeLessThan(0.5);
   });
+
+  it("treats a window containing a non-finite sample as silent, never NaN (R2-24)", () => {
+    // One corrupt decoder sample used to ride the accumulators into the
+    // output (NaN propagates through the correlation), and the width EMA
+    // downstream never forgets. 0 — "no stereo information" — is the honest
+    // reading of a frame we cannot trust.
+    const l = sine(440, 1024);
+    const r = sine(440, 1024, Math.PI / 4);
+    const nan = l.slice();
+    nan[100] = NaN;
+    expect(stereoWidth(nan, r)).toBe(0);
+    const inf = l.slice();
+    inf[7] = Infinity;
+    expect(stereoWidth(inf, r)).toBe(0);
+    const ninf = r.slice();
+    ninf[900] = -Infinity;
+    expect(stereoWidth(l, ninf)).toBe(0);
+    // The clean window still measures normally.
+    expect(Number.isFinite(stereoWidth(l, r))).toBe(true);
+  });
 });

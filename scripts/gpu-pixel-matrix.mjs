@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { compareMatrix } from "./gpu-pixel-verdict.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const baselinePath = path.join(root, "src", "render", "__baselines__", "gpu-pixel-matrix.json");
@@ -75,20 +76,6 @@ class CdpClient {
   close() {
     this.ws.close();
   }
-}
-
-function signatureError(a64, b64) {
-  const a = Buffer.from(a64, "base64");
-  const b = Buffer.from(b64, "base64");
-  if (a.length !== b.length) return { mae: Infinity, max: Infinity };
-  let sum = 0;
-  let max = 0;
-  for (let i = 0; i < a.length; i++) {
-    const d = Math.abs(a[i] - b[i]);
-    sum += d;
-    if (d > max) max = d;
-  }
-  return { mae: sum / a.length, max };
 }
 
 function signatureChroma(a64) {
@@ -214,38 +201,17 @@ function assertRuntime(matrix) {
   return { blackExtremes };
 }
 
+/**
+ * R2-16 STRICT: the verdict lives in gpu-pixel-verdict.mjs (pure, unit-
+ * tested in src/render/gpuPixelVerdict.test.ts) — any raw hash delta FAILS,
+ * even inside the old perceptual tolerances; the metrics ride each failure
+ * line as diagnostics. `--update` remains the only bless path.
+ */
 async function compare(matrix) {
   const baseline = JSON.parse(await readFile(baselinePath, "utf8"));
-  if (baseline.width !== matrix.width || baseline.height !== matrix.height) {
-    throw new Error(
-      `baseline size ${baseline.width}x${baseline.height}, runtime ${matrix.width}x${matrix.height}`,
-    );
-  }
-  const expected = new Map(baseline.cases.map((entry) => [entry.id, entry]));
-  const actual = new Map(matrix.cases.map((entry) => [entry.id, entry]));
-  const missing = [...expected.keys()].filter((id) => !actual.has(id));
-  const added = [...actual.keys()].filter((id) => !expected.has(id));
-  if (missing.length || added.length) {
-    throw new Error(`matrix case drift; missing=${missing.join(",")} added=${added.join(",")}`);
-  }
-
-  const failures = [];
-  let rawHashChanges = 0;
-  for (const [id, got] of actual) {
-    const want = expected.get(id);
-    const sig = signatureError(got.signature, want.signature);
-    const lumaDelta = Math.abs(got.meanLuma - want.meanLuma);
-    const litDelta = Math.abs(got.litFraction - want.litFraction);
-    if (got.hash !== want.hash) rawHashChanges++;
-    if (sig.mae > 8 || lumaDelta > 8 || litDelta > 0.12) {
-      failures.push(
-        `${id}: rgbMAE=${sig.mae.toFixed(2)} max=${sig.max} ` +
-          `lumaDelta=${lumaDelta.toFixed(2)} litDelta=${litDelta.toFixed(3)}`,
-      );
-    }
-  }
-  if (failures.length) throw new Error(`pixel baseline mismatch\n${failures.join("\n")}`);
-  return rawHashChanges;
+  const verdict = compareMatrix(baseline, matrix);
+  for (const line of verdict.diagnostics) console.log(line);
+  if (verdict.failures.length) throw new Error(verdict.failures.join("\n"));
 }
 
 async function evaluateMatrix() {
@@ -829,10 +795,13 @@ try {
     await writeFile(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
     console.log(`GPU baseline updated: ${matrix.cases.length} cases`);
   } else {
-    const rawHashChanges = await compare(matrix);
+    await compare(matrix);
     console.log(
       `GPU matrix passed: ${matrix.cases.length} cases, 0 compile errors, ` +
-        `0 GPU errors, ${rawHashChanges} tolerance-only raw hash changes; ` +
+        // Strict (R2-16): compare() above throws on ANY raw hash delta, so
+        // reaching this line proves the literal 0 — there is no such thing
+        // as a "tolerance-only raw hash change" anymore.
+        `0 GPU errors, 0 raw hash deltas (strict); ` +
         `spectrum smoke ${matrix.spectrumSmoke.displayBins} measured bins; ` +
         `modulation audit clean at ${matrix.modulationSmoke.narrow.dockWidth}px and ` +
         `${matrix.modulationSmoke.wide.dockWidth}px; ` +

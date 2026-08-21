@@ -96,6 +96,35 @@ describe("resolveActiveFrame", () => {
     expect(rf.mix).toBeCloseTo(0.5, 5);
   });
 
+  it("mid-crossfade, automation rides the OUTGOING side too (R2-06)", () => {
+    // Kills the mutant the last mutation round left standing — drop the
+    // `{ ...pParams, ...frame.automation }` merge on `prev` and the incoming
+    // half of the blend follows the lane while the outgoing half snaps to
+    // its un-automated base for the whole fade — AND the complementary
+    // partial mutant (review fold): keep the automation but drop the
+    // `...pParams` spread, which automates the outgoing side while wiping
+    // its base params. Hence the fixture carries a non-automated base key
+    // (`zoom`) next to the automated one (`hue`), and both are asserted on
+    // `prev.params`. Either mutation is a visible pop on every automated
+    // crossfade, identical in preview and export because both share this
+    // function.
+    const tl: Timeline = {
+      enabled: true,
+      scenes: [
+        { id: "a", name: "A", presetId: A, start: 0 },
+        { id: "b", name: "B", presetId: B, start: 10, fadeSec: 2 },
+      ],
+      lanes: [{ param: "hue", keyframes: [{ t: 0, value: 42, curve: "hold" }] }],
+    };
+    const input = baseInput(tl, { baseParams: { hue: 100, zoom: 3 } });
+    const rf = resolveActiveFrame(input, 11); // mid-fade
+    expect(rf.mix).toBeCloseTo(0.5, 5);
+    expect(rf.params.hue).toBe(42); // the incoming side is automated...
+    expect(rf.prev?.presetId).toBe(A);
+    expect(rf.prev?.params.hue).toBe(42); // ...the OUTGOING side matches...
+    expect(rf.prev?.params.zoom).toBe(3); // ...and keeps its un-automated base
+  });
+
   it("does not mutate the input baseParams object", () => {
     const input = baseInput({
       enabled: true,

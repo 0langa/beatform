@@ -94,3 +94,72 @@ describe("BS.1770 loudness", () => {
     expect(beats).toBe(2); // 25 s of audio -> pings at 10 s and 20 s
   });
 });
+
+/**
+ * R2-24: one non-finite sample used to be forever. The K-weighting biquads
+ * are IIR — a NaN entering x1/y1 turned every later output NaN — and the
+ * meter's incremental ring sum then went NaN with no path back (subtracting
+ * the poisoned slot yields NaN again). The meter must instead recover to
+ * correct readings within one ring length (400 ms) of clean input.
+ */
+describe("loudness NaN immunity (R2-24)", () => {
+  function meterAfterCorrupt(value: number): LoudnessMeter {
+    const meter = new LoudnessMeter(SR, 1);
+    const bad = sine(997, 0.1, 0.8);
+    bad[512] = value;
+    meter.process([bad]);
+    // One full ring length (and then some) of clean tone: the poisoned
+    // window must age out entirely.
+    const tone = sine(997, 0.5, 0.8);
+    for (let i = 0; i < tone.length; i += 4096) {
+      meter.process([tone.subarray(i, Math.min(tone.length, i + 4096))]);
+    }
+    return meter;
+  }
+
+  it("momentary recovers after a NaN sample once clean input resumes", () => {
+    const meter = meterAfterCorrupt(NaN);
+    const reference = integratedLufs([sine(997, 1, 0.8)], SR);
+    expect(Number.isFinite(meter.momentary)).toBe(true);
+    expect(Math.abs(meter.momentary - reference)).toBeLessThan(0.5);
+  });
+
+  it("momentary recovers after an Infinity sample the same way", () => {
+    const meter = meterAfterCorrupt(Infinity);
+    const reference = integratedLufs([sine(997, 1, 0.8)], SR);
+    expect(Number.isFinite(meter.momentary)).toBe(true);
+    expect(Math.abs(meter.momentary - reference)).toBeLessThan(0.5);
+  });
+
+  it("momentary recovers after a huge-but-FINITE sample that overflows the float32 ring", () => {
+    // The door clamp's float64 hole (review fold): a float-WAV magnitude of
+    // ~1e20 squares to ~1e40 — finite in float64, so a check on `z` itself
+    // passes — yet the ring is a Float32Array, so the slot stores Infinity.
+    // When that slot ages out, `sum -= Infinity` leaves the running sum
+    // -Infinity forever and momentary reads the floor for the meter's life:
+    // the exact immortal-poison class R2-24 exists to kill, wearing a
+    // finite disguise. The guard must judge the value AS STORED.
+    const meter = meterAfterCorrupt(1e20);
+    const reference = integratedLufs([sine(997, 1, 0.8)], SR);
+    expect(Number.isFinite(meter.momentary)).toBe(true);
+    expect(Math.abs(meter.momentary - reference)).toBeLessThan(0.5);
+  });
+
+  it("integrated measurement survives a corrupt sample without losing the rest of the track", () => {
+    // Quiet lead-in, one NaN, then the loud body. Pre-fix, the poisoned
+    // filters NaN'd every later block power, the absolute gate silently
+    // dropped them all, and the "measurement" was the quiet lead-in alone —
+    // ~24 LU off, reported as success.
+    const quiet = sine(997, 1, 0.05);
+    const loud = sine(997, 3, 0.8);
+    const clean = new Float32Array(quiet.length + loud.length);
+    clean.set(quiet, 0);
+    clean.set(loud, quiet.length);
+    const corrupt = clean.slice();
+    corrupt[quiet.length - 100] = NaN;
+    const a = integratedLufs([clean], SR);
+    const b = integratedLufs([corrupt], SR);
+    expect(Number.isFinite(b)).toBe(true);
+    expect(Math.abs(a - b)).toBeLessThan(0.5);
+  });
+});

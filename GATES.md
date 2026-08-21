@@ -106,12 +106,26 @@ this checkout's `public/icon.svg` and fails with "a different dev server is
 already serving …" instead of the misleading "Cannot find execution
 context".
 
-**GPU-matrix re-bless protocol** (when `test:gpu` reports hash deltas):
-a shader change legitimately alters pixel hashes. Verify the change
-VISUALLY first (device screenshots / wave-shots evidence), confirm the
-delta is confined to the modes you touched, then re-bless with
-`npm run test:gpu:update` and justify the re-bless in the commit message.
-Never re-bless to silence a delta you cannot explain.
+**GPU-matrix re-bless protocol** (STRICT — R2-16, owner verdict): **any raw
+pixel-hash delta fails `test:gpu`**, even when every perceptual metric
+(16×9 signature error, mean-luma delta, lit-fraction delta) sits inside the
+old tolerances — those metrics are printed as diagnostics on each failing
+case so you can judge the magnitude, and they gate nothing. There is no
+such thing as a "tolerance-only" hash change anymore.
+
+A failing delta has exactly two legitimate outcomes:
+
+1. **It's a bug** — fix the code until the hashes come back.
+2. **It's an intended visual change** — verify it VISUALLY on device
+   (screenshots / wave-shots evidence), confirm the set of moved cases is
+   exactly the modes you touched (moved-case count matching expectation is
+   part of the verification, not an afterthought), then re-bless with
+   `npm run test:gpu:update` and justify it in the commit message: what
+   changed, why the new pixels are correct, how many cases moved.
+
+`--update` is the only bless path. Never re-bless to silence a delta you
+cannot explain, never hand-edit `src/render/__baselines__/`, and never
+bless as part of an unrelated change.
 
 ## 4. Release-time verification set
 

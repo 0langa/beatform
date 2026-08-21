@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { presets } from "./presets";
+import { builder } from "./presets/builder";
 import { allParams } from "./types";
 import { assemblePresetModule, SHADER_SOURCES } from "./webgpuRenderer";
 
@@ -30,10 +31,16 @@ import { assemblePresetModule, SHADER_SOURCES } from "./webgpuRenderer";
 describe("shader golden baseline", () => {
   const SHARED_PREFIX = SHADER_SOURCES.header + SHADER_SOURCES.composite + SHADER_SOURCES.fsMain;
 
+  // The strip presets PLUS the hidden classic `builder` (R2-15): it left the
+  // strip but must render byte-identically forever for every old project and
+  // scene that references it — precisely the surface that drifts silently
+  // when no gate covers it, because no interactive path exercises it anymore.
+  const covered = [...presets, builder];
+
   it("covers exactly the registered preset set", () => {
     // Adding or removing a preset trips this first, as a prompt to bless the
     // new snapshots deliberately rather than discovering them by surprise.
-    expect(presets.map((p) => p.id)).toMatchSnapshot();
+    expect(covered.map((p) => p.id)).toMatchSnapshot();
   });
 
   it("shared prelude + standalone shader sources are stable", () => {
@@ -44,7 +51,7 @@ describe("shader golden baseline", () => {
     expect(SHADER_SOURCES).toMatchSnapshot();
   });
 
-  for (const preset of presets) {
+  for (const preset of covered) {
     it(`${preset.id}: accessors + body are stable`, () => {
       const full = assemblePresetModule(preset);
       // Assembly order is part of the ABI: accessors must sit between the
