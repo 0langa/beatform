@@ -62,6 +62,7 @@ import {
 import { audiogramActive, type AudiogramSettings } from "./audiogram";
 import type { MotionSettings, PostSettings } from "../render/types";
 import {
+  askConfirm,
   isTauri,
   openImageFile,
   openVideoFile,
@@ -953,6 +954,17 @@ let autosaveMaxTimer: ReturnType<typeof setTimeout> | undefined;
  * unclosable app.
  */
 const CLOSE_FLUSH_TIMEOUT_MS = 4000;
+
+/**
+ * R2-09: how long a CONFIRMED close waits for a cancelled export's teardown —
+ * the stream writer's `.partial` discard, the sidecar's `prores_abort` — to
+ * finish before proceeding to the ordinary flush+destroy anyway. The teardown
+ * is a couple of file removes and a process kill, so this is generous; the
+ * bound exists for exactly the reason CLOSE_FLUSH_TIMEOUT_MS does — a wedged
+ * teardown must never make the window unclosable, and lib.rs's Destroyed hook
+ * still kills a surviving sidecar (partial output included) as the backstop.
+ */
+const EXPORT_TEARDOWN_TIMEOUT_MS = 2000;
 
 /**
  * D1 fix (E2-D1) — GATE AUTOSAVE ON BOOT SETTLEMENT.
@@ -1950,6 +1962,38 @@ export const useVizStore = create<VizState>((set, get) => {
           const appWindow = getCurrentWindow();
           const un = await appWindow.onCloseRequested(async (event) => {
             event.preventDefault();
+            // R2-09: a running export or batch is mid-write — the stream
+            // lane has a `.partial` staged, a sidecar session has the
+            // output file open. lib.rs's Destroyed hook would kill the
+            // sidecar eventually, but silently discarding an hour of
+            // rendering on a stray Alt+F4 is not a decision to make FOR
+            // the user — ask first. On "keep rendering", preventDefault()
+            // above has already held the window open, so returning is the
+            // whole answer. On a confirmed close, cancel both lanes and
+            // give the teardown a bounded moment: `exporting`/
+            // `exportPreparing`/`batchStatus` clear only AFTER the abort
+            // path's discard has run (exportVideo awaits writer.discard()
+            // and runExport awaits proresAbort() before their finallys),
+            // so polling them out IS "the partial file is gone".
+            const busy = () =>
+              !!get().exporting || get().exportPreparing || get().batchStatus === "running";
+            if (busy()) {
+              // .catch(() => true): the ACL-throw precedent is real
+              // (ShaderEditor.tsx records askConfirm throwing in an
+              // installed build), and an unclosable window would be the
+              // worse failure — same judgment as the flush race below.
+              const closeAnyway = await askConfirm(
+                "An export is running — close anyway? The partial file will be removed.",
+                "Export running",
+              ).catch(() => true);
+              if (!closeAnyway) return;
+              get().cancelExport();
+              get().cancelBatch();
+              const teardownDeadline = Date.now() + EXPORT_TEARDOWN_TIMEOUT_MS;
+              while (busy() && Date.now() < teardownDeadline) {
+                await new Promise((resolve) => setTimeout(resolve, 50));
+              }
+            }
             // Whole-lane-review round 2, item 2: race the flush against
             // CLOSE_FLUSH_TIMEOUT_MS rather than awaiting it unconditionally
             // — see that const's own comment. Deliberately NOT importing
