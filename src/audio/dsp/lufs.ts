@@ -58,6 +58,18 @@ function kWeighting(sampleRate: number): [Biquad, Biquad] {
   return [kShelf(sampleRate), kHighPass(sampleRate)];
 }
 
+/**
+ * Largest biquad output whose SQUARE still stores in a float32 ring slot:
+ * sqrt(FLT_MAX) ≈ 1.84e19. Beyond it a sample cannot contribute to any
+ * momentary reading (the door clamp below reads its block as silence), so a
+ * filter carrying such state serves no measurement — it only manufactures a
+ * seconds-long garbage ring-down tail (the 38 Hz high-pass poles sit at
+ * ~0.9975, so a 1e20 impulse rings above signal level for ~0.4 s). Twelve
+ * orders of magnitude above any real mix, one order above the largest
+ * float32 (float-WAV) sample after shelf gain.
+ */
+const MAX_MEANINGFUL_OUT = 1.8446743e19;
+
 class BiquadState {
   private x1 = 0;
   private x2 = 0;
@@ -71,11 +83,14 @@ class BiquadState {
     // R2-24: an IIR never forgets — one non-finite sample (decoder glitch,
     // upstream NaN) parked in x1/y1 turns every later output NaN, forever.
     // A non-finite input always yields a non-finite output here (it appears
-    // as a term of `y`), so this one check catches both directions: reset to
-    // silence, report silence, and let the filter re-settle on clean input.
-    // The brief settling transient is the honest cost of a corrupt sample;
-    // permanence is not. Finite paths are bit-identical to before.
-    if (!Number.isFinite(out)) {
+    // as a term of `y`), so the finite check catches both directions; the
+    // magnitude check (review fold) extends the same policy to values whose
+    // energy is unrepresentable anyway — see MAX_MEANINGFUL_OUT. Either way:
+    // reset to silence, report silence, let the filter re-settle on clean
+    // input. The brief settling transient is the honest cost of a corrupt
+    // sample; permanence (or a 0.4 s garbage tail) is not. Finite in-range
+    // paths are bit-identical to before.
+    if (!Number.isFinite(out) || Math.abs(out) > MAX_MEANINGFUL_OUT) {
       this.x1 = this.x2 = this.y1 = this.y2 = 0;
       return 0;
     }
@@ -137,13 +152,17 @@ export class LoudnessMeter {
         z += w * w;
       }
       // R2-24 policy: PREVENT rather than heal. The biquads can no longer
-      // emit non-finite, but a huge finite w still overflows in w*w — and a
-      // single non-finite slot poisons the incremental sum with no path back
-      // (subtracting it later yields NaN again, so `momentary` stayed NaN
-      // for the life of the meter). Clamp the frame to silence at the door:
-      // the ring then only ever holds finite values, the running sum stays
-      // exact, and a poisoned reading ages out within one ring length.
-      if (!Number.isFinite(z)) z = 0;
+      // emit non-finite, but a huge w still overflows in w*w — and the check
+      // must judge the value AS THE RING STORES IT: the ring is Float32Array,
+      // so a z that is finite in float64 but above float32 range (> ~3.4e38,
+      // reachable from float-WAV magnitudes — 1e20 squares to 1e40) would
+      // still land in its slot as Infinity, and when that slot ages out
+      // `sum -= Infinity` poisons the running sum with no path back (the
+      // same immortal-poison class, wearing a finite disguise). Math.fround
+      // is exactly float32 rounding, so clamping on it keeps every STORED
+      // value finite, the incremental sum exact, and a poisoned reading
+      // aging out within one ring length.
+      if (!Number.isFinite(Math.fround(z))) z = 0;
       this.sum -= this.ring[this.ringPos];
       this.ring[this.ringPos] = z;
       this.sum += z;
