@@ -45,19 +45,32 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
 
 ### P1 — serious, user-reaching
 
-- [ ] **R2-01 ProRes 4444 exports BT.601, untagged** — `prores_args()`
+- [x] **R2-01 ProRes 4444 exports BT.601, untagged** — `prores_args()`
       (src-tauri/src/prores.rs:145-177) passes none of the four color flags the
       AV1 lane sets; measured on the shipped ffmpeg: red encodes Y′=0.3002
       (≈601), stream reads `yuva444p12le(tv)` with no tags. NLEs assume 709 for
       HD → every ProRes export decodes with ~10% green shift + channel clipping
       on saturated content. Scenario: any ProRes export dropped into
       Resolve/Premiere next to the same project's AV1/MP4 export.
-- [ ] **R2-02 Export cancel/failure can delete the user's previous file** — no
+      **FIXED 2026-08-21 (a433242)**: prores_args carries av1's exact four
+      flags; contract test updated. New gate `scripts/export-color-verify.mjs`
+      (8fe9893, GATES.md §3 row) proves tag AND conversion on the bundled
+      build: red now decodes Y′=0.2135 (bt709) vs the 0.3002 this row measured;
+      the script's negative control reproduced the 0.3002 exactly.
+- [x] **R2-02 Export cancel/failure can delete the user's previous file** — no
       temp-then-rename on the JS lanes: videoExporter.ts:214 opens the picked
       path `truncate:true` before anything encodes; `discard()` removes it on
       cancel/failure. Scenario: re-export over yesterday's song.mp4, cancel at
       10% (or codec refuses at frame 0) → old file gone. PNG-sequence variant
       included.
+      **FIXED 2026-08-21 (c26f3f6 + b76dd9d)**: the stream writer stages
+      `<target>.partial` and touches the target only via one close-time rename
+      (MoveFileExW REPLACE_EXISTING through plugin-fs); discard removes only
+      the temp, a failed rename removes the temp and surfaces. New
+      `export_allow_partial` command (main-window-gated) extends the dialog's
+      exact-file grant to the sibling. PNG variant closed by R2-12's
+      collision-free folders (nothing pre-existing is ever written into); the
+      buffered Canvas lane writes complete bytes once at the end (R2-30c).
 - [ ] **R2-03 Perform window freezes the last lyric caption / audiogram** —
       receiver overlay dedupe key omits lyric/audiogram state
       (src/perform/performRuntime.ts:406-441); once dynamics stop, nothing
@@ -96,23 +109,48 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
 
 ### P2
 
-- [ ] **R2-09 Killed app leaves truncated media at the destination** — JS lanes
+- [x] **R2-09 Killed app leaves truncated media at the destination** — JS lanes
       have no destroy-cleanup (sidecar lanes do: lib.rs:276-288) and no
       "export running" close guard. Scenario: close mid-MP4-export → partial
       file sits next to user files looking real.
-- [ ] **R2-10 Cancel is inert during sidecar finalize** —
+      **FIXED 2026-08-21 (b1218c7, with c26f3f6)**: onCloseRequested asks
+      ("An export is running — close anyway? The partial file will be
+      removed.") while exporting/exportPreparing/batch is running; a confirmed
+      close cancels both lanes and polls (bounded 2 s) for the teardown —
+      which is the `.partial` discard — before the flush+destroy continues.
+      And post-R2-02 the JS lanes' in-flight file IS a `.partial`, never the
+      real name.
+- [x] **R2-10 Cancel is inert during sidecar finalize** —
       exportActions.ts:625-629 never calls `proresAbort` from the cancel
       signal; GIF does ALL encoding in finalize. Scenario: cancel a 3-min GIF
       at "100%" → runs minutes anyway (bounded only by the 20-min timeout).
-- [ ] **R2-11 GIF cap counts frames, not bytes** — 5400-frame cap
+      **FIXED 2026-08-21 (7bbffcd)**: the finalize span (all four sidecar
+      lanes) arms an abort→proresAbort listener — Rust tolerates
+      abort-during-finalize by design — removed once finalize settles;
+      exactly one abort per session, and the resulting cancel keeps showing
+      nothing (AbortError rethrow).
+- [x] **R2-11 GIF cap counts frames, not bytes** — 5400-frame cap
       (exportActions.ts:441-446) permits a 4K GIF ≈179 GB ffmpeg working set →
       the OOM the cap exists to stop. Cap on frames×w×h.
-- [ ] **R2-12 PNG sequence folder reuse mixes stale frames into new runs** —
+      **FIXED 2026-08-21 (66c4074)**: ANIM_PIXEL_BUDGET = 5400×1920×1080 px
+      (exactly the old cap's 1080p implication), refusal names the
+      per-resolution/fps limit and what to reduce; animated WebP is under the
+      same cap (libwebp_anim assembles the whole animation in RAM — the old
+      "WebP streams" comment was wrong).
+- [x] **R2-12 PNG sequence folder reuse mixes stale frames into new runs** —
       fixed `<name>_frames` dir, no pre-clean: a shorter re-export leaves the
       old tail (frame_003600+…) interleaved for the NLE to ingest silently.
-- [ ] **R2-13 Batch runs skip the disk-space preflight** the single-export path
+      **FIXED 2026-08-21 (b76dd9d)**: pickSequenceDir walks `_frames`, `-2`,
+      `-3`, … past any non-empty existing folder (empty ones are reused,
+      nothing pre-existing is ever deleted — destructive-op policy); the
+      toast and Show-in-folder report the name that won.
+- [x] **R2-13 Batch runs skip the disk-space preflight** the single-export path
       has (exportActions.ts:314-361 vs none in batchActions) — the overnight
       surface is the one without the check.
+      **FIXED 2026-08-21 (a5b1986)**: startBatch sums per-job
+      estimateExportBytes (new sumDiskNeeds) over the queued jobs and runs
+      the identical warn-and-override askConfirm before flipping to running;
+      silently skipped when diskSpace answers null (browser/unqueryable).
 - [ ] **R2-14 Export worker can pick a different GPU adapter than the preview** —
       powerPreference pref is not carried into the job; worker resolves
       "default" (webgpuRenderer.ts:2264-2270). Dual-GPU laptops: preview dGPU,
@@ -198,6 +236,11 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       volume oracle → add `assert_main_window`); gallery size check runs after
       full buffering (pre-check Content-Length); `style-src 'unsafe-inline'`;
       lofty parser surface (schedule cargo-audit cadence). No P0/P1 anywhere.
+      **2/4 landed 2026-08-21 (10df960)**: disk_space/scratch_dir/perf_stats
+      are main-window-gated (loopback_died deliberately open: no window
+      handle, one atomic bool), and verifiedFetch refuses a header-declared
+      oversize before buffering (byte-count backstop kept). REMAINING:
+      `style-src 'unsafe-inline'`, cargo-audit cadence.
 - [ ] **R2-30 Export delivery nits (10)** — AAC priming/Opus pre-skip
       unsignaled (~20-45 ms late audio; device-probe then edit-list fix);
       mediabunny WebM writes CodecDelay=0 / misuses SeekPreRoll (upstream bug —
@@ -209,6 +252,15 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       MP4 where progressive would be safer; full-track animated WebP is
       uncapped while libwebp_anim assembles in RAM (verify, then cap like
       GIF); ffmpeg death on the abort path deletes the log tail unread.
+      **6/10 landed 2026-08-21 (4307ac1, 66c4074)**: VP9 fullCodecString
+      pinned; PNG no-sink guard added; <3 s canvas track refused before the
+      dialog; canvas loop now buffered progressive MP4 written once to the
+      picked path (owner verdict: ingest compatibility); WebP capped under
+      R2-11's pixel budget; prores_abort returns the log's last ~2 KB (read
+      before cleanup) and the TS side folds it into the surfaced error ahead
+      of translateExportError. REMAINING: AAC priming/Opus pre-skip,
+      mediabunny CodecDelay upstream report, codecProbe level ladders,
+      WebCodecs-lane 601/709 tagging probe.
 - [ ] **R2-31 Live/state nits (11)** — MIDI learn stays armed after its
       surfaces close; enable/disable MIDI race; quantized switch fires
       immediately on forward seek across a boundary; batch resume ETA uses the
