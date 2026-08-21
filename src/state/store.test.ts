@@ -237,6 +237,65 @@ describe("stepPreset honours beat-quantize like the number-key path (L11)", () =
 });
 
 /**
+ * R2-22 (owner verdict): stepping is a WALK, not a toggle. stepPreset used to
+ * compute from the CURRENT mode even with a queue pending, so the second `]`
+ * re-targeted the already-pending chip and queuePreset's cancel-toggle ate it
+ * — `]]` under quantize meant "queue, then cancel" instead of "two along".
+ * Steps now compute from the pending target when one exists (bypassing the
+ * cancel branch by construction); a direct chip tap on the pending target
+ * keeps its cancel-toggle untouched.
+ */
+describe("stepPreset walks from the pending target under quantize (R2-22)", () => {
+  /** Steps walk the STRIP order, which diverges from the registry array —
+   * expectations must come from the same orderedPresets the action reads. */
+  async function queuedPosture() {
+    const { useVizStore } = await import("./store");
+    const { orderedPresets } = await import("./presetOrder");
+    const strip = orderedPresets(useVizStore.getState().presetOrder, []);
+    useVizStore.setState({
+      presetId: strip[0].id,
+      customDefs: [],
+      switchQuantize: "beat",
+      playback: { ...useVizStore.getState().playback, playing: true },
+      beatGrid: { bpm: 120, beatTimes: Float32Array.from([0, 0.5, 1, 1.5, 2]), hopSec: 0.0116 },
+      pendingPresetId: null,
+    });
+    return { useVizStore, strip };
+  }
+
+  it("two steps queue two modes ahead, not a cancel", async () => {
+    const { useVizStore, strip } = await queuedPosture();
+
+    useVizStore.getState().stepPreset(1);
+    useVizStore.getState().stepPreset(1);
+
+    expect(useVizStore.getState().presetId).toBe(strip[0].id); // still queued
+    expect(useVizStore.getState().pendingPresetId).toBe(strip[2].id);
+  });
+
+  it("a step back after a step forward cancels the queue (back where you are)", async () => {
+    const { useVizStore, strip } = await queuedPosture();
+
+    useVizStore.getState().stepPreset(1);
+    useVizStore.getState().stepPreset(-1);
+
+    expect(useVizStore.getState().presetId).toBe(strip[0].id);
+    expect(useVizStore.getState().pendingPresetId).toBeNull();
+  });
+
+  it("a chip tap on the pending target still cancel-toggles (chip semantics preserved)", async () => {
+    const { useVizStore, strip } = await queuedPosture();
+
+    useVizStore.getState().stepPreset(1);
+    expect(useVizStore.getState().pendingPresetId).toBe(strip[1].id);
+    useVizStore.getState().queuePreset(strip[1].id); // the chip's own tap
+
+    expect(useVizStore.getState().presetId).toBe(strip[0].id);
+    expect(useVizStore.getState().pendingPresetId).toBeNull();
+  });
+});
+
+/**
  * F2 regression: the export worker builds its own WebGPU device, so on the
  * Canvas2D fallback exportCore throws GpuInitError — but it only got there
  * after the native save dialog, the overlay raster and a full decode, and a

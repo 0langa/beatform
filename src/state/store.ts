@@ -2104,7 +2104,16 @@ export const useVizStore = create<VizState>((set, get) => {
       // are "the next chip along", and stepping in a different sequence from
       // the one on screen is the kind of thing you only notice on stage.
       const all = orderedPresets(get().presetOrder, get().customDefs);
-      const i = all.findIndex((p) => p.id === get().presetId);
+      // From the PENDING target when one exists (R2-22, owner verdict):
+      // stepping is a walk, so `]]` under quantize means "two chips along" —
+      // computing from the current mode re-targeted the pending chip and
+      // queuePreset's cancel-toggle ate the queue. Stepping back onto the
+      // current mode still cancels (queuePreset's same-mode branch), and a
+      // direct chip tap keeps its cancel-toggle — only steps route around it.
+      const s = get();
+      const baseId = s.pendingPresetId ?? s.presetId;
+      let i = all.findIndex((p) => p.id === baseId);
+      if (i < 0) i = all.findIndex((p) => p.id === s.presetId); // stale pending
       // Through queuePreset, not switchPreset: [ and ] are live-performance
       // controls exactly like the number keys, and it was inconsistent for
       // 1-9 to honour beat-quantize while the step keys jumped instantly.
