@@ -258,9 +258,14 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       picked path (owner verdict: ingest compatibility); WebP capped under
       R2-11's pixel budget; prores_abort returns the log's last ~2 KB (read
       before cleanup) and the TS side folds it into the surfaced error ahead
-      of translateExportError. REMAINING: AAC priming/Opus pre-skip,
-      mediabunny CodecDelay upstream report, codecProbe level ladders,
-      WebCodecs-lane 601/709 tagging probe.
+      of translateExportError. **AAC priming: CLOSED NEGATIVE 2026-08-21** —
+      device probe through the real MP4 lane (six 1-sample-rise clicks at
+      exact 0.5 s intervals, 48 kHz, decoded back via the bundled ffmpeg)
+      measured 0.00 ms offset on every click: the platform encoder
+      pre-compensates its timestamps, no edit-list fix needed (probe:
+      scratchpad aac-priming-probe; evidence report archived with the lane).
+      REMAINING: mediabunny CodecDelay upstream report, codecProbe level
+      ladders, WebCodecs-lane 601/709 tagging probe.
 - [ ] **R2-31 Live/state nits (11)** — MIDI learn stays armed after its
       surfaces close; enable/disable MIDI race; quantized switch fires
       immediately on forward seek across a boundary; batch resume ETA uses the

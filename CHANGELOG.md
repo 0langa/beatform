@@ -11,6 +11,52 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.105.0] - 2026-08-21
+
+### Fixed
+
+- **ProRes 4444 colors are now correct in your editor.** The ProRes
+  exporter converted colors with an outdated standard (BT.601) and left
+  the file untagged, so Resolve, Premiere and After Effects showed every
+  ProRes export with a subtle green shift and clipped saturated colors.
+  ProRes now uses the same BT.709 conversion and tagging as the 10-bit
+  AV1 lane — what you graded is what you exported. (A new release gate
+  measures the actual decoded colors of both lanes so this cannot
+  regress.)
+- **Cancelling an export can no longer cost you the previous file.**
+  Exports write to a hidden `.partial` file and only replace the real
+  file once they finish. Cancel one, or have one fail, and whatever was
+  at that name before is untouched. If the finished render cannot
+  replace a file that another program holds open, the render is kept as
+  `.partial` next to it and the message tells you exactly where it is.
+- **Closing the app mid-export now asks first.** If an export or batch
+  is running, closing the window asks before quitting, cancels cleanly,
+  and removes the unfinished file instead of leaving something that
+  looks like a real video.
+- **Cancel works during the last encoding step too.** GIF and the other
+  sidecar formats do heavy work while "finishing" — pressing Cancel
+  there now actually stops them instead of letting the encode run to
+  the end.
+- **PNG sequences never mix runs.** Each export gets its own fresh
+  `…_frames` folder (`-2`, `-3`, … when the name is taken), so a
+  shorter re-export can no longer leave stale frames from a longer one
+  interleaved in the same folder.
+- **Huge animated exports are refused before they can fail.** The GIF
+  frame cap is now a resolution-aware pixel budget and covers animated
+  WebP too — a 4K GIF that would have exhausted memory late in the
+  encode is refused up front with a message that says what to reduce.
+- **Batch renders check disk space up front** — the same warn-and-
+  continue check single exports already had, run over the whole queue
+  (and again before "Retry failed", which is exactly when the disk may
+  be the reason).
+- **Spotify Canvas loops ship as plain progressive MP4** — the most
+  compatible container layout for picky upload validators. A track
+  shorter than 3 seconds now gets a clear message instead of a loop
+  Spotify would reject.
+- **When the encoder dies mid-export, the error now includes the
+  encoder's own last words** instead of only a generic pipe message, so
+  the real reason (disk full, bad file, …) is visible immediately.
+
 ## [2.104.2] - 2026-08-19
 
 ### Fixed
