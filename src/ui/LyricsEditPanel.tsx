@@ -307,6 +307,18 @@ export function LyricsEditPanel() {
           ? "Wait for the running lyrics job"
           : null;
 
+  // R2-21: while a line re-align is in flight, structural edits (split/merge/
+  // insert/delete) would renumber the lines under the sidecar's await — the
+  // apply guard matches index+text (lyricsEditActions.ts), and a renumbered
+  // sheet can put a DIFFERENT line with identical text (repeated chorus
+  // lines) at the awaited index. Locked the same way the align buttons
+  // already disable; text and time edits stay allowed — an edit to the
+  // awaited line changes its text and correctly voids the apply.
+  const structuralLocked = realign !== null;
+  const structuralWhy = structuralLocked
+    ? "Wait for the running line re-align — adding or removing lines would confuse it"
+    : null;
+
   const flagged = flaggedCount(lyrics);
   const wordCount = lyrics.reduce((n, l) => n + (l.words?.length ?? 0), 0);
 
@@ -452,8 +464,11 @@ export function LyricsEditPanel() {
                   <button
                     type="button"
                     className="text-btn"
-                    disabled={line.text.trim().split(/\s+/).length < 2}
-                    title="Split this line in two at the text cursor (words keep their timing)"
+                    disabled={structuralLocked || line.text.trim().split(/\s+/).length < 2}
+                    title={
+                      structuralWhy ??
+                      "Split this line in two at the text cursor (words keep their timing)"
+                    }
                     onClick={() => {
                       store().splitLyricLine(
                         i,
@@ -466,8 +481,11 @@ export function LyricsEditPanel() {
                   <button
                     type="button"
                     className="text-btn"
-                    disabled={i + 1 >= lyrics.length}
-                    title="Merge with the next line (word timing survives when both lines have it)"
+                    disabled={structuralLocked || i + 1 >= lyrics.length}
+                    title={
+                      structuralWhy ??
+                      "Merge with the next line (word timing survives when both lines have it)"
+                    }
                     onClick={() => store().mergeLyricLineWithNext(i)}
                   >
                     ⤵
@@ -475,7 +493,8 @@ export function LyricsEditPanel() {
                   <button
                     type="button"
                     className="text-btn"
-                    title="Insert an empty line above this one"
+                    disabled={structuralLocked}
+                    title={structuralWhy ?? "Insert an empty line above this one"}
                     onClick={() => {
                       store().insertLyricLineAfter(i - 1);
                       setFocusIdx(i);
@@ -486,7 +505,8 @@ export function LyricsEditPanel() {
                   <button
                     type="button"
                     className="text-btn"
-                    title="Insert an empty line below this one"
+                    disabled={structuralLocked}
+                    title={structuralWhy ?? "Insert an empty line below this one"}
                     onClick={() => {
                       store().insertLyricLineAfter(i);
                       setSel(i + 1);
@@ -498,7 +518,8 @@ export function LyricsEditPanel() {
                   <button
                     type="button"
                     className="text-btn danger"
-                    title="Delete this line (Ctrl+Z brings it back)"
+                    disabled={structuralLocked}
+                    title={structuralWhy ?? "Delete this line (Ctrl+Z brings it back)"}
                     onClick={() => {
                       store().deleteLyricLine(i);
                       setSel(-1);
