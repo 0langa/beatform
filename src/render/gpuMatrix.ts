@@ -8,6 +8,7 @@ import {
 } from "./builder2";
 import { demoFeatures } from "./thumbnails";
 import { presets } from "./presets";
+import { builder } from "./presets/builder";
 import { allParams, DEFAULT_MOTION, DEFAULT_POST, defaultParams } from "./types";
 import type { MotionSettings, ParamValues, PostSettings, PresetDef } from "./types";
 import { WebGPURenderer } from "./webgpuRenderer";
@@ -344,6 +345,25 @@ export async function runGpuPixelMatrix(width = 192, height = 108): Promise<GpuP
       }
     } finally {
       renderer.setMotion(DEFAULT_MOTION);
+    }
+
+    // ---- Hidden classic `builder` (R2-15). ------------------------------
+    // Off the strip since the layer compositor replaced it, but resolved
+    // forever for every old project/scene that references it — the exact
+    // surface that drifts silently, because no interactive path exercises
+    // it anymore. One defaults case gives it a device pixel baseline, with
+    // the same compile gate the strip presets get. APPENDED at the end of
+    // the run on purpose: inserting mid-sequence would reorder the shared
+    // renderer's state history for every later case, and an additive change
+    // must not move existing hashes.
+    {
+      const errors = await renderer.compilePresetCheck(builder);
+      if (errors.length) compileErrors[builder.id] = errors;
+      renderer.setPreset(builder);
+      cases.push({
+        id: `${builder.id}/@defaults`,
+        ...(await renderCase(renderer, canvas, builder, defaultParams(builder))),
+      });
     }
   } finally {
     renderer.dispose();
