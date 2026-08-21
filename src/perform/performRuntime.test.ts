@@ -368,6 +368,87 @@ describe("perform runtime", () => {
     expect(channel.closed).toBe(true);
     expect(r.dispose).toHaveBeenCalled();
   });
+
+  /**
+   * R2-03: the overlay dedupe key used to omit lyric/audiogram state, so when
+   * dynamics stopped (captions toggled off, lyrics removed, audiogram
+   * disabled) applyOverlay early-outed on an unchanged key and the renderer
+   * kept presenting the last COMPOSED frame — a baked caption, forever
+   * (applySceneToRenderer clears only the lyric plate). The inactive
+   * transition must push one dynamics-free overlay, mirroring the main
+   * window's refreshOverlay else-branch.
+   */
+  it("captions off replaces the composed overlay with a clean one, not a stale key hit", async () => {
+    // The compose path rasterizes through OffscreenCanvas; a minimal 2D
+    // stand-in is enough — the assertions are about setOverlay traffic.
+    const ctx2d = {
+      measureText: () => ({ width: 10 }),
+      save() {},
+      restore() {},
+      translate() {},
+      scale() {},
+      beginPath() {},
+      rect() {},
+      clip() {},
+      strokeText() {},
+      fillText() {},
+      fillRect() {},
+      drawImage() {},
+    };
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        constructor(
+          public width: number,
+          public height: number,
+        ) {}
+        getContext() {
+          return ctx2d;
+        }
+        transferToImageBitmap() {
+          return { close: vi.fn() };
+        }
+      },
+    );
+    const r = fakeRenderer();
+    const { channel } = start(r);
+    await flush();
+    const setOverlay = r.setOverlay as ReturnType<typeof vi.fn>;
+
+    const lyrics = {
+      lines: [{ t: 0, end: 10, text: "hello world" }],
+      style: {
+        enabled: true,
+        position: "bottom" as const,
+        size: 1,
+        color: "#ffffff",
+        fadeSec: 0.15,
+        anim: "plain" as const,
+      },
+    };
+    channel.deliver(sceneMsg({ lyrics }));
+    await flush();
+    // No overlay layers: the raster is null and the compose path owns pushes.
+    expect(setOverlay).not.toHaveBeenCalled();
+
+    channel.deliver(frameMsg({ t: 1 }));
+    await flush();
+    // Captions on: a composed overlay (caption baked in) reached the renderer.
+    expect(setOverlay).toHaveBeenCalledTimes(1);
+    expect(setOverlay.mock.calls[0][0]).not.toBeNull();
+
+    channel.deliver(sceneMsg({ lyrics: null }));
+    await flush();
+    // Captions off: a NEW setOverlay lands, and it is the clean (caption-free)
+    // overlay — with no static layers that means null, which clears.
+    expect(setOverlay).toHaveBeenCalledTimes(2);
+    expect(setOverlay.mock.calls[1][0]).toBeNull();
+
+    channel.deliver(frameMsg({ t: 2 }));
+    await flush();
+    // ...and the frame stream composes nothing further.
+    expect(setOverlay).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("present policy (pure)", () => {

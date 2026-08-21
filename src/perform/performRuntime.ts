@@ -406,7 +406,14 @@ export function startPerformRuntime(
   const applyOverlay = () => {
     if (!scene) return;
     const overlayAssets = assets?.overlayAssets ?? {};
-    const key = `${canvas.width}x${canvas.height}|${JSON.stringify(scene.overlay.layers)}|${JSON.stringify(
+    // Dynamics-active bit (R2-03): when captions/audiogram flip OFF the key
+    // must move, or the early-out below would leave the renderer presenting
+    // the last COMPOSED frame (a baked caption) forever — this re-raster is
+    // what pushes the one dynamics-free overlay, mirroring the main window's
+    // refreshOverlay. The ON flip rides the same bit: the re-raster re-retains
+    // the base the frame-stream compose path draws on.
+    const dynOn = hasDynamics(dynamicsOf()) ? 1 : 0;
+    const key = `${canvas.width}x${canvas.height}|dyn:${dynOn}|${JSON.stringify(scene.overlay.layers)}|${JSON.stringify(
       scene.overlay.meta,
     )}|${Object.keys(overlayAssets).sort().join(",")}`;
     if (key === overlayKey) return;
