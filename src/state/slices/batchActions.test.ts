@@ -133,6 +133,46 @@ beforeEach(() => {
   });
 });
 
+/**
+ * R2-04: batchStatus only flips to "running" after retryFailedBatch's awaits
+ * (the outDir readDir, then the R2-13 pre-flight), so a double-activation —
+ * double-click, Enter+click — passed the status guard twice and launched two
+ * runs writing to the same folder. The fix is the same synchronous
+ * `batchStarting` claim startBatch takes, released on every exit.
+ */
+describe("retryFailedBatch claims the start slot synchronously (R2-04)", () => {
+  it("two synchronous back-to-back calls launch exactly one run", async () => {
+    const first = s().retryFailedBatch();
+    const second = s().retryFailedBatch(); // fired before any await settles
+    await Promise.all([first, second]);
+
+    expect(runBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a declined pre-flight releases the claim — the next retry can start", async () => {
+    vi.mocked(diskSpace).mockResolvedValue({ freeBytes: 0, totalBytes: 500e9, root: "D:\\" });
+    vi.mocked(askConfirm).mockResolvedValueOnce(false);
+    await s().retryFailedBatch();
+    expect(runBatch).not.toHaveBeenCalled();
+
+    // Space freed up; the user tries again — a stuck claim would eat this.
+    vi.mocked(diskSpace).mockResolvedValue(null);
+    await s().retryFailedBatch();
+    expect(runBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a throwing pre-flight releases the claim too", async () => {
+    vi.mocked(diskSpace).mockRejectedValueOnce(new Error("forbidden path"));
+    await s().retryFailedBatch();
+    expect(runBatch).not.toHaveBeenCalled();
+    expect(s().batchError).toContain("Could not check disk space");
+
+    vi.mocked(diskSpace).mockResolvedValue(null);
+    await s().retryFailedBatch();
+    expect(runBatch).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("retryFailedBatch runs the summed disk pre-flight (R2-13, review fix 3)", () => {
   it("a low-space volume prompts once; declining leaves the done run untouched", async () => {
     // The retried job alone needs ~366 MB (240 s at 12 Mbps + audio); zero
