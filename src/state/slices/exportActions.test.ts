@@ -137,6 +137,9 @@ vi.mock("../platform", async (importOriginal) => {
     av1Begin: vi.fn(async () => {}),
     proresWrite: vi.fn(async () => {}),
     proresFinish: vi.fn(async () => {}),
+    // R2-10: the finalize-span Cancel listener calls this; like the mocks
+    // above, the real wrapper is a bridgeless invoke() in this environment.
+    proresAbort: vi.fn(async () => {}),
     // Real askConfirm goes through @tauri-apps/plugin-dialog (Tauri lane) or
     // window.confirm (browser lane, and `window` here is the plain stub
     // above with no `confirm`) — neither works in this environment. No
@@ -181,6 +184,8 @@ const {
   proresBegin,
   av1Begin,
   proresWrite,
+  proresFinish,
+  proresAbort,
 } = await import("../platform");
 
 const s = () => useVizStore.getState();
@@ -226,6 +231,9 @@ beforeEach(() => {
   vi.mocked(proresBegin).mockClear();
   vi.mocked(av1Begin).mockClear();
   vi.mocked(proresWrite).mockClear();
+  // R2-10: the finalize-cancel tests assert call COUNTS on these two.
+  vi.mocked(proresFinish).mockClear();
+  vi.mocked(proresAbort).mockClear();
   // Back to "track A is loaded and playing".
   engineBuffer = TRACK_A;
   engineTrackName = "probe.wav";
@@ -779,6 +787,76 @@ describe("FEAT-005 — ProRes 4444 deep-color lane", () => {
     expect(opts.deepStraightAlpha).toBeUndefined();
     expect(opts.onPngFrame).toBeUndefined();
     expect(typeof opts.onRawFrame).toBe("function");
+  });
+});
+
+/**
+ * R2-10 — Cancel must reach a sidecar session that is already FINALIZING.
+ *
+ * Once every frame is rendered, exportVideo resolves and nothing is listening
+ * to the abort signal any more — yet proresFinish can legitimately run for
+ * minutes (GIF paletteuse, a multi-GB ProRes flush; prores.rs allows 20).
+ * Clicking Cancel in that span flipped a signal nobody read: the dialog sat
+ * on "Finishing" until ffmpeg was done anyway. The finalize span now carries
+ * its own abort listener wired to proresAbort, which the Rust side tolerates
+ * mid-finalize by design (prores_finish then reports the cancel).
+ */
+describe("cancel during sidecar finalize reaches proresAbort (R2-10)", () => {
+  it("a Cancel while ffmpeg finalizes aborts the session exactly once, and shows no error", async () => {
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format: "webp", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\loop.webp");
+    const finishGate = deferred<void>();
+    vi.mocked(proresFinish).mockReturnValueOnce(finishGate.promise);
+
+    const run = s().runExport();
+    // The render is done (the exportVideo mock resolved) and the action is
+    // parked inside proresFinish — the exact span where Cancel used to be
+    // dead. waitFor rather than a fixed microtask drain: the path crosses
+    // the analysis gate, animBegin, the overlay raster and exportVideo, each
+    // its own await chain.
+    await vi.waitFor(() => expect(proresFinish).toHaveBeenCalledTimes(1));
+    expect(proresAbort).not.toHaveBeenCalled();
+
+    s().cancelExport();
+    await vi.waitFor(() => expect(proresAbort).toHaveBeenCalledTimes(1));
+
+    // What the Rust side then does: prores_finish's wait sees the job gone
+    // and rejects with its cancel sentence (a raw string — Tauri command
+    // rejections are not Errors).
+    finishGate.reject("Export cancelled while finishing");
+    await run;
+
+    // Exactly once — the catch path must await the listener's abort, not
+    // fire a second one at an already-empty session.
+    expect(proresAbort).toHaveBeenCalledTimes(1);
+    // A user cancel is not an error and not a success: nothing is shown.
+    expect(s().exportError).toBeNull();
+    expect(s().exportDone).toBeNull();
+    expect(s().exporting).toBeNull();
+  });
+
+  it("a finalize that completes normally never arms an abort and still reports success", async () => {
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format: "webp", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\loop.webp");
+
+    await s().runExport();
+
+    expect(proresFinish).toHaveBeenCalledTimes(1);
+    expect(proresAbort).not.toHaveBeenCalled();
+    expect(s().exportDone).toContain("WebP loop saved");
+    expect(s().exportError).toBeNull();
   });
 });
 

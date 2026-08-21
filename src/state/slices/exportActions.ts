@@ -384,6 +384,11 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // analysis can't see on a plain let (it narrows the reads to null).
       // `unknown`, not Error: Tauri command rejections are raw strings.
       const proresFail: { err: unknown } = { err: null };
+      // R2-10: the abort issued by the finalize-span Cancel listener below,
+      // held so the catch can await THAT call instead of issuing a second
+      // one — a session is aborted exactly once. Object holder for the same
+      // flow-analysis reason as proresFail above.
+      const finalizeAbort: { p: Promise<void> | null } = { p: null };
       // GIF/WebP are the only formats still fed encoded PNGs (onPngFrame) —
       // FEAT-005 moved ProRes onto the same raw rgba64le deep-color tap AV1
       // already used (onRawFrame below), so it no longer belongs here.
@@ -630,9 +635,47 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         );
         if (sidecarMode) {
           // All frames rendered — drain the pipe, close it, wait for ffmpeg.
-          await proresChain;
-          if (proresFail.err != null) throw proresFail.err;
-          await proresFinish();
+          //
+          // R2-10: exportVideo has already resolved, so nothing is listening
+          // to the abort signal any more — yet the finalize below can
+          // legitimately run for MINUTES (GIF paletteuse over thousands of
+          // buffered frames, a multi-GB ProRes flush to a slow disk;
+          // prores.rs allows it 20). Cancel was dead for that whole span:
+          // ac.abort() flipped a signal nobody read while the dialog sat on
+          // "Finishing". Re-arm it — abort -> proresAbort, which the Rust
+          // side tolerates mid-finalize by design (prores_finish then
+          // reports the cancel instead of success; see await_finalize).
+          const onFinalizeAbort = () => {
+            finalizeAbort.p = proresAbort()
+              .then(() => undefined)
+              .catch(() => undefined);
+          };
+          ac.signal.addEventListener("abort", onFinalizeAbort, { once: true });
+          // A cancel that landed between the render loop's last abort check
+          // and the listener attach above: `once` listeners never fire
+          // retroactively for an already-aborted signal.
+          if (ac.signal.aborted) onFinalizeAbort();
+          try {
+            await proresChain;
+            if (proresFail.err != null) throw proresFail.err;
+            try {
+              await proresFinish();
+            } catch (e) {
+              // A cancel during finalize surfaces as prores_finish's own
+              // rejection ("Export cancelled while finishing"). Rethrow it
+              // wearing the AbortError name so the catch below reads it as
+              // the user cancel it is — showing nothing — instead of a
+              // failure toast for doing what was asked.
+              if (ac.signal.aborted && proresFail.err == null) {
+                const cancelled = new Error("Export cancelled");
+                cancelled.name = "AbortError";
+                throw cancelled;
+              }
+              throw e;
+            }
+          } finally {
+            ac.signal.removeEventListener("abort", onFinalizeAbort);
+          }
           set({
             exportDone: proresMode
               ? `ProRes 4444 MOV (PCM audio) saved to ${savePath}`
@@ -656,7 +699,9 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           });
         }
       } catch (e) {
-        if (sidecarMode) await proresAbort().catch(() => undefined);
+        // R2-10: the finalize-span listener may already have aborted the
+        // session — await that call rather than issuing a second one.
+        if (sidecarMode) await (finalizeAbort.p ?? proresAbort().catch(() => undefined));
         // A dead sidecar aborts the render, so the surfaced error arrives
         // wearing an AbortError coat — check the sidecar failure FIRST or a
         // mid-render ffmpeg death reads as a user cancel and shows nothing.
