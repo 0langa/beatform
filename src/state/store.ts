@@ -2897,9 +2897,7 @@ export const useVizStore = create<VizState>((set, get) => {
       // Review D3 (R2-31a family): closing the dock hides the Live page — a
       // pending MIDI Learn armed there loses its surface and must disarm, or
       // the next control touched on the device silently mints a binding.
-      set(
-        next || !get().midiLearn ? { showPanel: next } : { showPanel: next, midiLearn: null },
-      );
+      set(next || !get().midiLearn ? { showPanel: next } : { showPanel: next, midiLearn: null });
       saveStoredPanelOpen(next);
     },
 
