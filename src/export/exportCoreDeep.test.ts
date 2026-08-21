@@ -1,6 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { VideoSampleSource } from "mediabunny";
 import { runExportJob, type ExportJob } from "./exportCore";
+import { codecString } from "./codecProbe";
 import type { PcmData } from "../audio/types";
+
+// Pass-through constructor spy (R2-30b): every mediabunny surface stays REAL
+// — the wrapper builds a genuine VideoSampleSource — but the constructor args
+// become observable, so a test can pin the exact config exportCore hands the
+// encoder without faking the encode stack.
+vi.mock("mediabunny", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("mediabunny")>();
+  const spied = vi.fn(function (
+    this: unknown,
+    ...args: ConstructorParameters<typeof actual.VideoSampleSource>
+  ) {
+    return new actual.VideoSampleSource(...args);
+  });
+  return { ...actual, VideoSampleSource: spied };
+});
 
 /**
  * FEAT-005 deep-colour lane — job-start validation.
@@ -103,5 +120,34 @@ describe("runExportJob deepColor validation", () => {
     );
     expect(videoProbe).not.toHaveBeenCalled();
     expect(audioProbe).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * R2-30b: the WebM lane must hand mediabunny the EXACT vp09.* string
+ * codecProbe just gated the job with — mediabunny's own bitrate-derived
+ * guess can name a different level than the one isConfigSupported approved,
+ * which is how a job that "probed fine" fails at frame 0 on a marginal VP9
+ * encoder. Driven through the real runExportJob so deleting the
+ * `fullCodecString:` line in exportCore's isWebm branch turns this red.
+ */
+describe("runExportJob WebM lane codec pinning (R2-30b)", () => {
+  it("constructs the VP9 source with fullCodecString = the probed vp09 string", async () => {
+    vi.mocked(VideoSampleSource).mockClear();
+    vi.stubGlobal("VideoEncoder", {
+      isConfigSupported: vi.fn(async () => ({ supported: true })),
+    });
+
+    // The run legitimately dies at OffscreenCanvas (absent in Node) — which
+    // is PAST the muxer/source construction under test, same idiom as the
+    // valid-deep test above.
+    await expect(
+      runExportJob(deepJob({ deepColor: false, codec: "vp9a", mode: "buffer" }), {}),
+    ).rejects.toThrow(/OffscreenCanvas/);
+
+    expect(VideoSampleSource).toHaveBeenCalledTimes(1);
+    const config = vi.mocked(VideoSampleSource).mock.calls[0][0];
+    expect(config.codec).toBe("vp9");
+    expect(config.fullCodecString).toBe(codecString("vp9a", 64, 64, 30));
   });
 });
