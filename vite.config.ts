@@ -34,7 +34,10 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // `.claude/**` too: agent worktrees live under .claude/worktrees, and a
+      // worktree being cleaned up mid-session yanked a tsconfig out from under
+      // the watcher and killed the dev server (observed on device 2026-08-21).
+      ignored: ["**/src-tauri/**", "**/.claude/**"],
     },
   },
 
