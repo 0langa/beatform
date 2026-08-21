@@ -631,18 +631,33 @@ describe("makeTauriWriter — temp-sibling atomic replace (R2-02)", () => {
     expect(files.has("out.mp4.partial")).toBe(false);
   });
 
-  it("a failed rename removes the temp, surfaces the error, and never touches the target", async () => {
-    const boom = new Error("Access is denied. (os error 5)"); // target open in a player
+  it("a failed publish rename KEEPS the finished .partial, names both files, and a later discard spares it", async () => {
+    // The scenario: yesterday's export is open in a player, so the
+    // REPLACE_EXISTING rename after a possibly hour-long render is refused.
+    // The finished bytes are the most valuable thing the writer ever holds —
+    // deleting them to avoid litter would be the real data loss.
+    const boom = new Error("Access is denied. (os error 5)");
     const { fs, files } = fakeDisk({ failRename: boom });
     files.set("out.mp4", [9, 9, 9]);
     const w = await makeTauriWriter(fs, "out.mp4");
     await w.write(new Uint8Array([1, 2, 3]), 0);
 
-    await expect(w.close()).rejects.toThrow(/os error 5/);
+    // The error names the situation, the blocked target AND the surviving
+    // file, with the way out.
+    await expect(w.close()).rejects.toThrow(
+      'Could not replace "out.mp4" — the file is in use. Your finished render is ' +
+        'saved as "out.mp4.partial"; close the program using the target and rename it.',
+    );
+    // Nothing of value lost in either direction: the previous target
+    // survives AND the finished render survives beside it.
     expect(files.get("out.mp4")).toEqual([9, 9, 9]);
-    // The chosen policy: report the error and clean up — no .partial litter
-    // left for the user to wonder about.
-    expect(files.has("out.mp4.partial")).toBe(false);
+    expect(files.get("out.mp4.partial")).toEqual([1, 2, 3]);
+
+    // exportVideo's catch calls discard() after a close() throw — exactly
+    // this sequence — and it must spare the kept render.
+    await w.discard();
+    expect(files.get("out.mp4.partial")).toEqual([1, 2, 3]);
+    expect(files.get("out.mp4")).toEqual([9, 9, 9]);
   });
 
   it("a write failure surfaces from close() without ever attempting the publish rename", async () => {

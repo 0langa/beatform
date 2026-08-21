@@ -261,8 +261,11 @@ export interface StreamFsOps {
  * std::fs::rename — MoveFileExW with MOVEFILE_REPLACE_EXISTING on Windows —
  * so replacing an existing target is one atomic step (the same primitive the
  * autosave's writeFileAtomic in platform.ts already stakes its design on).
- * A FAILED rename removes the temp and surfaces the error: no litter, and
- * whatever was previously at the target is still exactly as it was.
+ * A FAILED publish rename (typically: the target is open in a player, so
+ * REPLACE_EXISTING is refused) KEEPS the `.partial` — those bytes are a
+ * finished, possibly hour-long render, the most valuable thing this function
+ * ever holds — and surfaces an error naming both files and the way out. The
+ * kept file is flagged so the catch-path discard() spares it too.
  */
 export async function makeTauriWriter(
   fs: StreamFsOps,
@@ -274,6 +277,9 @@ export async function makeTauriWriter(
   let queue: Promise<void> = Promise.resolve();
   let cursor = 0;
   let failed: Error | null = null;
+  /** True once close() deliberately kept the finished `.partial` because the
+   * publish rename failed — from then on discard() must spare it. */
+  let keptPartial = false;
 
   return {
     write(data, position) {
@@ -310,19 +316,28 @@ export async function makeTauriWriter(
       // Publish: the one moment the target path is touched at all.
       try {
         await fs.rename(partial, path);
-      } catch (e) {
-        // No litter on a failed publish — remove the temp, surface the error,
-        // and leave the previous file at `path` exactly as it was.
-        await fs.remove(partial).catch(() => undefined);
-        throw e instanceof Error ? e : new Error(String(e));
+      } catch {
+        // The render FINISHED — every byte is safe in the sibling — and only
+        // the last-step replace was refused (the classic cause: the target is
+        // open in a player, which blocks REPLACE_EXISTING on Windows).
+        // Deleting the sibling here would throw away a possibly hour-long
+        // render to tidy a directory; keep it instead, flag it so the
+        // caller's catch-path discard() spares it, and tell the user exactly
+        // which file survived and what to do.
+        keptPartial = true;
+        throw new Error(
+          `Could not replace "${path}" — the file is in use. Your finished render is ` +
+            `saved as "${partial}"; close the program using the target and rename it.`,
+        );
       }
     },
     async discard() {
       await queue.catch(() => undefined);
       await handle.close().catch(() => undefined);
-      // ONLY the temp. The whole point of the sibling: a discarded run must
-      // leave whatever was previously at `path` untouched.
-      await fs.remove(partial).catch(() => undefined);
+      // ONLY the temp — and never one that close() deliberately kept as the
+      // user's surviving finished render. The whole point of the sibling: a
+      // discarded run must leave whatever was previously at `path` untouched.
+      if (!keptPartial) await fs.remove(partial).catch(() => undefined);
     },
   };
 }
