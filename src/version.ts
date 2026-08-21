@@ -20,4 +20,4 @@
  * while claiming 2.28.1). `version.test.ts` now asserts this constant equals
  * package.json's version, so a missed bump fails CI instead of shipping.
  */
-export const APP_VERSION = "2.107.0";
+export const APP_VERSION = "2.108.0";
