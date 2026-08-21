@@ -431,6 +431,33 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       }
       lastLoopEpoch = loopEpoch;
       lastTrackTime = compensated;
+      // Track time drives u.time, timeline and automation on both paths; idle
+      // motion freezes when paused. Input sampling still follows the live
+      // device, as documented in PREVIEW-EXPORT-CONTRACT.md.
+      const trackTime = compensated;
+      // Live FPS cap (Preferences ▸ Performance): draw-skip, transport-keep.
+      // Preview-only by design — exports walk every frame deterministically
+      // and never consult this.
+      const fpsCap = getPrefs().fpsCap;
+      const capSkipped = fpsCap > 0 && tMs - lastCapDraw < 1000 / fpsCap - 1;
+      // R2-25: the cap gates the DSP too. When this frame will not present
+      // AND the analyzer's fixed 60 Hz clock owes no tick, skip the whole
+      // feature update — the old shape ran the FFT/meter/pipeline on every
+      // rAF and threw the result away right here, so a 144 Hz panel capped
+      // to 30 paid 144 updates/s for 30 drawn frames. willTick is exactly
+      // update()'s own tick decision (realtimeSource.ts), so every canonical
+      // tick — detector steps and the texture-feedback advance license —
+      // still runs on time; only tickless capped frames are skipped, and
+      // their features had no consumer on this path.
+      if (capSkipped && !ana.willTick(t)) {
+        raf = requestAnimationFrame(loop);
+        armFallback();
+        if (eng.playing && t - lastUiUpdate > 0.25 && !hooks.isSeeking()) {
+          lastUiUpdate = t;
+          hooks.onPlayback(eng.state);
+        }
+        return;
+      }
       const features = ana.update(t, compensated);
       // A WebGPU renderer that has survived this long is healthy; give the
       // retry budget back so a later, unrelated device loss still gets its
@@ -445,18 +472,12 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       ) {
         gpuRetries = 0;
       }
-      // Track time drives u.time, timeline and automation on both paths; idle
-      // motion freezes when paused. Input sampling still follows the live
-      // device, as documented in PREVIEW-EXPORT-CONTRACT.md.
-      const trackTime = compensated;
-      // Live FPS cap (Preferences ▸ Performance): draw-skip, transport-keep.
-      // Preview-only by design — exports walk every frame deterministically
-      // and never consult this.
-      const fpsCap = getPrefs().fpsCap;
-      const capSkipped = fpsCap > 0 && tMs - lastCapDraw < 1000 / fpsCap - 1;
-      // A capped presentation must not cap texture-feedback STATE. The
-      // analyser still runs on every rAF and tells us which calls are its
-      // canonical 60 Hz ticks; those ticks render history offscreen below.
+      // A capped presentation must not cap texture-feedback STATE — ticked
+      // capped frames render history offscreen below (advance-only). This
+      // gate still exists behind willTick for the one case a tick carries no
+      // advance license: paused under the cap, update() ran at 60 Hz (meters
+      // and bins keep decaying honestly) but feedbackTicked stays false, so
+      // the frame neither presents nor advances — exactly as it always did.
       if (capSkipped && !ana.feedbackTicked) {
         raf = requestAnimationFrame(loop);
         armFallback();

@@ -226,6 +226,27 @@ export class RealtimeAnalyzer {
   }
 
   /**
+   * Whether an update() at wall-clock time `now` would advance the fixed
+   * 60 Hz analysis clock (R2-25). A PURE prediction over the exact state
+   * update() reads — the same first-frame dt fallback, the same accumulator,
+   * the same epsilon — so `willTick(t)` IS update(t)'s own analysisTick
+   * decision, and asking never moves the clock. (`sinceTick += dt` followed
+   * by `sinceTick >= X` compares the identical rounded double this sum
+   * produces, so the two cannot disagree even at the epsilon boundary.)
+   *
+   * The live frame loop uses it to skip whole feature updates on frames the
+   * fps cap will not present anyway — WITHOUT ever skipping a canonical
+   * analysis tick, which detectors and the texture-feedback advance license
+   * live on. Skipped frames leave `lastFrameAt` alone, so the next call's dt
+   * spans the gap and the accumulator owes the same total time either way:
+   * tick timing is identical to the uncapped schedule by construction.
+   */
+  willTick(now: number): boolean {
+    const dt = this.lastFrameAt === null ? 1 / 60 : now - this.lastFrameAt;
+    return this.sinceTick + dt >= ANALYSIS_DT - 1e-9;
+  }
+
+  /**
    * Call once per animation frame. `now` is a wall-clock seconds timestamp
    * (drives dt only); `trackTime` is the track position the visuals present
    * this frame — the caller passes the output-latency-compensated clock so
@@ -288,15 +309,23 @@ export class RealtimeAnalyzer {
       displayMagDb = this.displayMagDb;
     }
     // Feed the loudness meter only the NEW samples since last frame (the
-    // analyser exposes a sliding window; overlap would double-count)
-    const fresh = Math.min(
-      this.timeL.length,
-      Math.max(1, Math.round(dt * this.engine.ctx.sampleRate)),
-    );
-    this.meter.process([
-      this.timeL.subarray(this.timeL.length - fresh),
-      this.timeR.subarray(this.timeR.length - fresh),
-    ]);
+    // analyser exposes a sliding window; overlap would double-count) — and
+    // only while PLAYING (R2-32d). A paused tap decays to digital zeros, and
+    // feeding those filled the 400 ms momentary window with silence: f.lufs
+    // itself froze on pause (the pipeline's keep-previous rule, `lufs:
+    // playing ? … : undefined` below), but the first ~400 ms after every
+    // resume then read a dip the audio never contained. Skipping the feed
+    // freezes the meter exactly like the readout it drives.
+    if (playing) {
+      const fresh = Math.min(
+        this.timeL.length,
+        Math.max(1, Math.round(dt * this.engine.ctx.sampleRate)),
+      );
+      this.meter.process([
+        this.timeL.subarray(this.timeL.length - fresh),
+        this.timeR.subarray(this.timeR.length - fresh),
+      ]);
+    }
     // Second waveform lane: the per-channel taps, but only when the SOURCE is
     // genuinely stereo. The ChannelSplitter up-mixes a mono track discretely,
     // feeding analyserR pure silence — while the offline path substitutes the

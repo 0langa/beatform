@@ -272,23 +272,37 @@ describe("RealtimeAnalyzer P-15 fuel fields", SUITE, () => {
   it("detaching the analyses stops driving the fields (they hold, like bpm)", () => {
     const { engine, setNow } = fakeEngine(dense);
     const ana = new RealtimeAnalyzer(engine);
+    ana.setBeatGrid({
+      bpm: 174,
+      beatTimes: new Float32Array(Array.from({ length: 8 }, (_, i) => i * 0.5)),
+      hopSec: 0.01,
+    });
     ana.setSections([0.5]);
     ana.setVocalSpans([{ start: 0, end: 10 }]);
     setNow(1);
     const f = ana.update(1, 1);
     expect(f.sectionIndex).toBe(1);
     expect(f.vocal).toBe(1);
+    expect(f.bpm).toBe(174);
+    ana.setBeatGrid(null);
     ana.setSections(null);
     ana.setVocalSpans(null);
     setNow(1 + 1 / 60);
     const g = ana.update(1 + 1 / 60, 1 + 1 / 60);
     expect(g.sectionIndex).toBe(1); // held — the keep-previous convention
     expect(g.vocal).toBe(1);
+    expect(g.bpm).toBe(174); // detach mid-track HOLDS: same audio, same tempo
     ana.reset("source"); // a source change clears them to the honest unknowns
     setNow(1 + 2 / 60);
     const h = ana.update(1 + 2 / 60, 1 + 2 / 60);
     expect(h.sectionIndex).toBe(-1);
     expect(h.vocal).toBe(0);
+    // R2-32a: the grid readouts clear too — tempo-locked LFOs must fall back
+    // to their documented no-grid behaviour instead of running the dead
+    // track's BPM until the new track's analysis lands.
+    expect(h.bpm).toBe(0);
+    expect(h.beatPhase).toBe(0);
+    expect(h.barPhase).toBe(0);
   });
 });
 
@@ -546,5 +560,148 @@ describe("RealtimeAnalyzer feedback tick pause gate", SUITE, () => {
     }
     expect(at144).toBeGreaterThanOrEqual(118);
     expect(at144).toBeLessThanOrEqual(121);
+  });
+});
+
+/**
+ * R2-32d: the LUFS meter freezes with playback. While paused, the analyser
+ * tap decays to digital zeros, and feeding those into the meter filled its
+ * 400 ms momentary window with silence — so although f.lufs itself froze on
+ * pause (the pipeline's keep-previous rule), the FIRST ~400 ms after every
+ * resume read a deep dip that the audio never contained. Skipping
+ * meter.process while !playing freezes the momentary exactly like f.lufs.
+ */
+describe("RealtimeAnalyzer LUFS meter pause freeze (R2-32d)", SUITE, () => {
+  it("60 paused frames of zero windows, then resume: momentary within 0.5 LU immediately", () => {
+    let silent = false;
+    const sig = (t: number) => (silent || t < 0 ? 0 : 0.35 * Math.sin(2 * Math.PI * 220 * t));
+    const { engine, setNow, setPlaying } = fakeEngine(sig);
+    const ana = new RealtimeAnalyzer(engine);
+    let f = ana.features;
+    for (let n = 0; n < 120; n++) {
+      const t = n / 60;
+      setNow(t);
+      f = ana.update(t, t);
+    }
+    const before = f.lufs;
+    expect(before).toBeGreaterThan(-30); // fixture sanity: a real level
+
+    // Pause: playback stops and the tap hands back zero windows.
+    setPlaying(false);
+    silent = true;
+    for (let n = 120; n < 180; n++) {
+      const t = n / 60;
+      setNow(t);
+      f = ana.update(t, t);
+    }
+    expect(f.lufs).toBe(before); // f.lufs freezes on pause — unchanged rule
+
+    // Resume: the very FIRST playing frame must read the pre-pause level,
+    // not a window still 400 ms deep in pause silence.
+    setPlaying(true);
+    silent = false;
+    setNow(3);
+    f = ana.update(3, 3);
+    expect(Math.abs(f.lufs - before), `resumed at ${f.lufs} vs ${before}`).toBeLessThan(0.5);
+  });
+});
+
+/**
+ * willTick (R2-25): the live loop's license to SKIP a whole feature update on
+ * a frame the fps cap will not present. It must be exactly update()'s own
+ * analysisTick decision — same dt fallback, same accumulator, same epsilon —
+ * or a capped display would either drop canonical 60 Hz ticks (feedback state
+ * falls behind, detectors miss steps) or burn updates it meant to skip. The
+ * suite pins exactness three ways: frame-for-frame agreement under jitter,
+ * agreement under the cap-gated call pattern where tickless frames are never
+ * delivered at all, and purity (asking never moves the clock).
+ */
+describe("RealtimeAnalyzer willTick prediction (R2-25)", SUITE, () => {
+  /** Deterministic timestamp jitter, ±1.5 ms — rAF timestamps are never
+   * perfectly gridded, and the epsilon arithmetic must survive that. */
+  const jittered = (n: number, hz: number) => n / hz + 0.0015 * Math.sin(n * 0.73);
+
+  it("matches update()'s own tick decision frame-for-frame, jitter included", () => {
+    const { engine, setNow } = fakeEngine(dense);
+    const ana = new RealtimeAnalyzer(engine);
+    for (let n = 0; n < 400; n++) {
+      const t = Math.max(0, jittered(n, 144));
+      const predicted = ana.willTick(t);
+      setNow(t);
+      ana.update(t, t);
+      // playing is true throughout, so feedbackTicked IS the tick decision.
+      expect(ana.feedbackTicked, `frame ${n}`).toBe(predicted);
+    }
+  });
+
+  it("stays exact when tickless frames are never delivered (the cap-gated call pattern)", () => {
+    // Twin analyzers on the same clock: the reference sees every frame, the
+    // gated one only the frames services.ts would deliver under a 30 fps cap
+    // (presented frames + predicted ticks). The canonical tick stream must
+    // land on IDENTICAL frames — the accumulator owes the same total time
+    // whether it arrived as many small dts or one spanning dt.
+    const CAP = 30;
+    const HZ = 144;
+    const FRAMES = 288; // 2 s
+    const ref = fakeEngine(dense);
+    const anaRef = new RealtimeAnalyzer(ref.engine);
+    const gated = fakeEngine(dense);
+    const anaGated = new RealtimeAnalyzer(gated.engine);
+
+    const refTickFrames: number[] = [];
+    const gatedTickFrames: number[] = [];
+    let updates = 0;
+    let lastCapDraw = -1e9;
+    for (let n = 0; n < FRAMES; n++) {
+      const t = Math.max(0, jittered(n, HZ));
+      ref.setNow(t);
+      anaRef.update(t, t);
+      if (anaRef.feedbackTicked) refTickFrames.push(n);
+
+      // services.ts's own gate, verbatim: skip when the cap skips AND no
+      // tick is owed.
+      const tMs = t * 1000;
+      const capSkipped = tMs - lastCapDraw < 1000 / CAP - 1;
+      if (!capSkipped) lastCapDraw = tMs;
+      if (capSkipped && !anaGated.willTick(t)) continue;
+      gated.setNow(t);
+      anaGated.update(t, t);
+      updates++;
+      if (anaGated.feedbackTicked) gatedTickFrames.push(n);
+    }
+
+    expect(gatedTickFrames, "tick frames under the cap gate").toEqual(refTickFrames);
+    expect(refTickFrames.length).toBeGreaterThanOrEqual(118);
+    // The point of the gate: far fewer updates than frames (288 here), yet
+    // never fewer than the tick stream needs.
+    expect(updates).toBeGreaterThanOrEqual(refTickFrames.length);
+    expect(updates).toBeLessThan(FRAMES * 0.65);
+  });
+
+  it("predicts a tick for the first-ever frame and immediately after reset", () => {
+    const { engine, setNow } = fakeEngine(dense);
+    const ana = new RealtimeAnalyzer(engine);
+    // First frame: update() assumes dt = 1/60, which is exactly one owed tick.
+    expect(ana.willTick(0.42)).toBe(true);
+    setNow(0.42);
+    ana.update(0.42, 0.42);
+    expect(ana.feedbackTicked).toBe(true);
+    // reset() nulls lastFrameAt, so the next frame is "first" again — the
+    // priming frame must never be skippable regardless of cap state.
+    ana.reset("seek");
+    expect(ana.willTick(0.421)).toBe(true);
+  });
+
+  it("is pure: asking repeatedly never moves the clock", () => {
+    const { engine, setNow } = fakeEngine(dense);
+    const ana = new RealtimeAnalyzer(engine);
+    setNow(0);
+    ana.update(0, 0);
+    const t = 1 / 144; // too soon for the next tick
+    const first = ana.willTick(t);
+    for (let i = 0; i < 10; i++) expect(ana.willTick(t)).toBe(first);
+    expect(first).toBe(false);
+    // The clock still ticks at its own time afterwards.
+    expect(ana.willTick(1 / 60 + 1e-6)).toBe(true);
   });
 });

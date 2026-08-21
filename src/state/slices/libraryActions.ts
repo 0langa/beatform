@@ -1,6 +1,6 @@
 import { readTrackMeta } from "../../audio/trackMeta";
 import { isTauri, pickFolder, readBinaryFromPath, scanAudioLibrary } from "../platform";
-import { getEngine } from "../services";
+import { getAnalyzer, getEngine } from "../services";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
 import { shared } from "./shared";
@@ -83,6 +83,11 @@ export function libraryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           // during an advance waits for this track's grid instead of baking in
           // the last one's.
           ctx.invalidateAnalysis();
+          // Different audio entirely (R2-32b): detector history, peak caps,
+          // the drive envelope and the grid readouts all describe the song
+          // that just ended. Same call, same position as loadFile/loadDemo —
+          // this was the one load path that skipped it.
+          getAnalyzer().reset("source");
           await engine.play();
           const { meta, coverArt } = await readTrackMeta(pre.file, pre.file.name);
           if (gen !== shared.trackLoadGen) return;

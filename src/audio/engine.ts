@@ -15,6 +15,9 @@ export interface LoopbackStats {
   skippedFrames: number;
   hardSkippedFrames: number;
   adaptiveSkippedFrames: number;
+  /** Incoming frames dropped because the ring was FULL on a stalled graph
+   * (R2-32e) — the writer refuses to wrap over unread audio. */
+  overflowDroppedFrames: number;
   underrunFrames: number;
   underrunEvents: number;
   maxUnderrunFrames: number;
@@ -230,6 +233,8 @@ export class AudioEngine {
           skippedFrames: data.skippedFrames,
           hardSkippedFrames: data.hardSkippedFrames,
           adaptiveSkippedFrames: data.adaptiveSkippedFrames,
+          // ?? 0: a worklet from a cached pre-R2-32e bundle omits the field.
+          overflowDroppedFrames: data.overflowDroppedFrames ?? 0,
           underrunFrames: data.underrunFrames,
           underrunEvents: data.underrunEvents,
           maxUnderrunFrames: data.maxUnderrunFrames,

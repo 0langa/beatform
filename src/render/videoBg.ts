@@ -1,5 +1,3 @@
-import { ALL_FORMATS, BlobSource, CanvasSink, Input } from "mediabunny";
-
 /**
  * Video backgrounds — decode a local video file into a capped, downscaled loop
  * of frames, then select the frame for any track time PURELY from t. That is
@@ -43,6 +41,11 @@ export function videoBgFrameIndex(count: number, fps: number, t: number): number
  * — same rule as the image background, so it's cheap and export-identical.
  */
 export async function decodeVideoBgFrames(blob: Blob, dim = 0, blur = 0): Promise<VideoBgFrames> {
+  // Dynamic import (R2-35): the module's other exports (frame-index math,
+  // dispose) are boot-graph tenants via store.ts/performRuntime, but the
+  // codec stack is only needed when a video background actually decodes —
+  // one lazy chunk fetch per session instead of ~511 kB at startup.
+  const { ALL_FORMATS, BlobSource, CanvasSink, Input } = await import("mediabunny");
   const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
   const track = (await input.getVideoTracks())[0];
   if (!track) throw new Error("No video track in that file");

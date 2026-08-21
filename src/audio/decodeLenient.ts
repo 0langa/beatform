@@ -1,5 +1,3 @@
-import { ALL_FORMATS, AudioBufferSink, BufferSource, Input } from "mediabunny";
-
 /**
  * decodeAudioData with a long-file fallback.
  *
@@ -52,6 +50,11 @@ async function decodeWithMediabunny(
   ctx: AudioContext | OfflineAudioContext,
   data: ArrayBuffer,
 ): Promise<AudioBuffer> {
+  // Dynamic import (R2-35): this module sits in the BOOT graph via
+  // engine.ts/store.ts, but mediabunny is only ever needed on this rare
+  // fallback path (native decode already rejected) — loading the ~511 kB
+  // codec chunk here instead of statically keeps it out of app startup.
+  const { ALL_FORMATS, AudioBufferSink, BufferSource, Input } = await import("mediabunny");
   const input = new Input({ formats: ALL_FORMATS, source: new BufferSource(data) });
   const track = await input.getPrimaryAudioTrack();
   if (!track || !(await track.canDecode())) {

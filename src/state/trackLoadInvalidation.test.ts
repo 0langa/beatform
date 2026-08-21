@@ -497,6 +497,29 @@ describe("a load voids the previous track's analysis at the audio, not at the ta
     expect(s().libraryActivePath).toBe("/music/b.mp3");
   });
 
+  it("the gapless advance resets the analyzer source like every other load path (R2-32b)", async () => {
+    await loadAndAnalysePreviousTrack();
+    analyzer.reset.mockClear();
+
+    const { advance } = await advanceIntoTheWindow();
+
+    // Different audio entirely: detector history, peak caps, the drive
+    // envelope and the grid readouts (bpm/phases — R2-32a) all describe the
+    // song that just ended. loadFile and loadDemo have always fired this at
+    // the moment the new audio lands; the prefetch advance was the one load
+    // path that skipped it, so the first frames of the next song ran on the
+    // dead track's analyser state.
+    expect(analyzer.reset).toHaveBeenCalledWith("source");
+    // Ordered like its siblings: the reset lands with the buffer swap,
+    // before playback starts.
+    expect(analyzer.reset.mock.invocationCallOrder[0]).toBeLessThan(
+      engine.play.mock.invocationCallOrder[0],
+    );
+
+    await completeTheLoad();
+    await advance;
+  });
+
   it("does the same for a demo track, the third load path and the first one a new user takes", async () => {
     await loadAndAnalysePreviousTrack();
 

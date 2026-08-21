@@ -42,8 +42,10 @@ describe("drawn-spectrum resolution", () => {
     expect(d.displayBins).toBe(96);
     expect(d.measured).toBe(false);
     expect(d.axis).toBe("log");
-    // Responsive shares the detector's symmetric Hann: half-window latency.
-    expect(d.latencyMs).toBeCloseTo(d.windowMs / 2, 6);
+    // Responsive shares the detector's symmetric Hann, whose peak weight
+    // sits at (N-1)/2 — the same half-sample honesty as
+    // RealFFT.peakOffsetSamples, not the rounded-up N/2 (R2-32f).
+    expect(d.latencyMs).toBeCloseTo(((4096 - 1) / 2 / 48000) * 1000, 6);
   });
 
   it("reports the asymmetric peak-offset latency for the longer windows", () => {

@@ -1479,7 +1479,9 @@ export const useVizStore = create<VizState>((set, get) => {
           scheduleAutosave();
           return;
         }
-        return writeAutosave(serializeProject(docOf(get()), APP_VERSION));
+        // Compact on purpose (R2-26): nobody reads autosaves — see
+        // serializeProject. The manual Save path keeps the pretty form.
+        return writeAutosave(serializeProject(docOf(get()), APP_VERSION, { compact: true }));
       })
       .catch((e) => {
         console.error("[autosave]", e);
@@ -2849,7 +2851,13 @@ export const useVizStore = create<VizState>((set, get) => {
 
     toggleLoop() {
       const engine = getEngine();
+      const before = engine.currentTime;
       engine.loop = !engine.loop;
+      // Enabling the loop with the playhead outside the A-B region teleports
+      // it to the region start (engine's setter) — a discontinuity exactly
+      // like its siblings below, and a FORWARD teleport is one the frame
+      // loop's backward-jump heuristic can never catch (R2-32c).
+      if (Math.abs(engine.currentTime - before) > 0.001) getAnalyzer().reset("seek");
     },
 
     setLoopStart(time) {

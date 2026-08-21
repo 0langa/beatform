@@ -369,7 +369,10 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           // Missing, or corrupt (quarantined above): docOf(get()) is already
           // the localStorage fallback (nothing to apply) — just make sure a
           // file exists for next time, immediately rather than debounced.
-          void writeAutosave(serializeProject(ctx.docOf(get()), APP_VERSION)).catch((e) => {
+          // Compact like every autosave write (R2-26) — see serializeProject.
+          void writeAutosave(
+            serializeProject(ctx.docOf(get()), APP_VERSION, { compact: true }),
+          ).catch((e) => {
             console.warn("[autosave] initial write failed", e);
           });
         } finally {
