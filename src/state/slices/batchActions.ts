@@ -28,6 +28,53 @@ let batchStarting = false;
 export const EXPORT_RUNNING_REASON =
   "Finish (or cancel) the running export before starting a batch";
 
+/**
+ * R2-13: the summed warn-and-override disk pre-flight, shared by startBatch
+ * AND retryFailedBatch — a retry re-runs exactly the jobs that may have
+ * failed on a full disk, so it needs the check at least as much as the first
+ * attempt did. Sums per-queued-job estimateExportBytes into one DiskNeed and
+ * runs the identical askConfirm the single lane uses; never a hard block.
+ * diskSpace answers null off the desktop (and for an unqueryable volume) and
+ * preflightWarning stays silent on null volumes, so the browser build passes
+ * through without a word. Returns false only when the user DECLINED; throws
+ * propagate (the ACL-throw precedent) for the callers to turn into
+ * batchError while releasing their own claims.
+ */
+async function batchDiskPreflight(run: BatchRun): Promise<boolean> {
+  const scratchPath = await scratchDir();
+  const [outVol, scratchVol] = await Promise.all([
+    diskSpace(run.outDir),
+    scratchPath ? diskSpace(scratchPath) : Promise.resolve(null),
+  ]);
+  const byTrack = new Map(run.tracks.map((t) => [t.id, t]));
+  const need = sumDiskNeeds(
+    run.jobs
+      .filter((j) => j.status.k === "queued")
+      .map((j) => {
+        const jobFmt = run.formats.find((f) => f.id === j.formatId);
+        // A job whose format record is gone cannot be estimated — count it
+        // as zero rather than inventing numbers (warn-and-override anyway).
+        if (!jobFmt) return { outputBytes: 0, scratchBytes: 0, framesThroughScratch: false };
+        return estimateExportBytes({
+          format: jobFmt.codec === "vp9a" ? "webm" : "mp4",
+          width: jobFmt.w,
+          height: jobFmt.h,
+          fps: jobFmt.fps,
+          // Unknown duration (unreadable tags) estimates as zero — an
+          // honest under-count, and the prompt is overridable anyway.
+          seconds: byTrack.get(j.trackId)?.duration ?? 0,
+          bitrate: jobFmt.mbps * 1e6,
+          // Nothing is decoded yet; only the WAV-staging sidecar lanes
+          // read these, and the batch renders mp4/webm.
+          sampleRate: 48_000,
+          channels: 2,
+        });
+      }),
+  );
+  const warning = preflightWarning(need, outVol, scratchVol);
+  return !warning || (await askConfirm(warning, "Low disk space"));
+}
+
 export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
     setShowBatch(open) {
@@ -190,44 +237,11 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       for (const n of await ctx.fileNamesInDir(outDir)) alreadyDone.add(n);
       run.jobs = expandJobs(run.tracks, run.formats, outDir, alreadyDone);
 
-      // R2-13: the same warn-and-override disk pre-flight the single lane
-      // runs (runExport), summed over every queued job — the failure this
+      // R2-13: the summed warn-and-override pre-flight — the failure this
       // catches is twenty individually-fine jobs that do not fit the drive
-      // TOGETHER, discovered at 3am as a half-rendered queue. diskSpace
-      // answers null off the desktop and for an unqueryable volume, and
-      // preflightWarning stays silent on null volumes, so the browser build
-      // (and a measurement failure) skips this without a word — a pre-flight
-      // that cannot measure must stay silent, never block.
+      // TOGETHER, discovered at 3am as a half-rendered queue.
       try {
-        const scratchPath = await scratchDir();
-        const [outVol, scratchVol] = await Promise.all([
-          diskSpace(outDir),
-          scratchPath ? diskSpace(scratchPath) : Promise.resolve(null),
-        ]);
-        const byTrack = new Map(run.tracks.map((t) => [t.id, t]));
-        const need = sumDiskNeeds(
-          run.jobs
-            .filter((j) => j.status.k === "queued")
-            .map((j) => {
-              const jobFmt = run.formats.find((f) => f.id === j.formatId) ?? fmt;
-              return estimateExportBytes({
-                format: jobFmt.codec === "vp9a" ? "webm" : "mp4",
-                width: jobFmt.w,
-                height: jobFmt.h,
-                fps: jobFmt.fps,
-                // Unknown duration (unreadable tags) estimates as zero — an
-                // honest under-count, and the prompt is overridable anyway.
-                seconds: byTrack.get(j.trackId)?.duration ?? 0,
-                bitrate: jobFmt.mbps * 1e6,
-                // Nothing is decoded yet; only the WAV-staging sidecar lanes
-                // read these, and the batch renders mp4/webm.
-                sampleRate: 48_000,
-                channels: 2,
-              });
-            }),
-        );
-        const warning = preflightWarning(need, outVol, scratchVol);
-        if (warning && !(await askConfirm(warning, "Low disk space"))) {
+        if (!(await batchDiskPreflight(run))) {
           batchStarting = false;
           return;
         }
@@ -322,6 +336,16 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // Nothing failed AND nothing queued -> nothing to resume (L19: queued
       // jobs after a cancel are picked straight up by the runner below).
       if (!again.jobs.some((j) => j.status.k === "failed" || j.status.k === "queued")) return;
+      // R2-13 (review fix 3): the retry lane needs the pre-flight MOST — it
+      // re-runs exactly the jobs that may have just failed on a full disk.
+      // A decline leaves the store's run untouched (`again` was never
+      // committed), so the panel keeps showing the done/failed state it had.
+      try {
+        if (!(await batchDiskPreflight(again))) return;
+      } catch (e) {
+        set({ batchError: `Could not check disk space: ${(e as Error)?.message ?? String(e)}` });
+        return;
+      }
       const ac = new AbortController();
       batchAbort = ac;
       set({ batch: again, batchStatus: "running", batchError: null });
