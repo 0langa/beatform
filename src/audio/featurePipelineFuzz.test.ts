@@ -51,17 +51,22 @@ import type { AudioFeatures } from "./types";
  *
  * ── WHAT IS DELIBERATELY NOT GENERATED, AND WHY ─────────────────────────────
  *
- * Two inputs DO poison the contract and are left out because nothing can
- * supply them. Recorded so the next sweep does not re-derive them:
+ * One input DOES poison the contract and is left out because nothing can
+ * supply it. Recorded so the next sweep does not re-derive it:
  *
- *   - a NaN `width`. It feeds an EMA that `reset()` never clears, so one NaN
- *     frame kills stereo-driven visuals until restart. Both callers compute it
- *     with `stereoWidth`, which returns 0 for a dead channel and otherwise a
- *     ratio of sums of real samples.
  *   - a NaN waveform SAMPLE. `clamp01` keeps it out of every scalar (that is
  *     audit A7's guard), but `features.waveform`/`waveformL`/`waveformR` are
- *     copied through verbatim and would carry it to the oscilloscope. See
- *     above for why no decode path can produce one.
+ *     copied through verbatim and would carry it to the oscilloscope. Every
+ *     path into a channel buffer is a decoder, an OfflineAudioContext render
+ *     or a subarray of one, none of which can produce NaN.
+ *
+ * `width` and `lufs` used to sit on this list on the argument that their
+ * producers cannot emit non-finite values — true then, but the EMA behind
+ * `width` made the stakes "one bad frame kills stereo visuals until app
+ * restart", and a contract boundary must not lean on every caller staying
+ * clean forever. R2-24 added hold-previous guards at the boundary (and made
+ * stereoWidth/LoudnessMeter themselves immune), so both fields are generated
+ * below with occasional NaN/±Infinity to keep those guards load-bearing.
  */
 
 /** Deterministic: a red run reproduces from the seed printed in its output. */
@@ -95,6 +100,21 @@ const dtValue = fc.oneof(
   { weight: 1, arbitrary: fc.constantFrom(10, 1e-9) },
 );
 
+/** Stereo width as the callers feed it (0..1), plus the R2-24 hostile
+ * alphabet: the EMA behind it must hold, not poison, on non-finite input. */
+const widthValue = fc.oneof(
+  { weight: 5, arbitrary: fc.double({ min: 0, max: 1, noNaN: true }) },
+  { weight: 2, arbitrary: fc.constant(undefined) },
+  { weight: 1, arbitrary: fc.constantFrom(NaN, Infinity, -Infinity) },
+);
+
+/** Momentary LUFS as the meter reads (floor..0), same hostile tail (R2-24). */
+const lufsValue = fc.oneof(
+  { weight: 5, arbitrary: fc.double({ min: -70, max: 0, noNaN: true }) },
+  { weight: 2, arbitrary: fc.constant(undefined) },
+  { weight: 1, arbitrary: fc.constantFrom(NaN, Infinity, -Infinity) },
+);
+
 const frameArb = fc.record({
   db: fc.array(dbValue, { minLength: PATTERN, maxLength: PATTERN }),
   wave: fc.array(sampleValue, { minLength: PATTERN, maxLength: PATTERN }),
@@ -102,6 +122,8 @@ const frameArb = fc.record({
   playing: fc.boolean(),
   time: fc.double({ min: 0, max: 600, noNaN: true }),
   tick: fc.boolean(),
+  width: widthValue,
+  lufs: lufsValue,
 });
 
 /**
@@ -275,14 +297,17 @@ function tile(dst: Float32Array, pattern: number[]): void {
  */
 describe("FeaturePipeline property fuzz", { timeout: 30_000 }, () => {
   /**
-   * MUTATION-CHECKED, twice:
+   * MUTATION-CHECKED, three times:
    *   - `clamp01`'s upper bound removed (`v > 0 ? v : 0`), which lets a
    *     float-WAV-scale magnitude out of the dB mapping:
    *     RED, `chroma[0]=1.0000001192092896 outside 0..1`.
    *   - `sanitizeSync`'s `Number.isFinite` check dropped so a NaN `smooth`
    *     survives into the drive EMA: RED, `drive=NaN` — the exact class-1
    *     failure (a NaN reaching a shader uniform) this file exists for.
-   * Both reverted.
+   *   - the R2-24 width guard's `Number.isFinite(input.width)` removed:
+   *     RED, `width=NaN` in BOTH properties (the burst one proving the
+   *     poison outlives 30 clean frames — the EMA never forgets).
+   * All reverted.
    */
   it("no reachable frame sequence puts a non-finite value in AudioFeatures", () => {
     fc.assert(
@@ -304,6 +329,8 @@ describe("FeaturePipeline property fuzz", { timeout: 30_000 }, () => {
               playing: fr.playing,
               duration: 600,
               analysisTick: fr.tick,
+              width: fr.width,
+              lufs: fr.lufs,
             });
             const bad = violations(out);
             if (bad.length) throw new Error(bad.join(", "));
@@ -339,6 +366,8 @@ describe("FeaturePipeline property fuzz", { timeout: 30_000 }, () => {
             playing: fr.playing,
             duration: 600,
             analysisTick: fr.tick,
+            width: fr.width,
+            lufs: fr.lufs,
           });
         }
         rig.db.fill(-40);

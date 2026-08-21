@@ -68,6 +68,17 @@ class BiquadState {
   process(x: number): number {
     const y = this.c.b0 * x + this.c.b1 * this.x1 + this.c.b2 * this.x2;
     const out = y - this.c.a1 * this.y1 - this.c.a2 * this.y2;
+    // R2-24: an IIR never forgets — one non-finite sample (decoder glitch,
+    // upstream NaN) parked in x1/y1 turns every later output NaN, forever.
+    // A non-finite input always yields a non-finite output here (it appears
+    // as a term of `y`), so this one check catches both directions: reset to
+    // silence, report silence, and let the filter re-settle on clean input.
+    // The brief settling transient is the honest cost of a corrupt sample;
+    // permanence is not. Finite paths are bit-identical to before.
+    if (!Number.isFinite(out)) {
+      this.x1 = this.x2 = this.y1 = this.y2 = 0;
+      return 0;
+    }
     this.x2 = this.x1;
     this.x1 = x;
     this.y2 = this.y1;
@@ -125,6 +136,14 @@ export class LoudnessMeter {
         const w = hp.process(shelf.process(x));
         z += w * w;
       }
+      // R2-24 policy: PREVENT rather than heal. The biquads can no longer
+      // emit non-finite, but a huge finite w still overflows in w*w — and a
+      // single non-finite slot poisons the incremental sum with no path back
+      // (subtracting it later yields NaN again, so `momentary` stayed NaN
+      // for the life of the meter). Clamp the frame to silence at the door:
+      // the ring then only ever holds finite values, the running sum stays
+      // exact, and a poisoned reading ages out within one ring length.
+      if (!Number.isFinite(z)) z = 0;
       this.sum -= this.ring[this.ringPos];
       this.ring[this.ringPos] = z;
       this.sum += z;

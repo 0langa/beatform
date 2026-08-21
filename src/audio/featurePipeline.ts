@@ -733,11 +733,16 @@ export class FeaturePipeline {
     // tick — otherwise a held frame would zero the next tick's flux.
     if (tick) this.prevMag.set(mag);
 
-    if (input.width !== undefined) {
+    // R2-24: both guards hold the PREVIOUS value on a non-finite input. The
+    // width EMA is state reset() never clears, so one NaN frame used to kill
+    // stereo-driven visuals until app restart; lufs passed through verbatim.
+    // stereoWidth and LoudnessMeter are themselves immune now, but this is
+    // the contract boundary — it must not rely on every caller being clean.
+    if (input.width !== undefined && Number.isFinite(input.width)) {
       // Smooth like the bins: widths jump frame to frame, visuals shouldn't
       f.width += (input.width - f.width) * (1 - Math.exp(-dt * 8));
     }
-    if (input.lufs !== undefined) f.lufs = input.lufs;
+    if (input.lufs !== undefined && Number.isFinite(input.lufs)) f.lufs = input.lufs;
     if (input.bpm !== undefined) f.bpm = input.bpm;
     if (input.beatPhase !== undefined) f.beatPhase = input.beatPhase;
     if (input.barPhase !== undefined) f.barPhase = input.barPhase;

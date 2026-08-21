@@ -812,3 +812,42 @@ describe("FeaturePipeline discontinuity reset", () => {
     expect(f.beat).toBe(false);
   });
 });
+
+/**
+ * R2-24: `width` feeds an EMA that reset() never clears, so one NaN frame
+ * used to kill stereo-driven visuals until app restart; `lufs` passed
+ * through verbatim. The contract boundary now holds the previous value on a
+ * non-finite input and resumes cleanly — a glitched frame costs one frame,
+ * not the session.
+ */
+describe("width/lufs NaN immunity (R2-24)", () => {
+  it("a non-finite width holds the previous smoothed value and recovers", () => {
+    const p = makePipeline();
+    let f = p.update(makeInput({ width: 0.8 }));
+    for (let n = 1; n < 120; n++) f = p.update(makeInput({ time: n * DT, width: 0.8 }));
+    const settled = f.width;
+    expect(settled).toBeGreaterThan(0.7);
+
+    f = p.update(makeInput({ time: 2, width: NaN }));
+    expect(f.width).toBe(settled); // held, not poisoned
+    f = p.update(makeInput({ time: 2 + DT, width: Infinity }));
+    expect(f.width).toBe(settled);
+
+    // Clean input resumes: the EMA moves again instead of staying stuck.
+    for (let n = 0; n < 240; n++) f = p.update(makeInput({ time: 3 + n * DT, width: 0.2 }));
+    expect(Number.isFinite(f.width)).toBe(true);
+    expect(f.width).toBeLessThan(0.3);
+  });
+
+  it("a non-finite lufs holds the previous reading and resumes", () => {
+    const p = makePipeline();
+    let f = p.update(makeInput({ lufs: -14 }));
+    expect(f.lufs).toBe(-14);
+    f = p.update(makeInput({ time: DT, lufs: NaN }));
+    expect(f.lufs).toBe(-14);
+    f = p.update(makeInput({ time: 2 * DT, lufs: Infinity }));
+    expect(f.lufs).toBe(-14);
+    f = p.update(makeInput({ time: 3 * DT, lufs: -20 }));
+    expect(f.lufs).toBe(-20);
+  });
+});
