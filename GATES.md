@@ -66,13 +66,14 @@ at COMPILE time, so no cargo command works until they exist.
 
 ## 3. Device gates — need this machine's hardware; mandatory per touched area, and before a release that touched the area
 
-| Gate             | Command                                                            | Mandatory when                                                                                            |
-| ---------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| GPU pixel matrix | `npm run test:gpu`                                                 | Shader, renderer, preset params, color, presentation, or export-pixel code changed                        |
-| Gallery E2E      | `node scripts/gallery-e2e.mjs`                                     | Gallery or store-install surfaces changed (registry load, verified download, install/apply state, dialog) |
-| Loopback smoke   | `npm run test:loopback:built` and `npm run test:loopback:built:30` | Native audio capture, timing, packaging, or Tauri integration changed                                     |
-| Shadertoy smoke  | `npm run test:shadertoy:built`                                     | Shadertoy import, transpiler, or compat pipeline changed                                                  |
-| Lyrics E2E       | `npm run test:lyrics` (`test:lyrics:quick` for the short leg)      | Lyrics sidecar, models, alignment, or correction editor changed                                           |
+| Gate               | Command                                                            | Mandatory when                                                                                            |
+| ------------------ | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| GPU pixel matrix   | `npm run test:gpu`                                                 | Shader, renderer, preset params, color, presentation, or export-pixel code changed                        |
+| Export colorimetry | `node scripts/export-color-verify.mjs`                             | ProRes/AV1 sidecar arg vectors or color code changed                                                      |
+| Gallery E2E        | `node scripts/gallery-e2e.mjs`                                     | Gallery or store-install surfaces changed (registry load, verified download, install/apply state, dialog) |
+| Loopback smoke     | `npm run test:loopback:built` and `npm run test:loopback:built:30` | Native audio capture, timing, packaging, or Tauri integration changed                                     |
+| Shadertoy smoke    | `npm run test:shadertoy:built`                                     | Shadertoy import, transpiler, or compat pipeline changed                                                  |
+| Lyrics E2E         | `npm run test:lyrics` (`test:lyrics:quick` for the short leg)      | Lyrics sidecar, models, alignment, or correction editor changed                                           |
 
 The GPU matrix owns its full dev lifecycle: `npm run test:gpu` launches
 `tauri dev`, whose `beforeDevCommand` starts Vite. **Do not pre-start Vite for
