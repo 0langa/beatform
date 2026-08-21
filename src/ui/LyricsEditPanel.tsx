@@ -308,12 +308,13 @@ export function LyricsEditPanel() {
           : null;
 
   // R2-21: while a line re-align is in flight, structural edits (split/merge/
-  // insert/delete) would renumber the lines under the sidecar's await — the
-  // apply guard matches index+text (lyricsEditActions.ts), and a renumbered
-  // sheet can put a DIFFERENT line with identical text (repeated chorus
-  // lines) at the awaited index. Locked the same way the align buttons
-  // already disable; text and time edits stay allowed — an edit to the
-  // awaited line changes its text and correctly voids the apply.
+  // insert/delete — and, review D2, undo/redo, which replay whole sheets)
+  // would renumber the lines under the sidecar's await — the apply guard
+  // matches index+text (lyricsEditActions.ts), and a renumbered sheet can
+  // put a DIFFERENT line with identical text (repeated chorus lines) at the
+  // awaited index. Locked the same way the align buttons already disable;
+  // text and time edits stay allowed — an edit to the awaited line changes
+  // its text and correctly voids the apply.
   const structuralLocked = realign !== null;
   const structuralWhy = structuralLocked
     ? "Wait for the running line re-align — adding or removing lines would confuse it"
@@ -334,11 +335,16 @@ export function LyricsEditPanel() {
         if (e.key === "z" || e.key === "Z") {
           e.preventDefault();
           e.stopPropagation();
+          // Review D2: undo/redo replay whole sheets — they renumber lines
+          // under a running re-align exactly like the structural buttons.
+          // Still swallowed (the editor owns Ctrl+Z here), just inert.
+          if (structuralLocked) return;
           if (e.shiftKey) store().redoLyricsEdit();
           else store().undoLyricsEdit();
         } else if (e.key === "y" || e.key === "Y") {
           e.preventDefault();
           e.stopPropagation();
+          if (structuralLocked) return; // D2 — same as Ctrl+Z above
           store().redoLyricsEdit();
         }
       }}
@@ -366,8 +372,8 @@ export function LyricsEditPanel() {
           <button
             type="button"
             className="text-btn"
-            disabled={undoDepth === 0}
-            title="Undo the last lyric edit (Ctrl+Z inside this editor)"
+            disabled={structuralLocked || undoDepth === 0}
+            title={structuralWhy ?? "Undo the last lyric edit (Ctrl+Z inside this editor)"}
             onClick={() => store().undoLyricsEdit()}
           >
             ↶
@@ -375,8 +381,8 @@ export function LyricsEditPanel() {
           <button
             type="button"
             className="text-btn"
-            disabled={redoDepth === 0}
-            title="Redo (Ctrl+Y)"
+            disabled={structuralLocked || redoDepth === 0}
+            title={structuralWhy ?? "Redo (Ctrl+Y)"}
             onClick={() => store().redoLyricsEdit()}
           >
             ↷

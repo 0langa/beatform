@@ -99,6 +99,53 @@ describe("R2-21 — structural edits lock while a re-align is in flight", () => 
     expect(isDisabled(within(row).getByRole("button", { name: "+↓" }))).toBe(false);
     expect(isDisabled(within(row).getByRole("button", { name: "✕" }))).toBe(false);
   });
+
+  it("undo/redo lock too — buttons AND the in-panel Ctrl+Z/Y (review D2)", () => {
+    const undoMock = vi.fn();
+    const redoMock = vi.fn();
+    useVizStore.setState({
+      lyrics: LINES,
+      lyricsRealign: { index: 2 },
+      lyricsEditUndoDepth: 1, // non-zero so the disable is not vacuous
+      lyricsEditRedoDepth: 1,
+      undoLyricsEdit: undoMock,
+      redoLyricsEdit: redoMock,
+    });
+    const { container } = render(<LyricsEditPanel />);
+
+    expect(isDisabled(container.querySelector('button[title*="re-align"]'))).toBe(true);
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const undoBtn = buttons.find((b) => b.textContent === "↶")!;
+    const redoBtn = buttons.find((b) => b.textContent === "↷")!;
+    expect(isDisabled(undoBtn)).toBe(true);
+    expect(isDisabled(redoBtn)).toBe(true);
+
+    // The keyboard path: swallowed (the editor owns Ctrl+Z here) but inert.
+    const root = container.querySelector(".lyrics-edit") as HTMLElement;
+    fireEvent.keyDown(root, { key: "z", ctrlKey: true });
+    fireEvent.keyDown(root, { key: "z", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(root, { key: "y", ctrlKey: true });
+    expect(undoMock).not.toHaveBeenCalled();
+    expect(redoMock).not.toHaveBeenCalled();
+  });
+
+  it("undo/redo work again once the re-align settles (control)", () => {
+    const undoMock = vi.fn();
+    useVizStore.setState({
+      lyrics: LINES,
+      lyricsRealign: null,
+      lyricsEditUndoDepth: 1,
+      lyricsEditRedoDepth: 0,
+      undoLyricsEdit: undoMock,
+    });
+    const { container } = render(<LyricsEditPanel />);
+
+    const buttons = Array.from(container.querySelectorAll("button"));
+    expect(isDisabled(buttons.find((b) => b.textContent === "↶")!)).toBe(false);
+    const root = container.querySelector(".lyrics-edit") as HTMLElement;
+    fireEvent.keyDown(root, { key: "z", ctrlKey: true });
+    expect(undoMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 /**
