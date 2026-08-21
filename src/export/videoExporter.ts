@@ -2,13 +2,12 @@ import type { SyncSettings } from "../audio/types";
 import { pcmFromAudioBuffer } from "../audio/offlineSource";
 import { getPrefs } from "../state/prefs";
 import type { BgSettings, ParamValues } from "../render/types";
-import {
-  runExportJob,
-  type ExportCoreResult,
-  type ExportJob,
-  type LoudnessJob,
-  type LoudnessResult,
-} from "./exportCore";
+// Types only — the VALUE (runExportJob) is imported lazily inside runInline
+// (R2-35): exportCore statically carries the whole mediabunny codec stack,
+// and a static import here would chain it into the boot graph through every
+// module that imports this one (devHooks, the export actions). The worker
+// bundle (exportWorker.ts) keeps its own static import, unchanged.
+import type { ExportCoreResult, ExportJob, LoudnessJob, LoudnessResult } from "./exportCore";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { VocalSpan } from "../audio/vocalPresence";
 import type { VideoCodecId } from "./codecProbe";
@@ -594,6 +593,9 @@ async function runInline(
   onFrame: ((data: Uint8Array, index: number) => void | Promise<void>) | undefined,
   onRawFrame: ((data: Uint16Array) => void | Promise<void>) | undefined,
 ): Promise<ExportCoreResult> {
+  // The inline fallback is the ONLY main-thread consumer of exportCore —
+  // see the type-only import note at the top of this file (R2-35).
+  const { runExportJob } = await import("./exportCore");
   return runExportJob(job, {
     signal: o.signal,
     onProgress: o.onProgress,
