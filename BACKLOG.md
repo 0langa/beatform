@@ -202,15 +202,16 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       strict): any raw hash delta now FAILS — the comparison lives in
       scripts/gpu-pixel-verdict.mjs (pure, Node-tested), perceptual metrics
       demoted to per-failure diagnostics, `--update` the only bless path,
-      GATES.md §3 rewritten. 18 deterministic cases appended after the
-      existing sequence: feedback/export-walk for all six feedbackSample
-      presets (the exportCore advance+present shape), all 7 transition kinds
-      frozen mid-fade on spectrum-bars/radial-burst, bg
+      GATES.md §3 rewritten. 17 deterministic cases appended after the
+      existing sequence (6 + 7 + 3 + 1): feedback/export-walk for all six
+      feedbackSample presets (the exportCore advance+present shape), all 7
+      transition kinds frozen mid-fade on spectrum-bars/radial-burst, bg
       solid/transparent/image (synthesized gradient; video skipped — no
       deterministic fixture), deep/spectrum-bars via readbackDeepFrame +
       pure deepCaseMetrics. expectedMatrixCaseIds() locks enumeration
       (runner self-check + Node census: the 314 baseline ids reproduced in
-      order + exactly the 18). Device run fails with case drift until the
+      order + the 18 new ids — these 17 plus R2-15's builder/@defaults, the
+      whole pending-bless set). Device run fails with case drift until the
       orchestrator blesses. Overlay cases remain uncovered (need a bitmap
       fixture — deliberately out of this pass).
 - [x] **R2-17 `.bfbuilder` parse gate has zero tests** — version-gate mutant
