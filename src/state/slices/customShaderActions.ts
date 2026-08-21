@@ -146,6 +146,10 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       saveCustomPresets(customDefs);
       // Never leave the app pointing at a deleted visual.
       if (get().presetId === id) get().switchPreset(presets[0].id);
+      // Nor a QUEUE pointing at one (review O2, R2-19's theme): left
+      // pending, the next beat boundary fired the switch and presetById's
+      // registry fallback landed it on the default mode.
+      if (get().pendingPresetId === id) set({ pendingPresetId: null });
       // Timeline scenes too: a scene keeping the dead id would silently
       // render the default visual live AND in exports (and the next reload's
       // validTimeline would drop the scene outright).
