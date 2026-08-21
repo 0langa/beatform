@@ -69,15 +69,27 @@ function registryJson(entries: unknown[]): string {
   return JSON.stringify({ schemaVersion: 1, entries });
 }
 
-function stubFetch(bytes: Uint8Array, status = 200) {
+function stubFetch(bytes: Uint8Array, status = 200, declaredLength?: number) {
+  /** How many times any response body was actually read (R2-29 pins that a
+   * header-refused download never buffers its body at all). */
+  const reads = { count: 0 };
   const fn = vi.fn(async () => ({
     ok: status >= 200 && status < 300,
     status,
-    arrayBuffer: async () => bytes.buffer.slice(0),
+    headers: {
+      get: (name: string) =>
+        declaredLength !== undefined && name.toLowerCase() === "content-length"
+          ? String(declaredLength)
+          : null,
+    },
+    arrayBuffer: async () => {
+      reads.count++;
+      return bytes.buffer.slice(0);
+    },
     text: async () => new TextDecoder().decode(bytes),
   }));
   vi.stubGlobal("fetch", fn);
-  return fn;
+  return Object.assign(fn, { reads });
 }
 
 describe("semverGte", () => {
@@ -261,6 +273,39 @@ describe("verified downloads", () => {
       },
     });
     await expect(fetchEntryPreview(fatEntry)).rejects.toThrow(/larger than the gallery allows/);
+  });
+
+  it("refuses a header-declared oversize BEFORE reading the body (R2-29)", async () => {
+    const img = new Uint8Array(8);
+    const fetchFn = stubFetch(img, 200, MAX_PREVIEW_BYTES + 1);
+    const entry = makeEntry({
+      preview: {
+        url: `https://raw.githubusercontent.com/beatform-app/gallery/${PIN}/previews/test-look.jpg`,
+        sha256: await sha(img),
+      },
+    });
+    await expect(fetchEntryPreview(entry)).rejects.toThrow(/larger than the gallery allows/);
+    // The point of the header check: the body was never buffered at all.
+    expect(fetchFn.reads.count).toBe(0);
+  });
+
+  it("a lying (small) Content-Length admits nothing — the byte-count backstop still refuses (R2-29)", async () => {
+    const fat = new Uint8Array(MAX_PREVIEW_BYTES + 1);
+    stubFetch(fat, 200, 10); // header claims 10 bytes; the body is oversize
+    const fatEntry = makeEntry({
+      preview: {
+        url: `https://raw.githubusercontent.com/beatform-app/gallery/${PIN}/previews/test-look.jpg`,
+        sha256: await sha(fat),
+      },
+    });
+    await expect(fetchEntryPreview(fatEntry)).rejects.toThrow(/larger than the gallery allows/);
+  });
+
+  it("an honest in-bounds Content-Length changes nothing — verification proceeds to the hash", async () => {
+    const bytes = new TextEncoder().encode('{"kind":"bfpreset"}');
+    stubFetch(bytes, 200, bytes.byteLength);
+    const entry = makeEntry({ sha256: await sha(bytes), sizeBytes: bytes.byteLength });
+    await expect(fetchEntryContent(entry)).resolves.toBe('{"kind":"bfpreset"}');
   });
 });
 

@@ -36,9 +36,14 @@ const MAX_TRACKS: usize = 5000;
 /// file already denies it all plugin/core surface (fs, dialog, updater);
 /// this guard closes the app-command half for the categories that matter —
 /// anything that spawns a process (ffmpeg, the lyrics sidecar, loopback
-/// capture) or reads/writes through the app-global fs scope. Read-only
-/// telemetry (perf_stats, disk_space, transpile_shadertoy) and the
-/// perform_* window-management family stay intentionally open.
+/// capture) or reads/writes through the app-global fs scope. R2-29 extended
+/// it over the read-only telemetry too: `disk_space` probes ANY path's
+/// volume (which drives exist, how full), `scratch_dir` embeds the
+/// user-profile path, and `perf_stats` walks the process table — none of it
+/// the pixels-only window's to read. Still intentionally open:
+/// `transpile_shadertoy` (pure text transform), the perform_* family (the
+/// perform window's own lifecycle), and `loopback_died` (one atomic bool,
+/// and it takes no window handle to gate on).
 ///
 /// Guarded commands take `window: tauri::WebviewWindow` as their first
 /// parameter (injected by the IPC layer, invisible to the JS callers) and
@@ -408,15 +413,20 @@ mod tests {
     #[test]
     fn main_window_guard_rejects_every_other_label() {
         // FEAT-009 hardening: process-spawning / fs-scope commands are
-        // main-window-only. The performance window is the label that exists
-        // today; the guard must also hold for any window a future feature
-        // (or a bug) might mint.
+        // main-window-only — and since R2-29 the telemetry family
+        // (disk_space, scratch_dir, perf_stats) plus export_allow_partial
+        // (R2-02) route through this exact gate too. The performance window
+        // is the label that exists today; the guard must also hold for any
+        // window a future feature (or a bug) might mint.
         assert!(main_only_label(perform_window::MAIN_LABEL).is_ok());
         let err = main_only_label(perform_window::PERFORM_LABEL).unwrap_err();
         assert!(err.contains("perform"), "error names the caller: {err}");
         assert!(main_only_label("").is_err());
         assert!(main_only_label("main2").is_err());
         assert!(main_only_label("Main").is_err()); // labels are case-sensitive
+        assert!(main_only_label("MAIN").is_err());
+        assert!(main_only_label(" main").is_err()); // no whitespace laundering
+        assert!(main_only_label("main\u{200b}").is_err()); // zero-width padding
     }
 
     #[test]

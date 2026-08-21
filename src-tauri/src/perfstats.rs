@@ -175,8 +175,16 @@ fn collect(inner: &mut Inner, self_pid: Pid, marker: &str) -> PerfStats {
 }
 
 /// One stats sample for the performance overlay.
+///
+/// Main-window-only (R2-29): the sample walks the process table and reports
+/// per-process memory/CPU/disk-IO — host telemetry the pixels-only perform
+/// window has no reason to hold. `collect` stays window-free for the tests.
 #[tauri::command]
-pub fn perf_stats(state: tauri::State<'_, PerfState>) -> Result<PerfStats, String> {
+pub fn perf_stats(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, PerfState>,
+) -> Result<PerfStats, String> {
+    crate::assert_main_window(&window)?;
     let mut inner = state.0.lock().map_err(|e| e.to_string())?;
     let exe = std::env::current_exe()
         .ok()

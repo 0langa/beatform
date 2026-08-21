@@ -103,8 +103,19 @@ fn query(dir: &Path) -> Result<(u64, u64), String> {
 }
 
 /// Free/total bytes on the volume holding `path`. `path` need not exist.
+///
+/// Main-window-only (R2-29): it answers for ANY path, so from a second
+/// webview it is a volume-probe primitive (which drives exist, how full they
+/// are) that a window whose job is drawing pixels has no business holding.
 #[tauri::command]
-pub fn disk_space(path: String) -> Result<DiskSpace, String> {
+pub fn disk_space(window: tauri::WebviewWindow, path: String) -> Result<DiskSpace, String> {
+    crate::assert_main_window(&window)?;
+    disk_space_impl(path)
+}
+
+/// The query itself, split from the command so it is unit-testable without a
+/// window handle (the scan_dir/collect split, applied here by R2-29).
+fn disk_space_impl(path: String) -> Result<DiskSpace, String> {
     let p = PathBuf::from(&path);
     let dir = space_query_dir(&p);
     let (free_bytes, total_bytes) = query(&dir)?;
@@ -118,8 +129,17 @@ pub fn disk_space(path: String) -> Result<DiskSpace, String> {
 /// Where Chromium's blob spill and our staged mezzanine WAV land — `%TEMP%`,
 /// i.e. the system drive on a default Windows install. The pre-flight has to
 /// name THIS drive, not the output one.
+///
+/// Main-window-only (R2-29): the answer embeds the user-profile path (the
+/// username with it) — not the perform window's to read.
 #[tauri::command]
-pub fn scratch_dir() -> String {
+pub fn scratch_dir(window: tauri::WebviewWindow) -> Result<String, String> {
+    crate::assert_main_window(&window)?;
+    Ok(scratch_dir_impl())
+}
+
+/// Split for the same testability reason as disk_space_impl above.
+fn scratch_dir_impl() -> String {
     std::env::temp_dir().to_string_lossy().into_owned()
 }
 
@@ -158,7 +178,7 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn the_scratch_volume_reports_plausible_numbers() {
-        let s = disk_space(scratch_dir()).expect("temp dir must be queryable");
+        let s = disk_space_impl(scratch_dir_impl()).expect("temp dir must be queryable");
         assert!(s.total_bytes > 0, "a mounted volume has a size");
         assert!(
             s.free_bytes <= s.total_bytes,
@@ -174,7 +194,7 @@ mod tests {
     fn a_path_on_a_drive_that_does_not_exist_fails_instead_of_lying() {
         // Must NOT silently report the current drive's numbers — a pre-flight
         // that answers about the wrong volume is the bug it exists to prevent.
-        let r = disk_space("Q:\\definitely\\not\\mounted\\out.mov".into());
+        let r = disk_space_impl("Q:\\definitely\\not\\mounted\\out.mov".into());
         assert!(r.is_err(), "unmounted drive must error");
     }
 }

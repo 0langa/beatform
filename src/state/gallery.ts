@@ -295,6 +295,16 @@ export async function verifiedFetch(
   if (!res.ok) {
     throw new GalleryError(`Gallery download failed (HTTP ${res.status})`);
   }
+  // R2-29: when the server declares a Content-Length, refuse an oversized
+  // response BEFORE buffering its body. The header only ever REFUSES, never
+  // admits: it is advisory (and with Content-Encoding in play it measures
+  // the compressed transfer, not the decoded bytes), so the byte-count
+  // checks below remain the backstop that actually decides. NaN default
+  // makes an absent/garbage header skip this check entirely.
+  const declaredLength = Number(res.headers?.get("content-length") ?? NaN);
+  if (declaredLength > opts.maxBytes) {
+    throw new GalleryError("Download is larger than the gallery allows — refusing it");
+  }
   const bytes = await res.arrayBuffer();
   if (bytes.byteLength > opts.maxBytes) {
     throw new GalleryError("Download is larger than the gallery allows — refusing it");
