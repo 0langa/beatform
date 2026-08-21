@@ -564,6 +564,49 @@ describe("RealtimeAnalyzer feedback tick pause gate", SUITE, () => {
 });
 
 /**
+ * R2-32d: the LUFS meter freezes with playback. While paused, the analyser
+ * tap decays to digital zeros, and feeding those into the meter filled its
+ * 400 ms momentary window with silence — so although f.lufs itself froze on
+ * pause (the pipeline's keep-previous rule), the FIRST ~400 ms after every
+ * resume read a deep dip that the audio never contained. Skipping
+ * meter.process while !playing freezes the momentary exactly like f.lufs.
+ */
+describe("RealtimeAnalyzer LUFS meter pause freeze (R2-32d)", SUITE, () => {
+  it("60 paused frames of zero windows, then resume: momentary within 0.5 LU immediately", () => {
+    let silent = false;
+    const sig = (t: number) => (silent || t < 0 ? 0 : 0.35 * Math.sin(2 * Math.PI * 220 * t));
+    const { engine, setNow, setPlaying } = fakeEngine(sig);
+    const ana = new RealtimeAnalyzer(engine);
+    let f = ana.features;
+    for (let n = 0; n < 120; n++) {
+      const t = n / 60;
+      setNow(t);
+      f = ana.update(t, t);
+    }
+    const before = f.lufs;
+    expect(before).toBeGreaterThan(-30); // fixture sanity: a real level
+
+    // Pause: playback stops and the tap hands back zero windows.
+    setPlaying(false);
+    silent = true;
+    for (let n = 120; n < 180; n++) {
+      const t = n / 60;
+      setNow(t);
+      f = ana.update(t, t);
+    }
+    expect(f.lufs).toBe(before); // f.lufs freezes on pause — unchanged rule
+
+    // Resume: the very FIRST playing frame must read the pre-pause level,
+    // not a window still 400 ms deep in pause silence.
+    setPlaying(true);
+    silent = false;
+    setNow(3);
+    f = ana.update(3, 3);
+    expect(Math.abs(f.lufs - before), `resumed at ${f.lufs} vs ${before}`).toBeLessThan(0.5);
+  });
+});
+
+/**
  * willTick (R2-25): the live loop's license to SKIP a whole feature update on
  * a frame the fps cap will not present. It must be exactly update()'s own
  * analysisTick decision — same dt fallback, same accumulator, same epsilon —

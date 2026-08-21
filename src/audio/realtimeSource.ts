@@ -309,15 +309,23 @@ export class RealtimeAnalyzer {
       displayMagDb = this.displayMagDb;
     }
     // Feed the loudness meter only the NEW samples since last frame (the
-    // analyser exposes a sliding window; overlap would double-count)
-    const fresh = Math.min(
-      this.timeL.length,
-      Math.max(1, Math.round(dt * this.engine.ctx.sampleRate)),
-    );
-    this.meter.process([
-      this.timeL.subarray(this.timeL.length - fresh),
-      this.timeR.subarray(this.timeR.length - fresh),
-    ]);
+    // analyser exposes a sliding window; overlap would double-count) — and
+    // only while PLAYING (R2-32d). A paused tap decays to digital zeros, and
+    // feeding those filled the 400 ms momentary window with silence: f.lufs
+    // itself froze on pause (the pipeline's keep-previous rule, `lufs:
+    // playing ? … : undefined` below), but the first ~400 ms after every
+    // resume then read a dip the audio never contained. Skipping the feed
+    // freezes the meter exactly like the readout it drives.
+    if (playing) {
+      const fresh = Math.min(
+        this.timeL.length,
+        Math.max(1, Math.round(dt * this.engine.ctx.sampleRate)),
+      );
+      this.meter.process([
+        this.timeL.subarray(this.timeL.length - fresh),
+        this.timeR.subarray(this.timeR.length - fresh),
+      ]);
+    }
     // Second waveform lane: the per-channel taps, but only when the SOURCE is
     // genuinely stereo. The ChannelSplitter up-mixes a mono track discretely,
     // feeding analyserR pure silence — while the offline path substitutes the
