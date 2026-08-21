@@ -10,8 +10,13 @@ import {
   type BatchTrack,
 } from "../batch";
 import { runBatch } from "../batchRunner";
+import {
+  estimateExportBytes,
+  preflightWarning,
+  sumDiskNeeds,
+} from "../../export/diskPreflight";
 import { autoBitrateMbps, RESOLUTIONS, SIMPLIFIED_EXPORT_REASON } from "../exportConfig";
-import { isTauri, pickFolder } from "../platform";
+import { askConfirm, diskSpace, isTauri, pickFolder, scratchDir } from "../platform";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
 import { shared } from "./shared";
@@ -188,6 +193,55 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       const alreadyDone = get().batch ? takenPaths(get().batch!) : new Set<string>();
       for (const n of await ctx.fileNamesInDir(outDir)) alreadyDone.add(n);
       run.jobs = expandJobs(run.tracks, run.formats, outDir, alreadyDone);
+
+      // R2-13: the same warn-and-override disk pre-flight the single lane
+      // runs (runExport), summed over every queued job — the failure this
+      // catches is twenty individually-fine jobs that do not fit the drive
+      // TOGETHER, discovered at 3am as a half-rendered queue. diskSpace
+      // answers null off the desktop and for an unqueryable volume, and
+      // preflightWarning stays silent on null volumes, so the browser build
+      // (and a measurement failure) skips this without a word — a pre-flight
+      // that cannot measure must stay silent, never block.
+      try {
+        const scratchPath = await scratchDir();
+        const [outVol, scratchVol] = await Promise.all([
+          diskSpace(outDir),
+          scratchPath ? diskSpace(scratchPath) : Promise.resolve(null),
+        ]);
+        const byTrack = new Map(run.tracks.map((t) => [t.id, t]));
+        const need = sumDiskNeeds(
+          run.jobs
+            .filter((j) => j.status.k === "queued")
+            .map((j) => {
+              const jobFmt = run.formats.find((f) => f.id === j.formatId) ?? fmt;
+              return estimateExportBytes({
+                format: jobFmt.codec === "vp9a" ? "webm" : "mp4",
+                width: jobFmt.w,
+                height: jobFmt.h,
+                fps: jobFmt.fps,
+                // Unknown duration (unreadable tags) estimates as zero — an
+                // honest under-count, and the prompt is overridable anyway.
+                seconds: byTrack.get(j.trackId)?.duration ?? 0,
+                bitrate: jobFmt.mbps * 1e6,
+                // Nothing is decoded yet; only the WAV-staging sidecar lanes
+                // read these, and the batch renders mp4/webm.
+                sampleRate: 48_000,
+                channels: 2,
+              });
+            }),
+        );
+        const warning = preflightWarning(need, outVol, scratchVol);
+        if (warning && !(await askConfirm(warning, "Low disk space"))) {
+          batchStarting = false;
+          return;
+        }
+      } catch (e) {
+        // Same ACL-throw discipline as runExport's pre-flight span: a thrown
+        // dialog/command must release the claim, not strand the Start button.
+        batchStarting = false;
+        set({ batchError: `Could not check disk space: ${(e as Error)?.message ?? String(e)}` });
+        return;
+      }
 
       const ac = new AbortController();
       batchAbort = ac;

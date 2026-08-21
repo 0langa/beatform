@@ -142,6 +142,26 @@ export function estimateExportBytes(i: ExportSizeInput): DiskNeed {
 }
 
 /**
+ * R2-13: one DiskNeed for a whole batch run — the per-job estimates summed,
+ * so the exact same preflightWarning covers the batch lane. The failure this
+ * closes is twenty individually-fine jobs that do not fit the drive
+ * TOGETHER: the single-export check ran per job only after each job already
+ * started, and the batch lane never ran it at all, so an overnight queue
+ * could render for hours into a drive that was arithmetically full from job
+ * three. framesThroughScratch ORs (any one such job makes scratch traffic
+ * real); byte fields add.
+ */
+export function sumDiskNeeds(needs: DiskNeed[]): DiskNeed {
+  const total: DiskNeed = { outputBytes: 0, scratchBytes: 0, framesThroughScratch: false };
+  for (const need of needs) {
+    total.outputBytes += need.outputBytes;
+    total.scratchBytes += need.scratchBytes;
+    total.framesThroughScratch ||= need.framesThroughScratch;
+  }
+  return total;
+}
+
+/**
  * Leave the volume some room rather than filling it to zero. A drive at 0
  * bytes free takes the whole OS down with it, so "it exactly fits" is not a
  * pass.

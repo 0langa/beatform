@@ -3,6 +3,7 @@ import {
   estimateExportBytes,
   formatBytes,
   preflightWarning,
+  sumDiskNeeds,
   translateExportError,
   wavBytes,
   type VolumeSpace,
@@ -122,6 +123,52 @@ describe("estimateExportBytes", () => {
     };
     const twiceTheFrames = estimateExportBytes({ ...base, fps: 60 });
     expect(twiceTheFrames.outputBytes).toBeGreaterThan(estimateExportBytes(base).outputBytes * 1.9);
+  });
+});
+
+/**
+ * R2-13: the batch lane's pre-flight sums the per-job estimates into one
+ * DiskNeed so the same preflightWarning covers "twenty fine jobs that do not
+ * fit together" — the overnight-queue failure the single-export check could
+ * never see.
+ */
+describe("sumDiskNeeds (batch lane, R2-13)", () => {
+  it("adds the byte fields and ORs framesThroughScratch", () => {
+    expect(
+      sumDiskNeeds([
+        { outputBytes: 10, scratchBytes: 3, framesThroughScratch: false },
+        { outputBytes: 20, scratchBytes: 0, framesThroughScratch: true },
+        { outputBytes: 5, scratchBytes: 2, framesThroughScratch: false },
+      ]),
+    ).toEqual({ outputBytes: 35, scratchBytes: 5, framesThroughScratch: true });
+  });
+
+  it("an empty run needs nothing and trips no warning", () => {
+    const none = sumDiskNeeds([]);
+    expect(none).toEqual({ outputBytes: 0, scratchBytes: 0, framesThroughScratch: false });
+    expect(preflightWarning(none, vol("C:\\", 0.1), vol("C:\\", 0.1))).toBeNull();
+  });
+
+  it("N identical jobs need N times one job — and together they can trip a warning one alone would not", () => {
+    const one = estimateExportBytes({
+      format: "mp4",
+      width: 1920,
+      height: 1080,
+      fps: 60,
+      seconds: 240,
+      bitrate: 12e6,
+      sampleRate: 48000,
+      channels: 2,
+    });
+    const twenty = sumDiskNeeds(Array.from({ length: 20 }, () => one));
+    expect(twenty.outputBytes).toBe(one.outputBytes * 20);
+    expect(twenty.framesThroughScratch).toBe(false); // mp4 never stages frames
+
+    // A drive that comfortably fits ONE job but not the queue: the whole
+    // reason the batch lane sums instead of checking per job.
+    const drive = vol("D:\\", (one.outputBytes * 5) / GB);
+    expect(preflightWarning(one, drive, null)).toBeNull();
+    expect(preflightWarning(twenty, drive, null)).toMatch(/Not enough disk space/);
   });
 });
 
