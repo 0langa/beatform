@@ -797,6 +797,9 @@ interface Actions {
   deleteUserPreset(id: string): void;
   exportUserPreset(id: string): Promise<void>;
   importUserPreset(): Promise<void>;
+  /** Import a look from text the caller already has — the drag-drop path
+   *  (same split as openProjectText / importThemeText, R2-31e). */
+  importUserPresetText(contents: string): void;
   addTextLayer(): void;
   addImageLayer(): Promise<void>;
   addAlbumArtLayer(): void;
@@ -3320,7 +3323,17 @@ export const useVizStore = create<VizState>((set, get) => {
           { name: "Beatform look", extensions: [USER_PRESET_EXTENSION] },
         ]);
         if (!picked) return;
-        const preset = parseUserPreset(picked.contents);
+        get().importUserPresetText(picked.contents);
+      } catch (e) {
+        set({ error: `Could not import look: ${(e as Error).message}` });
+      }
+    },
+
+    /** The text half of importUserPreset — shared with the drag-drop
+     *  dispatch (R2-31e), same split as openProject/openProjectText. */
+    importUserPresetText(contents) {
+      try {
+        const preset = parseUserPreset(contents);
         const userPresets = [preset, ...get().userPresets];
         set({ userPresets });
         saveUserPresets(userPresets);

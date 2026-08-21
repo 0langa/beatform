@@ -121,6 +121,77 @@ export function resizeKeyValue(
 }
 
 /**
+ * The drop dispatch: which surface a set of dropped files routes to.
+ * Extracted from the onDrop handler and exported so the routing is
+ * unit-testable without rendering App (this file's exported-helper pattern
+ * — see commitVisualsWidth/resizeKeyValue above). Every Beatform file kind
+ * the app can EXPORT imports by drag too (R2-31e closed the .bfpreset and
+ * .bfbuilder gaps): each import action carries its own toast/error, so this
+ * function only routes.
+ */
+export function dispatchDroppedFiles(files: File[], store: typeof useVizStore.getState): void {
+  if (files.length === 0) return;
+  // Shaders and themes import by drag, from anywhere.
+  const shader = files.find((f) => f.name.toLowerCase().endsWith(".bfshader"));
+  if (shader) {
+    void shader.text().then((t) => store().importCustomPresetText(t));
+    return;
+  }
+  // Themes import by drag, from anywhere (Explorer, a GitHub
+  // download, Discord) — the whole ecosystem loop in one gesture.
+  const theme = files.find((f) => f.name.toLowerCase().endsWith(".bftheme"));
+  if (theme) {
+    void theme.text().then((t) => store().importThemeText(t));
+    return;
+  }
+  // Looks and Builder stacks close the set (R2-31e): the app exports both
+  // as files, and a file the app writes must import by the same gesture as
+  // every sibling format.
+  const look = files.find((f) => f.name.toLowerCase().endsWith(".bfpreset"));
+  if (look) {
+    void look.text().then((t) => store().importUserPresetText(t));
+    return;
+  }
+  const builder = files.find((f) => f.name.toLowerCase().endsWith(".bfbuilder"));
+  if (builder) {
+    void builder.text().then((t) => store().importBuilderStackText(t));
+    return;
+  }
+  // Projects open by drag too. Without this the file fell through to
+  // loadFile() below and the AUDIO decoder rejected it with "Unable to
+  // decode audio data" — invisible until v2.49.0 made drops arrive at
+  // all on Windows.
+  const project = files.find((f) => f.name.toLowerCase().endsWith(".bfproj"));
+  if (project) {
+    void project.text().then((t) => store().openProjectText(project.name, t));
+    return;
+  }
+  // Timed lyrics: drop an .lrc/.srt alone (attaches to the current
+  // track) or together with an audio file (applied AFTER the track
+  // loads — loading clears per-track lyrics, so order matters).
+  const lyricFile = files.find((f) => /\.(lrc|srt)$/i.test(f.name));
+  const rest = lyricFile ? files.filter((f) => f !== lyricFile) : files;
+  const applyLyrics = lyricFile
+    ? () => lyricFile.text().then((t) => store().loadLyricsText(lyricFile.name, t))
+    : null;
+  if (rest.length === 0) {
+    if (applyLyrics) void applyLyrics();
+    return;
+  }
+  // With the batch panel open, dropped tracks QUEUE — the panel says
+  // "drop in a folder of tracks", and replacing the live track with
+  // files[0] while ignoring the rest betrayed exactly that promise.
+  if (store().showBatch) {
+    void store().addBatchTracks(rest);
+    if (applyLyrics) void applyLyrics();
+  } else {
+    void store()
+      .loadFile(rest[0])
+      .then(() => applyLyrics?.());
+  }
+}
+
+/**
  * Owner ruling E (final round): the desktop boot veil's hard cap. The
  * device smoke measured a real ~423ms stale-document flash (I2) between
  * first paint (localStorage's synchronous fallback) and the autosave swap
@@ -526,53 +597,7 @@ export default function App() {
         e.preventDefault();
         dragDepthRef.current = 0;
         store().setDragOver(false);
-        const files = Array.from(e.dataTransfer.files);
-        if (files.length === 0) return;
-        // Shaders and themes import by drag, from anywhere.
-        const shader = files.find((f) => f.name.toLowerCase().endsWith(".bfshader"));
-        if (shader) {
-          void shader.text().then((t) => store().importCustomPresetText(t));
-          return;
-        }
-        // Themes import by drag, from anywhere (Explorer, a GitHub
-        // download, Discord) — the whole ecosystem loop in one gesture.
-        const theme = files.find((f) => f.name.toLowerCase().endsWith(".bftheme"));
-        if (theme) {
-          void theme.text().then((t) => store().importThemeText(t));
-          return;
-        }
-        // Projects open by drag too. Without this the file fell through to
-        // loadFile() below and the AUDIO decoder rejected it with "Unable to
-        // decode audio data" — invisible until v2.49.0 made drops arrive at
-        // all on Windows.
-        const project = files.find((f) => f.name.toLowerCase().endsWith(".bfproj"));
-        if (project) {
-          void project.text().then((t) => store().openProjectText(project.name, t));
-          return;
-        }
-        // Timed lyrics: drop an .lrc/.srt alone (attaches to the current
-        // track) or together with an audio file (applied AFTER the track
-        // loads — loading clears per-track lyrics, so order matters).
-        const lyricFile = files.find((f) => /\.(lrc|srt)$/i.test(f.name));
-        const rest = lyricFile ? files.filter((f) => f !== lyricFile) : files;
-        const applyLyrics = lyricFile
-          ? () => lyricFile.text().then((t) => store().loadLyricsText(lyricFile.name, t))
-          : null;
-        if (rest.length === 0) {
-          if (applyLyrics) void applyLyrics();
-          return;
-        }
-        // With the batch panel open, dropped tracks QUEUE — the panel says
-        // "drop in a folder of tracks", and replacing the live track with
-        // files[0] while ignoring the rest betrayed exactly that promise.
-        if (store().showBatch) {
-          void store().addBatchTracks(rest);
-          if (applyLyrics) void applyLyrics();
-        } else {
-          void store()
-            .loadFile(rest[0])
-            .then(() => applyLyrics?.());
-        }
+        dispatchDroppedFiles(Array.from(e.dataTransfer.files), store);
       }}
     >
       <div className="stage">
