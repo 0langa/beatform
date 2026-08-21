@@ -42,6 +42,10 @@ vi.mock("../audio/realtimeSource", () => {
     /** Mutable stand-in for the real getter — the loop's only license to
      * advance texture-feedback state (see the feedback-directive suite). */
     feedbackTicked = false;
+    /** Tick prediction (R2-25). Defaults to "a tick is owed" so every suite
+     * that predates the cap gate keeps its update-on-every-frame world; the
+     * cap-gate suite installs the real accumulator model. */
+    willTick = vi.fn(() => true);
   }
   return { RealtimeAnalyzer };
 });
@@ -80,10 +84,12 @@ import {
   getEngine,
   getLiveRouteValues,
   getLiveStemValues,
+  getPresentedFrames,
   getRenderer,
   initServices,
   type ServiceHooks,
 } from "./services";
+import { setPrefs } from "./prefs";
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import type { PresetDef, BgSettings } from "../render/types";
 import { DEFAULT_POST } from "../render/types";
@@ -657,6 +663,155 @@ describe("services.ts frame loop — feedback directives follow the analyzer's t
     ana.feedbackTicked = true;
     rafBox.cb?.(200);
     expect(lastDirective()).toBe("advance-and-present");
+
+    dispose();
+  });
+});
+
+/**
+ * R2-25: the fps cap gates the DSP too. Before this, a capped loop still ran
+ * the full feature update (FFT, meter, pipeline) on every rAF and then threw
+ * the result away on the frames it didn't present — a 144 Hz panel capped to
+ * 30 paid 144 updates/s for 30 drawn frames. The loop now asks
+ * `ana.willTick(t)` first and skips the whole update on capped frames that
+ * owe no canonical 60 Hz tick. What must survive unchanged: every canonical
+ * tick still runs on time (detector steps + the texture-feedback advance
+ * license — the advance-only branch under the cap), and uncapped loops still
+ * update on every rAF. realtimeSource.test.ts pins that willTick IS
+ * update()'s own tick decision; this suite pins what the loop does with it.
+ */
+describe("services.ts frame loop — fps cap gates the DSP too (R2-25)", () => {
+  const PRESET_ID = "custom-cap-gate-test";
+  const HZ = 144;
+  const FRAMES = 288; // 2 s of 144 Hz rAF
+
+  afterEach(() => {
+    unregisterCustomPreset(PRESET_ID);
+    setPrefs({ fpsCap: 0 });
+  });
+
+  /** Arm the loop with a manually-driven rAF (the file's standard rig). */
+  function rig() {
+    registerCustomPreset({
+      id: PRESET_ID,
+      name: "C",
+      params: [],
+      wgsl: "// c",
+    } as unknown as PresetDef);
+    const rafBox: { cb: ((t: number) => void) | null } = { cb: null };
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((cb: (t: number) => void) => {
+        rafBox.cb = cb;
+        return 1;
+      }),
+    );
+    const dispose = initServices(
+      fakeCanvas(),
+      fakeHooks({
+        getFrameInput: () =>
+          ({
+            timeline: EMPTY_TIMELINE,
+            basePresetId: PRESET_ID,
+            baseParams: {},
+            baseMods: [],
+            baseBg: {} as BgSettings,
+            paramsByPreset: {},
+            modsByPreset: {},
+          }) as FrameResolveInput,
+      }),
+    );
+    return { rafBox, dispose };
+  }
+
+  /** Install the REAL analyzer accumulator arithmetic on the mock — the same
+   * dt fallback, accumulator and epsilon realtimeSource.ts uses, advancing
+   * only in update() while willTick() stays a pure prediction, so the mock
+   * reproduces the exact contract the loop leans on. Playing throughout, so
+   * every analysis tick is a reported feedback tick. */
+  function installTickModel(ana: {
+    update: ReturnType<typeof vi.fn>;
+    willTick: ReturnType<typeof vi.fn>;
+    feedbackTicked: boolean;
+  }) {
+    const ANALYSIS_DT = 1 / 60;
+    const model = { lastFrameAt: null as number | null, sinceTick: 0, ticks: 0 };
+    ana.willTick.mockImplementation((now: number) => {
+      const dt = model.lastFrameAt === null ? 1 / 60 : now - model.lastFrameAt;
+      return model.sinceTick + dt >= ANALYSIS_DT - 1e-9;
+    });
+    ana.update.mockImplementation((now: number) => {
+      const dt = model.lastFrameAt === null ? 1 / 60 : now - model.lastFrameAt;
+      model.lastFrameAt = now;
+      model.sinceTick += dt;
+      let tick = false;
+      if (model.sinceTick >= ANALYSIS_DT - 1e-9) {
+        tick = true;
+        model.sinceTick -= ANALYSIS_DT;
+        if (model.sinceTick > ANALYSIS_DT) model.sinceTick = 0;
+      }
+      if (tick) model.ticks++;
+      ana.feedbackTicked = tick;
+      return { time: now, lufs: 0, width: 0 } as unknown;
+    });
+    return model;
+  }
+
+  /** Drive FRAMES rAF callbacks and count what reached the analyzer and the
+   * renderer. `advance` = render calls whose feedback directive advances
+   * state (advance-only under the cap, advance-and-present uncapped). */
+  function drive(rafBox: { cb: ((t: number) => void) | null }) {
+    const render = (getRenderer() as unknown as { render: ReturnType<typeof vi.fn> }).render;
+    const renderCallsBefore = render.mock.calls.length;
+    const presentedBefore = getPresentedFrames();
+    for (let n = 0; n < FRAMES; n++) rafBox.cb?.((n * 1000) / HZ);
+    const directives = render.mock.calls
+      .slice(renderCallsBefore)
+      .map((c) => (c[4] as { feedback: string }).feedback);
+    return {
+      advance: directives.filter((d) => d !== "present-only").length,
+      presented: getPresentedFrames() - presentedBefore,
+    };
+  }
+
+  it("capped 30 at 144 Hz: tickless capped frames never reach ana.update; every tick still does", async () => {
+    setPrefs({ fpsCap: 30 });
+    const { rafBox, dispose } = rig();
+    await flush();
+    const ana = getAnalyzer() as unknown as Parameters<typeof installTickModel>[0];
+    const model = installTickModel(ana);
+
+    const { advance, presented } = drive(rafBox);
+    const updates = ana.update.mock.calls.length;
+
+    // The win: far fewer feature updates than rAF ticks — the union of
+    // presented frames (~29/s) and canonical ticks (60/s), not 144/s.
+    expect(updates).toBeLessThan(FRAMES * 0.65);
+    // The law: not one canonical tick was lost to the cap. Every tick the
+    // accumulator produced ran inside an ana.update the loop chose to make,
+    // and each one carried its advance directive to the renderer.
+    expect(model.ticks).toBeGreaterThanOrEqual(118); // ~2 s of 60 Hz ticks
+    expect(advance).toBe(model.ticks);
+    expect(updates).toBeGreaterThanOrEqual(model.ticks);
+    // Presentation cadence is the cap's, untouched by the DSP gate.
+    expect(presented).toBeGreaterThanOrEqual(52);
+    expect(presented).toBeLessThanOrEqual(62);
+
+    dispose();
+  });
+
+  it("uncapped: ana.update still runs on every single rAF", async () => {
+    setPrefs({ fpsCap: 0 });
+    const { rafBox, dispose } = rig();
+    await flush();
+    const ana = getAnalyzer() as unknown as Parameters<typeof installTickModel>[0];
+    const model = installTickModel(ana);
+
+    const { advance, presented } = drive(rafBox);
+
+    expect(ana.update.mock.calls.length).toBe(FRAMES);
+    expect(presented).toBe(FRAMES);
+    expect(advance).toBe(model.ticks); // every tick advances, uncapped too
 
     dispose();
   });
