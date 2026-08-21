@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { exportVideo, makePngSequenceWriter, type PngFsOps } from "./videoExporter";
+import {
+  exportVideo,
+  makePngSequenceWriter,
+  makeTauriWriter,
+  type PngFsOps,
+  type StreamFsOps,
+} from "./videoExporter";
 
 /**
  * Stub for the Tauri fs plugin that createTauriWriter dynamically imports, so
@@ -8,7 +14,9 @@ import { exportVideo, makePngSequenceWriter, type PngFsOps } from "./videoExport
  */
 const tauriFs = vi.hoisted(() => ({
   writes: [] as { length: number; position: number }[],
+  opened: [] as string[],
   removed: [] as string[],
+  renames: [] as [string, string][],
   closed: 0,
   gate: null as Promise<void> | null,
   failNext: null as Error | null,
@@ -17,30 +25,46 @@ const tauriFs = vi.hoisted(() => ({
 
 vi.mock("@tauri-apps/plugin-fs", () => ({
   SeekMode: { Start: 0 },
-  open: async () => ({
-    async seek(position: number) {
-      tauriFs.cursor = position;
-    },
-    async write(data: Uint8Array) {
-      if (tauriFs.gate) await tauriFs.gate;
-      if (tauriFs.failNext) {
-        const e = tauriFs.failNext;
-        tauriFs.failNext = null;
-        throw e;
-      }
-      tauriFs.writes.push({ length: data.length, position: tauriFs.cursor });
-      tauriFs.cursor += data.length;
-      return data.length;
-    },
-    async close() {
-      tauriFs.closed++;
-    },
-  }),
+  open: async (path: string) => {
+    tauriFs.opened.push(path);
+    return {
+      async seek(position: number) {
+        tauriFs.cursor = position;
+      },
+      async write(data: Uint8Array) {
+        if (tauriFs.gate) await tauriFs.gate;
+        if (tauriFs.failNext) {
+          const e = tauriFs.failNext;
+          tauriFs.failNext = null;
+          throw e;
+        }
+        tauriFs.writes.push({ length: data.length, position: tauriFs.cursor });
+        tauriFs.cursor += data.length;
+        return data.length;
+      },
+      async close() {
+        tauriFs.closed++;
+      },
+    };
+  },
   remove: async (path: string) => {
     tauriFs.removed.push(path);
   },
+  rename: async (oldPath: string, newPath: string) => {
+    tauriFs.renames.push([oldPath, newPath]);
+  },
   writeFile: async () => undefined,
   mkdir: async () => undefined,
+}));
+
+/** createTauriWriter widens the fs scope to the `.partial` sibling through
+ * the export_allow_partial command before it opens anything (R2-02). */
+const tauriCore = vi.hoisted(() => ({ invokes: [] as [string, unknown][] }));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: async (cmd: string, args?: unknown) => {
+    tauriCore.invokes.push([cmd, args]);
+  },
 }));
 
 /**
@@ -376,11 +400,14 @@ describe("worker chunk lane backpressure", () => {
 
   beforeEach(() => {
     tauriFs.writes.length = 0;
+    tauriFs.opened.length = 0;
     tauriFs.removed.length = 0;
+    tauriFs.renames.length = 0;
     tauriFs.closed = 0;
     tauriFs.cursor = 0;
     tauriFs.gate = null;
     tauriFs.failNext = null;
+    tauriCore.invokes.length = 0;
     realWorker = (globalThis as { Worker?: typeof Worker }).Worker;
     (globalThis as { Worker: unknown }).Worker = FakeWorker;
   });
@@ -416,6 +443,12 @@ describe("worker chunk lane backpressure", () => {
     });
     await expect(promise).resolves.toMatchObject({ bytes: 8, blob: undefined });
     expect(tauriFs.closed).toBe(1);
+    // R2-02: the bytes were staged in the temp sibling (scope-granted via
+    // export_allow_partial first) and only published over the target by the
+    // close-time rename.
+    expect(tauriCore.invokes).toEqual([["export_allow_partial", { path: "out.mp4" }]]);
+    expect(tauriFs.opened).toEqual(["out.mp4.partial"]);
+    expect(tauriFs.renames).toEqual([["out.mp4.partial", "out.mp4"]]);
   });
 
   it("does not trip the watchdog while parked on a slow disk write", async () => {
@@ -475,6 +508,113 @@ describe("worker chunk lane backpressure", () => {
     // The self-inflicted abort must surface as the original disk error, not a
     // generic cancel — that is what classifyError keys off downstream.
     await expect(promise).rejects.toThrow(/os error 112/);
-    expect(tauriFs.removed).toEqual(["out.mp4"]); // partial file cleaned up
+    // R2-02: the discard removes ONLY the temp sibling — a file previously
+    // exported to out.mp4 is never touched by a failed run.
+    expect(tauriFs.removed).toEqual(["out.mp4.partial"]);
+    expect(tauriFs.renames).toEqual([]);
+  });
+});
+
+/**
+ * R2-02 — the stream writer replaces the target atomically instead of
+ * truncating it up front.
+ *
+ * The failure this closes: `open(path, { truncate: true })` destroyed
+ * whatever the previous export had left at the picked path in the first
+ * instant of a new run, so a cancel (or a crash, or an app close) at minute
+ * 40 left the user with neither the old file nor a usable new one. The
+ * writer now stages into `<target>.partial` and touches the target only via
+ * one close-time rename. Driven through the injectable StreamFsOps seam with
+ * a stateful fake disk, so every claim below is about observable file
+ * contents, not call counts.
+ */
+describe("makeTauriWriter — temp-sibling atomic replace (R2-02)", () => {
+  /** A fake disk: real byte contents per path, so rename/remove semantics
+   * (including MOVEFILE_REPLACE_EXISTING-style replace) are actually modeled. */
+  function fakeDisk(opts: { failRename?: Error; failWrite?: Error } = {}) {
+    const files = new Map<string, number[]>();
+    const fs: StreamFsOps = {
+      async open(path) {
+        files.set(path, []);
+        let cursor = 0;
+        return {
+          async seekStart(position) {
+            cursor = position;
+          },
+          async write(data) {
+            if (opts.failWrite) throw opts.failWrite;
+            const bytes = files.get(path)!;
+            for (const b of data) bytes[cursor++] = b;
+            return data.length;
+          },
+          async close() {},
+        };
+      },
+      async remove(path) {
+        files.delete(path);
+      },
+      async rename(oldPath, newPath) {
+        if (opts.failRename) throw opts.failRename;
+        if (!files.has(oldPath)) throw new Error(`rename: no such file ${oldPath}`);
+        files.set(newPath, files.get(oldPath)!); // replaces an existing target
+        files.delete(oldPath);
+      },
+    };
+    return { fs, files };
+  }
+
+  it("a cancelled run leaves the previous target file byte-for-byte untouched", async () => {
+    const { fs, files } = fakeDisk();
+    files.set("out.mp4", [9, 9, 9]); // the previous export's finished file
+    const w = await makeTauriWriter(fs, "out.mp4");
+    await w.write(new Uint8Array([1, 2]), 0);
+    await w.discard(); // what exportVideo's catch does on abort/failure
+
+    expect(files.get("out.mp4")).toEqual([9, 9, 9]);
+    expect(files.has("out.mp4.partial")).toBe(false); // no litter either
+  });
+
+  it("a successful close publishes the new bytes over the target in one rename", async () => {
+    const { fs, files } = fakeDisk();
+    files.set("out.mp4", [9, 9, 9]);
+    const w = await makeTauriWriter(fs, "out.mp4");
+    await w.write(new Uint8Array([1, 2]), 0);
+    await w.write(new Uint8Array([3]), 2);
+    // Mid-run the target still holds the OLD export — the new bytes are all
+    // in the sibling.
+    expect(files.get("out.mp4")).toEqual([9, 9, 9]);
+    expect(files.get("out.mp4.partial")).toEqual([1, 2, 3]);
+
+    await w.close();
+
+    expect(files.get("out.mp4")).toEqual([1, 2, 3]);
+    expect(files.has("out.mp4.partial")).toBe(false);
+  });
+
+  it("a failed rename removes the temp, surfaces the error, and never touches the target", async () => {
+    const boom = new Error("Access is denied. (os error 5)"); // target open in a player
+    const { fs, files } = fakeDisk({ failRename: boom });
+    files.set("out.mp4", [9, 9, 9]);
+    const w = await makeTauriWriter(fs, "out.mp4");
+    await w.write(new Uint8Array([1, 2, 3]), 0);
+
+    await expect(w.close()).rejects.toThrow(/os error 5/);
+    expect(files.get("out.mp4")).toEqual([9, 9, 9]);
+    // The chosen policy: report the error and clean up — no .partial litter
+    // left for the user to wonder about.
+    expect(files.has("out.mp4.partial")).toBe(false);
+  });
+
+  it("a write failure surfaces from close() without ever attempting the publish rename", async () => {
+    const boom = new Error("There is not enough space on the disk. (os error 112)");
+    const { fs, files } = fakeDisk({ failWrite: boom });
+    files.set("out.mp4", [9, 9, 9]);
+    const onError = vi.fn();
+    const w = await makeTauriWriter(fs, "out.mp4", onError);
+    await w.write(new Uint8Array([1]), 0);
+    expect(onError).toHaveBeenCalledTimes(1); // surfaced NOW (H5), not at close
+
+    await expect(w.close()).rejects.toThrow(/os error 112/);
+    expect(files.get("out.mp4")).toEqual([9, 9, 9]); // never renamed over
   });
 });

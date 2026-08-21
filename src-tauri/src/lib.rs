@@ -82,6 +82,38 @@ fn debug_allow_path(
     }
 }
 
+/// R2-02: the streaming export writer stages every byte in a `<target>.partial`
+/// sibling and renames over the target only on a fully successful finish, so a
+/// cancelled or failed export can never destroy the file a previous export
+/// left at the picked path. The save dialog's runtime grant covers EXACTLY the
+/// picked file, so the sibling needs its own grant — derived STRICTLY from a
+/// path the scope already allows: the webview can extend a grant the user's
+/// own dialog pick created, never mint a fresh one. (The batch lane's
+/// recursive folder grant covers the sibling on its own; the single-export
+/// file grant does not, which is why this exists.)
+#[tauri::command]
+fn export_allow_partial(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<(), String> {
+    assert_main_window(&window)?;
+    if !app.fs_scope().is_allowed(std::path::Path::new(&path)) {
+        return Err(format!("Path not permitted: {path}"));
+    }
+    app.fs_scope()
+        .allow_file(std::path::Path::new(&partial_sibling(&path)))
+        .map_err(|e| e.to_string())
+}
+
+/// The one place the temp-sibling name is derived on this side; the TS writer
+/// (videoExporter.ts, createTauriWriter) appends the identical suffix. A plain
+/// string append keeps the sibling in the SAME directory — same volume — which
+/// is what makes the final rename atomic.
+fn partial_sibling(path: &str) -> String {
+    format!("{path}.partial")
+}
+
 /// Recursively scan a user-picked folder for audio files and read their tags.
 ///
 /// Gated on the fs plugin scope: tauri-plugin-dialog's folder picker calls
@@ -301,6 +333,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             debug_allow_path,
+            export_allow_partial,
             scan_audio_library,
             show_in_folder,
             loopback::start_loopback,
@@ -384,6 +417,19 @@ mod tests {
         assert!(main_only_label("").is_err());
         assert!(main_only_label("main2").is_err());
         assert!(main_only_label("Main").is_err()); // labels are case-sensitive
+    }
+
+    #[test]
+    fn the_partial_sibling_stays_next_to_its_target() {
+        // R2-02: the TS writer appends the identical suffix — same directory,
+        // same volume, which is what keeps the final rename atomic. A derived
+        // name that moved directories would silently turn "atomic replace"
+        // into a cross-volume copy that can fail half-way.
+        assert_eq!(
+            partial_sibling(r"C:\out\video.mp4"),
+            r"C:\out\video.mp4.partial"
+        );
+        assert_eq!(partial_sibling("D:/x/loop.webm"), "D:/x/loop.webm.partial");
     }
 
     #[test]

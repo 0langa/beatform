@@ -209,9 +209,42 @@ async function createPngSequenceWriter(
   return makePngSequenceWriter({ writeFile, remove }, dir, onError);
 }
 
-async function createTauriWriter(path: string, onError?: (e: Error) => void): Promise<FileWriter> {
-  const { open, remove, SeekMode } = await import("@tauri-apps/plugin-fs");
-  const handle = await open(path, { write: true, create: true, truncate: true });
+/** Filesystem seam for the stream writer, injectable so tests can drive
+ * cancel-mid-write, a clean finish and a failed rename without a real disk
+ * (same seam pattern as PngFsOps above). Seeks are always from the start. */
+export interface StreamFsOps {
+  open(path: string): Promise<{
+    seekStart(position: number): Promise<void>;
+    write(data: Uint8Array): Promise<number>;
+    close(): Promise<void>;
+  }>;
+  remove(path: string): Promise<void>;
+  rename(oldPath: string, newPath: string): Promise<void>;
+}
+
+/**
+ * R2-02: the stream writer's logic, split from the Tauri imports so a stub fs
+ * can drive it in tests (the makePngSequenceWriter treatment).
+ *
+ * Every byte lands in a `<target>.partial` sibling — same directory, same
+ * volume — and the target is touched by exactly ONE atomic rename, after a
+ * fully successful finish. The old writer opened the target itself with
+ * truncate, so from the first instant of an export the previously exported
+ * file at that path was already destroyed, and a cancel/failure/app-close
+ * left a torn file under the real name. plugin-fs `rename` is Rust's
+ * std::fs::rename — MoveFileExW with MOVEFILE_REPLACE_EXISTING on Windows —
+ * so replacing an existing target is one atomic step (the same primitive the
+ * autosave's writeFileAtomic in platform.ts already stakes its design on).
+ * A FAILED rename removes the temp and surfaces the error: no litter, and
+ * whatever was previously at the target is still exactly as it was.
+ */
+export async function makeTauriWriter(
+  fs: StreamFsOps,
+  path: string,
+  onError?: (e: Error) => void,
+): Promise<FileWriter> {
+  const partial = `${path}.partial`;
+  const handle = await fs.open(partial);
   let queue: Promise<void> = Promise.resolve();
   let cursor = 0;
   let failed: Error | null = null;
@@ -225,7 +258,7 @@ async function createTauriWriter(path: string, onError?: (e: Error) => void): Pr
         if (failed) return;
         try {
           if (position !== cursor) {
-            await handle.seek(position, SeekMode.Start);
+            await handle.seekStart(position);
             cursor = position;
           }
           let off = 0;
@@ -248,13 +281,52 @@ async function createTauriWriter(path: string, onError?: (e: Error) => void): Pr
       await queue;
       await handle.close();
       if (failed) throw failed;
+      // Publish: the one moment the target path is touched at all.
+      try {
+        await fs.rename(partial, path);
+      } catch (e) {
+        // No litter on a failed publish — remove the temp, surface the error,
+        // and leave the previous file at `path` exactly as it was.
+        await fs.remove(partial).catch(() => undefined);
+        throw e instanceof Error ? e : new Error(String(e));
+      }
     },
     async discard() {
       await queue.catch(() => undefined);
       await handle.close().catch(() => undefined);
-      await remove(path).catch(() => undefined);
+      // ONLY the temp. The whole point of the sibling: a discarded run must
+      // leave whatever was previously at `path` untouched.
+      await fs.remove(partial).catch(() => undefined);
     },
   };
+}
+
+async function createTauriWriter(path: string, onError?: (e: Error) => void): Promise<FileWriter> {
+  const { open, remove, rename, SeekMode } = await import("@tauri-apps/plugin-fs");
+  // The save dialog's runtime fs-scope grant covers exactly the picked file;
+  // the `.partial` sibling needs its own, granted Rust-side strictly from the
+  // already-allowed target (export_allow_partial in lib.rs refuses any path
+  // the scope does not already cover).
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("export_allow_partial", { path });
+  return makeTauriWriter(
+    {
+      open: async (p) => {
+        const handle = await open(p, { write: true, create: true, truncate: true });
+        return {
+          seekStart: async (position) => {
+            await handle.seek(position, SeekMode.Start);
+          },
+          write: (data) => handle.write(data),
+          close: () => handle.close(),
+        };
+      },
+      remove,
+      rename: (oldPath, newPath) => rename(oldPath, newPath),
+    },
+    path,
+    onError,
+  );
 }
 
 /** Slice a whole-track waveform overview to a segment (seconds), so a
