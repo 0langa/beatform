@@ -2857,7 +2857,13 @@ export const useVizStore = create<VizState>((set, get) => {
       // it to the region start (engine's setter) — a discontinuity exactly
       // like its siblings below, and a FORWARD teleport is one the frame
       // loop's backward-jump heuristic can never catch (R2-32c).
-      if (Math.abs(engine.currentTime - before) > 0.001) getAnalyzer().reset("seek");
+      if (Math.abs(engine.currentTime - before) > 0.001) {
+        getAnalyzer().reset("seek");
+        // The teleport is a seek in every sense, so it gets the R2-31c
+        // bookkeeping too: without it a forward jump across a beat/bar
+        // boundary fires a queued quantized switch at the landing point.
+        lastQuantizeTick = Math.max(0, engine.currentTime);
+      }
     },
 
     setLoopStart(time) {

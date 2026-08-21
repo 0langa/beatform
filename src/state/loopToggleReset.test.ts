@@ -115,4 +115,57 @@ describe("toggleLoop fires the discontinuity reset only when the playhead moved 
     s().toggleLoop(); // off
     expect(analyzer.reset).not.toHaveBeenCalled();
   });
+
+  /**
+   * The teleport is a seek in every sense, so it also gets R2-31c's quantize
+   * bookkeeping: enabling the loop from before the region must not let the
+   * first tick after the jump read every leapt-over beat boundary as
+   * "crossed" and fire a queued switch off the teleport. (Cross-lane hole
+   * surfaced by the v2.108 review: R2-32c added the reset, R2-31c added the
+   * bookkeeping to the seek actions, and only their combination covers this
+   * path.)
+   */
+  it("a queued quantized switch does not fire off the teleport — only off the next natural crossing", async () => {
+    const { initServices } = await import("./services");
+    const { orderedPresets } = await import("./presetOrder");
+    const strip = orderedPresets(s().presetOrder, []);
+    const dispose = s().initApp({
+      getContext: () => null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as HTMLCanvasElement);
+    try {
+      const calls = vi.mocked(initServices).mock.calls;
+      const tick = calls[calls.length - 1][1].onFrameTick!;
+      useVizStore.setState({
+        presetId: strip[0].id,
+        customDefs: [],
+        switchQuantize: "beat",
+        playback: { ...s().playback, playing: true },
+        beatGrid: {
+          bpm: 120,
+          beatTimes: Float32Array.from([0, 0.5, 1, 1.5, 2, 9.5, 10, 10.5, 11]),
+          hopSec: 0.0116,
+        },
+        pendingPresetId: null,
+      });
+      engineState.loopStart = 10;
+      engineState.loopEnd = 12;
+      engineState.currentTime = 0.1;
+      tick(0.1); // baseline the bookkeeping
+      s().queuePreset(strip[1].id);
+      expect(s().pendingPresetId).toBe(strip[1].id);
+
+      s().toggleLoop(); // teleports 0.1 → 10, leaping many boundaries
+      expect(engineState.currentTime).toBe(10);
+      tick(10.2); // first tick after the jump — no boundary in (10, 10.2]
+      expect(s().presetId).toBe(strip[0].id); // no fire off the teleport
+      expect(s().pendingPresetId).toBe(strip[1].id); // still queued
+
+      tick(10.6); // the track naturally crosses 10.5
+      expect(s().presetId).toBe(strip[1].id);
+    } finally {
+      dispose();
+    }
+  });
 });

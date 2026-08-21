@@ -179,8 +179,11 @@ export class RealFFT {
     // windowed PCM samples (|x| ≤ 1, window weights ≤ 1), so |re|,|im| ≤ N ≤
     // 32768 — squares stay below ~1.1e9, astronomically far from float64's
     // ~1.8e308 overflow and from squared-subnormal underflow mattering (a
-    // magnitude that tiny is -Infinity dB either way). sqrt and hypot agree
-    // to ≤1 ulp on this domain.
+    // magnitude that tiny is -Infinity dB either way). sqrt vs hypot differ
+    // by at most ~2 ulp float64 on this domain (V8's hypot is not correctly
+    // rounded); the difference quantizes away in the Float32Array the dB
+    // values land in, and the golden feature trace ran byte-identical across
+    // the swap.
     const scale = this.scale;
     const bins = n >> 1;
     for (let i = 0; i < bins; i++) {
