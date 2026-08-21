@@ -2,7 +2,7 @@ import { wavFromPcm } from "../../audio/dsp/wav";
 import { pcmFromAudioBuffer } from "../../audio/offlineSource";
 import { buildExportOptions } from "../../export/buildExportOptions";
 import { CODEC_LABELS, probeCodecs } from "../../export/codecProbe";
-import { exportVideo } from "../../export/videoExporter";
+import { exportVideo, pickSequenceDir } from "../../export/videoExporter";
 import { rasterizeOverlay } from "../../render/overlay";
 import { audiogramActive } from "../audiogram";
 import { safeName } from "../batch";
@@ -12,6 +12,7 @@ import {
   animBegin,
   askConfirm,
   av1Begin,
+  dirNonEmpty,
   diskSpace,
   downloadBlob,
   isTauri,
@@ -257,8 +258,13 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
               endExportPreparing();
               return;
             }
-            // Keep each run in its own subfolder so sequences never interleave.
-            pngDir = `${dir}/${baseName}_frames`;
+            // Keep each run in its own subfolder so sequences never
+            // interleave — collision-free (R2-12): a second run into the
+            // same folder walks to `_frames-2`, `-3`, … instead of writing
+            // its frames in among (or over) the first run's. Nothing
+            // pre-existing is ever deleted; the completion toast and "Show
+            // in folder" both report whichever name won.
+            pngDir = await pickSequenceDir(`${dir}/${baseName}_frames`, dirNonEmpty);
           } else {
             savePath = await pickSavePath(
               fileName,

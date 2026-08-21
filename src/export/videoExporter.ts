@@ -200,6 +200,32 @@ export function makePngSequenceWriter(
   };
 }
 
+/**
+ * R2-12: pick a collision-free folder for a PNG-sequence run. `base` is the
+ * caller's preferred `<dir>/<name>_frames`; when that folder already exists
+ * WITH content, walk `-2`, `-3`, … instead — two runs' frame_%06d.png
+ * sequences interleaved in one directory are indistinguishable garbage to an
+ * NLE import, and deleting the previous run's frames is not this app's call
+ * to make (destructive-op policy: nothing pre-existing is ever removed). An
+ * EMPTY existing folder is fair game — a leftover mkdir from a cancelled
+ * run, not someone's data. `isTaken` answers "exists and is non-empty"; fs
+ * errors count as free, because a wrong "free" fails loudly at mkdir/write
+ * time while a wrong "taken" would silently skip a perfectly good name. The
+ * numeric ladder is capped; past it a timestamp suffix guarantees
+ * termination, still without deleting anything.
+ */
+export async function pickSequenceDir(
+  base: string,
+  isTaken: (dir: string) => Promise<boolean>,
+): Promise<string> {
+  if (!(await isTaken(base))) return base;
+  for (let n = 2; n <= 99; n++) {
+    const candidate = `${base}-${n}`;
+    if (!(await isTaken(candidate))) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
 async function createPngSequenceWriter(
   dir: string,
   onError?: (e: Error) => void,

@@ -118,6 +118,9 @@ vi.mock("../platform", async (importOriginal) => {
     pickFolder: vi.fn(async () => null),
     diskSpace: vi.fn(async () => null),
     scratchDir: vi.fn(async () => null),
+    // R2-12: the PNG-dir collision probe. Default "everything is free" keeps
+    // every pre-existing test on the exact folder name it always asserted.
+    dirNonEmpty: vi.fn(async () => false),
     animBegin: vi.fn(async () => {}),
     // FEAT-005: proresSetAudio/proresBegin/av1Begin/proresWrite are unmocked
     // by default (the ...actual spread above), which means the REAL wrapper
@@ -172,6 +175,7 @@ const {
   isTauri,
   pickSavePath,
   pickFolder,
+  dirNonEmpty,
   diskSpace,
   askConfirm,
   proresBegin,
@@ -580,6 +584,27 @@ describe("exportDonePath — the machine-readable companion to exportDone", () =
     // engineTrackName is "probe.wav", and safeName strips the extension.
     expect(s().exportDonePath).toBe(`${dir}/probe_frames`);
     expect(s().exportDone).toContain("PNG sequence");
+  });
+
+  it("walks the PNG folder to _frames-2 when the first run's folder is non-empty (R2-12)", async () => {
+    const dir = "C:\\exports";
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format: "png", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickFolder).mockResolvedValueOnce(dir);
+    // The previous run's frames are sitting in `${dir}/probe_frames` — the
+    // picker must walk past it, never write in among (or over) its files.
+    vi.mocked(dirNonEmpty).mockImplementationOnce(async (p) => p === `${dir}/probe_frames`);
+
+    await s().runExport();
+
+    // The toast and "Show in folder" both carry the name that actually won.
+    expect(s().exportDonePath).toBe(`${dir}/probe_frames-2`);
+    expect(s().exportDone).toContain(`${dir}/probe_frames-2`);
   });
 
   it("carries the save path for a sidecar (ffmpeg) export too", async () => {

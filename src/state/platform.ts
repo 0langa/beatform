@@ -101,6 +101,20 @@ export async function writeBinaryToPath(path: string, data: Blob): Promise<void>
   await writeFile(path, new Uint8Array(await data.arrayBuffer()));
 }
 
+/** R2-12: does `path` exist as a directory with anything in it? Errors (not
+ * existing, unreadable, off the desktop) all count as "no" — the PNG-dir
+ * picker treats that as a free name, and a wrong "free" fails loudly at
+ * mkdir/write time, which beats silently refusing a name that was fine. */
+export async function dirNonEmpty(path: string): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    const { readDir } = await import("@tauri-apps/plugin-fs");
+    return (await readDir(path)).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Tauri only: read a file's bytes (library playback — path came from a scan
  * under a dialog-picked folder, which grants the runtime read scope). */
 export async function readBinaryFromPath(path: string): Promise<Uint8Array> {

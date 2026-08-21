@@ -3,6 +3,7 @@ import {
   exportVideo,
   makePngSequenceWriter,
   makeTauriWriter,
+  pickSequenceDir,
   type PngFsOps,
   type StreamFsOps,
 } from "./videoExporter";
@@ -126,6 +127,47 @@ describe("makePngSequenceWriter failure channel", () => {
     await w.write(new Uint8Array([3]), 2); // fails
     await w.discard();
     expect(removed).toEqual(written);
+  });
+});
+
+/**
+ * R2-12: each PNG-sequence run gets a collision-free folder. Two runs'
+ * frame_%06d.png sequences interleaved in one directory are garbage to an
+ * NLE import, and deleting the earlier run's frames is off the table
+ * (destructive-op policy) — so the name walks instead.
+ */
+describe("pickSequenceDir collision walking", () => {
+  /** isTaken driven by a fixed set of "exists and is non-empty" names. */
+  const takenSet =
+    (...taken: string[]) =>
+    async (dir: string) =>
+      taken.includes(dir);
+
+  it("uses the preferred name when it is free (missing or empty)", async () => {
+    await expect(pickSequenceDir("out/track_frames", takenSet())).resolves.toBe(
+      "out/track_frames",
+    );
+  });
+
+  it("walks to -2, then -3, past non-empty folders — never reusing one", async () => {
+    await expect(
+      pickSequenceDir("out/track_frames", takenSet("out/track_frames")),
+    ).resolves.toBe("out/track_frames-2");
+    await expect(
+      pickSequenceDir("out/track_frames", takenSet("out/track_frames", "out/track_frames-2")),
+    ).resolves.toBe("out/track_frames-3");
+  });
+
+  it("falls back to a timestamp suffix when the numeric ladder is exhausted, deleting nothing", async () => {
+    const asked: string[] = [];
+    const everythingTaken = async (dir: string) => {
+      asked.push(dir);
+      return true;
+    };
+    const picked = await pickSequenceDir("out/track_frames", everythingTaken);
+    expect(picked).toMatch(/^out\/track_frames-\d{13,}$/); // Date.now() epoch ms
+    expect(asked[0]).toBe("out/track_frames");
+    expect(asked[asked.length - 1]).toBe("out/track_frames-99");
   });
 });
 
