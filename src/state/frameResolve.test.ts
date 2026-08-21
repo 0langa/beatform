@@ -96,6 +96,28 @@ describe("resolveActiveFrame", () => {
     expect(rf.mix).toBeCloseTo(0.5, 5);
   });
 
+  it("mid-crossfade, automation rides the OUTGOING side too (R2-06)", () => {
+    // Kills the mutant the last mutation round left standing: drop the
+    // `{ ...pParams, ...frame.automation }` merge on `prev` and the incoming
+    // half of the blend follows the lane while the outgoing half snaps to
+    // its un-automated base for the whole fade — a visible pop on every
+    // automated crossfade, identical in preview and export because both
+    // share this function.
+    const tl: Timeline = {
+      enabled: true,
+      scenes: [
+        { id: "a", name: "A", presetId: A, start: 0 },
+        { id: "b", name: "B", presetId: B, start: 10, fadeSec: 2 },
+      ],
+      lanes: [{ param: "hue", keyframes: [{ t: 0, value: 42, curve: "hold" }] }],
+    };
+    const rf = resolveActiveFrame(baseInput(tl), 11); // mid-fade
+    expect(rf.mix).toBeCloseTo(0.5, 5);
+    expect(rf.params.hue).toBe(42); // the incoming side is automated...
+    expect(rf.prev?.presetId).toBe(A);
+    expect(rf.prev?.params.hue).toBe(42); // ...and the OUTGOING side matches
+  });
+
   it("does not mutate the input baseParams object", () => {
     const input = baseInput({
       enabled: true,
