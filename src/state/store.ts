@@ -1532,6 +1532,13 @@ export const useVizStore = create<VizState>((set, get) => {
    * check it against `analysisId` and drop its result if superseded.
    */
   const invalidateAnalysis = (): number => {
+    // R2-19: a queued beat-quantized switch waits on THIS track's grid — any
+    // path that voids per-track analysis state (loadFile, loadDemo, the
+    // library advance, a re-analysis) unqueues it and resets the boundary
+    // bookkeeping, so a stale queue can never fire on the next track's grid
+    // (and a fresh queue's first boundary isn't suppressed by the old t).
+    if (get().pendingPresetId) set({ pendingPresetId: null });
+    lastQuantizeTick = -1;
     // An invalidation no job has claimed yet IS the current one: a load path
     // invalidates and then calls analyzeCurrentTrack, and opening a second
     // barrier there would release the very waiter the first one exists to hold.
@@ -1912,7 +1919,13 @@ export const useVizStore = create<VizState>((set, get) => {
       getEngine().setVolume(get().muted ? 0 : get().volume);
       // Library auto-advance: when a library track finishes naturally, play
       // the next one (the action checks the toggle + current-track membership).
-      getEngine().onEnded = () => void get().advanceLibrary();
+      getEngine().onEnded = () => {
+        // R2-19: the track that ran out takes its queued switch with it — the
+        // boundary it was waiting for no longer exists. The advance path's
+        // invalidation also clears, but only when it actually advances.
+        if (get().pendingPresetId) set({ pendingPresetId: null });
+        void get().advanceLibrary();
+      };
       get().pokeChrome();
 
       // Whole-lane-review fix C1: an OS-level quit (or the window's own
@@ -2993,6 +3006,12 @@ export const useVizStore = create<VizState>((set, get) => {
         // unrelated undo/redo today — closing it blind risked a silent
         // behavior change this round did not ask for.
         recoveredNotice: false,
+        // R2-19: the whole visual document is being replaced (open/undo/redo/
+        // theme/new) and presetId is set directly below — never through
+        // switchPreset, whose own supersede rule would have cleared this. A
+        // queued switch aimed at the outgoing document must not land on the
+        // incoming one.
+        pendingPresetId: null,
         // Keep the export resolution consistent with the incoming aspect
         // (covers project-open AND undo/redo of aspect changes).
         exportSettings: {
