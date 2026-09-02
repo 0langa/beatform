@@ -3,15 +3,19 @@
 One JSON file = one complete look: visual mode + parameters, background,
 text/logo layers (assets embedded as data URLs), timeline scenes, post
 chain, motion masters, plus metadata. **Import by dropping the file onto the
-app window.** Export via _Visuals ▸ Looks & themes ▸ Save as theme…_
+app window** — the same drop imports every sibling format the app writes:
+`.bfpreset` looks, `.bfbuilder` stacks, `.bfshader` shaders and `.bfproj`
+projects. Export via _Visuals ▸ Looks & themes ▸ Save as theme…_
 
 Themes contain **no code**. A theme can only select and parameterize the
 app's built-in visuals, so importing one is exactly as safe as clicking
-around the UI. Share them anywhere — a GitHub discussion, Discord, a zip.
-Community themes live in
-[Discussions](https://github.com/0langa/beatform/discussions), and the
-in-app [Gallery](https://github.com/beatform-app/gallery) carries a curated,
-checksum-verified selection.
+around the UI. Share them anywhere — Discord, a zip, a link. The sharing
+channel with a front door is the in-app **Gallery**: a public, curated
+collection of looks and themes backed by
+[beatform-app/gallery](https://github.com/beatform-app/gallery), where every
+entry is pinned to an immutable version and checksum-verified before it is
+parsed. Submissions are reviewed there as pull requests;
+`node scripts/gallery-submit.mjs` turns your file into a ready PR body.
 
 ## File layout
 
@@ -20,7 +24,7 @@ checksum-verified selection.
   "kind": "bftheme",
   "schemaVersion": 1, // .bftheme format version
   "projectSchemaVersion": 14, // embedded document schema (same as .bfproj)
-  "appVersion": "2.84.0", // app that wrote it (informational)
+  "appVersion": "2.108.0", // the app version that wrote it (informational)
   "meta": {
     "name": "Midnight Phonk", // required
     "author": "you", // defaults to "unknown"

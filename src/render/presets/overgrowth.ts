@@ -69,6 +69,20 @@ import { WGSL_COLOR_CONTROLS } from "../wgslLib";
  * skeleton — seed positions, regime, palette — re-locks within bars, so
  * the divergence is texture, never structure.
  *
+ * THE ONE WRITE dt DOES NOT GATE (F5 nit). `preset()` returns the tile
+ * value `advance()` produced in alpha on EVERY pass, presentation-only
+ * (dt = 0) frames included, and the virgin branch of `advance` is the one
+ * place that is not a pass-through at dt = 0: a just-cleared field lays
+ * the constellation (A = 1, B = seed) into visTex on a present-only frame
+ * too. Harmless twice over. The renderer copies visTex into histTex only
+ * on an advance tick (webgpuRenderer's feedback step 3, `feedbackAdvance`),
+ * so nothing ever reads a present-only frame's alpha — the composite pass
+ * derives its own alpha and ignores this lane — and the value it would
+ * have written is exactly the constellation the first real advance
+ * derives for itself from the still-cleared history. This note lives here
+ * rather than beside the WGSL because the body is snapshot-pinned by
+ * shaderGolden.test.ts.
+ *
  * NUMERICS. Karl Sims' parameterization: normalized 3×3 Laplacian (orth
  * 0.2 / diag 0.05 / centre −1), Du = Pattern scale, Dv = Du/2, explicit
  * Euler. The stencil's worst eigenvalue is −1.6, so the update factor is

@@ -17,7 +17,7 @@ GitHub is the only channel and everything is free forever.
    reads its tags, detects BPM + key, and locks grid-synced visuals to the
    real beats.
 3. **Pick a look.** Twenty visual modes across the top; each ships six to
-   fourteen curated styles (Builder ships six whole-stack starting points
+   fifteen curated styles (Builder ships six whole-stack starting points
    instead). Or open _Visuals ▸ Looks & themes_ and click a factory
    theme — Cover Story, Hyperlane, Chrome Sunset, Ion Storm, and more — for a
    complete tuned setup in one click. The in-app **Gallery** carries a curated
@@ -33,8 +33,8 @@ GitHub is the only channel and everything is free forever.
    _Scene ▸ Post_ adds bloom, grain and vignette; _Modulation_ wires any
    audio feature straight onto a control.
 5. **Export.** One MP4 (H.264/HEVC/AV1), a transparent WebM (VP9 + alpha), a
-   PNG sequence with alpha, a 10-bit AV1 MP4, or a ProRes 4444 `.mov` for your
-   editor. The same
+   PNG sequence with alpha, a 10-bit AV1 MP4, a ProRes 4444 `.mov` for your
+   editor, or a seamless GIF / animated WebP loop. The same
    project definition renders on an indexed export timeline; live reaction and
    cross-hardware pixels follow the documented parity tolerances.
 

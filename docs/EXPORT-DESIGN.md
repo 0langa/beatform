@@ -15,7 +15,7 @@ Instead: render every frame deterministically, decoupled from wall-clock.
 ```
 decodeAudioData(track)                 ── one decoded AudioBuffer is the
         │                                 single source of truth for both lanes
-        ├── audio lane ──────────────► AudioEncoder (AAC 256k, fallback Opus)
+        ├── audio lane ──────────────► AudioEncoder (AAC 192k, fallback Opus)
         │                                timestamps = sampleIndex / sampleRate
         └── video lane
              OfflineAnalyzer            src/audio/offlineSource.ts (EXISTS)
@@ -65,7 +65,7 @@ preset-animated / solid-color / transparent backgrounds with zero per-preset
 code. MP4 carries no alpha: transparent mode renders over black; chroma
 green/magenta swatches cover editor keying.
 
-Shipped since this document was first written (it described the v1 pipeline):
+Shipped since this document was first written:
 
 - **Worker + OffscreenCanvas move** — encoding runs off the UI thread, with
   frame/frameAck flow control so the queue can't outrun the encoder.
@@ -80,20 +80,43 @@ Shipped since this document was first written (it described the v1 pipeline):
 - **LUFS normalization**, **loop crossfade**, **timeline-driven scene
   resolution**, **lyric overlays**, **audiogram elements** and **batch render**.
 
-Still open (deliberately):
+Encoder and adapter selection, as it stands:
 
-- Hardware-encoder selection (VideoEncoder picks its own backend today).
+- The video **encoder** backend is WebCodecs' choice: `VideoEncoder` picks its
+  own implementation (hardware where the platform offers one), and the app
+  exposes no encoder picker. What it does control is the codec — availability
+  is probed per machine (`src/export/codecProbe.ts`) and re-checked at the
+  job's real dimensions.
+- The GPU **adapter** is chosen, and the export uses the same one the preview
+  does: _Preferences ▸ Performance ▸ GPU preference_ (default / high
+  performance / power saver) rides the `ExportJob` into the worker, which
+  cannot read preferences itself, so on a dual-GPU machine the export renders
+  on the adapter the preview ran on (`src/export/exportGpuPreference.test.ts`).
 
 (The second-display performance output shipped in v2.104.0 — it is a live
 mirror surface, not an export lane; see the perform window sources.)
 
 ## Quality defaults
 
-| Preset | Resolution | fps | H.264 bitrate |
-| ------ | ---------- | --- | ------------- |
-| High   | 1920×1080  | 60  | 16 Mbps       |
-| Ultra  | 2560×1440  | 60  | 28 Mbps       |
-| Max    | 3840×2160  | 60  | 50 Mbps       |
+The presets are the resolution labels in `RESOLUTIONS`
+(`src/state/exportConfig.ts`): 720p, 1080p, 1440p and 4K at 16:9, a
+1080×1080 square, and 1080×1920 / 2160×3840 vertical — each at 30 or 60 fps.
+With _auto_ bitrate the video rate comes from `autoBitrateMbps()` in the same
+file:
+
+```
+Mbps = clamp(round(width × height × fps × 0.09 / 1e6), 2, 60)
+```
+
+| Resolution | fps | Auto bitrate |
+| ---------- | --- | ------------ |
+| 1920×1080  | 60  | 11 Mbps      |
+| 2560×1440  | 60  | 20 Mbps      |
+| 3840×2160  | 60  | 45 Mbps      |
+
+The same rule feeds every codec lane and the batch queue; a manual bitrate
+replaces it. Audio is AAC at 192 kb/s, or Opus at 192 kb/s when AAC is
+unavailable.
 
 Encode speed: GPU shader presets render far faster than realtime; H.264
 hardware encode ~100-300 fps at 1080p. A 3-minute track ≈ 1-2 min export.

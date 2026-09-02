@@ -80,6 +80,15 @@ structural variety, not just hue swaps.
   (`window.__store`, `__runExport`, `__gpuErrors`) — see the patterns in
   existing PRs/commits.
 
+## Docs
+
+`docs/guide.md` is **generated** — never edit it by hand: the source is
+`src/ui/guideContent.ts` (plus the tables `src/ui/guideDerived.ts` derives
+from the live schemas), and `npm run build:guide` regenerates the file from
+them. Run it after any change to either source, because
+`src/ui/guideSync.test.ts` fails `npm test` whenever the committed
+`docs/guide.md` is stale.
+
 ## Commits
 
 Conventional commits (`feat:`, `fix:`, `chore:` …) — release notes are

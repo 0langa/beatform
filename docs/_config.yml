@@ -1,3 +1,5 @@
 title: Beatform
 description: Free, open-source music visualizer for Windows — WebGPU visuals, beat-locked sync, pro exports. GitHub releases only, no accounts, no cloud.
 theme: jekyll-theme-cayman
+# Internal planning docs stay out of the public site.
+exclude: [V3-RELEASE-PLAN.md]

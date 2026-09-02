@@ -75,6 +75,14 @@ at COMPILE time, so no cargo command works until they exist.
 | Shadertoy smoke    | `npm run test:shadertoy:built`                                     | Shadertoy import, transpiler, or compat pipeline changed                                                  |
 | Lyrics E2E         | `npm run test:lyrics` (`test:lyrics:quick` for the short leg)      | Lyrics sidecar, models, alignment, or correction editor changed                                           |
 
+**Probe harnesses (not gates).** `scripts/` also holds one-off and diagnostic
+harnesses that share `scripts/lib/` but gate nothing: `av1-e2e`, `midi-e2e`,
+`heap-soak`, `p11-smoke`, `perf-family-check`, `segment-parity-probe`,
+`deepcolor-verify`, `gallery-builtin-shots`, `gallery-seed-shots`,
+`v268-visual-check` and `midi-probe` (plus `wave-shots`, the evidence pack
+behind a GPU-matrix re-bless). A harness becomes a gate only by getting a row
+in the table above; until then a red run is information, not a blocker.
+
 The GPU matrix owns its full dev lifecycle: `npm run test:gpu` launches
 `tauri dev`, whose `beforeDevCommand` starts Vite. **Do not pre-start Vite for
 this gate**; doing so races the matrix for ports 1420/1421. No environment
@@ -163,15 +171,15 @@ audits remain CI/PR-only per section 5):
 
 ## 5. Where each gate runs in CI
 
-| Gate                                                    | `ci.yml` (push/PR) | `release.yml` (tag)                              |
-| ------------------------------------------------------- | ------------------ | ------------------------------------------------ |
-| typecheck / lint / format:check / `npm test`            | `checks` job       | yes                                              |
-| `npm run build`                                         | `checks` job       | via `npm run tauri build` (`beforeBuildCommand`) |
-| `cargo fmt --all -- --check`                            | `rust` job         | yes                                              |
-| `cargo clippy --workspace --all-targets -- -D warnings` | `rust` job         | yes                                              |
-| `cargo test --workspace --lib --bins`                   | `rust` job         | yes                                              |
-| `npm audit` / `cargo audit`                             | `audit` job        | no (dependency hygiene, not a release blocker)   |
-| Device gates (section 3)                                | no — need hardware | no — run locally per touched area before tagging |
+| Gate                                                    | `ci.yml` (push/PR)                                                                            | `release.yml` (tag)                              |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| typecheck / lint / format:check / `npm test`            | `checks` job                                                                                  | yes                                              |
+| `npm run build`                                         | `checks` job, and again in the `rust` job (tauri validates the frontend dist at compile time) | via `npm run tauri build` (`beforeBuildCommand`) |
+| `cargo fmt --all -- --check`                            | `rust` job                                                                                    | yes                                              |
+| `cargo clippy --workspace --all-targets -- -D warnings` | `rust` job                                                                                    | yes                                              |
+| `cargo test --workspace --lib --bins`                   | `rust` job                                                                                    | yes                                              |
+| `npm audit` / `cargo audit`                             | `audit` job                                                                                   | no (dependency hygiene, not a release blocker)   |
+| Device gates (section 3)                                | no — need hardware                                                                            | no — run locally per touched area before tagging |
 
 Release-critical web and Rust gates must stay aligned between both workflows.
 Dependency audits are the intentional exception: they block CI/PR but not a

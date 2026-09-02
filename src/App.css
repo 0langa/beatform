@@ -4608,9 +4608,11 @@ kbd {
   }
 }
 
-/* FROZEN, DELIBERATELY UNIMPLEMENTED — BACKLOG H15, owner decision Q1.
- * Same treatment as H2's group-subset argument: the spec lives at its
- * insertion point so nobody re-derives it, and no orphan surface ships.
+/* H15 — stacked param rows under container 300 (dock 466). SHIPPED
+ * 2026-08-13 on the owner's explicit yes; the rules below are LIVE. The
+ * measurements that sat frozen here while it was a taste call are kept as
+ * the spec at its insertion point so nobody re-derives them (same treatment
+ * as H2's group-subset argument).
  *
  * Below C 300 (dock 466) NO single-line layout works for an ordinary row
  * either: the grouped row is 161px and the fixed chrome is 138px, so even a

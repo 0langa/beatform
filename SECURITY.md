@@ -75,13 +75,13 @@ reports.
 
 No telemetry, no analytics, nothing in the background. Every request the
 app makes is user-facing and goes to GitHub. The full inventory, verified
-against v2.72.1:
+against 2.108.0 (2026-09-02):
 
 | Purpose                             | Host                                                                                                | Process               | When                                            |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------- |
 | Update check (`latest.json`)        | `github.com` (this repo's release assets)                                                           | Rust (updater plugin) | at startup and on a manual "Check for updates"  |
 | Installer download                  | `github.com` (this repo's release assets, minisign-verified)                                        | Rust (updater plugin) | only after you accept an offered update         |
-| Release notes for the update dialog | `raw.githubusercontent.com` (this repo's `CHANGELOG.md`, pinned to the offered tag)                 | Webview               | when an update is offered                       |
+| Release notes for the update dialog | `raw.githubusercontent.com` (this repo's `CHANGELOG.md` at the offered tag, `main` as fallback)     | Webview               | when an update is offered                       |
 | Gallery registry, content, previews | `raw.githubusercontent.com` (`beatform-app/gallery` — commit-pinned, SHA-256-verified before parse) | Webview               | only while you browse or install in the Gallery |
 | Lyrics AI-model downloads           | `github.com` (`beatform-app/models` release — SHA-256-pinned in the binary, Range-resumable)        | Rust                  | only when you ask to download a model           |
 
@@ -96,8 +96,18 @@ default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; co
 
 Note that `img-src` deliberately does **not** include the raw host: Gallery
 previews render only from verified bytes via `blob:` URLs, never straight
-off the network. If a release changes `connect-src`, `gallery.ts`, or
-`lyrics.rs`, this table gets re-verified as part of that release.
+off the network. If a release changes `connect-src`, `gallery.ts`,
+`changelogNotes.ts`, or `lyrics.rs`, this table gets re-verified as part of
+that release.
+
+Things that look like network but are not: Shadertoy import is paste-only —
+the GLSL you paste is transpiled locally in the Rust process
+(`src-tauri/src/shadertoy.rs`), nothing is fetched from shadertoy.com; links
+in the in-app guide render as non-navigating text (the webview ships no
+opener plugin), so the app never opens or fetches them; and the Gallery
+submission helper (`scripts/gallery-submit.mjs`) is a Node script run by a
+contributor, not code that runs in the app. The lyrics sidecar itself makes
+no network calls — model downloads happen in the shell process, as listed.
 
 ## Update integrity (auto-updater, v2.39.0+)
 

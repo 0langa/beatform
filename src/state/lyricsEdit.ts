@@ -216,9 +216,10 @@ function spreadWords(lines: LyricLine[], i: number, tokens: string[]): LyricWord
  * review, IMPORTANT): this module is deliberately pure and has no access to
  * playback state (see the file's own header), but MAX_TIME_SEC alone
  * regresses a legitimate tail edit on any track longer than ~100 minutes —
- * the app documents ~2-hour lyrics tracks as supported (LYRICS_MAX_TRACK_SEC,
- * lyricsGenActions.ts), so such files genuinely exist, arriving via IMPORT
- * (which has no clamp of its own) rather than generation. Callers that know
+ * the app plays ~2-hour mixes (decodeLenient.ts) while lyrics GENERATION
+ * stops at 90 minutes (LYRICS_MAX_TRACK_SEC, lyricsGenActions.ts), so such
+ * files genuinely exist, arriving via IMPORT (which has no clamp of its own)
+ * rather than generation. Callers that know
  * the track's real duration (lyricsEditActions.ts) pass it; callers that
  * don't (tests, or a caller with no loaded track) get the same MAX_TIME_SEC
  * safety net as before — the contract this function's OWN CALLERS already

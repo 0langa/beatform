@@ -78,8 +78,9 @@ Free and open source. Built to become a professional-grade tool for producers an
   of a static file). **Preferences** (Ctrl+,), four tabs: _General_ (autosave
   delay, remembered save-dialog folder), _Modes_ (drag the mode strip into
   your own order), _Performance_ (live frame cap, preview resolution, GPU
-  preference, and a **Performance display** FPS/CPU/memory overlay drawn over
-  the preview and never into it), _Updates_
+  preference, and a **Performance display** overlay — FPS, frame time,
+  renderer, JS heap, CPU, RAM, disk I/O — drawn over the preview and never
+  into it), _Updates_
 - **Project files**: save/open the whole setup (preset, params, sync,
   background, layers) as versioned `.bfproj` files — Ctrl+S / Ctrl+O,
   native dialogs
@@ -194,33 +195,48 @@ Free and open source. Built to become a professional-grade tool for producers an
 ```
 src/
   audio/
-    engine.ts          AudioContext graph, decoded-buffer playback, seek/volume
-    featurePipeline.ts source-agnostic spectrum->AudioFeatures (deterministic)
-    realtimeSource.ts  live analysis — shared DSP, device-timed input
-    offlineSource.ts   PcmData driver at fixed fps (export path)
-    dsp/fft.ts         own real FFT (Hann), shared by live + offline paths
-    types.ts           AudioFeatures — the audio->render contract
-    demoTrack.ts       OfflineAudioContext demo synth
+    engine.ts            AudioContext graph, decoded-buffer playback, seek/volume, A-B loop
+    featurePipeline.ts   source-agnostic spectrum -> AudioFeatures (deterministic)
+    realtimeSource.ts    live analysis — shared DSP, device-timed input
+    offlineSource.ts     PcmData driver at fixed fps (export path)
+    types.ts             AudioFeatures — the audio->render contract
+    stems.ts             analysis-only stem import -> envelope timelines for modulation
+    dsp/                 fft.ts (own real FFT), displaySpectrum, fftSize, lufs, truepeak, stereo, wav
+    analysis/            worker-side track analysis: beatGrid, keyDetect, sections
   render/
-    types.ts           Renderer + Preset interfaces, param schemas (serializable)
-    webgpuRenderer.ts  fullscreen-triangle pass, shared WGSL header/ABI
-    canvas2dRenderer.ts fallback renderer, same interface
-    presets/           one file per visual; index.ts is the registry
+    types.ts             Renderer + Preset interfaces, param schemas (serializable)
+    webgpuRenderer.ts    fullscreen-triangle pass, shared WGSL header/ABI, post chain
+    canvas2dRenderer.ts  fallback renderer, same interface
+    wgslLib.ts           shared WGSL snippet library (tonemap, palettes, hsl2rgb)
+    builder2.ts          Builder: a layer stack compiled into one fragment preset
+    overlay.ts / lyricPlate.ts   text/logo/art layers; lyrics rasterized for Lyric Stage
+    fixedFeedback.ts     60 Hz fixed-step clock for texture-feedback presets
+    videoBg.ts / bgImage.ts  video (frame picked purely from track time) and image backgrounds
+    presets/             one file per visual; index.ts is the registry; custom.ts = WGSL SDK
   export/
-    exportCore.ts      env-agnostic render+encode+mux pipeline
-    exportWorker.ts    module worker running the core off the main thread
-    videoExporter.ts   orchestration: worker/inline, blob or stream-to-disk
+    exportCore.ts        env-agnostic render+encode+mux pipeline
+    exportWorker.ts      module worker running the core off the main thread
+    videoExporter.ts     orchestration: worker/inline, blob or stream-to-disk
+    buildExportOptions.ts  document -> export options (determinism chokepoint)
+    codecProbe.ts        WebCodecs codec capability probe (H.264/HEVC/AV1/VP9+alpha)
   state/
-    store.ts           zustand store: document slice (project payload) + session
-    services.ts        engine/analyzer/renderer singletons + frame loop
-    project.ts         .bfproj schema, validation, migration point
-    userPresets.ts     .bfpreset user looks
-    platform.ts        Tauri/browser file dialogs + IO
-    persistence.ts     localStorage cache (last session)
-  App.tsx              view layer over the store
-docs/EXPORT-DESIGN.md  offline-rendered, frame-perfect MP4 export design
-src-tauri/             Rust shell — dialog/fs plugins, library scan
-                       (walkdir + lofty), WASAPI loopback capture (cpal)
+    store.ts             zustand store: document slice (project payload) + session
+    slices/              action groups: export, batch, gallery, lyrics, perform, midi, ...
+    frameResolve.ts      per-frame resolution shared by preview and export (chokepoint)
+    services.ts          engine/analyzer/renderer singletons + frame loop
+    project.ts           .bfproj schema, validation, numbered migrations
+    themes.ts / userPresets.ts / factoryThemes.ts   .bftheme, .bfpreset, the factory theme pack
+    timeline.ts / modMatrix.ts / lyrics.ts   scenes + keyframes, modulation matrix, timed lyrics
+    gallery.ts           Gallery registry client (URL allowlist + SHA-256 before parse)
+    midi.ts / quantize.ts   live performance: Web MIDI core, beat-quantized takeover
+    platform.ts / prefs.ts / persistence.ts / updater.ts   IO + dialogs, preferences, cache, auto-update
+  ui/                    React panels: Visuals dock pages, dialogs, guideContent.ts (-> docs/guide.md)
+  perform/               second-display output window (PerformApp, performRuntime)
+  App.tsx                view layer over the store; drop-import routing
+src-tauri/src/           Rust shell: lib.rs (commands, fs scope, library scan), loopback.rs (WASAPI),
+                         prores.rs (ffmpeg sidecar: ProRes/AV1/GIF/WebP), lyrics.rs (models + sidecar),
+                         shadertoy.rs (GLSL -> WGSL), perform_window.rs, perfstats.rs, midi_permission.rs
+src-tauri/lyrics-sidecar/  workspace member: whisper.cpp + MDX-Net isolation + wav2vec2 alignment
 ```
 
 Design rules: renderers consume only `AudioFeatures`; presets declare params
@@ -253,8 +269,11 @@ npm run typecheck    # tsc --noEmit
 The full gate list — web, Rust, and the device/E2E suites with the rules for
 when each is mandatory — is [`GATES.md`](GATES.md). CI runs the web gates
 (typecheck, lint, format check, tests, build) on every push/PR, plus a desktop
-job (`cargo fmt --all`, `cargo clippy --workspace`, `cargo test --workspace`)
-and a dependency audit. Always pass `--workspace`/`--all` to cargo: bare cargo
+job (`npm run build` for tauri's compile-time resource check, `cargo fmt --all`,
+`cargo clippy --workspace`, and `cargo test --workspace --lib --bins` — CI
+narrows the canonical `cargo test --workspace` to lib and bin targets to bound
+runtime, the same coverage minus doc-tests; GATES.md §2 has the detail) and a
+dependency audit. Always pass `--workspace`/`--all` to cargo: bare cargo
 silently skips the lyrics-sidecar member.
 
 ## Roadmap
@@ -265,16 +284,17 @@ shipped** — beat-quantized switching, Web MIDI, Stage mode, and the
 second-display output window with its Perform drawer all landed (v2.104.0).
 Everything stays free and open source, GitHub-only, with no monetization.
 
-Current work, evidence gaps, feature candidates and explicit non-goals are kept
-in [`BACKLOG.md`](BACKLOG.md). That ledger is the canonical detailed queue;
-older local roadmap and plan files are historical records.
+**Toward 3.0.0.** Version 3.0.0 is the release after which Beatform can sit
+stable for a while: nothing that was started ships half-done, every 2.x
+project, look, theme and shader file opens unchanged, and the updater carries
+every 2.x install forward. It is not a feature release. The ordered plan is
+[`docs/V3-RELEASE-PLAN.md`](docs/V3-RELEASE-PLAN.md); the open rows, the
+half-done inventory with its verdicts, and the explicit non-goals live in
+[`BACKLOG.md`](BACKLOG.md) — the canonical detailed queue. Development
+continues on the 2.x line until that plan closes.
 
-The full on-hardware acceptance pass (2026-07-27) is **complete** — every item
-in its scope green, including real-hardware drag-and-drop, a physical
+Manual acceptance evidence lives in [`TESTING.md`](TESTING.md) (the current
+batch) and [`archive/ledgers/`](archive/ledgers/README.md) (every earlier run,
+including the full 2026-07-27 on-hardware pass: real drag-and-drop, a physical
 non-US keyboard, a two-hour export soak and a ProRes 4444 alpha round-trip in
-DaVinci Resolve; `TESTING.md` records the pass and the few surfaces added
-since it ran.
-**v3.0.0 is not a version bump waiting on a checklist.** It is the point where
-this is exactly the app it should be — every feature something to stand behind,
-not merely something that works. Passing the acceptance pass is evidence toward
-that, not a trigger for it. Development continues on the 2.x line.
+DaVinci Resolve).

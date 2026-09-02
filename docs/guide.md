@@ -43,7 +43,7 @@ The **Gatefold** mode makes the artwork the whole show: the track's cover framed
 
 ### Your own shaders
 
-The _+_ chip at the end of the strip opens the shader editor, where you can write a WGSL fragment of your own — it becomes a first-class mode, saved into your projects and shareable as a `.bfshader` file. Its _Shadertoy…_ button takes the Image tab of a single-pass Shadertoy shader and translates it to WGSL on the spot, keeping the author and license with the visual. Both need hardware rendering: on the simplified Canvas2D fallback the _+_ chip is switched off.
+The _+_ chip at the end of the strip opens the shader editor, where you can write a WGSL fragment of your own — it becomes a first-class mode, saved into your projects and shareable as a `.bfshader` file — drop one onto the window to import it. Its _Shadertoy…_ button takes the Image tab of a single-pass Shadertoy shader and translates it to WGSL on the spot, keeping the author and license with the visual. Both need hardware rendering: on the simplified Canvas2D fallback the _+_ chip is switched off.
 
 ### Global motion
 
@@ -66,7 +66,7 @@ Every layer has:
 - color (hue + spread) and its own controls,
 - reorder arrows and a duplicate button.
 
-Stacks are saved inside your project like any other setting. _Export .bfbuilder_ writes a stack as a single small file anyone can import — a good way to share looks.
+Stacks are saved inside your project like any other setting. _Export .bfbuilder_ writes a stack as a single small file anyone can import by dropping it onto their window — a good way to share looks.
 
 <a id="sync"></a>
 
@@ -252,8 +252,8 @@ Press <kbd>B</kbd>, drop a folder of tracks, and Beatform renders one video per 
 
 - **Projects** (<kbd>Ctrl+S</kbd> / <kbd>Ctrl+O</kbd>) — a single `.bfproj` file holds everything: mode, controls, sync, backgrounds, overlays, timeline, Builder stacks, lyrics style, audiogram, even embedded images. Opening it on another machine restores the exact setup.
 - **Themes** — _Visuals ▸ Looks & themes_ exports the whole current look as a `.bftheme` anyone can drop onto their Beatform window ([file format reference](https://0langa.github.io/beatform/templates)).
-- **Builder stacks** — `.bfbuilder` files share a single Builder creation.
-- **Your looks** — _Save look_ (in the page header, or on _Looks & themes_) stores the current control values for one mode, locally, and exports as a `.bfpreset`. The visual's factory style chips stay on Mode, beside the header that names the active one.
+- **Builder stacks** — `.bfbuilder` files share a single Builder creation — drop one onto the window to import it.
+- **Your looks** — _Save look_ (in the page header, or on _Looks & themes_) stores the current control values for one mode, locally, and exports as a `.bfpreset`; dropping one onto the window imports it. The visual's factory style chips stay on Mode, beside the header that names the active one.
 
 ### Never lose work
 
