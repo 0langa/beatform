@@ -100,17 +100,28 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // queue needs it for its estimate and pays the VBR scan cost off the
       // interactive path.
       const added: BatchTrack[] = [];
+      // R2-31f: an AGGREGATE counter, never this call's own numbers. Drops
+      // overlap — nothing stops a second drop while the first is still reading
+      // tags — so each call adds its files on entry, subtracts one per file,
+      // and on exit subtracts only what it still owes. Per-call writes
+      // (`files.length`, then 0 in the finally) let the second drop overwrite
+      // the first's remaining count and let whichever drop finished first
+      // zero the counter with the other's files still in flight, so the
+      // panel's spinner vanished mid-scan.
+      let owed = files.length;
+      set({ batchScanning: get().batchScanning + owed });
       try {
-        set({ batchScanning: files.length });
         for (const file of files) {
           const { meta, fromTags, coverArt, duration } = await readTrackMeta(file, file.name, {
             duration: true,
           });
           added.push({ id: newBatchId(), file, meta, metaFromTags: fromTags, coverArt, duration });
-          set({ batchScanning: files.length - added.length });
+          owed--;
+          set({ batchScanning: get().batchScanning - 1 });
         }
       } finally {
-        set({ batchScanning: 0 });
+        // A throw mid-drop releases the rest of THIS drop's files only.
+        if (owed > 0) set({ batchScanning: Math.max(0, get().batchScanning - owed) });
       }
       // Re-read after the awaits, and bail if a run began while we scanned.
       if (get().batchStatus === "running") return;

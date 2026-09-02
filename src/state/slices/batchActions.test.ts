@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { TrackMetaResult } from "../../audio/trackMeta";
 import type { FormatPreset } from "../../export/buildExportOptions";
 import type { BatchRun, BatchTrack } from "../batch";
 
@@ -61,9 +62,15 @@ vi.mock("../batchRunner", async (importOriginal) => {
   return { ...actual, runBatch: vi.fn(async () => {}) };
 });
 
+// The tag reader would import music-metadata and parse real bytes; the R2-31f
+// suite below hands each call a promise it resolves BY HAND, because the whole
+// question there is what the counter reads while two scans overlap.
+vi.mock("../../audio/trackMeta", () => ({ readTrackMeta: vi.fn() }));
+
 const { useVizStore } = await import("../store");
 const { askConfirm, diskSpace } = await import("../platform");
 const { runBatch } = await import("../batchRunner");
+const { readTrackMeta } = await import("../../audio/trackMeta");
 const { shared } = await import("./shared");
 
 const s = () => useVizStore.getState();
@@ -215,5 +222,124 @@ describe("retryFailedBatch runs the summed disk pre-flight (R2-13, review fix 3)
 
     expect(askConfirm).not.toHaveBeenCalled();
     expect(runBatch).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** A tag read whose settling the test owns — one per readTrackMeta call. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+type Gate = ReturnType<typeof deferred<TrackMetaResult>>;
+
+/**
+ * R2-31f — `batchScanning` is an AGGREGATE across overlapping drops.
+ *
+ * Reading tags takes seconds per file (the VBR duration scan), and nothing
+ * stops a second drop while the first is still scanning. The old shape wrote
+ * `files.length` on entry, `files.length - added.length` per file and `0` in
+ * its finally — each call's OWN numbers — so a second drop overwrote the
+ * first's remaining count, and whichever call finished first zeroed the
+ * counter with the other's files still in flight: BatchPanel's spinner (it
+ * reads `batchScanning`) vanished mid-scan. Now every call adds its files on
+ * entry, subtracts one per file, and its finally subtracts only what THAT call
+ * still owes, so the panel reads the true number of files being scanned.
+ *
+ * Each test drives the real addBatchTracks twice, overlapping, and lands the
+ * individual tag reads by hand in the order that exposes the corruption.
+ */
+describe("addBatchTracks aggregates batchScanning across overlapping drops (R2-31f)", () => {
+  let gates: Map<string, Gate>;
+
+  const file = (name: string) => ({ name }) as unknown as File;
+  const tagged = (title: string): TrackMetaResult => ({
+    meta: { title, artist: "" },
+    fromTags: true,
+    coverArt: null,
+    duration: 10,
+  });
+  /** Enough microtask turns for an `await readTrackMeta` to resume and reach
+   * the next file's call (which creates the next gate). */
+  async function settle() {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  }
+  /** Land one file's tags and let the awaiting loop take its next step. */
+  async function land(name: string, title: string) {
+    const g = gates.get(name);
+    if (!g) throw new Error(`no scan in flight for ${name}`);
+    g.resolve(tagged(title));
+    await settle();
+  }
+  const titles = () => s().batch?.tracks.map((t) => t.meta.title);
+
+  beforeEach(() => {
+    gates = new Map();
+    vi.mocked(readTrackMeta).mockReset();
+    vi.mocked(readTrackMeta).mockImplementation((_blob, name) => {
+      const g = deferred<TrackMetaResult>();
+      gates.set(name, g);
+      return g.promise;
+    });
+    useVizStore.setState({ batch: null, batchStatus: "idle", batchScanning: 0 });
+  });
+
+  it("a second drop while the first is still scanning ADDS its files to the count", async () => {
+    const first = s().addBatchTracks([file("a1.mp3"), file("a2.mp3")]);
+    const second = s().addBatchTracks([file("b1.mp3")]);
+    // Both entry writes have landed (they precede each call's first await);
+    // the panel must read every file in flight, not the latest drop's count.
+    expect(s().batchScanning).toBe(3);
+
+    await settle();
+    await land("a1.mp3", "A1");
+    expect(s().batchScanning).toBe(2); // a2 and b1 still reading
+
+    await land("b1.mp3", "B1");
+    await second;
+    await land("a2.mp3", "A2");
+    await first;
+    expect(s().batchScanning).toBe(0);
+    expect(titles()).toEqual(["B1", "A1", "A2"]);
+  });
+
+  it("the drop that finishes first subtracts only ITS files — the other drop's spinner stays up", async () => {
+    const first = s().addBatchTracks([file("a1.mp3")]);
+    const second = s().addBatchTracks([file("b1.mp3"), file("b2.mp3")]);
+    await settle();
+    await land("a1.mp3", "A1");
+    await first;
+    // The first drop is committed; the second's two files are still being read.
+    expect(s().batchScanning).toBe(2);
+    expect(titles()).toEqual(["A1"]);
+
+    await land("b1.mp3", "B1");
+    expect(s().batchScanning).toBe(1);
+    await land("b2.mp3", "B2");
+    await second;
+    expect(s().batchScanning).toBe(0);
+    expect(titles()).toEqual(["A1", "B1", "B2"]);
+  });
+
+  it("a scan that throws mid-drop releases only what that drop still owed", async () => {
+    const first = s().addBatchTracks([file("a1.mp3"), file("a2.mp3"), file("a3.mp3")]);
+    const second = s().addBatchTracks([file("b1.mp3")]);
+    await settle();
+    await land("a1.mp3", "A1");
+
+    gates.get("a2.mp3")!.reject(new Error("tag reader exploded"));
+    await expect(first).rejects.toThrow("tag reader exploded");
+    // a2 and a3 leave the count with the drop that owed them; b1 stays.
+    expect(s().batchScanning).toBe(1);
+    expect(s().batch).toBeNull(); // the failed drop committed nothing
+
+    await land("b1.mp3", "B1");
+    await second;
+    expect(s().batchScanning).toBe(0);
+    expect(titles()).toEqual(["B1"]);
   });
 });
