@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) working with code in this repository.
 
 Beatform — desktop music visualizer. Tauri 2 (Rust) + React 19 + TypeScript + WebGPU (Canvas2D fallback). Free open source, GitHub Releases only; never propose paid tiers, cloud services or store distribution.
 
@@ -21,7 +21,7 @@ npx vitest run src/state/project.test.ts        # single file
 npx vitest run -t "pattern"                      # single test by name
 ```
 
-Quality gates are canonically defined in **`GATES.md`** — if anything below disagrees with it, GATES.md wins. Quoting it:
+Quality gates canonically defined in **`GATES.md`** — if anything below disagrees, GATES.md wins. Quoting it:
 
 ```
 npm run typecheck
@@ -37,31 +37,31 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-ALWAYS `--workspace`/`--all` on cargo commands — bare cargo silently skips the lyrics-sidecar member (fmt included).
+ALWAYS `--workspace`/`--all` on cargo commands — bare cargo silently skips lyrics-sidecar member (fmt included).
 
-Device/E2E gates (need hardware; GATES.md §3 says when each is mandatory, and carries the `test:gpu` re-bless protocol):
+Device/E2E gates (need hardware; GATES.md §3 says when each is mandatory, carries `test:gpu` re-bless protocol):
 
-- `npm run test:gpu` — WebGPU pixel-hash matrix over all visual modes. Shader changes alter hashes: verify visually, then re-bless with `npm run test:gpu:update` and justify in the commit.
+- `npm run test:gpu` — WebGPU pixel-hash matrix over all visual modes. Shader changes alter hashes: verify visually, then re-bless with `npm run test:gpu:update` and justify in commit.
 - `npm run test:loopback:built`, `npm run test:shadertoy:built`, `npm run test:lyrics` — built-app smokes (loopback capture, Shadertoy import, lyrics pipeline).
 - `node scripts/gallery-e2e.mjs` — gallery/store-install surfaces.
 
-No `src/audio/` suite is flaky: their only failure mode was vitest's 5 s per-test default timeout under full-suite parallelism, root-fixed with explicit 30 s **describe** budgets in every suite that does seconds of real work (`dspCharacterization`, `featurePipelineFuzz`, `realtimeSource`, `syncLatency`, `offlineSource`, `engineGraph`, `dsp/truepeak`). A failure there is real; reruns, `--maxWorkers=2` and smaller fixtures are not the protocol — GATES.md §1 has the rule for new suites.
+No `src/audio/` suite is flaky: only failure mode was vitest's 5 s per-test default timeout under full-suite parallelism, root-fixed with explicit 30 s **describe** budgets in every suite doing seconds of real work (`dspCharacterization`, `featurePipelineFuzz`, `realtimeSource`, `syncLatency`, `offlineSource`, `engineGraph`, `dsp/truepeak`). A failure there is real; reruns, `--maxWorkers=2` and smaller fixtures are not the protocol — GATES.md §1 has rule for new suites.
 
 ## Architecture
 
-`README.md` has the directory map. The load-bearing concepts:
+`README.md` has directory map. Load-bearing concepts:
 
-- **Determinism law (the core invariant):** preview and export must resolve identical frames from the same project document. Everything time-dependent resolves from _track time_, never wall clock, through shared chokepoints: `src/state/frameResolve.ts`, `src/export/buildExportOptions.ts`, and the overlay compose path. Presets are pure functions of `(AudioFeatures, time, params)`. Any feature touching rendering must go through these chokepoints or it will silently diverge between preview and export. Golden traces + the GPU pixel matrix guard this.
-- **Audio → render contract:** `src/audio/types.ts` (`AudioFeatures`) is the only thing renderers see. Live (`realtimeSource`) and offline (`offlineSource`) drive the same `featurePipeline` DSP.
-- **Document model:** the zustand store's document slice (`src/state/store.ts`) is what serializes into project files. `project.ts` owns the schema + numbered migrations (`schemaVersion`); themes/user presets/builder stacks/shader files are sibling versioned JSON formats sharing the migration approach. Never change persisted shape without a migration and a test.
+- **Determinism law (the core invariant):** preview and export must resolve identical frames from same project document. Everything time-dependent resolves from _track time_, never wall clock, through shared chokepoints: `src/state/frameResolve.ts`, `src/export/buildExportOptions.ts`, overlay compose path. Presets are pure functions of `(AudioFeatures, time, params)`. Any feature touching rendering must go through these chokepoints or it silently diverges between preview and export. Golden traces + GPU pixel matrix guard this.
+- **Audio → render contract:** `src/audio/types.ts` (`AudioFeatures`) is the only thing renderers see. Live (`realtimeSource`) and offline (`offlineSource`) drive same `featurePipeline` DSP.
+- **Document model:** zustand store's document slice (`src/state/store.ts`) serializes into project files. `project.ts` owns schema + numbered migrations (`schemaVersion`); themes/user presets/builder stacks/shader files are sibling versioned JSON formats sharing that migration approach. Never change persisted shape without a migration and a test.
 - **New visual mode** = one file in `src/render/presets/` + registry entry in `presets/index.ts`. Preset IDs are persisted forever (projects, looks, localStorage) — never rename an ID without a `canonicalPresetId` migration.
 - **Rust side:** `src-tauri/src/lib.rs` registers all commands. Filesystem access is scope-gated (dialog grants scope; commands check `fs_scope`). Long child processes: ffmpeg sidecar (ProRes/AV1/GIF/WebP), lyrics sidecar (`src-tauri/lyrics-sidecar/` workspace member — whisper.cpp + MDX-Net vocal isolation + wav2vec2 word alignment, JSON event protocol on stdout).
 - **Export pipeline** runs in a worker (`exportCore.ts` env-agnostic, `videoExporter.ts` orchestrates, desktop streams to disk via sidecar/fragmented MP4).
 
 ## Project rules
 
-- `BACKLOG.md` is the canonical work ledger — read it before starting feature work, update it when finishing. Completed eras are frozen verbatim under `archive/ledgers/` (read-only history; never reopen archived rows — the live ledger wins on any conflict). `CHANGELOG.md` is **user-facing UI**: the update dialog fetches it from GitHub (`raw.githubusercontent.com/<tag>`, falling back to `main`), so entries must read as release notes — and a local edit is invisible to a running app until pushed.
-- Never use `window.confirm`/`alert` — blocked by the Tauri dialog-plugin ACL. Use `askConfirm()` (`src/state/platform.ts`); an eslint rule enforces this.
-- Web MIDI: never extract `navigator.requestMIDIAccess` into a local (Illegal invocation, silently swallowed); WebView2 permission is granted in `src-tauri/src/midi_permission.rs`, installed from `on_page_load` (windows don't exist yet in `setup`).
-- Release ritual: `node scripts/release.mjs X.Y.Z --title "..."` — one resumable command (bump → changelog scaffold → commit+tag+push → CI watch → publish → verify). The full checklist it automates is GATES.md §4; `gh` on this machine needs the env PAT stripped (the script does it — equivalent of `env -u GITHUB_TOKEN`).
+- `BACKLOG.md` is canonical work ledger — read before starting feature work, update when finishing. Completed eras frozen verbatim under `archive/ledgers/` (read-only history; never reopen archived rows — live ledger wins on conflict). `CHANGELOG.md` is **user-facing UI**: update dialog fetches it from GitHub (`raw.githubusercontent.com/<tag>`, falling back to `main`), so entries must read as release notes — local edit is invisible to a running app until pushed.
+- Never use `window.confirm`/`alert` — blocked by Tauri dialog-plugin ACL. Use `askConfirm()` (`src/state/platform.ts`); eslint rule enforces this.
+- Web MIDI: never extract `navigator.requestMIDIAccess` into a local (Illegal invocation, silently swallowed); WebView2 permission granted in `src-tauri/src/midi_permission.rs`, installed from `on_page_load` (windows don't exist yet in `setup`).
+- Release ritual: `node scripts/release.mjs X.Y.Z --title "..."` — one resumable command (bump → changelog scaffold → commit+tag+push → CI watch → publish → verify). Full checklist it automates is GATES.md §4; `gh` on this machine needs env PAT stripped (script does it — equivalent of `env -u GITHUB_TOKEN`).
 - v3.0.0 is a quality bar, not a milestone — keep shipping 2.x; never propose cutting 3.0.

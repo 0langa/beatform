@@ -2,89 +2,88 @@
 
 ## ✅ VERIFY-003: Web MIDI browser-to-adapter transport — 2026-08-04
 
-Executed against repository HEAD `2e6bfbb` (debug build, Vite dev shell)
-driven over the WebView2 devtools protocol. Virtual transport: **loopMIDI**
-port `loopMIDI Beatform` (teVirtualMIDI 1.3.0.43,
-`C:\WINDOWS\SYSTEM32\teVirtualMIDI32.dll`), messages sent from outside the
-app via winmm (`scripts/midi-send.ps1`, P/Invoke `midiOutShortMsg`).
-Harness: `scripts/midi-e2e.mjs` (full run), `scripts/midi-probe.mjs`
-(diagnostics).
+Run against repository HEAD `2e6bfbb` (debug build, Vite dev shell) over the
+WebView2 devtools protocol. Virtual transport: **loopMIDI** port
+`loopMIDI Beatform` (teVirtualMIDI 1.3.0.43,
+`C:\WINDOWS\SYSTEM32\teVirtualMIDI32.dll`); messages sent from outside the app
+via winmm (`scripts/midi-send.ps1`, P/Invoke `midiOutShortMsg`). Harness:
+`scripts/midi-e2e.mjs` (full run), `scripts/midi-probe.mjs` (diagnostics).
 
-**Two shipped-code findings, both fixed in `2e6bfbb`** (the pure mapping
-core was fine; the transport in front of it was double-dead on every real
-Chromium — exactly the gap this item existed to close):
+**Two shipped-code findings, both fixed in `2e6bfbb`** (mapping core fine;
+transport in front of it double-dead on every real Chromium — the gap this
+item existed to close):
 
 1. `startMidi` extracted `requestMIDIAccess` into a local and called it
-   unbound — a native method without its `navigator` receiver throws
-   `TypeError: Illegal invocation`, which the surrounding catch silently
-   turned into the "MIDI isn't available here" notice. Spoofed test doubles
-   are plain functions with no receiver requirement, so unit tests passed.
+   unbound — native method without its `navigator` receiver throws
+   `TypeError: Illegal invocation`; the surrounding catch silently turned that
+   into the "MIDI isn't available here" notice. Spoofed test doubles are plain
+   functions with no receiver requirement, so unit tests passed.
 2. Chromium gates all Web MIDI behind a permission; WebView2 raises it as
    `PermissionRequested` kind 11 (`MIDI_SYSTEM_EXCLUSIVE_MESSAGES` — its
    only MIDI kind, sysex or not) and denies silently when unhandled. New
-   `src-tauri/src/midi_permission.rs` allows exactly that kind for the
-   app's own origins, installed from `on_page_load` (in `setup` the window
-   does not exist yet — a first wiring there silently did nothing).
+   `src-tauri/src/midi_permission.rs` allows exactly that kind for the app's
+   own origins, installed from `on_page_load` (in `setup` the window does not
+   exist yet — a first wiring there silently did nothing).
 
-| Check                        | Result  | Evidence                                                                                                                                                              |
-| ---------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Permission + access          | ✅ PASS | `enableMidi()` resolves with `midiEnabled: true`; Rust trace shows `request kind=11` from `http://localhost:1420/` answered `allow=true`                              |
-| Device discovery             | ✅ PASS | `midiDevices = ["loopMIDI Beatform"]`                                                                                                                                 |
-| CC learn                     | ✅ PASS | Armed learn for `speed` (0..1.5); one external `B0-07-40` produced binding `{kind:"cc", cc:7, param:"speed", min:0, max:1.5}` and cleared `midiLearn`                 |
-| CC apply, scaling, no dupes  | ✅ PASS | External `B0-07-7F` → `speed = 1.5` exactly, and exactly **1** observed param change for 1 message                                                                    |
-| Note learn + preset switch   | ✅ PASS | Armed note learn for `metaballs`; external `90-3C-7F` bound note 60, second message switched `presetId` to `metaballs` (via queuePreset, quantize off)                |
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Permission + access | ✅ PASS | `enableMidi()` resolves with `midiEnabled: true`; Rust trace shows `request kind=11` from `http://localhost:1420/` answered `allow=true` |
+| Device discovery | ✅ PASS | `midiDevices = ["loopMIDI Beatform"]` |
+| CC learn | ✅ PASS | Armed learn for `speed` (0..1.5); one external `B0-07-40` produced binding `{kind:"cc", cc:7, param:"speed", min:0, max:1.5}` and cleared `midiLearn` |
+| CC apply, scaling, no dupes | ✅ PASS | External `B0-07-7F` → `speed = 1.5` exactly, and exactly **1** observed param change for 1 message |
+| Note learn + preset switch | ✅ PASS | Armed note learn for `metaballs`; external `90-3C-7F` bound note 60, second message switched `presetId` to `metaballs` (via queuePreset, quantize off) |
 | Reconnect, no stuck handlers | ✅ PASS | `disableMidi()` cleared enabled+devices; `enableMidi()` rediscovered the port; external `B0-07-00` → `speed = 0` with exactly **1** change — no stacked subscriptions |
 
-Scope note: hot-plug re-enumeration (`onstatechange` → re-attach) is
-exercised indirectly by the disable/enable cycle and by code review; adding
-or removing the virtual port mid-run was deliberately not driven — the
-owner's loopMIDI instance stays untouched per instruction. Acceptance gate
-("at least one real browser MIDI transport path passes end to end; no stuck
-subscriptions or duplicate messages after reconnect") is met.
+Scope note: hot-plug re-enumeration (`onstatechange` → re-attach) is exercised
+indirectly by the disable/enable cycle and by code review; adding or removing
+the virtual port mid-run was deliberately not driven — the owner's loopMIDI
+instance stays untouched per instruction. Acceptance gate ("at least one real
+browser MIDI transport path passes end to end; no stuck subscriptions or
+duplicate messages after reconnect") is met.
 
-**Outcome: VERIFY-003 closed. The Web MIDI feature works on the real
-WebView2 transport for the first time; fix ships with the next release.**
+**Outcome: VERIFY-003 closed. Web MIDI works on the real WebView2 transport for
+the first time; fix ships with the next release.**
 
 ## ✅ v2.64.1 updater + ACL prompt quick pass — 2026-08-02
 
-Executed against repository HEAD `870cebc` using Computer Use. Installed app
-started at `2.64.0` and was updated only through Beatform's in-app updater.
+Run against repository HEAD `870cebc` using Computer Use. Installed app started
+at `2.64.0`, updated only through Beatform's in-app updater.
 
-| Check                         | Result  | Evidence                                                                                                                                                                                                                                                                                                                               |
-| ----------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Startup update prompt + notes | ✅ PASS | Launch immediately showed `v2.64.0 → v2.64.1`. `WHAT'S NEW IN V2.64.1` rendered the full fix note describing both broken unsaved-change prompts, the raw `confirm()` ACL cause, the native yes/no replacement, and the lint guard.                                                                                                     |
-| In-app install + relaunch     | ✅ PASS | `Install now` entered the download flow, closed the old Beatform window (`17762776`), and automatically relaunched a new window (`17893848`) within the next 5-second observation. No UAC or elevation UI appeared.                                                                                                                    |
-| Installed executable version  | ✅ PASS | `(Get-Item 'C:\Users\Julius\AppData\Local\Beatform\Beatform.exe').VersionInfo.ProductVersion` returned `2.64.1` after relaunch and again after final shutdown.                                                                                                                                                                         |
-| ALIGN-002 experiment 2        | ✅ PASS | Registry query returned `DisplayName = Beatform`, `DisplayVersion = 2.64.1` verbatim. Decisive interpretation: uninstall-registry version writing now works correctly; it is not one release behind.                                                                                                                                   |
-| WGSL dirty-close prompt       | ✅ PASS | Typed one temporary `x` into the WGSL textarea and clicked the header ×. Native `Discard unsaved changes to this shader?` yes/no dialog appeared with no error toast. `No` closed the prompt and kept the dirty editor open; clicking × again and choosing `Yes` discarded the character and closed the editor. No ACL error appeared. |
-| Shadertoy dirty-close prompt  | ✅ PASS | Entered `garbage`; translation showed `No mainImage(out vec4 fragColor, in vec2 fragCoord) found — paste the Image tab of a Shadertoy shader`. Header × opened native `Discard this import?`; `Yes` closed the importer and returned to the shader editor. No `plugin:dialog\|confirm not allowed by ACL` error appeared.              |
-| Clean shutdown/orphan check   | ✅ PASS | Closed shader editor and Beatform normally. Final `Get-Process -Name Beatform` check returned process count 0.                                                                                                                                                                                                                         |
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Startup update prompt + notes | ✅ PASS | Launch immediately showed `v2.64.0 → v2.64.1`. `WHAT'S NEW IN V2.64.1` rendered the full fix note describing both broken unsaved-change prompts, the raw `confirm()` ACL cause, the native yes/no replacement, and the lint guard. |
+| In-app install + relaunch | ✅ PASS | `Install now` entered the download flow, closed the old Beatform window (`17762776`), and automatically relaunched a new window (`17893848`) within the next 5-second observation. No UAC or elevation UI appeared. |
+| Installed executable version | ✅ PASS | `(Get-Item 'C:\Users\Julius\AppData\Local\Beatform\Beatform.exe').VersionInfo.ProductVersion` returned `2.64.1` after relaunch and again after final shutdown. |
+| ALIGN-002 experiment 2 | ✅ PASS | Registry query returned `DisplayName = Beatform`, `DisplayVersion = 2.64.1` verbatim. Decisive: uninstall-registry version writing works correctly; it is not one release behind. |
+| WGSL dirty-close prompt | ✅ PASS | Typed one temporary `x` into the WGSL textarea, clicked the header ×. Native `Discard unsaved changes to this shader?` yes/no dialog appeared with no error toast. `No` closed the prompt and kept the dirty editor open; × again + `Yes` discarded the character and closed the editor. No ACL error. |
+| Shadertoy dirty-close prompt | ✅ PASS | Entered `garbage`; translation showed `No mainImage(out vec4 fragColor, in vec2 fragCoord) found — paste the Image tab of a Shadertoy shader`. Header × opened native `Discard this import?`; `Yes` closed the importer and returned to the shader editor. No `plugin:dialog\|confirm not allowed by ACL` error. |
+| Clean shutdown/orphan check | ✅ PASS | Closed shader editor and Beatform normally. Final `Get-Process -Name Beatform` check returned process count 0. |
 
-**Outcome: all requested v2.64.1 quick-pass checks passed. ALIGN-002 is resolved:
+**Outcome: all requested v2.64.1 quick-pass checks passed. ALIGN-002 resolved:
 installed executable and uninstall registry both report `2.64.1`; both repaired
 native discard prompts work without ACL errors; no Beatform process remained.**
 
 ## ⚠️ v2.64.0 updater + Shadertoy import smoke — 2026-08-02
 
-Executed against repository HEAD `ba84330` using Computer Use. Installed app
-started at `2.63.0` and was updated only through Beatform's in-app updater.
-Feature smoke used `Demo: Groove (120 BPM house)` (0:16).
+Run against repository HEAD `ba84330` using Computer Use. Installed app started
+at `2.63.0`, updated only through Beatform's in-app updater. Feature smoke used
+`Demo: Groove (120 BPM house)` (0:16).
 
-| Check                                | Result      | Evidence                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Startup update prompt + notes        | ✅ PASS     | Launching installed v2.63.0 immediately showed `v2.63.0 → v2.64.0`. Notes rendered under `WHAT'S NEW IN V2.64.0` / `ADDED` and included the Shadertoy import changelog, audio-texture/iChannel0 support, metadata/license, original-GLSL re-edit, error reporting, and preview/export parity.                                                                                               |
-| In-app install + relaunch            | ✅ PASS     | `Install now` handed off to the updater, closed the original Beatform window, completed, and relaunched Beatform automatically within about 4 seconds. No UAC prompt, elevation dialog, or other consent UI appeared. No manual download was used.                                                                                                                                          |
-| Installed executable version         | ✅ PASS     | `(Get-Item 'C:\Users\Julius\AppData\Local\Beatform\Beatform.exe').VersionInfo.ProductVersion` returned `2.64.0` after relaunch and again after final cleanup.                                                                                                                                                                                                                               |
-| ALIGN-002 registry observation       | ⚠️ OBSERVED | Uninstall registry entry returned `DisplayName = Beatform`, `DisplayVersion = 2.63.0` verbatim. It advanced from the historically stuck `2.39.0`, but remained one release behind the `2.64.0` executable.                                                                                                                                                                                  |
-| Track load + preview                 | ✅ PASS     | Loaded `Demo: Groove (120 BPM house)`; duration resolved to 0:16 and playback drove the selected custom visual.                                                                                                                                                                                                                                                                             |
-| Shadertoy translate + add            | ✅ PASS     | Named `Verify Import`, author `e2e`, left default `CC BY-NC-SA 3.0`, and translated the supplied GLSL. Dialog closed; status reported `Custom visual "Verify Import" saved`; chip appeared, was selected, and canvas rendered it.                                                                                                                                                           |
-| Music/time reaction                  | ✅ PASS     | During playback the FFT bar silhouette changed substantially between observations near 0:00 and 0:11, while the time-driven color shifted/pulsed across green/yellow tones.                                                                                                                                                                                                                 |
-| Unsupported function-parameter error | ✅ PASS     | Invalid GLSL produced: `line 1: Passing a channel as a function parameter (sampler2D argument) is not supported yet — use iChannel0..3 directly inside the function`. No broken visual was added.                                                                                                                                                                                           |
-| Close invalid-import dialog          | ❌ FAIL     | Clicking Close after the expected translator error closed the dialog, then Beatform showed `Unexpected error: Command plugin:dialog                                                                                                                                                                                                                                                         | confirm not allowed by ACL`. Exact failure screenshot listed below. No fix attempted. |
-| Re-edit imported visual              | ✅ PASS     | Clicking `Verify Import` reopened `Edit imported shader` with name `Verify Import`, author `e2e`, license `CC BY-NC-SA 3.0`, and the original supplied GLSL—not generated WGSL. Closing this re-edit dialog did not reproduce the ACL toast.                                                                                                                                                |
-| Short MP4 export + playback          | ✅ PASS     | `Verify Import` Canvas-loop MP4 completed: 3.01 s, 1080×1920, 30 fps, H.264 High/yuv420p + AAC-LC 48 kHz stereo, 90 frames, 2,362,534 bytes. Windows Media Player opened and rendered the same green-gradient/yellow FFT visual; play completed the 3-second clip. Bundled ffmpeg full-decode to null exited 0. SHA-256 `05EF8258B52275F483D6FD8DC13C0CB26E4881847138D23DD49EE54D9073912B`. |
-| Persistence                          | ✅ PASS     | Quit Beatform normally, confirmed process count 0, and relaunched. `Verify Import` remained selected on the strip; loading the Groove demo rendered and animated it again.                                                                                                                                                                                                                  |
-| Cleanup + final shutdown             | ✅ PASS     | Deleted `Verify Import` through its shader-editor × after action-time confirmation; chip disappeared. Closed Beatform normally; final `Get-Process -Name Beatform` check returned process count 0.                                                                                                                                                                                          |
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Startup update prompt + notes | ✅ PASS | Launching installed v2.63.0 immediately showed `v2.63.0 → v2.64.0`. Notes rendered under `WHAT'S NEW IN V2.64.0` / `ADDED` and included the Shadertoy import changelog, audio-texture/iChannel0 support, metadata/license, original-GLSL re-edit, error reporting, and preview/export parity. |
+| In-app install + relaunch | ✅ PASS | `Install now` handed off to the updater, closed the original Beatform window, completed, and relaunched Beatform automatically within about 4 seconds. No UAC prompt, elevation dialog, or other consent UI appeared. No manual download used. |
+| Installed executable version | ✅ PASS | `(Get-Item 'C:\Users\Julius\AppData\Local\Beatform\Beatform.exe').VersionInfo.ProductVersion` returned `2.64.0` after relaunch and again after final cleanup. |
+| ALIGN-002 registry observation | ⚠️ OBSERVED | Uninstall registry entry returned `DisplayName = Beatform`, `DisplayVersion = 2.63.0` verbatim. Advanced from the historically stuck `2.39.0`, but remained one release behind the `2.64.0` executable. |
+| Track load + preview | ✅ PASS | Loaded `Demo: Groove (120 BPM house)`; duration resolved to 0:16 and playback drove the selected custom visual. |
+| Shadertoy translate + add | ✅ PASS | Named `Verify Import`, author `e2e`, left default `CC BY-NC-SA 3.0`, translated the supplied GLSL. Dialog closed; status reported `Custom visual "Verify Import" saved`; chip appeared, was selected, canvas rendered it. |
+| Music/time reaction | ✅ PASS | During playback the FFT bar silhouette changed substantially between observations near 0:00 and 0:11, while the time-driven color shifted/pulsed across green/yellow tones. |
+| Unsupported function-parameter error | ✅ PASS | Invalid GLSL produced: `line 1: Passing a channel as a function parameter (sampler2D argument) is not supported yet — use iChannel0..3 directly inside the function`. No broken visual was added. |
+| Close invalid-import dialog | ❌ FAIL | Clicking Close after the expected translator error closed the dialog, then Beatform showed `Unexpected error: Command plugin:dialog | confirm not allowed by ACL`. Failure screenshot listed below. No fix attempted. |
+| Re-edit imported visual | ✅ PASS | Clicking `Verify Import` reopened `Edit imported shader` with name `Verify Import`, author `e2e`, license `CC BY-NC-SA 3.0`, and the original supplied GLSL—not generated WGSL. Closing this re-edit dialog did not reproduce the ACL toast. |
+| Short MP4 export + playback | ✅ PASS | `Verify Import` Canvas-loop MP4 completed: 3.01 s, 1080×1920, 30 fps, H.264 High/yuv420p + AAC-LC 48 kHz stereo, 90 frames, 2,362,534 bytes. Windows Media Player opened and rendered the same green-gradient/yellow FFT visual; play completed the 3-second clip. Bundled ffmpeg full-decode to null exited 0. SHA-256 `05EF8258B52275F483D6FD8DC13C0CB26E4881847138D23DD49EE54D9073912B`. |
+| Persistence | ✅ PASS | Quit Beatform normally, confirmed process count 0, relaunched. `Verify Import` remained selected on the strip; loading the Groove demo rendered and animated it again. |
+| Cleanup + final shutdown | ✅ PASS | Deleted `Verify Import` through its shader-editor × after action-time confirmation; chip disappeared. Closed Beatform normally; final `Get-Process -Name Beatform` check returned process count 0. |
 
 Export artifact:
 `E:\agent-devstorage\shared-cache\audio-visualizer\artifacts\2026-08-02_beatform-v2.64-shadertoy-smoke\beatform-v2.64-verify-import-canvas-loop-3s.mp4`.
@@ -108,27 +107,27 @@ no Beatform process remained. No fix attempted.**
 
 ## ✅ v2.63.0 UI smoke — 2026-08-01
 
-Executed against installed `C:\Users\Julius\AppData\Local\Beatform\beatform.exe`
+Run against installed `C:\Users\Julius\AppData\Local\Beatform\beatform.exe`
 (`FileVersion`/`ProductVersion` `2.63.0`) using Computer Use. Repository HEAD:
 `39e53c5`. Test track:
 `E:\Timmy Turnup\Don Omar x Lucenzo - Danza Kuduro (Timmy Turnup Mashup) 320kbps mp3.mp3`
 (2:11). Renderer badge: `WEBGPU`.
 
-Version-source mapping checked before testing: analyzer-quality spectrum mode was
-introduced by `b7debf3`/`v2.61.0`; spectrum color controls by
-`d609d86`/`v2.62.0`; A-B loop regions by `bfe171d`/`v2.63.0`.
+Version-source mapping checked before testing: analyzer-quality spectrum mode
+came from `b7debf3`/`v2.61.0`; spectrum color controls from `d609d86`/`v2.62.0`;
+A-B loop regions from `bfe171d`/`v2.63.0`.
 
-| Check                                     | Result  | Evidence                                                                                                                                                                                                                                                                  |
-| ----------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Launch, open track, preview               | ✅ PASS | Beatform launched cleanly, MP3 opened through native picker, duration resolved to 2:11, button changed to `Pause (Space)`, and playhead advanced from 0:00 to 0:13.                                                                                                       |
-| Analyzer mode switching                   | ✅ PASS | Spectrum Bars switched through 341 ms, Linear, and FFT bins. UI reported `341 ms window`, `2.93 Hz/bin`, `5451 native bins in range`, and `96 measured bars, no interpolation`; preview stayed live.                                                                      |
-| v2.62 color-mode switching                | ✅ PASS | Spectrum Bars Saturation moved to 0.00 (neutral grayscale) and Lightness to 2.00 (bright endpoint). Switched live through Radial Burst, Bass Circle, and LED Matrix; each retained its own 1.00/1.00 color defaults while Spectrum Bars kept its edited values.           |
-| Seek/restart determinism                  | ✅ PASS | At natural end 2:11, Play restarted exactly at 0:00. While paused at 1:30: Right → 1:35, Left → 1:30, Right → 1:35; paused state remained stable.                                                                                                                         |
-| v2.63 A-B set/toggle/wrap                 | ✅ PASS | `I` set A=1:35; `O` set B=1:40. Enabling with `L` while paused exactly at B snapped to A and stayed paused. Resume from 1:38 crossed B and wrapped to 1:36. Disabling near 1:37 allowed playback through 1:49.                                                            |
-| v2.63 marker drag/outside-region behavior | ✅ PASS | Dragged A from 1:35 to 1:30 without moving paused playhead at 2:04. Enabling while paused outside region normalized to A=1:30 and stayed paused.                                                                                                                          |
-| v2.63 clear behavior                      | ✅ PASS | Clear removed both A/B markers and their times. Whole-track loop remained on, matching documented `X` behavior; playhead stayed at 1:30.                                                                                                                                  |
-| Short MP4 export                          | ✅ PASS | LED Matrix Canvas-loop export completed: 3.01 s, 1080×1920, 30 fps, H.264 High/yuv420p + AAC-LC 48 kHz stereo, 90 video frames, 2,079,766 bytes. Bundled ffmpeg full-decode to null exited 0. SHA-256 `B9742E178102CBCA9E8783B301EF5F1F56FED55D5DB1B04225DBC51F99172891`. |
-| Clean shutdown/orphan check               | ✅ PASS | Closed Beatform normally. Task Manager Processes view opened after shutdown and showed no Beatform entry; independent `Get-Process -Name Beatform` check returned process count 0.                                                                                        |
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Launch, open track, preview | ✅ PASS | Beatform launched cleanly, MP3 opened through native picker, duration resolved to 2:11, button changed to `Pause (Space)`, playhead advanced from 0:00 to 0:13. |
+| Analyzer mode switching | ✅ PASS | Spectrum Bars switched through 341 ms, Linear, and FFT bins. UI reported `341 ms window`, `2.93 Hz/bin`, `5451 native bins in range`, `96 measured bars, no interpolation`; preview stayed live. |
+| v2.62 color-mode switching | ✅ PASS | Spectrum Bars Saturation moved to 0.00 (neutral grayscale) and Lightness to 2.00 (bright endpoint). Switched live through Radial Burst, Bass Circle, LED Matrix; each retained its own 1.00/1.00 color defaults while Spectrum Bars kept its edited values. |
+| Seek/restart determinism | ✅ PASS | At natural end 2:11, Play restarted exactly at 0:00. While paused at 1:30: Right → 1:35, Left → 1:30, Right → 1:35; paused state stable. |
+| v2.63 A-B set/toggle/wrap | ✅ PASS | `I` set A=1:35; `O` set B=1:40. Enabling with `L` while paused exactly at B snapped to A and stayed paused. Resume from 1:38 crossed B and wrapped to 1:36. Disabling near 1:37 allowed playback through 1:49. |
+| v2.63 marker drag/outside-region behavior | ✅ PASS | Dragged A from 1:35 to 1:30 without moving paused playhead at 2:04. Enabling while paused outside region normalized to A=1:30 and stayed paused. |
+| v2.63 clear behavior | ✅ PASS | Clear removed both A/B markers and their times. Whole-track loop remained on, matching documented `X` behavior; playhead stayed at 1:30. |
+| Short MP4 export | ✅ PASS | LED Matrix Canvas-loop export completed: 3.01 s, 1080×1920, 30 fps, H.264 High/yuv420p + AAC-LC 48 kHz stereo, 90 video frames, 2,079,766 bytes. Bundled ffmpeg full-decode to null exited 0. SHA-256 `B9742E178102CBCA9E8783B301EF5F1F56FED55D5DB1B04225DBC51F99172891`. |
+| Clean shutdown/orphan check | ✅ PASS | Closed Beatform normally. Task Manager Processes view opened after shutdown and showed no Beatform entry; independent `Get-Process -Name Beatform` check returned process count 0. |
 
 Export artifact:
 `E:\agent-devstorage\shared-cache\audio-visualizer\artifacts\2026-08-01_beatform-v2.63-ui-smoke\beatform-v2.63-led-matrix-canvas-loop-3s.mp4`.
@@ -165,7 +164,7 @@ each item ✅/❌ with a one-line note.
 
 - Installed app: `C:\Users\Julius\AppData\Local\Beatform\Beatform.exe`
   (version via `(Get-Item <path>).VersionInfo.ProductVersion` — must be ≥ 2.44.1).
-- Bundled ffmpeg (use it for probing exports AND generating test media):
+- Bundled ffmpeg (probe exports AND generate test media):
   `C:\Users\Julius\AppData\Local\Beatform\ffmpeg.exe`.
 - Autosave file: `%APPDATA%\com.olanga.audiovisualizer\autosave.bfproj`.
 - **The visual canvas (WebGPU) is INVISIBLE to standard screen capture** of the
@@ -175,13 +174,13 @@ each item ✅/❌ with a one-line note.
   capture), (c) OBS/Game-Bar capture if available, else mark visual-quality
   items HUMAN.
 - Native Win32 file dialogs: automate by typing the FULL PATH into the
-  file-name field and pressing Enter (arrow-key navigation is unreliable).
+  file-name field + Enter (arrow-key navigation is unreliable).
 - Keyboard (since v2.45.2): every shortcut has a LETTER/DIGIT primary
-  binding that sits on the same labeled key on every layout — P/N previous/
-  next mode, S stage, 0 blackout, H help. The legacy physical-position
-  symbol keys (`[ ] \` via e.code, `.`/`?` via e.key) remain as
-  secondaries. Synthetic input can simply send the letters.
-- Prepare a scratch folder first: `C:\bf-test\` (media in `C:\bf-test\media`,
+  binding on the same labeled key on every layout — P/N previous/next mode,
+  S stage, 0 blackout, H help. Legacy physical-position symbol keys
+  (`[ ] \` via e.code, `.`/`?` via e.key) remain as secondaries. Synthetic
+  input can send the letters.
+- Scratch folder first: `C:\bf-test\` (media in `C:\bf-test\media`,
   exports in `C:\bf-test\out`).
 
 ### Generate test media (once, with the bundled ffmpeg)
@@ -216,24 +215,24 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
 
 - [✅] **Loopback / live input.** PASS 2026-07-23 on v2.44.1: bundled-worklet
   capture entered live state with no error toast, LUFS moved to -16.7 on
-  external WAV playback, and capture stopped cleanly. Steps: play audio in any app (e.g.
-  `start https://www.youtube.com/watch?v=jNQXAC9IVRw` or a local file in
+  external WAV playback, capture stopped cleanly. Steps: play audio in any app
+  (e.g. `start https://www.youtube.com/watch?v=jNQXAC9IVRw` or a local file in
   the browser). In Beatform click the **broadcast icon** (top bar).
-  PASS: no error toast appears (the old failure was the toast "System-audio
+  PASS: no error toast appears (old failure was the toast "System-audio
   capture failed: Unable to load a worklet's module"), the icon shows the
   live state, and the LUFS badge in the Visuals footer (open with G)
   moves with the external audio. Click the icon again to stop.
 - [✅] **Crash recovery.** PASS 2026-07-23 on v2.44.1: autosave existed
   (408337 bytes), forced termination produced the Restore/Discard bar,
   Restore returned the edited Speed 1.00 setting, and a later normal-close
-  relaunch showed no recovery bar. Steps: launch app → open Demos menu → load any demo →
-  open Visuals (G) → change any slider → wait 8 s →
+  relaunch showed no recovery bar. Steps: launch app → Demos menu → load any
+  demo → Visuals (G) → change any slider → wait 8 s →
   `powershell Stop-Process -Name beatform -Force` → verify the autosave
   exists: `Test-Path "$env:APPDATA\com.olanga.audiovisualizer\autosave.bfproj"`
   must be **True** (this file never existed before v2.44.1 — its presence
   is the core fix) → relaunch the app. PASS: a "Restore your unsaved
   work?" bar is visible in the UI chrome; click **Restore**; the app
-  continues without error. Then: close the app NORMALLY, relaunch —
+  continues without error. Then close the app NORMALLY, relaunch —
   PASS: no recovery bar.
 - [✅] **Shortcuts on a non-US keyboard.** PHYSICAL PASS 2026-07-26 by the
   owner on a real QWERTZ keyboard, v2.49.0: P/N/S/0/H and Esc all behave,
@@ -241,12 +240,12 @@ switching · OS-fullscreen + Stage as projector output · undo/redo ·
   search box inserted them as literal text with no mode switch and no
   Stage toggle (the AltGr = ctrl+alt guard from v2.44.1 holding). This
   supersedes the spoof below and CLOSES audit finding HW-2 — the physical
-  layout mapping is now verified, not assumed.
-- [~] _(superseded, kept for provenance)_ **Spoofed keyboard run.** PASS 2026-07-25 on v2.47.0 via
-  SPOOFED input (synthetic KeyboardEvent matrix in the dev harness —
-  no physical keyboard needed): AltGr chords (ctrl+alt+letter, how
-  QWERTZ types symbols) fire NO shortcut; the physical bracket
-  positions (code BracketLeft/BracketRight with QWERTZ key values
+  layout mapping is verified, not assumed.
+- [~] _(superseded, kept for provenance)_ **Spoofed keyboard run.** PASS
+  2026-07-25 on v2.47.0 via SPOOFED input (synthetic KeyboardEvent matrix in
+  the dev harness — no physical keyboard needed): AltGr chords
+  (ctrl+alt+letter, how QWERTZ types symbols) fire NO shortcut; the physical
+  bracket positions (code BracketLeft/BracketRight with QWERTZ key values
   u-umlaut/+) step modes; the physical Backslash position (#) toggles
   Stage; Esc exits; letters P/N/S/0/H verified earlier along with the
   focused-<select> guard. The letter/digit primaries make raw
@@ -333,9 +332,8 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
       confirmed on the real 2.50.0 -> 2.51.0 update offer: hero band with version
       chips, formatted release notes (headings/bullets/bold rather than a raw text
       dump), a real progress bar while downloading, and Restart now on completion.
-      This is the first time it was checked against a genuine offer — the earlier
-      screenshot attempt was inconclusive because the installed build predated the
-      feature.
+      First check against a genuine offer — the earlier screenshot attempt was
+      inconclusive because the installed build predated the feature.
 - [✅] **Preferences gear discoverability (new in v2.45.0).** PASS
   2026-07-26 on installed v2.51.0: the gear sits between the dock toggle
   and Keyboard shortcuts; its tooltip/accessibility description is
@@ -393,7 +391,7 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   `WorkingSet64` cannot separate "retained and needed" from "resident because
   RAM is free". Settling it needs JS-heap numbers from inside the renderer
   (`performance.memory` / `measureUserAgentSpecificMemory`) sampled during a
-  long export — worth doing, but it is not what the owner reported and not a
+  long export — worth doing, but not what the owner reported and not a
   v3 blocker.
 
 - [✅] **`.bfproj` FULL matrix.** PASS 2026-07-23 on v2.44.1: saved and
@@ -403,11 +401,11 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   motion detail 46%, timed karaoke lyrics, all three audiogram elements,
   and the embedded `QA Shader` custom WGSL visual; the shader rendered
   after its installed copy was deleted before load. Build a maximal
-  document: mode with edited
-  params, a text overlay layer + an image layer, a mod route, a timeline
-  with 2 scenes + 1 automation lane, non-default post + motion, edited
-  lyric style + audiogram ON, and a custom WGSL visual (Shader editor →
-  compile the starter shader → save). Ctrl+S → `C:\bf-test\out\full.bfproj`.
+  document: mode with edited params, a text overlay layer + an image layer,
+  a mod route, a timeline with 2 scenes + 1 automation lane, non-default
+  post + motion, edited lyric style + audiogram ON, and a custom WGSL
+  visual (Shader editor → compile the starter shader → save). Ctrl+S →
+  `C:\bf-test\out\full.bfproj`.
   Then: switch mode, delete the custom visual, change everything → Ctrl+O
   the file back. PASS: every listed piece returns, INCLUDING the custom
   visual rendering (its WGSL travels in the file since schema v9).
@@ -475,8 +473,8 @@ H.264 or VP9 and try again`. No "Assertion failed" appeared.
   decision 2026-07-26: no controller will be purchased). A virtual MIDI
   loopback could close the transport gap later at no cost.
 - [✅] **HUMAN — subjective visual quality** on real music across modes.
-  OWNER SIGN-OFF 2026-07-27. This is the one item no agent can close — it
-  needs eyes on the canvas, and the owner gave it.
+  OWNER SIGN-OFF 2026-07-27. The one item no agent can close — it needs
+  eyes on the canvas, and the owner gave it.
 
 **All items in this archived v2.51.0/v2.52.0 batch were green. This is evidence
 toward v3, not authorization to cut it; current code still requires its own

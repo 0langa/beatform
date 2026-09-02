@@ -1,39 +1,47 @@
 # BACKLOG — the live work ledger
 
-This is the canonical ledger (per CLAUDE.md): read it before feature work,
-update it when finishing. It was reset on **2026-08-20** after the
-quality-consolidation program completed (2.99.0 → 2.104.2 shipped the last of
-it). The full 5k-line history — every DONE record, evidence trail, dismissed
-finding and design decision through v2.104.2 — is preserved verbatim at
-**[archive/ledgers/](archive/ledgers/)**. Consult it for context; never reopen
+Canonical ledger (per CLAUDE.md): read before feature work, update when
+finishing. Reset **2026-08-20** after the quality-consolidation program
+completed (2.99.0 → 2.104.2 shipped the last of it). Full 5k-line history —
+every DONE record, evidence trail, dismissed finding and design decision
+through v2.104.2 — preserved verbatim at
+**[archive/ledgers/](archive/ledgers/)**. Consult for context; never reopen
 rows from it. User-facing history lives in CHANGELOG.md; process memory in the
 agents' memory stores.
 
 Rules unchanged: never rename a persisted ID without a migration; new modes
-follow the registry + grid + matrix re-bless discipline; GATES.md is canonical
-for what "done" means; quality over speed.
+follow registry + grid + matrix re-bless discipline; GATES.md is canonical for
+"done"; quality over speed.
+
+## v3.0.0 release program (ACTIVE — owner decision 2026-08-23)
+
+Owner decided to release v3.0.0. Ordered plan lives in
+**[docs/V3-RELEASE-PLAN.md](docs/V3-RELEASE-PLAN.md)**: owner conviction checks
+(rows below) → hardening burn-down shipped as v2.109.0 → findings wave if the
+play session files anything → lean TESTING.md v3 batch → docs/ version-only v3
+diff → full device battery → tag. Tag still waits for owner's explicit go;
+green checklists prepare it, they never trigger it.
 
 ## Owner-pending (only the owner can close these)
 
-- [ ] **FEAT-004 word-timing verdict** — the cold-boot retest's subjective
-      half: watch Lyric Stage's karaoke fill on a known song, say whether the
-      timing feels right. (Instrumented half PASSED 2026-08-19: cold
-      generation 2:45, honest ETAs, RTF learning persists — archive has the
-      full record.) Guide: the repo's sibling directory
+- [ ] **FEAT-004 word-timing verdict** — cold-boot retest's subjective half:
+      watch Lyric Stage's karaoke fill on a known song, say whether timing
+      feels right. (Instrumented half PASSED 2026-08-19: cold generation 2:45,
+      honest ETAs, RTF learning persists — archive has the full record.)
+      Guide: repo's sibling directory
       `..\AI text stuff\beatform-owner-board-2026-08-20.md`
-      (`C:\Users\Julius\source\repos\AI text stuff\`).
-- [ ] **FEAT-009 eyes-only legs** — subjective sharpness/smoothness on the
-      real second display, ~5 min stability impression, and the HDMI hotplug
-      yank/replug. (All programmatic legs PASSED 2026-08-19 on real mixed-DPI
-      hardware.)
-- [ ] **Launch kit** — README hero pick, [SLOT] fills, [VERIFY] flag checks,
-      the 3 screen-recording animateds, and posting (exclusively the owner's
-      action). Kit: `OneDrive\Documents\doc\beatform-launch-kit\`.
+      (`C:\Users\Julius\source\repos\meta\AI text stuff\`).
+- [ ] **FEAT-009 eyes-only legs** — subjective sharpness/smoothness on the real
+      second display, ~5 min stability impression, HDMI hotplug yank/replug.
+      (All programmatic legs PASSED 2026-08-19 on real mixed-DPI hardware.)
+- [ ] **Launch kit** — README hero pick, [SLOT] fills, [VERIFY] flag checks, 3
+      screen-recording animateds, posting (exclusively owner's action). Kit:
+      `OneDrive\Documents\doc\beatform-launch-kit\`.
 - [x] **Fresh-session unbiased audit** — EXECUTED 2026-08-21 (owner-triggered
       ahead of the play session): nine-domain fresh-eyes audit against source,
-      tests, git, device (debug shell drive + measurements) and the published
+      tests, git, device (debug shell drive + measurements) and published
       releases. Findings filed below in "Audit round 2"; dismissals recorded
-      with reasons. The play session itself remains open.
+      with reasons. Play session itself remains open.
 
 ## Audit round 2 (2026-08-21) — findings ledger
 
@@ -41,29 +49,29 @@ Nine-domain unbiased audit (correctness ×2, determinism, export, security,
 docs, tests, ledger/memory, performance) + main-thread device drive of the
 debug shell (same code as v2.104.2). Every row carries evidence and a reaching
 scenario; suspicions that failed to produce one are under "Dismissed". Fix
-verdicts pending the owner's Phase-2 round; nothing below is started.
+verdicts pending owner's Phase-2 round; nothing below is started.
 
 ### P1 — serious, user-reaching
 
 - [x] **R2-01 ProRes 4444 exports BT.601, untagged** — `prores_args()`
       (src-tauri/src/prores.rs:145-177) passes none of the four color flags the
-      AV1 lane sets; measured on the shipped ffmpeg: red encodes Y′=0.3002
-      (≈601), stream reads `yuva444p12le(tv)` with no tags. NLEs assume 709 for
-      HD → every ProRes export decodes with ~10% green shift + channel clipping
-      on saturated content. Scenario: any ProRes export dropped into
+      AV1 lane sets; measured on shipped ffmpeg: red encodes Y′=0.3002 (≈601),
+      stream reads `yuva444p12le(tv)` with no tags. NLEs assume 709 for HD →
+      every ProRes export decodes with ~10% green shift + channel clipping on
+      saturated content. Scenario: any ProRes export dropped into
       Resolve/Premiere next to the same project's AV1/MP4 export.
       **FIXED 2026-08-21 (a433242)**: prores_args carries av1's exact four
       flags; contract test updated. New gate `scripts/export-color-verify.mjs`
       (8fe9893, GATES.md §3 row) proves tag AND conversion on the bundled
       build: red now decodes Y′=0.2135 (bt709) vs the 0.3002 this row measured;
-      the script's negative control reproduced the 0.3002 exactly.
+      script's negative control reproduced the 0.3002 exactly.
 - [x] **R2-02 Export cancel/failure can delete the user's previous file** — no
-      temp-then-rename on the JS lanes: videoExporter.ts:214 opens the picked
-      path `truncate:true` before anything encodes; `discard()` removes it on
+      temp-then-rename on JS lanes: videoExporter.ts:214 opens the picked path
+      `truncate:true` before anything encodes; `discard()` removes it on
       cancel/failure. Scenario: re-export over yesterday's song.mp4, cancel at
       10% (or codec refuses at frame 0) → old file gone. PNG-sequence variant
       included.
-      **FIXED 2026-08-21 (c26f3f6 + b76dd9d)**: the stream writer stages
+      **FIXED 2026-08-21 (c26f3f6 + b76dd9d)**: stream writer stages
       `<target>.partial` and touches the target only via one close-time rename
       (MoveFileExW REPLACE_EXISTING through plugin-fs); discard removes only
       the temp, a failed rename removes the temp and surfaces. New
@@ -86,7 +94,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       **FIXED 2026-08-21 (565f084)**: retryFailedBatch takes startBatch's
       synchronous `batchStarting` claim before ANY await (the readDir and the
       R2-13 pre-flight), checks it in its own guard (retry and start now
-      exclude each other), and releases it in an outer finally on every exit.
+      exclude each other), releases it in an outer finally on every exit.
       Tests: two synchronous back-to-back calls launch exactly one run (red
       before: two); declined and throwing pre-flights both release the claim.
 - [x] **R2-05 Batch export lane drops `sections` and `audiogram`** —
@@ -140,7 +148,7 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       removed.") while exporting/exportPreparing/batch is running; a confirmed
       close cancels both lanes and polls (bounded 2 s) for the teardown —
       which is the `.partial` discard — before the flush+destroy continues.
-      And post-R2-02 the JS lanes' in-flight file IS a `.partial`, never the
+      Post-R2-02 the JS lanes' in-flight file IS a `.partial`, never the
       real name.
 - [x] **R2-10 Cancel is inert during sidecar finalize** —
       exportActions.ts:625-629 never calls `proresAbort` from the cancel
@@ -324,7 +332,13 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
       handle, one atomic bool), and verifiedFetch refuses a header-declared
       oversize before buffering (byte-count backstop kept). REMAINING:
       `style-src 'unsafe-inline'`, cargo-audit cadence.
-      **CLOSED 2026-08-21, v2.105.0 (10df960)**: the two actionable items landed (assert_main_window on disk_space/scratch_dir/perf_stats — loopback_died takes no window; gallery Content-Length pre-cap with byte-count backstop). The two residuals are accepted posture, recorded here: style-src unsafe-inline (no injection sink exists; nonce infeasible with the bundler today) and the lofty parser surface (mitigation = cargo-audit cadence in CI audit job).
+      **CLOSED 2026-08-21, v2.105.0 (10df960)**: the two actionable items
+      landed (assert_main_window on disk_space/scratch_dir/perf_stats —
+      loopback_died takes no window; gallery Content-Length pre-cap with
+      byte-count backstop). The two residuals are accepted posture, recorded
+      here: style-src unsafe-inline (no injection sink exists; nonce
+      infeasible with the bundler today) and the lofty parser surface
+      (mitigation = cargo-audit cadence in CI audit job).
 - [ ] **R2-30 Export delivery nits (10)** — AAC priming/Opus pre-skip
       unsignaled (~20-45 ms late audio; device-probe then edit-list fix);
       mediabunny WebM writes CodecDelay=0 / misuses SeekPreRoll (upstream bug —
@@ -425,11 +439,11 @@ verdicts pending the owner's Phase-2 round; nothing below is started.
 
 ## Audit round 2 — execution record (2026-08-21)
 
-The owner approved the five-wave plan in full; all four release waves shipped
-the same day, each through the house discipline (isolated worktree lane,
-fresh implementer, adversarial review, full gates, device gates for the
-touched areas, `release.mjs`, silent-install verification against HKCU and
-the runtime smoke, RECALL claim superseded per release):
+Owner approved the five-wave plan in full; all four release waves shipped the
+same day, each through house discipline (isolated worktree lane, fresh
+implementer, adversarial review, full gates, device gates for the touched
+areas, `release.mjs`, silent-install verification against HKCU and the runtime
+smoke, RECALL claim superseded per release):
 
 - **Wave 0 (be38754, commits only)** — records truth: repo docs, memory
   layer, owner notes, RECALL contamination (#92-94 deprecated).
@@ -508,7 +522,7 @@ via manual tag + --from=watch/publish; hardening row below).
   of it).
 - **DSP-001 / DSP-002** — see trigger table; recorded behavior, not defects,
   until a report proves user harm.
-- **Feedback modes after a live seek** — the preview keeps pre-seek history
+- **Feedback modes after a live seek** — preview keeps pre-seek history
   (finite for Spectro Falls, indefinite for Overgrowth); exports always
   replay from clip start. Documented in docs/PREVIEW-EXPORT-CONTRACT.md.
 - **Batch renders carry no lyrics** — Lyric Stage degrades to its rehearsal

@@ -1,12 +1,12 @@
 # GATES.md — the release-gate manifest
 
-This file is the **single canonical definition** of every quality gate in
-this repository. `CLAUDE.md`, `CONTRIBUTING.md` and `BACKLOG.md` quote it;
+**Single canonical definition** of every quality gate in this repository.
+`CLAUDE.md`, `CONTRIBUTING.md` and `BACKLOG.md` quote it;
 `.github/workflows/ci.yml` and `release.yml` implement it. If any of those
 ever disagree with this file, **this file wins and the other is drift** —
 fix the drift, don't fork the definition. (The 2026-08 audit found three
-contradicting gate definitions living in parallel; that is how two releases
-shipped off a main that was failing `format:check`.)
+contradicting gate definitions in parallel; that is how two releases
+shipped off a main failing `format:check`.)
 
 ## 1. Web gates — every change
 
@@ -21,21 +21,21 @@ npm run build
 Notes:
 
 - `npm test` is vitest over the whole web suite (DSP, schemas, golden
-  traces). `-- --maxWorkers=2` is an allowed local variation under thermal
-  load; it changes scheduling, not coverage.
-- No suite in `src/audio/` is flaky, and none of them needs a rerun. Their
-  one former failure mode was vitest's 5 s per-test DEFAULT timeout under
+  traces). `-- --maxWorkers=2` is allowed local variation under thermal
+  load; changes scheduling, not coverage.
+- No suite in `src/audio/` is flaky, and none needs a rerun. Their
+  one former failure mode: vitest's 5 s per-test DEFAULT timeout under
   full-suite parallelism, root-fixed with explicit `{ timeout: 30_000 }`
-  **describe** budgets in every suite that spends seconds on real work:
+  **describe** budgets in every suite spending seconds on real work:
   `dspCharacterization`, `featurePipelineFuzz`, `realtimeSource`,
   `syncLatency`, `offlineSource`, `engineGraph` and `dsp/truepeak`. A
   failure in any of them is a logic failure. Rerunning, `--maxWorkers=2`
   and shrinking a fixture are all non-answers — if a NEW suite starts
   timing out, give it a describe budget and say why in the file.
   The budget belongs on the `describe`, not on individual `it`s: the
-  per-test form leaves every test nobody measured on the 5 s default, which
-  is exactly how `featurePipelineFuzz` stayed red long after the suites
-  around it were fixed.
+  per-test form leaves every test nobody measured on the 5 s default —
+  exactly how `featurePipelineFuzz` stayed red long after surrounding
+  suites were fixed.
 
 ## 2. Rust gates — every change touching `src-tauri/`, and always before release
 
@@ -56,7 +56,7 @@ spell it `--workspace`.)
 
 CI narrows the test invocation to `cargo test --workspace --lib --bins` to
 bound runtime; neither crate has integration-test dirs, so today that is
-the same coverage minus doc-tests. The canonical local form stays
+the same coverage minus doc-tests. Canonical local form stays
 `cargo test --workspace`.
 
 Prerequisite once per clone: all four sidecar steps
@@ -78,12 +78,12 @@ at COMPILE time, so no cargo command works until they exist.
 The GPU matrix owns its full dev lifecycle: `npm run test:gpu` launches
 `tauri dev`, whose `beforeDevCommand` starts Vite. **Do not pre-start Vite for
 this gate**; doing so races the matrix for ports 1420/1421. No environment
-pin is needed: the bare command is the supported form.
+pin needed: the bare command is the supported form.
 
 The other device harnesses launch an already-built debug shell and attach CDP
-to it; they do not invoke `tauri dev`. Build the shell first (`cargo build` in
+to it; they never invoke `tauri dev`. Build the shell first (`cargo build` in
 `src-tauri/`), then start Vite separately — plain `npm run dev` is the
-supported form for these too.
+supported form here too.
 
 **The bind (E3f, resolved 2026-08-13).** Vite's default is `127.0.0.1`, set
 in `vite.config.ts` — never `host: false`, which bound whatever Node
@@ -109,7 +109,7 @@ context".
 **GPU-matrix re-bless protocol** (STRICT — R2-16, owner verdict): **any raw
 pixel-hash delta fails `test:gpu`**, even when every perceptual metric
 (16×9 signature error, mean-luma delta, lit-fraction delta) sits inside the
-old tolerances — those metrics are printed as diagnostics on each failing
+old tolerances — those metrics print as diagnostics on each failing
 case so you can judge the magnitude, and they gate nothing. There is no
 such thing as a "tolerance-only" hash change anymore.
 
@@ -139,7 +139,7 @@ Before tagging:
 - `node scripts/bump-version.mjs --verify` — the five version-bearing
   files agree (package.json, tauri.conf.json, Cargo.toml, Cargo.lock,
   src/version.ts).
-- `CHANGELOG.md` has a real section for the version (it is user-facing UI —
+- `CHANGELOG.md` has a real section for the version (user-facing UI —
   the update dialog renders it).
 
 After the tag (the `Release installers` workflow runs the same
