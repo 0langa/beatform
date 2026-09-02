@@ -160,9 +160,16 @@ export class AudioEngine {
     // Freeze the playhead the way pause() does BEFORE tearing down the
     // source — otherwise leaving live mode later resumes from wherever the
     // last segment began (usually 0), silently rewinding the track.
-    if (this._playing) this.offset = this.currentTime;
+    const wasPlaying = this._playing;
+    if (wasPlaying) this.offset = this.currentTime;
     this.stopSource();
     this._playing = false;
+    // And REPORT the stop the way pause() does, before the awaits below. The
+    // store's transport mirror otherwise keeps reading "playing" over a silent
+    // source for the whole worklet load — and for good if that load throws,
+    // since the failure path has no live node to stop and so nothing left
+    // that emits (liveInputWindow.test.ts).
+    if (wasPlaying) this.emit();
     if (this.ctx.state === "suspended") await this.ctx.resume();
     if (!this.workletReady) {
       // A bundled asset, NOT an inline blob: the app CSP is script-src 'self',
