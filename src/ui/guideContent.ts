@@ -88,7 +88,7 @@ export const GUIDE: readonly GuideSection[] = [
           { strong: "×" },
           " beside A/B to clear the markers without turning the loop off — ",
           { kbd: "L" },
-          " then covers the whole track again. A-B markers are session-only and reset when another track loads.",
+          " then covers the whole track again. A-B markers are session-only and reset when another track loads. The loop is a preview tool: an export renders the whole track (or the Canvas-loop segment), never just the A-B region.",
         ],
       },
       {

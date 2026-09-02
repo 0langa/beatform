@@ -21,7 +21,7 @@ When something looks wrong or you get lost, _Project ▸ New project_ resets the
 
 ### Loop a section while you tune
 
-Press <kbd>I</kbd> at the start of a drop and <kbd>O</kbd> at the end, or use the **A**/**B** buttons beside the player. The selected region appears on the seek bar; drag either marker to adjust it, then press <kbd>L</kbd> to loop it. Click **×** beside A/B to clear the markers without turning the loop off — <kbd>L</kbd> then covers the whole track again. A-B markers are session-only and reset when another track loads.
+Press <kbd>I</kbd> at the start of a drop and <kbd>O</kbd> at the end, or use the **A**/**B** buttons beside the player. The selected region appears on the seek bar; drag either marker to adjust it, then press <kbd>L</kbd> to loop it. Click **×** beside A/B to clear the markers without turning the loop off — <kbd>L</kbd> then covers the whole track again. A-B markers are session-only and reset when another track loads. The loop is a preview tool: an export renders the whole track (or the Canvas-loop segment), never just the A-B region.
 
 One bit of vocabulary that comes up throughout the rest of this guide: a **Style** is a chip a visual ships with, a **Look** is a control set you save for one mode, a **Theme** is a whole document in one file, and the **Gallery** is where other people's looks and themes live.
 
