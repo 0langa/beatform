@@ -3,10 +3,12 @@
 Terminal ledgers, preserved verbatim for context. **Nothing in here is open
 work.** The live ledger is [/BACKLOG.md](../../BACKLOG.md).
 
-| File                          | What it is                                                                                                                                                                                            |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BACKLOG-through-v2.104.2.md` | The full work ledger from the 2026-08 quality program's start through v2.104.2 (2026-08-19) — every DONE record, evidence trail, review finding, dismissal-with-reason, and owner verdict. ~5k lines. |
-| `PROPOSALS-2026-08-audit.md`  | The opinionated half of the 2026-08-06 full-product audit: P-1…P-21 with original briefs, owner verdicts, and the execution table (all terminal: complete/rejected).                                  |
+| File                            | What it is                                                                                                                                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BACKLOG-through-v2.104.2.md`   | The full work ledger from the 2026-08 quality program's start through v2.104.2 (2026-08-19) — every DONE record, evidence trail, review finding, dismissal-with-reason, and owner verdict. ~5k lines.        |
+| `PROPOSALS-2026-08-audit.md`    | The opinionated half of the 2026-08-06 full-product audit: P-1…P-21 with original briefs, owner verdicts, and the execution table (all terminal: complete/rejected).                                         |
+| `BACKLOG-through-v2.108.0.md`   | The live ledger as it stood after audit round 2 (2026-08-21) shipped as v2.105.0 → v2.108.0: the R2-01…R2-37 findings with fix evidence, dismissals, and the execution record. Archived at the v3.0.0 reset. |
+| `TESTING-through-2026-08-04.md` | Every manual/agent test run from v2.44.1 (2026-07-23) to VERIFY-003 (2026-08-04), including the frozen 2026-07-27 v2.51.0/v2.52.0 acceptance batch and its sign-off. Archived at the v3.0.0 reset.           |
 
 Rules for agents:
 

@@ -1,183 +1,172 @@
 # v3.0.0 Release Plan
 
-_Written 2026-08-23, against v2.108.0. This is the working plan for the days
-between now and the 3.0.0 tag. The live work ledger stays `BACKLOG.md` — rows
-close there; this document orders them and defines what "ready" means._
+_Re-cut 2026-09-02 against v2.108.0 (shipped 2026-08-21). Supersedes the
+2026-08-23 plan, which stalled after twelve idle days with none of its phases
+started. The live work ledger stays `BACKLOG.md` — rows close there; this
+document orders them and defines what "ready" means._
 
 ## The bar
 
-v3.0.0 has always been defined as a conviction bar, not a milestone: **the
-owner can say "this is exactly how I want Beatform to be, and I stand behind
-every single feature."** The owner has now decided to go for it. Everything
-below prepares the release; the tag itself still waits for that sentence —
-no checklist going green cuts v3 on its own.
+v3.0.0 has always been a conviction bar — _"this is exactly how I want Beatform
+to be, and I stand behind every single feature"_ — and the owner could never
+place an "enough" mark under it. On 2026-09-02 the owner made it concrete:
 
-## Where the project stands (2026-08-23)
+> **Nothing that was started ships half-done.** 3.0.0 is the release after
+> which Beatform can sit for a while in a stable, decently polished state.
 
-- **v2.108.0** shipped 2026-08-21 — the fourth wave of audit round 2, which
-  is **complete**: two full unbiased audits (2026-08-06: 273 items;
-  2026-08-21: nine domains) have been run and burned down. Four releases
-  shipped on the final day alone, each CI-green, device-gated, and
-  install-verified.
-- **Zero open bugs.** The external notes queue is empty; the live BACKLOG
-  carries no defect rows — only small hardening items, owner-only checks,
-  and deliberately trigger-gated future work.
-- **Quality machinery in place:** GATES.md gate manifest, strict GPU pixel
-  matrix (332 cases, any hash delta fails), export colorimetry gate, golden
-  traces, five built-app device harnesses, `release.mjs` one-command ritual.
-- **What remains open** (all of it small, listed in BACKLOG.md):
-  1. Three owner-only verdicts (word timing, second-display eyes, play
-     session).
-  2. A dozen agent-ready hardening rows.
-  3. The launch kit (drafted; posting is the owner's).
-  4. One unchecked device item in TESTING.md (Visuals dock + section rail
-     pass, new in v2.81.0).
+That is a finite, checkable rule. A code deep-dive (four independent sweeps:
+code markers, docs-vs-code, wiring gaps, feature symmetry) produced the
+**half-done inventory** in `BACKLOG.md`. Every row there gets exactly one
+verdict from the owner:
 
-## The path to 3.0.0
+- **FINISH** — complete the surface (small, bounded work; no new scope).
+- **REMOVE** — take the half-built surface out, so nothing promises what it
+  cannot do.
+- **DECLARE** — keep it as is, but write the limit down where a user meets it
+  (guide, contract doc, Known limitations) — a documented decision, not a
+  leftover.
 
-Ship order is chosen so the v3.0.0 diff itself is tiny and boring: all real
-work lands on 2.x first, and the major tag is a low-risk cut of an
-already-verified main.
+When the inventory is empty, the two owner checks are green, and the release
+path is verified, v3 is ready. The tag itself still waits for the owner's
+explicit go; no checklist cuts it on its own.
 
-### Phase A — Owner conviction checks (owner, ~15 min + play time)
+**Out of scope for v3, by decision:** new features (they go to 3.x through the
+same ledger), the open-ended play session (dropped as a gate 2026-09-02),
+persisted-format changes of any kind, and the trigger-gated rows (Spout, NDI,
+macOS/Linux, lyrics streaming rework) which stay on their named triggers.
 
-These are literally the "stand behind every feature" checks for the two
-flagship features. Guides live in BACKLOG.md "Owner-pending".
+## Where the project stands (2026-09-02)
 
-- [ ] **A1. FEAT-004 word-timing verdict** (~3 min): watch Lyric Stage's
-      karaoke fill on a known song; one-sentence verdict to any session.
-- [ ] **A2. FEAT-009 eyes-only legs** (~5 min): second-display sharpness /
-      smoothness impression, ~5 min stability, HDMI yank + replug.
-- [ ] **A3. Play session** (open-ended): just use the app. Anything that
-      feels off gets filed in BACKLOG.md and fixed in Phase C. This is the
-      conviction bar's real input — v3 waits for it.
+- **v2.108.0** is installed and published; `latest.json` serves it; the
+  external notes queue holds zero bugs and zero features.
+- **Twelve idle days** left drift, all found and fixed in the 2026-09-02
+  session: CI on `main` was red (prettier on six agent-config files from the
+  docs-compaction commit, plus one `npm audit` high in a dev-only transitive
+  dependency); three dependabot PRs (#26 actions, #29 cargo patch, #30 npm
+  minor/patch) have waited since 2026-08-19/26; the `dist` and
+  `src-tauri/target` junctions pointed at cache folders the devstorage janitor
+  had already evicted; `node_modules` was absent on the checkout.
+- **Ledgers reset:** the closed audit-round-2 ledger and every old test run
+  are frozen under `archive/ledgers/`; `BACKLOG.md` holds only open rows and
+  the half-done inventory; `TESTING.md` is the lean v3 acceptance batch.
+- **Quality machinery unchanged:** GATES.md manifest, strict 332-case GPU
+  pixel matrix, export colorimetry gate, golden traces, five built-app device
+  harnesses, `release.mjs` (hardened this session).
 
-### Phase B — Hardening burn-down → ship as v2.109.0 (agent)
+## The release train
 
-Do first, in this order (the first row protects the v3 ship itself):
+All real work lands on 2.x releases; the 3.0.0 diff itself is docs and a
+version number. Order matters more than dates.
 
-- [ ] **B1. `release.mjs` robustness** — idempotent commit/tag step and a
-      watch step that never re-attaches to a stale run (bit twice during the
-      2.108 wave). The v3 release goes through this script; harden it first.
-- [ ] **B2. `batchScanning` aggregated counter** (R2-31f) — the one real
-      residual defect-shaped row.
-- [ ] **B3. Test-hygiene set** — fps-cap+paused vitest pin; live-capture
-      async-setup window test; parserFuzz 30 s describe budgets;
-      buildExportOptions test title vs asserted fields (R2-34 remainder).
-- [ ] **B4. Overgrowth present-only virgin-branch comment** (one line).
-- [ ] **B5. WebCodecs-lane 601/709 tagging device probe** (R2-30 remainder)
-      — colorimetry truth belongs in a release named "I stand behind every
-      export". Fix if the probe finds untagged/wrong output; record if clean.
+### 1. v2.109.0 — "Housekeeping" (agent; ready to ship once the owner says go)
 
-Explicitly **parked for v3**, with reasons recorded in BACKLOG.md (parking
-is a decision, not a leftover):
+Everything the 2026-09-02 session produced, shipped through the full ritual:
 
-- Overgrowth mist seam sub-LSB inset — below one 8-bit LSB, frozen into the
-  blessed baseline, cosmetic only.
-- exportWorker duplicate bundle (~1.0 MB) — lazy-loaded; disk-only cost.
-- Perform-drawer fullscreen MIDI-learn overlay — product follow-up; the
-  drawer already shows mappings live.
-- codecProbe AV1/VP9 level-ladder accuracy — hardening, not user-reaching.
-- mediabunny upstream issue post — owner action, external account; good
-  citizenship, not a gate.
+- CI back to green: prettier drift, `npm audit fix` (browserslist, dev-only).
+- Dependabot PRs #26, #29, #30 merged first (owner action — remote mutation),
+  then the session's tree rebased on top. #30 bumps `mediabunny` (export
+  muxing) → run the built-app export smoke and `export-color-verify`; #29 bumps
+  `cpal` and `naga` → run both loopback smokes and the Shadertoy smoke.
+- Hardening rows closed: `release.mjs` idempotent commit/tag + stale-run-proof
+  watch (protects the v3 ship itself); `batchScanning` aggregated counter
+  (R2-31f); fps-cap + paused pin; live-input async-setup window test;
+  parserFuzz describe budgets; `buildExportOptions` full-surface test;
+  Overgrowth virgin-branch comment; the stale "FROZEN" CSS header.
+- Docs truth sweep: EXPORT-DESIGN numbers, SECURITY network inventory
+  re-verified, README architecture tree, GIF/WebP in the docs index,
+  `.bfpreset`/`.bfbuilder` drop-import documented, installer size, GATES §3/§5
+  edges, this plan excluded from the public docs site.
+- Ledger reset + archives; `CLAUDE.md` v3 rule rewritten; memory + RECALL
+  updated.
+- Still to run in this lane: **B5** — WebCodecs-lane 601/709 tagging device
+  probe (R2-30 remainder). Fix if the probe finds untagged output; record if
+  clean.
 
-Ship the phase as **v2.109.0** through the full ritual (web + Rust gates,
-device gates for touched areas, release.mjs, install verify).
+Gates: full web + Rust set; device gates for every touched area (see above);
+`release.mjs 2.109.0`; install verify (exe + HKCU `DisplayVersion`).
 
-### Phase C — Findings wave (only if Phase A files anything)
+### 2. Owner verdict round (~15 minutes, any time)
 
-Anything the play session or the eyes checks surface gets the house
-discipline — repro, fix, red-first test, gates — and ships as **v2.109.x**.
-If nothing is filed, this phase is skipped. v3 does not tag over known
-unfixed findings from Phase A.
+Read the half-done inventory in `BACKLOG.md` (HD-01 … HD-nn). Each row carries
+evidence, a recommended verdict, and a size. Reply with one word per row —
+_finish_, _remove_, or _declare_ — or "take the recommendations". Nothing in
+step 3 starts before this; guessing here is exactly how scope grew for thirty
+releases.
 
-### Phase D — v3 acceptance batch (TESTING.md)
+### 3. v2.110.0 — "Nothing half-done" (agent)
 
-Per TESTING.md's own reuse rule: reset the boxes, update the "State as of"
-line, replace the banner — same file, new batch. Keep it lean; the
-automated device gates already guard most surfaces continuously. The batch
-covers only what automation can't:
+Execute the verdicts:
 
-- [ ] **D1. Updater path into 3.0.0** — installed 2.x app receives and
-      installs the 3.0.0 offer (semver major bump through the live
-      manifest), HKCU DisplayVersion exact after (ALIGN-002 check).
-- [ ] **D2. Fresh install** of the 3.0.0 setup on a clean profile: first-run
-      boots, demo plays, one export completes.
-- [ ] **D3. Visuals dock + section rail device pass** — the one unchecked
-      item in the current TESTING.md; run it as written there.
-- [ ] **D4. Spot checks** rolled into A1–A3 (lyrics, perform window, real
-      music across modes) — the owner's Phase A verdicts are this evidence;
-      link them rather than re-running.
+- FINISH rows land with the house discipline (red-first test, gates, device
+  gates for touched areas, guide regenerated when a UI string moves).
+- REMOVE rows come out cleanly — UI, state, Rust field, tests, docs — with a
+  one-line CHANGELOG note that says what left and why.
+- DECLARE rows land as text: guide / contract / `BACKLOG.md` Known limitations,
+  each at the place a user meets the limit.
 
-### Phase E — Release surface (agent, riding the v3 commit)
+If the owner picks FINISH for the largest row (HD-06, global
+saturation/lightness on the nine modes that lack it — shader work with a GPU
+matrix re-bless), it ships as its own **v2.111.0** so its pixel re-bless is
+reviewable in isolation and never rides along with unrelated fixes.
 
-The actual v3.0.0 diff. Nothing behavioral — docs, version, presentation:
+### 4. Owner checks (~10 minutes, after v2.109.0 or later is installed)
 
-- [ ] **E1. CHANGELOG.md `[3.0.0]` section** — user-facing UI (the update
-      dialog renders it for every 2.x user updating in). It should read as a
-      milestone note: what Beatform is now (20 modes, live performance +
-      second display, lyrics pipeline, deep-color exports, Gallery,
-      determinism law), then the delta since 2.109.x. Written as release
-      notes, not a commit list.
-- [ ] **E2. README pass** — embed the hero shot the owner picks from the
-      launch kit; verify feature list, platform facts and version-agnostic
-      wording survive a major bump.
-- [ ] **E3. Docs truth sweep** — guide regenerated if any UI string moved
-      (`npm run build:guide`), docs site pages current, no "2.x" phrasing
-      that reads wrong under a 3.0.0 banner.
-- [ ] **E4. No persisted-format changes.** v3.0.0 changes no schema, no
-      preset IDs, no file formats — assert it in review: the diff contains
-      no `schemaVersion` or migration edits. A major version number is not a
-      license to break documents.
+`TESTING.md` A1 (Lyric Stage word timing) and A2 (second-display eyes + HDMI
+yank). Anything filed gets fixed as **v2.11x.y** with the same discipline. v3
+does not tag over an open finding from these two checks.
 
-### Phase F — Ship v3.0.0
+### 5. v3.0.0 — the boring cut
 
 Preconditions, all of them:
 
-1. Phases A–E closed (A3's verdict included).
-2. Full web + Rust gates green on the final tree.
-3. **Full device-gate battery once** — all six rows of GATES.md §3
-   regardless of touched-area rules. A milestone release earns the complete
-   sweep: GPU matrix, export colorimetry, gallery E2E, both loopback
-   smokes, Shadertoy smoke, lyrics E2E.
-4. The owner says the sentence. That is the trigger; nothing else is.
+1. Half-done inventory empty (every row FINISHED, REMOVED, or DECLARED and
+   closed in `BACKLOG.md`).
+2. A1 and A2 green in `TESTING.md`; any findings shipped.
+3. Full web + Rust gates green on the final tree.
+4. **Full device battery once** — all six rows of GATES.md §3 regardless of
+   touched-area rules: GPU matrix, export colorimetry, gallery E2E, both
+   loopback smokes, Shadertoy smoke, lyrics E2E.
+5. The 3.0.0 diff contains **no** `schemaVersion`, migration, or preset-ID
+   edits (assert it in review — a major version is not a license to break
+   documents).
+6. The owner says go.
 
-Then:
+The diff itself:
 
-```
-node scripts/release.mjs 3.0.0 --title "Beatform 3.0"
-```
+- `CHANGELOG.md [3.0.0]` — a milestone note (what Beatform is now: 20 modes,
+  live performance + second display, lyrics pipeline, deep-color exports,
+  Gallery, the determinism law), then the delta since v2.11x. Release-notes
+  voice; the update dialog renders it for every 2.x user.
+- README: hero shot (owner's pick from the launch kit), Roadmap section
+  already rewritten for the 3.0 era, version-agnostic wording checked.
+- Guide regenerated if any UI string moved (`npm run build:guide`); docs pages
+  free of "2.x"-era phrasing that reads wrong under a 3.0.0 banner.
 
-Post-publish (GATES.md §4 in full): SHA256SUMS match, signed manifest,
-live latest.json serves 3.0.0, installed-runtime smoke, HKCU
-DisplayVersion 3.0.0 exact. Close the ledger: BACKLOG rows, roadmap
-memory, RECALL latest-release claim superseded.
+Ship: `node scripts/release.mjs 3.0.0 --title "Beatform 3.0"`. Post-publish
+(GATES.md §4): SHA256SUMS match, signed manifest, live `latest.json` serves
+3.0.0, installed-runtime smoke, `TESTING.md` D1 (updater into 3.0.0, HKCU
+exact) and D2 (fresh install), D3 (Visuals dock device pass). Close the
+ledger: `BACKLOG.md` rows, roadmap memory, RECALL `beatform.latest_release`
+claim superseded.
 
-### Phase G — Launch (owner, at their pace)
+### 6. Launch (owner, at their pace)
 
-The launch kit is drafted end to end; what remains is exclusively the
-owner's: hero pick (feeds E2), the [SLOT] fills and [VERIFY] flags in the
-post drafts, the three screen-recording animateds, and the posting itself.
-Aligning the posts with the 3.0.0 release being live is the natural moment,
-but nothing in Phases A–F blocks on it.
+The launch kit is drafted end to end
+(`OneDrive\Documents\doc\beatform-launch-kit\`). Hero pick, `[SLOT]` fills,
+`[VERIFY]` flags, the three screen recordings, and the posting are exclusively
+the owner's. Nothing above blocks on it.
 
-## Suggested day plan
+## Suggested day plan (elastic — the order is what matters)
 
-| Day | Owner                             | Agent sessions                                        |
-| --- | --------------------------------- | ----------------------------------------------------- |
-| 1   | A1 + A2 (~15 min), start A3       | B1–B5, ship v2.109.0                                  |
-| 2   | Finish A3, file anything          | Phase C fixes if filed; open the TESTING.md batch (D) |
-| 3   | Hero pick + [SLOT]s (G prep)      | D1–D3, Phase E, full device battery                   |
-| 4   | Say the sentence; post the launch | Ship 3.0.0, verify, close ledgers                     |
+| Day | Owner                                        | Agent sessions                                        |
+| --- | -------------------------------------------- | ----------------------------------------------------- |
+| 1   | Merge dependabot PRs; give the verdict round | Rebase, B5 probe, ship v2.109.0                       |
+| 2   | —                                            | v2.110.0 (small FINISH / REMOVE / DECLARE rows)       |
+| 3   | A1 + A2 (~10 min) on the installed build     | v2.111.0 if HD-06 is FINISH; fix anything A1/A2 filed |
+| 4   | Say go                                       | Full device battery, 3.0.0 diff, ship, verify, close  |
 
-Days are elastic — the order is what matters. If A3 files findings, Phase C
-stretches the middle and the tag simply moves; the plan does not.
+## After 3.0.0
 
-## What v3.0.0 deliberately is not
-
-- Not a feature release — trigger-gated rows (Spout, NDI, macOS/Linux,
-  lyrics streaming rework) stay gated on their named triggers.
-- Not a format break — every 2.x project, preset, theme and shader file
-  opens unchanged; the updater carries every 2.x install forward.
-- Not the end of the line — 2.x discipline continues as 3.x discipline:
-  same gates, same ledger, same determinism law.
+The project sits. 2.x discipline continues as 3.x discipline when work
+resumes: same gates, same ledger, same determinism law. New ideas go to the
+external notes queue or the trigger table — never straight into a release.

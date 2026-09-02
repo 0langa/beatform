@@ -1,508 +1,265 @@
 # BACKLOG — the live work ledger
 
 Canonical ledger (per CLAUDE.md): read before feature work, update when
-finishing. Reset **2026-08-20** after the quality-consolidation program
-completed (2.99.0 → 2.104.2 shipped the last of it). Full 5k-line history —
-every DONE record, evidence trail, dismissed finding and design decision
-through v2.104.2 — preserved verbatim at
-**[archive/ledgers/](archive/ledgers/)**. Consult for context; never reopen
-rows from it. User-facing history lives in CHANGELOG.md; process memory in the
-agents' memory stores.
+finishing. Reset **2026-09-02** for the v3.0.0 program. Everything closed
+before that day is frozen verbatim under
+**[archive/ledgers/](archive/ledgers/)** (`BACKLOG-through-v2.104.2.md`,
+`PROPOSALS-2026-08-audit.md`, `BACKLOG-through-v2.108.0.md`,
+`TESTING-through-2026-08-04.md`) — consult for context; never reopen rows from
+it. User-facing history lives in CHANGELOG.md; process memory in the agents'
+memory stores.
 
 Rules unchanged: never rename a persisted ID without a migration; new modes
 follow registry + grid + matrix re-bless discipline; GATES.md is canonical for
 "done"; quality over speed.
 
-## v3.0.0 release program (ACTIVE — owner decision 2026-08-23)
+## v3.0.0 program (ACTIVE — owner re-cut 2026-09-02)
 
-Owner decided to release v3.0.0. Ordered plan lives in
-**[docs/V3-RELEASE-PLAN.md](docs/V3-RELEASE-PLAN.md)**: owner conviction checks
-(rows below) → hardening burn-down shipped as v2.109.0 → findings wave if the
-play session files anything → lean TESTING.md v3 batch → docs/ version-only v3
-diff → full device battery → tag. Tag still waits for owner's explicit go;
-green checklists prepare it, they never trigger it.
+The bar: **nothing that was started ships half-done.** Ordered plan and release
+train in **[docs/V3-RELEASE-PLAN.md](docs/V3-RELEASE-PLAN.md)**: v2.109.0
+housekeeping → owner verdict round → v2.110.0 (+ v2.111.0 if HD-06 is FINISH)
+→ owner checks A1/A2 → 3.0.0 docs/version-only diff after a full device
+battery. The tag waits for the owner's explicit go.
 
 ## Owner-pending (only the owner can close these)
 
-- [ ] **FEAT-004 word-timing verdict** — cold-boot retest's subjective half:
-      watch Lyric Stage's karaoke fill on a known song, say whether timing
-      feels right. (Instrumented half PASSED 2026-08-19: cold generation 2:45,
-      honest ETAs, RTF learning persists — archive has the full record.)
-      Guide: repo's sibling directory
-      `..\AI text stuff\beatform-owner-board-2026-08-20.md`
-      (`C:\Users\Julius\source\repos\meta\AI text stuff\`).
-- [ ] **FEAT-009 eyes-only legs** — subjective sharpness/smoothness on the real
-      second display, ~5 min stability impression, HDMI hotplug yank/replug.
-      (All programmatic legs PASSED 2026-08-19 on real mixed-DPI hardware.)
-- [ ] **Launch kit** — README hero pick, [SLOT] fills, [VERIFY] flag checks, 3
-      screen-recording animateds, posting (exclusively owner's action). Kit:
-      `OneDrive\Documents\doc\beatform-launch-kit\`.
-- [x] **Fresh-session unbiased audit** — EXECUTED 2026-08-21 (owner-triggered
-      ahead of the play session): nine-domain fresh-eyes audit against source,
-      tests, git, device (debug shell drive + measurements) and published
-      releases. Findings filed below in "Audit round 2"; dismissals recorded
-      with reasons. Play session itself remains open.
+- [ ] **Verdict round** — one word per HD row below: _finish_ / _remove_ /
+      _declare_, or "take the recommendations". Nothing in v2.110.0 starts
+      before this.
+- [ ] **Merge dependabot PRs #26, #29, #30** (open since 2026-08-19/26; CI
+      green on each). Remote mutation — owner's click, or tell a session to.
+- [ ] **A1 Lyric Stage word timing** (~3 min) — TESTING.md § A1. Closes
+      FEAT-004.
+- [ ] **A2 Second-display eyes + HDMI yank** (~5 min) — TESTING.md § A2.
+      Closes FEAT-009.
+- [ ] **Launch kit** (not a gate) — hero pick, `[SLOT]` fills, `[VERIFY]`
+      flags, three screen recordings, posting.
+      Kit: `OneDrive\Documents\doc\beatform-launch-kit\`.
+- **Play session** — DROPPED as a v3 gate 2026-09-02 (owner choice). The
+  automated device battery plus A1/A2 stand in for it.
 
-## Audit round 2 (2026-08-21) — findings ledger
+## Half-done inventory (the v3 gate — every row needs a verdict, then closes)
 
-Nine-domain unbiased audit (correctness ×2, determinism, export, security,
-docs, tests, ledger/memory, performance) + main-thread device drive of the
-debug shell (same code as v2.104.2). Every row carries evidence and a reaching
-scenario; suspicions that failed to produce one are under "Dismissed". Fix
-verdicts pending owner's Phase-2 round; nothing below is started.
+Found 2026-09-02 by four independent read-only sweeps of the code (markers,
+docs-vs-code, wiring gaps, feature symmetry). Each row: what a user can reach
+that is not finished, where, the recommended verdict, and a size (S < 2 h,
+M ≈ half a day, L ≈ 1-2 days incl. re-bless). **Verdict** is the owner's word;
+until written it is blank. A row closes when its verdict is executed and the
+evidence is recorded here.
 
-### P1 — serious, user-reaching
+### Export and batch
 
-- [x] **R2-01 ProRes 4444 exports BT.601, untagged** — `prores_args()`
-      (src-tauri/src/prores.rs:145-177) passes none of the four color flags the
-      AV1 lane sets; measured on shipped ffmpeg: red encodes Y′=0.3002 (≈601),
-      stream reads `yuva444p12le(tv)` with no tags. NLEs assume 709 for HD →
-      every ProRes export decodes with ~10% green shift + channel clipping on
-      saturated content. Scenario: any ProRes export dropped into
-      Resolve/Premiere next to the same project's AV1/MP4 export.
-      **FIXED 2026-08-21 (a433242)**: prores_args carries av1's exact four
-      flags; contract test updated. New gate `scripts/export-color-verify.mjs`
-      (8fe9893, GATES.md §3 row) proves tag AND conversion on the bundled
-      build: red now decodes Y′=0.2135 (bt709) vs the 0.3002 this row measured;
-      script's negative control reproduced the 0.3002 exactly.
-- [x] **R2-02 Export cancel/failure can delete the user's previous file** — no
-      temp-then-rename on JS lanes: videoExporter.ts:214 opens the picked path
-      `truncate:true` before anything encodes; `discard()` removes it on
-      cancel/failure. Scenario: re-export over yesterday's song.mp4, cancel at
-      10% (or codec refuses at frame 0) → old file gone. PNG-sequence variant
-      included.
-      **FIXED 2026-08-21 (c26f3f6 + b76dd9d)**: stream writer stages
-      `<target>.partial` and touches the target only via one close-time rename
-      (MoveFileExW REPLACE_EXISTING through plugin-fs); discard removes only
-      the temp, a failed rename removes the temp and surfaces. New
-      `export_allow_partial` command (main-window-gated) extends the dialog's
-      exact-file grant to the sibling. PNG variant closed by R2-12's
-      collision-free folders (nothing pre-existing is ever written into); the
-      buffered Canvas lane writes complete bytes once at the end (R2-30c).
-- [x] **R2-03 Perform window freezes the last lyric caption / audiogram** —
-      receiver overlay dedupe key omits lyric/audiogram state
-      (src/perform/performRuntime.ts:406-441); once dynamics stop, nothing
-      pushes a clean overlay (main window heals via refreshOverlay, receiver
-      has no equivalent). Scenario: live show, toggle captions off mid-set →
-      audience projector keeps the stale line indefinitely.
-      **FIXED 2026-08-21, v2.107.0 (7b08fe4)**: dynamics-active bit in the receiver overlay key + a clean overlay push on the OFF transition, mirroring refreshOverlay; ON-flip re-retains. Test pins the exact transition.
-- [x] **R2-04 Batch "Retry failed" double-activation runs two batches into the
-      same files** — retryFailedBatch (src/state/slices/batchActions.ts:255-307)
-      takes no synchronous claim; `batchStatus` flips only after an awaited
-      readDir. Scenario: double-click "Retry N failed" → two concurrent export
-      loops on identical outPaths, cancel reaches only one.
-      **FIXED 2026-08-21 (565f084)**: retryFailedBatch takes startBatch's
-      synchronous `batchStarting` claim before ANY await (the readDir and the
-      R2-13 pre-flight), checks it in its own guard (retry and start now
-      exclude each other), releases it in an outer finally on every exit.
-      Tests: two synchronous back-to-back calls launch exactly one run (red
-      before: two); declined and throwing pre-flights both release the claim.
-- [x] **R2-05 Batch export lane drops `sections` and `audiogram`** —
-      batchRunner.ts:204-266 discards the sections analyzeTrack returns and
-      never passes document audiogram; the interactive lane passes both
-      (exportActions.ts:520,531). Scenario: sectionPulse modulation route or
-      audiogram enabled → batch output differs from interactive output of the
-      same document, silently. Violates the one-document-one-render law across
-      lanes.
-      **FIXED 2026-08-21 (affb4ae)**: TrackInput now carries the analysis
-      `sections` and the frozen doc's audiogram (gated on audiogramActive
-      exactly like the interactive lane); the 4096-bucket waveform overview
-      moved into the shared `audiogram.waveformOverviewOf` so live and batch
-      draw from one implementation, computed per decoded track. batchRunner
-      suite pins the built job (sections, settings, per-track waveform,
-      all-off → undefined).
-- [x] **R2-06 Determinism chokepoint guard hole: crossfade prev-side automation
-      merge unguarded** — deleting `{ ...pParams, ...frame.automation }`
-      (src/state/frameResolve.ts:105-109) survives the FULL 2872-test suite
-      (mutation-proven). Scenario for the guarded regression: automation lane
-      live during any scene crossfade — outgoing side renders stale params and
-      no gate catches it.
-      **CLOSED 2026-08-21 (0d6fc3a)**: frameResolve.test.ts gains the
-      mid-crossfade automation case asserting on `prev.params`.
-      Mutation-verified: re-applying exactly that mutant fails only the new
-      test ("expected 100 to be 42", 1 failed | 12 passed); restored, 13
-      pass.
-- [x] **R2-07 README claims the second-display output window is "still to
-      come"** — it shipped in v2.104.0 (perform_window.rs, D drawer);
-      README:256-258 roadmap + missing Features bullet. Scenario: a user
-      evaluating from README concludes the flagship live feature doesn't exist.
-      **FIXED 2026-08-21, wave 0 (be38754)**: README roadmap + a dedicated second-display/Perform-drawer features bullet.
-- [x] **R2-08 `Math.hypot` is ~70% of every FFT call** — fft.ts:178; measured
-      537 µs → ~165 µs per 4096-pt call with `Math.sqrt(a*a+b*b)` (43× on the
-      hot instruction). Runs once per rAF on the UI thread + per export tick;
-      "precise" display spectrum pays 2.81 ms/frame. Scenario: high-refresh
-      panels and every export pay ~17% of a core for nothing. Fix is one
-      expression; requires golden-trace + GPU-matrix re-bless discipline
-      (last-ulp shifts).
+- [ ] **HD-01 Batch export silently ignores the export panel's format.**
+      `startBatch` hardcodes `format: "mp4"` (src/state/slices/batchActions.ts:210)
+      and never reads `settings.format` — pick PNG sequence, ProRes, AV1 10-bit,
+      GIF or WebP, queue a batch, get MP4s with no notice. Deep-color follows
+      format, so it is dropped too. Recommended: **FINISH-lite** — refuse the
+      unsupported formats up front with a notice and label the batch panel
+      "MP4 / WebM" (S); full lane parity for the sidecar formats is M.
+      Verdict: \_\_\_
+- [ ] **HD-02 Batch ignores Canvas-loop mode** (`settings.mode` never read;
+      no segment, no loop crossfade, wrong size). Recommended: **FINISH-lite**
+      — refuse canvas mode in batch with a notice (fold into HD-01) (S).
+      Verdict: \_\_\_
+- [ ] **HD-03 Batch drops stems and vocal spans** — `TrackInput` carries
+      neither, so stem routes and the "Vocals (lyrics)" mod source read 0 in
+      batch output while the interactive export honours them (same class as
+      R2-05, one layer up). Recommended: **FINISH** — pass both through like
+      sections/audiogram (S). Verdict: \_\_\_
+- [ ] **HD-14 The A-B loop region cannot be exported** — `segment` is set only
+      in canvas mode (src/state/slices/exportActions.ts:230); the loop is a
+      preview-only tool. Recommended: **DECLARE** in the guide next to the A-B
+      keys (S); an "Export loop region" checkbox would be M. Verdict: \_\_\_
+- [ ] **HD-24 Batch progress shows only instantaneous fps** (no average
+      speed) and classifies errors without the single-export lane's
+      translation + scratch re-measure + ffmpeg log tail. Recommended:
+      **FINISH** — reuse the single lane's helpers (S). Verdict: \_\_\_
 
-### P2
+### Rendering and modes
 
-      **FIXED 2026-08-21, v2.108.0 (b281319)**: sqrt(re*re+im*im) — 1.80x whole-call measured, output BIT-IDENTICAL over 65,531 bins; golden trace untouched; strict 332-case matrix re-run on device with the swap live: zero raw hash deltas. No re-bless was needed anywhere.
+- [ ] **HD-06 Nine of twenty modes lack the global Saturation + Lightness
+      pair** the other eleven treat as standard (oscilloscope, tunnel-rings,
+      nebula, metaballs, voice-orb, echo-trails, aurora, synthwave, Builder) —
+      and exactly those nine have no `color/grayscale` pixel case. The most
+      visible inconsistency in the mode strip. Recommended: **FINISH** as its
+      own release v2.111.0 (L — nine shaders through `presetColor`, styles
+      re-checked, GPU matrix re-bless with per-mode visual proof), else
+      **DECLARE** in the guide (S). Verdict: \_\_\_
+- [ ] **HD-07 The second-display window inherits the operator's fps cap.**
+      Cap-skipped tickless frames return before `publishPerformFrame`
+      (src/state/services.ts:452) and ticked capped frames publish
+      `advance-only`, which the receiver never presents
+      (src/perform/performRuntime.ts:127). A battery knob throttles the
+      audience. Recommended: **FINISH** — publish and present the mirror
+      regardless of the preview cap (S/M; verify on the real second display).
+      Verdict: \_\_\_
+- [ ] **HD-09 Automation lanes on toggle/enum parameters interpolate
+      linearly** — the lane picker offers every param, but `addKeyframe`
+      defaults `curve: "linear"` (src/state/timeline.ts:31,140), so a bool or
+      enum lane yields fractional values between keys. Recommended:
+      **FINISH** — default `hold` for non-numeric params and snap their lane
+      values (S). Verdict: \_\_\_
+- [ ] **HD-15 Three analysis fields are computed every frame and consumed by
+      nothing** — `beatIndex`, `barIndex`, `chroma` (P-15 "reactivity fuel",
+      src/audio/types.ts:83, "per-mode adoption is a later wave"); `vocal` and
+      `sectionPulse` from the same batch ARE routable mod sources.
+      Recommended: **DECLARE** — reword the comment to state exactly which
+      fields have consumers and that the rest are an internal contract with
+      measured cost (S); **REMOVE** the three would also be S. Verdict: \_\_\_
+- [ ] **HD-23 Canvas2D fallback is one generic look and unreachable on
+      healthy hardware** — no toggle forces it; only a real GPU loss reaches
+      it; no pixel baseline. PREVIEW-EXPORT-CONTRACT already scopes it.
+      Recommended: **DECLARE** (already documented; 0). Verdict: \_\_\_
 
-- [x] **R2-09 Killed app leaves truncated media at the destination** — JS lanes
-      have no destroy-cleanup (sidecar lanes do: lib.rs:276-288) and no
-      "export running" close guard. Scenario: close mid-MP4-export → partial
-      file sits next to user files looking real.
-      **FIXED 2026-08-21 (b1218c7, with c26f3f6)**: onCloseRequested asks
-      ("An export is running — close anyway? The partial file will be
-      removed.") while exporting/exportPreparing/batch is running; a confirmed
-      close cancels both lanes and polls (bounded 2 s) for the teardown —
-      which is the `.partial` discard — before the flush+destroy continues.
-      Post-R2-02 the JS lanes' in-flight file IS a `.partial`, never the
-      real name.
-- [x] **R2-10 Cancel is inert during sidecar finalize** —
-      exportActions.ts:625-629 never calls `proresAbort` from the cancel
-      signal; GIF does ALL encoding in finalize. Scenario: cancel a 3-min GIF
-      at "100%" → runs minutes anyway (bounded only by the 20-min timeout).
-      **FIXED 2026-08-21 (7bbffcd)**: the finalize span (all four sidecar
-      lanes) arms an abort→proresAbort listener — Rust tolerates
-      abort-during-finalize by design — removed once finalize settles;
-      exactly one abort per session, and the resulting cancel keeps showing
-      nothing (AbortError rethrow).
-- [x] **R2-11 GIF cap counts frames, not bytes** — 5400-frame cap
-      (exportActions.ts:441-446) permits a 4K GIF ≈179 GB ffmpeg working set →
-      the OOM the cap exists to stop. Cap on frames×w×h.
-      **FIXED 2026-08-21 (66c4074)**: ANIM_PIXEL_BUDGET = 5400×1920×1080 px
-      (exactly the old cap's 1080p implication), refusal names the
-      per-resolution/fps limit and what to reduce; animated WebP is under the
-      same cap (libwebp_anim assembles the whole animation in RAM — the old
-      "WebP streams" comment was wrong).
-- [x] **R2-12 PNG sequence folder reuse mixes stale frames into new runs** —
-      fixed `<name>_frames` dir, no pre-clean: a shorter re-export leaves the
-      old tail (frame_003600+…) interleaved for the NLE to ingest silently.
-      **FIXED 2026-08-21 (b76dd9d)**: pickSequenceDir walks `_frames`, `-2`,
-      `-3`, … past any non-empty existing folder (empty ones are reused,
-      nothing pre-existing is ever deleted — destructive-op policy); the
-      toast and Show-in-folder report the name that won.
-- [x] **R2-13 Batch runs skip the disk-space preflight** the single-export path
-      has (exportActions.ts:314-361 vs none in batchActions) — the overnight
-      surface is the one without the check.
-      **FIXED 2026-08-21 (a5b1986)**: startBatch sums per-job
-      estimateExportBytes (new sumDiskNeeds) over the queued jobs and runs
-      the identical warn-and-override askConfirm before flipping to running;
-      silently skipped when diskSpace answers null (browser/unqueryable).
-- [x] **R2-14 Export worker can pick a different GPU adapter than the preview** —
-      powerPreference pref is not carried into the job; worker resolves
-      "default" (webgpuRenderer.ts:2264-2270). Dual-GPU laptops: preview dGPU,
-      export iGPU → same-machine pixel divergence.
-      **FIXED 2026-08-21 (06f20e7)**: buildJob — the main-thread job assembly
-      both lanes flow through, so batch inherits — always emits
-      `powerPreference` into the ExportJob; the worker's
-      WebGPURenderer.create takes the job's value and only the live path
-      (which can see prefs) falls back. Tests pin the job field (including
-      an explicit "default" — an absent key would re-blind the worker) and
-      the create() argument; the segment-shift census classifies the field
-      TIMELESS.
-- [x] **R2-15 Hidden legacy `builder` preset has zero guard coverage** — kept
-      renderable forever (presets/index.ts:72-82) but excluded from
-      shaderGolden and all 314 matrix cases; its byte-identity promise is
-      unguarded (mutation-adjacent: proven absent from both loops).
-      **FIXED 2026-08-21 (5e79d2d), pending device bless**: shaderGolden
-      iterates [...presets, builder] — WGSL accessors+body and param ABI
-      snapshot-pinned, census updated (snapshot diff pure additions) — and
-      the matrix enumerates `builder/@defaults`, appended at the run's end so
-      no existing hash can move. The new case correctly fails a device run
-      with the existing "matrix case drift" error until the orchestrator
-      blesses on device; baseline JSON untouched here.
-- [x] **R2-16 GPU matrix blind spots + soft verdict** — matrix never exercises
-      the feedback two-call shape, transitions, bg modes 1-4, overlays, or deep
-      capture (gpuMatrix.ts:157-170,242); and it passes on raw hash deltas
-      (fails only on 16×9-thumbnail tolerances) while GATES.md §3 tells the
-      hash-delta re-bless story. The renderer's most intricate machinery has no
-      device-pixel guard.
-      **FIXED 2026-08-21 (29c9fbc), pending device bless** (owner verdict:
-      strict): any raw hash delta now FAILS — the comparison lives in
-      scripts/gpu-pixel-verdict.mjs (pure, Node-tested), perceptual metrics
-      demoted to per-failure diagnostics, `--update` the only bless path,
-      GATES.md §3 rewritten. 17 deterministic cases appended after the
-      existing sequence (6 + 7 + 3 + 1): feedback/export-walk for all six
-      feedbackSample presets (the exportCore advance+present shape), all 7
-      transition kinds frozen mid-fade on spectrum-bars/radial-burst, bg
-      solid/transparent/image (synthesized gradient; video skipped — no
-      deterministic fixture), deep/spectrum-bars via readbackDeepFrame +
-      pure deepCaseMetrics. expectedMatrixCaseIds() locks enumeration
-      (runner self-check + Node census: the 314 baseline ids reproduced in
-      order + the 18 new ids — these 17 plus R2-15's builder/@defaults, the
-      whole pending-bless set). Device run fails with case drift until the
-      orchestrator blesses. Overlay cases remain uncovered (need a bitmap
-      fixture — deliberately out of this pass).
-- [x] **R2-17 `.bfbuilder` parse gate has zero tests** — version-gate mutant
-      survived the full suite; a `>=` slip refuses every valid file
-      (builder2.ts:441-459). Sibling formats all pin their gates.
-      **CLOSED 2026-08-21 (c210b0e)**: builder2File.test.ts pins the gate
-      matrix mirroring custom.test.ts — round-trip, non-JSON refused, wrong
-      kind refused, current+1 refused with the newer-app message,
-      exactly-current accepted, whitelist tolerance (junk dropped/clamped),
-      missing stack → empty. Mutation-verified: `>` → `>=` fails the suite 4
-      ways; restored, all 7 pass.
-- [x] **R2-18 Escape after Stage mode closes and persists away the workspace** —
-      the Esc cascade (useAppShortcuts.ts:55-85) also runs
-      setShowPanel(false)/setShowLibrary(false)/setShowTimeline(false),
-      contradicting the recorded P-1 rationale in store.ts:2846 ("leaving
-      Stage must not cost the workspace"); prefs persist the loss across
-      restarts.
-      **FIXED 2026-08-21, v2.107.0 (fccf0b7)**: Esc inside Stage exits Stage only (also disarms MIDI learn first — review D3); the cascade is untouched outside Stage. Guide regenerated.
-- [x] **R2-19 Queued quantized switch survives track loads / project opens /
-      undo / track end** — pendingPresetId cleared in only 3 places; a stale
-      switch fires at the next boundary of content it was never aimed at
-      (mid-set surprise).
-      **FIXED 2026-08-21, v2.107.0 (4b6a75b)**: pendingPresetId (and lastQuantizeTick) cleared via the invalidateAnalysis/applyDocument/onEnded chokepoints; three red-proven tests through the real initApp tick.
-- [x] **R2-20 Custom-shader delete: no confirm, undo cannot restore
-      unreferenced defs** — ShaderEditor.tsx:253; history snapshots embed only
-      referenced defs → a misclick permanently destroys WGSL while the undo
-      toast implies otherwise.
-      **FIXED 2026-08-21, v2.107.0 (df4d3ca)**: delete behind askConfirm; history snapshots embed the doomed def so undo genuinely restores it (localStorage write-back pinned). Deleting also un-queues a pending switch to it (review O2, 70937bd).
-- [x] **R2-21 Lyrics re-align can attach word timings to a duplicate-text line
-      at the same index** — guard is index+text (lyricsEditActions.ts:254-266);
-      edits are not blocked during the sidecar run; choruses make collisions
-      normal.
-      **FIXED 2026-08-21, v2.107.0 (c1523e1 + b2e4361)**: structural edits (split included) AND their undo/redo lock while the aligner runs; text edits stay live and correctly void the apply.
-- [x] **R2-22 Step-under-quantize double-press cancels instead of stepping** —
-      stepPreset routes through queuePreset's cancel-on-same-target branch
-      (store.ts:2043-2081); double-tap of `]` mid-set nets nothing pending.
-      **FIXED 2026-08-21, v2.107.0 (aa34200)**: step keys walk from the pending target (]] queues two ahead); chip cancel-toggle preserved.
-- [x] **R2-23 Undo groups two look/theme/style applications within 800 ms into
-      one entry** — UNGROUPABLE (history.ts:34-49) lacks the three keys; A/B
-      comparing two looks then Ctrl+Z jumps past both.
-      **FIXED 2026-08-21, v2.107.0 (fa754e6)**: look/theme/style joined UNGROUPABLE; six rapid applications = six undo entries.
-- [x] **R2-24 NaN poisoning of width/LUFS is permanent for the session** — one
-      non-finite sample in a float-PCM WAV → stereoWidth NaN → width EMA and
-      the LUFS biquad/ring never recover (stereo.ts:6-21,
-      featurePipeline.ts:734-737, lufs.ts:68-140); "Stereo width" is a stock
-      mod source, so NaN reaches params/uniforms and persists across clean
-      tracks until restart.
-      **FIXED 2026-08-21 (8650b64)**: stereoWidth reads any window whose
-      summed accumulators go non-finite as silent (0); the pipeline holds
-      the previous width/lufs on non-finite input (a glitched frame costs
-      one frame, not the session); the LUFS biquads reset-to-silence on a
-      non-finite output and the meter clamps a non-finite block power to 0
-      at the ring's door — prevention policy: the incremental sum stays
-      exact and a poisoned reading ages out within one ring length.
-      integratedLufs inherits the biquad guard (it used to lose everything
-      after the glitch to the absolute gate). Tests written FIRST (all red
-      pre-fix); corrupt-track integrated within 0.5 LU of clean;
-      featurePipelineFuzz now generates width/lufs with occasional
-      NaN/±Infinity (mutation-checked: dropping the width guard reds both
-      properties with width=NaN).
-- [x] **R2-25 fpsCap caps presentation, not DSP** — ana.update runs per rAF
-      before the cap check (services.ts:434 vs 456-468); 144 Hz + cap 30 still
-      pays ~99 ms/s of DSP for 30 presented frames. The battery knob barely
-      touches the dominant cost.
-      **FIXED 2026-08-21, v2.108.0 (acaaf86)**: RealtimeAnalyzer.willTick prediction (branch-identical to update by construction); capped tickless frames skip ana.update; tick frames proven identical to uncapped by a twin-analyzer pin driving the real loop.
-- [x] **R2-26 Autosave stringifies the full document (assets included,
-      pretty-printed) on the UI thread** — store.ts:1456 → project.ts:192
-      `JSON.stringify(file, null, 2)`; measured 3.3 ms/739 KB, linear ⇒
-      150-250 ms hitches per autosave on embedded-video projects.
-      **FIXED 2026-08-21, v2.108.0 (ca7eb9e)**: autosave writes compact JSON (0.62→0.43 ms structural / 11.9→10.0 ms on an 8 MB-asset doc; manual saves stay pretty). The asset-splice variant was prototyped, measured cost-neutral-at-best and correctness-risky, and rejected with the reasoning in code.
-- [x] **R2-27 Records drift (memory layer)** — five wrongs telling yesterday's
-      story: roadmap-progress.md missing its 2.104.2 entry while MEMORY.md
-      claims it; quality-consolidation card still "ACTIVE/paused" though the
-      program completed; post-restart-battery card still reads armed though
-      executed 2026-08-19; RECALL closeout instruction points at dead card #87
-      with an op that can't work (live claim card #95, supersede-not-update);
-      owner notes doc lists FEAT-004/FEAT-005 as "considering" though shipped
-      (moves to HISTORY per its own contract). Plus: RECALL cards #92-94 are
-      instruction-shaped diagnostic prompts stored as VALIDATED requirements
-      and re-injected into sessions by the prompt hook — memory contamination;
-      deprecate.
-      **FIXED 2026-08-21, wave 0**: all five memory-layer wrongs corrected (roadmap 2.104.2+audit entries, consolidation card COMPLETED, battery card EXECUTED, RECALL rule → supersede-by-claim-key, owner notes FEAT-004/005 → HISTORY with outcomes); RECALL #92-94 deprecated with lifecycle notes.
-- [x] **R2-28 Licensing/docs truth cluster** — THIRD_PARTY_LICENSES.md:
-      "exclusively ProRes" false (same sidecar drives AV1 10-bit/GIF/WebP) and
-      the direct-deps table omits 8 crates (count stale: 541);
-      style/control counts stale on four surfaces ("6-14 styles" → 6-15,
-      "~430 controls" → 559; CONTRIBUTING "5-7" contradicts the floor);
-      README "every item in TESTING.md green" vs an explicit unchecked item +
-      stale TESTING lines (v2.53 reference, VERIFY-002 "postponed" though
-      passed, empty sign-off); CLAUDE.md's changelog mechanism claim wrong
-      (dialog FETCHES from GitHub; local edits invisible to a running dev
-      app); EXPORT-DESIGN.md still lists the shipped second display as "still
-      open" and omits AV1 from the sidecar line.
+### Live performance and MIDI
 
-### P3 (clusters; full detail in the audit reports)
+- [ ] **HD-18 MIDI must be re-enabled by hand on every launch.** Bindings
+      persist (`LS_MIDI`, src/state/persistence.ts:612); `midiEnabled` is
+      session-only and nothing re-enables at boot, so saved bindings do
+      nothing until the user clicks Enable. Recommended: **FINISH** — persist
+      the enable flag and re-enable on boot (permission is granted Rust-side)
+      (S). Verdict: \_\_\_
+- [ ] **HD-19 MIDI can bind only knob→param and note→mode.** Blackout,
+      play/pause, Stage, next/previous mode, volume and A-B keys — the Perform
+      drawer's own controls — have no MIDI target (src/state/midi.ts:35); the
+      drawer arms note-learn only, CC-learn lives on Visuals ▸ Live; CC learn
+      is limited to the active mode's mod-targetable params (no Global motion,
+      Post, volume). Recommended: **FINISH the VJ core** — blackout,
+      play/pause, next/prev mode as note targets, CC-learn from the drawer
+      (M) — and **DECLARE** the rest (S). Verdict: \_\_\_
+- [ ] **HD-16 `loopback_died` is never polled.** The Rust command exists
+      (src-tauri/src/loopback.rs:348, registered) and its doc says the
+      frontend polls it to drop the "listening" indicator; no TS call site
+      exists. A dead capture device leaves the broadcast icon lit over
+      silence. Recommended: **FINISH** — poll or event it into the live-input
+      state (S). Verdict: \_\_\_
 
-      **FIXED 2026-08-21, wave 0 (be38754)**: THIRD_PARTY ffmpeg scope + 8 crates + ~540 count; style/control counts on all four surfaces (6-15, 550+); README TESTING claim scoped; CLAUDE.md changelog mechanism truth; EXPORT-DESIGN second display + AV1 + resolutions; TESTING.md stale lines + VERIFY-002 sign-off.
+### Lyrics
 
-- [x] **R2-29 Security defense-in-depth (4)** — perform-window-reachable
-      telemetry (`scratch_dir` leaks username path, `disk_space` is a mounted-
-      volume oracle → add `assert_main_window`); gallery size check runs after
-      full buffering (pre-check Content-Length); `style-src 'unsafe-inline'`;
-      lofty parser surface (schedule cargo-audit cadence). No P0/P1 anywhere.
-      **2/4 landed 2026-08-21 (10df960)**: disk_space/scratch_dir/perf_stats
-      are main-window-gated (loopback_died deliberately open: no window
-      handle, one atomic bool), and verifiedFetch refuses a header-declared
-      oversize before buffering (byte-count backstop kept). REMAINING:
-      `style-src 'unsafe-inline'`, cargo-audit cadence.
-      **CLOSED 2026-08-21, v2.105.0 (10df960)**: the two actionable items
-      landed (assert_main_window on disk_space/scratch_dir/perf_stats —
-      loopback_died takes no window; gallery Content-Length pre-cap with
-      byte-count backstop). The two residuals are accepted posture, recorded
-      here: style-src unsafe-inline (no injection sink exists; nonce
-      infeasible with the bundler today) and the lofty parser surface
-      (mitigation = cargo-audit cadence in CI audit job).
-- [ ] **R2-30 Export delivery nits (10)** — AAC priming/Opus pre-skip
-      unsignaled (~20-45 ms late audio; device-probe then edit-list fix);
-      mediabunny WebM writes CodecDelay=0 / misuses SeekPreRoll (upstream bug —
-      report it); VP9 fullCodecString unpinned (probe/encode drift); codecProbe
-      AV1/VP9 level ladders under-declare; WebCodecs-lane 601/709 untagged
-      (device-probe worthwhile given R2-01); PNG mode lacks the no-sink guard
-      the deep lane has; canvas export of a <3 s track produces a
-      Spotify-rejectable file without warning; canvas loop ships fragmented
-      MP4 where progressive would be safer; full-track animated WebP is
-      uncapped while libwebp_anim assembles in RAM (verify, then cap like
-      GIF); ffmpeg death on the abort path deletes the log tail unread.
-      **6/10 landed 2026-08-21 (4307ac1, 66c4074)**: VP9 fullCodecString
-      pinned; PNG no-sink guard added; <3 s canvas track refused before the
-      dialog; canvas loop now buffered progressive MP4 written once to the
-      picked path (owner verdict: ingest compatibility); WebP capped under
-      R2-11's pixel budget; prores_abort returns the log's last ~2 KB (read
-      before cleanup) and the TS side folds it into the surfaced error ahead
-      of translateExportError. **AAC priming: CLOSED NEGATIVE 2026-08-21** —
-      device probe through the real MP4 lane (six 1-sample-rise clicks at
-      exact 0.5 s intervals, 48 kHz, decoded back via the bundled ffmpeg)
-      measured 0.00 ms offset on every click: the platform encoder
-      pre-compensates its timestamps, no edit-list fix needed (probe:
-      scratchpad aac-priming-probe; evidence report archived with the lane).
-      REMAINING (hardening): mediabunny CodecDelay/SeekPreRoll upstream report (issue text drafted in the audit reports — POSTING is an owner action, external account); codecProbe AV1/VP9 level-ladder accuracy; WebCodecs-lane 601/709 tagging probe.
-- [x] **R2-31 Live/state nits (11)** — MIDI learn stays armed after its
-      surfaces close; enable/disable MIDI race; quantized switch fires
-      immediately on forward seek across a boundary; batch resume ETA uses the
-      original startedAt; dropped .bfpreset/.bfbuilder files fall through to
-      the audio decoder ("could not decode"); concurrent batch-add scans
-      corrupt the scanning counter; lyrics tier download double-activation;
-      three unguarded module-scope localStorage reads; perform cover-art
-      fingerprint can length-collide; ShaderEditor chip-load replaces a dirty
-      draft without the confirm its close path has; lyrics editor rows keyed
-      by index.
-      **10/11 LANDED 2026-08-21, v2.107.0** (learn disarm incl. dock-close/Stage-entry/Esc-in-Stage; MIDI enable/disable generation guard; forward-seek quantize guard; batch resume ETA restamp; .bfpreset/.bfbuilder drop import; download claim; localStorage guards; FNV cover fingerprint memoized by reference — review D1; dirty-draft confirm on chip-load/New; stable lyric row uids, session-only, provably never persisted). REMAINING (hardening): 31f batchScanning concurrent counter (deferred by the lane to avoid a cross-lane batchActions conflict — now safe to do).
-- [x] **R2-32 Audio/DSP nits (9)** — reset("source") keeps bpm/beatPhase (live
-      sessions run the dead track's BPM for tempo-locked LFOs); gapless
-      auto-advance skips the source reset (stale beat/section indices over the
-      next track's opening); loop-toggle teleport fires one phantom onset;
-      live is beat-blind 0.2 s after load while exports pre-roll warm (and the
-      offline comment claims otherwise); envelope comments describe the render
-      clock while code (correctly) uses the analysis clock; momentary LUFS
-      under-reads ~400 ms after resume; oscilloscope span is
-      sample-rate-dependent (96/192 kHz devices see 2-4× zoom); surround
-      tracks: preview analyzes the full downmix, export only the front pair;
-      loopback ring can wrap on multi-second render stalls (self-heals) +
-      pre-priming inflates underrun stats. Cosmetics: dead `void prevUpdate`,
-      loopback.rs 2× reserve, half-sample latency readout.
-      **8/9 LANDED 2026-08-21, v2.108.0 (cc575f7..d5996d9)**: source-reset clears bpm/beatPhase/barPhase (live-toggle scenario fixed; detach-HOLD vs reset-CLEAR pinned three ways), gapless advance resets, loop-toggle teleport resets + gets the quantize bookkeeping (7d68e59, cross-lane review F3, red-proven), LUFS pause freeze (0.5 LU on first resumed frame), worklet ring overflow-drop + stats arming (device-proven by both loopback smokes post-merge), comment-truth fixes rode wave 0, cosmetics landed. NOT DONE (recorded, by design): the oscilloscope sample-span stays samples per the owner verdict — documented in the charac test and analyzer docs.
-- [x] **R2-33 Determinism contract docs (3)** — PREVIEW-EXPORT-CONTRACT
-      overclaims "exactly" for feedback replay; canvas-loop audio crossfade
-      feeding the analyzers is undocumented; the cross-frame-state carve-out
-      names two modes but applies to Particle Flow and the other feedback
-      modes.
-      **FIXED 2026-08-21, wave 0 (be38754)**: contract carve-out names every stateful mode, replay claim is structural, canvas-loop audio crossfade documented.
-- [x] **R2-34 Test hygiene (3)** — parserFuzz describes lack the 30 s budgets;
-      buildExportOptions test title promises "the full surface" but asserts
-      ~18/35 fields; project.ts docblock still denies the theme-v14 threading
-      that exists and is tested.
-      **1/3 done (wave 0: project.ts theme-v14 docblock). REMAINING (hardening)**: parserFuzz 30 s describe budgets; buildExportOptions test title vs its ~18/35 asserted fields.
-- [x] **R2-35 Perf residuals (4)** — exportWorker bundle duplicates ~1.0 MB of
-      codec+renderer stacks; boot graph eagerly parses the 511 KB codec stack
-      (dynamic-import at three call sites would defer it); ~15-25 small
-      allocations/frame against the loop's allocation-free doctrine
-      (measured harmless); dB→linear round-trip costs ~50-166 µs/frame on
-      detailed/precise displays. Undo snapshot 4.3 ms/push on a 120-scene doc
-      (bounded, fine).
-      **2/4 LANDED 2026-08-21, v2.108.0 (f82a8e1 + guard 7d68e59)**: mediabunny left the boot graph (entry preload -511 KB, appMain 494→439 kB) and a guard test pins the import form. REMAINING (hardening): exportWorker bundle still duplicates the codec+renderer stacks (~1.0 MB, lazy-loaded — cost is disk + one parse per export session); the residual frame-loop micro-allocations are measured harmless and stay.
-- [x] **R2-36 Docs small (3)** — fetch-ffmpeg.mjs header names only ProRes;
-      README format list omits aac/opus the library scanner accepts; GATES.md
-      §3 cites "matrix 269/269" while the baseline holds 314 cases.
-      **FIXED 2026-08-21, wave 0 (be38754)**: fetch-ffmpeg header names all four lanes; README library formats include aac/opus; GATES E3f note no longer implies a frozen 269.
-- [x] **R2-37 Ledger small (4)** — "nine releases 2.99.0→2.104.2" is eight;
-      MEMORY.md hardcodes `D:\beatform-archive` against its own probe-the-
-      letter rule; pre-rename `audio-visualizer` devstorage paths linger in
-      live memory guidance; BACKLOG's FEAT-004 guide pointer is ambiguous
-      (file lives in the repo-sibling "AI text stuff" dir, not OneDrive).
+- [ ] **HD-17 Lyrics model manager can download but never verify or
+      remove.** `lyrics_model_verify` / `lyrics_model_remove` exist in Rust
+      and as TS wrappers (src/state/platform.ts:302,307); no button calls
+      either — multi-GB models cannot be reclaimed from inside the app.
+      Recommended: **FINISH** — Verify and Remove actions in LyricsGenPanel
+      (S/M). Verdict: \_\_\_
+- [ ] **HD-08 Line re-align has no cancel and no progress.** Transcribe has a
+      stage-weighted bar, ETA and cancel; re-align sets
+      `lyricsRealign: { index }` and offers nothing else
+      (src/state/slices/lyricsEditActions.ts:231). Recommended: **FINISH** —
+      cancel + indeterminate progress (M). Verdict: \_\_\_
+- [ ] **HD-11 `.srt` is read-only** — imports, drop-imports, but export always
+      writes `.lrc`. Recommended: **DECLARE** in the guide ("LRC is the
+      output format; SRT imports are converted") (S). Verdict: \_\_\_
+- [ ] **HD-20 The lyrics editor's Ctrl+Z / Ctrl+Y** (src/ui/LyricsEditPanel.tsx:335)
+      appear in no shortcut sheet and no help prose; the coverage test scans
+      only `useAppShortcuts.ts`. Recommended: **FINISH** — one sheet row (S).
+      Verdict: \_\_\_
 
-### Dismissed (with reasons — the round's negative results)
+### Files, import, Gallery, Shadertoy
 
-- Perform-window Esc "dead" — refuted on device: direct `perform_escape`
-  invoke from the output window resolves and closes it; the non-response was
-  the harness's synthetic keydown, not the app.
-- Default-mode-on-boot suspicion — profile persistence explains it; fresh
-  profile boots Spectrum Bars (screenshot evidence).
-- Prototype pollution via crafted preset/theme/project/shader files — every
-  parser rebuilds clean objects; verified field-by-field (security agent).
-- ffmpeg argv injection via paths/tags — structurally built argv, local-
-  absolute output enforcement, pinned formats; UNC/TOCTOU/symlink paths all
-  closed and test-pinned.
-- Batch/PCM crossfade double-apply, watchdog false kills, A-B loop maths,
-  autosave clobber races, zustand selector allocations, timeline drag
-  stale-closures — all specifically hunted, all clean (agents' dismissed
-  lists).
-- 24/25 fps tick shimmer (no such fps offered), meter float drift (~4e-8),
-  gate-reopen onset flash (real onset), decodeAudioData long-file ceiling
-  (mediabunny fallback verified).
+- [ ] **HD-10 `.bftheme` imports only by drag-and-drop** — export has a native
+      dialog (src/state/slices/projectIOActions.ts:76); import has no dialog,
+      no button, no file input. Recommended: **FINISH** — "Import theme…" via
+      the existing dialog helper next to the export (S). Verdict: \_\_\_
+- [ ] **HD-13 Gallery: an updated upstream entry reads "Already in My Looks"
+      forever** (`entryGate` compares only `minAppVersion`/`savedWith`, never
+      the entry's hash against the installed copy), and removal lives on a
+      different surface than install with no label on the card. Recommended:
+      **FINISH** hash-aware gate (S/M) + **DECLARE** the removal location on
+      the card (S). Verdict: \_\_\_
+- [ ] **HD-12 Shadertoy import never warns.** `iChannel1-3` bind an empty
+      texture, so shaders that sample them compile and silently render black
+      there; multi-pass (Buffer A-D / Common) is not detected; the transpiler
+      has no warning channel at all (src-tauri/src/shadertoy.rs,
+      src/ui/ShadertoyImport.tsx:150). Recommended: **FINISH** — detect
+      `iChannel1-3` and buffer references, surface warnings in the dialog for
+      the shader actually pasted (M). Verdict: \_\_\_
 
-## Audit round 2 — execution record (2026-08-21)
+### Performance display
 
-Owner approved the five-wave plan in full; all four release waves shipped the
-same day, each through house discipline (isolated worktree lane, fresh
-implementer, adversarial review, full gates, device gates for the touched
-areas, `release.mjs`, silent-install verification against HKCU and the runtime
-smoke, RECALL claim superseded per release):
+- [ ] **HD-05 The GPU % stat can be enabled but never shows a value.**
+      Toggle (src/ui/SettingsDialog.tsx:56) → overlay row
+      (src/ui/PerfOverlay.tsx:204) → Rust field (src-tauri/src/perfstats.rs:85)
+      is fully wired with no collector; it renders "—" forever. Recommended:
+      **REMOVE** the toggle, row and field (S; Rust gates). Implementing a PDH
+      GPU-engine collector would be M. Verdict: \_\_\_
 
-- **Wave 0 (be38754, commits only)** — records truth: repo docs, memory
-  layer, owner notes, RECALL contamination (#92-94 deprecated).
-- **v2.105.0 "Exports you can trust"** — R2-01/02/09/10/11/12/13 + security
-  and export nit folds; new colorimetry gate; AAC priming closed negative.
-- **v2.106.0 "One document, one render"** — R2-04/05/06/14/15/16/17/24;
-  strict matrix + 18 new cases blessed on device (missing=∅ proof).
-- **v2.107.0 "Live set holds"** — R2-03/18/19/20/21/22/23 + 10/11 of R2-31.
-- **v2.108.0 "Fast where it counts"** — R2-08/25/26 + 8/9 of R2-32 + boot
-  slice; sqrt bit-identity device-proven (332/332 zero deltas).
+### Code that promises a second consumer
 
-Ship turbulence, all resolved and recorded: CI clippy 1.98 grew a lint the
-local 1.96 could not see (fix 69a1503 + tag re-point); a scripted ledger
-edit broke prettier on the tag (prettier pass 1a29b2a + tag re-point —
-lesson: format:check after ANY scripted markdown edit); release.mjs's
-commit step is not idempotent when the bump commit exists but the tag does
-not, and its watch step re-watches a stale run id from state (worked around
-via manual tag + --from=watch/publish; hardening row below).
+- [ ] **HD-21 Dead or duplicated helpers.** `isExporting`
+      (src/state/store.ts:3415) is documented as the Escape/close guard but
+      `useAppShortcuts.ts:86` re-implements it inline and differently
+      (divergence risk); `saveBinaryFile` (platform.ts:57) has zero callers;
+      `getPerformBridgeStats`, `isBindableMessage`, `LED_MATRIX_HUE_KEYS` are
+      test-only exports whose production callers re-implement the logic; 14
+      more module-local exports have no importer. Recommended: **FINISH** —
+      route the callers through the one helper, delete the rest (S).
+      Verdict: \_\_\_
 
-## Next hardening pass (agent-ready, not scheduled — small, non-blocking)
+### Pre-decided (recorded so nobody reopens them; verdict already DECLARE)
 
-      **FIXED 2026-08-21, wave 0**: eight-releases correction, drive-letter probe wording, devstorage rename note in the consolidation card, BACKLOG guide pointer names the sibling dir.
+- **HD-22 `.bfpreset` and the last-session cache carry no document-schema
+  stamp**, so a pre-v14 Kaleido Nebula look renders ~21% flatter than the
+  same look saved in a `.bfproj`. A retroactive migration was **rejected by a
+  judge panel in 2026-08**: unstamped values are ambiguous (the same `1.0` is a
+  pre-v14 ceiling and a post-v14 neutral), and migrating would oversaturate
+  every look already fixed by hand. `appVersion` has been stamped into every
+  `.bfpreset` since 2026-08-13 so the NEXT such change can be gated. Documented
+  in code (userPresets.ts:42-66) and pinned by tests. Stays DECLARE.
 
-- [ ] Unit test for the fps-cap + paused interaction (the `advance-only`
-      branch under `capSkipped` is device-proven but has no vitest pin —
-      2.104.2 review noted it; both consumers read one shared boolean, so
-      risk is low).
-- [ ] Live-capture async-setup window test (`startLiveInput`: `playing` reads
-      false during the worklet-load await — correct behavior, untested).
-- [ ] Overgrowth mist seam sub-LSB inset (F4 nit, 2.103.0 review): fixed-UV
-      inset under-insets below ~119 px canvas height; deterministic,
-      below one 8-bit LSB, frozen into the blessed baseline — cosmetic only.
-- [ ] Overgrowth present-only virgin-branch comment (F5 nit): one-line
-      comment explaining why the un-dt-gated visTex-alpha write is harmless.
-- [ ] Perform drawer: dedicated fullscreen MIDI-learn overlay (P-4's one
-      not-built possible follow-up; the drawer shows mappings live instead).
-- [ ] Batch add-tracks concurrent scans: make `batchScanning` an aggregated
-      counter (R2-31f — deferred by the 2.107 lane to avoid a cross-lane
-      conflict; now safe).
-- [ ] release.mjs robustness: idempotent commit/tag step (bump-committed but
-      untagged resumes cleanly) and a watch step that never re-watches a
-      completed failed run for the same tag (observed twice this round).
-- [ ] parserFuzz 30 s describe budgets + buildExportOptions test title vs its
-      asserted-field list (R2-34 remainder).
+## Hardening (agent-ready, not v3 gates)
+
+- [ ] **B5 — WebCodecs-lane 601/709 tagging device probe** (R2-30 remainder):
+      export an H.264/HEVC/AV1 MP4 through the WebCodecs lane, probe with the
+      bundled ffmpeg for color tags and measured Y′. Fix if untagged or wrong;
+      record if clean. Rides the v2.109.0 lane.
+- [ ] codecProbe AV1/VP9 level-ladder accuracy (R2-30 remainder; not
+      user-reaching).
+- [ ] GPU matrix: transitions are proven on one non-feedback pair
+      (spectrum-bars ← radial-burst) and post/motion on two modes; add a
+      feedback-mode pair and a Builder pair (re-bless with proof).
+- [ ] `paramsTab` pref (src/state/prefs.ts:73) is frozen — validated,
+      persisted and diffed, consumed only by its own migration to
+      `visualsPage`. Drop it with a prefs migration + test, or leave with a
+      one-line comment.
+- [ ] Overgrowth mist seam sub-LSB inset (F4 nit): below one 8-bit LSB, frozen
+      into the blessed baseline, cosmetic only — **parked** by decision.
 - [ ] exportWorker bundle duplicates the codec+renderer stacks (~1.0 MB,
-      lazy-parsed per export session — R2-35 remainder; worth a shared-chunk
-      pass someday, not user-visible today).
-- [ ] mediabunny upstream: WebM CodecDelay=0 / SeekPreRoll misuse — issue
-      text drafted in the audit reports; POSTING is an owner action.
-- [ ] codecProbe AV1/VP9 level-ladder accuracy + WebCodecs-lane 601/709
-      tagging device probe (R2-30 remainder).
-- [ ] Review nanos, recorded: toggleLoop's 1 ms jump detector can misfire on
-      an AudioContext quantum tick (sibling-consistent, pre-existing);
-      loopback worklet arms `delivered` on a zero-frame delivery (Rust never
-      sends one); redo after shader-delete-undo does not re-delete
-      (applyDocument merges defs — pre-existing library semantics); Esc with
-      Stage active AND a dialog open exits Stage first (owner-glance:
-      consistent with the verdict, only reachable by entering Stage with a
-      dialog already open).
+      lazy-loaded; disk-only cost) — **parked** by decision.
+- [ ] mediabunny upstream: WebM CodecDelay=0 / SeekPreRoll misuse — issue text
+      drafted in the archived audit reports; **posting is the owner's action**.
+- [ ] Review nanos, recorded: toggleLoop's 1 ms jump detector can misfire on an
+      AudioContext quantum tick; loopback worklet arms `delivered` on a
+      zero-frame delivery (Rust never sends one); redo after
+      shader-delete-undo does not re-delete (library merge semantics); Esc
+      with Stage active AND a dialog open exits Stage first.
+
+## Done 2026-09-02 (in the working tree; ships as v2.109.0 on the owner's go)
+
+- CI on `main` back to green locally: prettier drift on six agent-config files
+  from the docs-compaction commit; `npm audit fix` cleared the browserslist
+  high (dev-only transitive dependency, lockfile only).
+- Checkout repaired: `node_modules` installed; the `dist` and
+  `src-tauri/target` junctions' targets on the devstorage drive had been
+  janitor-evicted — recreated (routing logged).
+- Hardening rows closed: `release.mjs` idempotent commit/tag + stale-run-proof
+  watch with a Node-tested helper module; `batchScanning` aggregated counter
+  (R2-31f); fps-cap + paused vitest pin; live-input async-setup window test —
+  which found and fixed a real defect: `AudioEngine.startLiveInput` stopped the
+  source before its first await without emitting, so the transport showed
+  "playing" over silence for the worklet load (permanently if the load
+  threw); it now emits like `pause()` (src/audio/engine.ts);
+  parserFuzz 30 s describe budgets; `buildExportOptions` test now asserts all
+  39 option keys with a compiler-enforced key list; Overgrowth virgin-branch
+  comment (TS header, snapshot untouched); H15 CSS header no longer claims
+  "FROZEN, UNIMPLEMENTED" for a shipped block.
+- Docs truth sweep (EXPORT-DESIGN numbers, SECURITY inventory, README tree,
+  GIF/WebP in the docs index, drop-import of `.bfpreset`/`.bfbuilder`,
+  installer size, GATES §3/§5 edges, plan excluded from the public site) —
+  see the session report for the per-item record.
+- Ledgers: this file reset; archives written; TESTING.md reset to the v3
+  batch; CLAUDE.md v3 rule rewritten; owner notes doc FEAT-003 → HISTORY;
+  memory + RECALL updated (card #106 supersedes #105; #77/#100 deprecated).
 
 ## Trigger-gated (activate on the named trigger, not before)
 
@@ -514,6 +271,7 @@ via manual tag + --from=watch/publish; hardening row below).
 | Lyrics streaming rework (whole-decode memory ceiling → 90-min limit stands)                                    | A user actually hits the limit meaningfully |
 | DSP-001 — DC-offset waveform/trigger behavior                                                                  | A reproducible report                       |
 | DSP-002 — Short analyzer history after seek                                                                    | A reproducible report                       |
+| Multi-format fan-out per batch track (`formats[]` exists in the model, `startBatch` always passes one)         | A user asks for it                          |
 
 ## Known limitations (by-design verdicts — do not "fix" without an owner decision)
 
@@ -527,11 +285,14 @@ via manual tag + --from=watch/publish; hardening row below).
   replay from clip start. Documented in docs/PREVIEW-EXPORT-CONTRACT.md.
 - **Batch renders carry no lyrics** — Lyric Stage degrades to its rehearsal
   in batch output (recorded 2.101.0).
+- **Builder↔Builder crossfade with two different stacks** is unrepresentable
+  (one shared buffer); the active frame's stack wins (services.ts).
+- DECLARE verdicts from the half-done inventory are appended here as they
+  land, each with the doc location where the user meets the limit.
 
 ## Cleared-work pointer
 
-Everything shipped through **v2.104.2** (2026-08-19) — including the entire
-2026-08 quality-consolidation program, the P-19 five-mode roster, FEAT-004/005/009,
-P-1…P-21, Tracks A–F, and the hardening waves — is recorded with evidence in
-[archive/ledgers/BACKLOG-through-v2.104.2.md](archive/ledgers/BACKLOG-through-v2.104.2.md)
-and [archive/ledgers/PROPOSALS-2026-08-audit.md](archive/ledgers/PROPOSALS-2026-08-audit.md).
+Everything shipped through **v2.108.0** (2026-08-21) — the 2026-08 quality
+program, audit rounds 1 and 2, FEAT-004/005/009, P-1…P-21, the hardening
+waves — is recorded with evidence in
+[archive/ledgers/](archive/ledgers/README.md).
