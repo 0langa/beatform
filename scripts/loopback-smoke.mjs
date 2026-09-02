@@ -191,7 +191,19 @@ function verify(result) {
     }
   }
   if (failures.length) {
-    throw new Error(`${failures.join("\n")}\nstats=${JSON.stringify(result.stats)}`);
+    // The baseline decides the threshold: a loud idle window means something
+    // ELSE was playing on this machine, and a tone that arrives and then
+    // vanishes while native frames keep flowing points at the room (volume,
+    // mute, another app) rather than the code — say so instead of leaving it
+    // implied.
+    const idleTone = result.idle?.end?.toneScore ?? 0;
+    const context =
+      `toneThreshold=${result.toneThreshold?.toFixed(3)} idle.end=${JSON.stringify(result.idle?.end)} ` +
+      `onset.firstActiveMs=${result.onset?.firstActiveMs} active.activeFraction=${result.active?.activeFraction?.toFixed(3)}` +
+      (idleTone > 0.1
+        ? "\nNOTE: the idle baseline was not silent — other audio was playing on the system; pause it and rerun."
+        : "");
+    throw new Error(`${failures.join("\n")}\n${context}\nstats=${JSON.stringify(result.stats)}`);
   }
 }
 

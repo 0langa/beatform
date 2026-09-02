@@ -26,8 +26,11 @@ battery. The tag waits for the owner's explicit go.
 - [ ] **Verdict round** — one word per HD row below: _finish_ / _remove_ /
       _declare_, or "take the recommendations". Nothing in v2.110.0 starts
       before this.
-- [ ] **Merge dependabot PRs #26, #29, #30** (open since 2026-08-19/26; CI
-      green on each). Remote mutation — owner's click, or tell a session to.
+- [x] **Merge dependabot PRs** — DONE 2026-09-02 on the owner's go: #26
+      (rust-cache action), #29 (lofty 0.25.1, cpal 0.18.2, naga 30.0.1) and
+      #31 (the npm minor/patch group, 13 updates incl. mediabunny 1.55.4,
+      vite 8.2.2, vitest 4.1.11, eslint 10.9.1; #30 was dependabot's earlier
+      copy of the same group, closed by dependabot) squash-merged after CI.
 - [ ] **A1 Lyric Stage word timing** (~3 min) — TESTING.md § A1. Closes
       FEAT-004.
 - [ ] **A2 Second-display eyes + HDMI yank** (~5 min) — TESTING.md § A2.
@@ -209,11 +212,14 @@ evidence is recorded here.
 
 ## Hardening (agent-ready, not v3 gates)
 
-- [ ] **B5 — WebCodecs-lane 601/709 tagging device probe** (R2-30 remainder):
-      export an H.264/HEVC/AV1 MP4 through the WebCodecs lane, probe with the
-      bundled ffmpeg for color tags and measured Y′. Fix if untagged or wrong;
-      record if clean. Rides the v2.109.0 lane.
-- [ ] codecProbe AV1/VP9 level-ladder accuracy (R2-30 remainder; not
+- [x] **B5 — WebCodecs-lane 601/709 tagging device probe** (R2-30 remainder):
+      **CLOSED CLEAN 2026-09-02** — new `scripts/webcodecs-color-probe.mjs`
+      drove the debug shell through a real H.264 export of a red document and
+      a PNG frame of the same document as RGB truth: stream reads
+      `yuv420p(tv, bt709, progressive)`; measured Y′ 0.1764 vs BT.709
+      prediction 0.1762 (BT.601 would read 0.2449). Tagged AND converted
+      correctly; nothing to fix. Artifacts on devstorage
+      (`artifacts/2026-09-02_webcodecs-color-probe`).
       user-reaching).
 - [ ] GPU matrix: transitions are proven on one non-feedback pair
       (spectrum-bars ← radial-burst) and post/motion on two modes; add a
@@ -257,6 +263,14 @@ evidence is recorded here.
   GIF/WebP in the docs index, drop-import of `.bfpreset`/`.bfbuilder`,
   installer size, GATES §3/§5 edges, plan excluded from the public site) —
   see the session report for the per-item record.
+- **Dependabot #29 (cpal 0.18.1 → 0.18.2) would have killed live capture** —
+  caught by `npm run test:loopback:built` in this lane ("known tone did not
+  reach analyzer … native delivery covered 0.00 s"), never shipped. cpal 0.18.2
+  reports a WASAPI capture data discontinuity (routine on a loopback tap each
+  time the render endpoint wakes) as `ErrorKind::Xrun`, and loopback.rs ended
+  the session on any stream error. Fix: `stream_error_ends_capture` classifies
+  — Xrun continues, everything else still marks the session dead — with a unit
+  test; both loopback smokes re-run green after the rebuild.
 - Ledgers: this file reset; archives written; TESTING.md reset to the v3
   batch; CLAUDE.md v3 rule rewritten; owner notes doc FEAT-003 → HISTORY;
   memory + RECALL updated (card #106 supersedes #105; #77/#100 deprecated).

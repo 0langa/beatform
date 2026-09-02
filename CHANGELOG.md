@@ -11,6 +11,50 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.109.0] - 2026-09-02
+
+Housekeeping on the road to 3.0.0: no new features, two small fixes, a
+dependency refresh verified on real hardware, and the documentation
+re-checked line by line against the app.
+
+### Fixed
+
+- **Switching to "Listen to the system" updates the play button at once.**
+  Starting system-audio capture pauses the current track, but the transport
+  kept showing it as playing until the capture was fully up — and for good if
+  the capture failed to start. It now reflects the pause immediately.
+- **Adding tracks to a batch twice in a row keeps the scanning indicator
+  honest.** A second drop while the first drop's tags were still being read
+  could make the "scanning" count vanish early or flicker. Every file still in
+  flight is now counted, across overlapping drops.
+
+### Changed
+
+- **Dependency refresh, verified on device.** Media muxing (mediabunny 1.55),
+  tag reading (music-metadata 11.15, lofty 0.25.1), audio capture (cpal
+  0.18.2), shader tooling (naga 30.0.1) and the build toolchain moved to their
+  latest minor/patch releases. Exports, system-audio capture and Shadertoy
+  import were re-run on real hardware afterwards; the capture library's new
+  way of reporting a routine data gap was taught to the loopback tap before
+  release, so nothing changed for you.
+- **The default MP4 export is confirmed color-correct.** A new device probe
+  proved the H.264 lane tags and encodes BT.709 like the ProRes and AV1 lanes
+  already did (`scripts/webcodecs-color-probe.mjs`).
+- **Docs re-verified against the code.** Export design numbers (auto bitrate
+  formula, 192 kb/s audio, the real resolution presets), the security page's
+  network inventory, the README architecture map, GIF/WebP in the docs index,
+  and drop-import of `.bfpreset` / `.bfbuilder` / `.bfshader` files are now all
+  documented as they actually behave.
+
+### Under the hood
+
+- The release script can resume cleanly after a half-finished commit/tag step
+  and never re-watches a stale CI run. New test pins for the frame-rate cap
+  under pause, the live-input start window, and the full export-options
+  surface. The work ledgers were reset for the 3.0.0 program: what remains
+  before the tag is an inventory of half-done surfaces awaiting one verdict
+  each (see BACKLOG.md).
+
 ## [2.108.0] - 2026-08-21
 
 ### Changed
@@ -3107,7 +3151,12 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.104.2...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.109.0...HEAD
+[2.109.0]: https://github.com/0langa/beatform/compare/v2.108.0...v2.109.0
+[2.108.0]: https://github.com/0langa/beatform/compare/v2.107.0...v2.108.0
+[2.107.0]: https://github.com/0langa/beatform/compare/v2.106.0...v2.107.0
+[2.106.0]: https://github.com/0langa/beatform/compare/v2.105.0...v2.106.0
+[2.105.0]: https://github.com/0langa/beatform/compare/v2.104.2...v2.105.0
 [2.104.2]: https://github.com/0langa/beatform/compare/v2.104.1...v2.104.2
 [2.104.1]: https://github.com/0langa/beatform/compare/v2.104.0...v2.104.1
 [2.104.0]: https://github.com/0langa/beatform/compare/v2.103.0...v2.104.0

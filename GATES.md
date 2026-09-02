@@ -79,8 +79,10 @@ at COMPILE time, so no cargo command works until they exist.
 harnesses that share `scripts/lib/` but gate nothing: `av1-e2e`, `midi-e2e`,
 `heap-soak`, `p11-smoke`, `perf-family-check`, `segment-parity-probe`,
 `deepcolor-verify`, `gallery-builtin-shots`, `gallery-seed-shots`,
-`v268-visual-check` and `midi-probe` (plus `wave-shots`, the evidence pack
-behind a GPU-matrix re-bless). A harness becomes a gate only by getting a row
+`v268-visual-check`, `midi-probe` and `webcodecs-color-probe` (the B5 answer:
+the WebCodecs H.264 lane tags and encodes BT.709/tv — rerun it if the encoder
+config or the muxer changes), plus `wave-shots`, the evidence pack behind a
+GPU-matrix re-bless. A harness becomes a gate only by getting a row
 in the table above; until then a red run is information, not a blocker.
 
 The GPU matrix owns its full dev lifecycle: `npm run test:gpu` launches
