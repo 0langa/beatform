@@ -8,6 +8,8 @@ import {
   type Keyframe,
   type Scene,
   type Timeline,
+  defaultCurveFor,
+  snapsAutomation,
 } from "../state/timeline";
 import { currentBuilder2Def, isBuilderVirtualKey } from "../render/builder2";
 import { orderedPresets } from "../state/presetOrder";
@@ -353,7 +355,14 @@ export function TimelinePanel() {
     const value = store().activeParams[param] ?? 0;
     const lane: AutomationLane = {
       param,
-      keyframes: [{ id: newKeyframeId(), t: snap(playheadTime()), value, curve: "linear" }],
+      keyframes: [
+        {
+          id: newKeyframeId(),
+          t: snap(playheadTime()),
+          value,
+          curve: defaultCurveFor(allParams(activePreset).find((p) => p.key === param)),
+        },
+      ],
     };
     // UNGROUPABLE (history.ts): two rapid adds must cost two undo entries,
     // the same shape as timeline-scene-add/layer-add/mod-add.
@@ -427,9 +436,16 @@ export function TimelinePanel() {
     const t = snap(tOf(e.clientX - rect.left));
     const lane = timeline.lanes[laneIndex];
     const spec = laneSpec(lane);
-    const value =
+    const raw =
       spec.min +
       (1 - Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))) * (spec.max - spec.min);
+    // A dot on a toggle/enum lane lands on a whole state, and starts on
+    // `hold` — the curve those params can actually honour (HD-09).
+    // laneSpec falls back to a bare { min, max } for a param no preset
+    // declares — such a lane keeps the historical linear/raw behaviour.
+    const known = "key" in spec ? spec : undefined;
+    const value = known && snapsAutomation(known) ? Math.round(raw) : raw;
+    const curve = defaultCurveFor(known);
     const id = newKeyframeId();
     // Fresh + globally unique per gesture (Date.now() + random suffix): two
     // separate add gestures can never share this key, even back to back —
@@ -442,7 +458,7 @@ export function TimelinePanel() {
     const index = lane.keyframes.length;
     setLane(
       laneIndex,
-      { ...lane, keyframes: [...lane.keyframes, { id, t, value, curve: "linear" }] },
+      { ...lane, keyframes: [...lane.keyframes, { id, t, value, curve }] },
       groupKey,
     );
     return { index, groupKey };

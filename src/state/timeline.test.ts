@@ -1,9 +1,11 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  defaultCurveFor,
   deriveTimelineEnabled,
   evalTimeline,
   laneValue,
+  snapsAutomation,
   validTimeline,
   type AutomationLane,
   type Keyframe,
@@ -481,5 +483,25 @@ describe("laneValue resolves by time, not by array position", () => {
       }),
       { numRuns: 700, seed: 0x51ac_0f22 },
     );
+  });
+});
+
+describe("defaultCurveFor / snapsAutomation (HD-09)", () => {
+  it("toggle and enum params, and mod:snap counts, start on hold and snap", () => {
+    expect(defaultCurveFor({ control: "toggle" })).toBe("hold");
+    expect(defaultCurveFor({ control: "enum" })).toBe("hold");
+    expect(defaultCurveFor({ control: "slider", mod: "snap" })).toBe("hold");
+    expect(snapsAutomation({ control: "toggle" })).toBe(true);
+    expect(snapsAutomation({ control: "enum" })).toBe(true);
+    expect(snapsAutomation({ control: "slider", mod: "snap" })).toBe(true);
+  });
+
+  it("continuous params keep the historical linear default", () => {
+    expect(defaultCurveFor({ control: "slider" })).toBe("linear");
+    expect(defaultCurveFor({ control: "hue" })).toBe("linear");
+    expect(defaultCurveFor({ control: "angle", mod: "smooth" })).toBe("linear");
+    expect(defaultCurveFor(undefined)).toBe("linear");
+    expect(snapsAutomation({ control: "slider" })).toBe(false);
+    expect(snapsAutomation({})).toBe(false);
   });
 });

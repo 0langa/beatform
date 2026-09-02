@@ -207,3 +207,68 @@ describe("resolveActiveFrame scene backgrounds that name assets (AX-6)", () => {
     expect(resolveActiveFrame(baseInput(sceneBg(solid)), 1).bg).toEqual(solid);
   });
 });
+
+describe("automation on discrete params snaps (HD-09)", () => {
+  // Aurora: `stars` is a toggle (mod:"off" — automation is not modulation, so
+  // it still applies), `layers` is an enum with mod:"snap". A linear lane on
+  // either used to hand the renderer 0.4 of a switch.
+  const AURORA = "aurora";
+  it("a linear toggle lane resolves to 0 or 1, never a fraction", () => {
+    const tl: Timeline = {
+      enabled: true,
+      scenes: [],
+      lanes: [
+        {
+          param: "stars",
+          keyframes: [
+            { t: 0, value: 0, curve: "linear" },
+            { t: 10, value: 1, curve: "linear" },
+          ],
+        },
+      ],
+    };
+    const input = baseInput(tl, { basePresetId: AURORA, baseParams: {} });
+    expect(resolveActiveFrame(input, 3).params.stars).toBe(0);
+    expect(resolveActiveFrame(input, 7).params.stars).toBe(1);
+  });
+
+  it("an enum lane steps through whole options and stays inside the range", () => {
+    const tl: Timeline = {
+      enabled: true,
+      scenes: [],
+      lanes: [
+        {
+          param: "layers",
+          keyframes: [
+            { t: 0, value: 1, curve: "linear" },
+            { t: 3, value: 4, curve: "linear" },
+          ],
+        },
+      ],
+    };
+    const input = baseInput(tl, { basePresetId: AURORA, baseParams: {} });
+    expect(resolveActiveFrame(input, 1.4).params.layers).toBe(2);
+    expect(resolveActiveFrame(input, 1.6).params.layers).toBe(3);
+    expect(Number.isInteger(resolveActiveFrame(input, 2.2).params.layers)).toBe(true);
+  });
+
+  it("continuous params still interpolate, and undeclared keys pass through untouched", () => {
+    const tl: Timeline = {
+      enabled: true,
+      scenes: [],
+      lanes: [
+        {
+          param: "hue",
+          keyframes: [
+            { t: 0, value: 0, curve: "linear" },
+            { t: 10, value: 100, curve: "linear" },
+          ],
+        },
+        { param: "l3.notAParam", keyframes: [{ t: 0, value: 0.37, curve: "hold" }] },
+      ],
+    };
+    const rf = resolveActiveFrame(baseInput(tl), 5);
+    expect(rf.params.hue).toBeCloseTo(50, 5);
+    expect(rf.params["l3.notAParam"]).toBe(0.37);
+  });
+});

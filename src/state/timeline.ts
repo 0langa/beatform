@@ -1,4 +1,4 @@
-import type { BgSettings, ParamValues } from "../render/types";
+import type { BgSettings, ParamSpec, ParamValues } from "../render/types";
 import { knownPresetId } from "../render/presets";
 import { validBg } from "./project";
 
@@ -31,6 +31,29 @@ export interface Keyframe {
   curve: "linear" | "hold" | "smooth";
 }
 
+/**
+ * Does automation on this param take whole numbers only? Toggles and enums
+ * have no in-between state, and `mod: "snap"` counts must step, not glide —
+ * the same rule the mod-matrix apply chokepoint uses for its snap params.
+ * (HD-09: a linear lane on a switch used to yield 0.4 of a toggle between
+ * keyframes, which the renderer floored into whatever state it floored into.)
+ */
+export function snapsAutomation(spec: Pick<ParamSpec, "control" | "mod">): boolean {
+  return spec.control === "toggle" || spec.control === "enum" || spec.mod === "snap";
+}
+
+/**
+ * The curve a NEW keyframe starts on for `spec`: `hold` for params that
+ * snap (a toggle lane reads as "on from here"), `linear` for everything
+ * else. The user can still cycle any dot afterwards. Unknown spec (a lane on
+ * a param the active preset lacks) keeps the historical default.
+ */
+export function defaultCurveFor(
+  spec: Pick<ParamSpec, "control" | "mod"> | undefined,
+): Keyframe["curve"] {
+  return spec && snapsAutomation(spec) ? "hold" : "linear";
+}
+
 export interface AutomationLane {
   /** Target param key (of whatever preset is active at that time). */
   param: string;
@@ -52,10 +75,10 @@ export const TRANSITION_KINDS = [
   "glitch",
   "cut",
 ] as const;
-export type TransitionKind = (typeof TRANSITION_KINDS)[number];
+type TransitionKind = (typeof TRANSITION_KINDS)[number];
 
 /** WGSL kind index for a transition name (0 = crossfade fallback). */
-export function transitionIndex(kind: TransitionKind | undefined): number {
+function transitionIndex(kind: TransitionKind | undefined): number {
   const i = kind ? TRANSITION_KINDS.indexOf(kind) : 0;
   return i < 0 ? 0 : i;
 }
