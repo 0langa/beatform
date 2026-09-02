@@ -53,25 +53,6 @@ export async function saveTextFile(
   return defaultName;
 }
 
-/** Save binary data to a user-chosen location. Returns the path/name, null on cancel. */
-export async function saveBinaryFile(
-  defaultName: string,
-  data: Blob,
-  filters: FileFilter[],
-): Promise<string | null> {
-  if (isTauri()) {
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    const { writeFile } = await import("@tauri-apps/plugin-fs");
-    const path = await save({ defaultPath: defaultSavePath(defaultName), filters });
-    if (!path) return null;
-    rememberSaveDir(path);
-    await writeFile(path, new Uint8Array(await data.arrayBuffer()));
-    return path;
-  }
-  downloadBlob(data, defaultName);
-  return defaultName;
-}
-
 /** Tauri only: choose a save destination without writing yet (pick before a
  * long render). Returns the path, null on cancel. */
 /** Tauri only: choose an existing folder (PNG sequence destination). Returns
@@ -188,6 +169,17 @@ export function decodeLoopbackBase64(data: string): ArrayBuffer {
 export async function stopLoopback(): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("stop_loopback");
+}
+
+/**
+ * Tauri only: true once the capture device went away (unplugged, driver
+ * reset). Rust flips the flag from cpal's error callback; the store polls it
+ * while listening (liveInputWatch.ts) so the broadcast icon never stays lit
+ * over silence.
+ */
+export async function loopbackDied(): Promise<boolean> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("loopback_died");
 }
 
 // --- ProRes ffmpeg sidecar (desktop only) ---

@@ -159,7 +159,7 @@ export interface ProjectDocument {
   builderStack: BuilderStack;
 }
 
-export interface ProjectFile {
+interface ProjectFile {
   schemaVersion: number;
   kind: "bfproj";
   appVersion: string;
@@ -439,7 +439,7 @@ export function validateDocument(rawDoc: Partial<ProjectDocument>): ProjectDocum
 }
 
 /** Whitelist-validate embedded custom defs; duplicates by id keep the first. */
-export function validCustomDefs(v: unknown): PresetDef[] {
+function validCustomDefs(v: unknown): PresetDef[] {
   if (!Array.isArray(v)) return [];
   const out: PresetDef[] = [];
   const seen = new Set<string>();
@@ -649,7 +649,7 @@ const FONT_FAMILY_RE = /^\p{L}[\p{L}\p{N} _-]*$/u;
  * because ONE bad family invalidates the whole `ctx.font` shorthand —
  * "Arial, 3Bad" is as dead as "3Bad" on its own.
  */
-export function validFontFamily(v: unknown): string {
+function validFontFamily(v: unknown): string {
   if (typeof v !== "string") return "Arial";
   const s = v.trim().slice(0, 100);
   if (!s) return "Arial";

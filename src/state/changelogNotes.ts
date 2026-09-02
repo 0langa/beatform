@@ -21,12 +21,12 @@
 const REPO = "0langa/beatform";
 
 /** Raw CHANGELOG at a git ref (tag or branch). */
-export function changelogUrl(ref: string): string {
+function changelogUrl(ref: string): string {
   return `https://raw.githubusercontent.com/${REPO}/${ref}/CHANGELOG.md`;
 }
 
 /** The branch copy — fallback only; see the module docstring. */
-export const CHANGELOG_URL = changelogUrl("main");
+const CHANGELOG_URL = changelogUrl("main");
 
 /** How many sections the dialog renders before summarising the rest. A
  * long-idle install would otherwise pour 70+ sections into a small box. */

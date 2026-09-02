@@ -1340,7 +1340,8 @@ export function ParamsPanel() {
               not a shortcut around it. */}
           <p className="section-hint">
             Complete themes — visual, colors, sync, post — live in the Gallery, ready to apply in
-            one click. Drop any .bftheme file onto the window to import; save yours to share.
+            one click. Import a .bftheme file with the button below or drop it onto the window; save
+            yours to share.
           </p>
           {savingTheme ? (
             <form
@@ -1386,6 +1387,13 @@ export function ParamsPanel() {
                 onClick={() => setSavingTheme(true)}
               >
                 + Save as theme…
+              </button>
+              <button
+                className="text-btn"
+                title="Open a .bftheme file — the same import as dropping it onto the window"
+                onClick={() => void store().importThemeFromFile()}
+              >
+                Import theme…
               </button>
             </div>
           )}

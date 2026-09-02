@@ -69,11 +69,13 @@ import {
   openTextFile,
   readBinaryFromPath,
   saveTextFile,
+  loopbackDied,
   startLoopback,
   stopLoopback,
   writeAutosave,
   type LibraryTrack,
 } from "./platform";
+import { watchLiveInput } from "./liveInputWatch";
 import {
   pruneBitmapCache,
   rasterizeOverlay,
@@ -570,6 +572,8 @@ interface Actions {
   applyTheme(document: ProjectDocument, name: string): void;
   /** Parse + apply a .bftheme file's text (drag-import). */
   importThemeText(contents: string): void;
+  /** Native open dialog → importThemeText (HD-10). */
+  importThemeFromFile(): Promise<void>;
   /** Save the current setup as a shareable .bftheme file. */
   exportCurrentTheme(meta: ThemeMeta): Promise<void>;
   /** Show/hide the Gallery dialog; first open loads the registry. An
@@ -927,6 +931,8 @@ let unclaimedAnalysisId: number | null = null;
  * second click from running a second start path whose failure cleanup would
  * tear down the first click's worklet. */
 let liveToggling = false;
+/** HD-16: stops the `loopback_died` poll (liveInputWatch.ts) while listening. */
+let stopLiveWatch: (() => void) | null = null;
 /** Trailing timer: reset on every scheduleAutosave() call, fires
  * autosaveIntervalSec after the LAST edit (the "quiet period" write). */
 let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -2743,6 +2749,8 @@ export const useVizStore = create<VizState>((set, get) => {
       try {
         const engine = getEngine();
         if (get().liveInputActive) {
+          stopLiveWatch?.();
+          stopLiveWatch = null;
           await stopLoopback().catch(() => undefined);
           engine.stopLiveInput();
           getAnalyzer().reset("source");
@@ -2791,6 +2799,17 @@ export const useVizStore = create<VizState>((set, get) => {
             error: null,
           });
           flashNotice(`Listening to ${info.device}`);
+          // HD-16: Rust flips `loopback_died` when the device goes away and
+          // nothing pushes that to the page. Poll it; on death tear down
+          // exactly as a manual stop would (the stop path resets the flag
+          // too) and say why the icon went dark.
+          stopLiveWatch?.();
+          stopLiveWatch = watchLiveInput(loopbackDied, () => {
+            stopLiveWatch = null;
+            void get()
+              .toggleLiveInput()
+              .then(() => set({ error: "System-audio device was lost — listening stopped" }));
+          });
         } catch (e) {
           // Clear the Rust side too: a half-started (or orphaned) capture
           // would wedge every future toggle on "already running".
@@ -3410,14 +3429,6 @@ useVizStore.subscribe((s) => {
   // leaves the stage to the mode's no-lyrics treatment).
   resetLyricPlate();
 });
-
-/** True while an export is running — guards Escape-to-close and modal close. */
-export function isExporting(): boolean {
-  const s = useVizStore.getState();
-  // batchStatus matters on its own: `exporting` goes null between jobs while
-  // the next track decodes, and a batch is still very much exporting there.
-  return s.exporting !== null || s.batchStatus === "running";
-}
 
 /**
  * FEAT-009 — the mirror publisher's state side, wired at module scope like

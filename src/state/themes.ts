@@ -41,7 +41,7 @@ export interface ThemeMeta {
   thumbnail?: string;
 }
 
-export interface ThemeFile {
+interface ThemeFile {
   kind: "bftheme";
   schemaVersion: number;
   /** Schema of the embedded document — same versioning as .bfproj. */
