@@ -16,7 +16,6 @@ export interface PerfOverlayStats {
   cpu: boolean;
   ram: boolean;
   disk: boolean;
-  gpu: boolean;
 }
 
 /**
@@ -174,7 +173,6 @@ export const DEFAULT_PREFS: AppPrefs = {
     cpu: true,
     ram: true,
     disk: false,
-    gpu: false,
   },
   measuredRtf: NO_MEASURED_RTF,
   performHud: false,
@@ -238,7 +236,6 @@ function validOverlayStats(raw: unknown): PerfOverlayStats {
     cpu: bool(p.cpu, d.cpu),
     ram: bool(p.ram, d.ram),
     disk: bool(p.disk, d.disk),
-    gpu: bool(p.gpu, d.gpu),
   };
 }
 
@@ -503,8 +500,7 @@ function sameOverlayStats(a: PerfOverlayStats, b: PerfOverlayStats): boolean {
     a.jsHeap === b.jsHeap &&
     a.cpu === b.cpu &&
     a.ram === b.ram &&
-    a.disk === b.disk &&
-    a.gpu === b.gpu
+    a.disk === b.disk
   );
 }
 

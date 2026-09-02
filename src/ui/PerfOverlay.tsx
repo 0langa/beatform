@@ -48,7 +48,6 @@ interface PerfStatsPayload {
   memTotalBytes: number;
   diskReadBytesTotal: number;
   diskWrittenBytesTotal: number;
-  gpuPct: number | null;
 }
 
 /** Latest Rust sample with disk rates derived on this side — the Rust command
@@ -104,12 +103,11 @@ export function PerfOverlay(props: PerfOverlayProps) {
   const cpuRef = useRef<HTMLSpanElement>(null);
   const ramRef = useRef<HTMLSpanElement>(null);
   const diskRef = useRef<HTMLSpanElement>(null);
-  const gpuRef = useRef<HTMLSpanElement>(null);
 
   /** Latest Rust sample; written by the 1 Hz poller, read by the text tick. */
   const rustRef = useRef<RustSnapshot | null>(null);
 
-  const needsRust = show.cpu || show.ram || show.disk || show.gpu;
+  const needsRust = show.cpu || show.ram || show.disk;
 
   // 1 Hz Rust poll — only while a Rust-backed stat is visible, only on
   // desktop. In the browser those rows read "n/a".
@@ -200,16 +198,6 @@ export function PerfOverlay(props: PerfOverlayProps) {
           ? `R ${rust.readKbps.toFixed(0)} · W ${rust.writeKbps.toFixed(0)} KB/s`
           : pending;
       }
-      if (show.gpu && gpuRef.current) {
-        // gpuPct is Option<f32> on the Rust side and always None on this
-        // build — an honest "—" beats a flaky number.
-        gpuRef.current.textContent =
-          rust && rust.stats.gpuPct !== null
-            ? `${rust.stats.gpuPct.toFixed(0)}%`
-            : rust
-              ? "—"
-              : pending;
-      }
     };
 
     // Sample PRESENTED frames, not rAF ticks: rAF fires at display refresh
@@ -237,14 +225,7 @@ export function PerfOverlay(props: PerfOverlayProps) {
   }, [show, rendererKind]);
 
   const anyRow =
-    show.fps ||
-    show.frameTime ||
-    show.renderer ||
-    show.jsHeap ||
-    show.cpu ||
-    show.ram ||
-    show.disk ||
-    show.gpu;
+    show.fps || show.frameTime || show.renderer || show.jsHeap || show.cpu || show.ram || show.disk;
   if (!anyRow) return null;
 
   const labelStyle: React.CSSProperties = { opacity: 0.65 };
@@ -333,14 +314,6 @@ export function PerfOverlay(props: PerfOverlayProps) {
         <>
           <span style={labelStyle}>Disk</span>
           <span ref={diskRef} style={valueStyle}>
-            …
-          </span>
-        </>
-      )}
-      {show.gpu && (
-        <>
-          <span style={labelStyle}>GPU</span>
-          <span ref={gpuRef} style={valueStyle}>
             …
           </span>
         </>

@@ -53,7 +53,6 @@ const PERF_STAT_TOGGLES: Array<{ key: keyof PerfOverlayStats; label: string }> =
   { key: "cpu", label: "CPU" },
   { key: "ram", label: "RAM" },
   { key: "disk", label: "Disk I/O" },
-  { key: "gpu", label: "GPU" },
 ];
 
 export function SettingsDialog() {
@@ -193,7 +192,8 @@ export function SettingsDialog() {
             </div>
             <p className="section-hint">
               Caps only the live preview — exports always render every frame at the exact export
-              frame rate, so files are unaffected.
+              frame rate, so files are unaffected. While the second display is live the cap is
+              lifted, so the audience never watches a throttled mirror.
             </p>
             <div className="field">
               <span>Preview resolution</span>

@@ -19,11 +19,12 @@
 //! Disk I/O is reported as CUMULATIVE bytes summed over the family; the
 //! frontend diffs consecutive samples into KB/s (clamped at 0, so the one
 //! odd sample when a child process dies degrades to a 0-rate tick, never a
-//! negative). GPU utilisation is deliberately `None` on this build: sysinfo
-//! has no GPU support on Windows, and the D3DKMT/PDH "GPU Engine" routes are
+//! negative). There is no GPU utilisation field: sysinfo has no GPU support
+//! on Windows, and the D3DKMT/PDH "GPU Engine" routes are
 //! undocumented-or-fiddly enough that a solid implementation does not fit in
-//! a small dependency-free module — an honest "—" in the overlay beats a
-//! flaky number.
+//! a small dependency-free module. The overlay used to carry a GPU row that
+//! read "—" forever; HD-05 (2.110.0) removed the toggle, the row and this
+//! field rather than ship a stat with no collector.
 
 use serde::Serialize;
 use std::sync::Mutex;
@@ -81,8 +82,6 @@ pub struct PerfStats {
     disk_read_bytes_total: u64,
     /// CUMULATIVE bytes the family has written to disk.
     disk_written_bytes_total: u64,
-    /// GPU utilisation — always `None` on this build (see module docs).
-    gpu_pct: Option<f32>,
 }
 
 /// Marker WebView2 stamps on every child it spawns for a given host exe.
@@ -170,7 +169,6 @@ fn collect(inner: &mut Inner, self_pid: Pid, marker: &str) -> PerfStats {
         mem_total_bytes: sys.total_memory(),
         disk_read_bytes_total: read,
         disk_written_bytes_total: written,
-        gpu_pct: None,
     }
 }
 
@@ -233,7 +231,5 @@ mod tests {
         // family membership is stable.
         assert!(second.disk_read_bytes_total >= first.disk_read_bytes_total);
         assert!(second.disk_written_bytes_total >= first.disk_written_bytes_total);
-        // The honest skip: this build never invents a GPU number.
-        assert!(second.gpu_pct.is_none());
     }
 }

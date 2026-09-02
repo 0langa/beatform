@@ -99,7 +99,6 @@ describe("prefs: performance overlay", () => {
       cpu: true,
       ram: true,
       disk: false,
-      gpu: false,
     });
     // The rest of the blob is untouched.
     expect(p.volume).toBe(0.5);
@@ -246,9 +245,9 @@ describe("prefs: no-op writes", () => {
     });
     expect(setPrefs({ perfOverlayStats: { ...before.perfOverlayStats } })).toBe(before);
     expect(calls).toBe(0);
-    setPrefs({ perfOverlayStats: { ...before.perfOverlayStats, gpu: true } });
+    setPrefs({ perfOverlayStats: { ...before.perfOverlayStats, disk: true } });
     expect(calls).toBe(1);
-    expect(getPrefs().perfOverlayStats.gpu).toBe(true);
+    expect(getPrefs().perfOverlayStats.disk).toBe(true);
   });
 
   it("treats a patch that VALIDATES back to the current value as a no-op", async () => {
