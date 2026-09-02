@@ -202,6 +202,15 @@ function verify(result) {
       `onset.firstActiveMs=${result.onset?.firstActiveMs} active.activeFraction=${result.active?.activeFraction?.toFixed(3)}` +
       (idleTone > 0.1
         ? "\nNOTE: the idle baseline was not silent — other audio was playing on the system; pause it and rerun."
+        : "") +
+      // Every analyzer number exactly 0 while the native tap delivered its 12 s
+      // means the tone never entered the endpoint mix at all. Seen 2026-09-02:
+      // Windows' per-app Volume Mixer had the WebView2 session muted on the
+      // default output device (it remembers mute per exe per device).
+      (result.active?.maxBin === 0 && (result.stats?.mainFrames ?? 0) > 0
+        ? "\nNOTE: native frames flowed but the analyzer saw digital silence — the tone never reached the " +
+          'endpoint mix. Check the Windows Volume Mixer for a muted "Microsoft Edge WebView2" / Beatform ' +
+          "session on the default output device, or switch the default output device, and rerun."
         : "");
     throw new Error(`${failures.join("\n")}\n${context}\nstats=${JSON.stringify(result.stats)}`);
   }
