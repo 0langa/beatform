@@ -21,8 +21,14 @@
  *                  --continue); passes straight through when the section
  *                  already has content
  *   4. commit      commit "chore(release): X.Y.Z — <title>" + tag vX.Y.Z +
- *                  push main + push the tag
- *   5. watch       wait for the "Release installers" workflow run on the tag,
+ *                  push main + push the tag. Rerun-safe: each sub-action is
+ *                  skipped when git already shows it done (bump committed,
+ *                  tag at HEAD, origin/main at HEAD, remote tag at HEAD); a
+ *                  tag pointing anywhere else is an error and is NEVER moved.
+ *                  Records state.tagPushedAt and verifies origin afterwards.
+ *   5. watch       wait for the "Release installers" run for the tag that was
+ *                  created after state.tagPushedAt (newest wins — never
+ *                  re-attaches to an older failed run for the same tag),
  *                  stream it, then verify its recorded conclusion directly
  *   6. publish     gh release edit vX.Y.Z --draft=false
  *                  --title "Beatform vX.Y.Z" --latest
@@ -33,6 +39,11 @@
  *   8. reminder    ALIGN-002: after the installed app auto-updates, HKCU
  *                  uninstall DisplayVersion must equal X.Y.Z (exact-version
  *                  check) — printed, then marked done
+ *
+ * The decisions behind steps 4 and 5 are pure functions in
+ * scripts/lib/release-helpers.mjs, unit-tested in
+ * src/release/releaseHelpers.test.ts; this file only gathers facts from
+ * git/gh and executes the answer.
  *
  * AUTH, REQUIRED ON THIS MACHINE: every `gh` invocation here runs with
  * GITHUB_TOKEN REMOVED from the child environment — the exact equivalent of
@@ -51,6 +62,14 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import {
+  commitPlan,
+  parseLsRemoteTag,
+  parseVerifiedVersion,
+  pickReleaseRun,
+  releaseSubject,
+  remoteMismatches,
+} from "./lib/release-helpers.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stateFile = path.join(root, "node_modules", ".cache", "release-state.json");
@@ -110,7 +129,9 @@ function ghEnv() {
   return env;
 }
 
-function run(file, args, { cwd = root, env, capture = false } = {}) {
+/** `allowFailure` (capture only): a non-zero exit returns null instead of
+ * throwing — for lookups whose "not found" is a legitimate answer. */
+function run(file, args, { cwd = root, env, capture = false, allowFailure = false } = {}) {
   const res = spawnSync(file, args, {
     cwd,
     env: env ?? process.env,
@@ -120,6 +141,7 @@ function run(file, args, { cwd = root, env, capture = false } = {}) {
   });
   if (res.error) throw res.error;
   if (res.status !== 0) {
+    if (capture && allowFailure) return null;
     const detail = capture ? `\n${res.stdout ?? ""}${res.stderr ?? ""}` : "";
     throw new Error(`${file} ${args.join(" ")} exited ${res.status}${detail}`);
   }
@@ -140,6 +162,53 @@ function gh(args, opts = {}) {
 
 function node(args, opts = {}) {
   return run(process.execPath, args, opts);
+}
+
+function git(args, opts = {}) {
+  return run("git", args, { ...opts, capture: true });
+}
+
+/** What origin holds right now: origin/main (after a fetch — `--no-tags`
+ * so the lookup never creates a local tag behind the plan's back) and the
+ * commit the remote tag resolves to. Two network calls. */
+function remoteState() {
+  run("git", ["fetch", "origin", "main", "--no-tags", "--quiet"]);
+  return {
+    remoteMain: git(["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"], {
+      allowFailure: true,
+    }),
+    remoteTagTarget: parseLsRemoteTag(
+      git(["ls-remote", "--tags", "origin", `refs/tags/${tag}`, `refs/tags/${tag}^{}`]),
+      tag,
+    ),
+  };
+}
+
+/** The facts commitPlan() decides on — read fresh from git every time. */
+function commitFacts(title) {
+  const verify = spawnSync(
+    process.execPath,
+    [path.join("scripts", "bump-version.mjs"), "--verify"],
+    {
+      cwd: root,
+      encoding: "utf8",
+      windowsHide: true,
+    },
+  );
+  if (verify.error) throw verify.error;
+  return {
+    version,
+    tag,
+    title,
+    head: git(["rev-parse", "HEAD"]),
+    headSubject: git(["log", "-1", "--format=%s"]),
+    treeClean: git(["status", "--porcelain"]) === "",
+    filesAtVersion: parseVerifiedVersion(`${verify.stdout ?? ""}${verify.stderr ?? ""}`),
+    tagTarget: git(["rev-parse", "--verify", "--quiet", `refs/tags/${tag}^{commit}`], {
+      allowFailure: true,
+    }),
+    ...remoteState(),
+  };
 }
 
 function repoSlug() {
@@ -303,18 +372,56 @@ const steps = {
     const title = opt("title") ?? state.title;
     if (!title) throw new Error('commit: no title — pass --title "..." (stored in state)');
     state.title = title;
-    run("git", ["add", "-A"]);
-    run("git", ["commit", "-m", `chore(release): ${version} — ${title}`]);
-    run("git", ["tag", tag]);
-    run("git", ["push", "origin", "main"]);
-    run("git", ["push", "origin", tag]);
+    // Rerun-safe: git is the source of truth for what already happened, not
+    // the state file — a crash between any two of the four sub-actions (the
+    // 2.108 bite) resumes from exactly the one that did not land. The plan
+    // throws, never guesses, when a tag points anywhere but the release commit.
+    const plan = commitPlan(commitFacts(title));
+    for (const note of plan.notes) console.log(`commit: ${note}`);
+    if (plan.commit) {
+      run("git", ["add", "-A"]);
+      run("git", ["commit", "-m", releaseSubject(version, title)]);
+    }
+    if (plan.tag) run("git", ["tag", tag]);
+    if (plan.pushMain) run("git", ["push", "origin", "main"]);
+    if (plan.pushTag) {
+      // Stamped BEFORE the push and saved at once, so it is a lower bound on
+      // the workflow run's createdAt even if this process dies mid-push. The
+      // watch step only considers runs created after it.
+      state.tagPushedAt = new Date().toISOString();
+      saveState(state);
+      run("git", ["push", "origin", tag]);
+    }
+    // `git push` exiting zero is not proof; read origin back.
+    const head = git(["rev-parse", "HEAD"]);
+    const problems = remoteMismatches(head, remoteState(), tag);
+    if (problems.length) {
+      throw new Error(`commit: origin does not match after push:\n  ${problems.join("\n  ")}`);
+    }
+    console.log(`commit: origin/main and ${tag} both at ${head.slice(0, 7)} — verified`);
+    if (!state.tagPushedAt) {
+      console.log(
+        `commit: note — ${tag} reached origin outside this script, so no push time is recorded; ` +
+          "watch will take the newest run for the tag.",
+      );
+    }
     return true;
   },
 
-  async watch() {
+  async watch(state) {
     // Find the tag's "Release installers" run (registration can lag the push).
-    let runId = null;
-    for (let i = 0; i < 30 && !runId; i++) {
+    // Only runs created after the recorded tag push are eligible and the
+    // newest wins — after a failed run + tag delete + re-push this must not
+    // re-attach to the old completed/failure run (the second 2.108 bite).
+    const afterIso = state.tagPushedAt ?? null;
+    if (!afterIso) {
+      console.log(
+        `watch: WARNING — no tagPushedAt in state (${tag} pushed outside this script?); ` +
+          "cannot filter runs by push time, taking the newest run for the tag by databaseId.",
+      );
+    }
+    let picked = null;
+    for (let i = 0; i < 30 && !picked; i++) {
       const out = gh(
         [
           "run",
@@ -322,19 +429,33 @@ const steps = {
           "--workflow",
           "Release installers",
           "--json",
-          "databaseId,headBranch,status",
+          "databaseId,headBranch,status,conclusion,createdAt",
           "--limit",
           "20",
         ],
         { capture: true },
       );
-      const match = JSON.parse(out).find((r) => r.headBranch === tag);
-      if (match) runId = match.databaseId;
-      else await sleep(10_000);
+      picked = pickReleaseRun(JSON.parse(out), tag, afterIso);
+      if (!picked) await sleep(10_000);
     }
-    if (!runId) throw new Error(`watch: no "Release installers" run appeared for ${tag}`);
-    console.log(`watch: streaming run ${runId} (env -u GITHUB_TOKEN gh run watch)`);
-    gh(["run", "watch", String(runId), "--exit-status"]);
+    if (!picked) {
+      throw new Error(
+        `watch: no "Release installers" run for ${tag}` +
+          `${afterIso ? ` created after ${afterIso}` : ""} appeared within 5 minutes`,
+      );
+    }
+    const runId = picked.databaseId;
+    const shown = picked.conclusion ? `${picked.status}/${picked.conclusion}` : picked.status;
+    console.log(
+      `watch: streaming run ${runId} (${shown}, created ${picked.createdAt}) — env -u GITHUB_TOKEN gh run watch`,
+    );
+    try {
+      gh(["run", "watch", String(runId), "--exit-status"]);
+    } catch (e) {
+      // A non-zero watch exit is only a hint; the recorded conclusion below
+      // is the gate either way and produces the message with the run URL.
+      console.log(`watch: gh run watch exited non-zero (${e.message.split("\n")[0]})`);
+    }
     // `gh run watch --exit-status` has returned zero for a failed run on this
     // machine before. Publishing is irreversible enough that the workflow's
     // recorded conclusion, not the watch process, is the release gate.
