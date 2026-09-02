@@ -39,6 +39,20 @@ import { presets } from "../render/presets";
 const RUNS = { numRuns: 300, seed: 0x2f8a_11c3 };
 
 /**
+ * Explicit 30 s budget on every describe below, per GATES.md §1 — on the
+ * describe, never on individual `it`s, so no test is left on vitest's 5 s
+ * per-test default. Each property here drives its 300 fast-check cases
+ * through the real parsers and validators, and on a genuine failure
+ * fast-check shrinks with hundreds more: alone that is tens of milliseconds,
+ * but under full-suite parallelism on a loaded machine the same work can
+ * stretch toward the default, which would then report a TIMEOUT instead of
+ * the shrunk counterexample the fixed seed exists to print. Same remedy
+ * `featurePipelineFuzz` and `dspCharacterization` carry: a failure here is
+ * real, and rerunning is not the protocol.
+ */
+const SUITE = { timeout: 30_000 };
+
+/**
  * Keys with a meaning of their own to the JS object model, mixed into every
  * generated object. `migratePresetIdKeys` and the per-preset map validators
  * are written against exactly this: a hand-edited or hostile file whose keys
@@ -147,7 +161,7 @@ const realisticDocument = fc.record(
   { requiredKeys: [] },
 );
 
-describe("project parser fuzzing", () => {
+describe("project parser fuzzing", SUITE, () => {
   it("only ever fails with ProjectParseError", () => {
     fc.assert(
       fc.property(fc.oneof(fc.string(), fc.json()), (text) => {
@@ -215,7 +229,7 @@ describe("project parser fuzzing", () => {
   });
 });
 
-describe("theme parser fuzzing", () => {
+describe("theme parser fuzzing", SUITE, () => {
   it("only ever fails with ThemeParseError", () => {
     const envelope = fc.record({
       kind: fc.constantFrom("bftheme", "bfproj", ""),
@@ -271,7 +285,7 @@ const lyricLine = fc.oneof(
 
 const lyricText = fc.array(lyricLine, { maxLength: 24 }).map((lines) => lines.join("\n"));
 
-describe("lyric parser fuzzing", () => {
+describe("lyric parser fuzzing", SUITE, () => {
   it("parseLrc and parseSrt return sorted, finite, non-negative lines", () => {
     fc.assert(
       fc.property(lyricText, (text) => {

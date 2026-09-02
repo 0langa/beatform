@@ -690,8 +690,9 @@ describe("services.ts frame loop — fps cap gates the DSP too (R2-25)", () => {
     setPrefs({ fpsCap: 0 });
   });
 
-  /** Arm the loop with a manually-driven rAF (the file's standard rig). */
-  function rig() {
+  /** Arm the loop with a manually-driven rAF (the file's standard rig).
+   * `hooks` lets a test observe the transport refresh (onPlayback). */
+  function rig(hooks: Partial<ServiceHooks> = {}) {
     registerCustomPreset({
       id: PRESET_ID,
       name: "C",
@@ -719,6 +720,7 @@ describe("services.ts frame loop — fps cap gates the DSP too (R2-25)", () => {
             paramsByPreset: {},
             modsByPreset: {},
           }) as FrameResolveInput,
+        ...hooks,
       }),
     );
     return { rafBox, dispose };
@@ -727,13 +729,18 @@ describe("services.ts frame loop — fps cap gates the DSP too (R2-25)", () => {
   /** Install the REAL analyzer accumulator arithmetic on the mock — the same
    * dt fallback, accumulator and epsilon realtimeSource.ts uses, advancing
    * only in update() while willTick() stays a pure prediction, so the mock
-   * reproduces the exact contract the loop leans on. Playing throughout, so
-   * every analysis tick is a reported feedback tick. */
-  function installTickModel(ana: {
-    update: ReturnType<typeof vi.fn>;
-    willTick: ReturnType<typeof vi.fn>;
-    feedbackTicked: boolean;
-  }) {
+   * reproduces the exact contract the loop leans on. `playing` (default true)
+   * is the analyzer's own report gate — `lastUpdateTicked = analysisTick &&
+   * engine.playing` — so a paused model still steps its 60 Hz clock (meters
+   * and bins keep decaying) but never reports a feedback tick. */
+  function installTickModel(
+    ana: {
+      update: ReturnType<typeof vi.fn>;
+      willTick: ReturnType<typeof vi.fn>;
+      feedbackTicked: boolean;
+    },
+    { playing = true }: { playing?: boolean } = {},
+  ) {
     const ANALYSIS_DT = 1 / 60;
     const model = { lastFrameAt: null as number | null, sinceTick: 0, ticks: 0 };
     ana.willTick.mockImplementation((now: number) => {
@@ -751,7 +758,7 @@ describe("services.ts frame loop — fps cap gates the DSP too (R2-25)", () => {
         if (model.sinceTick > ANALYSIS_DT) model.sinceTick = 0;
       }
       if (tick) model.ticks++;
-      ana.feedbackTicked = tick;
+      ana.feedbackTicked = tick && playing;
       return { time: now, lufs: 0, width: 0 } as unknown;
     });
     return model;
@@ -771,6 +778,8 @@ describe("services.ts frame loop — fps cap gates the DSP too (R2-25)", () => {
     return {
       advance: directives.filter((d) => d !== "present-only").length,
       presented: getPresentedFrames() - presentedBefore,
+      renderCalls: directives.length,
+      directives,
     };
   }
 
@@ -812,6 +821,91 @@ describe("services.ts frame loop — fps cap gates the DSP too (R2-25)", () => {
     expect(ana.update.mock.calls.length).toBe(FRAMES);
     expect(presented).toBe(FRAMES);
     expect(advance).toBe(model.ticks); // every tick advances, uncapped too
+
+    dispose();
+  });
+
+  /**
+   * Paused under the cap — the branch the 2.104.2 review left device-proven
+   * but unpinned. The analyzer keeps stepping its 60 Hz clock while paused
+   * (meters and bins decay honestly), so willTick still owes ticks and
+   * ana.update still runs, but it reports NO feedback tick (`analysisTick &&
+   * engine.playing`). The loop's two consumers of that one boolean have to
+   * agree: a capped tick frame neither presents nor advances — it returns
+   * before render, so an "advance-only" can never leave the loop without a
+   * reported tick behind it — the frames presented at the cap's cadence are
+   * all present-only, and with the transport standing still no throttled
+   * onPlayback refresh fires, exactly as an uncapped pause never fired one
+   * (every onPlayback site gates on eng.playing; pause and seek state reach
+   * the store through engine.onStateChange, not through this loop).
+   */
+  it("paused under the cap: capped frames never render or advance; ticks still reach ana.update; no transport refresh", async () => {
+    setPrefs({ fpsCap: 30 });
+    const onPlayback = vi.fn();
+    const { rafBox, dispose } = rig({ onPlayback });
+    await flush();
+    const eng = getEngine() as unknown as { playing: boolean };
+    eng.playing = false; // the mock's default, made explicit: paused
+    const ana = getAnalyzer() as unknown as Parameters<typeof installTickModel>[0];
+    const model = installTickModel(ana, { playing: false });
+
+    const { advance, presented, renderCalls, directives } = drive(rafBox);
+
+    // Every render call presented — not one capped frame reached the renderer.
+    expect(renderCalls).toBe(presented);
+    expect(presented).toBeGreaterThanOrEqual(52);
+    expect(presented).toBeLessThanOrEqual(62);
+    // Nothing advanced: no "advance-only", no "advance-and-present".
+    expect(advance).toBe(0);
+    expect(new Set(directives)).toEqual(new Set(["present-only"]));
+    // The 60 Hz clock still ran inside ana.update — paused meters keep decaying.
+    expect(model.ticks).toBeGreaterThanOrEqual(118);
+    expect(ana.update.mock.calls.length).toBeGreaterThanOrEqual(model.ticks);
+    // Standing transport: no throttled refresh, same as an uncapped pause.
+    expect(onPlayback).not.toHaveBeenCalled();
+
+    dispose();
+  });
+
+  /**
+   * Playing under the cap: the capped early returns (tickless frame,
+   * advance-only tick frame) each carry the same throttled transport refresh
+   * the presented path has, so the cap changes how often the PICTURE updates
+   * and never how often the transport does. A bare count cannot show that —
+   * at 144 Hz capped to 30, refreshes riding presented frames alone would
+   * land every ~0.278 s, seven in two seconds, the same seven the 0.25 s
+   * cadence gives — so this drives frame by frame and counts the refreshes
+   * that fired on frames that did NOT present.
+   */
+  it("playing under the cap: the 0.25 s transport refresh fires from the capped early returns too", async () => {
+    setPrefs({ fpsCap: 30 });
+    const onPlayback = vi.fn();
+    const { rafBox, dispose } = rig({ onPlayback });
+    await flush();
+    const eng = getEngine() as unknown as { playing: boolean };
+    eng.playing = true;
+    const ana = getAnalyzer() as unknown as Parameters<typeof installTickModel>[0];
+    installTickModel(ana);
+
+    let refreshes = 0;
+    let onUnpresentedFrames = 0;
+    for (let n = 0; n < FRAMES; n++) {
+      const presentedBefore = getPresentedFrames();
+      const refreshesBefore = onPlayback.mock.calls.length;
+      rafBox.cb?.((n * 1000) / HZ);
+      if (onPlayback.mock.calls.length > refreshesBefore) {
+        refreshes++;
+        if (getPresentedFrames() === presentedBefore) onUnpresentedFrames++;
+      }
+    }
+
+    // 0.25 s cadence over ~2 s of rAF: the first frame past each quarter
+    // second, whichever path that frame takes.
+    expect(refreshes).toBeGreaterThanOrEqual(6);
+    expect(refreshes).toBeLessThanOrEqual(8);
+    // Most quarter-second marks fall on capped frames (only one in five
+    // presents); the refresh has to come from the early returns for them.
+    expect(onUnpresentedFrames).toBeGreaterThanOrEqual(4);
 
     dispose();
   });

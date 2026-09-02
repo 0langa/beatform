@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { buildExportOptions, resolveDocParams, type FormatPreset } from "./buildExportOptions";
-import { DEFAULT_POST, DEFAULT_MOTION } from "../render/types";
+import {
+  buildExportOptions,
+  resolveDocParams,
+  type ExportIo,
+  type FormatPreset,
+  type TrackInput,
+} from "./buildExportOptions";
+import type { ExportOptions } from "./videoExporter";
+import { DEFAULT_POST, DEFAULT_MOTION, type PresetDef } from "../render/types";
+import type { BuilderLayer } from "../render/builder2";
 import { DEFAULT_SYNC } from "../audio/types";
-import { DEFAULT_LYRIC_STYLE } from "../state/lyrics";
+import type { BeatGrid } from "../audio/analysis/beatGrid";
+import { STEM_TRACK_KEYS, type StemEntry, type StemTrackKey } from "../audio/stems";
+import { vocalSpansFromLyrics } from "../audio/vocalPresence";
+import { DEFAULT_LYRIC_STYLE, type LyricLine } from "../state/lyrics";
 import { DEFAULT_AUDIOGRAM } from "../state/audiogram";
 import type { ProjectDocument } from "../state/project";
 import { resolveActiveFrame } from "../state/frameResolve";
@@ -44,6 +55,57 @@ function doc(over: Partial<ProjectDocument> = {}): ProjectDocument {
 
 const track = { name: "t.mp3", meta: { title: "T", artist: "A" }, coverArt: null, beatGrid: null };
 
+/**
+ * Every key of ExportOptions (videoExporter.ts), as a Record so the COMPILER
+ * keeps the list honest in both directions: a key added to the type is a
+ * typecheck error here until it is listed ("Property 'x' is missing"), and a
+ * key removed from the type is an excess-property error. The full-surface
+ * test then requires buildExportOptions to CARRY every listed key at runtime.
+ * That key set is stable — the chokepoint's return literal assigns each key
+ * explicitly, undefined or not, so Object.keys never depends on the fixture.
+ */
+const EXPORT_OPTION_KEYS: Record<keyof ExportOptions, true> = {
+  width: true,
+  height: true,
+  fps: true,
+  bitrate: true,
+  codec: true,
+  presetId: true,
+  params: true,
+  bg: true,
+  bgImage: true,
+  bgVideo: true,
+  sync: true,
+  mods: true,
+  smoothSpectrum: true,
+  post: true,
+  motion: true,
+  paramsByPreset: true,
+  modsByPreset: true,
+  timeline: true,
+  builderStack: true,
+  overlay: true,
+  coverArt: true,
+  beatGrid: true,
+  sections: true,
+  vocalSpans: true,
+  stems: true,
+  lyrics: true,
+  audiogram: true,
+  customPresets: true,
+  streamToPath: true,
+  pngDir: true,
+  onPngFrame: true,
+  deepColor: true,
+  onRawFrame: true,
+  deepStraightAlpha: true,
+  loudness: true,
+  segment: true,
+  loopCrossfadeSec: true,
+  signal: true,
+  onProgress: true,
+};
+
 describe("buildExportOptions", () => {
   it("passes the format's codec through (frozen batch runs keep encoding it)", () => {
     const o = buildExportOptions(doc(), { ...FMT, codec: "hevc" }, track, undefined, {});
@@ -54,28 +116,194 @@ describe("buildExportOptions", () => {
 
   it("carries every field the export pipeline reads", () => {
     // A dropped optional field would not fail typecheck and would silently
-    // change the render — so assert the full surface, not a sample.
-    const o = buildExportOptions(doc(), FMT, track, undefined, {
-      streamToPath: "/out.mp4",
-      signal: new AbortController().signal,
+    // change the render — so assert the full surface, not a sample. Every
+    // input the chokepoint accepts is populated below, on the arm it really
+    // arrives by:
+    //   document — presetId, params, sync, mods, smoothSpectrum, post,
+    //     motion, paramsByPreset, modsByPreset, timeline, builderStack, bg
+    //     (+ bgImage / bgVideo resolved from assets), coverArt via
+    //     centerImageByPreset.
+    //   track — coverArt fallback, beatGrid, sections, stems, lyrics,
+    //     vocalSpans (derived from vocalLines), audiogram, customPresets.
+    //     Session state and track analysis, never persisted in a .bfproj, so
+    //     no document can drive them (TrackInput in buildExportOptions.ts).
+    //   format — width, height, fps, bitrate, codec.
+    //   overlay — the pre-rasterized ImageBitmap; composed by the caller
+    //     (rasterizeOverlay in exportActions.ts / batchRunner.ts).
+    //   io — streamToPath, pngDir, onPngFrame, deepColor, onRawFrame,
+    //     deepStraightAlpha, loudness, segment, loopCrossfadeSec, signal,
+    //     onProgress: destination and lifecycle, caller-owned (ExportIo).
+    // bgImage and bgVideo are exclusive by construction (one bg.mode), so the
+    // surface takes two documents: image mode here, video mode at the end.
+    const bgAsset = { id: "as-bg", name: "bg.png", dataUrl: "data:image/png;base64,AA==" };
+    const centerAsset = { id: "as-c", name: "c.png", dataUrl: "data:image/png;base64,BB==" };
+    const layer: BuilderLayer = {
+      id: "l1",
+      type: "rings",
+      enabled: true,
+      opacity: 1,
+      blend: "add",
+      hue: 30,
+      hueSpread: 60,
+      params: {},
+    };
+    const d = doc({
+      paramsByPreset: { "spectrum-bars": { gain: 2 }, aurora: { speed: 0.5 } },
+      syncByPreset: { "spectrum-bars": { mode: "bass", smooth: 0.7 } },
+      modsByPreset: {
+        "spectrum-bars": [{ id: "m1", source: "kick", param: "gain", amount: 0.5 }],
+      },
+      smoothSpectrum: true,
+      post: { ...DEFAULT_POST, bloom: 0.9 },
+      motion: { ...DEFAULT_MOTION, rotation: 1.5 },
+      timeline: {
+        enabled: true,
+        scenes: [{ id: "sc1", name: "S", presetId: "aurora", start: 4 }],
+        lanes: [],
+      },
+      builderStack: { layers: [layer] },
+      assets: { "as-bg": bgAsset, "as-c": centerAsset },
+      bg: { mode: BG_IMAGE, color: [0, 0, 0], image: { assetId: "as-bg", dim: 0.3, blur: 2 } },
+      centerImageByPreset: { "spectrum-bars": "as-c" },
     });
+
+    const beatGrid: BeatGrid = {
+      bpm: 128,
+      beatTimes: new Float32Array([0, 0.46875]),
+      hopSec: 512 / 48000,
+    };
+    const lines: LyricLine[] = [
+      { t: 1, end: 2, text: "one" },
+      { t: 3, end: null, text: "two" },
+    ];
+    const stem: StemEntry = {
+      slot: "stem1",
+      analysis: {
+        name: "drums",
+        rate: 30,
+        frames: 2,
+        tracks: Object.fromEntries(STEM_TRACK_KEYS.map((k) => [k, new Float32Array(2)])) as Record<
+          StemTrackKey,
+          Float32Array
+        >,
+      },
+    };
+    const customPreset: PresetDef = {
+      id: "custom-x",
+      name: "X",
+      params: [],
+      wgsl: "fn preset(uv: vec2f) -> vec4f { return vec4f(uv, 0.0, 1.0); }",
+    };
+    const trackIn: TrackInput = {
+      ...track,
+      coverArt: "data:cover",
+      beatGrid,
+      sections: [0, 12.5, 40],
+      stems: [stem],
+      lyrics: { lines, style: { ...DEFAULT_LYRIC_STYLE, position: "top" } },
+      vocalLines: lines,
+      audiogram: { settings: { ...DEFAULT_AUDIOGRAM }, waveform: new Float32Array([0, 0.5, 1]) },
+      customPresets: [customPreset],
+    };
+
+    const onPngFrame = (_data: Uint8Array, _index: number) => undefined;
+    const onRawFrame = (_data: Uint16Array) => undefined;
+    const onProgress = (_done: number, _total: number) => undefined;
+    const signal = new AbortController().signal;
+    const io: ExportIo = {
+      streamToPath: "/out.mp4",
+      pngDir: "/frames",
+      onPngFrame,
+      deepColor: true,
+      onRawFrame,
+      deepStraightAlpha: true,
+      loudness: { targetLufs: -14, truePeakDb: -1 },
+      segment: { start: 30, duration: 15 },
+      loopCrossfadeSec: 0.5,
+      signal,
+      onProgress,
+    };
+    // Node has no ImageBitmap; the chokepoint only passes the handle through.
+    const overlay = { width: 1920, height: 1080 } as unknown as ImageBitmap;
+
+    const o = buildExportOptions(d, FMT, trackIn, overlay, io);
+
+    // Structural guard, direction 1: the options object carries EXACTLY the
+    // keys of ExportOptions (EXPORT_OPTION_KEYS is compiler-checked against
+    // the type). A field added to the type or to the chokepoint fails here
+    // until it is listed AND asserted below — on purpose, never silently.
+    const keys = Object.keys(EXPORT_OPTION_KEYS).sort() as (keyof ExportOptions)[];
+    expect(Object.keys(o).sort()).toEqual(keys);
+    // Direction 2: every key is actually populated from the fixture (bgVideo
+    // excepted — exclusive with bgImage, covered by the video document below).
+    for (const key of keys) {
+      if (key !== "bgVideo") expect(o[key], key).toBeDefined();
+    }
+
+    // Format.
     expect(o.width).toBe(1920);
     expect(o.height).toBe(1080);
     expect(o.fps).toBe(60);
     expect(o.bitrate).toBe(12e6);
     expect(o.codec).toBe("h264"); // omitted on the format -> default
+
+    // Document.
     expect(o.presetId).toBe("spectrum-bars");
-    expect(o.params).toEqual(resolveDocParams("spectrum-bars", {}));
-    expect(o.bg).toBeDefined();
-    expect(o.sync).toEqual(DEFAULT_SYNC);
-    expect(o.mods).toEqual([]);
-    expect(o.smoothSpectrum).toBe(false);
-    expect(o.post).toEqual(DEFAULT_POST);
-    expect(o.motion).toEqual(DEFAULT_MOTION);
-    expect(o.paramsByPreset).toEqual({});
-    expect(o.modsByPreset).toEqual({});
+    expect(o.params).toEqual(resolveDocParams("spectrum-bars", d.paramsByPreset));
+    expect(o.params.gain).toBe(2);
+    expect(o.bg).toEqual(d.bg);
+    expect(o.bgImage).toEqual({ dataUrl: bgAsset.dataUrl, dim: 0.3, blur: 2 });
+    expect(o.sync).toEqual({ mode: "bass", smooth: 0.7 });
+    expect(o.mods).toEqual(d.modsByPreset["spectrum-bars"]);
+    expect(o.smoothSpectrum).toBe(true);
+    expect(o.post).toEqual({ ...DEFAULT_POST, bloom: 0.9 });
+    expect(o.motion).toEqual({ ...DEFAULT_MOTION, rotation: 1.5 });
+    expect(o.paramsByPreset).toEqual(d.paramsByPreset);
+    expect(o.modsByPreset).toEqual(d.modsByPreset);
+    expect(o.timeline).toEqual(d.timeline);
+    expect(o.builderStack).toEqual({ layers: [layer] });
+    expect(o.coverArt).toBe(centerAsset.dataUrl); // center image wins over the cover
+
+    // Track.
+    expect(o.beatGrid).toBe(beatGrid);
+    expect(o.sections).toEqual([0, 12.5, 40]);
+    expect(o.vocalSpans).toEqual(vocalSpansFromLyrics(lines));
+    expect(o.vocalSpans).not.toHaveLength(0);
+    expect(o.stems).toEqual([stem]);
+    expect(o.lyrics).toEqual(trackIn.lyrics);
+    expect(o.audiogram).toEqual(trackIn.audiogram);
+    expect(o.customPresets).toEqual([customPreset]);
+
+    // Overlay.
+    expect(o.overlay).toBe(overlay);
+
+    // Io.
     expect(o.streamToPath).toBe("/out.mp4");
-    expect(o.signal).toBeDefined();
+    expect(o.pngDir).toBe("/frames");
+    expect(o.onPngFrame).toBe(onPngFrame);
+    expect(o.deepColor).toBe(true);
+    expect(o.onRawFrame).toBe(onRawFrame);
+    expect(o.deepStraightAlpha).toBe(true);
+    expect(o.loudness).toEqual({ targetLufs: -14, truePeakDb: -1 });
+    expect(o.segment).toEqual({ start: 30, duration: 15 });
+    expect(o.loopCrossfadeSec).toBe(0.5);
+    expect(o.signal).toBe(signal);
+    expect(o.onProgress).toBe(onProgress);
+
+    // The other background kind: bgVideo populated, bgImage empty, same keys.
+    const v = buildExportOptions(
+      doc({
+        assets: { "as-bg": bgAsset },
+        bg: { mode: BG_VIDEO, color: [0, 0, 0], video: { assetId: "as-bg", dim: 0.4, blur: 1 } },
+      }),
+      FMT,
+      trackIn,
+      overlay,
+      io,
+    );
+    expect(Object.keys(v).sort()).toEqual(keys);
+    expect(v.bgVideo).toEqual({ dataUrl: bgAsset.dataUrl, dim: 0.4, blur: 1 });
+    expect(v.bgImage).toBeUndefined();
   });
 
   it("passes the deep-color lane's fields through the chokepoint (AV1 10-bit)", () => {
