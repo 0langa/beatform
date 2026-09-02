@@ -261,6 +261,12 @@ pub fn start_loopback(
             config.into(),
             move |data: &[f32], _| pipe.push(data, ch),
             move |e| {
+                // A data discontinuity is a gap, not a dead device — the ring
+                // simply misses a few frames and capture continues. Nothing
+                // else runs here: this is the audio thread.
+                if !stream_error_ends_capture(e.kind()) {
+                    return;
+                }
                 // Device lost / driver reset. Mark the session dead and unpark
                 // the owner thread so the stream is dropped; the next
                 // start_loopback then reclaims instead of refusing.
@@ -347,6 +353,21 @@ pub fn stop_loopback(
 #[tauri::command]
 pub fn loopback_died(state: tauri::State<'_, LoopbackCtl>) -> bool {
     state.dead.load(Ordering::SeqCst)
+}
+
+/// Which stream errors end the capture session.
+///
+/// cpal 0.18.2 started reporting a WASAPI capture buffer discontinuity
+/// (`AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY`) as `ErrorKind::Xrun`. On a
+/// loopback tap that flag is routine — it fires whenever the render endpoint
+/// goes idle and resumes, i.e. the moment the user starts playing something —
+/// and it means a gap in the data, not a lost device. Treating it as fatal
+/// ended every capture session at its first sound (the built-app loopback
+/// smoke caught this on the 0.18.2 bump: "native delivery covered 0.00 s").
+/// Everything else — device lost, driver reset, backend failure — still ends
+/// the session so `start_loopback` reclaims it instead of refusing.
+fn stream_error_ends_capture(kind: cpal::ErrorKind) -> bool {
+    !matches!(kind, cpal::ErrorKind::Xrun)
 }
 
 #[cfg(test)]
@@ -519,5 +540,18 @@ mod tests {
             assert_eq!(block.len(), 64 * 2 * 2);
             drop(block); // the channel send would consume it the same way
         }
+    }
+
+    #[test]
+    fn a_capture_xrun_does_not_end_the_session_but_device_loss_does() {
+        // cpal 0.18.2 reports WASAPI data discontinuities as Xrun; a loopback
+        // tap sees one every time the render endpoint wakes up.
+        assert!(!stream_error_ends_capture(cpal::ErrorKind::Xrun));
+        assert!(stream_error_ends_capture(
+            cpal::ErrorKind::DeviceNotAvailable
+        ));
+        assert!(stream_error_ends_capture(
+            cpal::ErrorKind::StreamInvalidated
+        ));
     }
 }
