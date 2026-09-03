@@ -67,7 +67,9 @@ const NO_TIMELINE: DrivenTimeline = { enabled: false, lanes: NO_LANES };
  * timeline's master switch is off (evalTimeline's first line returns an empty
  * `automation` map) and when the lane has no keyframes (`laneValue` returns
  * null). It does NOT consult `spec.mod`: frameResolve spreads `automation` over
- * the resolved params wholesale, so a lane on a `mod: "off"` knob like `mirror`
+ * the resolved params wholesale (HD-09 rounds and clamps toggle / enum / snap
+ * lanes there, which changes the value, never the set of keys), so a lane on a
+ * `mod: "off"` knob like `mirror`
  * genuinely moves it — and TimelinePanel offers every param of the active
  * preset as a lane target, `mod: "off"` included. Claiming otherwise would hide
  * a real driver, which is the same defect class as claiming a false one.
