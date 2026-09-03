@@ -36,11 +36,11 @@ const ABI_BASELINE: Record<string, string> = {
   particles:
     "hue,saturation,lightness,density,size,speed,direction,beatDance,sizePulse,fly,clump,streak,hotCore,shootingStars,constellation,energyDrive,wander,wanderSpeed,fill,layers,parallax,hueVariance,twinkle,glow,brightness,beatFlash,bgLevel,vignette,mirror,sizeVar,bandColor,beatPop",
   "tunnel-rings":
-    "hue,hueSpread,colorFade,speed,rings,spokes,material,beatPulse,junction,curve,coverWall,centerGlow,cruiseFloor,curveScale,cruiseEnergy,beatSpeed,tileLevel,tileSpectrum,pulseWidth,tileSat,checker,groutWidth,groutLevel,fogNear,fogFar,vignette,mirror,twist,roundness,surfaceWarp,beatBright",
+    "hue,hueSpread,saturation,lightness,colorFade,speed,rings,spokes,material,beatPulse,junction,curve,coverWall,centerGlow,cruiseFloor,curveScale,cruiseEnergy,beatSpeed,tileLevel,tileSpectrum,pulseWidth,tileSat,checker,groutWidth,groutLevel,fogNear,fogFar,vignette,mirror,twist,roundness,surfaceWarp,beatBright",
   nebula:
     "hue,scale,flow,kaleido,contrast,sparkle,beatRipple,duo,hue2,windStrength,stars,warp,angle,spin,depth,hueRange,midHueShift,brightFloor,bassBright,saturation,sparkleScale,sparkleSharp,rippleWidth,rippleWarp,beatBloom,driveGlow,vignette,hotCore,windAngle",
   metaballs:
-    "hue,count,size,speed,glow,threshold,gloss,beatSwell,smear,orbitX,orbitY,radiusFloor,energyGrow,radiusBand,rimStart,innerGrad,hueField,beatBright,bgLevel,vignette,mirror,lightAngle,squash,bassWeight,eccentric,environment",
+    "hue,saturation,lightness,count,size,speed,glow,threshold,gloss,beatSwell,smear,orbitX,orbitY,radiusFloor,energyGrow,radiusBand,rimStart,innerGrad,hueField,beatBright,bgLevel,vignette,mirror,lightAngle,squash,bassWeight,eccentric,environment",
   "led-matrix":
     "display,cols,rows,gap,rounded,hueShift,saturation,lightness,ghost,scrollSpeed,beatBoost,dim,hueLow,hueHigh,spectrumColor,gradStart,gradEnd,litLevel,hotBoost,bassGlow,beatFlash,peaks,peakBright,bloom,histFade,scanline,flicker,panelVariance,vignette",
   // P-19: the spectrogram-waterfall archetype. New in this release, so its
@@ -59,7 +59,7 @@ const ABI_BASELINE: Record<string, string> = {
   overgrowth:
     "form,scale,speed,hue,hueSpread,saturation,lightness,duo,growth,etch,surge,seeds,glow,relief,flow,contrast,seedSize,barSurge,paper,haze,floorLevel,bassGlow,vignette,grain",
   "voice-orb":
-    "hue,size,satellites,ring,ringStyle,mirror,texture,response,voiceFocus,wobble,sparkle,flare,rmsBlend,growth,idleBreath,wobScale,mode1,mode2,mode3,coreGlow,breathGlow,rimGlow,ringDist,ringWave,ringCount,satSize,satDist,satOrbit,sparkleScale,bgLevel,vignette",
+    "hue,saturation,lightness,size,satellites,ring,ringStyle,mirror,texture,response,voiceFocus,wobble,sparkle,flare,rmsBlend,growth,idleBreath,wobScale,mode1,mode2,mode3,coreGlow,breathGlow,rimGlow,ringDist,ringWave,ringCount,satSize,satDist,satOrbit,sparkleScale,bgLevel,vignette",
   "echo-trails":
     "hue,decay,zoom,swirl,radius,source,react,inject,beatZoom,flowSwirl,thick,hueSpin,hueDrift,kickFlash,vignette,mirror,echoHue,sides,beatStar,warp,centerX,centerY",
   "particle-flow":
@@ -70,7 +70,7 @@ const ABI_BASELINE: Record<string, string> = {
   "spectrum-scape":
     "hue,heightScale,camPitch,camDist,camSpin,emissive,layout,barShape,saturation,lightness,hotBeat,bandGlow,fov,hueRange,barWidth,spacing,light,camYaw,targetY,driveHeight,hotDrive,glowBeat,hotWindow,hueLift,fillLight,ambientLight,fogDensity,terrainSmooth",
   aurora:
-    "hue,bright,react,flow,thick,baseY,wave,layers,beatPulse,palWarm,moon,ground,specAmt,bassSwell,drift,reflect,horizon,reflectFade,hueStep,hueSpread,palSpan,rays,sat,stars,bgGlow,mirror,groundRough,moonX,moonY,moonGlow",
+    "hue,saturation,lightness,bright,react,flow,thick,baseY,wave,layers,beatPulse,palWarm,moon,ground,specAmt,bassSwell,drift,reflect,horizon,reflectFade,hueStep,hueSpread,palSpan,rays,sat,stars,bgGlow,mirror,groundRough,moonX,moonY,moonGlow",
   synthwave:
     "hue,gridHue,speed,react,beatPulse,sunR,roadW,skyline,mountains,gridGlow,scan,sunWarm,sunY,sunX,scanCount,scanWidth,scanPhase,sunRays,roadLanes,roadGlow,skyDensity,windows,gridScale,horizonY,stars,starDensity,gridLock,fog,vignette",
   "bass-circle":

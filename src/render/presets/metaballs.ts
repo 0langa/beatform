@@ -1,5 +1,5 @@
 import type { PresetDef } from "../types";
-import { WGSL_PALETTE_PHASE } from "../wgslLib";
+import { WGSL_PALETTE_PHASE, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
  * Lava-lamp metaballs: blobs orbit slowly and merge; each blob's size tracks
@@ -302,6 +302,26 @@ export const metaballs: PresetDef = {
       step: 1,
       default: 25,
       hint: "Base blob color",
+    },
+    {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
     },
     {
       key: "count",
@@ -608,6 +628,8 @@ export const metaballs: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+${WGSL_RGB_CONTROLS}
+
 fn preset(uv: vec2f) -> vec4f {
   var p = centered(uv);
   // Club mirror: fold the field before summing blobs so the orbit becomes a
@@ -856,6 +878,11 @@ fn preset(uv: vec2f) -> vec4f {
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.05);
+  // Whole-visual saturation / lightness (HD-06): the finished, tonemapped
+  // frame rides the RGB map once, before the dither and BEFORE the smear fold
+  // below — the history it folds in is last frame's already-routed output.
+  // Identity at the defaults (rgb * 1 + gray * 0): bit-identical default frame.
+  col = presetRgb(col);
   col += grain(uv, 0.012);
   // Lava smear (depth batch 3): the mode's texture-feedback opt-in. The
   // previous RAW frame — this same function's last output, pre-composite, so

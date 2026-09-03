@@ -2,35 +2,48 @@
 
 exports[`shader golden baseline > aurora: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
-fn P_bright() -> f32 { return params[1u]; }
-fn P_react() -> f32 { return params[2u]; }
-fn P_flow() -> f32 { return params[3u]; }
-fn P_thick() -> f32 { return params[4u]; }
-fn P_baseY() -> f32 { return params[5u]; }
-fn P_wave() -> f32 { return params[6u]; }
-fn P_layers() -> f32 { return params[7u]; }
-fn P_beatPulse() -> f32 { return params[8u]; }
-fn P_palWarm() -> f32 { return params[9u]; }
-fn P_moon() -> f32 { return params[10u]; }
-fn P_ground() -> f32 { return params[11u]; }
-fn P_specAmt() -> f32 { return params[12u]; }
-fn P_bassSwell() -> f32 { return params[13u]; }
-fn P_drift() -> f32 { return params[14u]; }
-fn P_reflect() -> f32 { return params[15u]; }
-fn P_horizon() -> f32 { return params[16u]; }
-fn P_reflectFade() -> f32 { return params[17u]; }
-fn P_hueStep() -> f32 { return params[18u]; }
-fn P_hueSpread() -> f32 { return params[19u]; }
-fn P_palSpan() -> f32 { return params[20u]; }
-fn P_rays() -> f32 { return params[21u]; }
-fn P_sat() -> f32 { return params[22u]; }
-fn P_stars() -> f32 { return params[23u]; }
-fn P_bgGlow() -> f32 { return params[24u]; }
-fn P_mirror() -> f32 { return params[25u]; }
-fn P_groundRough() -> f32 { return params[26u]; }
-fn P_moonX() -> f32 { return params[27u]; }
-fn P_moonY() -> f32 { return params[28u]; }
-fn P_moonGlow() -> f32 { return params[29u]; }
+fn P_saturation() -> f32 { return params[1u]; }
+fn P_lightness() -> f32 { return params[2u]; }
+fn P_bright() -> f32 { return params[3u]; }
+fn P_react() -> f32 { return params[4u]; }
+fn P_flow() -> f32 { return params[5u]; }
+fn P_thick() -> f32 { return params[6u]; }
+fn P_baseY() -> f32 { return params[7u]; }
+fn P_wave() -> f32 { return params[8u]; }
+fn P_layers() -> f32 { return params[9u]; }
+fn P_beatPulse() -> f32 { return params[10u]; }
+fn P_palWarm() -> f32 { return params[11u]; }
+fn P_moon() -> f32 { return params[12u]; }
+fn P_ground() -> f32 { return params[13u]; }
+fn P_specAmt() -> f32 { return params[14u]; }
+fn P_bassSwell() -> f32 { return params[15u]; }
+fn P_drift() -> f32 { return params[16u]; }
+fn P_reflect() -> f32 { return params[17u]; }
+fn P_horizon() -> f32 { return params[18u]; }
+fn P_reflectFade() -> f32 { return params[19u]; }
+fn P_hueStep() -> f32 { return params[20u]; }
+fn P_hueSpread() -> f32 { return params[21u]; }
+fn P_palSpan() -> f32 { return params[22u]; }
+fn P_rays() -> f32 { return params[23u]; }
+fn P_sat() -> f32 { return params[24u]; }
+fn P_stars() -> f32 { return params[25u]; }
+fn P_bgGlow() -> f32 { return params[26u]; }
+fn P_mirror() -> f32 { return params[27u]; }
+fn P_groundRough() -> f32 { return params[28u]; }
+fn P_moonX() -> f32 { return params[29u]; }
+fn P_moonY() -> f32 { return params[30u]; }
+fn P_moonGlow() -> f32 { return params[31u]; }
+
+fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let adjusted = rgb * saturation + gray * (1.0 - saturation);
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
+fn presetRgb(rgb: vec3f) -> vec3f {
+  return presetRgbAt(rgb, P_saturation(), P_lightness());
+}
 
 // Bounded, continuous noise clock (seconds of TRACK time in, noise coordinate
 // out). u.time grows without bound and fbm's top octave multiplies its input by
@@ -320,6 +333,11 @@ fn preset(uv: vec2f) -> vec4f {
   }
 
   col = tonemap(col * 1.1);
+  // Whole-visual saturation / lightness (HD-06): the finished, tonemapped
+  // frame rides the RGB map once, before the dither — every palette, tint and
+  // white in it at one stroke. Identity at the defaults (rgb * 1 + gray * 0),
+  // so the default frame is bit-identical.
+  col = presetRgb(col);
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
@@ -331,6 +349,14 @@ exports[`shader golden baseline > aurora: param ABI (key + default, in order) is
   {
     "default": 140,
     "key": "hue",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 1,
@@ -3071,31 +3097,44 @@ exports[`shader golden baseline > lyric-stage: param ABI (key + default, in orde
 
 exports[`shader golden baseline > metaballs: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
-fn P_count() -> f32 { return params[1u]; }
-fn P_size() -> f32 { return params[2u]; }
-fn P_speed() -> f32 { return params[3u]; }
-fn P_glow() -> f32 { return params[4u]; }
-fn P_threshold() -> f32 { return params[5u]; }
-fn P_gloss() -> f32 { return params[6u]; }
-fn P_beatSwell() -> f32 { return params[7u]; }
-fn P_smear() -> f32 { return params[8u]; }
-fn P_orbitX() -> f32 { return params[9u]; }
-fn P_orbitY() -> f32 { return params[10u]; }
-fn P_radiusFloor() -> f32 { return params[11u]; }
-fn P_energyGrow() -> f32 { return params[12u]; }
-fn P_radiusBand() -> f32 { return params[13u]; }
-fn P_rimStart() -> f32 { return params[14u]; }
-fn P_innerGrad() -> f32 { return params[15u]; }
-fn P_hueField() -> f32 { return params[16u]; }
-fn P_beatBright() -> f32 { return params[17u]; }
-fn P_bgLevel() -> f32 { return params[18u]; }
-fn P_vignette() -> f32 { return params[19u]; }
-fn P_mirror() -> f32 { return params[20u]; }
-fn P_lightAngle() -> f32 { return params[21u]; }
-fn P_squash() -> f32 { return params[22u]; }
-fn P_bassWeight() -> f32 { return params[23u]; }
-fn P_eccentric() -> f32 { return params[24u]; }
-fn P_environment() -> f32 { return params[25u]; }
+fn P_saturation() -> f32 { return params[1u]; }
+fn P_lightness() -> f32 { return params[2u]; }
+fn P_count() -> f32 { return params[3u]; }
+fn P_size() -> f32 { return params[4u]; }
+fn P_speed() -> f32 { return params[5u]; }
+fn P_glow() -> f32 { return params[6u]; }
+fn P_threshold() -> f32 { return params[7u]; }
+fn P_gloss() -> f32 { return params[8u]; }
+fn P_beatSwell() -> f32 { return params[9u]; }
+fn P_smear() -> f32 { return params[10u]; }
+fn P_orbitX() -> f32 { return params[11u]; }
+fn P_orbitY() -> f32 { return params[12u]; }
+fn P_radiusFloor() -> f32 { return params[13u]; }
+fn P_energyGrow() -> f32 { return params[14u]; }
+fn P_radiusBand() -> f32 { return params[15u]; }
+fn P_rimStart() -> f32 { return params[16u]; }
+fn P_innerGrad() -> f32 { return params[17u]; }
+fn P_hueField() -> f32 { return params[18u]; }
+fn P_beatBright() -> f32 { return params[19u]; }
+fn P_bgLevel() -> f32 { return params[20u]; }
+fn P_vignette() -> f32 { return params[21u]; }
+fn P_mirror() -> f32 { return params[22u]; }
+fn P_lightAngle() -> f32 { return params[23u]; }
+fn P_squash() -> f32 { return params[24u]; }
+fn P_bassWeight() -> f32 { return params[25u]; }
+fn P_eccentric() -> f32 { return params[26u]; }
+fn P_environment() -> f32 { return params[27u]; }
+
+fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let adjusted = rgb * saturation + gray * (1.0 - saturation);
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
+fn presetRgb(rgb: vec3f) -> vec3f {
+  return presetRgbAt(rgb, P_saturation(), P_lightness());
+}
 
 fn preset(uv: vec2f) -> vec4f {
   var p = centered(uv);
@@ -3345,6 +3384,11 @@ fn preset(uv: vec2f) -> vec4f {
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.05);
+  // Whole-visual saturation / lightness (HD-06): the finished, tonemapped
+  // frame rides the RGB map once, before the dither and BEFORE the smear fold
+  // below — the history it folds in is last frame's already-routed output.
+  // Identity at the defaults (rgb * 1 + gray * 0): bit-identical default frame.
+  col = presetRgb(col);
   col += grain(uv, 0.012);
   // Lava smear (depth batch 3): the mode's texture-feedback opt-in. The
   // previous RAW frame — this same function's last output, pre-composite, so
@@ -3377,6 +3421,14 @@ exports[`shader golden baseline > metaballs: param ABI (key + default, in order)
   {
     "default": 25,
     "key": "hue",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 5,
@@ -8783,35 +8835,48 @@ exports[`shader golden baseline > synthwave: param ABI (key + default, in order)
 exports[`shader golden baseline > tunnel-rings: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
 fn P_hueSpread() -> f32 { return params[1u]; }
-fn P_colorFade() -> f32 { return params[2u]; }
-fn P_speed() -> f32 { return params[3u]; }
-fn P_rings() -> f32 { return params[4u]; }
-fn P_spokes() -> f32 { return params[5u]; }
-fn P_material() -> f32 { return params[6u]; }
-fn P_beatPulse() -> f32 { return params[7u]; }
-fn P_junction() -> f32 { return params[8u]; }
-fn P_curve() -> f32 { return params[9u]; }
-fn P_coverWall() -> f32 { return params[10u]; }
-fn P_centerGlow() -> f32 { return params[11u]; }
-fn P_cruiseFloor() -> f32 { return params[12u]; }
-fn P_curveScale() -> f32 { return params[13u]; }
-fn P_cruiseEnergy() -> f32 { return params[14u]; }
-fn P_beatSpeed() -> f32 { return params[15u]; }
-fn P_tileLevel() -> f32 { return params[16u]; }
-fn P_tileSpectrum() -> f32 { return params[17u]; }
-fn P_pulseWidth() -> f32 { return params[18u]; }
-fn P_tileSat() -> f32 { return params[19u]; }
-fn P_checker() -> f32 { return params[20u]; }
-fn P_groutWidth() -> f32 { return params[21u]; }
-fn P_groutLevel() -> f32 { return params[22u]; }
-fn P_fogNear() -> f32 { return params[23u]; }
-fn P_fogFar() -> f32 { return params[24u]; }
-fn P_vignette() -> f32 { return params[25u]; }
-fn P_mirror() -> f32 { return params[26u]; }
-fn P_twist() -> f32 { return params[27u]; }
-fn P_roundness() -> f32 { return params[28u]; }
-fn P_surfaceWarp() -> f32 { return params[29u]; }
-fn P_beatBright() -> f32 { return params[30u]; }
+fn P_saturation() -> f32 { return params[2u]; }
+fn P_lightness() -> f32 { return params[3u]; }
+fn P_colorFade() -> f32 { return params[4u]; }
+fn P_speed() -> f32 { return params[5u]; }
+fn P_rings() -> f32 { return params[6u]; }
+fn P_spokes() -> f32 { return params[7u]; }
+fn P_material() -> f32 { return params[8u]; }
+fn P_beatPulse() -> f32 { return params[9u]; }
+fn P_junction() -> f32 { return params[10u]; }
+fn P_curve() -> f32 { return params[11u]; }
+fn P_coverWall() -> f32 { return params[12u]; }
+fn P_centerGlow() -> f32 { return params[13u]; }
+fn P_cruiseFloor() -> f32 { return params[14u]; }
+fn P_curveScale() -> f32 { return params[15u]; }
+fn P_cruiseEnergy() -> f32 { return params[16u]; }
+fn P_beatSpeed() -> f32 { return params[17u]; }
+fn P_tileLevel() -> f32 { return params[18u]; }
+fn P_tileSpectrum() -> f32 { return params[19u]; }
+fn P_pulseWidth() -> f32 { return params[20u]; }
+fn P_tileSat() -> f32 { return params[21u]; }
+fn P_checker() -> f32 { return params[22u]; }
+fn P_groutWidth() -> f32 { return params[23u]; }
+fn P_groutLevel() -> f32 { return params[24u]; }
+fn P_fogNear() -> f32 { return params[25u]; }
+fn P_fogFar() -> f32 { return params[26u]; }
+fn P_vignette() -> f32 { return params[27u]; }
+fn P_mirror() -> f32 { return params[28u]; }
+fn P_twist() -> f32 { return params[29u]; }
+fn P_roundness() -> f32 { return params[30u]; }
+fn P_surfaceWarp() -> f32 { return params[31u]; }
+fn P_beatBright() -> f32 { return params[32u]; }
+
+fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let adjusted = rgb * saturation + gray * (1.0 - saturation);
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
+fn presetRgb(rgb: vec3f) -> vec3f {
+  return presetRgbAt(rgb, P_saturation(), P_lightness());
+}
 
 // The tube's centreline as a lateral offset (tube-radius units) per unit of
 // TRAVEL distance -- two incommensurate sines per axis, so the path bends
@@ -9216,6 +9281,11 @@ fn preset(uv: vec2f) -> vec4f {
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.25);
+  // Whole-visual saturation / lightness (HD-06): the finished, tonemapped
+  // frame rides the RGB map once, before the dither — every palette, tint and
+  // white in it at one stroke. Identity at the defaults (rgb * 1 + gray * 0),
+  // so the default frame is bit-identical.
+  col = presetRgb(col);
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
@@ -9231,6 +9301,14 @@ exports[`shader golden baseline > tunnel-rings: param ABI (key + default, in ord
   {
     "default": 70,
     "key": "hueSpread",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 0,
@@ -9353,36 +9431,49 @@ exports[`shader golden baseline > tunnel-rings: param ABI (key + default, in ord
 
 exports[`shader golden baseline > voice-orb: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
-fn P_size() -> f32 { return params[1u]; }
-fn P_satellites() -> f32 { return params[2u]; }
-fn P_ring() -> f32 { return params[3u]; }
-fn P_ringStyle() -> f32 { return params[4u]; }
-fn P_mirror() -> f32 { return params[5u]; }
-fn P_texture() -> f32 { return params[6u]; }
-fn P_response() -> f32 { return params[7u]; }
-fn P_voiceFocus() -> f32 { return params[8u]; }
-fn P_wobble() -> f32 { return params[9u]; }
-fn P_sparkle() -> f32 { return params[10u]; }
-fn P_flare() -> f32 { return params[11u]; }
-fn P_rmsBlend() -> f32 { return params[12u]; }
-fn P_growth() -> f32 { return params[13u]; }
-fn P_idleBreath() -> f32 { return params[14u]; }
-fn P_wobScale() -> f32 { return params[15u]; }
-fn P_mode1() -> f32 { return params[16u]; }
-fn P_mode2() -> f32 { return params[17u]; }
-fn P_mode3() -> f32 { return params[18u]; }
-fn P_coreGlow() -> f32 { return params[19u]; }
-fn P_breathGlow() -> f32 { return params[20u]; }
-fn P_rimGlow() -> f32 { return params[21u]; }
-fn P_ringDist() -> f32 { return params[22u]; }
-fn P_ringWave() -> f32 { return params[23u]; }
-fn P_ringCount() -> f32 { return params[24u]; }
-fn P_satSize() -> f32 { return params[25u]; }
-fn P_satDist() -> f32 { return params[26u]; }
-fn P_satOrbit() -> f32 { return params[27u]; }
-fn P_sparkleScale() -> f32 { return params[28u]; }
-fn P_bgLevel() -> f32 { return params[29u]; }
-fn P_vignette() -> f32 { return params[30u]; }
+fn P_saturation() -> f32 { return params[1u]; }
+fn P_lightness() -> f32 { return params[2u]; }
+fn P_size() -> f32 { return params[3u]; }
+fn P_satellites() -> f32 { return params[4u]; }
+fn P_ring() -> f32 { return params[5u]; }
+fn P_ringStyle() -> f32 { return params[6u]; }
+fn P_mirror() -> f32 { return params[7u]; }
+fn P_texture() -> f32 { return params[8u]; }
+fn P_response() -> f32 { return params[9u]; }
+fn P_voiceFocus() -> f32 { return params[10u]; }
+fn P_wobble() -> f32 { return params[11u]; }
+fn P_sparkle() -> f32 { return params[12u]; }
+fn P_flare() -> f32 { return params[13u]; }
+fn P_rmsBlend() -> f32 { return params[14u]; }
+fn P_growth() -> f32 { return params[15u]; }
+fn P_idleBreath() -> f32 { return params[16u]; }
+fn P_wobScale() -> f32 { return params[17u]; }
+fn P_mode1() -> f32 { return params[18u]; }
+fn P_mode2() -> f32 { return params[19u]; }
+fn P_mode3() -> f32 { return params[20u]; }
+fn P_coreGlow() -> f32 { return params[21u]; }
+fn P_breathGlow() -> f32 { return params[22u]; }
+fn P_rimGlow() -> f32 { return params[23u]; }
+fn P_ringDist() -> f32 { return params[24u]; }
+fn P_ringWave() -> f32 { return params[25u]; }
+fn P_ringCount() -> f32 { return params[26u]; }
+fn P_satSize() -> f32 { return params[27u]; }
+fn P_satDist() -> f32 { return params[28u]; }
+fn P_satOrbit() -> f32 { return params[29u]; }
+fn P_sparkleScale() -> f32 { return params[30u]; }
+fn P_bgLevel() -> f32 { return params[31u]; }
+fn P_vignette() -> f32 { return params[32u]; }
+
+fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let adjusted = rgb * saturation + gray * (1.0 - saturation);
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
+fn presetRgb(rgb: vec3f) -> vec3f {
+  return presetRgbAt(rgb, P_saturation(), P_lightness());
+}
 
 fn preset(uv: vec2f) -> vec4f {
   var p = centered(uv);
@@ -9571,6 +9662,11 @@ fn preset(uv: vec2f) -> vec4f {
   // radius the pre-v2.44 code clipped against).
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.15);
+  // Whole-visual saturation / lightness (HD-06): the finished, tonemapped
+  // frame rides the RGB map once, before the dither — every palette, tint and
+  // white in it at one stroke. Identity at the defaults (rgb * 1 + gray * 0),
+  // so the default frame is bit-identical.
+  col = presetRgb(col);
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
@@ -9582,6 +9678,14 @@ exports[`shader golden baseline > voice-orb: param ABI (key + default, in order)
   {
     "default": 195,
     "key": "hue",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 0.16,

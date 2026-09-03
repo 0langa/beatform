@@ -1,5 +1,5 @@
 import type { PresetDef } from "../types";
-import { WGSL_PALETTE_PHASE } from "../wgslLib";
+import { WGSL_PALETTE_PHASE, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
  * A real tube you fly down, not a zoomed disc. The wall is unwrapped with the
@@ -423,6 +423,26 @@ export const tunnelRings: PresetDef = {
       hint: "Color variation between ring rows",
     },
     {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
+    },
+    {
       // Default 0 = the hard palette step every saved look renders today. The
       // shader skips the blend branch entirely at 0, so old projects (and every
       // factory style, none of which set this) stay bit-identical.
@@ -767,6 +787,8 @@ export const tunnelRings: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+${WGSL_RGB_CONTROLS}
+
 // The tube's centreline as a lateral offset (tube-radius units) per unit of
 // TRAVEL distance -- two incommensurate sines per axis, so the path bends
 // left, right, up and down without visibly repeating. A function of travel,
@@ -1170,6 +1192,11 @@ fn preset(uv: vec2f) -> vec4f {
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.25);
+  // Whole-visual saturation / lightness (HD-06): the finished, tonemapped
+  // frame rides the RGB map once, before the dither — every palette, tint and
+  // white in it at one stroke. Identity at the defaults (rgb * 1 + gray * 0),
+  // so the default frame is bit-identical.
+  col = presetRgb(col);
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
