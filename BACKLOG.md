@@ -116,20 +116,20 @@ evidence is recorded here.
 
 ### Live performance and MIDI
 
-- [ ] **HD-18 MIDI must be re-enabled by hand on every launch.** Bindings
+- [x] **HD-18 MIDI must be re-enabled by hand on every launch.** Bindings
       persist (`LS_MIDI`, src/state/persistence.ts:612); `midiEnabled` is
       session-only and nothing re-enables at boot, so saved bindings do
       nothing until the user clicks Enable. Recommended: **FINISH** — persist
       the enable flag and re-enable on boot (permission is granted Rust-side)
-      (S). Verdict: \_\_\_
-- [ ] **HD-19 MIDI can bind only knob→param and note→mode.** Blackout,
+      (S). Verdict: **FINISH** — closed 2026-09-03 (9c7daf8): `midiEnabled` lives in AppPrefs (additive boolean, validator defaults a missing key to false); `initApp` calls `restoreMidi()` quietly at boot; Enable sets the flag, Disable clears it. Prefs + midiActions tests. Device check pending: relaunch with MIDI left on and confirm it re-arms without a click.
+- [x] **HD-19 MIDI can bind only knob→param and note→mode.** Blackout,
       play/pause, Stage, next/previous mode, volume and A-B keys — the Perform
       drawer's own controls — have no MIDI target (src/state/midi.ts:35); the
       drawer arms note-learn only, CC-learn lives on Visuals ▸ Live; CC learn
       is limited to the active mode's mod-targetable params (no Global motion,
       Post, volume). Recommended: **FINISH the VJ core** — blackout,
       play/pause, next/prev mode as note targets, CC-learn from the drawer
-      (M) — and **DECLARE** the rest (S). Verdict: \_\_\_
+      (M) — and **DECLARE** the rest (S). Verdict: **FINISH core + DECLARE rest** — closed 2026-09-03 (9c7daf8): `CommandBinding` (blackout, playPause, nextMode, prevMode) dispatches the same store actions the keys take (`setBlackout` gated like the `0` key, `togglePlay`, `stepPreset` → beat-quantized queue); the Perform drawer carries a Pad picker with Learn note and a Knob picker with Learn CC over the active mode's mod targets; `validMidiBindings` round-trips the new kind and drops unknown commands. Guide MIDI text declares volume, A-B, Stage and Global/Post as keyboard-and-mouse only. Ledger claim corrected: the drawer never had play/pause or next/prev _buttons_ — the keys' store actions are the target. Device check pending: real controller pass (see the row's report).
 - [x] **HD-16 `loopback_died` is never polled.** The Rust command exists
       (src-tauri/src/loopback.rs:348, registered) and its doc says the
       frontend polls it to drop the "listening" indicator; no TS call site

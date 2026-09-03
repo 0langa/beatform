@@ -35,6 +35,13 @@ deliberate limit. No new features.
   adding a second one. The Gallery also remembers what you installed across
   restarts, and each installed card says where removal lives (Visuals ▸ Looks
   & themes).
+- **MIDI stays enabled across launches.** Leave it on and your saved bindings
+  work from the moment Beatform starts; Disable turns it off for good.
+- **MIDI pads can fire the Perform drawer's own controls** — Blackout,
+  Play/pause, Next mode and Previous mode — and both note-learn and CC-learn for
+  the current mode's parameters now live in the drawer, so you never leave it
+  mid-set. Volume, A-B loop, Stage mode and the Global motion / post controls
+  remain keyboard-and-mouse only.
 
 ### Added
 
