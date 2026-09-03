@@ -4986,3 +4986,14 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Connected input names beside the Disable button: one line, clipped —
+   the full list is the title. */
+.perform-midi-devices {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-dim);
+}

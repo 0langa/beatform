@@ -139,6 +139,16 @@ export interface AppPrefs {
    * hotplug can invalidate it between sessions, so the Rust side clamps a
    * stale value at open time (perform_window::resolve_monitor). */
   performMonitor: number | null;
+  /**
+   * HD-18: MIDI was left ON when the app last ran, so `initApp` re-enables it
+   * at boot. The bindings were always persisted (viz.midiBindings.v1); the
+   * on/off state was not, so every launch began with bindings that did
+   * nothing until the user clicked Enable. Set by a successful enableMidi,
+   * cleared by disableMidi. Additive: a blob without the key reads false, and
+   * an OLDER build reading a newer blob simply does not carry the key —
+   * validPrefs rebuilds the object field by field, unknown keys fall away.
+   */
+  midiEnabled: boolean;
 }
 
 export const DEFAULT_PREFS: AppPrefs = {
@@ -178,6 +188,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   performHud: false,
   performFullscreen: true,
   performMonitor: null,
+  midiEnabled: false,
 };
 
 const LS_PREFS = "beatform.prefs.v1";
@@ -374,6 +385,7 @@ function validPrefs(raw: unknown): AppPrefs {
       p.performMonitor < 64
         ? p.performMonitor
         : null,
+    midiEnabled: bool(p.midiEnabled, d.midiEnabled),
   };
 }
 
@@ -548,7 +560,8 @@ function samePrefs(a: AppPrefs, b: AppPrefs): boolean {
     sameMeasuredRtf(a.measuredRtf, b.measuredRtf) &&
     a.performHud === b.performHud &&
     a.performFullscreen === b.performFullscreen &&
-    a.performMonitor === b.performMonitor
+    a.performMonitor === b.performMonitor &&
+    a.midiEnabled === b.midiEnabled
   );
 }
 

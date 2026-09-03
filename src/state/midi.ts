@@ -33,7 +33,41 @@ export interface NoteBinding {
   presetId: string;
 }
 
-export type MidiBinding = CcBinding | NoteBinding;
+/**
+ * HD-19: the Perform drawer's own controls as note targets. Each fires the
+ * SAME store action the keyboard and the drawer button call — blackout keeps
+ * its arming rule (Stage mode / performance window), the mode steps walk the
+ * strip through queuePreset and so inherit beat-quantize.
+ */
+export type MidiCommand = "blackout" | "playPause" | "nextMode" | "prevMode";
+
+/** Every command, in picker order, with its UI label. */
+export const MIDI_COMMANDS: ReadonlyArray<{ command: MidiCommand; label: string }> = [
+  { command: "blackout", label: "Blackout" },
+  { command: "playPause", label: "Play / pause" },
+  { command: "nextMode", label: "Next mode" },
+  { command: "prevMode", label: "Previous mode" },
+];
+
+export function isMidiCommand(v: unknown): v is MidiCommand {
+  return typeof v === "string" && MIDI_COMMANDS.some((c) => c.command === v);
+}
+
+export function midiCommandLabel(command: MidiCommand): string {
+  return MIDI_COMMANDS.find((c) => c.command === command)?.label ?? command;
+}
+
+/** A note → one of the drawer's controls. Shares the `note:<n>` trigger with
+ * NoteBinding on purpose: a pad has one meaning, and re-learning it replaces
+ * whatever it did before. */
+export interface CommandBinding {
+  kind: "command";
+  /** MIDI note number 0..127. */
+  note: number;
+  command: MidiCommand;
+}
+
+export type MidiBinding = CcBinding | NoteBinding | CommandBinding;
 
 /** Stable map key for a binding — also the dedupe key. */
 export function bindingId(b: MidiBinding): string {
@@ -42,7 +76,9 @@ export function bindingId(b: MidiBinding): string {
 
 /** What an incoming MIDI message resolves to, given the current bindings. */
 export type MidiAction =
-  { type: "param"; key: string; value: number } | { type: "preset"; id: string };
+  | { type: "param"; key: string; value: number }
+  | { type: "preset"; id: string }
+  | { type: "command"; command: MidiCommand };
 
 const STATUS_MASK = 0xf0;
 const NOTE_ON = 0x90;
@@ -86,6 +122,7 @@ export function applyMidiMessage(
     const note = data[1] ?? 0;
     for (const b of bindings) {
       if (b.kind === "note" && b.note === note) return { type: "preset", id: b.presetId };
+      if (b.kind === "command" && b.note === note) return { type: "command", command: b.command };
     }
     return null;
   }
@@ -94,20 +131,27 @@ export function applyMidiMessage(
 
 /** What the UI is currently arming a "MIDI learn" for. */
 export type MidiLearn =
-  { kind: "cc"; param: string; min: number; max: number } | { kind: "note"; presetId: string };
+  | { kind: "cc"; param: string; min: number; max: number }
+  | { kind: "note"; presetId: string }
+  | { kind: "command"; command: MidiCommand };
 
 /**
  * Build the binding a learn gesture produces from the first matching message.
- * A CC-learn only binds to a CC message; a note-learn only to a note-on — so
- * wiggling the wrong control during learn is simply ignored (returns null).
+ * A CC-learn only binds to a CC message; a note-learn (mode or command) only
+ * to a note-on — so wiggling the wrong control during learn is simply ignored
+ * (returns null).
  */
 export function learnBinding(learn: MidiLearn, data: ArrayLike<number>): MidiBinding | null {
   const s = status(data);
   if (learn.kind === "cc" && s === CONTROL_CHANGE) {
     return { kind: "cc", cc: data[1] ?? 0, param: learn.param, min: learn.min, max: learn.max };
   }
-  if (learn.kind === "note" && s === NOTE_ON && (data[2] ?? 0) > 0) {
-    return { kind: "note", note: data[1] ?? 0, presetId: learn.presetId };
+  if (s === NOTE_ON && (data[2] ?? 0) > 0) {
+    if (learn.kind === "note")
+      return { kind: "note", note: data[1] ?? 0, presetId: learn.presetId };
+    if (learn.kind === "command") {
+      return { kind: "command", note: data[1] ?? 0, command: learn.command };
+    }
   }
   return null;
 }
@@ -155,6 +199,15 @@ export function validMidiBindings(raw: unknown): MidiBinding[] {
         // build cannot render is still stored (a custom visual the user has
         // not re-imported yet must keep its pad), it is only spelled current.
         presetId: canonicalPresetId(o.presetId),
+      });
+    } else if (o.kind === "command" && Number.isFinite(o.note) && isMidiCommand(o.command)) {
+      // A command this build does not know (a newer build's target) fails
+      // isMidiCommand and is dropped with the rest of the junk — same rule as
+      // an unknown `kind`: nothing unrecognised reaches the dispatcher.
+      out.push({
+        kind: "command",
+        note: Math.min(127, Math.max(0, (o.note as number) | 0)),
+        command: o.command,
       });
     }
   }
