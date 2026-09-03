@@ -52,31 +52,31 @@ evidence is recorded here.
 
 ### Export and batch
 
-- [ ] **HD-01 Batch export silently ignores the export panel's format.**
+- [x] **HD-01 Batch export silently ignores the export panel's format.**
       `startBatch` hardcodes `format: "mp4"` (src/state/slices/batchActions.ts:210)
       and never reads `settings.format` — pick PNG sequence, ProRes, AV1 10-bit,
       GIF or WebP, queue a batch, get MP4s with no notice. Deep-color follows
       format, so it is dropped too. Recommended: **FINISH-lite** — refuse the
       unsupported formats up front with a notice and label the batch panel
       "MP4 / WebM" (S); full lane parity for the sidecar formats is M.
-      Verdict: \_\_\_
-- [ ] **HD-02 Batch ignores Canvas-loop mode** (`settings.mode` never read;
+      Verdict: **FINISH-lite** — closed 2026-09-03 (88c97b1): `batchSettingsRefusal()` in `startBatch` refuses PNG/ProRes/AV1 10-bit/GIF/WebP (and canvas mode, HD-02) before the folder dialog, naming the tile and the fix; the panel disables Start with the same sentence and says "Batch renders whole tracks as MP4 / WebM". Code fact: `FormatPreset.format` is literally `"mp4"` and WebM rides the `vp9a` codec, which was already passed through — so the only admissible format id is mp4.
+- [x] **HD-02 Batch ignores Canvas-loop mode** (`settings.mode` never read;
       no segment, no loop crossfade, wrong size). Recommended: **FINISH-lite**
       — refuse canvas mode in batch with a notice (fold into HD-01) (S).
-      Verdict: \_\_\_
-- [ ] **HD-03 Batch drops stems and vocal spans** — `TrackInput` carries
+      Verdict: **FINISH-lite** — closed 2026-09-03 (88c97b1): canvas-loop mode refused in the same `batchSettingsRefusal()` path as HD-01, with tests for each refusal and for MP4 passing through.
+- [x] **HD-03 Batch drops stems and vocal spans** — `TrackInput` carries
       neither, so stem routes and the "Vocals (lyrics)" mod source read 0 in
       batch output while the interactive export honours them (same class as
       R2-05, one layer up). Recommended: **FINISH** — pass both through like
-      sections/audiogram (S). Verdict: \_\_\_
+      sections/audiogram (S). Verdict: **DECLARE with a guard** (not the literal pass-through) — closed 2026-09-03 (88c97b1). The code refutes the row: `loadFile` clears `stems` and `lyrics` on every load because both are imports bounced/timed for ONE track; sections and the audiogram are recomputed per batch track from its own audio, stems and lyrics cannot be. Passing the loaded track's stems to twenty other songs would paint one song's drums onto every other — the opposite of the determinism law. An interactive export of any batch track, loaded fresh, carries neither, so batch already resolves the same frames. What ships: `TrackInput` stays free of stems/lyrics (pinned), and the Batch panel warns up front (`batchInertSources`) when the loaded track's stems or lyrics feed the setup (stem routes, Vocals source, captions). Guide updated.
 - [x] **HD-14 The A-B loop region cannot be exported** — `segment` is set only
       in canvas mode (src/state/slices/exportActions.ts:230); the loop is a
       preview-only tool. Recommended: **DECLARE** in the guide next to the A-B
       keys (S); an "Export loop region" checkbox would be M. Verdict: **DECLARE** — closed 2026-09-03 (e121697): the guide's A-B paragraph now says the loop is a preview tool and exports never render just the A-B region.
-- [ ] **HD-24 Batch progress shows only instantaneous fps** (no average
+- [x] **HD-24 Batch progress shows only instantaneous fps** (no average
       speed) and classifies errors without the single-export lane's
       translation + scratch re-measure + ffmpeg log tail. Recommended:
-      **FINISH** — reuse the single lane's helpers (S). Verdict: \_\_\_
+      **FINISH** — reuse the single lane's helpers (S). Verdict: **FINISH** — closed 2026-09-03 (88c97b1): the single lane's 5 s windowed rate ring became `SpeedMeter` (pure, tested) and both lanes use it; batch rows read `42 fps · avg 38`; failed batch jobs go through `describeFailure` = the single lane's `classifyError` + `translateExportError` over a fresh scratch re-measure. Ledger claim inverted: the old batch `fps` was the cumulative average, the single lane had the window. The ffmpeg log tail does not apply — batch never runs a sidecar. Loose end noted, not a row: `ExportDialog.tsx` computes `avgSpeed` but renders only `speed`.
 
 ### Rendering and modes
 

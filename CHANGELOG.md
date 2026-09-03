@@ -42,6 +42,14 @@ deliberate limit. No new features.
   the current mode's parameters now live in the drawer, so you never leave it
   mid-set. Volume, A-B loop, Stage mode and the Global motion / post controls
   remain keyboard-and-mouse only.
+- **Batch render says no before it writes the wrong thing.** Choosing PNG
+  frames, ProRes, AV1 10-bit, GIF, WebP or Canvas-loop mode in the Export panel
+  used to produce a queue of plain MP4s with no notice. The batch now refuses
+  those settings up front, names the setting to change, and the panel states
+  that batch renders whole tracks as MP4 / WebM before you queue.
+- **Batch rows show the current render rate and the job's average side by
+  side**, and a failed job gets the same disk-space diagnosis the single export
+  gives (a full working drive is named as such, not as a permission problem).
 
 ### Added
 
@@ -61,6 +69,10 @@ deliberate limit. No new features.
 
 - The A-B loop is a preview tool: exports render the whole track or the
   Canvas-loop segment, never just the A-B region (guide).
+- Stems and lyrics belong to the one track they were imported for, so batched
+  videos render without them. The Batch panel now warns before a run when the
+  loaded track's stems or lyrics feed your setup (stem routes, the Vocals
+  source, captions).
 
 ## [2.109.0] - 2026-09-02
 
