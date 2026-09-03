@@ -80,14 +80,14 @@ evidence is recorded here.
 
 ### Rendering and modes
 
-- [ ] **HD-06 Nine of twenty modes lack the global Saturation + Lightness
+- [x] **HD-06 Nine of twenty modes lack the global Saturation + Lightness
       pair** the other eleven treat as standard (oscilloscope, tunnel-rings,
       nebula, metaballs, voice-orb, echo-trails, aurora, synthwave, Builder) —
       and exactly those nine have no `color/grayscale` pixel case. The most
       visible inconsistency in the mode strip. Recommended: **FINISH** as its
       own release v2.111.0 (L — nine shaders through `presetColor`, styles
       re-checked, GPU matrix re-bless with per-mode visual proof), else
-      **DECLARE** in the guide (S). Verdict: \_\_\_
+      **DECLARE** in the guide (S). Verdict: **FINISH (eight modes) + DECLARE (Builder)** — executed 2026-09-03 on `wt/color` (796390d, b33e2a3, 2507b8d, 2e996f2, defb321), ships as v2.111.0. Code facts that corrected the row: six of the eight are cosine-palette RGB modes with no `hsl2rgb`, so the HSL `presetColor` contract cannot apply — they route through a new shared `presetRgb`/`presetRgbAt` in wgslLib.ts written as `rgb*s + gray*(1-s)` (exact identity at s = 1 under fma, unlike `mix`); Oscilloscope and Synthwave (HSL modes) route every `hsl2rgb` through `presetColor` and their tinted whites through `presetRgb`. Tunnel/Metaballs/Voice Orb/Aurora route the finished frame after tonemap; Echo Trails routes its three injection sites, never the fed-back history; Kaleido Nebula keeps its RP-6 `saturation` and gains `lightness` plus a final stage that only engages below saturation 1/16 (styles and the default untouched). Builder is DECLARED: its `paramsByPreset.builder2` is a derived mirror rewritten from the stack on every edit and load, so a real global key needs a `.bfbuilder` format change — colour stays per layer by design. Pixel neutrality at the defaults argued and pinned (shaderGolden snapshot: exactly 16 changed entries; gpuMatrix ids: +16). **Device gate pending:** `npm run test:gpu` must show 316 unchanged hashes, 16 moved `extreme/min|max` cases (they sweep the new keys) and 16 new `color/*` cases, then `npm run test:gpu:update` → 348 cases; visual checks per mode at saturation 0 / lightness 2.
 - [x] **HD-07 The second-display window inherits the operator's fps cap.**
       Cap-skipped tickless frames return before `publishPerformFrame`
       (src/state/services.ts:452) and ticked capped frames publish

@@ -11,6 +11,17 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.111.0] - UNRELEASED
+
+### Changed
+
+- **Every mode on the strip now has the global Saturation and Lightness
+  pair.** Oscilloscope, Tunnel, Kaleido Nebula, Metaballs, Voice Orb, Echo
+  Trails, Aurora and Synthwave join the other eleven. The defaults are
+  pixel-identical to before, so existing projects and looks render exactly as
+  they did; turn Saturation to 0 for a true grayscale of any mode. Builder keeps
+  colour per layer by design.
+
 ## [2.110.0] - UNRELEASED
 
 "Nothing half-done": every surface that was started and left unfinished got
