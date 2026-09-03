@@ -3912,35 +3912,57 @@ exports[`shader golden baseline > nebula: param ABI (key + default, in order) is
 
 exports[`shader golden baseline > oscilloscope: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
-fn P_gain() -> f32 { return params[1u]; }
-fn P_calm() -> f32 { return params[2u]; }
-fn P_glow() -> f32 { return params[3u]; }
-fn P_traceBright() -> f32 { return params[4u]; }
-fn P_fill() -> f32 { return params[5u]; }
-fn P_mirror() -> f32 { return params[6u]; }
-fn P_traces() -> f32 { return params[7u]; }
-fn P_renderMode() -> f32 { return params[8u]; }
-fn P_persist() -> f32 { return params[9u]; }
-fn P_display() -> f32 { return params[10u]; }
-fn P_traceClamp() -> f32 { return params[11u]; }
-fn P_coreWidth() -> f32 { return params[12u]; }
-fn P_traceSpread() -> f32 { return params[13u]; }
-fn P_agFloor() -> f32 { return params[14u]; }
-fn P_agRange() -> f32 { return params[15u]; }
-fn P_hueWave() -> f32 { return params[16u]; }
-fn P_bandHue() -> f32 { return params[17u]; }
-fn P_ghostDim() -> f32 { return params[18u]; }
-fn P_fillDim() -> f32 { return params[19u]; }
-fn P_bandDim() -> f32 { return params[20u]; }
-fn P_graticule() -> f32 { return params[21u]; }
-fn P_gridLevel() -> f32 { return params[22u]; }
-fn P_gridBeat() -> f32 { return params[23u]; }
-fn P_scanline() -> f32 { return params[24u]; }
-fn P_beatLift() -> f32 { return params[25u]; }
-fn P_bgLevel() -> f32 { return params[26u]; }
-fn P_vignette() -> f32 { return params[27u]; }
-fn P_kaleido() -> f32 { return params[28u]; }
-fn P_xyRotate() -> f32 { return params[29u]; }
+fn P_saturation() -> f32 { return params[1u]; }
+fn P_lightness() -> f32 { return params[2u]; }
+fn P_gain() -> f32 { return params[3u]; }
+fn P_calm() -> f32 { return params[4u]; }
+fn P_glow() -> f32 { return params[5u]; }
+fn P_traceBright() -> f32 { return params[6u]; }
+fn P_fill() -> f32 { return params[7u]; }
+fn P_mirror() -> f32 { return params[8u]; }
+fn P_traces() -> f32 { return params[9u]; }
+fn P_renderMode() -> f32 { return params[10u]; }
+fn P_persist() -> f32 { return params[11u]; }
+fn P_display() -> f32 { return params[12u]; }
+fn P_traceClamp() -> f32 { return params[13u]; }
+fn P_coreWidth() -> f32 { return params[14u]; }
+fn P_traceSpread() -> f32 { return params[15u]; }
+fn P_agFloor() -> f32 { return params[16u]; }
+fn P_agRange() -> f32 { return params[17u]; }
+fn P_hueWave() -> f32 { return params[18u]; }
+fn P_bandHue() -> f32 { return params[19u]; }
+fn P_ghostDim() -> f32 { return params[20u]; }
+fn P_fillDim() -> f32 { return params[21u]; }
+fn P_bandDim() -> f32 { return params[22u]; }
+fn P_graticule() -> f32 { return params[23u]; }
+fn P_gridLevel() -> f32 { return params[24u]; }
+fn P_gridBeat() -> f32 { return params[25u]; }
+fn P_scanline() -> f32 { return params[26u]; }
+fn P_beatLift() -> f32 { return params[27u]; }
+fn P_bgLevel() -> f32 { return params[28u]; }
+fn P_vignette() -> f32 { return params[29u]; }
+fn P_kaleido() -> f32 { return params[30u]; }
+fn P_xyRotate() -> f32 { return params[31u]; }
+
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
+
+fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let adjusted = rgb * saturation + gray * (1.0 - saturation);
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
+fn presetRgb(rgb: vec3f) -> vec3f {
+  return presetRgbAt(rgb, P_saturation(), P_lightness());
+}
 
 // Smoothed waveform sample: box blur over +/-4 taps scaled by calm
 fn calmWave(x: f32, calm: f32) -> f32 {
@@ -4082,8 +4104,10 @@ fn traceLayer(colIn: vec3f, fuv: vec2f, wx: f32, xs: f32, center: f32,
   // brightness rides the Motion Pulse master — an exact 1x at its default.
   let core = smoothstep(cw, cw * 0.23, d);
   let hot = smoothstep(0.45, 0.95, core) * (0.75 + beatP * 0.5 * u.pulse);
-  var beam = hsl2rgb(traceHue, 0.85, 0.62) * core;
-  beam = mix(beam, vec3f(1.0), hot);
+  var beam = presetColor(traceHue, 0.85, 0.62) * core;
+  // The white-hot centre rides the RGB map too (HD-06): pure white is
+  // achromatic, so this is for Lightness — 0 must be black, not a hairline.
+  beam = mix(beam, presetRgb(vec3f(1.0)), hot);
   beam *= 1.0 + hot * 1.6;
   col += beam * P_traceBright() * dim;
 
@@ -4092,7 +4116,7 @@ fn traceLayer(colIn: vec3f, fuv: vec2f, wx: f32, xs: f32, center: f32,
   // actual light source.
   let glowTight = exp(-d * (170.0 - P_glow() * 90.0));
   let glowWide = exp(-d * 22.0) * 0.45;
-  col += hsl2rgb(traceHue, 0.9, 0.55) * (glowTight * 0.6 + glowWide)
+  col += presetColor(traceHue, 0.9, 0.55) * (glowTight * 0.6 + glowWide)
        * (0.35 + P_glow() * 0.75) * (1.0 + beatP * 0.6 * u.pulse) * P_traceBright() * dim;
 
   // Mirrored ghost trace (dimmer, hue-shifted) — the vertical-flip toggle;
@@ -4101,14 +4125,14 @@ fn traceLayer(colIn: vec3f, fuv: vec2f, wx: f32, xs: f32, center: f32,
   if (P_mirror() > 0.5) {
     let ym = center - ampP;
     let dm = abs(fuv.y - ym);
-    col += hsl2rgb(traceHue + 30.0, 0.7, 0.5) * exp(-dm * 160.0) * P_ghostDim() * dim;
+    col += presetColor(traceHue + 30.0, 0.7, 0.5) * exp(-dm * 160.0) * P_ghostDim() * dim;
   }
 
   // Soft fill from trace toward the lane's center line
   if (P_fill() > 0.5) {
     let between = step(min(yP, center), fuv.y) * step(fuv.y, max(yP, center));
     let fade = 1.0 - abs(fuv.y - center) / max(abs(ampP), 0.001);
-    col += hsl2rgb(traceHue, 0.7, 0.4) * between * clamp(fade, 0.0, 1.0) * P_fillDim() * dim;
+    col += presetColor(traceHue, 0.7, 0.4) * between * clamp(fade, 0.0, 1.0) * P_fillDim() * dim;
   }
   return col;
 }
@@ -4159,7 +4183,7 @@ fn xyScope(uv: vec2f) -> vec4f {
   let beatP = max(u.driveBeat, gridPulse(8.0));
 
   // Background + scanlines: the same face the sweep display wears.
-  var col = hsl2rgb(P_hue() + 40.0, 0.4, P_bgLevel() + u.bass * 0.02);
+  var col = presetColor(P_hue() + 40.0, 0.4, P_bgLevel() + u.bass * 0.02);
   col *= (1.0 - P_scanline()) + P_scanline() * (0.5 + 0.5 * sin(uv.y * 400.0));
 
   // Graticule, XY voice: square divisions about the centre (a phase scope's
@@ -4185,7 +4209,7 @@ fn xyScope(uv: vec2f) -> vec4f {
     mesh += smoothstep(0.05, 0.0, abs(fract(gv.x) - 0.5)) * smoothstep(0.02, 0.008, abs(gf.y));
     mesh += smoothstep(0.05, 0.0, abs(fract(gv.y) - 0.5)) * smoothstep(0.02, 0.008, abs(gf.x));
   }
-  col += hsl2rgb(P_hue(), 0.25, 0.32) * mesh * P_gridLevel() * (1.0 + beatP * P_gridBeat() * u.pulse);
+  col += presetColor(P_hue(), 0.25, 0.32) * mesh * P_gridLevel() * (1.0 + beatP * P_gridBeat() * u.pulse);
 
   // The path march. Chord count rides the Motion Detail master; the floor
   // keeps a readable figure at Detail 0. Every path tap is at a
@@ -4230,22 +4254,22 @@ fn xyScope(uv: vec2f) -> vec4f {
             + sin(u.time * 0.11) * P_hueWave() * 0.35;
   let coreXY = smoothstep(cwXY, cwXY * 0.23, dmin);
   let hotXY = smoothstep(0.45, 0.95, coreXY) * (0.75 + beatP * 0.5 * u.pulse);
-  var beamXY = hsl2rgb(hueXY, 0.85, 0.62) * coreXY;
-  beamXY = mix(beamXY, vec3f(1.0), hotXY);
+  var beamXY = presetColor(hueXY, 0.85, 0.62) * coreXY;
+  beamXY = mix(beamXY, presetRgb(vec3f(1.0)), hotXY);
   beamXY *= 1.0 + hotXY * 1.6;
   col += beamXY * P_traceBright();
 
   // Two-tier glow: the dwell energy IS the tight bloom (it already hugs the
   // path); the wide soft halo reads off the nearest approach.
   let glowWideXY = exp(-dmin * 22.0) * 0.45;
-  col += hsl2rgb(hueXY, 0.9, 0.55) * (energy * 0.6 + glowWideXY)
+  col += presetColor(hueXY, 0.9, 0.55) * (energy * 0.6 + glowWideXY)
        * (0.35 + P_glow() * 0.75) * (1.0 + beatP * 0.6 * u.pulse) * P_traceBright();
 
   // Anti-phase ghost — this face's voice of the same ghost-trace toggle
   // (RP-7: the mirror key means ghost trace here, never a fold): the figure
   // with its right channel inverted, dim and hue-shifted.
   if (P_mirror() > 0.5) {
-    col += hsl2rgb(hueXY + 30.0, 0.7, 0.5) * exp(-dgh * 160.0) * P_ghostDim();
+    col += presetColor(hueXY + 30.0, 0.7, 0.5) * exp(-dgh * 160.0) * P_ghostDim();
   }
 
   // Gentle beat lift, then the finishing kit BEFORE the persistence union —
@@ -4333,7 +4357,7 @@ fn preset(uv: vec2f) -> vec4f {
   // Background: near-black, subtle bass tint. Scanlines are a DISPLAY
   // property, not scene content, so they key off the raw screen uv, not the
   // kaleido-folded one.
-  var col = hsl2rgb(P_hue() + 40.0, 0.4, P_bgLevel() + u.bass * 0.02);
+  var col = presetColor(P_hue() + 40.0, 0.4, P_bgLevel() + u.bass * 0.02);
   // 0.5 + 0.5*sin, not raw sin: raw sin spans -1..1, so half of every scanline
   // cycle drove the multiplier negative and clipped to black instead of
   // modulating brightness.
@@ -4377,7 +4401,7 @@ fn preset(uv: vec2f) -> vec4f {
   }
   // Face 1 (None) is bare phosphor: grid stays 0.0 and the add below is an
   // exact +0 at every pixel.
-  col += hsl2rgb(P_hue(), 0.25, 0.32) * grid * P_gridLevel() * (1.0 + beatP * P_gridBeat() * u.pulse);
+  col += presetColor(P_hue(), 0.25, 0.32) * grid * P_gridLevel() * (1.0 + beatP * P_gridBeat() * u.pulse);
 
   // Sweep-space -> screen-height conversion for the sampled beam modes:
   // aspect makes dot pips round, and the kaleido fold halves the screen run
@@ -4469,6 +4493,14 @@ exports[`shader golden baseline > oscilloscope: param ABI (key + default, in ord
   {
     "default": 160,
     "key": "hue",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 0.9,
@@ -8462,33 +8494,55 @@ exports[`shader golden baseline > spectrum-scape: param ABI (key + default, in o
 exports[`shader golden baseline > synthwave: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
 fn P_gridHue() -> f32 { return params[1u]; }
-fn P_speed() -> f32 { return params[2u]; }
-fn P_react() -> f32 { return params[3u]; }
-fn P_beatPulse() -> f32 { return params[4u]; }
-fn P_sunR() -> f32 { return params[5u]; }
-fn P_roadW() -> f32 { return params[6u]; }
-fn P_skyline() -> f32 { return params[7u]; }
-fn P_mountains() -> f32 { return params[8u]; }
-fn P_gridGlow() -> f32 { return params[9u]; }
-fn P_scan() -> f32 { return params[10u]; }
-fn P_sunWarm() -> f32 { return params[11u]; }
-fn P_sunY() -> f32 { return params[12u]; }
-fn P_sunX() -> f32 { return params[13u]; }
-fn P_scanCount() -> f32 { return params[14u]; }
-fn P_scanWidth() -> f32 { return params[15u]; }
-fn P_scanPhase() -> f32 { return params[16u]; }
-fn P_sunRays() -> f32 { return params[17u]; }
-fn P_roadLanes() -> f32 { return params[18u]; }
-fn P_roadGlow() -> f32 { return params[19u]; }
-fn P_skyDensity() -> f32 { return params[20u]; }
-fn P_windows() -> f32 { return params[21u]; }
-fn P_gridScale() -> f32 { return params[22u]; }
-fn P_horizonY() -> f32 { return params[23u]; }
-fn P_stars() -> f32 { return params[24u]; }
-fn P_starDensity() -> f32 { return params[25u]; }
-fn P_gridLock() -> f32 { return params[26u]; }
-fn P_fog() -> f32 { return params[27u]; }
-fn P_vignette() -> f32 { return params[28u]; }
+fn P_saturation() -> f32 { return params[2u]; }
+fn P_lightness() -> f32 { return params[3u]; }
+fn P_speed() -> f32 { return params[4u]; }
+fn P_react() -> f32 { return params[5u]; }
+fn P_beatPulse() -> f32 { return params[6u]; }
+fn P_sunR() -> f32 { return params[7u]; }
+fn P_roadW() -> f32 { return params[8u]; }
+fn P_skyline() -> f32 { return params[9u]; }
+fn P_mountains() -> f32 { return params[10u]; }
+fn P_gridGlow() -> f32 { return params[11u]; }
+fn P_scan() -> f32 { return params[12u]; }
+fn P_sunWarm() -> f32 { return params[13u]; }
+fn P_sunY() -> f32 { return params[14u]; }
+fn P_sunX() -> f32 { return params[15u]; }
+fn P_scanCount() -> f32 { return params[16u]; }
+fn P_scanWidth() -> f32 { return params[17u]; }
+fn P_scanPhase() -> f32 { return params[18u]; }
+fn P_sunRays() -> f32 { return params[19u]; }
+fn P_roadLanes() -> f32 { return params[20u]; }
+fn P_roadGlow() -> f32 { return params[21u]; }
+fn P_skyDensity() -> f32 { return params[22u]; }
+fn P_windows() -> f32 { return params[23u]; }
+fn P_gridScale() -> f32 { return params[24u]; }
+fn P_horizonY() -> f32 { return params[25u]; }
+fn P_stars() -> f32 { return params[26u]; }
+fn P_starDensity() -> f32 { return params[27u]; }
+fn P_gridLock() -> f32 { return params[28u]; }
+fn P_fog() -> f32 { return params[29u]; }
+fn P_vignette() -> f32 { return params[30u]; }
+
+fn colorScale(value: f32, control: f32) -> f32 {
+  if (control <= 1.0) { return value * control; }
+  return min(value * control, 1.0);
+}
+
+fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
+  return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}
+
+fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let adjusted = rgb * saturation + gray * (1.0 - saturation);
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
+fn presetRgb(rgb: vec3f) -> vec3f {
+  return presetRgbAt(rgb, P_saturation(), P_lightness());
+}
 
 fn preset(uv: vec2f) -> vec4f {
   var col = vec3f(0.0);
@@ -8531,7 +8585,7 @@ fn preset(uv: vec2f) -> vec4f {
     let grid = smoothstep(lineW, 0.0, lz) + smoothstep(lineW, 0.0, lx);
     let fade = smoothstep(0.0, 0.06, fy);
     let glow = P_gridGlow() * (0.4 + drive * P_react() + u.bass * 0.3) * pulse;
-    var gridCol = hsl2rgb(P_gridHue(), 0.9, 0.55) * grid * fade * glow;
+    var gridCol = presetColor(P_gridHue(), 0.9, 0.55) * grid * fade * glow;
 
     // Atmospheric fog (IQ): brightness/saturation fall off with the TRUE
     // optical depth (persp, not the density-scaled line coordinate), so the
@@ -8539,7 +8593,7 @@ fn preset(uv: vec2f) -> vec4f {
     // holding constant brightness all the way to the horizon — this was the
     // single biggest reason the floor read as flat rather than deep.
     let fogAmt = (1.0 - exp(-persp * 0.22)) * clamp(P_fog(), 0.0, 1.5);
-    let fogCol = mix(hsl2rgb(P_gridHue(), 0.5, 0.045), hsl2rgb(P_hue(), 0.55, 0.045), 0.5);
+    let fogCol = mix(presetColor(P_gridHue(), 0.5, 0.045), presetColor(P_hue(), 0.55, 0.045), 0.5);
     gridCol = mix(gridCol, fogCol * (grid * 0.7 + 0.3) * fade, clamp(fogAmt, 0.0, 1.0));
 
     // --- Road (optional; the block is GATED so the default width 0 renders
@@ -8563,8 +8617,8 @@ fn preset(uv: vec2f) -> vec4f {
       let edgeD = abs(abs(wx) - halfW);
       let edgeW = 0.012 + fy * 0.02;
       let edgeGlow = P_roadGlow() * (0.55 + drive * P_react() * 0.5 + u.bass * 0.25) * pulse;
-      var roadCol = hsl2rgb(P_gridHue(), 0.95, 0.62) * smoothstep(edgeW, 0.0, edgeD);
-      roadCol += hsl2rgb(P_gridHue(), 0.8, 0.5) * exp(-edgeD * 60.0) * 0.3;
+      var roadCol = presetColor(P_gridHue(), 0.95, 0.62) * smoothstep(edgeW, 0.0, edgeD);
+      roadCol += presetColor(P_gridHue(), 0.8, 0.5) * exp(-edgeD * 60.0) * 0.3;
       // Lane markers: up to three dashed dividers spaced evenly across the
       // road, scrolling at the grid's own rate.
       let lanes = P_roadLanes();
@@ -8574,7 +8628,7 @@ fn preset(uv: vec2f) -> vec4f {
           if (f32(i) > lanes - 0.5) { break; }
           let fi = f32(i) + 1.0;
           let laneD = abs(wx - (-halfW + 2.0 * halfW * fi / (lanes + 1.0)));
-          roadCol += vec3f(1.0, 0.95, 0.75) * smoothstep(edgeW * 0.8, 0.0, laneD) * dash * 0.8;
+          roadCol += presetRgb(vec3f(1.0, 0.95, 0.75)) * smoothstep(edgeW * 0.8, 0.0, laneD) * dash * 0.8;
         }
       }
       // The road sits in the same atmosphere as the grid: fog dims it toward
@@ -8609,8 +8663,8 @@ fn preset(uv: vec2f) -> vec4f {
     let scanGap = P_scan() * step(1.0 - P_scanWidth(),
       fract(scanPos * (P_scanCount() + scanPos * (P_scanCount() * 2.5)) + P_scanPhase()));
     let sunGrad = mix(
-      hsl2rgb(P_hue() + 45.0 * P_sunWarm(), 0.95, 0.62),
-      hsl2rgb(P_hue(), 0.95, 0.55),
+      presetColor(P_hue() + 45.0 * P_sunWarm(), 0.95, 0.62),
+      presetColor(P_hue(), 0.95, 0.55),
       clamp((uv.y - (sunCy - P_sunR())) / (2.0 * P_sunR()), 0.0, 1.0),
     );
     var sky = sunGrad * sunBody * (1.0 - scanGap);
@@ -8620,18 +8674,20 @@ fn preset(uv: vec2f) -> vec4f {
     // off is what reads as EMITTING rather than merely sun-coloured.
     let core = exp(-sd * sd * (9.0 / max(P_sunR() * P_sunR(), 1e-4)));
     let hot = smoothstep(0.3, 0.85, core) * sunBody;
-    sky = mix(sky, vec3f(1.0, 0.97, 0.9), hot * 0.75);
-    sky += vec3f(1.0, 0.95, 0.85) * hot * hot * 0.7 * (1.0 - scanGap * 0.6);
-    sky += hsl2rgb(P_hue() + 30.0, 0.8, 0.45) * smoothstep(P_sunR() * 2.3, 0.0, sd) * (0.35 + drive * 0.35);
+    // The tinted whites below ride the RGB map (HD-06): raw, any one of them
+    // would tint a grayscale frame and ignore Lightness.
+    sky = mix(sky, presetRgb(vec3f(1.0, 0.97, 0.9)), hot * 0.75);
+    sky += presetRgb(vec3f(1.0, 0.95, 0.85)) * hot * hot * 0.7 * (1.0 - scanGap * 0.6);
+    sky += presetColor(P_hue() + 30.0, 0.8, 0.45) * smoothstep(P_sunR() * 2.3, 0.0, sd) * (0.35 + drive * 0.35);
     // Rotating sun rays (optional).
     if (P_sunRays() > 0.01) {
       let ang = atan2(sunCtr.y, sunCtr.x);
       let rays = 0.5 + 0.5 * sin(ang * 16.0 + u.time * 0.6);
-      sky += hsl2rgb(P_hue() + 40.0, 0.9, 0.5) * rays
+      sky += presetColor(P_hue() + 40.0, 0.9, 0.5) * rays
            * smoothstep(P_sunR() * 3.2, P_sunR(), sd) * P_sunRays() * (0.4 + drive * 0.6);
     }
     // Sky gradient darkening upward.
-    sky += hsl2rgb(P_hue() + 60.0, 0.6, 0.12) * (horizon - uv.y) * 1.2;
+    sky += presetColor(P_hue() + 60.0, 0.6, 0.12) * (horizon - uv.y) * 1.2;
     // Stars (small round points behind the sun, above the mountains).
     if (P_stars() > 0.5) {
       let gp = vec2f(uv.x * u.aspect, uv.y) * 60.0;
@@ -8644,7 +8700,7 @@ fn preset(uv: vec2f) -> vec4f {
       if (h > thr) {
         let sp = vec2f(hash21(cell + 0.37), hash21(cell + 0.71));
         let star = smoothstep(0.13, 0.0, length(gp - cell - sp));
-        sky += vec3f(0.9, 0.92, 1.0) * star * (h - thr) / max(1.0 - thr, 0.01) * 0.62
+        sky += presetRgb(vec3f(0.9, 0.92, 1.0)) * star * (h - thr) / max(1.0 - thr, 0.01) * 0.62
              * (0.5 + 0.5 * sin(u.time * 2.0 + h * 40.0)) * smoothstep(horizon, 0.0, uv.y);
       }
     }
@@ -8679,7 +8735,7 @@ fn preset(uv: vec2f) -> vec4f {
         let wdot = smoothstep(0.5, 0.18, abs(fract(wp.x) - 0.5))
                  * smoothstep(0.5, 0.25, abs(fract(wp.y) - 0.5));
         let glimmer = 0.6 + 0.4 * sin(u.time * 3.0 + wh * 43.0);
-        winGlow = vec3f(1.0, 0.83, 0.55) * lit * wdot * city * P_windows()
+        winGlow = presetRgb(vec3f(1.0, 0.83, 0.55)) * lit * wdot * city * P_windows()
                 * glimmer * (0.45 + u.treble * 0.95);
       }
     }
@@ -8692,16 +8748,16 @@ fn preset(uv: vec2f) -> vec4f {
     // sun behind it — sells the silhouette as a shape instead of a flat
     // cutout. Towers standing in front of the ridge mask it.
     let ridgeDist = abs(uv.y - ridgeTop);
-    col += hsl2rgb(P_hue() + 20.0, 0.85, 0.6) * smoothstep(0.007, 0.0, ridgeDist)
+    col += presetColor(P_hue() + 20.0, 0.85, 0.6) * smoothstep(0.007, 0.0, ridgeDist)
          * (0.5 + drive * 0.4) * P_mountains() * (1.0 - city);
   }
   // Horizon bloom: a tight crisp line plus a wider soft halo, pumped by the
   // sync source — two exp() reaches read as an actual light source instead
   // of a single flat bar.
   let hEdge = abs(uv.y - horizon);
-  col += hsl2rgb(P_gridHue(), 0.85, 0.65) * exp(-hEdge * 90.0)
+  col += presetColor(P_gridHue(), 0.85, 0.65) * exp(-hEdge * 90.0)
        * (0.5 + u.energy * 0.3 + drive * 0.5) * pulse;
-  col += hsl2rgb(P_gridHue(), 0.7, 0.6) * exp(-hEdge * 16.0) * 0.22 * (0.4 + drive * 0.4) * pulse;
+  col += presetColor(P_gridHue(), 0.7, 0.6) * exp(-hEdge * 16.0) * 0.22 * (0.4 + drive * 0.4) * pulse;
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.15);
@@ -8720,6 +8776,14 @@ exports[`shader golden baseline > synthwave: param ABI (key + default, in order)
   {
     "default": 300,
     "key": "gridHue",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 1,

@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_COLOR_CONTROLS, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
  * Time-domain oscilloscope. The pipeline phase-aligns the waveform to a
@@ -391,6 +392,26 @@ export const oscilloscope: PresetDef = {
       hint: "Color of the trace",
     },
     {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
+    },
+    {
       key: "gain",
       label: "Gain",
       group: "reaction",
@@ -761,6 +782,10 @@ export const oscilloscope: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+${WGSL_COLOR_CONTROLS}
+
+${WGSL_RGB_CONTROLS}
+
 // Smoothed waveform sample: box blur over +/-4 taps scaled by calm
 fn calmWave(x: f32, calm: f32) -> f32 {
   let spread = calm * 0.012;
@@ -901,8 +926,10 @@ fn traceLayer(colIn: vec3f, fuv: vec2f, wx: f32, xs: f32, center: f32,
   // brightness rides the Motion Pulse master — an exact 1x at its default.
   let core = smoothstep(cw, cw * 0.23, d);
   let hot = smoothstep(0.45, 0.95, core) * (0.75 + beatP * 0.5 * u.pulse);
-  var beam = hsl2rgb(traceHue, 0.85, 0.62) * core;
-  beam = mix(beam, vec3f(1.0), hot);
+  var beam = presetColor(traceHue, 0.85, 0.62) * core;
+  // The white-hot centre rides the RGB map too (HD-06): pure white is
+  // achromatic, so this is for Lightness — 0 must be black, not a hairline.
+  beam = mix(beam, presetRgb(vec3f(1.0)), hot);
   beam *= 1.0 + hot * 1.6;
   col += beam * P_traceBright() * dim;
 
@@ -911,7 +938,7 @@ fn traceLayer(colIn: vec3f, fuv: vec2f, wx: f32, xs: f32, center: f32,
   // actual light source.
   let glowTight = exp(-d * (170.0 - P_glow() * 90.0));
   let glowWide = exp(-d * 22.0) * 0.45;
-  col += hsl2rgb(traceHue, 0.9, 0.55) * (glowTight * 0.6 + glowWide)
+  col += presetColor(traceHue, 0.9, 0.55) * (glowTight * 0.6 + glowWide)
        * (0.35 + P_glow() * 0.75) * (1.0 + beatP * 0.6 * u.pulse) * P_traceBright() * dim;
 
   // Mirrored ghost trace (dimmer, hue-shifted) — the vertical-flip toggle;
@@ -920,14 +947,14 @@ fn traceLayer(colIn: vec3f, fuv: vec2f, wx: f32, xs: f32, center: f32,
   if (P_mirror() > 0.5) {
     let ym = center - ampP;
     let dm = abs(fuv.y - ym);
-    col += hsl2rgb(traceHue + 30.0, 0.7, 0.5) * exp(-dm * 160.0) * P_ghostDim() * dim;
+    col += presetColor(traceHue + 30.0, 0.7, 0.5) * exp(-dm * 160.0) * P_ghostDim() * dim;
   }
 
   // Soft fill from trace toward the lane's center line
   if (P_fill() > 0.5) {
     let between = step(min(yP, center), fuv.y) * step(fuv.y, max(yP, center));
     let fade = 1.0 - abs(fuv.y - center) / max(abs(ampP), 0.001);
-    col += hsl2rgb(traceHue, 0.7, 0.4) * between * clamp(fade, 0.0, 1.0) * P_fillDim() * dim;
+    col += presetColor(traceHue, 0.7, 0.4) * between * clamp(fade, 0.0, 1.0) * P_fillDim() * dim;
   }
   return col;
 }
@@ -978,7 +1005,7 @@ fn xyScope(uv: vec2f) -> vec4f {
   let beatP = max(u.driveBeat, gridPulse(8.0));
 
   // Background + scanlines: the same face the sweep display wears.
-  var col = hsl2rgb(P_hue() + 40.0, 0.4, P_bgLevel() + u.bass * 0.02);
+  var col = presetColor(P_hue() + 40.0, 0.4, P_bgLevel() + u.bass * 0.02);
   col *= (1.0 - P_scanline()) + P_scanline() * (0.5 + 0.5 * sin(uv.y * 400.0));
 
   // Graticule, XY voice: square divisions about the centre (a phase scope's
@@ -1004,7 +1031,7 @@ fn xyScope(uv: vec2f) -> vec4f {
     mesh += smoothstep(0.05, 0.0, abs(fract(gv.x) - 0.5)) * smoothstep(0.02, 0.008, abs(gf.y));
     mesh += smoothstep(0.05, 0.0, abs(fract(gv.y) - 0.5)) * smoothstep(0.02, 0.008, abs(gf.x));
   }
-  col += hsl2rgb(P_hue(), 0.25, 0.32) * mesh * P_gridLevel() * (1.0 + beatP * P_gridBeat() * u.pulse);
+  col += presetColor(P_hue(), 0.25, 0.32) * mesh * P_gridLevel() * (1.0 + beatP * P_gridBeat() * u.pulse);
 
   // The path march. Chord count rides the Motion Detail master; the floor
   // keeps a readable figure at Detail 0. Every path tap is at a
@@ -1049,22 +1076,22 @@ fn xyScope(uv: vec2f) -> vec4f {
             + sin(u.time * 0.11) * P_hueWave() * 0.35;
   let coreXY = smoothstep(cwXY, cwXY * 0.23, dmin);
   let hotXY = smoothstep(0.45, 0.95, coreXY) * (0.75 + beatP * 0.5 * u.pulse);
-  var beamXY = hsl2rgb(hueXY, 0.85, 0.62) * coreXY;
-  beamXY = mix(beamXY, vec3f(1.0), hotXY);
+  var beamXY = presetColor(hueXY, 0.85, 0.62) * coreXY;
+  beamXY = mix(beamXY, presetRgb(vec3f(1.0)), hotXY);
   beamXY *= 1.0 + hotXY * 1.6;
   col += beamXY * P_traceBright();
 
   // Two-tier glow: the dwell energy IS the tight bloom (it already hugs the
   // path); the wide soft halo reads off the nearest approach.
   let glowWideXY = exp(-dmin * 22.0) * 0.45;
-  col += hsl2rgb(hueXY, 0.9, 0.55) * (energy * 0.6 + glowWideXY)
+  col += presetColor(hueXY, 0.9, 0.55) * (energy * 0.6 + glowWideXY)
        * (0.35 + P_glow() * 0.75) * (1.0 + beatP * 0.6 * u.pulse) * P_traceBright();
 
   // Anti-phase ghost — this face's voice of the same ghost-trace toggle
   // (RP-7: the mirror key means ghost trace here, never a fold): the figure
   // with its right channel inverted, dim and hue-shifted.
   if (P_mirror() > 0.5) {
-    col += hsl2rgb(hueXY + 30.0, 0.7, 0.5) * exp(-dgh * 160.0) * P_ghostDim();
+    col += presetColor(hueXY + 30.0, 0.7, 0.5) * exp(-dgh * 160.0) * P_ghostDim();
   }
 
   // Gentle beat lift, then the finishing kit BEFORE the persistence union —
@@ -1152,7 +1179,7 @@ fn preset(uv: vec2f) -> vec4f {
   // Background: near-black, subtle bass tint. Scanlines are a DISPLAY
   // property, not scene content, so they key off the raw screen uv, not the
   // kaleido-folded one.
-  var col = hsl2rgb(P_hue() + 40.0, 0.4, P_bgLevel() + u.bass * 0.02);
+  var col = presetColor(P_hue() + 40.0, 0.4, P_bgLevel() + u.bass * 0.02);
   // 0.5 + 0.5*sin, not raw sin: raw sin spans -1..1, so half of every scanline
   // cycle drove the multiplier negative and clipped to black instead of
   // modulating brightness.
@@ -1196,7 +1223,7 @@ fn preset(uv: vec2f) -> vec4f {
   }
   // Face 1 (None) is bare phosphor: grid stays 0.0 and the add below is an
   // exact +0 at every pixel.
-  col += hsl2rgb(P_hue(), 0.25, 0.32) * grid * P_gridLevel() * (1.0 + beatP * P_gridBeat() * u.pulse);
+  col += presetColor(P_hue(), 0.25, 0.32) * grid * P_gridLevel() * (1.0 + beatP * P_gridBeat() * u.pulse);
 
   // Sweep-space -> screen-height conversion for the sampled beam modes:
   // aspect makes dot pips round, and the kaleido fold halves the screen run

@@ -32,7 +32,7 @@ const ABI_BASELINE: Record<string, string> = {
   "radial-burst":
     "hue,hueSpread,saturation,lightness,innerRadius,symmetry,angle,rotSpeed,glow,peaks,cover,coverHue,barLen,ringBreathe,coreSize,corePump,coreBeat,wobBase,wobAmp,wobClamp,spinBase,spinEnergy,coreBright,detailRing,detailPos,beatBloom,coverMix,coverBright,coverFit,coverZoom,coverX,coverY,rimBright,vignette",
   oscilloscope:
-    "hue,gain,calm,glow,traceBright,fill,mirror,traces,renderMode,persist,display,traceClamp,coreWidth,traceSpread,agFloor,agRange,hueWave,bandHue,ghostDim,fillDim,bandDim,graticule,gridLevel,gridBeat,scanline,beatLift,bgLevel,vignette,kaleido,xyRotate",
+    "hue,saturation,lightness,gain,calm,glow,traceBright,fill,mirror,traces,renderMode,persist,display,traceClamp,coreWidth,traceSpread,agFloor,agRange,hueWave,bandHue,ghostDim,fillDim,bandDim,graticule,gridLevel,gridBeat,scanline,beatLift,bgLevel,vignette,kaleido,xyRotate",
   particles:
     "hue,saturation,lightness,density,size,speed,direction,beatDance,sizePulse,fly,clump,streak,hotCore,shootingStars,constellation,energyDrive,wander,wanderSpeed,fill,layers,parallax,hueVariance,twinkle,glow,brightness,beatFlash,bgLevel,vignette,mirror,sizeVar,bandColor,beatPop",
   "tunnel-rings":
@@ -72,7 +72,7 @@ const ABI_BASELINE: Record<string, string> = {
   aurora:
     "hue,saturation,lightness,bright,react,flow,thick,baseY,wave,layers,beatPulse,palWarm,moon,ground,specAmt,bassSwell,drift,reflect,horizon,reflectFade,hueStep,hueSpread,palSpan,rays,sat,stars,bgGlow,mirror,groundRough,moonX,moonY,moonGlow",
   synthwave:
-    "hue,gridHue,speed,react,beatPulse,sunR,roadW,skyline,mountains,gridGlow,scan,sunWarm,sunY,sunX,scanCount,scanWidth,scanPhase,sunRays,roadLanes,roadGlow,skyDensity,windows,gridScale,horizonY,stars,starDensity,gridLock,fog,vignette",
+    "hue,gridHue,saturation,lightness,speed,react,beatPulse,sunR,roadW,skyline,mountains,gridGlow,scan,sunWarm,sunY,sunX,scanCount,scanWidth,scanPhase,sunRays,roadLanes,roadGlow,skyDensity,windows,gridScale,horizonY,stars,starDensity,gridLock,fog,vignette",
   "bass-circle":
     "hue,saturation,lightness,radius,pump,barLen,segments,particles,spin,rimBright,cover,coreFill,coverHue,symmetry,angle,hueSpread,beatPump,gap,segGap,barGlow,partDensity,partFill,partFloat,beatBurst,partBeat,coverMix,coverBright,coverFit,coverZoom,coverX,coverY,vignette",
   builder2:

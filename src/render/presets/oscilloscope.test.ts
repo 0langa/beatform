@@ -501,7 +501,7 @@ describe("graticule faces: the default face is the shipped mesh, verbatim", () =
   it("faces 2 and 3 exist and share the beat-flash light", () => {
     // One col += line for every face: the furniture changes, the light does
     // not, so gridLevel and gridBeat keep meaning on all four faces.
-    const adds = wgsl.match(/col \+= hsl2rgb\(P_hue\(\), 0\.25, 0\.32\) \* grid/g);
+    const adds = wgsl.match(/col \+= presetColor\(P_hue\(\), 0\.25, 0\.32\) \* grid/g);
     expect(adds).toHaveLength(1);
   });
 });

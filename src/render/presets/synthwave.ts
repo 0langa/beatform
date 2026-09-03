@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { WGSL_COLOR_CONTROLS, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
  * Synthwave — a retro perspective grid streaming toward a scanline sun, over
@@ -341,6 +342,26 @@ export const synthwave: PresetDef = {
       hint: "Color of the neon floor grid (the road's rails ride it too)",
     },
     {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
+    },
+    {
       key: "speed",
       label: "Speed",
       group: "motion",
@@ -630,6 +651,10 @@ export const synthwave: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+${WGSL_COLOR_CONTROLS}
+
+${WGSL_RGB_CONTROLS}
+
 fn preset(uv: vec2f) -> vec4f {
   var col = vec3f(0.0);
   let cx = (uv.x - 0.5) * u.aspect;
@@ -671,7 +696,7 @@ fn preset(uv: vec2f) -> vec4f {
     let grid = smoothstep(lineW, 0.0, lz) + smoothstep(lineW, 0.0, lx);
     let fade = smoothstep(0.0, 0.06, fy);
     let glow = P_gridGlow() * (0.4 + drive * P_react() + u.bass * 0.3) * pulse;
-    var gridCol = hsl2rgb(P_gridHue(), 0.9, 0.55) * grid * fade * glow;
+    var gridCol = presetColor(P_gridHue(), 0.9, 0.55) * grid * fade * glow;
 
     // Atmospheric fog (IQ): brightness/saturation fall off with the TRUE
     // optical depth (persp, not the density-scaled line coordinate), so the
@@ -679,7 +704,7 @@ fn preset(uv: vec2f) -> vec4f {
     // holding constant brightness all the way to the horizon — this was the
     // single biggest reason the floor read as flat rather than deep.
     let fogAmt = (1.0 - exp(-persp * 0.22)) * clamp(P_fog(), 0.0, 1.5);
-    let fogCol = mix(hsl2rgb(P_gridHue(), 0.5, 0.045), hsl2rgb(P_hue(), 0.55, 0.045), 0.5);
+    let fogCol = mix(presetColor(P_gridHue(), 0.5, 0.045), presetColor(P_hue(), 0.55, 0.045), 0.5);
     gridCol = mix(gridCol, fogCol * (grid * 0.7 + 0.3) * fade, clamp(fogAmt, 0.0, 1.0));
 
     // --- Road (optional; the block is GATED so the default width 0 renders
@@ -703,8 +728,8 @@ fn preset(uv: vec2f) -> vec4f {
       let edgeD = abs(abs(wx) - halfW);
       let edgeW = 0.012 + fy * 0.02;
       let edgeGlow = P_roadGlow() * (0.55 + drive * P_react() * 0.5 + u.bass * 0.25) * pulse;
-      var roadCol = hsl2rgb(P_gridHue(), 0.95, 0.62) * smoothstep(edgeW, 0.0, edgeD);
-      roadCol += hsl2rgb(P_gridHue(), 0.8, 0.5) * exp(-edgeD * 60.0) * 0.3;
+      var roadCol = presetColor(P_gridHue(), 0.95, 0.62) * smoothstep(edgeW, 0.0, edgeD);
+      roadCol += presetColor(P_gridHue(), 0.8, 0.5) * exp(-edgeD * 60.0) * 0.3;
       // Lane markers: up to three dashed dividers spaced evenly across the
       // road, scrolling at the grid's own rate.
       let lanes = P_roadLanes();
@@ -714,7 +739,7 @@ fn preset(uv: vec2f) -> vec4f {
           if (f32(i) > lanes - 0.5) { break; }
           let fi = f32(i) + 1.0;
           let laneD = abs(wx - (-halfW + 2.0 * halfW * fi / (lanes + 1.0)));
-          roadCol += vec3f(1.0, 0.95, 0.75) * smoothstep(edgeW * 0.8, 0.0, laneD) * dash * 0.8;
+          roadCol += presetRgb(vec3f(1.0, 0.95, 0.75)) * smoothstep(edgeW * 0.8, 0.0, laneD) * dash * 0.8;
         }
       }
       // The road sits in the same atmosphere as the grid: fog dims it toward
@@ -749,8 +774,8 @@ fn preset(uv: vec2f) -> vec4f {
     let scanGap = P_scan() * step(1.0 - P_scanWidth(),
       fract(scanPos * (P_scanCount() + scanPos * (P_scanCount() * 2.5)) + P_scanPhase()));
     let sunGrad = mix(
-      hsl2rgb(P_hue() + 45.0 * P_sunWarm(), 0.95, 0.62),
-      hsl2rgb(P_hue(), 0.95, 0.55),
+      presetColor(P_hue() + 45.0 * P_sunWarm(), 0.95, 0.62),
+      presetColor(P_hue(), 0.95, 0.55),
       clamp((uv.y - (sunCy - P_sunR())) / (2.0 * P_sunR()), 0.0, 1.0),
     );
     var sky = sunGrad * sunBody * (1.0 - scanGap);
@@ -760,18 +785,20 @@ fn preset(uv: vec2f) -> vec4f {
     // off is what reads as EMITTING rather than merely sun-coloured.
     let core = exp(-sd * sd * (9.0 / max(P_sunR() * P_sunR(), 1e-4)));
     let hot = smoothstep(0.3, 0.85, core) * sunBody;
-    sky = mix(sky, vec3f(1.0, 0.97, 0.9), hot * 0.75);
-    sky += vec3f(1.0, 0.95, 0.85) * hot * hot * 0.7 * (1.0 - scanGap * 0.6);
-    sky += hsl2rgb(P_hue() + 30.0, 0.8, 0.45) * smoothstep(P_sunR() * 2.3, 0.0, sd) * (0.35 + drive * 0.35);
+    // The tinted whites below ride the RGB map (HD-06): raw, any one of them
+    // would tint a grayscale frame and ignore Lightness.
+    sky = mix(sky, presetRgb(vec3f(1.0, 0.97, 0.9)), hot * 0.75);
+    sky += presetRgb(vec3f(1.0, 0.95, 0.85)) * hot * hot * 0.7 * (1.0 - scanGap * 0.6);
+    sky += presetColor(P_hue() + 30.0, 0.8, 0.45) * smoothstep(P_sunR() * 2.3, 0.0, sd) * (0.35 + drive * 0.35);
     // Rotating sun rays (optional).
     if (P_sunRays() > 0.01) {
       let ang = atan2(sunCtr.y, sunCtr.x);
       let rays = 0.5 + 0.5 * sin(ang * 16.0 + u.time * 0.6);
-      sky += hsl2rgb(P_hue() + 40.0, 0.9, 0.5) * rays
+      sky += presetColor(P_hue() + 40.0, 0.9, 0.5) * rays
            * smoothstep(P_sunR() * 3.2, P_sunR(), sd) * P_sunRays() * (0.4 + drive * 0.6);
     }
     // Sky gradient darkening upward.
-    sky += hsl2rgb(P_hue() + 60.0, 0.6, 0.12) * (horizon - uv.y) * 1.2;
+    sky += presetColor(P_hue() + 60.0, 0.6, 0.12) * (horizon - uv.y) * 1.2;
     // Stars (small round points behind the sun, above the mountains).
     if (P_stars() > 0.5) {
       let gp = vec2f(uv.x * u.aspect, uv.y) * 60.0;
@@ -784,7 +811,7 @@ fn preset(uv: vec2f) -> vec4f {
       if (h > thr) {
         let sp = vec2f(hash21(cell + 0.37), hash21(cell + 0.71));
         let star = smoothstep(0.13, 0.0, length(gp - cell - sp));
-        sky += vec3f(0.9, 0.92, 1.0) * star * (h - thr) / max(1.0 - thr, 0.01) * 0.62
+        sky += presetRgb(vec3f(0.9, 0.92, 1.0)) * star * (h - thr) / max(1.0 - thr, 0.01) * 0.62
              * (0.5 + 0.5 * sin(u.time * 2.0 + h * 40.0)) * smoothstep(horizon, 0.0, uv.y);
       }
     }
@@ -819,7 +846,7 @@ fn preset(uv: vec2f) -> vec4f {
         let wdot = smoothstep(0.5, 0.18, abs(fract(wp.x) - 0.5))
                  * smoothstep(0.5, 0.25, abs(fract(wp.y) - 0.5));
         let glimmer = 0.6 + 0.4 * sin(u.time * 3.0 + wh * 43.0);
-        winGlow = vec3f(1.0, 0.83, 0.55) * lit * wdot * city * P_windows()
+        winGlow = presetRgb(vec3f(1.0, 0.83, 0.55)) * lit * wdot * city * P_windows()
                 * glimmer * (0.45 + u.treble * 0.95);
       }
     }
@@ -832,16 +859,16 @@ fn preset(uv: vec2f) -> vec4f {
     // sun behind it — sells the silhouette as a shape instead of a flat
     // cutout. Towers standing in front of the ridge mask it.
     let ridgeDist = abs(uv.y - ridgeTop);
-    col += hsl2rgb(P_hue() + 20.0, 0.85, 0.6) * smoothstep(0.007, 0.0, ridgeDist)
+    col += presetColor(P_hue() + 20.0, 0.85, 0.6) * smoothstep(0.007, 0.0, ridgeDist)
          * (0.5 + drive * 0.4) * P_mountains() * (1.0 - city);
   }
   // Horizon bloom: a tight crisp line plus a wider soft halo, pumped by the
   // sync source — two exp() reaches read as an actual light source instead
   // of a single flat bar.
   let hEdge = abs(uv.y - horizon);
-  col += hsl2rgb(P_gridHue(), 0.85, 0.65) * exp(-hEdge * 90.0)
+  col += presetColor(P_gridHue(), 0.85, 0.65) * exp(-hEdge * 90.0)
        * (0.5 + u.energy * 0.3 + drive * 0.5) * pulse;
-  col += hsl2rgb(P_gridHue(), 0.7, 0.6) * exp(-hEdge * 16.0) * 0.22 * (0.4 + drive * 0.4) * pulse;
+  col += presetColor(P_gridHue(), 0.7, 0.6) * exp(-hEdge * 16.0) * 0.22 * (0.4 + drive * 0.4) * pulse;
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.15);

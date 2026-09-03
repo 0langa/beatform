@@ -7,10 +7,12 @@ import { gatefold } from "./gatefold";
 import { ledMatrix } from "./ledMatrix";
 import { lyricStage } from "./lyricStage";
 import { metaballs } from "./metaballs";
+import { oscilloscope } from "./oscilloscope";
 import { overgrowth } from "./overgrowth";
 import { radialBurst } from "./radialBurst";
 import { spectroFalls } from "./spectroFalls";
 import { spectrumBars } from "./spectrumBars";
+import { synthwave } from "./synthwave";
 import { tunnelRings } from "./tunnelRings";
 import { voiceOrb } from "./voiceOrb";
 
@@ -39,6 +41,8 @@ const COLOR_PRESETS = [
   lyricStage,
   gatefold,
   overgrowth,
+  oscilloscope,
+  synthwave,
 ];
 
 /**
@@ -120,6 +124,20 @@ describe("full preset color controls", () => {
     // full-colour sleeve standing in a grayscale room at saturation 0.
     expect(gatefold.wgsl.match(/presetRgb\(/g)).toHaveLength(2);
     expect(gatefold.wgsl).toContain("let gray = vec3f(dot(rgb");
+  });
+
+  it("Oscilloscope routes its white-hot beam cores through the controls", () => {
+    // Definition + the sweep face's core + the XY face's core — the mode's
+    // only authored RGB. Pure white is achromatic, so this is for lightness:
+    // a "0 = black" that leaves a white hairline is not black.
+    expect(oscilloscope.wgsl.match(/presetRgb\(/g)).toHaveLength(3);
+  });
+
+  it("Synthwave routes its tinted whites through the controls", () => {
+    // Definition + lane markers, the sun's two hot-core tints, the stars and
+    // the lit windows — every warm or cool white the sky and road are painted
+    // with. Any one of them raw would tint the grayscale frame.
+    expect(synthwave.wgsl.match(/presetRgb\(/g)).toHaveLength(6);
   });
 
   it("Metaballs routes the fresh frame before the smear fold", () => {
