@@ -164,19 +164,19 @@ evidence is recorded here.
       dialog (src/state/slices/projectIOActions.ts:76); import has no dialog,
       no button, no file input. Recommended: **FINISH** — "Import theme…" via
       the existing dialog helper next to the export (S). Verdict: **FINISH** — closed 2026-09-03 (63d3a78): "Import theme…" beside "Save as theme…" opens the native dialog and feeds the drop-import's parser (`importThemeFromFile`, tested).
-- [ ] **HD-13 Gallery: an updated upstream entry reads "Already in My Looks"
+- [x] **HD-13 Gallery: an updated upstream entry reads "Already in My Looks"
       forever** (`entryGate` compares only `minAppVersion`/`savedWith`, never
       the entry's hash against the installed copy), and removal lives on a
       different surface than install with no label on the card. Recommended:
       **FINISH** hash-aware gate (S/M) + **DECLARE** the removal location on
-      the card (S). Verdict: \_\_\_
-- [ ] **HD-12 Shadertoy import never warns.** `iChannel1-3` bind an empty
+      the card (S). Verdict: **FINISH + DECLARE** — closed 2026-09-03 (93fb127): `installedLookState` compares the registry's per-entry sha256 with the digest recorded at install; a changed entry reads "Update look" and installs over the old copy through the verified path. The install record moved from session-only to a validated localStorage map (`viz.galleryInstalled.v1`, additive; no file format touched) — which also fixed the Gallery forgetting every install after a restart. Installed cards say removal lives under Visuals ▸ Looks & themes. Ledger claim corrected: the gate compared `minAppVersion`/`schemaVersion` (no `savedWith` exists). Device check pending: `node scripts/gallery-e2e.mjs` step 5b (update path).
+- [x] **HD-12 Shadertoy import never warns.** `iChannel1-3` bind an empty
       texture, so shaders that sample them compile and silently render black
       there; multi-pass (Buffer A-D / Common) is not detected; the transpiler
       has no warning channel at all (src-tauri/src/shadertoy.rs,
       src/ui/ShadertoyImport.tsx:150). Recommended: **FINISH** — detect
       `iChannel1-3` and buffer references, surface warnings in the dialog for
-      the shader actually pasted (M). Verdict: \_\_\_
+      the shader actually pasted (M). Verdict: **FINISH** — closed 2026-09-03 (542606c): the import dialog scans the pasted GLSL and lists, before Translate, the empty channels it samples (iChannel1–3), that iMouse is always zero, and Buffer A–D / Common mentions; advisory, never a gate (`shadertoyWarnings.ts`, pure, tested; dialog test).
 
 ### Performance display
 

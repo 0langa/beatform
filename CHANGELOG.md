@@ -30,11 +30,19 @@ deliberate limit. No new features.
 - **The second display is no longer throttled by the preview frame cap.** A
   30 fps battery cap on the operator's preview used to reach the audience.
   While the second display is live the cap is lifted for both.
+- **Gallery updates.** A look you added now shows **Update look** when the
+  Gallery carries a newer version, and updating replaces your copy instead of
+  adding a second one. The Gallery also remembers what you installed across
+  restarts, and each installed card says where removal lives (Visuals ▸ Looks
+  & themes).
 
 ### Added
 
 - **Import theme…** opens a file dialog for `.bftheme` files — the same import
   as dropping the file onto the window.
+- **Shadertoy import warns before you translate** when the pasted code samples
+  `iChannel1–3`, reads `iMouse`, or mentions other passes — those inputs are
+  empty in Beatform, so the affected parts would render black with no error.
 
 ### Removed
 
