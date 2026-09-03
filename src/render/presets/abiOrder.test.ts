@@ -61,7 +61,7 @@ const ABI_BASELINE: Record<string, string> = {
   "voice-orb":
     "hue,saturation,lightness,size,satellites,ring,ringStyle,mirror,texture,response,voiceFocus,wobble,sparkle,flare,rmsBlend,growth,idleBreath,wobScale,mode1,mode2,mode3,coreGlow,breathGlow,rimGlow,ringDist,ringWave,ringCount,satSize,satDist,satOrbit,sparkleScale,bgLevel,vignette",
   "echo-trails":
-    "hue,decay,zoom,swirl,radius,source,react,inject,beatZoom,flowSwirl,thick,hueSpin,hueDrift,kickFlash,vignette,mirror,echoHue,sides,beatStar,warp,centerX,centerY",
+    "hue,saturation,lightness,decay,zoom,swirl,radius,source,react,inject,beatZoom,flowSwirl,thick,hueSpin,hueDrift,kickFlash,vignette,mirror,echoHue,sides,beatStar,warp,centerX,centerY",
   "particle-flow":
     "hue,saturation,lightness,field,flowStrength,swirl,beatBurst,size,brightness,density,ribbon,flowScale,damping,gravity,attractor,audioFlow,midSwirl,trebleJitter,sizePulse,hueSpread,speedColor,sat,spawnRadius,vignette,bgLevel",
   // 2.102.0: ",terrainSmooth" APPENDED for the Waveform terrain layout

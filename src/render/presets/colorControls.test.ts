@@ -3,6 +3,7 @@ import { advancedKeys, allParams } from "../types";
 import { WGSL_RGB_CONTROLS } from "../wgslLib";
 import { aurora } from "./aurora";
 import { bassCircle } from "./bassCircle";
+import { echoTrails } from "./echoTrails";
 import { gatefold } from "./gatefold";
 import { ledMatrix } from "./ledMatrix";
 import { lyricStage } from "./lyricStage";
@@ -51,7 +52,7 @@ const COLOR_PRESETS = [
  * colour) rides presetRgb, and there is no hsl2rgb() at all, so nothing can
  * bypass the map.
  */
-const PALETTE_PRESETS = [tunnelRings, metaballs, voiceOrb, aurora];
+const PALETTE_PRESETS = [tunnelRings, metaballs, voiceOrb, echoTrails, aurora];
 
 describe("full preset color controls", () => {
   for (const preset of [...COLOR_PRESETS, ...PALETTE_PRESETS]) {
@@ -138,6 +139,14 @@ describe("full preset color controls", () => {
     // the lit windows — every warm or cool white the sky and road are painted
     // with. Any one of them raw would tint the grayscale frame.
     expect(synthwave.wgsl.match(/presetRgb\(/g)).toHaveLength(6);
+  });
+
+  it("Echo Trails routes what it injects, never what it feeds back", () => {
+    // Definition + the three injection sites (spectrum ring, cover source,
+    // kick core). The history sample is last frame's already-routed output:
+    // routing it again would compound the map once per frame.
+    expect(echoTrails.wgsl.match(/presetRgb\(/g)).toHaveLength(4);
+    expect(echoTrails.wgsl).not.toMatch(/presetRgb\(\s*feedbackSample/);
   });
 
   it("Metaballs routes the fresh frame before the smear fold", () => {

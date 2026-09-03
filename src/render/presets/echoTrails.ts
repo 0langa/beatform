@@ -1,5 +1,5 @@
 import type { PresetDef } from "../types";
-import { WGSL_PALETTE_STD } from "../wgslLib";
+import { WGSL_PALETTE_STD, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
  * Echo Trails — the first feedback preset. A fresh audio-driven source (a
@@ -378,6 +378,26 @@ export const echoTrails: PresetDef = {
       hint: "Base color",
     },
     {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
+    },
+    {
       key: "decay",
       label: "Trail length",
       group: "motion",
@@ -662,6 +682,8 @@ export const echoTrails: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+${WGSL_RGB_CONTROLS}
+
 fn preset(uv: vec2f) -> vec4f {
   var c = centered(uv);              // aspect-corrected, centered at 0
   let mirrorN = P_mirror();
@@ -1062,7 +1084,12 @@ fn preset(uv: vec2f) -> vec4f {
   // level is spec on the default path (initialized above, never reassigned in
   // the useRing branch), so this line computes the pre-wave value; the cover
   // source leaves band at 0 and this add is an exact +0.
-  col += ringHot * band * (0.5 + level) * P_inject() * deposit;
+  // Whole-visual saturation / lightness (HD-06) land on what is INJECTED —
+  // this ring, the cover source and the kick core below — never on the
+  // fed-back history, which is last frame's already-routed output: routing it
+  // again would compound the map once per frame. Identity at the defaults
+  // (rgb * 1 + gray * 0), so the accumulator's default frames are bit-identical.
+  col += presetRgb(ringHot) * band * (0.5 + level) * P_inject() * deposit;
 
   // Cover art source: the album art itself becomes what the tunnel echoes —
   // video feedback pointed at the sleeve. The injection is pre-scaled by
@@ -1083,7 +1110,7 @@ fn preset(uv: vec2f) -> vec4f {
     let mask = smoothstep(discR, discR - 0.012, rad);
     let box = vec2f(c.x / discR, c.y / discR) * 0.5 + vec2f(0.5);
     let cuv = fitUV(box, coverAspect(), 1.0, 0.0, 1.0, vec2f(0.0));
-    col += coverSample(cuv).rgb * mask * P_inject() * (1.0 - loopGain) * deposit;
+    col += presetRgb(coverSample(cuv).rgb) * mask * P_inject() * (1.0 - loopGain) * deposit;
   }
 
   // Kick core: a bright central burst on kick hits, desaturating toward
@@ -1094,7 +1121,7 @@ fn preset(uv: vec2f) -> vec4f {
     vec3f(1.0),
     0.55
   );
-  col += corePal * smoothstep(P_radius() * 0.7, 0.0, rad) * u.kick * P_kickFlash() * deposit;
+  col += presetRgb(corePal) * smoothstep(P_radius() * 0.7, 0.0, rad) * u.kick * P_kickFlash() * deposit;
 
   // No tonemap() here: with a feedback accumulator, tonemap's own output
   // feeds back in as next frame's input and compounds — measured to slowly

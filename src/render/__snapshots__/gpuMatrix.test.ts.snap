@@ -144,6 +144,8 @@ exports[`matrix case enumeration (R2-16) > the full id list is the census — ad
   "echo-trails/style/droste",
   "echo-trails/style/riptide",
   "echo-trails/style/maelstrom",
+  "echo-trails/color/grayscale",
+  "echo-trails/color/bright-grayscale",
   "particle-flow/@defaults",
   "particle-flow/style/flow",
   "particle-flow/style/galaxy",

@@ -1403,27 +1403,40 @@ exports[`shader golden baseline > covers exactly the registered preset set 1`] =
 
 exports[`shader golden baseline > echo-trails: accessors + body are stable 1`] = `
 "fn P_hue() -> f32 { return params[0u]; }
-fn P_decay() -> f32 { return params[1u]; }
-fn P_zoom() -> f32 { return params[2u]; }
-fn P_swirl() -> f32 { return params[3u]; }
-fn P_radius() -> f32 { return params[4u]; }
-fn P_source() -> f32 { return params[5u]; }
-fn P_react() -> f32 { return params[6u]; }
-fn P_inject() -> f32 { return params[7u]; }
-fn P_beatZoom() -> f32 { return params[8u]; }
-fn P_flowSwirl() -> f32 { return params[9u]; }
-fn P_thick() -> f32 { return params[10u]; }
-fn P_hueSpin() -> f32 { return params[11u]; }
-fn P_hueDrift() -> f32 { return params[12u]; }
-fn P_kickFlash() -> f32 { return params[13u]; }
-fn P_vignette() -> f32 { return params[14u]; }
-fn P_mirror() -> f32 { return params[15u]; }
-fn P_echoHue() -> f32 { return params[16u]; }
-fn P_sides() -> f32 { return params[17u]; }
-fn P_beatStar() -> f32 { return params[18u]; }
-fn P_warp() -> f32 { return params[19u]; }
-fn P_centerX() -> f32 { return params[20u]; }
-fn P_centerY() -> f32 { return params[21u]; }
+fn P_saturation() -> f32 { return params[1u]; }
+fn P_lightness() -> f32 { return params[2u]; }
+fn P_decay() -> f32 { return params[3u]; }
+fn P_zoom() -> f32 { return params[4u]; }
+fn P_swirl() -> f32 { return params[5u]; }
+fn P_radius() -> f32 { return params[6u]; }
+fn P_source() -> f32 { return params[7u]; }
+fn P_react() -> f32 { return params[8u]; }
+fn P_inject() -> f32 { return params[9u]; }
+fn P_beatZoom() -> f32 { return params[10u]; }
+fn P_flowSwirl() -> f32 { return params[11u]; }
+fn P_thick() -> f32 { return params[12u]; }
+fn P_hueSpin() -> f32 { return params[13u]; }
+fn P_hueDrift() -> f32 { return params[14u]; }
+fn P_kickFlash() -> f32 { return params[15u]; }
+fn P_vignette() -> f32 { return params[16u]; }
+fn P_mirror() -> f32 { return params[17u]; }
+fn P_echoHue() -> f32 { return params[18u]; }
+fn P_sides() -> f32 { return params[19u]; }
+fn P_beatStar() -> f32 { return params[20u]; }
+fn P_warp() -> f32 { return params[21u]; }
+fn P_centerX() -> f32 { return params[22u]; }
+fn P_centerY() -> f32 { return params[23u]; }
+
+fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let adjusted = rgb * saturation + gray * (1.0 - saturation);
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
+fn presetRgb(rgb: vec3f) -> vec3f {
+  return presetRgbAt(rgb, P_saturation(), P_lightness());
+}
 
 fn preset(uv: vec2f) -> vec4f {
   var c = centered(uv);              // aspect-corrected, centered at 0
@@ -1825,7 +1838,12 @@ fn preset(uv: vec2f) -> vec4f {
   // level is spec on the default path (initialized above, never reassigned in
   // the useRing branch), so this line computes the pre-wave value; the cover
   // source leaves band at 0 and this add is an exact +0.
-  col += ringHot * band * (0.5 + level) * P_inject() * deposit;
+  // Whole-visual saturation / lightness (HD-06) land on what is INJECTED —
+  // this ring, the cover source and the kick core below — never on the
+  // fed-back history, which is last frame's already-routed output: routing it
+  // again would compound the map once per frame. Identity at the defaults
+  // (rgb * 1 + gray * 0), so the accumulator's default frames are bit-identical.
+  col += presetRgb(ringHot) * band * (0.5 + level) * P_inject() * deposit;
 
   // Cover art source: the album art itself becomes what the tunnel echoes —
   // video feedback pointed at the sleeve. The injection is pre-scaled by
@@ -1846,7 +1864,7 @@ fn preset(uv: vec2f) -> vec4f {
     let mask = smoothstep(discR, discR - 0.012, rad);
     let box = vec2f(c.x / discR, c.y / discR) * 0.5 + vec2f(0.5);
     let cuv = fitUV(box, coverAspect(), 1.0, 0.0, 1.0, vec2f(0.0));
-    col += coverSample(cuv).rgb * mask * P_inject() * (1.0 - loopGain) * deposit;
+    col += presetRgb(coverSample(cuv).rgb) * mask * P_inject() * (1.0 - loopGain) * deposit;
   }
 
   // Kick core: a bright central burst on kick hits, desaturating toward
@@ -1857,7 +1875,7 @@ fn preset(uv: vec2f) -> vec4f {
     vec3f(1.0),
     0.55
   );
-  col += corePal * smoothstep(P_radius() * 0.7, 0.0, rad) * u.kick * P_kickFlash() * deposit;
+  col += presetRgb(corePal) * smoothstep(P_radius() * 0.7, 0.0, rad) * u.kick * P_kickFlash() * deposit;
 
   // No tonemap() here: with a feedback accumulator, tonemap's own output
   // feeds back in as next frame's input and compounds — measured to slowly
@@ -1884,6 +1902,14 @@ exports[`shader golden baseline > echo-trails: param ABI (key + default, in orde
   {
     "default": 200,
     "key": "hue",
+  },
+  {
+    "default": 1,
+    "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 0.92,
