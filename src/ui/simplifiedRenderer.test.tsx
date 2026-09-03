@@ -6,6 +6,7 @@ import { SliderRow, ToggleRow } from "./kit";
 import { BatchPanel } from "./BatchPanel";
 import type { BatchRun } from "../state/batch";
 import type { ProjectDocument } from "../state/project";
+import type { StemEntry } from "../audio/stems";
 
 // BatchPanel is store-direct as of P-12 wave 2, so its Start button reaches
 // the real `startBatch`, which is guarded but still resolves the engine on the
@@ -261,5 +262,162 @@ describe("BatchPanel surfaces its own refusals (SS-3)", () => {
     // `exporting` — that must not disable/announce anything here.
     renderBatch({ exporting: { done: 1, total: 10, speed: null }, batchStatus: "running" });
     expect(screen.queryByText(/running export before starting a batch/)).toBeNull();
+  });
+});
+
+/**
+ * HD-01 / HD-02 — the panel states the batch lane's one output shape before
+ * anyone queues a night of work, and disables Start (with the same sentence
+ * startBatch would refuse with) while the Export panel is set to a format
+ * or Type the batch cannot render.
+ */
+describe("BatchPanel states what batch renders (HD-01, HD-02)", () => {
+  it("shows the MP4 / WebM limit near Start", () => {
+    renderBatch();
+    expect(screen.getByText(/renders whole tracks as MP4 \/ WebM/)).toBeTruthy();
+  });
+
+  it("disables Start while the Export panel's format is not MP4, naming the format", async () => {
+    renderBatch({
+      exportSettings: { ...useVizStore.getState().exportSettings, format: "png" },
+    });
+    const start = screen.getByRole("button", { name: /Render 1 video/ });
+    expect(isDisabled(start)).toBe(true);
+    expect(start.getAttribute("title")).toMatch(/PNG frames/);
+    await userEvent.click(start);
+    expect(useVizStore.getState().batchError).toBeNull();
+    // Stated in the panel — once, not as a note AND a block.
+    expect(screen.getAllByText(/PNG frames/)).toHaveLength(1);
+  });
+
+  it("disables Start in Canvas loop mode", () => {
+    renderBatch({
+      exportSettings: { ...useVizStore.getState().exportSettings, mode: "canvas" },
+    });
+    const start = screen.getByRole("button", { name: /Render 1 video/ });
+    expect(isDisabled(start)).toBe(true);
+    expect(start.getAttribute("title")).toMatch(/Canvas loop/);
+  });
+
+  it("does not block Retry on a finished run — the run's format was frozen when it started", () => {
+    // The refusal is about what a NEW run would render from the Export
+    // panel's CURRENT settings. A retry re-runs the frozen run's own
+    // FormatPreset (already MP4 / WebM), so flipping the panel to PNG after
+    // the fact must neither disable Retry nor hang the refusal banner over
+    // a panel that offers no Start.
+    renderBatch({
+      batchStatus: "done",
+      exportSettings: { ...useVizStore.getState().exportSettings, format: "png" },
+      batch: {
+        ...RUN,
+        jobs: [
+          {
+            id: "j1",
+            trackId: "t1",
+            formatId: "primary",
+            outPath: "D:/out/a.mp4",
+            totalFrames: 600,
+            status: { k: "failed", kind: "unknown", message: "boom" },
+          },
+        ],
+      },
+    });
+    const retry = screen.getByRole("button", { name: /Retry 1 failed/ });
+    expect(isDisabled(retry)).toBe(false);
+    expect(retry.getAttribute("title")).toBeNull();
+    expect(screen.queryByText(/PNG frames/)).toBeNull();
+  });
+});
+
+/**
+ * HD-03 — stems and lyrics are per-track imports the batch cannot carry, so
+ * a stem route or the Vocals (lyrics) source reads 0 in every batched video.
+ * The panel says so up front — but only when the LOADED track actually has
+ * them: that is the one case where the preview shows something the batch
+ * will not. With nothing imported, preview and batch already agree (both
+ * read 0), and the default document ships with the caption style ON, so a
+ * warning keyed on the document alone would nag every fresh session.
+ */
+describe("BatchPanel warns about the loaded track's session-only sources (HD-03)", () => {
+  const STEM = { slot: "stem1", analysis: {} } as unknown as StemEntry;
+  const LINE = { t: 0, end: null, text: "la" };
+
+  it("names stem routes and the Vocals source when the loaded track carries them", () => {
+    const pid = useVizStore.getState().presetId;
+    renderBatch({
+      stems: [STEM],
+      lyrics: [LINE],
+      lyricStyle: { ...useVizStore.getState().lyricStyle, enabled: false },
+      modsByPreset: {
+        [pid]: [
+          { id: "r1", source: "stem1:kick", param: "hue", amount: 0.5 },
+          { id: "r2", source: "vocal", param: "glow", amount: 0.5 },
+        ],
+      },
+    });
+    expect(screen.getByText(/Stem routes will read 0/)).toBeTruthy();
+    expect(screen.getByText(/Vocals \(lyrics\) source will read 0/)).toBeTruthy();
+    expect(screen.queryByText(/captions won't appear/)).toBeNull();
+  });
+
+  it("stays quiet about routes when nothing is imported — preview reads 0 there too", () => {
+    const pid = useVizStore.getState().presetId;
+    renderBatch({
+      stems: [],
+      lyrics: null,
+      modsByPreset: {
+        [pid]: [
+          { id: "r1", source: "stem1:kick", param: "hue", amount: 0.5 },
+          { id: "r2", source: "vocal", param: "glow", amount: 0.5 },
+        ],
+      },
+    });
+    expect(screen.queryByText(/will read 0/)).toBeNull();
+  });
+
+  it("stays quiet when only DSP sources are routed", () => {
+    const pid = useVizStore.getState().presetId;
+    renderBatch({
+      stems: [STEM],
+      lyrics: [LINE],
+      modsByPreset: { [pid]: [{ id: "r1", source: "bass", param: "hue", amount: 0.5 }] },
+    });
+    expect(screen.queryByText(/will read 0/)).toBeNull();
+  });
+
+  it("warns about captions only when lyrics are loaded AND the caption is on", () => {
+    const style = useVizStore.getState().lyricStyle;
+    renderBatch({ lyrics: [LINE], lyricStyle: { ...style, enabled: true } });
+    expect(screen.getByText(/Lyric captions won't appear/)).toBeTruthy();
+    cleanup();
+    // The default document: caption style on, no lyrics loaded. Not a warning.
+    renderBatch({ lyrics: null, lyricStyle: { ...style, enabled: true } });
+    expect(screen.queryByText(/captions won't appear/)).toBeNull();
+  });
+});
+
+/**
+ * HD-24 — the per-track readout shows the job's average speed beside the
+ * current rate, mirroring the two numbers the single lane computes.
+ */
+describe("BatchPanel shows average speed beside the current rate (HD-24)", () => {
+  it("prints both when the job reports both", () => {
+    renderBatch({
+      batchStatus: "running",
+      batch: {
+        ...RUN,
+        jobs: [
+          {
+            id: "j1",
+            trackId: "t1",
+            formatId: "primary",
+            outPath: "D:/out/a.mp4",
+            totalFrames: 600,
+            status: { k: "running", done: 300, total: 600, fps: 42.4, avgFps: 37.6 },
+          },
+        ],
+      },
+    });
+    expect(screen.getByText(/42 fps · avg 38/)).toBeTruthy();
   });
 });

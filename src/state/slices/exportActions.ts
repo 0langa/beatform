@@ -2,6 +2,7 @@ import { wavFromPcm } from "../../audio/dsp/wav";
 import { pcmFromAudioBuffer } from "../../audio/offlineSource";
 import { buildExportOptions } from "../../export/buildExportOptions";
 import { CODEC_LABELS, probeCodecs } from "../../export/codecProbe";
+import { SpeedMeter } from "../../export/speedMeter";
 import { exportVideo, pickSequenceDir } from "../../export/videoExporter";
 import { rasterizeOverlay } from "../../render/overlay";
 import { audiogramActive } from "../audiogram";
@@ -37,23 +38,6 @@ import { getEngine } from "../services";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
 import { shared } from "./shared";
-
-let exportStartedAt = 0;
-/**
- * E4b: recent (elapsedMs-since-start, done) samples for the windowed fps
- * readout, reset alongside exportStartedAt at the top of every export. The
- * dialog's fps used to be a pure cumulative average (done/elapsed since
- * start) — accurate on average, but it rides the encoder-queue fill at
- * render speed for the first few seconds and then decays toward the real
- * steady-state rate for the rest of the run, which is what the owner watched
- * as "16 fps -> 7 fps at 16%" (BACKLOG E4b). This ring keeps only the last
- * SPEED_WINDOW_MS of onProgress samples so the readout tracks the CURRENT
- * rate instead.
- */
-let speedWindow: Array<{ t: number; done: number }> = [];
-/** Window width for the fps readout above. onProgress fires every 10 frames
- * (exportCore.ts), so 5 s covers several samples even on a fast 60 fps job. */
-const SPEED_WINDOW_MS = 5000;
 
 /**
  * R2-11: pixel budget for the in-RAM loop encoders. GIF's single-pass
@@ -395,8 +379,11 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
 
       const ac = new AbortController();
       shared.exportAbort = ac;
-      exportStartedAt = performance.now();
-      speedWindow = [];
+      // E4b: the windowed fps readout (the dialog's) and the cumulative
+      // average (ETA math) come from the shared meter — export/speedMeter.ts
+      // holds the arithmetic and the reasoning; the batch runner reports the
+      // same two numbers per job (HD-24).
+      const speedMeter = new SpeedMeter(performance.now());
       set({
         exportError: null,
         exportDone: null,
@@ -653,26 +640,8 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                   : undefined,
               signal: ac.signal,
               onProgress: (done, total) => {
-                const now = performance.now();
-                const elapsed = (now - exportStartedAt) / 1000;
-                // Windowed rate (E4b): drop samples older than the window,
-                // always keeping at least the one just pushed so the first
-                // call of a run never reads an empty ring.
-                speedWindow.push({ t: now, done });
-                const windowStartT = now - SPEED_WINDOW_MS;
-                while (speedWindow.length > 1 && speedWindow[0].t < windowStartT) {
-                  speedWindow.shift();
-                }
-                const oldest = speedWindow[0];
-                const windowSecs = (now - oldest.t) / 1000;
-                const windowDone = done - oldest.done;
                 set({
-                  exporting: {
-                    done,
-                    total,
-                    speed: windowSecs > 0 && windowDone > 0 ? windowDone / windowSecs : null,
-                    avgSpeed: done > 0 && elapsed > 0 ? done / elapsed : null,
-                  },
+                  exporting: { done, total, ...speedMeter.sample(performance.now(), done) },
                 });
               },
             },

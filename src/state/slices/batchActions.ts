@@ -8,10 +8,17 @@ import {
   takenPaths,
   type BatchRun,
   type BatchTrack,
+  type JobStatus,
 } from "../batch";
-import { runBatch } from "../batchRunner";
+import { runBatch, type BatchRunnerHooks } from "../batchRunner";
 import { estimateExportBytes, preflightWarning, sumDiskNeeds } from "../../export/diskPreflight";
-import { autoBitrateMbps, RESOLUTIONS, SIMPLIFIED_EXPORT_REASON } from "../exportConfig";
+import {
+  autoBitrateMbps,
+  exportFormatLabel,
+  RESOLUTIONS,
+  SIMPLIFIED_EXPORT_REASON,
+  type ExportSettings,
+} from "../exportConfig";
 import { askConfirm, diskSpace, isTauri, pickFolder, scratchDir } from "../platform";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
@@ -29,6 +36,34 @@ let batchStarting = false;
  * below and the panel's disabled-Start tooltip must give the same reason. */
 export const EXPORT_RUNNING_REASON =
   "Finish (or cancel) the running export before starting a batch";
+
+/** What batch renders, in the panel's words — the note beside Start and the
+ * first clause of every settings refusal, so the two cannot drift. */
+export const BATCH_OUTPUT_NOTE = "Batch renders whole tracks as MP4 / WebM";
+
+/**
+ * HD-01 / HD-02: the batch lane renders exactly one thing — the in-worker
+ * WebCodecs video (MP4, or WebM under the VP9 + alpha codec), one whole
+ * track per job. Every other export-panel Format (PNG frames, ProRes, AV1
+ * 10-bit, GIF, WebP) and the Canvas loop Type are single-track lanes the
+ * runner has no path for: the sidecar formats need an ffmpeg session per
+ * file and the deep-color tap, a Canvas loop needs a segment, a crossfade
+ * and the 9:16 spec. startBatch used to read none of it and quietly wrote
+ * MP4s. One sentence, shared by the store guard and the panel's disabled
+ * Start (the F2 idiom), naming the setting and what batch renders. Null =
+ * nothing to refuse.
+ */
+export function batchSettingsRefusal(
+  settings: Pick<ExportSettings, "format" | "mode">,
+): string | null {
+  const fixes: string[] = [];
+  if (settings.mode === "canvas") fixes.push("Type from Canvas loop to Video");
+  if (settings.format !== "mp4") {
+    fixes.push(`Format from ${exportFormatLabel(settings.format)} to MP4`);
+  }
+  if (fixes.length === 0) return null;
+  return `${BATCH_OUTPUT_NOTE} — switch ${fixes.join(" and ")} in the Export panel`;
+}
 
 /**
  * R2-13: the summed warn-and-override disk pre-flight, shared by startBatch
@@ -78,6 +113,55 @@ async function batchDiskPreflight(run: BatchRun): Promise<boolean> {
 }
 
 export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
+  /**
+   * The runner hooks both entry points share — one definition, so a retry
+   * cannot drift from a first run in what it mirrors or how it diagnoses.
+   *
+   * onJobStart/onTrackStart reuse the single-export controller so the
+   * existing Cancel path means "skip this job" for free — one level earlier
+   * for the track window, because while a track is still decoding/analysing
+   * (before any of its jobs exist) Skip must still have something to abort,
+   * or it sits inert until that finishes on its own.
+   *
+   * onJobUpdate mirrors the running job into `exporting` so the rest of the
+   * app already knows a render is in flight: the Export button is
+   * conditionally rendered on !exporting, and runExport has no re-entrancy
+   * guard, so without this a click mid-batch would start a second export
+   * and clobber the shared abort controller. Both rates ride along (HD-24).
+   *
+   * measureScratch is the fresh scratch-volume reading the runner folds into
+   * a failed job's diagnosis (HD-24) — the same re-measure runExport does.
+   */
+  const runnerHooks = (ac: AbortController): BatchRunnerHooks => ({
+    onJobStart: (_id, jobAc) => {
+      shared.exportAbort = jobAc;
+    },
+    onTrackStart: (_trackId, trackAc) => {
+      shared.exportAbort = trackAc;
+    },
+    onJobUpdate: (id: string, status: JobStatus) => {
+      const cur = get().batch;
+      if (!cur) return;
+      set({
+        batch: { ...cur, jobs: cur.jobs.map((j) => (j.id === id ? { ...j, status } : j)) },
+        exporting:
+          status.k === "running"
+            ? {
+                done: status.done,
+                total: Math.max(1, status.total),
+                speed: status.fps,
+                avgSpeed: status.avgFps,
+              }
+            : null,
+      });
+    },
+    measureScratch: async () => {
+      const path = await scratchDir();
+      return path ? diskSpace(path) : null;
+    },
+    shouldStop: () => ac.signal.aborted,
+  });
+
   return {
     setShowBatch(open) {
       // A refusal message belongs to the attempt that earned it — reopening
@@ -184,6 +268,14 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         set({ batchError: "Batch render needs the desktop app (it writes files to a folder)" });
         return;
       }
+      // HD-01 / HD-02: a Format or Type the batch lane cannot render is
+      // refused HERE — before the folder dialog, after the desktop check (an
+      // absolute constraint is named before a fixable one).
+      const refusal = batchSettingsRefusal(get().exportSettings);
+      if (refusal) {
+        set({ batchError: refusal });
+        return;
+      }
       // batchStatus does not become "running" until after the folder dialog, so
       // a double-click on Start would otherwise pass this guard twice and launch
       // two runs writing to the same paths. Claim the slot synchronously.
@@ -196,8 +288,11 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       }
       if (!outDir) return;
 
-      // The format the export panel is currently set to — one output shape in
-      // this version; the model already fans out to several.
+      // The shape the export panel is currently set to — one output shape in
+      // this version; the model already fans out to several. `format` is the
+      // only value FormatPreset admits: the WebCodecs lane's video container
+      // (.mp4, or .webm under the VP9 + alpha codec); every other panel
+      // format was turned away by batchSettingsRefusal above.
       const settings = get().exportSettings;
       const res = RESOLUTIONS[settings.resIdx];
       const fmt: FormatPreset = {
@@ -270,38 +365,7 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       batchAbort = ac;
       set({ batch: run, batchStatus: "running", batchError: null });
       try {
-        await runBatch(run, {
-          onJobStart: (_id, jobAc) => {
-            // Reuse the single-export controller so the existing Cancel path
-            // means "skip this job" for free.
-            shared.exportAbort = jobAc;
-          },
-          onTrackStart: (_trackId, trackAc) => {
-            // Same wiring as onJobStart, one level earlier: while a track is
-            // still decoding/analysing (before any of its jobs exist), Skip
-            // must still have something to abort, or it sits inert until
-            // that finishes on its own.
-            shared.exportAbort = trackAc;
-          },
-          onJobUpdate: (id, status) => {
-            const cur = get().batch;
-            if (!cur) return;
-            const jobs = cur.jobs.map((j) => (j.id === id ? { ...j, status } : j));
-            set({ batch: { ...cur, jobs } });
-            // Mirror into `exporting` so the rest of the app already knows a
-            // render is in flight: the Export button is conditionally rendered
-            // on !exporting, and runExport has no re-entrancy guard, so
-            // without this a click mid-batch would start a second export and
-            // clobber the shared abort controller.
-            set({
-              exporting:
-                status.k === "running"
-                  ? { done: status.done, total: Math.max(1, status.total), speed: status.fps }
-                  : null,
-            });
-          },
-          shouldStop: () => ac.signal.aborted,
-        });
+        await runBatch(run, runnerHooks(ac));
       } finally {
         shared.exportAbort = null;
         batchAbort = null;
@@ -371,28 +435,10 @@ export function batchActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         batchAbort = ac;
         set({ batch: again, batchStatus: "running", batchError: null });
         try {
-          await runBatch(again, {
-            onJobStart: (_id, jobAc) => {
-              shared.exportAbort = jobAc;
-            },
-            // A retry re-decodes/re-analyses any track whose failed job it
-            // just re-queued — same window, same need for Skip to reach it.
-            onTrackStart: (_trackId, trackAc) => {
-              shared.exportAbort = trackAc;
-            },
-            onJobUpdate: (id, status) => {
-              const cur = get().batch;
-              if (!cur) return;
-              set({
-                batch: { ...cur, jobs: cur.jobs.map((j) => (j.id === id ? { ...j, status } : j)) },
-                exporting:
-                  status.k === "running"
-                    ? { done: status.done, total: Math.max(1, status.total), speed: status.fps }
-                    : null,
-              });
-            },
-            shouldStop: () => ac.signal.aborted,
-          });
+          // Same hooks as startBatch: a retry re-decodes/re-analyses any
+          // track whose failed job it just re-queued — same window, same
+          // need for Skip to reach it.
+          await runBatch(again, runnerHooks(ac));
         } finally {
           shared.exportAbort = null;
           batchAbort = null;

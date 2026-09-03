@@ -47,11 +47,10 @@ export interface ExportProgress {
    * Cumulative done/elapsed average across the whole run so far — the OLD
    * `speed` computation, kept for ETA math (total remaining time wants the
    * long-run rate, not a window that swings with a momentary GPU/encoder
-   * hiccup) if a caller ever needs it. null until known. Optional: only the
-   * interactive single-export path (exportActions.ts) populates it today —
-   * batch progress (batchActions.ts) has no separate windowed reading, so it
-   * mirrors its one rate into `speed` and leaves this unset rather than
-   * claim a distinct number it does not have.
+   * hiccup) if a caller ever needs it. null until known. Both lanes populate
+   * it from the shared SpeedMeter (export/speedMeter.ts): the interactive
+   * export directly, the batch by mirroring the running job's `avgFps`
+   * (HD-24). Optional only for callers that construct a record by hand.
    */
   avgSpeed?: number | null;
 }
@@ -255,6 +254,12 @@ const FORMAT_META: Record<ExportFormatId, { label: string; hint: string }> = {
     hint: "Animated .webp loop — much smaller than GIF, keeps alpha; no audio",
   },
 };
+
+/** A format's tile label ("PNG frames", "AV1 10-bit") for prose that names a
+ * setting the user can see — the batch refusal (slices/batchActions.ts). */
+export function exportFormatLabel(id: ExportFormatId): string {
+  return FORMAT_META[id].label;
+}
 
 /** Every format, always, each with the honest reason it cannot run right now. */
 export function exportFormatOptions(caps: ExportCapabilities): ExportOption<ExportFormatId>[] {

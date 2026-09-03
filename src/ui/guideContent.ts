@@ -689,7 +689,7 @@ export const GUIDE: readonly GuideSection[] = [
         p: [
           "Press ",
           { kbd: "B" },
-          ", drop a folder of tracks, and Beatform renders one video per track, titled from each file's own tags (anything untagged falls back to the filename and is flagged). A failed file costs that one video, never the whole night — and if you cancel a run, the jobs it never reached stay queued so you can resume or retry them. That queue lives in the session: closing the app clears it.",
+          ", drop a folder of tracks, and Beatform renders one video per track, titled from each file's own tags (anything untagged falls back to the filename and is flagged). A batch renders whole tracks as MP4 / WebM at the Export panel's codec, resolution and frame rate — PNG frames, ProRes, AV1 10-bit, GIF, WebP and Canvas loops are single-track exports, and the panel says so before you start. Stems and lyrics belong to the track you have loaded, so batched videos render without them; when the loaded track's stems or lyrics feed your setup, the panel warns you first. A failed file costs that one video, never the whole night — and if you cancel a run, the jobs it never reached stay queued so you can resume or retry them. That queue lives in the session: closing the app clears it.",
         ],
       },
     ],

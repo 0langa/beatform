@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrackMetaResult } from "../../audio/trackMeta";
 import type { FormatPreset } from "../../export/buildExportOptions";
 import type { BatchRun, BatchTrack } from "../batch";
@@ -52,6 +52,7 @@ vi.mock("../platform", async (importOriginal) => {
     diskSpace: vi.fn(async () => null),
     scratchDir: vi.fn(async () => null),
     askConfirm: vi.fn(async () => true),
+    pickFolder: vi.fn(async () => null),
   };
 });
 
@@ -68,10 +69,11 @@ vi.mock("../batchRunner", async (importOriginal) => {
 vi.mock("../../audio/trackMeta", () => ({ readTrackMeta: vi.fn() }));
 
 const { useVizStore } = await import("../store");
-const { askConfirm, diskSpace } = await import("../platform");
+const { askConfirm, diskSpace, isTauri, pickFolder } = await import("../platform");
 const { runBatch } = await import("../batchRunner");
 const { readTrackMeta } = await import("../../audio/trackMeta");
 const { shared } = await import("./shared");
+const { batchSettingsRefusal } = await import("./batchActions");
 
 const s = () => useVizStore.getState();
 
@@ -341,5 +343,89 @@ describe("addBatchTracks aggregates batchScanning across overlapping drops (R2-3
     await second;
     expect(s().batchScanning).toBe(0);
     expect(titles()).toEqual(["B1"]);
+  });
+});
+
+/**
+ * HD-01 / HD-02 — the batch lane renders exactly one thing: the in-worker
+ * WebCodecs video (MP4, or WebM under the VP9 + alpha codec), one whole
+ * track per job. The export panel offers five other formats and a Canvas
+ * loop Type, and startBatch used to read none of that: a user who picked
+ * PNG frames, ProRes, AV1 10-bit, GIF or WebP — or a Canvas loop — queued a
+ * night of work and got plain MP4s with no notice (deep color, which
+ * follows the format, was dropped along with it). Now the refusal comes
+ * BEFORE the folder dialog, names the setting, and says what batch renders.
+ */
+describe("startBatch refuses what the batch lane cannot render (HD-01, HD-02)", () => {
+  const settings = () => useVizStore.getState().exportSettings;
+  const idle = (): BatchRun => ({ ...doneRun(), jobs: [] });
+
+  beforeEach(() => {
+    // Desktop: the settings check must be reached, which sits past the
+    // desktop-only refusal (an absolute constraint is named before a
+    // fixable one — the exportConfig capability-map rule).
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(pickFolder).mockClear();
+    useVizStore.setState({ batch: idle(), batchStatus: "idle", batchError: null });
+  });
+  afterEach(() => {
+    vi.mocked(isTauri).mockReturnValue(false);
+    useVizStore.setState({ exportSettings: { ...settings(), format: "mp4", mode: "video" } });
+  });
+
+  it.each([
+    ["png", "PNG frames"],
+    ["prores", "ProRes"],
+    ["av1-10", "AV1 10-bit"],
+    ["gif", "GIF"],
+    ["webp", "WebP"],
+  ] as const)("format %s: refuses before the folder dialog, naming %s", async (format, label) => {
+    useVizStore.setState({ exportSettings: { ...settings(), format } });
+    await s().startBatch();
+    expect(pickFolder).not.toHaveBeenCalled();
+    expect(runBatch).not.toHaveBeenCalled();
+    expect(s().batchError).toContain(label);
+    expect(s().batchError).toMatch(/MP4 \/ WebM/);
+    expect(s().batchStatus).toBe("idle");
+  });
+
+  it("Canvas loop mode: refuses — a batch renders whole tracks", async () => {
+    useVizStore.setState({ exportSettings: { ...settings(), mode: "canvas" } });
+    await s().startBatch();
+    expect(pickFolder).not.toHaveBeenCalled();
+    expect(s().batchError).toMatch(/Canvas loop/);
+    expect(s().batchError).toMatch(/Video/);
+  });
+
+  it("names both fixes when both are wrong, so the user is not sent round twice", async () => {
+    useVizStore.setState({ exportSettings: { ...settings(), mode: "canvas", format: "gif" } });
+    await s().startBatch();
+    expect(s().batchError).toMatch(/Canvas loop/);
+    expect(s().batchError).toMatch(/GIF/);
+  });
+
+  it("MP4 + Video passes the guard and reaches the folder dialog", async () => {
+    useVizStore.setState({ exportSettings: { ...settings(), format: "mp4", mode: "video" } });
+    await s().startBatch(); // the mocked dialog returns null -> quiet return
+    expect(pickFolder).toHaveBeenCalledTimes(1);
+    expect(s().batchError).toBeNull();
+  });
+
+  it("a refused Start holds no claim — fix the setting and Start works", async () => {
+    useVizStore.setState({ exportSettings: { ...settings(), format: "png" } });
+    await s().startBatch();
+    expect(pickFolder).not.toHaveBeenCalled();
+    useVizStore.setState({ exportSettings: { ...settings(), format: "mp4" } });
+    await s().startBatch();
+    expect(pickFolder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("batchSettingsRefusal — the one sentence the store guard and the panel share", () => {
+  it("is null for a whole-track MP4 / WebM export", () => {
+    expect(batchSettingsRefusal({ format: "mp4", mode: "video" })).toBeNull();
+  });
+  it("names the format's tile label, not its id", () => {
+    expect(batchSettingsRefusal({ format: "av1-10", mode: "video" })).toContain("AV1 10-bit");
   });
 });

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  batchInertSources,
   classifyError,
+  describeFailure,
   expandJobs,
   isRunComplete,
   retryFailed,
@@ -10,6 +12,7 @@ import {
   type BatchTrack,
 } from "./batch";
 import type { FormatPreset } from "../export/buildExportOptions";
+import type { ProjectDocument } from "./project";
 
 const F16: FormatPreset = {
   id: "16:9",
@@ -213,7 +216,7 @@ describe("runStats", () => {
         formatId: "16:9",
         outPath: "/o/a.mp4",
         totalFrames: 300,
-        status: { k: "running", done: 50, total: 300, fps: 30 },
+        status: { k: "running", done: 50, total: 300, fps: 30, avgFps: 30 },
       },
     ]);
     expect(runStats(r, 5_000).etaMs).toBeNull();
@@ -264,7 +267,7 @@ describe("runStats", () => {
         formatId: "16:9",
         outPath: "/o/b.mp4",
         totalFrames: null,
-        status: { k: "running", done: 50, total: 0, fps: null },
+        status: { k: "running", done: 50, total: 0, fps: null, avgFps: null },
       },
     ]);
     const s = runStats(r, 10_000);
@@ -511,5 +514,153 @@ describe("classifyError", () => {
     // beside real failures — and re-rendering it under "Retry failed" — would
     // misreport what happened.
     expect(classifyError(new DOMException("stop", "AbortError"))).toBeNull();
+  });
+});
+
+/**
+ * HD-24 — a batch job's failure gets the single lane's diagnosis.
+ *
+ * runExport folds `translateExportError` over every failure with a FRESH
+ * scratch-volume reading, so a NotReadableError (the Blob API's stock text
+ * blames "permission problems" on the drive the user exported TO — the one
+ * drive known to be fine) is named as out-of-working-space when scratch
+ * really is full. The batch lane only ever ran `classifyError`, so its rows
+ * carried the misleading raw text. describeFailure is classifyError plus
+ * that translation, and a translated failure is a DISK failure whatever the
+ * raw text matched.
+ */
+describe("describeFailure", () => {
+  const lowScratch = { freeBytes: 100e6, totalBytes: 500e9, root: "C:\\" };
+  const roomyScratch = { freeBytes: 400e9, totalBytes: 500e9, root: "C:\\" };
+
+  it("translates a Windows disk-full into the single lane's sentence, kind disk", () => {
+    const d = describeFailure(
+      new Error("There is not enough space on the disk. (os error 112)"),
+      null,
+    );
+    expect(d?.kind).toBe("disk");
+    expect(d?.message).toMatch(/ran out of space while writing/);
+  });
+
+  it("names a NotReadableError as working-space exhaustion only when scratch is really low", () => {
+    const nre = new DOMException("The requested file could not be read", "NotReadableError");
+    const low = describeFailure(nre, lowScratch);
+    expect(low?.kind).toBe("disk");
+    expect(low?.message).toMatch(/working space on C:\\/);
+    // Plenty of scratch: no confident disk diagnosis — the raw text and the
+    // ordinary classification stand, exactly like classifyError alone.
+    const roomy = describeFailure(nre, roomyScratch);
+    expect(roomy).toEqual(classifyError(nre));
+    expect(roomy?.kind).toBe("unknown");
+  });
+
+  it("leaves untranslatable failures exactly as classifyError reads them", () => {
+    const gpu = new Error("GPU device lost during export: reset");
+    gpu.name = "GpuDeviceLostError";
+    expect(describeFailure(gpu, lowScratch)).toEqual(classifyError(gpu));
+  });
+
+  it("still reads an abort as not-a-failure", () => {
+    expect(describeFailure(new DOMException("stop", "AbortError"), lowScratch)).toBeNull();
+  });
+});
+
+/**
+ * HD-03 — stems and lyrics are imported PER TRACK (loadFile clears both), so
+ * no batch track can carry them: a stem route or the Vocals (lyrics) source
+ * reads 0 in every batched video — as it would in an interactive export of
+ * any track you had not imported them for. That is the determinism law
+ * holding, not breaking; what was wrong is that nothing SAID so. This helper
+ * is what the panel warns from: which of the LOADED track's imports the
+ * document the run will freeze actually leans on. Both halves must hold —
+ * a route with nothing imported already reads 0 in preview (nothing
+ * diverges, nothing to say), and `lyricStyle.enabled` is TRUE by default, so
+ * a caption warning keyed on the style alone would fire on every fresh
+ * document with no lyrics anywhere near it.
+ */
+describe("batchInertSources", () => {
+  const route = (source: string, param = "hue") => ({
+    id: `r-${source}`,
+    source,
+    param,
+    amount: 0.5,
+  });
+  const doc = (over: Record<string, unknown>) =>
+    ({
+      presetId: "bars",
+      modsByPreset: {},
+      timeline: { enabled: false, scenes: [], lanes: [] },
+      lyricStyle: { enabled: false },
+      ...over,
+    }) as unknown as ProjectDocument;
+  const LOADED = { hasStems: true, hasLyrics: true };
+  const NOTHING = { hasStems: false, hasLyrics: false };
+
+  it("reads nothing off a document that routes only DSP sources", () => {
+    expect(
+      batchInertSources(doc({ modsByPreset: { bars: [route("bass"), route("kick")] } }), LOADED),
+    ).toEqual({ stems: false, vocal: false, captions: false });
+  });
+
+  it("flags stem routes and the Vocals source on the active mode when the track carries them", () => {
+    const s = batchInertSources(
+      doc({ modsByPreset: { bars: [route("stem1:kick"), route("vocal")] } }),
+      LOADED,
+    );
+    expect(s.stems).toBe(true);
+    expect(s.vocal).toBe(true);
+  });
+
+  it("stays quiet about routes when nothing is imported — preview reads 0 there too", () => {
+    const s = batchInertSources(
+      doc({ modsByPreset: { bars: [route("stem1:kick"), route("vocal")] } }),
+      NOTHING,
+    );
+    expect(s).toEqual({ stems: false, vocal: false, captions: false });
+    // Each half gates its own source: stems loaded says nothing about lyrics.
+    const stemsOnly = batchInertSources(
+      doc({ modsByPreset: { bars: [route("stem1:kick"), route("vocal")] } }),
+      { hasStems: true, hasLyrics: false },
+    );
+    expect(stemsOnly).toEqual({ stems: true, vocal: false, captions: false });
+  });
+
+  it("ignores routes on a mode the run will never render", () => {
+    // Routes are stored per mode; a stem route parked on an INACTIVE mode
+    // never evaluates, so warning about it would be a false alarm.
+    const s = batchInertSources(doc({ modsByPreset: { tunnel: [route("stem2:bass")] } }), LOADED);
+    expect(s.stems).toBe(false);
+  });
+
+  it("looks at every scene's mode when the timeline is enabled", () => {
+    const scenes = [{ id: "s1", name: "A", presetId: "tunnel", start: 0 }];
+    const on = batchInertSources(
+      doc({
+        modsByPreset: { tunnel: [route("stem2:bass")] },
+        timeline: { enabled: true, scenes, lanes: [] },
+      }),
+      LOADED,
+    );
+    expect(on.stems).toBe(true);
+    // ...and not when it is off: a disabled timeline's scenes are inert too.
+    const off = batchInertSources(
+      doc({
+        modsByPreset: { tunnel: [route("stem2:bass")] },
+        timeline: { enabled: false, scenes, lanes: [] },
+      }),
+      LOADED,
+    );
+    expect(off.stems).toBe(false);
+  });
+
+  it("flags an enabled lyric caption only while the loaded track has lyrics to draw", () => {
+    const styled = doc({ lyricStyle: { enabled: true } });
+    expect(batchInertSources(styled, LOADED).captions).toBe(true);
+    // The default document ships with the caption style ON and no lyrics
+    // loaded; that is every user's starting point, not a warning.
+    expect(batchInertSources(styled, NOTHING).captions).toBe(false);
+    // And lyrics loaded with the caption switched off draw nothing in the
+    // preview either — nothing to warn about.
+    expect(batchInertSources(doc({}), LOADED).captions).toBe(false);
   });
 });
