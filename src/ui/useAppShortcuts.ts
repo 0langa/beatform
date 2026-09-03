@@ -408,6 +408,24 @@ export const SHORTCUT_SHEET: readonly ShortcutRow[] = [
     action: "Redo the last undone change",
     group: "Editing",
   },
+  // The lyrics correction editor (LyricsEditPanel.tsx) keeps its own undo
+  // history and handles these keys itself while focus is inside it — the
+  // app-wide Ctrl+Z above never sees them there (HD-20). The coverage test
+  // scans that panel's handler too, and requires these rows to SAY "lyric".
+  {
+    keys: ["Ctrl/Cmd+Z"],
+    literals: ["z", "Z"],
+    action: "Undo the last lyric edit",
+    group: "Editing",
+    note: "with focus in the Edit lyrics section, which keeps its own undo history",
+  },
+  {
+    keys: ["Ctrl/Cmd+Y", "Ctrl/Cmd+Shift+Z"],
+    literals: ["y", "Y", "z", "Z"],
+    action: "Redo the last undone lyric edit",
+    group: "Editing",
+    note: "with focus in the Edit lyrics section",
+  },
 ];
 
 /**

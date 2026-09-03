@@ -47,6 +47,7 @@ function trackDuration(): number {
 
 export function LyricsGenPanel() {
   const lyricsGen = useVizStore((s) => s.lyricsGen);
+  const realign = useVizStore((s) => s.lyricsRealign);
   const store = useVizStore.getState;
   const [tier, setTier] = useState<LyricsTier>("small");
   const [language, setLanguage] = useState("auto");
@@ -69,12 +70,83 @@ export function LyricsGenPanel() {
     );
   }
 
-  const { models, dml, phase, download, gen } = lyricsGen;
+  const { models, dml, phase, download, gen, modelOp } = lyricsGen;
   const duration = trackDuration();
   const estimate =
     duration > 0
       ? formatEstimate(estimateGenerateSeconds(duration, tier, dml === true, measuredRtf))
       : null;
+
+  // HD-17: the model manager — what is on disk, with Verify (installed
+  // files) and Remove (installed files and stalled partial downloads). It
+  // rides under every phase view so a download in progress still shows what
+  // already landed, locked with the reason on each button; the store guards
+  // the same conditions, this is the visible half.
+  const onDisk = models?.models.filter((m) => m.installed || m.partBytes > 0) ?? [];
+  const onDiskBytes = onDisk.reduce((n, m) => n + (m.installed ? m.bytes : m.partBytes), 0);
+  const modelsBusyWhy =
+    phase === "downloading"
+      ? "Wait for the download to finish"
+      : phase === "generating"
+        ? "Wait for the running lyrics job"
+        : modelOp
+          ? modelOp.kind === "verify"
+            ? `Checking ${modelOp.id}…`
+            : `Removing ${modelOp.id}…`
+          : realign
+            ? "Wait for the running line re-align"
+            : null;
+  const modelManager =
+    models != null && onDisk.length > 0 ? (
+      <div className="lyr-models">
+        <div className="lyr-models-head" title={`Stored in ${models.modelsDir}`}>
+          <span className="lyr-count">Models on this PC · {formatBytes(onDiskBytes)}</span>
+        </div>
+        {onDisk.map((m) => {
+          const mine = modelOp?.id === m.id ? modelOp.kind : null;
+          return (
+            <div key={m.id} className="lyr-model-row" data-lyr-model={m.id}>
+              <span className="lyr-model-name" title={m.fileName}>
+                {m.id}
+              </span>
+              <span className="lyr-model-size">
+                {m.installed ? formatBytes(m.bytes) : `${formatBytes(m.partBytes)} partial`}
+              </span>
+              <span className="lyr-model-btns">
+                {m.installed && (
+                  <button
+                    type="button"
+                    className="text-btn"
+                    disabled={modelsBusyWhy !== null}
+                    title={
+                      modelsBusyWhy ??
+                      "Re-check this file against its published checksum — a few seconds, on this PC"
+                    }
+                    onClick={() => void store().verifyLyricsModel(m.id)}
+                  >
+                    {mine === "verify" ? "checking…" : "Verify"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="text-btn danger"
+                  disabled={modelsBusyWhy !== null}
+                  title={
+                    modelsBusyWhy ??
+                    (m.installed
+                      ? "Delete this model from disk — generating lyrics with it will need the download again"
+                      : "Delete the partial download — the next download starts over")
+                  }
+                  onClick={() => void store().removeLyricsModel(m.id)}
+                >
+                  {mine === "remove" ? "removing…" : "Remove"}
+                </button>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    ) : null;
 
   if (phase === "downloading" && download) {
     const pct = download.total > 0 ? Math.round((100 * download.received) / download.total) : 0;
@@ -93,6 +165,7 @@ export function LyricsGenPanel() {
           </button>
         </div>
         <p className="section-hint">Cancel keeps what is downloaded — the next try resumes.</p>
+        {modelManager}
       </div>
     );
   }
@@ -120,6 +193,7 @@ export function LyricsGenPanel() {
             Cancel
           </button>
         </div>
+        {modelManager}
       </div>
     );
   }
@@ -148,11 +222,12 @@ export function LyricsGenPanel() {
       {ready ? (
         <button
           className="text-btn"
-          disabled={duration <= 0}
+          disabled={duration <= 0 || modelsBusyWhy !== null}
           title={
-            duration <= 0
+            modelsBusyWhy ??
+            (duration <= 0
               ? "Load a track first"
-              : "Isolate the vocals and transcribe them — fully on this PC"
+              : "Isolate the vocals and transcribe them — fully on this PC")
           }
           onClick={() => void store().generateLyrics(tier, language)}
         >
@@ -161,8 +236,11 @@ export function LyricsGenPanel() {
       ) : (
         <button
           className="text-btn"
-          disabled={models == null}
-          title="One-time download from Beatform's model mirror; every file is checksum-verified"
+          disabled={models == null || modelsBusyWhy !== null}
+          title={
+            modelsBusyWhy ??
+            "One-time download from Beatform's model mirror; every file is checksum-verified"
+          }
           onClick={() => void store().downloadLyricsTier(tier)}
         >
           Download models{dl ? ` (${formatBytes(dl.remaining)})` : "…"}
@@ -176,6 +254,7 @@ export function LyricsGenPanel() {
         automatically once its model is installed. Words will need a few fixes — that is normal for
         sung vocals.
       </p>
+      {modelManager}
     </div>
   );
 }

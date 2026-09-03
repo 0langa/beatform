@@ -636,6 +636,12 @@ interface Actions {
    * loadLyricsText exactly like an imported .lrc. */
   generateLyrics(tier: LyricsTier, language: string): Promise<void>;
   cancelLyricsGenerate(): void;
+  /** Re-hash one installed lyrics model against the manifest (HD-17);
+   * the outcome lands as a notice (intact) or an error (damaged). */
+  verifyLyricsModel(id: string): Promise<void>;
+  /** Delete one lyrics model — or its stalled partial download — from
+   * disk, after asking. Refreshes the manifest state like a download. */
+  removeLyricsModel(id: string): Promise<void>;
   // --- lyrics correction editor (FEAT-004 phase 4) ---
   /** Replace line i's text (word timings follow; see lyricsEdit.setLineText). */
   editLyricLineText(i: number, text: string): void;
@@ -662,6 +668,9 @@ interface Actions {
   exportLyricsLrc(): Promise<void>;
   /** Re-run forced alignment for one line against the loaded track. */
   realignLyricLine(i: number): Promise<void>;
+  /** Cancel the running line re-align (HD-08): the shared sidecar cancel,
+   * and whatever it still returns is dropped — the lyrics stay untouched. */
+  cancelLyricsRealign(): void;
   setLyricStyle(patch: Partial<LyricStyle>): void;
   /** Toggle/adjust the audiogram overlay elements. */
   setAudiogram(patch: Partial<AudiogramSettings>): void;

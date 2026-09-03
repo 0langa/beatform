@@ -254,6 +254,7 @@ export function LyricsEditPanel() {
   const realign = useVizStore((s) => s.lyricsRealign);
   const genPhase = useVizStore((s) => s.lyricsGen.phase);
   const genModels = useVizStore((s) => s.lyricsGen.models);
+  const genModelOp = useVizStore((s) => s.lyricsGen.modelOp);
   const store = useVizStore.getState;
   const [sel, setSel] = useState(-1);
   const [wordsOpen, setWordsOpen] = useState(false);
@@ -305,7 +306,13 @@ export function LyricsEditPanel() {
         ? "Needs the lyrics models — download them under Lyrics above"
         : genPhase !== "idle"
           ? "Wait for the running lyrics job"
-          : null;
+          : genModelOp
+            ? // HD-17: the aligner reads the model files — the store refuses a
+              // re-align during a verify/remove, so the button says why.
+              genModelOp.kind === "verify"
+              ? `Checking ${genModelOp.id} — re-align can run when the check is done`
+              : `Removing ${genModelOp.id} — re-align can run when it is done`
+            : null;
 
   // R2-21: while a line re-align is in flight, structural edits (split/merge/
   // insert/delete — and, review D2, undo/redo, which replay whole sheets)
@@ -390,13 +397,34 @@ export function LyricsEditPanel() {
           <button
             type="button"
             className="text-btn"
-            title="Save the corrected lyrics as an .lrc file — word timing included where present"
+            title="Save the corrected lyrics as an .lrc file — word timing included where present; lyrics that came in as .srt are saved as .lrc too"
             onClick={() => void store().exportLyricsLrc()}
           >
             Save .lrc
           </button>
         </span>
       </div>
+      {realign && (
+        // HD-08: the aligner reports no percent, so the bar sweeps
+        // indeterminately; Cancel is the generate lane's — the same sidecar
+        // cancel, and whatever the run still returns is dropped.
+        <div className="lyr-realign">
+          <div className="progress">
+            <div className="progress-fill indeterminate" />
+          </div>
+          <div className="export-status">
+            <span>Re-aligning line {realign.index + 1}…</span>
+            <button
+              type="button"
+              className="text-btn danger"
+              title="Stop the re-align — the line keeps the timing it has now"
+              onClick={() => store().cancelLyricsRealign()}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       <div className="lyr-list" ref={listRef}>
         {lyrics.map((line, i) => {
           const sev = lineSeverity(line);

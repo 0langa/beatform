@@ -1941,7 +1941,7 @@ export function ParamsPanel() {
                 title={
                   lyricsGenPhase !== "idle"
                     ? "Generating lyrics — importing now would be overwritten when it finishes"
-                    : "Import timed lyrics (.lrc from any lyrics site, or .srt) — drawn as a karaoke overlay, identical in exports"
+                    : "Import timed lyrics (.lrc from any lyrics site, or .srt — converted to LRC; every save writes .lrc) — drawn as a karaoke overlay, identical in exports"
                 }
               >
                 + Import lyrics…
