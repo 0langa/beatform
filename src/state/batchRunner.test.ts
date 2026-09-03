@@ -455,3 +455,183 @@ describe("runBatch aborts the whole run when WebGPU is unavailable (F2)", () => 
     expect(decodeAudioData).toHaveBeenCalledTimes(2);
   });
 });
+
+/** Decode + analysis succeed at once; the job itself is the test's business. */
+function primeDecodeOk() {
+  vi.mocked(getEngine).mockReturnValue({
+    ctx: {
+      decodeAudioData: () =>
+        Promise.resolve({ getChannelData: () => new Float32Array(4) } as unknown as AudioBuffer),
+    },
+  } as unknown as ReturnType<typeof getEngine>);
+  vi.mocked(analyzeTrack).mockReturnValue({
+    id: 1,
+    result: Promise.resolve({ grid: null, key: null, sections: [] }),
+  });
+}
+
+/**
+ * HD-03 — the determinism direction the law actually protects here.
+ *
+ * Stems and lyrics are imported per loaded track (loadFile clears both), so
+ * an interactive export of any batch track — loaded fresh — carries neither.
+ * The runner must therefore NOT reach for the session's stems/lyrics (those
+ * belong to whatever track is loaded in the editor) and paint them onto
+ * twenty other songs. The built TrackInput stays free of both; the panel's
+ * pre-flight warning (batchInertSources) is where the limit becomes visible.
+ */
+describe("runBatch never carries another track's stems or lyrics (HD-03)", () => {
+  afterEach(() => {
+    vi.mocked(getEngine).mockReset();
+    vi.mocked(analyzeTrack).mockReset();
+    vi.mocked(exportVideo).mockReset();
+    vi.mocked(buildExportOptions).mockClear();
+  });
+
+  it("builds every job with stems, lyrics and vocalLines absent", async () => {
+    primeDecodeOk();
+    vi.mocked(exportVideo).mockResolvedValue({ bytes: 1, seconds: 1, audioCodec: "aac" });
+    // Earlier describes in this file also drive buildExportOptions; this
+    // test counts calls, so start from a clean log.
+    vi.mocked(buildExportOptions).mockClear();
+
+    await runBatch(fakeRun(["t1", "t2"].map(fakeTrack)), hooks().hooks);
+
+    expect(vi.mocked(buildExportOptions)).toHaveBeenCalledTimes(2);
+    for (const call of vi.mocked(buildExportOptions).mock.calls) {
+      const track = call[2];
+      expect(track.stems).toBeUndefined();
+      expect(track.lyrics).toBeUndefined();
+      expect(track.vocalLines).toBeUndefined();
+    }
+  });
+});
+
+/**
+ * HD-24 — a failed batch job gets the single lane's diagnosis, not a raw
+ * classification. runExport re-measures the scratch volume at failure time
+ * and folds translateExportError over the error; the runner only ever ran
+ * classifyError, so the row said whatever the thrower said. The hook
+ * `measureScratch` is the store's fresh reading; without it the raw text
+ * stands (nothing is invented from a stale pre-flight snapshot).
+ */
+describe("runBatch describes a failed job the way the single lane does (HD-24)", () => {
+  afterEach(() => {
+    vi.mocked(getEngine).mockReset();
+    vi.mocked(analyzeTrack).mockReset();
+    vi.mocked(exportVideo).mockReset();
+  });
+
+  const failedMessage = (s: JobStatus | undefined) =>
+    s?.k === "failed" ? s.message : `not failed: ${JSON.stringify(s)}`;
+
+  it("translates a Windows disk-full into the actionable sentence, kind disk", async () => {
+    primeDecodeOk();
+    vi.mocked(exportVideo).mockRejectedValue(
+      new Error("There is not enough space on the disk. (os error 112)"),
+    );
+    const { hooks: h, statuses } = hooks();
+    await runBatch(fakeRun([fakeTrack("t1")]), h);
+    expect(statuses.get("job-t1")).toMatchObject({ k: "failed", kind: "disk" });
+    expect(failedMessage(statuses.get("job-t1"))).toMatch(/ran out of space while writing/);
+  });
+
+  it("re-measures scratch at failure time: a NotReadableError on a full scratch drive is a disk failure", async () => {
+    primeDecodeOk();
+    vi.mocked(exportVideo).mockRejectedValue(
+      new DOMException("The requested file could not be read", "NotReadableError"),
+    );
+    const measureScratch = vi.fn(async () => ({
+      freeBytes: 50e6,
+      totalBytes: 500e9,
+      root: "C:\\",
+    }));
+    const { hooks: h, statuses } = hooks({ measureScratch });
+    await runBatch(fakeRun([fakeTrack("t1")]), h);
+    expect(measureScratch).toHaveBeenCalledTimes(1);
+    expect(statuses.get("job-t1")).toMatchObject({ k: "failed", kind: "disk" });
+    expect(failedMessage(statuses.get("job-t1"))).toMatch(/working space on C:\\/);
+  });
+
+  it("with no scratch reading, the raw text stands — nothing is diagnosed from thin air", async () => {
+    primeDecodeOk();
+    vi.mocked(exportVideo).mockRejectedValue(
+      new DOMException("The requested file could not be read", "NotReadableError"),
+    );
+    const { hooks: h, statuses } = hooks();
+    await runBatch(fakeRun([fakeTrack("t1")]), h);
+    expect(statuses.get("job-t1")).toEqual({
+      k: "failed",
+      kind: "unknown",
+      message: "The requested file could not be read",
+    });
+  });
+
+  it("a throwing scratch measurement never turns a failure into a crash", async () => {
+    primeDecodeOk();
+    vi.mocked(exportVideo).mockRejectedValue(new Error("something else"));
+    const { hooks: h, statuses } = hooks({
+      measureScratch: vi.fn(async () => {
+        throw new Error("forbidden path");
+      }),
+    });
+    await runBatch(fakeRun([fakeTrack("t1")]), h);
+    expect(statuses.get("job-t1")).toMatchObject({ k: "failed", kind: "unknown" });
+  });
+});
+
+/**
+ * HD-24 — the per-job readout carries BOTH rates the single lane computes.
+ * The runner's old `fps` was done / seconds-since-job-start: a cumulative
+ * average dressed as the current rate (the E4b artifact, per job). Now `fps`
+ * is the windowed recent rate and `avgFps` the job's cumulative average, from
+ * the shared SpeedMeter, so the panel can show one beside the other.
+ */
+describe("runBatch reports a windowed rate and the job average (HD-24)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(getEngine).mockReset();
+    vi.mocked(analyzeTrack).mockReset();
+    vi.mocked(exportVideo).mockReset();
+    // Back to this file's module-level `{}` stub (mockReset restores the
+    // implementation vi.fn was created with).
+    vi.mocked(buildExportOptions).mockReset();
+  });
+
+  it("fps tracks the recent stretch while avgFps remembers the whole job", async () => {
+    primeDecodeOk();
+    let mockNow = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => mockNow);
+    // buildExportOptions is stubbed to `{}` in this file — hand the io object
+    // through so exportVideo can drive its onProgress.
+    vi.mocked(buildExportOptions).mockImplementation(
+      (_doc, _fmt, _track, _overlay, io) => io as never,
+    );
+    vi.mocked(exportVideo).mockImplementation(async (_buf, opts) => {
+      // Fast: 100 frames in 1000 ms; slow: 100 more over the next 5800 ms.
+      for (let i = 1; i <= 10; i++) {
+        mockNow = i * 100;
+        opts.onProgress!(i * 10, 300);
+      }
+      for (let i = 1; i <= 10; i++) {
+        mockNow = 1000 + i * 580;
+        opts.onProgress!(100 + i * 10, 300);
+      }
+      return { bytes: 1, seconds: 1, audioCodec: "aac" };
+    });
+    const seen: JobStatus[] = [];
+    const { hooks: h } = hooks({ onJobUpdate: (_id, s) => seen.push(s) });
+
+    await runBatch(fakeRun([fakeTrack("t1")]), h);
+
+    const running = seen.filter(
+      (s): s is Extract<JobStatus, { k: "running" }> => s.k === "running",
+    );
+    const last = running[running.length - 1];
+    expect(last.done).toBe(200);
+    expect(last.fps).not.toBeNull();
+    expect(last.fps!).toBeGreaterThan(14);
+    expect(last.fps!).toBeLessThan(19);
+    expect(last.avgFps).toBeCloseTo(200 / 6.8, 5);
+  });
+});

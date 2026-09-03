@@ -1,6 +1,7 @@
 import type { OverlayMeta } from "../render/overlay";
 import type { PresetDef } from "../render/types";
 import type { FormatPreset } from "../export/buildExportOptions";
+import { translateExportError, type VolumeSpace } from "../export/diskPreflight";
 import type { ProjectDocument } from "./project";
 
 /**
@@ -30,7 +31,17 @@ export type FailKind = "input" | "gpu" | "disk" | "unknown";
 
 export type JobStatus =
   | { k: "queued" }
-  | { k: "running"; done: number; total: number; fps: number | null }
+  | {
+      k: "running";
+      done: number;
+      total: number;
+      /** Frames/s over the last few seconds (SpeedMeter's windowed rate) —
+       * the CURRENT pipeline rate. null until enough recent samples exist. */
+      fps: number | null;
+      /** Frames/s averaged over the whole job so far — the long-run rate,
+       * shown beside `fps` so a momentary stall reads as one (HD-24). */
+      avgFps: number | null;
+    }
   | { k: "done"; bytes: number; path: string }
   | { k: "failed"; kind: FailKind; message: string }
   /**
@@ -388,4 +399,95 @@ export function classifyError(e: unknown): { kind: FailKind; message: string } |
   }
   if (/decode|empty|unsupported/i.test(message)) return { kind: "input", message };
   return { kind: "unknown", message };
+}
+
+/**
+ * classifyError plus the single lane's translation (HD-24).
+ *
+ * runExport folds `translateExportError` over every failure with a FRESH
+ * scratch-volume reading: the Blob API's NotReadableError blames "permission
+ * problems" on the drive the user exported TO (the one drive known to be
+ * fine) when the real cause is a full working drive, and Windows spells
+ * disk-full three different ways. A failure the translator recognizes is a
+ * disk failure whatever classifyError's regexes made of the raw text.
+ * `scratch` is the caller's fresh measurement — null means "not measured",
+ * and nothing is diagnosed from thin air: the raw text stands. Same
+ * null-for-abort contract as classifyError.
+ */
+export function describeFailure(
+  e: unknown,
+  scratch: VolumeSpace | null,
+): { kind: FailKind; message: string } | null {
+  const c = classifyError(e);
+  if (!c) return null;
+  const translated = translateExportError(e, scratch);
+  return translated ? { kind: "disk", message: translated } : c;
+}
+
+/** The loaded track's per-track imports the batch cannot carry — see
+ * batchInertSources. Each flag is true only when the preview is USING that
+ * import right now, so the batch will visibly differ from it. */
+export interface BatchInertSources {
+  /** Stems are loaded and a stem route ("stem1:kick"…) sits on a mode the
+   * run will render. */
+  stems: boolean;
+  /** Lyrics are loaded and the Vocals (lyrics) source sits on a mode the run
+   * will render. */
+  vocal: boolean;
+  /** Lyrics are loaded and the caption overlay is switched on. */
+  captions: boolean;
+}
+
+/** What the session has imported for the LOADED track (store.stems /
+ * store.lyrics) — the half of the question the document cannot answer. */
+export interface BatchSessionImports {
+  hasStems: boolean;
+  hasLyrics: boolean;
+}
+
+/**
+ * Which of the loaded track's imports the document the run will freeze leans
+ * on (HD-03) — the exact cases where the preview shows something the batch
+ * will not.
+ *
+ * Stems and lyrics are imported for the LOADED track and cleared by every
+ * load (store.ts loadFile): stems are bounced from the same session as that
+ * master and aligned to its 0:00, lyrics are timed to it. So no batch track
+ * can carry them, and handing the loaded track's stems to twenty other songs
+ * would paint one song's drums onto every other — a stem route or the Vocals
+ * (lyrics) source reads 0 in every batched video, and an enabled caption
+ * draws nothing, exactly what an interactive export of the same track,
+ * loaded fresh, would do. That is the determinism law holding; what was
+ * wrong is that nothing said so before a night's render. The panel warns
+ * from this.
+ *
+ * Both halves must hold before a flag is raised. A route with nothing
+ * imported already reads 0 in the preview, so batch and preview agree and
+ * there is nothing to say; and `lyricStyle.enabled` is TRUE by default, so a
+ * caption warning keyed on the document alone would nag every fresh session
+ * that never loaded a lyric.
+ *
+ * Routes are stored per mode, so only the modes the run renders count: the
+ * active one, plus every scene's when the timeline is enabled. A stem route
+ * parked on an inactive mode never evaluates and would be a false alarm.
+ */
+export function batchInertSources(
+  doc: Pick<ProjectDocument, "presetId" | "modsByPreset" | "timeline" | "lyricStyle">,
+  session: BatchSessionImports,
+): BatchInertSources {
+  const modes = new Set<string>([doc.presetId]);
+  if (doc.timeline.enabled) for (const scene of doc.timeline.scenes) modes.add(scene.presetId);
+  let stemRouted = false;
+  let vocalRouted = false;
+  for (const mode of modes) {
+    for (const route of doc.modsByPreset[mode] ?? []) {
+      if (route.source === "vocal") vocalRouted = true;
+      else if (route.source.startsWith("stem")) stemRouted = true;
+    }
+  }
+  return {
+    stems: session.hasStems && stemRouted,
+    vocal: session.hasLyrics && vocalRouted,
+    captions: session.hasLyrics && doc.lyricStyle.enabled,
+  };
 }

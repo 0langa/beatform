@@ -5,7 +5,9 @@ import { rasterizeOverlay } from "../render/overlay";
 import { analyzeTrack } from "../audio/analysis/trackAnalysis";
 import { getEngine, setLiveRenderPaused } from "./services";
 import { audiogramActive, waveformOverviewOf } from "./audiogram";
-import { classifyError, type BatchRun, type JobStatus } from "./batch";
+import { classifyError, describeFailure, type BatchRun, type JobStatus } from "./batch";
+import { SpeedMeter } from "../export/speedMeter";
+import type { VolumeSpace } from "../export/diskPreflight";
 import { extractCoverPalette } from "./coverPalette";
 import { presetById } from "../render/presets";
 import type { ProjectDocument } from "./project";
@@ -86,6 +88,14 @@ export interface BatchRunnerHooks {
    * exercised without a filesystem.
    */
   streamPathFor?(outPath: string): string | undefined;
+  /**
+   * Fresh free-space reading of the scratch volume, taken when a job FAILS
+   * (HD-24). The single lane re-measures at failure time rather than trusting
+   * its pre-flight snapshot, because the Blob API's NotReadableError is only
+   * a disk diagnosis when scratch really is short NOW. Optional, and allowed
+   * to throw: without a reading, the raw text stands.
+   */
+  measureScratch?(): Promise<VolumeSpace | null>;
 }
 
 /**
@@ -152,6 +162,19 @@ function raceAgainstStop<T>(promise: Promise<T>, isStopped: () => boolean): Prom
   });
 }
 
+/**
+ * A thrown job/track error as its terminal status: an abort is what the user
+ * asked for (skipped, not red); anything else is described the way the single
+ * lane describes it — classifyError plus translateExportError over a fresh
+ * scratch reading (HD-24). One path for the decode window and the render, so
+ * the two cannot drift in what a row says.
+ */
+async function failureStatus(e: unknown, hooks: BatchRunnerHooks): Promise<JobStatus> {
+  if (!classifyError(e)) return { k: "skipped" };
+  const scratch = hooks.measureScratch ? await hooks.measureScratch().catch(() => null) : null;
+  return { k: "failed", ...describeFailure(e, scratch)! };
+}
+
 export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<void> {
   // The preview would otherwise keep drawing a canvas nobody is watching,
   // competing with the export for the same GPU all night.
@@ -212,12 +235,10 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
         sections = analysis.sections;
       } catch (e) {
         // A file that cannot be decoded fails its jobs and nothing else.
-        // classifyError maps our own AbortError the same way it maps a real
-        // user cancel: null -> "skipped", not a red failure.
-        const c = classifyError(e);
-        for (const job of jobs) {
-          updateJob(job.id, c ? { k: "failed", ...c } : { k: "skipped" });
-        }
+        // failureStatus maps our own AbortError the same way it maps a real
+        // user cancel: "skipped", not a red failure.
+        const status = await failureStatus(e, hooks);
+        for (const job of jobs) updateJob(job.id, status);
         continue;
       }
 
@@ -250,12 +271,15 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
           done: 0,
           total: job.totalFrames ?? 0,
           fps: null,
+          avgFps: null,
         });
 
         // Re-rasterized per job: it depends on BOTH this track's title and this
         // format's resolution.
         let overlay: ImageBitmap | undefined;
-        const startedAt = performance.now();
+        // Windowed + cumulative rates from the shared meter (HD-24) — the
+        // same two numbers the single lane shows, per job.
+        const meter = new SpeedMeter(performance.now());
         try {
           overlay =
             (await rasterizeOverlay(
@@ -291,13 +315,8 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
                 loudness: run.loudness,
                 signal: ac.signal,
                 onProgress: (done, total) => {
-                  const secs = (performance.now() - startedAt) / 1000;
-                  updateJob(job.id, {
-                    k: "running",
-                    done,
-                    total,
-                    fps: done > 0 && secs > 0 ? done / secs : null,
-                  });
+                  const { speed, avgSpeed } = meter.sample(performance.now(), done);
+                  updateJob(job.id, { k: "running", done, total, fps: speed, avgFps: avgSpeed });
                 },
               },
             ),
@@ -310,8 +329,9 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
         } catch (e) {
           // Deliberately swallowed: one job's failure is one job's failure.
           // An abort means the user hit Skip — record that, not a red error.
-          const c = classifyError(e);
-          updateJob(job.id, c ? { k: "failed", ...c } : { k: "skipped" });
+          // Anything else is described the way the single lane describes it
+          // (HD-24): translated, over a fresh scratch reading.
+          updateJob(job.id, await failureStatus(e, hooks));
           // ...with exactly one exception (audit F2). GpuInitError means the
           // export worker could not create a WebGPU device AT ALL — a property
           // of this machine, not of this track. Every remaining job would fail

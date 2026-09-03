@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BatchTrack } from "../state/batch";
-import { runStats } from "../state/batch";
-import { EXPORT_RUNNING_REASON } from "../state/slices/batchActions";
+import { batchInertSources, runStats } from "../state/batch";
+import {
+  BATCH_OUTPUT_NOTE,
+  batchSettingsRefusal,
+  EXPORT_RUNNING_REASON,
+} from "../state/slices/batchActions";
 import { NO_HARDWARE_RENDERING_CLAUSE } from "../state/exportConfig";
 import { RESOLUTIONS, useVizStore } from "../state/store";
 import { useFocusTrap } from "./useFocusTrap";
@@ -63,6 +67,20 @@ export function BatchPanel() {
   const overlayLayers = useVizStore((s) => s.overlayLayers);
   const aspect = useVizStore((s) => s.aspect);
   const formatLabel = useVizStore((s) => RESOLUTIONS[s.exportSettings.resIdx].label);
+  /** Two more primitives off exportSettings (HD-01/02): a Format or Type
+   * the batch lane cannot render disables Start with the store guard's own
+   * sentence — never the whole object, for the reason above. */
+  const exportFormat = useVizStore((s) => s.exportSettings.format);
+  const exportMode = useVizStore((s) => s.exportSettings.mode);
+  /** The document fields batchInertSources reads (HD-03) — reference-stable
+   * slices, so no selector allocates — plus what the session has imported
+   * for the LOADED track, as two booleans. */
+  const presetId = useVizStore((s) => s.presetId);
+  const modsByPreset = useVizStore((s) => s.modsByPreset);
+  const timeline = useVizStore((s) => s.timeline);
+  const lyricStyle = useVizStore((s) => s.lyricStyle);
+  const hasStems = useVizStore((s) => s.stems.length > 0);
+  const hasLyrics = useVizStore((s) => s.lyrics != null);
   /** True while a SINGLE export is running: Start disables with the same
    * sentence the store guard would answer with (F2 — one shared reason). */
   const exporting = useVizStore((s) => !!s.exporting);
@@ -85,6 +103,13 @@ export function BatchPanel() {
     : exporting && status !== "running"
       ? EXPORT_RUNNING_REASON
       : null;
+  // HD-01/02: the Export panel's CURRENT Format/Type gates only a NEW run —
+  // that is what startBatch would freeze into the FormatPreset. A retry
+  // re-runs the finished run's own preset (already MP4 / WebM), so this
+  // block reaches Start and the idle banner, never "Retry failed".
+  const settingsBlock =
+    status === "idle" ? batchSettingsRefusal({ format: exportFormat, mode: exportMode }) : null;
+  const startBlocked = blocked ?? settingsBlock;
   const fileInput = useRef<HTMLInputElement>(null);
   const tracks = run?.tracks ?? [];
   const running = status === "running";
@@ -127,6 +152,30 @@ export function BatchPanel() {
         } no title tag — the filename was used. Edit any title below.`,
       );
     }
+    // HD-03: stems and lyrics belong to the LOADED track, so no batch track
+    // carries them — a route on them reads 0 and a caption draws nothing,
+    // exactly as in an interactive export of a freshly loaded track. Warn
+    // only where the preview is using them right now: that is where the
+    // batched videos will visibly differ from what is on screen.
+    const inert = batchInertSources(
+      { presetId, modsByPreset, timeline, lyricStyle },
+      { hasStems, hasLyrics },
+    );
+    if (inert.stems) {
+      warnings.push(
+        "Stem routes will read 0 — the imported stems belong to the loaded track, and a batch renders each track without them.",
+      );
+    }
+    if (inert.vocal) {
+      warnings.push(
+        "The Vocals (lyrics) source will read 0 — the loaded lyrics belong to the current track, and a batch renders each track without them.",
+      );
+    }
+    if (inert.captions) {
+      warnings.push(
+        "Lyric captions won't appear — the loaded lyrics belong to the current track, and a batch renders each track without them.",
+      );
+    }
   }
 
   const jobFor = (t: BatchTrack) => run?.jobs.find((j) => j.trackId === t.id);
@@ -159,7 +208,8 @@ export function BatchPanel() {
           <p className="section-hint">
             Drop in a folder of tracks and render one video per track, unattended. Titles come from
             each file's own tags — no spreadsheet, no retyping. Everything else (preset, layers,
-            timeline, post) is whatever you have set up right now.
+            timeline, post) is whatever you have set up right now. {BATCH_OUTPUT_NOTE}, at the
+            Export panel's codec, resolution and frame rate.
           </p>
         )}
 
@@ -246,12 +296,12 @@ export function BatchPanel() {
           </div>
         )}
 
-        {blocked && <div className="toast-inline error">{blocked}</div>}
+        {startBlocked && <div className="toast-inline error">{startBlocked}</div>}
 
         {/* Refusals from startBatch/retryFailedBatch (SS-3) — shown where the
-            click happened. Skipped when `blocked` already states the same
+            click happened. Skipped when the banner already states the same
             condition, so the panel never nags twice in a row. */}
-        {batchError && batchError !== blocked && (
+        {batchError && batchError !== startBlocked && (
           <div className="toast-inline error">{batchError}</div>
         )}
 
@@ -292,6 +342,7 @@ export function BatchPanel() {
                     <span className="batch-meta">
                       {st.total > 0 ? Math.round((st.done / st.total) * 100) : 0}%
                       {st.fps ? ` · ${Math.round(st.fps)} fps` : ""}
+                      {st.avgFps ? ` · avg ${Math.round(st.avgFps)}` : ""}
                     </span>
                   )}
                   {status === "idle" && (
@@ -319,14 +370,23 @@ export function BatchPanel() {
         </div>
 
         {status === "idle" && tracks.length > 0 && (
-          <button
-            className="btn-primary wide"
-            disabled={!!blocked}
-            title={blocked ?? undefined}
-            onClick={() => void store().startBatch()}
-          >
-            Render {tracks.length} video{tracks.length === 1 ? "" : "s"}…
-          </button>
+          <>
+            {/* HD-01/02: the batch lane's one output shape, stated before the
+                click — unless the blocked banner is already saying it. */}
+            {!settingsBlock && (
+              <p className="section-hint">
+                {BATCH_OUTPUT_NOTE} — codec, resolution and frame rate follow the Export panel.
+              </p>
+            )}
+            <button
+              className="btn-primary wide"
+              disabled={!!startBlocked}
+              title={startBlocked ?? undefined}
+              onClick={() => void store().startBatch()}
+            >
+              Render {tracks.length} video{tracks.length === 1 ? "" : "s"}…
+            </button>
+          </>
         )}
         {running && (
           <div className="save-look-row">
