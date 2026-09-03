@@ -242,6 +242,20 @@ export function deepCaseMetrics(
 }
 
 /**
+ * Does the preset carry the global saturation + lightness pair (the "full
+ * colour controls" club colorControls.test.ts pins)? Read off the whole ABI,
+ * not params[] alone: Kaleido Nebula's saturation was frozen in advanced[]
+ * by RP-6 and re-tiered in place, and abiOrder.test.ts forbids moving it.
+ */
+function hasFullColorControls(preset: PresetDef): boolean {
+  const specs = allParams(preset);
+  return (
+    specs.some((param) => param.key === "saturation") &&
+    specs.some((param) => param.key === "lightness")
+  );
+}
+
+/**
  * The complete case-id list, in run order — the single enumeration the
  * device run must produce (runGpuPixelMatrix self-checks against it) and
  * the one Node can test for count and dedup (R2-16). Append-only at the
@@ -253,10 +267,7 @@ export function expectedMatrixCaseIds(): string[] {
   for (const preset of presets) {
     ids.push(`${preset.id}/@defaults`);
     for (const style of preset.styles ?? []) ids.push(`${preset.id}/style/${style.id}`);
-    const hasFullColorControls =
-      preset.params.some((param) => param.key === "saturation") &&
-      preset.params.some((param) => param.key === "lightness");
-    if (hasFullColorControls) {
+    if (hasFullColorControls(preset)) {
       ids.push(`${preset.id}/color/grayscale`, `${preset.id}/color/bright-grayscale`);
     }
   }
@@ -379,16 +390,13 @@ export async function runGpuPixelMatrix(width = 192, height = 108): Promise<GpuP
     }
 
     for (const preset of presets) {
-      const hasFullColorControls =
-        preset.params.some((param) => param.key === "saturation") &&
-        preset.params.some((param) => param.key === "lightness");
       const variants = [
         { id: `${preset.id}/@defaults`, values: {} },
         ...(preset.styles ?? []).map((style) => ({
           id: `${preset.id}/style/${style.id}`,
           values: style.values,
         })),
-        ...(hasFullColorControls
+        ...(hasFullColorControls(preset)
           ? [
               {
                 id: `${preset.id}/color/grayscale`,
