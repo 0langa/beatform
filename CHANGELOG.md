@@ -11,7 +11,7 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
-## [2.109.0] - 2026-09-02
+## [2.109.0] - 2026-09-03
 
 Housekeeping on the road to 3.0.0: no new features, two small fixes, a
 dependency refresh verified on real hardware, and the documentation
