@@ -50,6 +50,10 @@ deliberate limit. No new features.
 - **Batch rows show the current render rate and the job's average side by
   side**, and a failed job gets the same disk-space diagnosis the single export
   gives (a full working drive is named as such, not as a permission problem).
+- **Line re-align shows progress and can be cancelled.** A cancelled re-align
+  leaves your lyrics exactly as they were.
+- **The lyrics editor's own Ctrl+Z / Ctrl+Y** now appear on the shortcut sheet
+  (H) and in the guide.
 
 ### Added
 
@@ -58,6 +62,10 @@ deliberate limit. No new features.
 - **Shadertoy import warns before you translate** when the pasted code samples
   `iChannel1–3`, reads `iMouse`, or mentions other passes — those inputs are
   empty in Beatform, so the affected parts would render black with no error.
+- **Lyrics models can be verified and removed.** The Lyrics section lists every
+  downloaded model with its size; Verify re-checks a file against its checksum,
+  Remove (after confirming) deletes it — or a stalled partial download — to free
+  the space.
 
 ### Removed
 
@@ -73,6 +81,8 @@ deliberate limit. No new features.
   videos render without them. The Batch panel now warns before a run when the
   loaded track's stems or lyrics feed your setup (stem routes, the Vocals
   source, captions).
+- SRT files import; LRC is what Beatform writes. Every lyrics save is an
+  `.lrc`, also when the lyrics came in as `.srt` (guide and tooltips say so).
 
 ## [2.109.0] - 2026-09-02
 

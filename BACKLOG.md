@@ -139,24 +139,24 @@ evidence is recorded here.
 
 ### Lyrics
 
-- [ ] **HD-17 Lyrics model manager can download but never verify or
+- [x] **HD-17 Lyrics model manager can download but never verify or
       remove.** `lyrics_model_verify` / `lyrics_model_remove` exist in Rust
       and as TS wrappers (src/state/platform.ts:302,307); no button calls
       either — multi-GB models cannot be reclaimed from inside the app.
       Recommended: **FINISH** — Verify and Remove actions in LyricsGenPanel
-      (S/M). Verdict: \_\_\_
-- [ ] **HD-08 Line re-align has no cancel and no progress.** Transcribe has a
+      (S/M). Verdict: **FINISH** — closed 2026-09-03 (afea521): LyricsGenPanel lists every model on disk with Verify (checksum re-check) and Remove (askConfirm first; also clears stalled `.part` downloads); a transient `modelOp` claim locks download/generate/re-align while one runs; both re-read `lyricsModelsState()` like the download path. Device check pending: Verify and Remove on a real model.
+- [x] **HD-08 Line re-align has no cancel and no progress.** Transcribe has a
       stage-weighted bar, ETA and cancel; re-align sets
       `lyricsRealign: { index }` and offers nothing else
       (src/state/slices/lyricsEditActions.ts:231). Recommended: **FINISH** —
-      cancel + indeterminate progress (M). Verdict: \_\_\_
-- [ ] **HD-11 `.srt` is read-only** — imports, drop-imports, but export always
+      cancel + indeterminate progress (M). Verdict: **FINISH** — closed 2026-09-03 (afea521): re-align shows an indeterminate bar with Cancel; `cancelLyricsRealign` reuses `lyrics_generate_cancel` (the sidecar's line-align job shares the generate slot, verified in lyrics.rs), a run-local token drops late results, `lyricsRealign` clears in `finally`, the document stays untouched (undo depth 0 pinned). No Rust change. Device check pending: Cancel during a real re-align.
+- [x] **HD-11 `.srt` is read-only** — imports, drop-imports, but export always
       writes `.lrc`. Recommended: **DECLARE** in the guide ("LRC is the
-      output format; SRT imports are converted") (S). Verdict: \_\_\_
-- [ ] **HD-20 The lyrics editor's Ctrl+Z / Ctrl+Y** (src/ui/LyricsEditPanel.tsx:335)
+      output format; SRT imports are converted") (S). Verdict: **DECLARE** — closed 2026-09-03 (afea521): guide paragraph states LRC is the format Beatform writes and that SRT imports convert (an SRT cue's explicit end time is not kept); Save .lrc / Import lyrics tooltips and the save-dialog filter label say the same; pinned by `guideContent.test.ts` and a lyricsEditActions test.
+- [x] **HD-20 The lyrics editor's Ctrl+Z / Ctrl+Y** (src/ui/LyricsEditPanel.tsx:335)
       appear in no shortcut sheet and no help prose; the coverage test scans
       only `useAppShortcuts.ts`. Recommended: **FINISH** — one sheet row (S).
-      Verdict: \_\_\_
+      Verdict: **FINISH** — closed 2026-09-03 (afea521): two Editing rows on the shortcut sheet; the coverage test now also scans `LyricsEditPanel.tsx` and asserts lyrics-specific rows exist (the plain union check passed vacuously because Ctrl+Z/Y exist app-wide). Ledger claim corrected: the guide prose already mentioned the editor's keys; the sheet and the test were the gap.
 
 ### Files, import, Gallery, Shadertoy
 
