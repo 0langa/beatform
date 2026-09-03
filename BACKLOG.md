@@ -69,10 +69,10 @@ evidence is recorded here.
       batch output while the interactive export honours them (same class as
       R2-05, one layer up). Recommended: **FINISH** — pass both through like
       sections/audiogram (S). Verdict: \_\_\_
-- [ ] **HD-14 The A-B loop region cannot be exported** — `segment` is set only
+- [x] **HD-14 The A-B loop region cannot be exported** — `segment` is set only
       in canvas mode (src/state/slices/exportActions.ts:230); the loop is a
       preview-only tool. Recommended: **DECLARE** in the guide next to the A-B
-      keys (S); an "Export loop region" checkbox would be M. Verdict: \_\_\_
+      keys (S); an "Export loop region" checkbox would be M. Verdict: **DECLARE** — closed 2026-09-03 (e121697): the guide's A-B paragraph now says the loop is a preview tool and exports never render just the A-B region.
 - [ ] **HD-24 Batch progress shows only instantaneous fps** (no average
       speed) and classifies errors without the single-export lane's
       translation + scratch re-measure + ffmpeg log tail. Recommended:
@@ -88,31 +88,31 @@ evidence is recorded here.
       own release v2.111.0 (L — nine shaders through `presetColor`, styles
       re-checked, GPU matrix re-bless with per-mode visual proof), else
       **DECLARE** in the guide (S). Verdict: \_\_\_
-- [ ] **HD-07 The second-display window inherits the operator's fps cap.**
+- [x] **HD-07 The second-display window inherits the operator's fps cap.**
       Cap-skipped tickless frames return before `publishPerformFrame`
       (src/state/services.ts:452) and ticked capped frames publish
       `advance-only`, which the receiver never presents
       (src/perform/performRuntime.ts:127). A battery knob throttles the
       audience. Recommended: **FINISH** — publish and present the mirror
       regardless of the preview cap (S/M; verify on the real second display).
-      Verdict: \_\_\_
-- [ ] **HD-09 Automation lanes on toggle/enum parameters interpolate
+      Verdict: **FINISH** — closed 2026-09-03 (46ab64c): `effectiveFpsCap` lifts the preview cap while the mirror is live (pure, unit-tested); the Preferences hint says so. Owner check A2 confirms it on the real second display.
+- [x] **HD-09 Automation lanes on toggle/enum parameters interpolate
       linearly** — the lane picker offers every param, but `addKeyframe`
       defaults `curve: "linear"` (src/state/timeline.ts:31,140), so a bool or
       enum lane yields fractional values between keys. Recommended:
       **FINISH** — default `hold` for non-numeric params and snap their lane
-      values (S). Verdict: \_\_\_
-- [ ] **HD-15 Three analysis fields are computed every frame and consumed by
+      values (S). Verdict: **FINISH** — closed 2026-09-03 (b799394): new keyframes on toggle/enum/snap params start on `hold`, dots land on whole values, and `resolveActiveFrame` rounds and clamps automated values for those params in the shared chokepoint (frameResolve tests).
+- [x] **HD-15 Three analysis fields are computed every frame and consumed by
       nothing** — `beatIndex`, `barIndex`, `chroma` (P-15 "reactivity fuel",
       src/audio/types.ts:83, "per-mode adoption is a later wave"); `vocal` and
       `sectionPulse` from the same batch ARE routable mod sources.
       Recommended: **DECLARE** — reword the comment to state exactly which
       fields have consumers and that the rest are an internal contract with
-      measured cost (S); **REMOVE** the three would also be S. Verdict: \_\_\_
-- [ ] **HD-23 Canvas2D fallback is one generic look and unreachable on
+      measured cost (S); **REMOVE** the three would also be S. Verdict: **DECLARE** — closed 2026-09-03 (e121697): the `AudioFeatures` comment names the consumers field by field and states that `beatIndex`/`barIndex`/`chroma` have none and adoption is not scheduled.
+- [x] **HD-23 Canvas2D fallback is one generic look and unreachable on
       healthy hardware** — no toggle forces it; only a real GPU loss reaches
       it; no pixel baseline. PREVIEW-EXPORT-CONTRACT already scopes it.
-      Recommended: **DECLARE** (already documented; 0). Verdict: \_\_\_
+      Recommended: **DECLARE** (already documented; 0). Verdict: **DECLARE** — closed 2026-09-03: already documented in PREVIEW-EXPORT-CONTRACT.md; nothing to change.
 
 ### Live performance and MIDI
 
@@ -130,12 +130,12 @@ evidence is recorded here.
       Post, volume). Recommended: **FINISH the VJ core** — blackout,
       play/pause, next/prev mode as note targets, CC-learn from the drawer
       (M) — and **DECLARE** the rest (S). Verdict: \_\_\_
-- [ ] **HD-16 `loopback_died` is never polled.** The Rust command exists
+- [x] **HD-16 `loopback_died` is never polled.** The Rust command exists
       (src-tauri/src/loopback.rs:348, registered) and its doc says the
       frontend polls it to drop the "listening" indicator; no TS call site
       exists. A dead capture device leaves the broadcast icon lit over
       silence. Recommended: **FINISH** — poll or event it into the live-input
-      state (S). Verdict: \_\_\_
+      state (S). Verdict: **FINISH** — closed 2026-09-03 (63d3a78): the store polls `loopback_died` once a second while listening (`liveInputWatch.ts`, unit-tested) and tears the session down with a notice when the device is gone.
 
 ### Lyrics
 
@@ -160,10 +160,10 @@ evidence is recorded here.
 
 ### Files, import, Gallery, Shadertoy
 
-- [ ] **HD-10 `.bftheme` imports only by drag-and-drop** — export has a native
+- [x] **HD-10 `.bftheme` imports only by drag-and-drop** — export has a native
       dialog (src/state/slices/projectIOActions.ts:76); import has no dialog,
       no button, no file input. Recommended: **FINISH** — "Import theme…" via
-      the existing dialog helper next to the export (S). Verdict: \_\_\_
+      the existing dialog helper next to the export (S). Verdict: **FINISH** — closed 2026-09-03 (63d3a78): "Import theme…" beside "Save as theme…" opens the native dialog and feeds the drop-import's parser (`importThemeFromFile`, tested).
 - [ ] **HD-13 Gallery: an updated upstream entry reads "Already in My Looks"
       forever** (`entryGate` compares only `minAppVersion`/`savedWith`, never
       the entry's hash against the installed copy), and removal lives on a
@@ -180,16 +180,16 @@ evidence is recorded here.
 
 ### Performance display
 
-- [ ] **HD-05 The GPU % stat can be enabled but never shows a value.**
+- [x] **HD-05 The GPU % stat can be enabled but never shows a value.**
       Toggle (src/ui/SettingsDialog.tsx:56) → overlay row
       (src/ui/PerfOverlay.tsx:204) → Rust field (src-tauri/src/perfstats.rs:85)
       is fully wired with no collector; it renders "—" forever. Recommended:
       **REMOVE** the toggle, row and field (S; Rust gates). Implementing a PDH
-      GPU-engine collector would be M. Verdict: \_\_\_
+      GPU-engine collector would be M. Verdict: **REMOVE** — closed 2026-09-03 (46ab64c): toggle, overlay row, prefs key and the Rust `gpu_pct` field are gone; old prefs blobs that still carry the key are ignored by the validator.
 
 ### Code that promises a second consumer
 
-- [ ] **HD-21 Dead or duplicated helpers.** `isExporting`
+- [x] **HD-21 Dead or duplicated helpers.** `isExporting`
       (src/state/store.ts:3415) is documented as the Escape/close guard but
       `useAppShortcuts.ts:86` re-implements it inline and differently
       (divergence risk); `saveBinaryFile` (platform.ts:57) has zero callers;
@@ -197,7 +197,7 @@ evidence is recorded here.
       test-only exports whose production callers re-implement the logic; 14
       more module-local exports have no importer. Recommended: **FINISH** —
       route the callers through the one helper, delete the rest (S).
-      Verdict: \_\_\_
+      Verdict: **FINISH** — closed 2026-09-03 (63d3a78): `isExporting` and `saveBinaryFile` deleted (no callers; the Escape handler gates the export and batch dialogs separately on purpose); 13 module-local helpers/types de-exported per knip. Test-only exports with production twins (`getPerformBridgeStats`, `isBindableMessage`, `LED_MATRIX_HUE_KEYS`) stay: their production callers read the same module state, not a copy.
 
 ### Pre-decided (recorded so nobody reopens them; verdict already DECLARE)
 

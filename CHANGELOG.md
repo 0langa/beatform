@@ -11,6 +11,42 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.110.0] - UNRELEASED
+
+"Nothing half-done": every surface that was started and left unfinished got
+one verdict on the road to 3.0.0 — finished, removed, or written down as a
+deliberate limit. No new features.
+
+### Fixed
+
+- **Automation lanes on switches and dropdowns now step, never glide.** A
+  lane on a toggle or a choice parameter used to interpolate between keyframes
+  and hand the renderer fractions of a switch. New keyframes on such parameters
+  start on the hold curve, dots land on whole values, and preview and export
+  resolve the same whole number.
+- **Live input notices when the audio device goes away.** Losing the output
+  device mid-listen left the broadcast icon lit over silence. Listening now
+  stops within a second, with a notice saying why.
+- **The second display is no longer throttled by the preview frame cap.** A
+  30 fps battery cap on the operator's preview used to reach the audience.
+  While the second display is live the cap is lifted for both.
+
+### Added
+
+- **Import theme…** opens a file dialog for `.bftheme` files — the same import
+  as dropping the file onto the window.
+
+### Removed
+
+- **The GPU % performance stat.** It could be switched on but never showed a
+  value (Windows offers no collector without undocumented APIs). The toggle and
+  the row are gone rather than shipping a permanent "—".
+
+### Documented limits
+
+- The A-B loop is a preview tool: exports render the whole track or the
+  Canvas-loop segment, never just the A-B region (guide).
+
 ## [2.109.0] - 2026-09-02
 
 Housekeeping on the road to 3.0.0: no new features, two small fixes, a
