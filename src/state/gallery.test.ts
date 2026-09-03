@@ -5,10 +5,13 @@ import {
   fetchEntryPreview,
   fetchRegistry,
   GalleryError,
+  installedLookState,
   MAX_PREVIEW_BYTES,
   parseRegistry,
   semverGte,
+  validGalleryInstalled,
   type GalleryEntry,
+  type GalleryInstallRecord,
 } from "./gallery";
 import { APP_VERSION } from "../version";
 import { FACTORY_GALLERY_ENTRIES } from "./factoryThemes";
@@ -206,6 +209,123 @@ describe("entryGate", () => {
     for (const b of FACTORY_GALLERY_ENTRIES) {
       expect(entryGate(b), `${b.id} should never be gated`).toBeNull();
     }
+  });
+});
+
+/**
+ * HD-13 — the hash-aware half of the gate. `entryGate` answers "can THIS
+ * BUILD install the entry" (version/format refusal). `installedLookState`
+ * answers "what does My Looks already hold for it", by comparing the
+ * registry's content digest against the one recorded when the look was
+ * installed. Before this existed the dialog and the slice each compared
+ * only "does the preset the install created still exist", so an entry the
+ * author had since updated upstream read "Already in My Looks" for as long
+ * as the copy survived.
+ */
+describe("installedLookState — the hash-aware half of the gate (HD-13)", () => {
+  const SHA_V1 = "1".repeat(64);
+  const SHA_V2 = "2".repeat(64);
+  const upstream = makeEntry({ id: "test-look", sha256: SHA_V2 });
+  const inMyLooks = [{ id: "up-installed" }];
+
+  it("no record at all → absent: a look whose install recorded no provenance reads '+ Add look' after a restart, exactly as before", () => {
+    expect(installedLookState(upstream, {}, inMyLooks)).toBe("absent");
+  });
+
+  it("a record whose user preset was deleted → absent (the record is a hint; My Looks is the truth — A1)", () => {
+    const installed = { "test-look": { presetId: "up-gone", sha256: SHA_V2 } };
+    expect(installedLookState(upstream, installed, inMyLooks)).toBe("absent");
+  });
+
+  it("installed copy carries the upstream's CURRENT digest → current ('Already in My Looks')", () => {
+    const installed = { "test-look": { presetId: "up-installed", sha256: SHA_V2 } };
+    expect(installedLookState(upstream, installed, inMyLooks)).toBe("current");
+  });
+
+  it("installed copy carries a DIFFERENT digest → outdated ('Update available')", () => {
+    const installed = { "test-look": { presetId: "up-installed", sha256: SHA_V1 } };
+    expect(installedLookState(upstream, installed, inMyLooks)).toBe("outdated");
+  });
+
+  it("a record WITHOUT a digest (written before provenance existed) → current, never outdated", () => {
+    const installed: Record<string, GalleryInstallRecord> = {
+      "test-look": { presetId: "up-installed" },
+    };
+    expect(installedLookState(upstream, installed, inMyLooks)).toBe("current");
+  });
+
+  it("themes and built-ins have no installed state, whatever the maps say", () => {
+    const theme = makeEntry({
+      id: "test-theme",
+      type: "theme",
+      sha256: SHA_V2,
+      contentUrl: `https://raw.githubusercontent.com/beatform-app/gallery/${PIN}/themes/test-theme.bftheme`,
+    });
+    const installed = { "test-theme": { presetId: "up-installed", sha256: SHA_V1 } };
+    expect(installedLookState(theme, installed, inMyLooks)).toBe("absent");
+    for (const b of FACTORY_GALLERY_ENTRIES) {
+      const stale = { [b.id]: { presetId: "up-installed", sha256: SHA_V1 } };
+      expect(installedLookState(b, stale, inMyLooks), `${b.id} is never "installed"`).toBe(
+        "absent",
+      );
+    }
+  });
+});
+
+/**
+ * The persisted install record (`viz.galleryInstalled.v1`) is localStorage,
+ * i.e. untrusted at rest, and is read at boot — so it is validated field by
+ * field the way `validUserPreset` validates the looks list. A record that
+ * fails on its load-bearing field (which preset it points at) is dropped; a
+ * record whose digest is merely missing or malformed is kept WITHOUT the
+ * digest and then reads as "installed, version unknown" (never "outdated").
+ */
+describe("validGalleryInstalled — the persisted install record is untrusted localStorage", () => {
+  const SHA = "a".repeat(64);
+
+  it("returns {} for anything that is not a plain object", () => {
+    for (const v of [null, undefined, 3, "x", [], true]) {
+      expect(validGalleryInstalled(v)).toEqual({});
+    }
+  });
+
+  it("keeps well-formed records verbatim", () => {
+    const good = { "test-look": { presetId: "up-1", sha256: SHA } };
+    expect(validGalleryInstalled(good)).toEqual(good);
+  });
+
+  it("drops records with a malformed entry id, a non-string presetId, or the wrong shape", () => {
+    const raw = {
+      "Bad Id!": { presetId: "up-1", sha256: SHA },
+      "ok-look": { presetId: 7, sha256: SHA },
+      // The old session-only shape (bare preset id) was never persisted, so
+      // there is nothing to migrate — it is simply not a record.
+      "also-ok": "up-1",
+      "fine-look": { presetId: "up-2", sha256: "b".repeat(64) },
+    };
+    expect(validGalleryInstalled(raw)).toEqual({
+      "fine-look": { presetId: "up-2", sha256: "b".repeat(64) },
+    });
+  });
+
+  it("keeps a record whose digest is missing or malformed — minus the digest — and lower-cases a valid one", () => {
+    const raw = {
+      "no-sha": { presetId: "up-1" },
+      "bad-sha": { presetId: "up-2", sha256: "not-hex" },
+      "upper-sha": { presetId: "up-3", sha256: "A".repeat(64) },
+    };
+    expect(validGalleryInstalled(raw)).toEqual({
+      "no-sha": { presetId: "up-1" },
+      "bad-sha": { presetId: "up-2" },
+      "upper-sha": { presetId: "up-3", sha256: SHA },
+    });
+  });
+
+  it("never carries unknown keys through (a corrupted record cannot smuggle fields into state)", () => {
+    const out = validGalleryInstalled({
+      "test-look": { presetId: "up-1", sha256: SHA, extra: 1 },
+    });
+    expect(Object.keys(out["test-look"]).sort()).toEqual(["presetId", "sha256"]);
   });
 });
 

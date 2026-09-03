@@ -772,7 +772,15 @@ export const GUIDE: readonly GuideSection[] = [
         ul: [
           [
             { strong: "+ Add look" },
-            " puts that entry into your own saved looks for the mode it belongs to, and applies it straight away.",
+            " puts that entry into your own saved looks for the mode it belongs to, and applies it straight away. The card then reads ",
+            { em: "✓ Added" },
+            ". Removing the look happens where your looks live, not in the Gallery: delete it under ",
+            { em: "Looks & themes" },
+            " in the Visuals dock and the card flips back to ",
+            { em: "+ Add look" },
+            ". When the Gallery later carries a newer version of a look you added, the card offers ",
+            { strong: "Update look" },
+            ", which replaces your copy in place rather than adding a second one.",
           ],
           [
             { strong: "Apply theme" },

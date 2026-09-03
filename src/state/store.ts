@@ -198,8 +198,8 @@ import { lyricsEditActions } from "./slices/lyricsEditActions";
 import { lyricsGenActions } from "./slices/lyricsGenActions";
 import { midiActions } from "./slices/midiActions";
 import { overlayActions } from "./slices/overlayActions";
-import { galleryActions } from "./slices/galleryActions";
-import type { GalleryEntry, GalleryEntryType } from "./gallery";
+import { galleryActions, loadGalleryInstalled } from "./slices/galleryActions";
+import type { GalleryEntry, GalleryEntryType, GalleryInstallRecord } from "./gallery";
 import { projectIOActions } from "./slices/projectIOActions";
 import { stemsModsActions } from "./slices/stemsModsActions";
 
@@ -359,11 +359,13 @@ interface SessionSlice {
   galleryPreviews: Record<string, string>;
   /** entry id currently downloading/installing, else null. */
   galleryBusy: string | null;
-  /** Look entry id -> the user-preset id its install created (A1). "✓ Added"
-   * holds only while that preset still EXISTS in My Looks — the dialog
-   * re-checks against userPresets, so deleting the look reverts the card to
-   * "+ Add look" instead of trusting a stale record. Themes never enter. */
-  galleryInstalled: Record<string, string>;
+  /** Look entry id -> what its install created and which content (A1 +
+   * HD-13). "✓ Added" holds only while that preset still EXISTS in My Looks
+   * and the registry digest still matches — `installedLookState` re-checks
+   * both, so deleting the look reverts the card to "+ Add look" and an
+   * upstream update flips it to "Update look" instead of trusting a stale
+   * record. Persisted (`viz.galleryInstalled.v1`). Themes never enter. */
+  galleryInstalled: Record<string, GalleryInstallRecord>;
   /** Theme entry id that just applied — transient (~2.5 s) "Applied ✓"
    * feedback (A1). Applying a theme is legitimately repeatable, so themes get
    * no persistent installed state at all. */
@@ -1705,7 +1707,7 @@ export const useVizStore = create<VizState>((set, get) => {
     galleryEntries: [],
     galleryPreviews: {},
     galleryBusy: null,
-    galleryInstalled: {},
+    galleryInstalled: loadGalleryInstalled(),
     galleryApplied: null,
     galleryOpenFilter: "all" as const,
     showGallery: false,
