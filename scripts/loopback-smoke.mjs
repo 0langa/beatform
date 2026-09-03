@@ -211,6 +211,19 @@ function verify(result) {
         ? "\nNOTE: native frames flowed but the analyzer saw digital silence — the tone never reached the " +
           'endpoint mix. Check the Windows Volume Mixer for a muted "Microsoft Edge WebView2" / Beatform ' +
           "session on the default output device, or switch the default output device, and rerun."
+        : "") +
+      // Loopback captures the endpoint's mix AFTER its audio-processing objects.
+      // A quiet, steady two-tone that comes back with beats and a spectrum peak
+      // well outside the tone bins, over an idle window that was digital
+      // silence, is the endpoint's enhancement chain (loudness equalization,
+      // bass boost, virtualization) reshaping the signal — seen 2026-09-03 on
+      // Surface speakers carrying a Realtek "System Effect" APO chain.
+      (idleTone < 0.05 &&
+      (result.active?.maxBeat ?? 0) > 0.5 &&
+      (result.active?.maxTone ?? 0) < 0.3 * (result.active?.maxBin ?? 0)
+        ? "\nNOTE: the tone arrived weak and pumping while the idle window was silent — the default output " +
+          "device's audio enhancements are reshaping the mix the tap records. Turn off Audio enhancements " +
+          "(Sound → device properties) for that device, or use a device without them, and rerun."
         : "");
     throw new Error(`${failures.join("\n")}\n${context}\nstats=${JSON.stringify(result.stats)}`);
   }
