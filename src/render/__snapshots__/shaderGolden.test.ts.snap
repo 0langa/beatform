@@ -3580,15 +3580,27 @@ fn P_midHueShift() -> f32 { return params[16u]; }
 fn P_brightFloor() -> f32 { return params[17u]; }
 fn P_bassBright() -> f32 { return params[18u]; }
 fn P_saturation() -> f32 { return params[19u]; }
-fn P_sparkleScale() -> f32 { return params[20u]; }
-fn P_sparkleSharp() -> f32 { return params[21u]; }
-fn P_rippleWidth() -> f32 { return params[22u]; }
-fn P_rippleWarp() -> f32 { return params[23u]; }
-fn P_beatBloom() -> f32 { return params[24u]; }
-fn P_driveGlow() -> f32 { return params[25u]; }
-fn P_vignette() -> f32 { return params[26u]; }
-fn P_hotCore() -> f32 { return params[27u]; }
-fn P_windAngle() -> f32 { return params[28u]; }
+fn P_lightness() -> f32 { return params[20u]; }
+fn P_sparkleScale() -> f32 { return params[21u]; }
+fn P_sparkleSharp() -> f32 { return params[22u]; }
+fn P_rippleWidth() -> f32 { return params[23u]; }
+fn P_rippleWarp() -> f32 { return params[24u]; }
+fn P_beatBloom() -> f32 { return params[25u]; }
+fn P_driveGlow() -> f32 { return params[26u]; }
+fn P_vignette() -> f32 { return params[27u]; }
+fn P_hotCore() -> f32 { return params[28u]; }
+fn P_windAngle() -> f32 { return params[29u]; }
+
+fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let adjusted = rgb * saturation + gray * (1.0 - saturation);
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
+fn presetRgb(rgb: vec3f) -> vec3f {
+  return presetRgbAt(rgb, P_saturation(), P_lightness());
+}
 
 // Two-colour palette family (depth wave). A second cosine ramp anchored at
 // Second hue takes over the DENSE filament cores while the thin rim keeps the
@@ -3809,6 +3821,13 @@ fn preset(uv: vec2f) -> vec4f {
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.1);
+  // Whole-visual colour controls (HD-06). Saturation's FIRST stage is the
+  // RP-6 chroma scaler above; this second stage is the roster's gray-mix,
+  // faded in only under 1/16: min(s * 16, 1) is exactly 1.0 at the default
+  // and at every factory style (the lowest sits at 0.1), so nothing authored
+  // moves, and 0 lands on true luminance like every other mode. Lightness is
+  // the plain whole-frame scale. Identity at the defaults, before the dither.
+  col = presetRgbAt(col, min(P_saturation() * 16.0, 1.0), P_lightness());
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
@@ -3896,6 +3915,10 @@ exports[`shader golden baseline > nebula: param ABI (key + default, in order) is
   {
     "default": 1,
     "key": "saturation",
+  },
+  {
+    "default": 1,
+    "key": "lightness",
   },
   {
     "default": 9,

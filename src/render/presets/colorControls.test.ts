@@ -8,6 +8,7 @@ import { gatefold } from "./gatefold";
 import { ledMatrix } from "./ledMatrix";
 import { lyricStage } from "./lyricStage";
 import { metaballs } from "./metaballs";
+import { nebula } from "./nebula";
 import { oscilloscope } from "./oscilloscope";
 import { overgrowth } from "./overgrowth";
 import { radialBurst } from "./radialBurst";
@@ -55,7 +56,7 @@ const COLOR_PRESETS = [
 const PALETTE_PRESETS = [tunnelRings, metaballs, voiceOrb, echoTrails, aurora];
 
 describe("full preset color controls", () => {
-  for (const preset of [...COLOR_PRESETS, ...PALETTE_PRESETS]) {
+  for (const preset of [...COLOR_PRESETS, ...PALETTE_PRESETS, nebula]) {
     it(`${preset.name} exposes pixel-neutral saturation and lightness defaults`, () => {
       const specs = allParams(preset);
       const saturation = specs.find((param) => param.key === "saturation");
@@ -156,5 +157,35 @@ describe("full preset color controls", () => {
     const fold = metaballs.wgsl.indexOf("var outCol = max(col, vec3f(0.0));");
     expect(routed).toBeGreaterThan(-1);
     expect(fold).toBeGreaterThan(routed);
+  });
+
+  it("Kaleido Nebula keeps its RP-6 saturation law and reaches true gray below every style", () => {
+    // RP-6 made nebula's saturation a palette-chroma scaler anchored on the
+    // old authored point (nebula.test.ts pins the arithmetic and the v14
+    // migration divides by the same constant). Its floor is chroma 0.06 —
+    // "near-gray" — and the dark field and warm highlight tints never passed
+    // through it, so saturation 0 was never grayscale. Any change to the
+    // curve at the styles' own saturations would move their pixel hashes,
+    // so the gray-mix fades in only UNDER them: k = min(s * 16, 1) is exactly
+    // 1.0 for every s >= 1/16, and the lowest factory style sits at 0.1.
+    expect(nebula.wgsl).toContain("let chroma = mix(0.06, 0.5, P_saturation() * 0.75);");
+    expect(nebula.wgsl).toContain(WGSL_RGB_CONTROLS);
+    // Definition + the presetRgb wrapper's call inside the shared helper + the
+    // one call site below, which feeds the derived control instead of P_saturation().
+    expect(nebula.wgsl.match(/presetRgbAt\(/g)).toHaveLength(3);
+    expect(nebula.wgsl).toContain(
+      "col = presetRgbAt(col, min(P_saturation() * 16.0, 1.0), P_lightness());",
+    );
+    for (const style of nebula.styles ?? []) {
+      const s = style.values.saturation ?? 1;
+      expect(Math.min(Math.fround(s) * 16, 1), `${style.id} sits under the knee`).toBe(1);
+    }
+    // The ABI keeps saturation where RP-6 froze it (advanced[]); lightness
+    // joins it there, both promoted to the curated tier in place.
+    const advanced = nebula.advanced ?? [];
+    const sat = advanced.find((p) => p.key === "saturation");
+    const light = advanced.find((p) => p.key === "lightness");
+    expect(sat?.tier).toBe("curated");
+    expect(light?.tier).toBe("curated");
   });
 });

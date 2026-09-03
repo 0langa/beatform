@@ -25,6 +25,13 @@ import { allParams, type PresetDef } from "../types";
  * Baselines below were generated from the v2.81.0 tree, BEFORE the 2.82.0
  * curation pass, and committed unchanged: the promotions provably moved
  * nothing.
+ *
+ * HD-06 (2.111.0) is the one deliberate edit since: the global
+ * saturation,lightness pair INSERTED into eight rows (after the hue keys, or
+ * beside nebula's RP-6 saturation in advanced[]) — a genuine param addition,
+ * the case this file's rule explicitly allows. Every accessor is regenerated
+ * from the same list, so the shifted indexes render identically; only the
+ * extreme/min|max matrix cases move, because they sweep the new keys.
  */
 const ABI_BASELINE: Record<string, string> = {
   "spectrum-bars":
@@ -38,7 +45,7 @@ const ABI_BASELINE: Record<string, string> = {
   "tunnel-rings":
     "hue,hueSpread,saturation,lightness,colorFade,speed,rings,spokes,material,beatPulse,junction,curve,coverWall,centerGlow,cruiseFloor,curveScale,cruiseEnergy,beatSpeed,tileLevel,tileSpectrum,pulseWidth,tileSat,checker,groutWidth,groutLevel,fogNear,fogFar,vignette,mirror,twist,roundness,surfaceWarp,beatBright",
   nebula:
-    "hue,scale,flow,kaleido,contrast,sparkle,beatRipple,duo,hue2,windStrength,stars,warp,angle,spin,depth,hueRange,midHueShift,brightFloor,bassBright,saturation,sparkleScale,sparkleSharp,rippleWidth,rippleWarp,beatBloom,driveGlow,vignette,hotCore,windAngle",
+    "hue,scale,flow,kaleido,contrast,sparkle,beatRipple,duo,hue2,windStrength,stars,warp,angle,spin,depth,hueRange,midHueShift,brightFloor,bassBright,saturation,lightness,sparkleScale,sparkleSharp,rippleWidth,rippleWarp,beatBloom,driveGlow,vignette,hotCore,windAngle",
   metaballs:
     "hue,saturation,lightness,count,size,speed,glow,threshold,gloss,beatSwell,smear,orbitX,orbitY,radiusFloor,energyGrow,radiusBand,rimStart,innerGrad,hueField,beatBright,bgLevel,vignette,mirror,lightAngle,squash,bassWeight,eccentric,environment",
   "led-matrix":

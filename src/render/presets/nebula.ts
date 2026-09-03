@@ -1,5 +1,5 @@
 import type { PresetDef } from "../types";
-import { WGSL_PALETTE_PHASE } from "../wgslLib";
+import { WGSL_PALETTE_PHASE, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
  * The authored palette-mix point the RP-6 saturation scaler anchors to. The
@@ -567,14 +567,36 @@ export const nebula: PresetDef = {
       // default and the migration in state/project.ts maps every stored
       // pre-v14 value by the inverse (v / 0.75). Key is permanent; only the
       // range/default/semantics moved, with the migration carrying old files.
+      //
+      // HD-06 (2.111.0): the key stays HERE — abiOrder.test.ts forbids moving
+      // a spec between the arrays — and is re-tiered curated in place, so the
+      // pair shows on the mode page like every other mode's. Below 1/16 the
+      // shader also fades the chroma this scaler never reached (its own 0.06
+      // floor, the dark field, the warm highlights) to luminance, so 0 is
+      // grayscale rather than near-gray; every factory style sits at 0.1 or
+      // above, where that fade is exactly 1.0 and nothing authored moves.
       key: "saturation",
       label: "Saturation",
       group: "color",
+      tier: "curated",
       min: 0,
       max: 2,
       step: 0.02,
       default: 1,
-      hint: "Whole-cloud color intensity — 1 as designed, 0 near-gray, above 1 turns electric",
+      hint: "Whole-cloud color intensity — 0 = grayscale, 1 as designed, above 1 turns electric",
+    },
+    {
+      // HD-06: the roster's second global colour knob, beside its sibling in
+      // the ABI and re-tiered curated the same way.
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      tier: "curated",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
     },
     {
       key: "sparkleScale",
@@ -669,6 +691,8 @@ export const nebula: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+${WGSL_RGB_CONTROLS}
+
 // Two-colour palette family (depth wave). A second cosine ramp anchored at
 // Second hue takes over the DENSE filament cores while the thin rim keeps the
 // base hue — the teal-core/magenta-rim class of emission-nebula looks a
@@ -888,6 +912,13 @@ fn preset(uv: vec2f) -> vec4f {
 
   col *= vignette(uv, P_vignette());
   col = tonemap(col * 1.1);
+  // Whole-visual colour controls (HD-06). Saturation's FIRST stage is the
+  // RP-6 chroma scaler above; this second stage is the roster's gray-mix,
+  // faded in only under 1/16: min(s * 16, 1) is exactly 1.0 at the default
+  // and at every factory style (the lowest sits at 0.1), so nothing authored
+  // moves, and 0 lands on true luminance like every other mode. Lightness is
+  // the plain whole-frame scale. Identity at the defaults, before the dither.
+  col = presetRgbAt(col, min(P_saturation() * 16.0, 1.0), P_lightness());
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }

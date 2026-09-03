@@ -89,6 +89,8 @@ exports[`matrix case enumeration (R2-16) > the full id list is the census — ad
   "nebula/style/nursery",
   "nebula/style/stellarWind",
   "nebula/style/pinwheel",
+  "nebula/color/grayscale",
+  "nebula/color/bright-grayscale",
   "metaballs/@defaults",
   "metaballs/style/lava",
   "metaballs/style/chrome",
