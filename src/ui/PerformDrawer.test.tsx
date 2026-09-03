@@ -10,6 +10,14 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
  * actions.
  */
 
+// Web MIDI does not exist under jsdom; the drawer decides at import whether to
+// show its MIDI section at all, so the adapter is mocked before the import.
+const midiStop = vi.fn();
+vi.mock("../state/midiInput", () => ({
+  midiSupported: () => true,
+  startMidi: vi.fn(async () => ({ stop: midiStop })),
+}));
+
 vi.mock("../state/services", () => ({
   initServices: vi.fn(() => vi.fn()),
   getEngine: vi.fn(() => ({
@@ -33,6 +41,10 @@ vi.mock("../state/services", () => ({
 const { useVizStore } = await import("../state/store");
 const { PerformDrawer } = await import("./PerformDrawer");
 const { orderedPresets } = await import("../state/presetOrder");
+const { allParams, isModTarget } = await import("../render/types");
+const { presetById } = await import("../render/presets");
+const { MIDI_COMMANDS } = await import("../state/midi");
+const { shared } = await import("../state/slices/shared");
 
 const PRISTINE = { ...useVizStore.getState() };
 
@@ -126,5 +138,112 @@ describe("PerformDrawer", () => {
       fireEvent.change(select, { target: { value: "bass" } });
     });
     expect(useVizStore.getState().sync.mode).toBe("bass");
+  });
+});
+
+/**
+ * HD-19 — the drawer is a full MIDI surface: note-learn for the current mode
+ * AND for its own controls (blackout, play/pause, next/previous mode), and
+ * CC-learn for the active mode's knob targets — all through the one
+ * `setMidiLearn` the Live page uses. There is no second learn system.
+ */
+describe("PerformDrawer MIDI", () => {
+  beforeEach(() => {
+    shared.midiHandle = null;
+    shared.midiStarting = false;
+    useVizStore.setState({ midiEnabled: true, midiBindings: [], midiLearn: null });
+  });
+
+  it("offers Enable when off, and the enable goes through the store", async () => {
+    useVizStore.setState({ midiEnabled: false });
+    render(<PerformDrawer />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Enable MIDI…" }));
+    });
+    expect(useVizStore.getState().midiEnabled).toBe(true);
+    useVizStore.getState().disableMidi();
+  });
+
+  it("note target picker: the current mode plus the four VJ commands; Learn note arms the pick", () => {
+    render(<PerformDrawer />);
+    const pick = screen.getByTitle("What a pad or note triggers") as HTMLSelectElement;
+    const preset = presetById(useVizStore.getState().presetId);
+    expect([...pick.options].map((o) => o.textContent)).toEqual([
+      `Switch to ${preset.name}`,
+      ...MIDI_COMMANDS.map((c) => c.label),
+    ]);
+
+    // Default: the current mode — exactly the binding the old button armed.
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Learn note" }));
+    });
+    expect(useVizStore.getState().midiLearn).toEqual({ kind: "note", presetId: preset.id });
+    // Armed → the same button cancels.
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Play a note…" }));
+    });
+    expect(useVizStore.getState().midiLearn).toBeNull();
+
+    act(() => {
+      fireEvent.change(pick, { target: { value: "cmd:blackout" } });
+      fireEvent.click(screen.getByRole("button", { name: "Learn note" }));
+    });
+    expect(useVizStore.getState().midiLearn).toEqual({ kind: "command", command: "blackout" });
+  });
+
+  it("CC picker lists the active mode's mod-targetable params; Learn CC arms a cc-learn with the spec's range", () => {
+    render(<PerformDrawer />);
+    const preset = presetById(useVizStore.getState().presetId);
+    const targets = allParams(preset).filter(isModTarget);
+    expect(targets.length).toBeGreaterThan(0);
+    const pick = screen.getByTitle("Which parameter a knob or fader drives") as HTMLSelectElement;
+    // Grouped by param group in the picker, so compare as sets, not in declaration order.
+    expect([...pick.options].map((o) => o.value).sort()).toEqual(targets.map((p) => p.key).sort());
+    // Not offered: "off" params are not CC targets (RP-2).
+    for (const off of allParams(preset).filter((p) => !isModTarget(p))) {
+      expect([...pick.options].some((o) => o.value === off.key)).toBe(false);
+    }
+
+    const chosen = targets[targets.length - 1];
+    act(() => {
+      fireEvent.change(pick, { target: { value: chosen.key } });
+      fireEvent.click(screen.getByRole("button", { name: "Learn CC" }));
+    });
+    expect(useVizStore.getState().midiLearn).toEqual({
+      kind: "cc",
+      param: chosen.key,
+      min: chosen.min,
+      max: chosen.max,
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Move a knob…" }));
+    });
+    expect(useVizStore.getState().midiLearn).toBeNull();
+  });
+
+  it("lists a command binding by its label and removes it through the store", () => {
+    useVizStore.setState({
+      midiBindings: [
+        { kind: "command", note: 36, command: "blackout" },
+        { kind: "command", note: 37, command: "nextMode" },
+      ],
+    });
+    render(<PerformDrawer />);
+    expect(screen.getByText("Note 36 → Blackout")).toBeTruthy();
+    expect(screen.getByText("Note 37 → Next mode")).toBeTruthy();
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Remove Note 36 → Blackout" }));
+    });
+    expect(useVizStore.getState().midiBindings).toEqual([
+      { kind: "command", note: 37, command: "nextMode" },
+    ]);
+  });
+
+  it("Disable is reachable from the drawer too (MIDI now re-arms itself at launch)", () => {
+    render(<PerformDrawer />);
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Disable" }));
+    });
+    expect(useVizStore.getState().midiEnabled).toBe(false);
   });
 });

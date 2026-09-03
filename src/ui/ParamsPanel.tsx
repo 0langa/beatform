@@ -40,7 +40,7 @@ import {
   presetMasters,
 } from "../render/types";
 import { QUANTIZE_MODES } from "../state/quantize";
-import { bindingId } from "../state/midi";
+import { bindingId, midiCommandLabel } from "../state/midi";
 import {
   HERTZ,
   PERCENT,
@@ -2232,7 +2232,9 @@ export function ParamsPanel() {
                   const label =
                     b.kind === "cc"
                       ? `CC ${b.cc} → ${allParams(preset).find((p) => p.key === b.param)?.label ?? b.param}`
-                      : `Note ${b.note} → ${b.presetId}`;
+                      : b.kind === "command"
+                        ? `Note ${b.note} → ${midiCommandLabel(b.command)}`
+                        : `Note ${b.note} → ${b.presetId}`;
                   return (
                     <div key={id} className="mod-row">
                       <span className="row-label" style={{ flex: 1 }}>

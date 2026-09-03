@@ -221,7 +221,7 @@ The broadcast icon in the top bar visualizes whatever Windows is playing — Spo
 - **Stage mode** (<kbd>S</kbd>) hides every piece of chrome and the cursor for a clean full-bleed output — project it, capture it, or screen-share it. The mode name flashes briefly on each switch so you can drive blind.
 - **Second display** (the Perform drawer, <kbd>D</kbd>): open a dedicated output window on a projector or TV while every control stays on your screen — mode pads, quantize, blackout, the monitor picker and fullscreen all live in the drawer. A feedback mode (Spectro Falls, Overgrowth) opened on the output mid-song builds its trail history from that moment on, like starting a capture. During a batch render the output window pauses on its last frame until the batch finishes.
 - **Blackout** (<kbd>0</kbd> in Stage mode or with the performance window open) cuts to black — the classic VJ cut. <kbd>Esc</kbd> steps back out of Stage mode and leaves the rest of your workspace exactly as it was.
-- **MIDI** (the Live page): map a controller's knobs to any parameter and pads to modes. _Learn CC_, then move a knob, binds it to the selected parameter. The _Learn note →_ button always names whichever mode you currently have open — switch to that mode first, click it, then play a pad to bind that note to switching there (note switches obey the beat-quantize too). Bindings are remembered.
+- **MIDI** (the Perform drawer, or the Live page): map a controller's knobs to the current mode's parameters, and its pads to modes or to the drawer's own controls. Pick a target, click _Learn CC_ and move a knob — or _Learn note_ and hit a pad. Pad targets are the mode you currently have open, Blackout, Play / pause, Next mode and Previous mode; each takes exactly the path the button or key takes, so a pad switch obeys the beat-quantize and a blackout pad only works in Stage mode or with the performance window open. One meaning per pad — re-learning a pad replaces what it did. Bindings are remembered, and MIDI stays enabled across launches until you click _Disable_. Not mappable: volume, the A-B loop keys, Stage mode, and the Global motion and post-processing controls — those stay on the keyboard and mouse.
 
 Everything here is preview-only — a live session never changes what an export renders.
 
@@ -369,7 +369,7 @@ No. Live system audio never gets a beat grid — Beatform can't analyze a track 
 
 ### Does MIDI mapping need special drivers?
 
-No — Beatform talks to controllers directly through the Web MIDI API. There's nothing to install: open the Live page, click _Learn CC_ or _Learn note_, move the control or hit the pad, and the binding is saved from then on.
+No — Beatform talks to controllers directly through the Web MIDI API. There's nothing to install: open the Perform drawer (<kbd>D</kbd>) or the Live page, click _Learn CC_ or _Learn note_, move the control or hit the pad, and the binding is saved from then on. MIDI itself stays on across launches until you click _Disable_.
 
 ### What Shadertoy shaders can I import?
 

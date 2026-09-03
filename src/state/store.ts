@@ -521,6 +521,9 @@ interface Actions {
   setSwitchQuantize(mode: QuantizeMode): void;
   /** Request Web MIDI access and start listening (user-gesture initiated). */
   enableMidi(): Promise<void>;
+  /** HD-18: at boot, re-enable MIDI when the user left it on last session
+   * (prefs `midiEnabled`). Quiet on failure — no per-launch toast. */
+  restoreMidi(): Promise<void>;
   disableMidi(): void;
   /** Feed one raw MIDI packet through learn/apply (also the adapter's sink). */
   handleMidiMessage(data: ArrayLike<number>): void;
@@ -2058,6 +2061,15 @@ export const useVizStore = create<VizState>((set, get) => {
           else unlistenCloseRequested = un;
         })().catch((e) => console.warn("[autosave] could not install the close handler", e));
       }
+
+      // HD-18: MIDI bindings persist, so the enable state must too — without
+      // this every launch started with saved bindings that did nothing until
+      // the user clicked Enable. Restored here, beside the teardown below that
+      // stops the listener, and only when the pref says it was left on. In
+      // the desktop shell the WebView2 permission is granted from Rust
+      // (midi_permission.rs, on_page_load), so this never prompts; anywhere
+      // else a denied prompt just stays quiet.
+      void get().restoreMidi();
 
       return () => {
         clearTimeout(idleTimer);

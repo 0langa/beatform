@@ -604,3 +604,78 @@ describe("prefs: performance window (FEAT-009 / P-4)", () => {
     expect(calls).toBe(3);
   });
 });
+
+/**
+ * HD-18: MIDI used to be session-only — bindings persisted, the enable flag
+ * did not, so every launch started with saved bindings that did nothing until
+ * the user clicked Enable. The flag now lives in this blob. Additive: a blob
+ * without the key reads as "off", junk reads as "off", and (as with every
+ * field here) the validator rebuilds the object field-by-field, so a key
+ * this build does not know is simply not carried — which is exactly how an
+ * OLDER build treats this new key.
+ */
+describe("prefs: MIDI stays enabled across launches (HD-18)", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("a blob predating the field defaults to off and keeps its other settings", async () => {
+    seed(JSON.stringify({ volume: 0.5, performHud: true }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().midiEnabled).toBe(false);
+    expect(getPrefs().volume).toBe(0.5);
+    expect(getPrefs().performHud).toBe(true);
+  });
+
+  it("round-trips true", async () => {
+    seed(JSON.stringify({ midiEnabled: true }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().midiEnabled).toBe(true);
+  });
+
+  it("junk degrades to off without losing the rest of the blob", async () => {
+    for (const bad of ["yes", 1, null, {}, []]) {
+      seed(JSON.stringify({ midiEnabled: bad, volume: 0.4 }));
+      const { getPrefs } = await importFresh();
+      expect(getPrefs().midiEnabled).toBe(false);
+      expect(getPrefs().volume).toBe(0.4);
+    }
+  });
+
+  it("a key from a newer build loads fine and is not re-stored — the property that makes this key safe for older builds", async () => {
+    const storage = seed(JSON.stringify({ midiEnabled: true, fromTheFuture: 42, volume: 0.7 }));
+    const { getPrefs } = await importFresh();
+    expect(getPrefs().midiEnabled).toBe(true);
+    expect(getPrefs().volume).toBe(0.7);
+    const rewritten = JSON.parse(storage.getItem(KEY) ?? "{}") as Record<string, unknown>;
+    expect("fromTheFuture" in rewritten).toBe(false);
+    expect(rewritten.midiEnabled).toBe(true);
+  });
+
+  it("setPrefs persists the flag and notifies subscribers; a re-import reads it back", async () => {
+    vi.useFakeTimers();
+    const storage = seed(undefined);
+    const { getPrefs, setPrefs, subscribePrefs } = await importFresh();
+    let calls = 0;
+    subscribePrefs(() => {
+      calls++;
+    });
+    expect(getPrefs().midiEnabled).toBe(false);
+    setPrefs({ midiEnabled: true });
+    expect(calls).toBe(1);
+    expect(getPrefs().midiEnabled).toBe(true);
+    // No-op write stays a no-op (the samePrefs guard covers the field).
+    const before = getPrefs();
+    expect(setPrefs({ midiEnabled: true })).toBe(before);
+    expect(calls).toBe(1);
+    vi.advanceTimersByTime(250); // past the debounced write
+    const stored = JSON.parse(storage.getItem(KEY) ?? "{}") as { midiEnabled?: unknown };
+    expect(stored.midiEnabled).toBe(true);
+    // The next launch reads the flag back.
+    vi.stubGlobal("localStorage", storage);
+    vi.stubGlobal("window", { addEventListener: () => {} });
+    const fresh = await importFresh();
+    expect(fresh.getPrefs().midiEnabled).toBe(true);
+  });
+});

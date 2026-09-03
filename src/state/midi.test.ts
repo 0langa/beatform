@@ -6,6 +6,9 @@ import {
   learnBinding,
   upsertBinding,
   validMidiBindings,
+  MIDI_COMMANDS,
+  isMidiCommand,
+  midiCommandLabel,
   type MidiBinding,
 } from "./midi";
 import { knownPresetId, presetById, presets } from "../render/presets";
@@ -173,5 +176,95 @@ describe("validMidiBindings", () => {
       const once = validMidiBindings([{ kind: "note", note: 36, presetId: "starfield" }]);
       expect(validMidiBindings(once)).toEqual(once);
     });
+  });
+});
+
+/**
+ * HD-19: a note can also fire one of the Perform drawer's own controls —
+ * blackout, play/pause, next/previous mode — not just a mode switch. A
+ * command binding shares the `note:<n>` trigger space with mode bindings, so
+ * re-learning a pad replaces whatever it did before instead of stacking two
+ * meanings on one key.
+ */
+const cmdBind: MidiBinding = { kind: "command", note: 36, command: "blackout" };
+
+describe("command bindings (HD-19)", () => {
+  it("maps a note-on to the bound command, ignores note-off / zero velocity / CC", () => {
+    expect(applyMidiMessage([cmdBind], NOTE_ON(36))).toEqual({
+      type: "command",
+      command: "blackout",
+    });
+    expect(applyMidiMessage([cmdBind], NOTE_OFF(36))).toBeNull();
+    expect(applyMidiMessage([cmdBind], NOTE_ON(36, 0))).toBeNull();
+    expect(applyMidiMessage([cmdBind], CC(36, 100))).toBeNull();
+    expect(applyMidiMessage([cmdBind], NOTE_ON(37))).toBeNull();
+  });
+
+  it("shares the note trigger with mode bindings — re-learning a pad replaces it either way", () => {
+    expect(bindingId(cmdBind)).toBe("note:36");
+    const modeOn36: MidiBinding = { kind: "note", note: 36, presetId: "particles" };
+    expect(upsertBinding([modeOn36], cmdBind)).toEqual([cmdBind]);
+    expect(upsertBinding([cmdBind], modeOn36)).toEqual([modeOn36]);
+  });
+
+  it("a command-learn binds only to a note-on", () => {
+    const learn = { kind: "command" as const, command: "playPause" as const };
+    expect(learnBinding(learn, NOTE_ON(40))).toEqual({
+      kind: "command",
+      note: 40,
+      command: "playPause",
+    });
+    expect(learnBinding(learn, CC(40, 1))).toBeNull();
+    expect(learnBinding(learn, NOTE_ON(40, 0))).toBeNull();
+  });
+
+  it("exposes exactly the four VJ targets, each with a UI label", () => {
+    expect(MIDI_COMMANDS.map((c) => c.command)).toEqual([
+      "blackout",
+      "playPause",
+      "nextMode",
+      "prevMode",
+    ]);
+    for (const c of MIDI_COMMANDS) {
+      expect(isMidiCommand(c.command)).toBe(true);
+      expect(midiCommandLabel(c.command)).toBe(c.label);
+      expect(c.label.length).toBeGreaterThan(0);
+    }
+    expect(isMidiCommand("warpDrive")).toBe(false);
+    expect(isMidiCommand(undefined)).toBe(false);
+  });
+});
+
+describe("validMidiBindings: command kind (HD-19)", () => {
+  it("round-trips a command binding through JSON alongside the older kinds", () => {
+    const all = [ccBind, noteBind, cmdBind];
+    expect(validMidiBindings(JSON.parse(JSON.stringify(all)))).toEqual(all);
+  });
+
+  it("drops a command this build does not know (a newer build's target), keeping the rest", () => {
+    expect(
+      validMidiBindings([{ kind: "command", note: 1, command: "warpDrive" }, ccBind, cmdBind]),
+    ).toEqual([ccBind, cmdBind]);
+    expect(validMidiBindings([{ kind: "command", note: 1 }])).toEqual([]);
+    expect(validMidiBindings([{ kind: "command", note: 1, command: 7 }])).toEqual([]);
+  });
+
+  it("still drops an unknown binding KIND — a newer build's kinds never reach the dispatcher", () => {
+    expect(validMidiBindings([{ kind: "sysex", note: 1, command: "blackout" }, cmdBind])).toEqual([
+      cmdBind,
+    ]);
+  });
+
+  it("clamps the note into 0..127 and rejects a non-finite one", () => {
+    expect(validMidiBindings([{ kind: "command", note: 300, command: "nextMode" }])).toEqual([
+      { kind: "command", note: 127, command: "nextMode" },
+    ]);
+    expect(validMidiBindings([{ kind: "command", note: NaN, command: "nextMode" }])).toEqual([]);
+  });
+
+  it("dedupes a mode binding and a command binding on the same note — last wins", () => {
+    const modeOn36 = { kind: "note", note: 36, presetId: "particles" };
+    expect(validMidiBindings([modeOn36, cmdBind])).toEqual([cmdBind]);
+    expect(validMidiBindings([cmdBind, modeOn36])).toEqual([modeOn36]);
   });
 });

@@ -1,14 +1,20 @@
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useVizStore } from "../state/store";
 import { orderedPresets } from "../state/presetOrder";
 import { QUANTIZE_MODES } from "../state/quantize";
-import { bindingId } from "../state/midi";
+import {
+  bindingId,
+  isMidiCommand,
+  MIDI_COMMANDS,
+  midiCommandLabel,
+  type MidiBinding,
+} from "../state/midi";
 import { midiSupported } from "../state/midiInput";
 import { isTauri } from "../state/platform";
 import { getPrefs, subscribePrefs } from "../state/prefs";
 import { monitorLabel } from "../state/slices/performActions";
 import { presetById, presets as builtinPresets } from "../render/presets";
-import { allParams } from "../render/types";
+import { allParams, groupParams, isModTarget } from "../render/types";
 import type { SyncMode } from "../audio/types";
 import { Segmented } from "./kit";
 import { Switch } from "./Switch";
@@ -17,8 +23,11 @@ import { IconClose } from "./Icons";
 /**
  * P-4 — the Perform drawer: the operator console for live sets, and
  * FEAT-009's second-display controls in the same room. The Visuals ▸ Live
- * page CONFIGURES (CC learn with its param picker, quantize explanation);
- * this drawer PERFORMS: big pads, blackout, the output window.
+ * page EXPLAINS (quantize, what MIDI can and cannot drive) and keeps its own
+ * learn buttons; this drawer PERFORMS: big pads, blackout, the output window,
+ * and since HD-19 the full MIDI learn surface — pads to modes or to the
+ * drawer's own controls, knobs to the current mode's params — so an operator
+ * never has to leave it mid-set.
  *
  * Deliberately NOT `.chrome` and mounted above the blackout overlay: it is
  * summoned from inside Stage mode (D), and the control that undoes a
@@ -53,6 +62,7 @@ export function PerformDrawer() {
   const performMonitors = useVizStore((s) => s.performMonitors);
   const syncMode = useVizStore((s) => s.sync.mode);
   const midiEnabled = useVizStore((s) => s.midiEnabled);
+  const midiDevices = useVizStore((s) => s.midiDevices);
   const midiBindings = useVizStore((s) => s.midiBindings);
   const midiLearn = useVizStore((s) => s.midiLearn);
   const store = useVizStore.getState;
@@ -63,7 +73,33 @@ export function PerformDrawer() {
   const desktop = isTauri();
   const activePreset = presetById(presetId);
   const blackoutArmed = stageMode || performOpen;
-  const noteLearnArmed = midiLearn?.kind === "note";
+  // HD-19: the drawer is a full MIDI surface. Note-learn covers the current
+  // mode AND the drawer's own controls (blackout, play/pause, next/previous
+  // mode); CC-learn covers the active mode's knob targets — mod:"off" params
+  // are not targets (RP-2), the same filter the Live page applies. Both arm
+  // the ONE setMidiLearn the Live page uses; there is no second learn system.
+  const noteLearnArmed = midiLearn?.kind === "note" || midiLearn?.kind === "command";
+  const ccLearnArmed = midiLearn?.kind === "cc";
+  const [noteTarget, setNoteTarget] = useState("mode");
+  const [ccParam, setCcParam] = useState("");
+  const modTargetGroups = useMemo(
+    () => groupParams(activePreset, allParams(activePreset).filter(isModTarget)),
+    [activePreset],
+  );
+  // A pick made on another mode may not exist here — fall back to the first target.
+  const ccKey = modTargetGroups.some((g) => g.params.some((p) => p.key === ccParam))
+    ? ccParam
+    : (modTargetGroups[0]?.params[0]?.key ?? "");
+  const modeName = (id: string) =>
+    builtinPresets.find((p) => p.id === id)?.name ??
+    customDefs.find((p) => p.id === id)?.name ??
+    id;
+  const bindingLabel = (b: MidiBinding): string =>
+    b.kind === "cc"
+      ? `CC ${b.cc} → ${allParams(activePreset).find((p) => p.key === b.param)?.label ?? b.param}`
+      : b.kind === "command"
+        ? `Note ${b.note} → ${midiCommandLabel(b.command)}`
+        : `Note ${b.note} → ${modeName(b.presetId)}`;
 
   return (
     <div className="perform-drawer" role="region" aria-label="Perform">
@@ -229,61 +265,140 @@ export function PerformDrawer() {
               <div className="perform-row">
                 <span className="row-label">MIDI</span>
                 {midiEnabled ? (
-                  <button
-                    className={`text-btn ${noteLearnArmed ? "accent" : ""}`}
-                    title={`Bind a controller note/pad to ${activePreset.name} — press it after arming`}
-                    onClick={() =>
-                      noteLearnArmed
-                        ? store().setMidiLearn(null)
-                        : store().setMidiLearn({ kind: "note", presetId })
-                    }
-                  >
-                    {noteLearnArmed ? "Play a note…" : `Learn note → ${activePreset.name}`}
-                  </button>
+                  <>
+                    <span
+                      className="perform-midi-devices"
+                      title={midiDevices.length ? midiDevices.join(", ") : undefined}
+                    >
+                      {midiDevices.length ? midiDevices.join(", ") : "no inputs detected"}
+                    </span>
+                    <button
+                      className="text-btn"
+                      title="Stop listening to MIDI (stays off next launch)"
+                      onClick={() => store().disableMidi()}
+                    >
+                      Disable
+                    </button>
+                  </>
                 ) : (
                   <button
                     className="text-btn"
-                    title="Grant MIDI access and start listening"
+                    title="Grant MIDI access and start listening (stays on next launch)"
                     onClick={() => void store().enableMidi()}
                   >
                     Enable MIDI…
                   </button>
                 )}
               </div>
-              {midiEnabled && midiBindings.length === 0 && (
-                <p className="perform-drawer-hint">
-                  No mappings yet — CC learn (knobs → params) lives on Visuals ▸ Live.
-                </p>
-              )}
               {midiEnabled && (
-                <div className="perform-midi-list">
-                  {midiBindings.map((b) => {
-                    const label =
-                      b.kind === "cc"
-                        ? `CC ${b.cc} → ${
-                            allParams(activePreset).find((p) => p.key === b.param)?.label ?? b.param
-                          }`
-                        : `Note ${b.note} → ${
-                            builtinPresets.find((p) => p.id === b.presetId)?.name ??
-                            customDefs.find((p) => p.id === b.presetId)?.name ??
-                            b.presetId
-                          }`;
-                    const id = bindingId(b);
-                    return (
-                      <div key={id} className="perform-midi-row">
-                        <span className="perform-midi-label">{label}</span>
-                        <button
-                          className="chip-x"
-                          title="Remove this mapping"
-                          aria-label={`Remove ${label}`}
-                          onClick={() => store().removeMidiBinding(id)}
+                <>
+                  <div className="perform-row">
+                    <span className="row-label">Pad</span>
+                    <select
+                      className="select"
+                      value={noteTarget}
+                      title="What a pad or note triggers"
+                      onChange={(e) => setNoteTarget(e.target.value)}
+                    >
+                      <option value="mode">Switch to {activePreset.name}</option>
+                      {MIDI_COMMANDS.map((c) => (
+                        <option key={c.command} value={`cmd:${c.command}`}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className={`text-btn ${noteLearnArmed ? "accent" : ""}`}
+                      title="Then play a pad or note on your controller to bind it"
+                      onClick={() => {
+                        if (noteLearnArmed) {
+                          store().setMidiLearn(null);
+                          return;
+                        }
+                        const cmd = noteTarget.startsWith("cmd:") ? noteTarget.slice(4) : null;
+                        store().setMidiLearn(
+                          isMidiCommand(cmd)
+                            ? { kind: "command", command: cmd }
+                            : { kind: "note", presetId },
+                        );
+                      }}
+                    >
+                      {noteLearnArmed ? "Play a note…" : "Learn note"}
+                    </button>
+                  </div>
+                  <div className="perform-row">
+                    <span className="row-label">Knob</span>
+                    {modTargetGroups.length ? (
+                      <>
+                        <select
+                          className="select"
+                          value={ccKey}
+                          title="Which parameter a knob or fader drives"
+                          onChange={(e) => setCcParam(e.target.value)}
                         >
-                          <IconClose size={11} />
+                          {modTargetGroups.map(({ group, params }) => (
+                            <optgroup key={group.id} label={group.label}>
+                              {params.map((p) => (
+                                <option key={p.key} value={p.key}>
+                                  {p.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                        <button
+                          className={`text-btn ${ccLearnArmed ? "accent" : ""}`}
+                          title="Then move a knob or fader on your controller to bind it"
+                          onClick={() => {
+                            if (ccLearnArmed) {
+                              store().setMidiLearn(null);
+                              return;
+                            }
+                            const spec = allParams(activePreset).find((p) => p.key === ccKey);
+                            if (spec && isModTarget(spec)) {
+                              store().setMidiLearn({
+                                kind: "cc",
+                                param: spec.key,
+                                min: spec.min,
+                                max: spec.max,
+                              });
+                            }
+                          }}
+                        >
+                          {ccLearnArmed ? "Move a knob…" : "Learn CC"}
                         </button>
-                      </div>
-                    );
-                  })}
-                </div>
+                      </>
+                    ) : (
+                      <span className="perform-drawer-hint">
+                        {activePreset.name} has no knob targets
+                      </span>
+                    )}
+                  </div>
+                  {midiBindings.length === 0 && (
+                    <p className="perform-drawer-hint">
+                      No mappings yet — pick a target, arm Learn, then touch the control.
+                    </p>
+                  )}
+                  <div className="perform-midi-list">
+                    {midiBindings.map((b) => {
+                      const label = bindingLabel(b);
+                      const id = bindingId(b);
+                      return (
+                        <div key={id} className="perform-midi-row">
+                          <span className="perform-midi-label">{label}</span>
+                          <button
+                            className="chip-x"
+                            title="Remove this mapping"
+                            aria-label={`Remove ${label}`}
+                            onClick={() => store().removeMidiBinding(id)}
+                          >
+                            <IconClose size={11} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </section>
           )}
