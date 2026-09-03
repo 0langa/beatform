@@ -1098,6 +1098,14 @@ button:disabled {
   user-select: text;
 }
 
+/* HD-12: advisory, not an error — the import still goes through. */
+.shader-warning {
+  color: #d9a441;
+  font-family: Consolas, monospace;
+  font-size: 11.5px;
+  user-select: text;
+}
+
 /* ---------- library panel ---------- */
 
 .library-panel {

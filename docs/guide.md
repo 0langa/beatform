@@ -373,7 +373,7 @@ No — Beatform talks to controllers directly through the Web MIDI API. There's 
 
 ### What Shadertoy shaders can I import?
 
-Single-pass shaders using the Image tab — paste the source and Beatform translates it to WGSL locally, keeping the author and license with the visual. Multipass buffers, cubemap/video/keyboard channels, static textures on iChannel1–3, and channels chosen at runtime instead of written literally aren't supported yet. An unsupported shader gets a diagnostic naming the reason rather than a silent failure.
+Single-pass shaders using the Image tab — paste the source and Beatform translates it to WGSL locally, keeping the author and license with the visual. Multipass buffers, cubemap/video/keyboard channels, static textures on iChannel1–3, and channels chosen at runtime instead of written literally aren't supported yet. An unsupported shader gets a diagnostic naming the reason rather than a silent failure, and the import dialog warns before you translate when the pasted code samples iChannel1–3, reads iMouse, or mentions other passes — those inputs are empty in Beatform, so the affected parts render black.
 
 ### How does the Gallery keep a download from being something malicious?
 

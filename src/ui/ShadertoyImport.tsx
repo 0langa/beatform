@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { askConfirm } from "../state/platform";
 import { useVizStore } from "../state/store";
+import { shadertoyWarnings } from "../state/shadertoyWarnings";
 import { IconClose } from "./Icons";
 import { useFocusTrap } from "./useFocusTrap";
 import { raceTimeout, SHADER_APPLY_TIMEOUT_MS } from "./asyncTimeout";
@@ -48,6 +49,9 @@ export function ShadertoyImport() {
   const [source, setSource] = useState(st?.source ?? "");
   const [license, setLicense] = useState(st?.license ?? DEFAULT_LICENSE);
   const [errors, setErrors] = useState<string[]>([]);
+  // HD-12: what the pasted code will silently lose (empty channels, zero
+  // iMouse, other passes) — shown before Translate, never a gate.
+  const warnings = useMemo(() => shadertoyWarnings(glsl), [glsl]);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const dialogRef = useFocusTrap(true);
@@ -211,6 +215,15 @@ export function ShadertoyImport() {
             {errors.map((e, i) => (
               <div key={i} className="shader-error">
                 {e}
+              </div>
+            ))}
+          </div>
+        )}
+        {warnings.length > 0 && (
+          <div className="shader-errors" role="note" aria-label="Import warnings">
+            {warnings.map((w, i) => (
+              <div key={i} className="shader-warning">
+                {w}
               </div>
             ))}
           </div>
