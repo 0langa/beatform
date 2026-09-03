@@ -36,7 +36,13 @@ import {
 import type { LineDetail } from "../lyricsGen";
 import { wavFromPcm } from "../../audio/dsp/wav";
 import { pcmFromAudioBuffer } from "../../audio/offlineSource";
-import { isTauri, lyricsAlignLine, lyricsStageAudio, saveTextFile } from "../platform";
+import {
+  isTauri,
+  lyricsAlignLine,
+  lyricsGenerateCancel,
+  lyricsStageAudio,
+  saveTextFile,
+} from "../platform";
 import { getEngine } from "../services";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
@@ -67,6 +73,17 @@ const lineTimeCeiling = (): number => getEngine().audioBuffer?.duration ?? MAX_T
 // depths are mirrored into state so buttons can enable/disable reactively).
 let past: LyricLine[][] = [];
 let future: LyricLine[][] = [];
+
+// HD-08: the running re-align's cancel token. lyrics_align_line shares the
+// sidecar job slot with lyrics_generate, so the SAME Rust cancel command
+// (lyrics_generate_cancel: a "cancel" line down stdin, bounded kill as the
+// backstop) reaches it — no second cancel path. What Rust cannot do is
+// un-deliver a result already on its way back, or stop a run that is still
+// staging its audio slice before any sidecar exists. This flag closes both
+// gaps: set by cancelLyricsRealign, checked after every await, reset at the
+// start of each run. One boolean suffices — `lyricsRealign` admits exactly
+// one run at a time.
+let realignCancelled = false;
 
 export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   const depths = () => ({
@@ -185,8 +202,11 @@ export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       if (!lines || lines.length === 0) return;
       const name = (get().lyricFileName ?? "lyrics.lrc").replace(/\.(lrc|srt)$/i, "") + ".lrc";
       try {
+        // .lrc is the only output format (HD-11, by design): an .srt import
+        // is converted on the way in and saved back as .lrc — the file name
+        // above already swapped the extension.
         const path = await saveTextFile(name, writeLrc(lines), [
-          { name: "Timed lyrics", extensions: ["lrc"] },
+          { name: "Timed lyrics (.lrc)", extensions: ["lrc"] },
         ]);
         if (path) ctx.flashNotice(`Lyrics saved — ${path.split(/[\\/]/).pop()}`);
       } catch (e) {
@@ -209,7 +229,9 @@ export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         set({ error: "Re-align needs the desktop app" });
         return;
       }
-      if (s.lyricsGen.phase !== "idle" || s.lyricsRealign) return;
+      // modelOp (HD-17): the aligner reads the model files — wait for a
+      // verify/remove exactly as it waits for a download or a generation.
+      if (s.lyricsGen.phase !== "idle" || s.lyricsGen.modelOp || s.lyricsRealign) return;
       const engine = getEngine();
       const buf = engine.audioBuffer;
       if (!buf) {
@@ -229,6 +251,7 @@ export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         return;
       }
       set({ lyricsRealign: { index: i } });
+      realignCancelled = false; // a new run, a fresh token
       // Words are aligned against THIS track's audio (`buf` above). If a new
       // track lands mid-run, the text check below could still pass — same
       // text at the same index in freshly loaded lyrics — with timings that
@@ -245,13 +268,18 @@ export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           channels: pcm.channels.map((c) => c.subarray(s0, s1)),
         };
         await lyricsStageAudio(wavFromPcm(slice));
+        // Cancelled while staging: there is no sidecar to stop yet, so
+        // simply never spawn one (the finally clears the flight state).
+        if (realignCancelled) return;
         const words = await lyricsAlignLine(
           start - sliceStart,
           end - sliceStart,
           line.text,
           true, // sidecar auto-detects; its CPU fallback is internal
         );
-        if (gen !== shared.trackLoadGen) return;
+        // A result that lands after Cancel (the sidecar finished just as the
+        // cancel line reached it) is a result for a run the user gave up on.
+        if (realignCancelled || gen !== shared.trackLoadGen) return;
         const now = get().lyrics;
         // The lines may have been edited while the sidecar ran; only apply
         // to the same line with the same text (applyRealignedWords also
@@ -273,6 +301,15 @@ export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       } finally {
         set({ lyricsRealign: null });
       }
+    },
+
+    cancelLyricsRealign() {
+      // Only a RUNNING re-align may be cancelled through here: with none in
+      // flight the shared Rust cancel would reach whatever job does hold the
+      // slot — a running generation, which has its own Cancel.
+      if (!get().lyricsRealign) return;
+      realignCancelled = true;
+      void lyricsGenerateCancel();
     },
   } satisfies Partial<VizState>;
 }

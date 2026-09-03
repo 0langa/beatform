@@ -171,6 +171,8 @@ The Scene page's Layers section adds text and image overlays. Text supports `{ti
 
 Drop an `.lrc` or `.srt` file onto the window — the current line follows the music karaoke-style, live and in every export. Position, size, color, fade timing and an _Animation_ (Plain, Slide up, Pop, or Karaoke — the line fills bright left to right as it is sung) live on the Text page. Drop the lyrics alongside the track or after it — they attach to the loaded track just like an imported stem does. And when the words deserve the whole frame, the **Lyric Stage** visual mode puts them centre stage: big audio-reactive type with the same word-by-word fill, the sung word carrying the light — no caption needed.
 
+LRC is the lyrics format Beatform writes. An `.srt` subtitle file imports just the same — drop it, or use **Import lyrics** — but it is converted on the way in, and every save writes an `.lrc`; there is no SRT export. The one thing the conversion cannot keep is an SRT cue's explicit end time: in LRC a line simply runs until the next one starts.
+
 ### Generate lyrics (desktop)
 
 No .lrc at hand? The Text page can generate timed lyrics from the loaded track, entirely on your PC. The mix is transcribed by OpenAI's Whisper running on whisper.cpp; in parallel, an Ultimate Vocal Remover (UVR) MDX-Net model isolates the vocal, and each word is then timed against that isolated vocal by a wav2vec2 forced aligner — so the karaoke fill follows the singer word by word. (Enhanced .lrc files with word tags from other tools get the same per-word fill when imported.) The AI models download once (size and a time estimate are shown first, and each one is checksum-verified) and nothing ever leaves your machine. Sung words are hard even for good models — expect to fix a few lines, and thanks to the UVR and whisper.cpp projects for making local isolation and transcription possible.
@@ -181,7 +183,7 @@ Once a track has lyrics — imported or generated — the Text page's **Edit lyr
 
 A selected line's toolbar can nudge it earlier or later, split it at the text cursor, merge it into the next line, insert an empty line above or below, delete it (<kbd>Ctrl+Z</kbd> brings it straight back), or re-align it — re-running the word aligner against the isolated vocal for that line's text (desktop only, once the lyrics models are downloaded and a track is loaded). Lines the aligner wasn't confident about are flagged red or amber, and a **⚑ next** button jumps to the next one.
 
-Opening a line's word view breaks the karaoke timing down word by word: edit a word's text, nudge its start time, or reset the whole line with **⇤⇥ even** to space every word out evenly when the alignment came out scrambled. Editing here has its own undo/redo (<kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>), separate from the rest of the app, and **Save .lrc** writes the corrected lyrics back out, word timing included.
+Opening a line's word view breaks the karaoke timing down word by word: edit a word's text, nudge its start time, or reset the whole line with **⇤⇥ even** to space every word out evenly when the alignment came out scrambled. Editing here has its own undo/redo (<kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>), separate from the rest of the app, and **Save .lrc** writes the corrected lyrics back out, word timing included — always as .lrc, even when the lyrics came in as .srt.
 
 ### Audiogram
 
@@ -336,6 +338,8 @@ Press <kbd>H</kbd> for the full list — that overlay is also where the button t
 - <kbd>Ctrl/Cmd+Z</kbd> — Undo the last change
 - <kbd>Ctrl/Cmd+Shift+Z</kbd> — Redo the last undone change (same key as Undo, plus Shift)
 - <kbd>Ctrl/Cmd+Y</kbd> — Redo the last undone change
+- <kbd>Ctrl/Cmd+Z</kbd> — Undo the last lyric edit (with focus in the Edit lyrics section, which keeps its own undo history)
+- <kbd>Ctrl/Cmd+Y</kbd> / <kbd>Ctrl/Cmd+Shift+Z</kbd> — Redo the last undone lyric edit (with focus in the Edit lyrics section)
 
 Every performance shortcut has a letter or digit as its main binding, so it sits on the same labeled key on every keyboard layout — QWERTZ and AZERTY included. The punctuation keys some of them also answer to (<kbd>[</kbd>, <kbd>]</kbd>, <kbd>\</kbd>, <kbd>.</kbd>) are kept for US-layout muscle memory and are bound by physical position, not by the character printed on them. And <kbd>Esc</kbd> closes whatever's open — except in Stage mode, where it only steps back out of Stage and leaves your panels as they were.
 

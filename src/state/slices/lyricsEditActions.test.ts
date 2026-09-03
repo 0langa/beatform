@@ -37,7 +37,13 @@ vi.mock("../services", () => ({
 
 vi.mock("../platform", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../platform")>();
-  return { ...actual, writeAutosave: vi.fn(async () => {}) };
+  return {
+    ...actual,
+    writeAutosave: vi.fn(async () => {}),
+    // HD-11: the save dialog, captured — exportLyricsLrc's file name, text
+    // and filter are the contract under test.
+    saveTextFile: vi.fn(async (name: string) => `C:/out/${name}`),
+  };
 });
 
 // Dynamic import: a static one would hoist above the global stubs and the
@@ -268,5 +274,36 @@ describe("tail time ceiling is duration-aware (whole-lane review, IMPORTANT on t
     s().setLyricLineTime(last, 6800);
 
     expect(s().lyrics![last].t).toBeCloseTo(6800);
+  });
+});
+
+/**
+ * HD-11 (DECLARE) — .srt is read-only by design: it imports (file picker and
+ * drop alike) and is converted to LRC on the way in; every save writes .lrc.
+ * This pins the declared behaviour the guide and the tooltips now describe,
+ * so the documentation can never drift from what the export actually does.
+ */
+describe("HD-11 — SRT imports are saved as LRC", () => {
+  it("an .srt import exports through the save dialog as <name>.lrc with the LRC filter, explicit cue ends dropped", async () => {
+    const { saveTextFile } = await import("../platform");
+    vi.mocked(saveTextFile).mockClear();
+    const s = () => useVizStore.getState();
+    s().loadLyricsText(
+      "subtitles.srt",
+      "1\n00:00:01,000 --> 00:00:02,500\nexplicit end\n\n2\n00:00:04,000 --> 00:00:05,000\nsecond cue\n",
+    );
+    expect(s().lyrics![0].end).toBe(2.5); // the SRT end IS honoured while loaded
+
+    await s().exportLyricsLrc();
+
+    expect(saveTextFile).toHaveBeenCalledTimes(1);
+    const [name, text, filters] = vi.mocked(saveTextFile).mock.calls[0];
+    expect(name).toBe("subtitles.lrc"); // never .srt
+    expect(filters).toEqual([{ name: "Timed lyrics (.lrc)", extensions: ["lrc"] }]);
+    expect(text).toContain("[00:01.00]explicit end");
+    expect(text).toContain("[00:04.00]second cue");
+    expect(text).not.toMatch(/-->/); // no SRT syntax survives
+    expect(text).not.toMatch(/<00:02\.50>/); // the cue's explicit end is not representable in LRC
+    expect(s().notice).toBe("Lyrics saved — subtitles.lrc");
   });
 });

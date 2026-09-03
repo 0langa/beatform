@@ -11,6 +11,7 @@ import { wavFromPcm } from "../../audio/dsp/wav";
 import { pcmFromAudioBuffer } from "../../audio/offlineSource";
 import {
   blendMeasuredRtf,
+  formatBytes,
   missingModels,
   parseDownloadProgress,
   parseSidecarEvent,
@@ -30,7 +31,9 @@ import {
   lyricsGenerateCancel,
   lyricsGpuProbe,
   lyricsModelDownload,
+  lyricsModelRemove,
   lyricsModelsState,
+  lyricsModelVerify,
   lyricsStageAudio,
 } from "../platform";
 import { getPrefs, setPrefs } from "../prefs";
@@ -88,7 +91,9 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
 
     async downloadLyricsTier(tier: LyricsTier) {
       const s = get();
-      if (!isTauri() || s.lyricsGen.phase !== "idle") return;
+      // modelOp (HD-17): a remove in flight could delete a file this
+      // download is about to consider installed and skip.
+      if (!isTauri() || s.lyricsGen.phase !== "idle" || s.lyricsGen.modelOp) return;
       const models = s.lyricsGen.models;
       if (!models) return;
       const missing = missingModels(models, tier);
@@ -153,7 +158,9 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         set({ error: "Lyrics generation needs the desktop app" });
         return;
       }
-      if (s.lyricsGen.phase !== "idle") return;
+      // modelOp (HD-17): the sidecar reads the model files — never start it
+      // while one is being removed.
+      if (s.lyricsGen.phase !== "idle" || s.lyricsGen.modelOp) return;
       const engine = getEngine();
       const buf = engine.audioBuffer;
       if (!buf) {
@@ -310,6 +317,69 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
 
     cancelLyricsGenerate() {
       void lyricsGenerateCancel();
+    },
+
+    // --- Model manager (HD-17): verify and remove what was downloaded ---
+    // Both Rust commands existed unused. The claim (`modelOp`) is taken
+    // SYNCHRONOUSLY before the first await (R2-31g, the download path's
+    // lesson) so a second click, or any lyrics job, is refused until the
+    // finally releases it — and every exit refreshes the manifest state
+    // exactly the way a download ends.
+
+    async verifyLyricsModel(id: string) {
+      const s = get();
+      if (!isTauri() || s.lyricsGen.phase !== "idle" || s.lyricsGen.modelOp || s.lyricsRealign) {
+        return;
+      }
+      const model = s.lyricsGen.models?.models.find((m) => m.id === id);
+      if (!model?.installed) return;
+      set({ lyricsGen: { ...get().lyricsGen, modelOp: { id, kind: "verify" } } });
+      try {
+        const ok = await lyricsModelVerify(id);
+        if (ok) {
+          ctx.flashNotice(`${id} verified — the file matches its checksum`);
+        } else {
+          set({
+            error:
+              `${id} failed verification — the file on disk does not match its checksum. ` +
+              `Remove it and download it again.`,
+          });
+        }
+      } catch (e) {
+        set({ error: `Could not verify ${id}: ${(e as Error).message ?? e}` });
+      } finally {
+        const fresh = await lyricsModelsState().catch(() => get().lyricsGen.models);
+        set({ lyricsGen: { ...get().lyricsGen, modelOp: null, models: fresh } });
+      }
+    },
+
+    async removeLyricsModel(id: string) {
+      const s = get();
+      if (!isTauri() || s.lyricsGen.phase !== "idle" || s.lyricsGen.modelOp || s.lyricsRealign) {
+        return;
+      }
+      const model = s.lyricsGen.models?.models.find((m) => m.id === id);
+      // Installed files and stalled partial downloads (the Rust command
+      // unlinks both the file and its .part) — nothing else is on disk.
+      if (!model || (!model.installed && model.partBytes <= 0)) return;
+      const size = formatBytes(model.installed ? model.bytes : model.partBytes);
+      set({ lyricsGen: { ...get().lyricsGen, modelOp: { id, kind: "remove" } } });
+      try {
+        const proceed = await askConfirm(
+          model.installed
+            ? `Remove ${id} (${size}) from this PC? Generating lyrics with it will need the download again.`
+            : `Delete the partial download of ${id} (${size})? The next download starts over.`,
+          "Remove lyrics model",
+        );
+        if (!proceed) return;
+        await lyricsModelRemove(id);
+        ctx.flashNotice(`${id} removed — ${size} freed`);
+      } catch (e) {
+        set({ error: `Could not remove ${id}: ${(e as Error).message ?? e}` });
+      } finally {
+        const fresh = await lyricsModelsState().catch(() => get().lyricsGen.models);
+        set({ lyricsGen: { ...get().lyricsGen, modelOp: null, models: fresh } });
+      }
     },
   } satisfies Partial<VizState>;
 }

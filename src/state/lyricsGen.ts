@@ -496,6 +496,12 @@ export interface LyricsGenState {
   phase: "idle" | "downloading" | "generating";
   /** Model manifest + install state; null until the first refresh. */
   models: LyricsModelsState | null;
+  /** A model-manager operation in flight (HD-17): verify re-hashes a
+   * multi-GB file (seconds), remove deletes it. Separate from `phase`
+   * because neither is a lyrics job — importing or clearing lyrics stays
+   * allowed meanwhile — but every model READER (download, generate,
+   * re-align) waits for it, and it waits for them. */
+  modelOp: { id: string; kind: "verify" | "remove" } | null;
   /** DirectML availability on this machine; null until probed. */
   dml: boolean | null;
   /** Live download progress while phase === "downloading". */
@@ -520,6 +526,7 @@ export interface LyricsGenState {
 export const IDLE_LYRICS_GEN: LyricsGenState = {
   phase: "idle",
   models: null,
+  modelOp: null,
   dml: null,
   download: null,
   gen: null,

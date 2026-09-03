@@ -50,6 +50,9 @@ const h = vi.hoisted(() => ({
   resolveGenerate: null as ((lrc: string) => void) | null,
   resolveAlign: null as
     ((words: { t: number; end: number; conf: number; text: string }[]) => void) | null,
+  // The sidecar's cancel outcome: lyrics_align_line rejects with the bare
+  // string "cancelled" (Tauri invoke rejects with the Err payload itself).
+  rejectAlign: null as ((reason: unknown) => void) | null,
   // Captured so tests can feed synthetic progress/stageDone/result lines
   // through the SAME onLine the real Tauri Channel would call — this is
   // what lets stage-transition (a) and measured-RTF (b) be tested against
@@ -71,6 +74,14 @@ vi.mock("../platform", async (importOriginal) => {
     lyricsModelDownload: vi.fn(async () => {}),
     lyricsModelsState: vi.fn(async () => useVizStore.getState().lyricsGen.models!),
     lyricsDownloadCancel: vi.fn(async () => {}),
+    // HD-17: verify answers "intact" and remove succeeds unless a test says
+    // otherwise; both are Rust-side in the app, so only the wiring is under
+    // test here (confirm-first, result surfacing, state refresh, guards).
+    lyricsModelVerify: vi.fn(async () => true),
+    lyricsModelRemove: vi.fn(async () => {}),
+    // HD-08: the ONE sidecar cancel — lyrics_align_line shares the job slot
+    // with lyrics_generate, so the same Rust command reaches a re-align.
+    lyricsGenerateCancel: vi.fn(async () => {}),
     lyricsStageAudio: vi.fn(async () => {}),
     lyricsGenerate: vi.fn(
       (_opts: unknown, onLine: (line: string) => void) =>
@@ -81,8 +92,9 @@ vi.mock("../platform", async (importOriginal) => {
     ),
     lyricsAlignLine: vi.fn(
       () =>
-        new Promise<{ t: number; end: number; conf: number; text: string }[]>((resolve) => {
+        new Promise<{ t: number; end: number; conf: number; text: string }[]>((resolve, reject) => {
           h.resolveAlign = resolve;
+          h.rejectAlign = reject;
         }),
     ),
   };
@@ -93,7 +105,14 @@ vi.mock("../platform", async (importOriginal) => {
 const { useVizStore } = await import("../store");
 const { getEngine } = await import("../services");
 const { shared } = await import("./shared");
-const { askConfirm, lyricsStageAudio } = await import("../platform");
+const {
+  askConfirm,
+  lyricsStageAudio,
+  lyricsGenerateCancel,
+  lyricsModelVerify,
+  lyricsModelRemove,
+  lyricsModelsState,
+} = await import("../platform");
 const { LYRICS_MAX_TRACK_SEC } = await import("./lyricsGenActions");
 const { getPrefs, setPrefs } = await import("../prefs");
 const { NO_MEASURED_RTF } = await import("../lyricsGen");
@@ -128,9 +147,14 @@ beforeEach(() => {
   useVizStore.setState({ notice: null, error: null });
   h.resolveGenerate = null;
   h.resolveAlign = null;
+  h.rejectAlign = null;
   h.onLine = null;
   vi.mocked(askConfirm).mockClear();
   vi.mocked(lyricsStageAudio).mockClear();
+  vi.mocked(lyricsGenerateCancel).mockClear();
+  vi.mocked(lyricsModelVerify).mockClear();
+  vi.mocked(lyricsModelRemove).mockClear();
+  vi.mocked(lyricsModelsState).mockClear();
   // measuredRtf is a module-level singleton (prefs.ts), not store state —
   // reset it directly so one test's persisted RTF can never leak into the
   // next one's estimate.
@@ -477,5 +501,294 @@ describe("downloadLyricsTier double-activation (R2-31g)", () => {
 
     expect(lyricsModelDownload).not.toHaveBeenCalled();
     expect(s().lyricsGen.phase).toBe("idle"); // a decline never wedges the UI
+  });
+});
+
+/**
+ * HD-08: re-align gets the transcribe lane's cancel. lyrics_align_line shares
+ * the Rust job slot with lyrics_generate, so lyrics_generate_cancel already
+ * reaches it — the store only needed a cancel action wired to that command,
+ * plus a run-local token so words that land AFTER the click (the sidecar
+ * finishing just as the cancel line arrives, or the cancel landing while the
+ * audio slice is still being staged) are dropped instead of applied. A
+ * cancelled re-align must leave the lyrics document untouched — no words,
+ * no undo entry — and clear `lyricsRealign`.
+ */
+describe("realignLyricLine cancel (HD-08)", () => {
+  const WORDS = [
+    { t: 0.7, end: 1.0, conf: 0.9, text: "Third" },
+    { t: 1.0, end: 1.3, conf: 0.9, text: "line" },
+    { t: 1.4, end: 1.9, conf: 0.9, text: "here" },
+  ];
+
+  it("Cancel sends the shared sidecar cancel; the rejected run leaves lyrics untouched, clears lyricsRealign, raises no error", async () => {
+    s().loadLyricsText("song.lrc", LRC);
+    const before = JSON.stringify(s().lyrics);
+
+    const done = s().realignLyricLine(2);
+    await until(() => h.rejectAlign !== null);
+    expect(s().lyricsRealign).toEqual({ index: 2 });
+
+    s().cancelLyricsRealign();
+    expect(lyricsGenerateCancel).toHaveBeenCalledTimes(1);
+    h.rejectAlign!("cancelled"); // the Rust Err payload, verbatim
+    await done;
+
+    expect(JSON.stringify(s().lyrics)).toBe(before);
+    expect(s().lyricsEditUndoDepth).toBe(0); // no phantom undo entry
+    expect(s().lyricsRealign).toBeNull();
+    expect(s().error).toBeNull(); // a user cancel is not a failure
+  });
+
+  it("words that arrive after Cancel are dropped, not applied", async () => {
+    s().loadLyricsText("song.lrc", LRC);
+    const before = JSON.stringify(s().lyrics);
+
+    const done = s().realignLyricLine(2);
+    await until(() => h.resolveAlign !== null);
+    s().cancelLyricsRealign();
+    // The sidecar had already finished when the cancel line reached it: the
+    // command resolves normally, with words for a run the user gave up on.
+    h.resolveAlign!(WORDS);
+    await done;
+
+    expect(JSON.stringify(s().lyrics)).toBe(before);
+    expect(s().lyrics![2].words).toBeUndefined();
+    expect(s().lyricsRealign).toBeNull();
+  });
+
+  it("a Cancel while the audio slice is still staging never spawns the sidecar", async () => {
+    const { lyricsAlignLine } = await import("../platform");
+    vi.mocked(lyricsAlignLine).mockClear();
+    s().loadLyricsText("song.lrc", LRC);
+    let releaseStage!: () => void;
+    vi.mocked(lyricsStageAudio).mockImplementationOnce(
+      () =>
+        new Promise<void>((r) => {
+          releaseStage = r;
+        }),
+    );
+
+    const done = s().realignLyricLine(2);
+    await until(() => vi.mocked(lyricsStageAudio).mock.calls.length === 1);
+    s().cancelLyricsRealign();
+    releaseStage();
+    await done;
+
+    expect(lyricsAlignLine).not.toHaveBeenCalled();
+    expect(s().lyricsRealign).toBeNull();
+    expect(s().error).toBeNull();
+  });
+
+  it("Cancel is inert with no re-align in flight, even mid-generation (that job has its own Cancel)", async () => {
+    s().cancelLyricsRealign();
+    expect(lyricsGenerateCancel).not.toHaveBeenCalled();
+
+    const done = s().generateLyrics("small", "auto");
+    await until(() => h.resolveGenerate !== null);
+    s().cancelLyricsRealign();
+    expect(lyricsGenerateCancel).not.toHaveBeenCalled();
+    h.resolveGenerate!(LRC);
+    await done;
+  });
+
+  it("a fresh re-align after a cancelled one applies normally (the token does not stick)", async () => {
+    s().loadLyricsText("song.lrc", LRC);
+    const first = s().realignLyricLine(2);
+    await until(() => h.rejectAlign !== null);
+    s().cancelLyricsRealign();
+    h.rejectAlign!("cancelled");
+    await first;
+    h.resolveAlign = null;
+
+    const second = s().realignLyricLine(2);
+    await until(() => h.resolveAlign !== null);
+    h.resolveAlign!(WORDS);
+    await second;
+
+    expect(s().lyrics![2].words).toHaveLength(3);
+    expect(s().lyricsRealign).toBeNull();
+  });
+});
+
+/**
+ * HD-17: the model manager can finally verify and remove what it downloaded.
+ * Both are Rust commands that existed unused; the store owns confirm-first
+ * on remove, result surfacing in the panel's own language (notice on
+ * success, error on a failed check), the busy claim that keeps a second
+ * click and every other lyrics job out, and the same models-state refresh
+ * the download path ends with.
+ */
+describe("lyrics model verify/remove (HD-17)", () => {
+  function modelInfo(id: string, installed: boolean, partBytes = 0) {
+    return {
+      id,
+      fileName: `${id}.bin`,
+      bytes: 1_500_000_000,
+      sha256: "x",
+      role: "isolation",
+      installed,
+      partBytes,
+    };
+  }
+  const fixture = () => ({
+    modelsDir: "C:/models",
+    models: [
+      modelInfo("mdx-voc-ft", true),
+      modelInfo("wav2vec2-align", true),
+      modelInfo("wav2vec2-vocab", true),
+      modelInfo("whisper-small", true),
+      modelInfo("whisper-medium", false, 300_000_000), // a stalled partial
+    ],
+  });
+  beforeEach(() => {
+    useVizStore.setState({
+      lyricsGen: { ...s().lyricsGen, phase: "idle", modelOp: null, models: fixture() },
+      lyricsRealign: null,
+    });
+  });
+
+  it("remove asks first; a declined confirm deletes nothing and releases the claim", async () => {
+    vi.mocked(askConfirm).mockResolvedValueOnce(false);
+    await s().removeLyricsModel("whisper-small");
+
+    expect(askConfirm).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(askConfirm).mock.calls[0][0]).toMatch(/whisper-small/);
+    expect(vi.mocked(askConfirm).mock.calls[0][0]).toMatch(/1\.50 GB/);
+    expect(lyricsModelRemove).not.toHaveBeenCalled();
+    expect(s().lyricsGen.modelOp).toBeNull();
+  });
+
+  it("an accepted remove deletes the model, refreshes the models state and says what it freed", async () => {
+    const after = fixture();
+    after.models[3] = modelInfo("whisper-small", false);
+    vi.mocked(lyricsModelsState).mockResolvedValueOnce(after);
+
+    await s().removeLyricsModel("whisper-small");
+
+    expect(lyricsModelRemove).toHaveBeenCalledWith("whisper-small");
+    expect(s().lyricsGen.models).toEqual(after); // refreshed like the download path
+    expect(s().lyricsGen.modelOp).toBeNull();
+    expect(s().notice).toMatch(/whisper-small/);
+    expect(s().notice).toMatch(/1\.50 GB/);
+    expect(s().error).toBeNull();
+  });
+
+  it("a stalled partial download can be removed too — its confirm names the partial size", async () => {
+    await s().removeLyricsModel("whisper-medium");
+
+    expect(vi.mocked(askConfirm).mock.calls[0][0]).toMatch(/300 MB/);
+    expect(lyricsModelRemove).toHaveBeenCalledWith("whisper-medium");
+  });
+
+  it("verify: an intact model gets a notice, a damaged one an error naming the model", async () => {
+    await s().verifyLyricsModel("whisper-small");
+    expect(lyricsModelVerify).toHaveBeenCalledWith("whisper-small");
+    expect(s().notice).toMatch(/whisper-small/);
+    expect(s().error).toBeNull();
+    expect(s().lyricsGen.modelOp).toBeNull();
+
+    vi.mocked(lyricsModelVerify).mockResolvedValueOnce(false);
+    await s().verifyLyricsModel("mdx-voc-ft");
+    expect(s().error).toMatch(/mdx-voc-ft/);
+    expect(s().error).toMatch(/download/i); // tells the user the way out
+    expect(s().lyricsGen.modelOp).toBeNull();
+  });
+
+  it("verify marks the model busy while the hash runs, and refreshes the models state after", async () => {
+    let release!: (ok: boolean) => void;
+    vi.mocked(lyricsModelVerify).mockImplementationOnce(
+      () =>
+        new Promise<boolean>((r) => {
+          release = r;
+        }),
+    );
+    const done = s().verifyLyricsModel("whisper-small");
+    await until(() => vi.mocked(lyricsModelVerify).mock.calls.length === 1);
+    expect(s().lyricsGen.modelOp).toEqual({ id: "whisper-small", kind: "verify" });
+
+    // A second click on anything while the hash runs is refused outright.
+    await s().verifyLyricsModel("mdx-voc-ft");
+    await s().removeLyricsModel("mdx-voc-ft");
+    expect(lyricsModelVerify).toHaveBeenCalledTimes(1);
+    expect(askConfirm).not.toHaveBeenCalled();
+
+    release(true);
+    await done;
+    expect(s().lyricsGen.modelOp).toBeNull();
+    expect(lyricsModelsState).toHaveBeenCalled();
+  });
+
+  it("a second remove click during the confirm is refused — one prompt, one delete (R2-31g shape)", async () => {
+    let answer!: (ok: boolean) => void;
+    vi.mocked(askConfirm).mockImplementationOnce(
+      () =>
+        new Promise<boolean>((r) => {
+          answer = r;
+        }),
+    );
+    const first = s().removeLyricsModel("whisper-small");
+    await until(() => vi.mocked(askConfirm).mock.calls.length === 1);
+    const second = s().removeLyricsModel("whisper-small");
+    answer(true);
+    await Promise.all([first, second]);
+
+    expect(askConfirm).toHaveBeenCalledTimes(1);
+    expect(lyricsModelRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it("both refuse while a lyrics job, a download or a line re-align is running", async () => {
+    for (const phase of ["downloading", "generating"] as const) {
+      useVizStore.setState({ lyricsGen: { ...s().lyricsGen, phase } });
+      await s().verifyLyricsModel("whisper-small");
+      await s().removeLyricsModel("whisper-small");
+    }
+    useVizStore.setState({
+      lyricsGen: { ...s().lyricsGen, phase: "idle" },
+      lyricsRealign: { index: 0 },
+    });
+    await s().verifyLyricsModel("whisper-small");
+    await s().removeLyricsModel("whisper-small");
+
+    expect(lyricsModelVerify).not.toHaveBeenCalled();
+    expect(lyricsModelRemove).not.toHaveBeenCalled();
+    expect(askConfirm).not.toHaveBeenCalled();
+  });
+
+  it("neither touches a model that is not on disk", async () => {
+    useVizStore.setState({
+      lyricsGen: {
+        ...s().lyricsGen,
+        models: { modelsDir: "C:/models", models: [modelInfo("whisper-medium", false)] },
+      },
+    });
+    await s().verifyLyricsModel("whisper-medium");
+    await s().removeLyricsModel("whisper-medium");
+    expect(lyricsModelVerify).not.toHaveBeenCalled();
+    expect(lyricsModelRemove).not.toHaveBeenCalled();
+  });
+
+  it("a remove failure surfaces as an error and still refreshes and releases", async () => {
+    vi.mocked(lyricsModelRemove).mockRejectedValueOnce(new Error("remove C:/models/x.bin: busy"));
+    await s().removeLyricsModel("whisper-small");
+    expect(s().error).toMatch(/whisper-small/);
+    expect(s().error).toMatch(/busy/);
+    expect(s().lyricsGen.modelOp).toBeNull();
+  });
+
+  it("download, generate and re-align wait for a model operation to finish (a remove must not race a read)", async () => {
+    const { lyricsModelDownload } = await import("../platform");
+    vi.mocked(lyricsModelDownload).mockClear();
+    useVizStore.setState({
+      lyricsGen: { ...s().lyricsGen, modelOp: { id: "whisper-small", kind: "remove" } },
+    });
+    await s().downloadLyricsTier("medium");
+    await s().generateLyrics("small", "auto");
+    s().loadLyricsText("song.lrc", LRC);
+    await s().realignLyricLine(0);
+
+    expect(lyricsModelDownload).not.toHaveBeenCalled();
+    expect(lyricsStageAudio).not.toHaveBeenCalled();
+    expect(s().lyricsGen.phase).toBe("idle");
   });
 });

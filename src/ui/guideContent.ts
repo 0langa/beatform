@@ -457,6 +457,17 @@ export const GUIDE: readonly GuideSection[] = [
           " visual mode puts them centre stage: big audio-reactive type with the same word-by-word fill, the sung word carrying the light — no caption needed.",
         ],
       },
+      {
+        p: [
+          "LRC is the lyrics format Beatform writes. An ",
+          { code: ".srt" },
+          " subtitle file imports just the same — drop it, or use ",
+          { strong: "Import lyrics" },
+          " — but it is converted on the way in, and every save writes an ",
+          { code: ".lrc" },
+          "; there is no SRT export. The one thing the conversion cannot keep is an SRT cue's explicit end time: in LRC a line simply runs until the next one starts.",
+        ],
+      },
       { h4: "Generate lyrics (desktop)" },
       {
         p: [
@@ -490,7 +501,7 @@ export const GUIDE: readonly GuideSection[] = [
           { kbd: "Ctrl+Y" },
           "), separate from the rest of the app, and ",
           { strong: "Save .lrc" },
-          " writes the corrected lyrics back out, word timing included.",
+          " writes the corrected lyrics back out, word timing included — always as .lrc, even when the lyrics came in as .srt.",
         ],
       },
       { h4: "Audiogram" },
