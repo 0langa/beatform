@@ -1695,6 +1695,14 @@ button.row-value:focus-visible {
   color: var(--text-faint);
 }
 
+/* HD-13: the installed-state line under the meta row — "In My Looks · remove
+   it under Visuals ▸ Looks & themes". Same voice as the meta line; it is
+   status, not a control. */
+.gallery-card-note {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
 /* P-6: sibling of the type-label span above it — same badge visual language
    as PanelFooterBadges' `.renderer-badge`, just enough external margin to
    sit in the meta line's inline text flow between the type label and
