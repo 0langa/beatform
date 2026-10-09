@@ -240,6 +240,48 @@ evidence is recorded here.
       shader-delete-undo does not re-delete (library merge semantics); Esc
       with Stage active AND a dialog open exits Stage first.
 
+## Done 2026-10-09 — beat-sync audit (owner-initiated; owner picked "fix all three")
+
+Owner report: visuals felt less on-beat / less immersive than YouTube
+visualizers. Measured with a synthetic song at four mastering levels and ten
+real tracks from the owner's test library (hardstyle, EDM, reggae, hip hop).
+Onset **timing was never the problem** (pulses land within ±7 ms of the
+transient, pinned by `syncLatency.test.ts`). Three findings, two fixed, one
+declared:
+
+- [x] **Band levels pinned at 1.0.** `bandMean` on the −90..−22 dBFS sync
+      scale ×1.6 saturated on any real bass: ten real songs read `drive`
+      (default Kicks mode) at 1.00 for 95%+ of frames, bass p5 0.9–1.0. Fixed
+      with a per-band adaptive peak reference (`BandLevel` in
+      `featurePipeline.ts`: mean dB over the band, peak hold releasing
+      4 dB/s, floor −50 dB, amplitude-like curve 10^(Δ·0.03), instant attack,
+      12/s release). After: `drive` p5 0.10–0.57, p95 0.82–0.97 on the same
+      songs. Detectors (flux on `mag`) untouched → beat frames in the golden
+      trace identical; only the bass/mid/treble/drive columns of
+      `offlineSource.test.ts.snap` moved (re-blessed with that check). GPU
+      pixel matrix unaffected (renders `demoFeatures`, not the pipeline).
+- [x] **Live preview pulses led the ear.** Tap-derived features were
+      presented at graph-head time while the grid was latency-compensated —
+      a kick flashed `outputLatency − one frame` (≈50 ms on the reference
+      machine) before it was audible, and `max(driveBeat, gridPulse)` smeared
+      into two pulses. `RealtimeAnalyzer.present()` now serves tap-derived
+      fields from a 64-entry snapshot ring delayed by the loop's presentation
+      lag (`latency − DISPLAY_LEAD + avOffset`), time-derived fields live.
+      New **Preferences ▸ Performance ▸ Visual timing offset** (−250..250 ms,
+      `prefs.avOffsetMs`) for latency the browser cannot report (Bluetooth).
+      Preview-only; exports never take the path. Tests: ring semantics in
+      `realtimeSource.test.ts`, loop arithmetic in `services.test.ts`.
+- **DECLARED — onset detectors not retuned.** The synthetic song showed
+  ~50% off-beat fires (a re-fire ~140 ms after kicks over a sustained
+  sub, chance fires on stationary noise). On real songs those fires are
+  REAL events: scored against the beat grid with eighth-note positions,
+  ±100 ms, the kick detector reads recall 81% / precision 92%. Ten
+  threshold variants (echo gate, σ term, median, rising edge, higher
+  multiplier, unclamped flux scale) were simulated on the ten songs and
+  none improved F1 (best 0.598 vs 0.585 current; the σ variant lost
+  recall 67→44%). No change without a measured win. Probe scripts kept in
+  the session scratchpad, not the repo.
+
 ## Done 2026-09-02 (in the working tree; ships as v2.109.0 on the owner's go)
 
 - CI on `main` back to green locally: prettier drift on six agent-config files

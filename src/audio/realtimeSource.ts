@@ -39,6 +39,64 @@ const GATE_CLOSE = Math.pow(10, -66 / 20);
 const GATE_HOLD_SEC = 0.35;
 
 /**
+ * Presentation ring depth, in update() calls. 64 covers ~1 s at 60 Hz and
+ * ~440 ms at 144 Hz — more than the output latency plus the ±250 ms the A/V
+ * offset preference allows. Each entry holds one AudioFeatures clone (~38 KB,
+ * the three waveform lanes dominate), so the ring tops out near 2.5 MB.
+ */
+const RING_MAX = 64;
+
+/** A structural copy of a features frame with its own arrays. */
+function cloneFeatures(src: AudioFeatures): AudioFeatures {
+  return {
+    ...src,
+    bins: new Float32Array(src.bins),
+    peaks: new Float32Array(src.peaks),
+    waveform: new Float32Array(src.waveform),
+    waveformL: new Float32Array(src.waveformL),
+    waveformR: new Float32Array(src.waveformR),
+    ...(src.chroma ? { chroma: new Float32Array(src.chroma) } : {}),
+  };
+}
+
+/** Copy an array feature, reallocating when a layout change resized it
+ * (measured spectrum mode replaces `bins`/`peaks` with a shorter array). */
+function setArr(dst: Float32Array, src: Float32Array): Float32Array {
+  const d = dst.length === src.length ? dst : new Float32Array(src.length);
+  d.set(src);
+  return d;
+}
+
+/**
+ * Copy every TAP-derived field (what the analyser measured on the audio) —
+ * never the time-derived ones (time, grid, sections, lyrics), which
+ * `present()` resolves for the frame being shown.
+ */
+function copyTapFields(dst: AudioFeatures, src: AudioFeatures): void {
+  dst.bins = setArr(dst.bins, src.bins);
+  dst.peaks = setArr(dst.peaks, src.peaks);
+  dst.waveform = setArr(dst.waveform, src.waveform);
+  dst.waveformL = setArr(dst.waveformL, src.waveformL);
+  dst.waveformR = setArr(dst.waveformR, src.waveformR);
+  if (src.chroma) dst.chroma = setArr(dst.chroma ?? new Float32Array(12), src.chroma);
+  dst.rms = src.rms;
+  dst.energy = src.energy;
+  dst.voice = src.voice;
+  dst.drive = src.drive;
+  dst.driveBeat = src.driveBeat;
+  dst.bass = src.bass;
+  dst.mid = src.mid;
+  dst.treble = src.treble;
+  dst.width = src.width;
+  dst.lufs = src.lufs;
+  dst.kick = src.kick;
+  dst.snare = src.snare;
+  dst.hat = src.hat;
+  dst.beat = src.beat;
+  dst.beatIntensity = src.beatIntensity;
+}
+
+/**
  * Realtime analysis source: pulls the most recent fftSize time-domain samples
  * from the AnalyserNode each animation frame and runs the SAME RealFFT (Hann
  * window) the offline export path uses. Counterpart of OfflineAnalyzer.
@@ -91,6 +149,17 @@ export class RealtimeAnalyzer {
   private gateHold = 0;
   /** Handed to the pipeline in place of the tap while the gate is shut. */
   private silence: Float32Array;
+  /**
+   * The frame the visuals PRESENT — see `present()`. Its tap-derived fields
+   * come from the snapshot ring delayed by the caller's presentation lag; its
+   * time-derived fields are always this frame's.
+   */
+  private presented: AudioFeatures;
+  /** Ring of recent pipeline frames (tap-derived fields only matter), each
+   * stamped with the wall-clock `now` it was analysed at. */
+  private ring: Array<{ at: number; f: AudioFeatures }> = [];
+  private ringLen = 0;
+  private ringHead = 0;
 
   constructor(engine: AudioEngine, binCount = 96) {
     this.engine = engine;
@@ -111,6 +180,7 @@ export class RealtimeAnalyzer {
       // the window is trigger-search headroom.
       waveformLength: WAVEFORM_LENGTH,
     });
+    this.presented = cloneFeatures(this.pipeline.features);
   }
 
   /** Choose what the visuals follow. */
@@ -170,6 +240,11 @@ export class RealtimeAnalyzer {
     // frame of real audio opens it anyway.
     this.gateOpen = false;
     this.gateHold = 0;
+    // The ring describes audio that is no longer adjacent: presenting it
+    // after a seek would show the OLD position for one latency's worth of
+    // frames. Empty, the next update presents live until the ring refills.
+    this.ringLen = 0;
+    this.ringHead = 0;
   }
 
   /** Attach the track's beat grid once analysis lands (null = none yet). */
@@ -222,7 +297,7 @@ export class RealtimeAnalyzer {
    * diagnostics" before that.
    */
   get features(): AudioFeatures {
-    return this.pipeline.features;
+    return this.presented;
   }
 
   /**
@@ -252,8 +327,14 @@ export class RealtimeAnalyzer {
    * this frame — the caller passes the output-latency-compensated clock so
    * grid phase and f.time align with what the ears hear (defaults to the
    * engine's raw clock).
+   *
+   * `presentLag` (seconds, ≥ 0) delays the TAP-derived features by that much
+   * wall-clock time before they are presented — see `present()`. The caller
+   * passes the same presentation lag it subtracted from the clock to get
+   * `trackTime`, so onset pulses, bands and bins reach the eye at the moment
+   * the ear hears the audio they were measured on. 0 presents live.
    */
-  update(now: number, trackTime = this.engine.currentTime): AudioFeatures {
+  update(now: number, trackTime = this.engine.currentTime, presentLag = 0): AudioFeatures {
     const dt = this.lastFrameAt === null ? 1 / 60 : now - this.lastFrameAt;
     this.lastFrameAt = now;
     // Decide whether the detectors step this frame.
@@ -338,7 +419,7 @@ export class RealtimeAnalyzer {
     // gated frame's lanes are the same silence the mono lane carries.
     const stereo =
       !gated && (this.engine.liveInput || (this.engine.audioBuffer?.numberOfChannels ?? 0) > 1);
-    return this.pipeline.update({
+    const live = this.pipeline.update({
       magDb: this.magDb,
       ...(displayMagDb ? { displayMagDb } : {}),
       waveform: gated ? this.silence : this.timeData,
@@ -357,6 +438,85 @@ export class RealtimeAnalyzer {
       ...(this.sections ? sectionStateAt(this.sections, trackTime) : {}),
       ...(this.vocalSpans ? { vocal: vocalPresenceAt(this.vocalSpans, trackTime) } : {}),
     });
+    return this.present(live, now, presentLag);
+  }
+
+  /**
+   * Align what the eye sees with what the ear hears.
+   *
+   * The analyser taps the graph HEAD, which the speakers play
+   * `baseLatency + outputLatency` later (66 ms on the reference machine;
+   * Bluetooth adds more than the browser reports). The loop already presents
+   * the beat GRID at the compensated clock, but every tap-derived feature —
+   * onset pulses, bands, bins, the waveform — was computed on audio the ear
+   * has not heard yet, so a kick flashed on screen a few frames before it
+   * was audible, and `max(driveBeat, gridPulse)` in the presets smeared into
+   * two pulses one latency apart.
+   *
+   * Fix: keep a ring of recent frames and present the one analysed
+   * `presentLag` ago. The grid, section and lyric fields are a pure function
+   * of track time and are taken from the LIVE frame (already resolved at the
+   * compensated clock), so nothing is compensated twice. Preview-only by
+   * construction — the export path has no output latency and never calls
+   * this — so the determinism law is untouched.
+   *
+   * If the ring does not reach back far enough (first frames after a reset,
+   * or a lag longer than the ring), the oldest frame is presented: a lag
+   * that is slightly short beats a visible jump.
+   */
+  private present(live: AudioFeatures, now: number, presentLag: number): AudioFeatures {
+    const out = this.presented;
+    if (presentLag > 0) {
+      // Push this frame: into the next free slot while the ring fills, over
+      // the OLDEST entry once it is full.
+      let idx: number;
+      if (this.ringLen < RING_MAX) {
+        idx = (this.ringHead + this.ringLen) % RING_MAX;
+        this.ringLen++;
+      } else {
+        idx = this.ringHead;
+        this.ringHead = (this.ringHead + 1) % RING_MAX;
+      }
+      if (idx >= this.ring.length) {
+        this.ring.push({ at: now, f: cloneFeatures(live) });
+      } else {
+        const slot = this.ring[idx];
+        slot.at = now;
+        copyTapFields(slot.f, live);
+      }
+      // The frame analysed NEAREST to now − lag. Nearest rather than
+      // "newest at or before": frames are sampled on a jittery rAF clock, and
+      // a floor would skip the one-frame pulse peak whenever the target fell
+      // a hair before its stamp. Entries are stamped in increasing order, so
+      // walk back from the newest and stop once the distance starts growing.
+      const target = now - presentLag;
+      let pick = this.ring[this.ringHead];
+      let best = Infinity;
+      for (let i = this.ringLen - 1; i >= 0; i--) {
+        const e = this.ring[(this.ringHead + i) % RING_MAX];
+        const d = Math.abs(e.at - target);
+        if (d > best) break;
+        best = d;
+        pick = e;
+      }
+      copyTapFields(out, pick.f);
+    } else {
+      this.ringLen = 0;
+      this.ringHead = 0;
+      copyTapFields(out, live);
+    }
+    out.time = live.time;
+    out.duration = live.duration;
+    out.timeOrigin = live.timeOrigin;
+    out.bpm = live.bpm;
+    out.beatPhase = live.beatPhase;
+    out.barPhase = live.barPhase;
+    out.beatIndex = live.beatIndex;
+    out.barIndex = live.barIndex;
+    out.sectionIndex = live.sectionIndex;
+    out.sectionPulse = live.sectionPulse;
+    out.vocal = live.vocal;
+    return out;
   }
 
   /**

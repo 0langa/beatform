@@ -15,7 +15,7 @@ import {
 import { useFocusTrap } from "./useFocusTrap";
 import { IconClose } from "./Icons";
 import { PresetOrderEditor } from "./PresetOrderEditor";
-import { SECONDS, Segmented, SelectRow, SliderRow, ToggleRow } from "./kit";
+import { MILLISECONDS, SECONDS, Segmented, SelectRow, SliderRow, ToggleRow } from "./kit";
 
 /**
  * App-level settings (Ctrl+,) — preferences about the APP, as opposed to the
@@ -219,6 +219,20 @@ export function SettingsDialog() {
             <p className="section-hint">
               Lowers only the live canvas — every export still renders at the exact size you pick in
               the export dialog.
+            </p>
+            <SliderRow
+              label="Visual timing offset"
+              hint="Shifts the live visuals against the sound you hear. Positive = later. Raise it if hits flash before you hear them (Bluetooth headphones usually need +100 to +200 ms)."
+              min={-250}
+              max={250}
+              step={5}
+              value={prefs.avOffsetMs}
+              onChange={(v) => apply({ avOffsetMs: v })}
+              format={MILLISECONDS}
+            />
+            <p className="section-hint">
+              Beatform already corrects for the output delay your audio device reports. This covers
+              what it cannot see. Preview only — exports are frame-exact by construction.
             </p>
             <SelectRow
               label="GPU preference"

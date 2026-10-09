@@ -705,3 +705,97 @@ describe("RealtimeAnalyzer willTick prediction (R2-25)", SUITE, () => {
     expect(ana.willTick(1 / 60 + 1e-6)).toBe(true);
   });
 });
+
+/**
+ * Live presentation ring: tap-derived features reach the eye `presentLag`
+ * after they were analysed, time-derived ones never wait. The fixture is one
+ * kick at t = 1 s in silence, so the first frame whose kick pulse is 1 marks
+ * exactly where the pulse is presented.
+ */
+describe("RealtimeAnalyzer presentation lag (eye/ear alignment)", SUITE, () => {
+  const oneKick = (t: number): number => {
+    const s = t - 1;
+    return s >= 0 && s < 0.05 ? 0.8 * Math.sin(2 * Math.PI * 80 * s) * Math.exp(-s * 60) : 0;
+  };
+
+  /** Frame index (60 Hz) of the first full-strength kick pulse presented. */
+  function firstKickFrame(presentLag: number): { frame: number; timeAt: number } {
+    const { engine, setNow } = fakeEngine(oneKick);
+    const ana = new RealtimeAnalyzer(engine);
+    for (let n = 0; n < 200; n++) {
+      const t = n / 60;
+      setNow(t);
+      const f = ana.update(t, t + 100, presentLag);
+      if (f.kick === 1) return { frame: n, timeAt: f.time };
+    }
+    return { frame: -1, timeAt: NaN };
+  }
+
+  /** Presented rms at frame 61 (the kick's first frame) with a 3-frame lag,
+   * optionally after a seek reset issued on that same frame. */
+  function rmsAtKickFrame(resetAtKick: boolean): number {
+    const { engine, setNow } = fakeEngine(oneKick);
+    const ana = new RealtimeAnalyzer(engine);
+    let rms = NaN;
+    for (let n = 0; n <= 61; n++) {
+      const t = n / 60;
+      setNow(t);
+      if (n === 61 && resetAtKick) ana.reset("seek");
+      rms = ana.update(t, t, 3 / 60).rms;
+    }
+    return rms;
+  }
+
+  it("presents the kick pulse `presentLag` later, and f.time stays the frame's own clock", () => {
+    const live = firstKickFrame(0);
+    const lagged = firstKickFrame(3 / 60);
+    expect(live.frame).toBeGreaterThan(0);
+    expect(lagged.frame).toBe(live.frame + 3);
+    // The presented frame's time is this frame's compensated clock, not the
+    // snapshot's — the grid/section/lyric fields are not delayed twice.
+    expect(lagged.timeAt).toBeCloseTo(lagged.frame / 60 + 100, 6);
+  });
+
+  it("a lag longer than the ring presents the oldest frame rather than nothing", () => {
+    const live = firstKickFrame(0);
+    const far = firstKickFrame(5); // 300 frames of lag, ring holds 64
+    expect(far.frame).toBe(live.frame + 63);
+  });
+
+  it("a seek reset empties the ring, so the next frame presents live until it refills", () => {
+    // Without a reset, the 3-frame lag presents the silence from before the
+    // kick on the kick's own frame; a reset on that frame drops the stale
+    // snapshots and presents the kick frame itself.
+    expect(rmsAtKickFrame(false)).toBe(0);
+    expect(rmsAtKickFrame(true)).toBeGreaterThan(0.3);
+  });
+
+  it("zero lag presents the live frame on the same object the getter exposes", () => {
+    const { engine, setNow } = fakeEngine(oneKick);
+    const ana = new RealtimeAnalyzer(engine);
+    let f = ana.features;
+    let fired = false;
+    for (let n = 0; n < 120; n++) {
+      const t = n / 60;
+      setNow(t);
+      f = ana.update(t, t, 0);
+      expect(f).toBe(ana.features);
+      fired ||= f.kick === 1;
+    }
+    expect(fired).toBe(true);
+  });
+
+  it("presents the frame NEAREST the target, so a one-frame pulse peak is never skipped", () => {
+    // rAF stamps that are deliberately NOT multiples of the lag: a floor
+    // ("newest at or before") would present 0.85 where the live frame had 1.
+    const { engine, setNow } = fakeEngine(oneKick);
+    const ana = new RealtimeAnalyzer(engine);
+    let peak = 0;
+    for (let n = 0; n < 120; n++) {
+      const t = n / 60 + 0.0071;
+      setNow(t);
+      peak = Math.max(peak, ana.update(t, t, 3 / 60 + 0.004).kick);
+    }
+    expect(peak).toBe(1);
+  });
+});

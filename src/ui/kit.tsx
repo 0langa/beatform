@@ -164,6 +164,8 @@ export const DEGREES: ValueUnit = { scale: 1, unit: "°" };
 export const HERTZ: ValueUnit = { scale: 1, unit: " Hz" };
 /** Durations stored in seconds. */
 export const SECONDS: ValueUnit = { scale: 1, unit: " s" };
+/** Short offsets stored in milliseconds already. */
+export const MILLISECONDS: ValueUnit = { scale: 1, unit: " ms" };
 
 /** Display-unit multiplier — 1 for plain and display-only formats. */
 function unitScale(format: ValueFormat | undefined): number {

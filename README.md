@@ -77,7 +77,8 @@ Free and open source. Built to become a professional-grade tool for producers an
   in one click (signature-verified; no telemetry — the check is a plain fetch
   of a static file). **Preferences** (Ctrl+,), four tabs: _General_ (autosave
   delay, remembered save-dialog folder), _Modes_ (drag the mode strip into
-  your own order), _Performance_ (live frame cap, preview resolution, GPU
+  your own order), _Performance_ (live frame cap, preview resolution, visual
+  timing offset for headphones the browser cannot time, GPU
   preference, and a **Performance display** overlay — FPS, frame time,
   renderer, JS heap, CPU, RAM, disk I/O — drawn over the preview and never
   into it), _Updates_

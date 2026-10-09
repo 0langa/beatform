@@ -11,6 +11,42 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+The visuals follow the music again. Three changes to how Beatform listens,
+each sized by measurement on real songs.
+
+### Changed
+
+- **Bass, mids, treble, voice and the Kicks sync source now breathe with the
+  track.** Every visual's main motion input used to sit pinned at 100% on any
+  song with real bass — measured on ten tracks across genres, `drive` read
+  1.00 for 95% of frames and bass for 90–100% — so pumps, glows and spins
+  scaled by them never moved. Each band now reads relative to its own recent
+  peak (a per-band automatic gain), so a kick hits 1.0 and the space between
+  hits falls to roughly 0.2–0.5 whether the master is a quiet live recording
+  or a brickwalled club track. After the change the same ten songs read
+  `drive` between 0.1–0.6 at rest and 0.8–1.0 on hits. Beat, kick, snare and
+  hat **pulses are untouched** (they already land within a few milliseconds
+  of the transient), and the drawn spectrum is unchanged. Existing projects
+  simply react more — no settings move.
+
+### Fixed
+
+- **Live preview hits no longer flash before you hear them.** The live
+  analyser listens ahead of the speakers by your device's output delay.
+  The beat grid was already corrected for it, but onset pulses, bands and
+  bars were not — so a kick could flash two or three frames early, and a
+  visual mixing the grid pulse with the detected one smeared into two hits.
+  Everything tap-derived is now presented from a short memory delayed by the
+  reported latency (minus one display frame), on the same instant as the
+  grid. Exports were never affected.
+
+### Added
+
+- **Preferences ▸ Performance ▸ Visual timing offset** (−250…+250 ms). For
+  audio devices whose true delay the browser cannot see — Bluetooth
+  headphones commonly add 100–200 ms. Positive shows the visuals later.
+  Preview only.
+
 ## [2.109.0] - 2026-09-03
 
 Housekeeping on the road to 3.0.0: no new features, two small fixes, a

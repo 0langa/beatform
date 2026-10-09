@@ -829,6 +829,14 @@ export const GUIDE: readonly GuideSection[] = [
         ],
       },
       { derived: "preferences-tabs" },
+      { h4: "Visual timing offset" },
+      {
+        p: [
+          "Beatform already shifts the live visuals by the output delay your audio device reports, so a kick flashes when you hear it, not when the computer plays it. Some devices under-report that delay — Bluetooth headphones most of all, which commonly add 100–200 ms the browser never sees. If hits flash before you hear them, raise ",
+          { strong: "Visual timing offset" },
+          " in Preferences ▸ Performance until they land; positive values show the visuals later. It only affects the live preview — exports are frame-exact by construction.",
+        ],
+      },
       { h4: "Updates" },
       {
         p: [

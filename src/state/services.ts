@@ -140,6 +140,13 @@ let instanceSeq = 0;
  * off as a one-off and the retry budget is handed back.
  */
 const GPU_HEALTHY_MS = 60_000;
+/**
+ * How far ahead of the eye the frame being drawn is: a frame rendered now is
+ * scanned out at the next vsync at the earliest, one 60 Hz frame later. Part
+ * of the live presentation lag (see the loop) — the ear is `outputLatency`
+ * behind the graph head, the eye is this much behind the frame.
+ */
+const DISPLAY_LEAD = 1 / 60;
 
 /**
  * Stop the live preview from drawing without tearing down the loop.
@@ -413,8 +420,20 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         const lat = eng.outputLatency;
         latency = latency < 0 ? lat : latency + (lat - latency) * 0.05;
       }
-      const compensated =
-        eng.playing && latency > 0 ? Math.max(0, eng.currentTime - latency) : eng.currentTime;
+      // Presentation lag: how far behind the graph head the EYE is when this
+      // frame is seen. The ear is `latency` behind the head; the frame drawn
+      // now is scanned out no sooner than the next vsync (DISPLAY_LEAD), so
+      // the visuals want the audio from `latency − DISPLAY_LEAD` ago. The
+      // user's A/V offset covers what the browser cannot measure (Bluetooth,
+      // monitor processing). Applied to BOTH the clock (grid phase, u.time)
+      // and the analyzer's presentation ring (onset pulses, bands, bins), so
+      // every reactive input lands on the same instant. Can go slightly
+      // negative with a negative offset: the clock may run ahead, the ring
+      // cannot (clamped to live).
+      const presentLag = eng.playing
+        ? Math.max(0, latency) - DISPLAY_LEAD + getPrefs().avOffsetMs / 1000
+        : 0;
+      const compensated = eng.playing ? Math.max(0, eng.currentTime - presentLag) : eng.currentTime;
       // Loop wrap. The engine reports position as `raw % duration`, so a
       // looping track silently teleports from the end back to the start with
       // no event to subscribe to — and the analyser would diff the opening
@@ -458,7 +477,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
         }
         return;
       }
-      const features = ana.update(t, compensated);
+      const features = ana.update(t, compensated, Math.max(0, presentLag));
       // A WebGPU renderer that has survived this long is healthy; give the
       // retry budget back so a later, unrelated device loss still gets its
       // rebuild. Only counts while actually on WebGPU — once we're on the

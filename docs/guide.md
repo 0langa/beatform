@@ -288,6 +288,10 @@ The gear icon in the top bar (or <kbd>Ctrl+,</kbd>) collects the choices that fo
 
 - **General** · **Modes** · **Performance** · **Updates**
 
+### Visual timing offset
+
+Beatform already shifts the live visuals by the output delay your audio device reports, so a kick flashes when you hear it, not when the computer plays it. Some devices under-report that delay — Bluetooth headphones most of all, which commonly add 100–200 ms the browser never sees. If hits flash before you hear them, raise **Visual timing offset** in Preferences ▸ Performance until they land; positive values show the visuals later. It only affects the live preview — exports are frame-exact by construction.
+
 ### Updates
 
 Beatform updates itself from GitHub Releases: shortly after launch it checks a static file (no telemetry, ever) and offers new versions in a dialog — install now, restart once, done. Every download is verified against Beatform's signing key before it installs. The automatic check can be turned off in Preferences ▸ Updates.

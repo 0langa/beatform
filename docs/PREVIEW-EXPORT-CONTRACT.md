@@ -108,7 +108,14 @@ Sample acquisition differs:
 
 - Export uses a fixed 16.67 ms analysis lookahead.
 - Preview reads a live Web Audio tap ahead of the speakers by device-dependent,
-  smoothed output latency, commonly 10–40 ms.
+  smoothed output latency, commonly 10–70 ms. The live loop presents every
+  tap-derived feature (onset pulses, bands, bins, waveform) from a snapshot
+  ring delayed by that latency minus one display frame, plus the user's
+  _Visual timing offset_ preference (Preferences ▸ Performance, for latency
+  the browser cannot see — Bluetooth). The beat grid, sections and lyric
+  timing resolve from the same shifted clock, so every reactive input lands
+  on the instant the ear hears. Exports have no output latency and never take
+  this path.
 - Continuous bins, peaks, bands, and drive update at presentation cadence.
   Characterization tests require spectrum cosine similarity above `0.998`
   across 30/60/144 fps fixtures; they do not require numeric identity.

@@ -910,3 +910,97 @@ describe("services.ts frame loop — fps cap gates the DSP too (R2-25)", () => {
     dispose();
   });
 });
+
+describe("services.ts frame loop — live presentation lag (eye/ear alignment)", () => {
+  const PRESET_ID = "custom-present-lag-test";
+  const HZ = 60;
+
+  afterEach(() => {
+    unregisterCustomPreset(PRESET_ID);
+    setPrefs({ avOffsetMs: 0 });
+  });
+
+  function rig() {
+    registerCustomPreset({
+      id: PRESET_ID,
+      name: "C",
+      params: [],
+      wgsl: "// c",
+    } as unknown as PresetDef);
+    const rafBox: { cb: ((t: number) => void) | null } = { cb: null };
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((cb: (t: number) => void) => {
+        rafBox.cb = cb;
+        return 1;
+      }),
+    );
+    const dispose = initServices(
+      fakeCanvas(),
+      fakeHooks({
+        getFrameInput: () =>
+          ({
+            timeline: EMPTY_TIMELINE,
+            basePresetId: PRESET_ID,
+            baseParams: {},
+            baseMods: [],
+            baseBg: {} as BgSettings,
+            paramsByPreset: {},
+            modsByPreset: {},
+          }) as FrameResolveInput,
+      }),
+    );
+    return { rafBox, dispose };
+  }
+
+  /** The analyzer mock's update() arguments on the last frame driven. */
+  async function lastUpdateArgs(opts: { playing: boolean; latency: number; offsetMs: number }) {
+    setPrefs({ avOffsetMs: opts.offsetMs });
+    const { rafBox, dispose } = rig();
+    await flush();
+    const eng = getEngine() as unknown as {
+      playing: boolean;
+      outputLatency: number;
+      currentTime: number;
+    };
+    eng.playing = opts.playing;
+    eng.outputLatency = opts.latency;
+    eng.currentTime = 10;
+    const ana = getAnalyzer() as unknown as { update: ReturnType<typeof vi.fn> };
+    ana.update.mockImplementation(() => ({ time: 0, lufs: 0, width: 0 }));
+    for (let n = 0; n < 30; n++) rafBox.cb?.((n * 1000) / HZ);
+    const calls = ana.update.mock.calls;
+    const call = calls[calls.length - 1] as [number, number, number];
+    dispose();
+    return { trackTime: call[1], presentLag: call[2] };
+  }
+
+  it("playing: the ring lag is the reported latency minus one display frame, and the clock is shifted by the same amount", async () => {
+    const { trackTime, presentLag } = await lastUpdateArgs({
+      playing: true,
+      latency: 0.1,
+      offsetMs: 0,
+    });
+    expect(presentLag).toBeCloseTo(0.1 - 1 / 60, 6);
+    expect(trackTime).toBeCloseTo(10 - (0.1 - 1 / 60), 6);
+  });
+
+  it("the A/V offset preference adds to both; a negative offset moves the clock ahead but never the ring", async () => {
+    const plus = await lastUpdateArgs({ playing: true, latency: 0.1, offsetMs: 50 });
+    expect(plus.presentLag).toBeCloseTo(0.1 - 1 / 60 + 0.05, 6);
+    expect(plus.trackTime).toBeCloseTo(10 - (0.1 - 1 / 60 + 0.05), 6);
+    const minus = await lastUpdateArgs({ playing: true, latency: 0.02, offsetMs: -100 });
+    expect(minus.presentLag).toBe(0);
+    expect(minus.trackTime).toBeCloseTo(10 - (0.02 - 1 / 60 - 0.1), 6);
+  });
+
+  it("paused: no lag and the raw clock, so a seek sits exactly where it was dropped", async () => {
+    const { trackTime, presentLag } = await lastUpdateArgs({
+      playing: false,
+      latency: 0.1,
+      offsetMs: 80,
+    });
+    expect(presentLag).toBe(0);
+    expect(trackTime).toBe(10);
+  });
+});
