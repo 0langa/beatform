@@ -148,7 +148,7 @@ export async function runUpdateCheck(manual: boolean): Promise<void> {
     phase = found ? { state: "available", ...found } : { state: "none" };
     if (found && !manual) promptOpen = true;
   } catch (e) {
-    phase = manual ? { state: "error", message: (e as Error).message } : { state: "idle" };
+    phase = manual ? { state: "error", message: errorText(e) } : { state: "idle" };
   }
   emit();
 }
@@ -202,9 +202,24 @@ export async function installUpdate(): Promise<void> {
     });
     phase = { state: "ready", version };
   } catch (e) {
-    phase = { state: "error", message: (e as Error).message };
+    phase = { state: "error", message: errorText(e) };
   }
   emit();
+}
+
+/**
+ * The text a failed check/install shows. Tauri plugin commands reject with a
+ * PLAIN STRING, not an Error, so `(e as Error).message` was `undefined` and
+ * the dialog read "— nothing was changed" with no reason in front of it.
+ * Seen live on 2026-10-09: three 2.111.0 installs failed because C: had
+ * 10 MB free and the 60 MB installer could not be written to %TEMP%, and the
+ * dialog could not say so. Never empty: a reason-less failure still gets a
+ * sentence the user can act on.
+ */
+export function errorText(e: unknown): string {
+  const text =
+    e instanceof Error ? e.message : typeof e === "string" ? e : e == null ? "" : String(e);
+  return text.trim() || "Unknown error (no details reported)";
 }
 
 export async function relaunchApp(): Promise<void> {

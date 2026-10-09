@@ -185,6 +185,39 @@ describe("installing (G5)", () => {
     expect(getUpdatePhase()).toEqual({ state: "error", message: "signature mismatch" });
   });
 
+  it("a plain-string rejection (how Tauri plugin commands fail) keeps its text", async () => {
+    // Seen live: the updater could not write the installer to %TEMP% (disk
+    // full) and the dialog showed an empty reason, because the rejection
+    // was a string and `.message` of a string is undefined.
+    const update = stagedUpdate("9.9.9");
+    (update.downloadAndInstall as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
+      "failed to write installer: There is not enough space on the disk. (os error 112)",
+    );
+    env.check.mockResolvedValue(update);
+    await runUpdateCheck(true);
+
+    await installUpdate();
+
+    expect(getUpdatePhase()).toEqual({
+      state: "error",
+      message: "failed to write installer: There is not enough space on the disk. (os error 112)",
+    });
+  });
+
+  it("a reason-less rejection still shows a sentence, never an empty message", async () => {
+    const update = stagedUpdate("9.9.9");
+    (update.downloadAndInstall as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(undefined);
+    env.check.mockResolvedValue(update);
+    await runUpdateCheck(true);
+
+    await installUpdate();
+
+    expect(getUpdatePhase()).toEqual({
+      state: "error",
+      message: "Unknown error (no details reported)",
+    });
+  });
+
   it("installing with nothing staged is an error phase, not an unhandled rejection", async () => {
     // Reachable from the dev hook and from a prompt left open across a failed
     // re-check; the guard lives in downloadAndInstallUpdate and must surface.

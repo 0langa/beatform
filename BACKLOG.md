@@ -22,6 +22,23 @@ v2.110.0 became the 2026-10-09 beat-sync release)
 → owner checks A1/A2 → 3.0.0 docs/version-only diff after a full device
 battery. The tag waits for the owner's explicit go.
 
+## Open after 2.111.0 (found 2026-10-10 on the owner's machine)
+
+- [ ] **ALIGN-002 regressed: the HKCU uninstall entry does not follow in-app
+      updates.** After 2.108.0 → 2.110.0 → 2.111.0 through the in-app updater,
+      `beatform.exe` reports ProductVersion 2.111.0 but
+      `HKCU\...\Uninstall\*` DisplayVersion still reads **2.108.0** (checked
+      after both updates). The NSIS `/UPDATE` path installs the files and
+      skips (or fails to write) the uninstall registry values. Reproduce:
+      install an older setup exe, update in-app, read DisplayVersion. Fix
+      lives in the NSIS template / tauri bundler config, then re-verify per
+      GATES.md §4. Size S–M.
+- [x] **Updater error dialog showed no reason** — Tauri plugin commands
+      reject with a plain string, `(e as Error).message` was `undefined`.
+      Fixed on main (`errorText` in `src/state/updater.ts`, two tests). The
+      live failure behind it was C: at 10 MB free: the updater writes the
+      60 MB installer to `%TEMP%` first; freeing space fixed the update.
+
 ## Owner-pending (only the owner can close these)
 
 - [ ] **Verdict round** — one word per HD row below: _finish_ / _remove_ /
