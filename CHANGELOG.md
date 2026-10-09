@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.110.0] - 2026-10-09
+
 The visuals follow the music again. Three changes to how Beatform listens,
 each sized by measurement on real songs.
 
@@ -3187,7 +3189,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.109.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.110.0...HEAD
+[2.110.0]: https://github.com/0langa/beatform/compare/v2.109.0...v2.110.0
 [2.109.0]: https://github.com/0langa/beatform/compare/v2.108.0...v2.109.0
 [2.108.0]: https://github.com/0langa/beatform/compare/v2.107.0...v2.108.0
 [2.107.0]: https://github.com/0langa/beatform/compare/v2.106.0...v2.107.0
