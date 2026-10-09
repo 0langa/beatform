@@ -257,6 +257,15 @@ export class FeaturePipeline {
    * option. */
   private priming = false;
 
+  // Normalized band levels (f.bass/mid/treble/voice and the kick-mode drive).
+  private bassLevel = new BandLevel();
+  private midLevel = new BandLevel();
+  private trebleLevel = new BandLevel();
+  private voiceLevel = new BandLevel();
+  private kickBand = new BandLevel();
+  /** This frame's normalized kick band — read by updateSync in Kicks mode. */
+  private kickLevel = 0;
+
   // Onset-class detectors: independent flux trackers per drum band
   private kickDet = new OnsetClassDetector();
   private snareDet = new OnsetClassDetector();
@@ -618,9 +627,16 @@ export class FeaturePipeline {
     // Slow envelope (~0.8 s time constant): calm baseline for motion speeds
     f.energy += (f.rms - f.energy) * (1 - Math.exp(-dt * 1.2));
 
-    f.bass = bandMean(mag, this.bassRange);
-    f.mid = bandMean(mag, this.midRange);
-    f.treble = bandMean(mag, this.trebleRange);
+    // Band levels are NORMALIZED (see BandLevel): each band reads relative to
+    // its own recent peak, so a kick reads 1.0 on the hit and ~0.2–0.5 between
+    // hits on any master. The old `bandMean(mag)` on the −90..−22 sync scale
+    // pinned bass at 1.00 for nearly the whole track on real music (measured
+    // p5 0.9–1.0 across ten songs), so every preset's "breathe" input was a
+    // flat line. The sync scale `mag` keeps driving flux and the detectors —
+    // those are byte-identical.
+    f.bass = this.bassLevel.update(input.magDb, this.bassRange, dt);
+    f.mid = this.midLevel.update(input.magDb, this.midRange, dt);
+    f.treble = this.trebleLevel.update(input.magDb, this.trebleRange, dt);
 
     // Onset detection steps on the FIXED analysis clock; everything above
     // this point ran for the rendered frame. See ANALYSIS_HZ.
@@ -659,7 +675,7 @@ export class FeaturePipeline {
     // the 60 Hz tick rate; that is the deterministic choice, not an accident.
     if (tick && !f.beat) f.beatIntensity *= Math.exp(-ANALYSIS_DT * BEAT_DECAY);
 
-    f.voice = bandMean(mag, this.voiceRange);
+    f.voice = this.voiceLevel.update(input.magDb, this.voiceRange, dt);
 
     // Chroma (P-15): fold the analysis spectrum into 12 pitch classes,
     // taking each class's PEAK bin — peaks are what reads musically, the
@@ -728,6 +744,9 @@ export class FeaturePipeline {
       this.floorScale,
     );
 
+    // Kick-mode drive reads the normalized kick band (40–120 Hz, the bins the
+    // kick onset detector watches) — same rule as f.bass above.
+    this.kickLevel = this.kickBand.update(input.magDb, this.kickRange, dt);
     this.updateSync(f, mag, dt, input.playing, tick);
     // prevMag is the reference for the NEXT tick, so it only advances on a
     // tick — otherwise a held frame would zero the next tick's flux.
@@ -807,8 +826,21 @@ export class FeaturePipeline {
       this.features.drive = 0;
       this.features.energy = 0;
       this.features.rms = 0;
+      this.features.bass = 0;
+      this.features.mid = 0;
+      this.features.treble = 0;
+      this.features.voice = 0;
       this.driveValue = 0;
       this.syncBeatIntensity = 0;
+      // A new source has its own loudness: the band references start from
+      // the floor again rather than inheriting the dead track's peaks. A seek
+      // keeps them — same track, same loudness — like the drawn bins.
+      this.bassLevel.reset();
+      this.midLevel.reset();
+      this.trebleLevel.reset();
+      this.voiceLevel.reset();
+      this.kickBand.reset();
+      this.kickLevel = 0;
       // P-15 fields: a NEW source has no analysis yet (the store re-runs it
       // and re-attaches grid/sections/lyrics), so start from the honest
       // nothing-known values like a fresh pipeline. A seek keeps them — the
@@ -938,7 +970,7 @@ export class FeaturePipeline {
         // the kick band itself (40–120 Hz, the same bins the kick onset
         // detector watches), so motion pumps with the kick drum's punch
         // instead of gliding with overall loudness.
-        raw = bandMean(mag, this.kickRange);
+        raw = this.kickLevel;
         break;
       case "energy":
       default:
@@ -1008,11 +1040,68 @@ function clamp01(v: number): number {
   return v > 0 ? (v > 1 ? 1 : v) : 0;
 }
 
-function bandMean(mag: Float32Array, [b0, b1]: [number, number]): number {
-  let s = 0;
-  const n = Math.max(1, b1 - b0);
-  for (let b = b0; b < b1; b++) s += mag[b];
-  return clamp01((s / n) * 1.6);
+/**
+ * Band level that reads relative to the band's OWN recent peak — a per-band
+ * automatic gain control, the way every polished music visualizer derives its
+ * "pump" from the bass.
+ *
+ * Why not a fixed scale: there is no dB window that works for both a −7 LUFS
+ * club master and a −16 LUFS live recording. The previous `bandMean` mapped
+ * −90..−22 dBFS linearly and multiplied by 1.6, which saturates on any band
+ * carrying real content: measured on ten real tracks, `bass` sat at 1.00 for
+ * 90–100 % of frames and kick-mode `drive` at 1.00 for 95 %+, so visuals
+ * scaled by them never moved. A quieter window would have fixed loud masters
+ * and left quiet ones dead.
+ *
+ * Mechanism, all deterministic in track time (state advances by `dt`):
+ *  - `bandDb` is the mean dB over the band's FFT bins (floored at MIN_DB).
+ *  - `ref` is a peak hold on bandDb that releases at REF_RELEASE_DB_PER_S, so
+ *    the reference follows the track's loudness within a few seconds and a
+ *    breakdown re-sensitizes gradually rather than instantly. REF_FLOOR_DB
+ *    stops a near-silent band from being normalized up to full scale.
+ *  - level = 10^((bandDb − ref) · BAND_GAMMA): an amplitude-like curve,
+ *    −10 dB below the peak reads 0.5, −20 dB reads 0.25. The dB-linear map it
+ *    replaces compressed those to 0.85 and 0.71 — the "flat line" look.
+ *  - Instant attack (a hit lands in its own frame), BAND_RELEASE smoothing on
+ *    the way down so the value does not flicker between analysis frames.
+ *
+ * A band at the MIN_DB floor reads exactly 0, so a band with no content at all
+ * stays dark instead of showing the ref-floor residual.
+ */
+const REF_FLOOR_DB = -50;
+const REF_RELEASE_DB_PER_S = 4;
+const BAND_GAMMA = 0.03;
+const BAND_RELEASE = 12;
+
+class BandLevel {
+  private ref = REF_FLOOR_DB;
+  private out = 0;
+
+  reset(): void {
+    this.ref = REF_FLOOR_DB;
+    this.out = 0;
+  }
+
+  update(magDb: Float32Array, [b0, b1]: [number, number], dt: number): number {
+    let s = 0;
+    const n = Math.max(1, b1 - b0);
+    for (let b = b0; b < b1; b++) {
+      // Clamp to MIN_DB..0 dBFS: −Infinity (a zero bin) and NaN both land on
+      // the floor, and anything above full scale is a hostile frame, not
+      // music — an unbounded value would park `ref` where no release could
+      // ever bring it back (the fuzz suite's poisoning property).
+      const v = magDb[b];
+      s += v >= MIN_DB ? (v > 0 ? 0 : v) : MIN_DB;
+    }
+    const bandDb = s / n;
+    this.ref = Math.max(bandDb, this.ref - REF_RELEASE_DB_PER_S * dt, REF_FLOOR_DB);
+    const level = bandDb <= MIN_DB ? 0 : clamp01(Math.pow(10, (bandDb - this.ref) * BAND_GAMMA));
+    this.out =
+      level >= this.out
+        ? level
+        : this.out + (level - this.out) * (1 - Math.exp(-dt * BAND_RELEASE));
+    return this.out;
+  }
 }
 
 /**
