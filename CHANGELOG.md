@@ -11,7 +11,7 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
-## [2.111.0] - UNRELEASED
+## [2.111.0] - 2026-10-09
 
 "Nothing half-done": every surface that was started and left unfinished got
 one verdict on the road to 3.0.0 — finished, removed, or written down as a
@@ -81,6 +81,12 @@ deliberate limit. Plus the Saturation + Lightness pair on every mode.
 - **The GPU % performance stat.** It could be switched on but never showed a
   value (Windows offers no collector without undocumented APIs). The toggle and
   the row are gone rather than shipping a permanent "—".
+
+### Dependencies
+
+- Tauri 2.11.6 with the current dialog, fs, process and updater plugins,
+  React 19.3, mediabunny 1.61 and vitest 5 — every dependabot update merged
+  after the full gate set, and `npm audit` reports zero findings.
 
 ### Documented limits
 
@@ -3272,7 +3278,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.110.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.111.0...HEAD
+[2.111.0]: https://github.com/0langa/beatform/compare/v2.110.0...v2.111.0
 [2.110.0]: https://github.com/0langa/beatform/compare/v2.108.0...v2.110.0
 [2.108.0]: https://github.com/0langa/beatform/compare/v2.107.0...v2.108.0
 [2.107.0]: https://github.com/0langa/beatform/compare/v2.106.0...v2.107.0
