@@ -49,13 +49,14 @@ each sized by measurement on real songs.
   headphones commonly add 100–200 ms. Positive shows the visuals later.
   Preview only.
 
-## [2.109.0] - 2026-09-03
+### Also in this release: the 2.109.0 housekeeping that never shipped
 
-Housekeeping on the road to 3.0.0: no new features, two small fixes, a
-dependency refresh verified on real hardware, and the documentation
-re-checked line by line against the app.
+2.109.0 was written up on 2026-09-03 but never tagged, so its notes ride
+along here. In short: no new features, two small fixes, a dependency refresh
+verified on real hardware, and the documentation re-checked line by line
+against the app.
 
-### Fixed
+#### Fixed
 
 - **Switching to "Listen to the system" updates the play button at once.**
   Starting system-audio capture pauses the current track, but the transport
@@ -66,7 +67,7 @@ re-checked line by line against the app.
   could make the "scanning" count vanish early or flicker. Every file still in
   flight is now counted, across overlapping drops.
 
-### Changed
+#### Changed
 
 - **Dependency refresh, verified on device.** Media muxing (mediabunny 1.55),
   tag reading (music-metadata 11.15, lofty 0.25.1), audio capture (cpal
@@ -84,7 +85,7 @@ re-checked line by line against the app.
   and drop-import of `.bfpreset` / `.bfbuilder` / `.bfshader` files are now all
   documented as they actually behave.
 
-### Under the hood
+#### Under the hood
 
 - The release script can resume cleanly after a half-finished commit/tag step
   and never re-watches a stale CI run. New test pins for the frame-rate cap
@@ -3190,8 +3191,7 @@ Initial public release.
 - Three synthesized demo tracks.
 
 [Unreleased]: https://github.com/0langa/beatform/compare/v2.110.0...HEAD
-[2.110.0]: https://github.com/0langa/beatform/compare/v2.109.0...v2.110.0
-[2.109.0]: https://github.com/0langa/beatform/compare/v2.108.0...v2.109.0
+[2.110.0]: https://github.com/0langa/beatform/compare/v2.108.0...v2.110.0
 [2.108.0]: https://github.com/0langa/beatform/compare/v2.107.0...v2.108.0
 [2.107.0]: https://github.com/0langa/beatform/compare/v2.106.0...v2.107.0
 [2.106.0]: https://github.com/0langa/beatform/compare/v2.105.0...v2.106.0
