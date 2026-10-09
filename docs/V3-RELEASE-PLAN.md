@@ -55,6 +55,15 @@ macOS/Linux, lyrics streaming rework) which stay on their named triggers.
 
 ## The release train
 
+> **Numbering note (2026-10-09).** v2.109.0 was written up but never
+> tagged; its notes shipped inside **v2.110.0**, which became the beat-sync
+> release (band dynamics, live eye/ear alignment, Visual timing offset) after
+> the owner reported the visuals felt off-beat. The "Nothing half-done" work
+> below — every HD row including HD-06 — was executed on worktree branches on
+> 2026-09-03 and merged back to main on 2026-10-09; it ships as **one**
+> release, **v2.111.0**. Section numbers below keep their original text;
+> read v2.110.0 there as v2.111.0.
+
 All real work lands on 2.x releases; the 3.0.0 diff itself is docs and a
 version number. Order matters more than dates.
 
@@ -93,7 +102,7 @@ _finish_, _remove_, or _declare_ — or "take the recommendations". Nothing in
 step 3 starts before this; guessing here is exactly how scope grew for thirty
 releases.
 
-### 3. v2.110.0 — "Nothing half-done" (agent)
+### 3. v2.111.0 — "Nothing half-done" (agent; executed, merged to main 2026-10-09)
 
 Execute the verdicts:
 
@@ -106,8 +115,9 @@ Execute the verdicts:
 
 If the owner picks FINISH for the largest row (HD-06, global
 saturation/lightness on the nine modes that lack it — shader work with a GPU
-matrix re-bless), it ships as its own **v2.111.0** so its pixel re-bless is
-reviewable in isolation and never rides along with unrelated fixes.
+matrix re-bless), it was meant to ship as its own release so the pixel
+re-bless is reviewable in isolation; after the 2026-10-09 re-cut it rides in
+v2.111.0 with its re-bless as its own commit.
 
 ### 4. Owner checks (~10 minutes, after v2.109.0 or later is installed)
 
@@ -161,8 +171,8 @@ the owner's. Nothing above blocks on it.
 | Day | Owner                                        | Agent sessions                                        |
 | --- | -------------------------------------------- | ----------------------------------------------------- |
 | 1   | Merge dependabot PRs; give the verdict round | Rebase, B5 probe, ship v2.109.0                       |
-| 2   | —                                            | v2.110.0 (small FINISH / REMOVE / DECLARE rows)       |
-| 3   | A1 + A2 (~10 min) on the installed build     | v2.111.0 if HD-06 is FINISH; fix anything A1/A2 filed |
+| 2   | —                                            | v2.111.0 (all FINISH / REMOVE / DECLARE rows + HD-06) |
+| 3   | A1 + A2 (~10 min) on the installed build     | fix anything A1/A2 filed as v2.111.x                  |
 | 4   | Say go                                       | Full device battery, 3.0.0 diff, ship, verify, close  |
 
 ## After 3.0.0

@@ -17,14 +17,15 @@ follow registry + grid + matrix re-bless discipline; GATES.md is canonical for
 
 The bar: **nothing that was started ships half-done.** Ordered plan and release
 train in **[docs/V3-RELEASE-PLAN.md](docs/V3-RELEASE-PLAN.md)**: v2.109.0
-housekeeping → owner verdict round → v2.110.0 (+ v2.111.0 if HD-06 is FINISH)
+housekeeping → owner verdict round → v2.111.0 (one release, HD-06 included;
+v2.110.0 became the 2026-10-09 beat-sync release)
 → owner checks A1/A2 → 3.0.0 docs/version-only diff after a full device
 battery. The tag waits for the owner's explicit go.
 
 ## Owner-pending (only the owner can close these)
 
 - [ ] **Verdict round** — one word per HD row below: _finish_ / _remove_ /
-      _declare_, or "take the recommendations". Nothing in v2.110.0 starts
+      _declare_, or "take the recommendations". Nothing in v2.111.0 starts
       before this.
 - [x] **Merge dependabot PRs** — DONE 2026-09-02 on the owner's go: #26
       (rust-cache action), #29 (lofty 0.25.1, cpal 0.18.2, naga 30.0.1) and
