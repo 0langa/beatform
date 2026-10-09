@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-prism-cathedral",
+    "name": "Prism Cathedral",
+    "presetId": "echo-trails",
+    "params": {
+      "hue": 285,
+      "mirror": 6,
+      "sides": 6,
+      "echoHue": 0.7,
+      "hueSpin": 0.5,
+      "hueDrift": 0.3,
+      "decay": 0.95,
+      "zoom": 0.3,
+      "swirl": 0.18,
+      "radius": 0.3,
+      "thick": 0.02,
+      "react": 0.12,
+      "inject": 0.4,
+      "beatStar": 0.7,
+      "kickFlash": 0.12,
+      "beatZoom": 0.2,
+      "flowSwirl": 0.16,
+      "vignette": 0.45,
+      "source": 1,
+      "warp": 2
+    },
+    "sync": {
+      "mode": "kick",
+      "smooth": 0.32,
+      "attack": 0.03,
+      "release": 0.5
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}

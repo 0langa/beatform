@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-orchid-glass",
+    "name": "Orchid Glass",
+    "presetId": "metaballs",
+    "params": {
+      "hue": 45,
+      "hueField": 18,
+      "count": 4,
+      "size": 0.16,
+      "speed": 0.2,
+      "gloss": 0.96,
+      "glow": 0.45,
+      "innerGrad": 0.5,
+      "rimStart": 0.5,
+      "threshold": 1.14,
+      "energyGrow": 1,
+      "radiusBand": 0.6,
+      "radiusFloor": 0.8,
+      "beatSwell": 0.28,
+      "beatBright": 0.12,
+      "squash": 0.2,
+      "orbitX": 0.24,
+      "orbitY": 0.2,
+      "lightAngle": 55,
+      "bgLevel": 0.01,
+      "vignette": 0.5,
+      "environment": 1,
+      "bassWeight": 0.45,
+      "eccentric": 0.28
+    },
+    "sync": {
+      "mode": "bass",
+      "smooth": 0.5,
+      "attack": 0.18,
+      "release": 0.65
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}

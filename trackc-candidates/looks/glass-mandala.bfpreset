@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-glass-mandala",
+    "name": "Glass Mandala",
+    "presetId": "radial-burst",
+    "params": {
+      "hue": 305,
+      "hueSpread": 160,
+      "symmetry": 6,
+      "rotSpeed": 0.08,
+      "innerRadius": 0.22,
+      "barLen": 0.2,
+      "coreSize": 0.8,
+      "glow": 0.4,
+      "rimBright": 0.85,
+      "coreBright": 0.4,
+      "wobBase": 0.04,
+      "wobAmp": 0.14,
+      "wobClamp": 0.16,
+      "spinBase": 0.5,
+      "spinEnergy": 0.6,
+      "peaks": 0,
+      "detailPos": 0.75,
+      "cover": 0,
+      "vignette": 0.55
+    },
+    "sync": {
+      "mode": "bass",
+      "smooth": 0.55,
+      "attack": 0.2,
+      "release": 0.7
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}

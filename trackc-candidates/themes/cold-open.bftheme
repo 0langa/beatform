@@ -1,0 +1,316 @@
+{
+  "kind": "bftheme",
+  "schemaVersion": 1,
+  "projectSchemaVersion": 14,
+  "appVersion": "2.95.0",
+  "meta": {
+    "name": "Cold Open",
+    "author": "Beatform",
+    "license": "CC0-1.0",
+    "description": "A single amber trace on a broadcast reticle, with your title and artist set as a hard editorial lockup. Twelve seconds of standby, then a glitch cut into the full instrument.",
+    "bpmHint": [
+      70,
+      130
+    ]
+  },
+  "document": {
+    "presetId": "oscilloscope",
+    "paramsByPreset": {
+      "oscilloscope": {
+        "hue": 32,
+        "gain": 1,
+        "calm": 0.62,
+        "glow": 0.5,
+        "traceBright": 1.1,
+        "traceClamp": 0.3,
+        "coreWidth": 0.003,
+        "fill": 0,
+        "mirror": 0,
+        "traces": 1,
+        "renderMode": 0,
+        "display": 0,
+        "persist": 0.3,
+        "agFloor": 0.35,
+        "agRange": 1.5,
+        "hueWave": 14,
+        "bandHue": 40,
+        "ghostDim": 0.35,
+        "graticule": 3,
+        "gridLevel": 0.08,
+        "gridBeat": 0.45,
+        "scanline": 0.16,
+        "beatLift": 0.12,
+        "bgLevel": 0.02,
+        "vignette": 0.7,
+        "kaleido": 1
+      }
+    },
+    "syncByPreset": {
+      "oscilloscope": {
+        "mode": "energy",
+        "smooth": 0.45,
+        "attack": 0.12,
+        "release": 0.5,
+        "contrast": 0.5
+      }
+    },
+    "bgByPreset": {},
+    "centerImageByPreset": {},
+    "bg": {
+      "mode": 1,
+      "color": [
+        0.035,
+        0.03,
+        0.026
+      ]
+    },
+    "overlayLayers": [
+      {
+        "id": "cold-open-t0",
+        "type": "text",
+        "text": "Now playing",
+        "font": "Arial",
+        "weight": 600,
+        "size": 0.018,
+        "color": [
+          1,
+          1,
+          1
+        ],
+        "opacity": 0.5,
+        "letterSpacing": 0.42,
+        "anchor": "tl",
+        "offset": [
+          0.062,
+          0.09
+        ],
+        "glow": 0.1,
+        "uppercase": true
+      },
+      {
+        "id": "cold-open-t1",
+        "type": "text",
+        "text": "{title}",
+        "font": "Arial",
+        "weight": 800,
+        "size": 0.062,
+        "color": [
+          1,
+          1,
+          1
+        ],
+        "opacity": 1,
+        "letterSpacing": 0.01,
+        "anchor": "bl",
+        "offset": [
+          0.06,
+          -0.135
+        ],
+        "glow": 0.22,
+        "uppercase": true
+      },
+      {
+        "id": "cold-open-t2",
+        "type": "text",
+        "text": "{artist}",
+        "font": "Arial",
+        "weight": 400,
+        "size": 0.024,
+        "color": [
+          1,
+          0.86,
+          0.7
+        ],
+        "opacity": 0.68,
+        "letterSpacing": 0.3,
+        "anchor": "bl",
+        "offset": [
+          0.062,
+          -0.085
+        ],
+        "glow": 0.1,
+        "uppercase": true
+      }
+    ],
+    "assets": {},
+    "aspect": "16:9",
+    "modsByPreset": {
+      "oscilloscope": [
+        {
+          "id": "cold-open-m0",
+          "source": "voice",
+          "param": "traceBright",
+          "amount": 0.25,
+          "curve": "smooth",
+          "attack": 0.1,
+          "release": 0.55
+        },
+        {
+          "id": "cold-open-m1",
+          "source": "kick",
+          "param": "gridBeat",
+          "amount": 0.3,
+          "curve": "exp",
+          "attack": 0.01,
+          "release": 0.28
+        },
+        {
+          "id": "cold-open-m2",
+          "source": "treble",
+          "param": "glow",
+          "amount": 0.18,
+          "curve": "smooth",
+          "attack": 0.05,
+          "release": 0.4
+        },
+        {
+          "id": "cold-open-m3",
+          "source": "rms",
+          "param": "post:bloom",
+          "amount": 0.12,
+          "curve": "smooth",
+          "attack": 0.4,
+          "release": 1.2
+        },
+        {
+          "id": "cold-open-m4",
+          "source": "lfo:sine:4",
+          "param": "persist",
+          "amount": 0.18
+        },
+        {
+          "id": "cold-open-m5",
+          "source": "sectionPulse",
+          "param": "post:chromatic",
+          "amount": 0.1,
+          "curve": "exp",
+          "attack": 0.02,
+          "release": 1.8
+        }
+      ]
+    },
+    "smoothSpectrum": false,
+    "timeline": {
+      "enabled": true,
+      "scenes": [
+        {
+          "id": "cold-open-s0",
+          "name": "Standby",
+          "presetId": "oscilloscope",
+          "start": 0,
+          "params": {
+            "graticule": 0,
+            "gridLevel": 0.05,
+            "traceBright": 0.6,
+            "glow": 0.28,
+            "persist": 0.18,
+            "scanline": 0.24,
+            "beatLift": 0.04,
+            "vignette": 0.85
+          }
+        },
+        {
+          "id": "cold-open-s1",
+          "name": "Open",
+          "presetId": "oscilloscope",
+          "start": 12,
+          "fadeSec": 2.5,
+          "transition": "glitch"
+        }
+      ],
+      "lanes": []
+    },
+    "post": {
+      "bloom": 0.18,
+      "bloomThreshold": 0.92,
+      "exposure": 1,
+      "tonemap": true,
+      "vignette": 0.3,
+      "grain": 0.07,
+      "chromatic": 0.02
+    },
+    "motion": {
+      "rotation": 1,
+      "pulse": 0.8,
+      "detail": 1,
+      "spectrumSmooth": 0.2
+    },
+    "lyricStyle": {
+      "enabled": true,
+      "position": "top",
+      "size": 0.9,
+      "color": "#ffffff",
+      "fadeSec": 0.25,
+      "anim": "wipe"
+    },
+    "audiogram": {
+      "progressBar": true,
+      "timeReadout": false,
+      "waveformStrip": false,
+      "position": "bottom",
+      "color": "#ffb257"
+    },
+    "customDefs": [],
+    "builderStack": {
+      "layers": [
+        {
+          "id": "cold-open-b0",
+          "type": "wash",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "glow": 0.5,
+            "flash": 0.35
+          }
+        },
+        {
+          "id": "cold-open-b1",
+          "type": "stars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "density": 10,
+            "speed": 0.6,
+            "streak": 0.4
+          }
+        },
+        {
+          "id": "cold-open-b2",
+          "type": "bars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "height": 0.5,
+            "gap": 0.25,
+            "glow": 0.5,
+            "peaks": 1
+          }
+        },
+        {
+          "id": "cold-open-b3",
+          "type": "rings",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "start": 0.05,
+            "end": 0.48,
+            "sharp": 0.5,
+            "bright": 0.8
+          }
+        }
+      ]
+    }
+  }
+}

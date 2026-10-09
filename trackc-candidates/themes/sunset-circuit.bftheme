@@ -1,0 +1,259 @@
+{
+  "kind": "bftheme",
+  "schemaVersion": 1,
+  "projectSchemaVersion": 14,
+  "appVersion": "2.95.0",
+  "meta": {
+    "name": "Sunset Circuit",
+    "author": "Beatform",
+    "license": "CC0-1.0",
+    "description": "The drive home, not the set: a low sun sinking over the first twenty-four seconds, a grid running out to a hazy horizon, and real film grain instead of tape hiss. Nothing in it flashes.",
+    "bpmHint": [
+      90,
+      124
+    ]
+  },
+  "document": {
+    "presetId": "synthwave",
+    "paramsByPreset": {
+      "synthwave": {
+        "hue": 45,
+        "gridHue": 330,
+        "sunWarm": 1.45,
+        "sunR": 0.36,
+        "sunY": 0.26,
+        "sunX": -0.18,
+        "sunRays": 0.22,
+        "scan": 0.46,
+        "scanCount": 18,
+        "scanWidth": 0.62,
+        "scanPhase": 0,
+        "mountains": 0.6,
+        "skyline": 0.22,
+        "skyDensity": 0.4,
+        "windows": 0.18,
+        "roadW": 0.44,
+        "roadLanes": 1,
+        "roadGlow": 0.7,
+        "gridGlow": 0.75,
+        "gridScale": 0.85,
+        "gridLock": 1,
+        "horizonY": 0.47,
+        "speed": 0.55,
+        "react": 0.55,
+        "beatPulse": 0.2,
+        "stars": 1,
+        "starDensity": 0.22,
+        "fog": 1.15,
+        "vignette": 0.4
+      }
+    },
+    "syncByPreset": {
+      "synthwave": {
+        "mode": "energy",
+        "smooth": 0.68,
+        "attack": 0.4,
+        "release": 0.72,
+        "contrast": 0.45
+      }
+    },
+    "bgByPreset": {},
+    "centerImageByPreset": {},
+    "bg": {
+      "mode": 0,
+      "color": [
+        0,
+        0,
+        0
+      ]
+    },
+    "overlayLayers": [],
+    "assets": {},
+    "aspect": "16:9",
+    "modsByPreset": {
+      "synthwave": [
+        {
+          "id": "sunset-circuit-m0",
+          "source": "rms",
+          "param": "post:exposure",
+          "amount": 0.05,
+          "curve": "smooth",
+          "attack": 0.8,
+          "release": 1.6
+        },
+        {
+          "id": "sunset-circuit-m1",
+          "source": "bass",
+          "param": "gridGlow",
+          "amount": 0.18,
+          "curve": "smooth",
+          "attack": 0.25,
+          "release": 0.9
+        },
+        {
+          "id": "sunset-circuit-m2",
+          "source": "energy",
+          "param": "fog",
+          "amount": 0.12,
+          "curve": "smooth",
+          "attack": 1.2,
+          "release": 3
+        },
+        {
+          "id": "sunset-circuit-m3",
+          "source": "treble",
+          "param": "windows",
+          "amount": 0.2,
+          "curve": "smooth",
+          "attack": 0.15,
+          "release": 0.7
+        },
+        {
+          "id": "sunset-circuit-m4",
+          "source": "lfo:sine:8",
+          "param": "sunX",
+          "amount": 0.05
+        },
+        {
+          "id": "sunset-circuit-m5",
+          "source": "lfo:sine:4",
+          "param": "scanPhase",
+          "amount": 0.25
+        }
+      ]
+    },
+    "smoothSpectrum": false,
+    "timeline": {
+      "enabled": true,
+      "scenes": [],
+      "lanes": [
+        {
+          "param": "sunY",
+          "keyframes": [
+            {
+              "id": "sunset-circuit-k0",
+              "t": 0,
+              "value": 0.34,
+              "curve": "smooth"
+            },
+            {
+              "id": "sunset-circuit-k1",
+              "t": 24,
+              "value": 0.26,
+              "curve": "smooth"
+            }
+          ]
+        },
+        {
+          "param": "fog",
+          "keyframes": [
+            {
+              "id": "sunset-circuit-k2",
+              "t": 0,
+              "value": 0.75,
+              "curve": "smooth"
+            },
+            {
+              "id": "sunset-circuit-k3",
+              "t": 24,
+              "value": 1.15,
+              "curve": "smooth"
+            }
+          ]
+        }
+      ]
+    },
+    "post": {
+      "bloom": 0.24,
+      "bloomThreshold": 0.9,
+      "exposure": 0.7,
+      "tonemap": true,
+      "vignette": 0.38,
+      "grain": 0.085,
+      "chromatic": 0.035
+    },
+    "motion": {
+      "rotation": 1,
+      "pulse": 0.7,
+      "detail": 1,
+      "spectrumSmooth": 0.3
+    },
+    "lyricStyle": {
+      "enabled": true,
+      "position": "bottom",
+      "size": 1,
+      "color": "#ffffff",
+      "fadeSec": 0.15,
+      "anim": "plain"
+    },
+    "audiogram": {
+      "progressBar": false,
+      "timeReadout": false,
+      "waveformStrip": false,
+      "position": "bottom",
+      "color": "#7c5cff"
+    },
+    "customDefs": [],
+    "builderStack": {
+      "layers": [
+        {
+          "id": "sunset-circuit-b0",
+          "type": "wash",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "glow": 0.5,
+            "flash": 0.35
+          }
+        },
+        {
+          "id": "sunset-circuit-b1",
+          "type": "stars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "density": 10,
+            "speed": 0.6,
+            "streak": 0.4
+          }
+        },
+        {
+          "id": "sunset-circuit-b2",
+          "type": "bars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "height": 0.5,
+            "gap": 0.25,
+            "glow": 0.5,
+            "peaks": 1
+          }
+        },
+        {
+          "id": "sunset-circuit-b3",
+          "type": "rings",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "start": 0.05,
+            "end": 0.48,
+            "sharp": 0.5,
+            "bright": 0.8
+          }
+        }
+      ]
+    }
+  }
+}

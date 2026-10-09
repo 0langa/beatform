@@ -1,0 +1,241 @@
+{
+  "kind": "bftheme",
+  "schemaVersion": 1,
+  "projectSchemaVersion": 14,
+  "appVersion": "2.95.0",
+  "meta": {
+    "name": "Blacklight",
+    "author": "Beatform",
+    "license": "CC0-1.0",
+    "description": "A lit lattice running away from you in the dark — violet wireframe, four-fold symmetry, junctions burning at every intersection. The grid pulses on a two-beat square wave, and a section change steps the whole shaft to six-fold and back.",
+    "bpmHint": [
+      125,
+      150
+    ]
+  },
+  "document": {
+    "presetId": "tunnel-rings",
+    "paramsByPreset": {
+      "tunnel-rings": {
+        "hue": 200,
+        "hueSpread": 14,
+        "colorFade": 0.1,
+        "material": 2,
+        "speed": 0.3,
+        "rings": 10,
+        "spokes": 16,
+        "junction": 0.35,
+        "twist": 0.3,
+        "roundness": 0.1,
+        "surfaceWarp": 0.25,
+        "curve": 0.3,
+        "curveScale": 1.2,
+        "mirror": 4,
+        "beatPulse": 0.85,
+        "beatSpeed": 0.16,
+        "beatBright": 0.14,
+        "pulseWidth": 6,
+        "cruiseFloor": 0.4,
+        "cruiseEnergy": 0.7,
+        "centerGlow": 0.06,
+        "tileLevel": 0,
+        "tileSpectrum": 0.16,
+        "tileSat": 0.9,
+        "checker": 0.02,
+        "groutWidth": 0.02,
+        "groutLevel": 0.12,
+        "fogNear": 0.06,
+        "fogFar": 0.35,
+        "coverWall": 0,
+        "vignette": 0.7
+      }
+    },
+    "syncByPreset": {
+      "tunnel-rings": {
+        "mode": "kick",
+        "smooth": 0.18,
+        "attack": 0.012,
+        "release": 0.34,
+        "shapeRound": 0.1,
+        "contrast": 0.58
+      }
+    },
+    "bgByPreset": {},
+    "centerImageByPreset": {},
+    "bg": {
+      "mode": 1,
+      "color": [
+        0.02,
+        0.028,
+        0.04
+      ]
+    },
+    "overlayLayers": [],
+    "assets": {},
+    "aspect": "16:9",
+    "modsByPreset": {
+      "tunnel-rings": [
+        {
+          "id": "blacklight-m0",
+          "source": "kick",
+          "param": "beatBright",
+          "amount": 0.28,
+          "curve": "exp",
+          "attack": 0.005,
+          "release": 0.16
+        },
+        {
+          "id": "blacklight-m1",
+          "source": "lfo:square:4",
+          "param": "groutLevel",
+          "amount": 0.18,
+          "attack": 0.04,
+          "release": 0.18
+        },
+        {
+          "id": "blacklight-m2",
+          "source": "barPhase",
+          "param": "centerGlow",
+          "amount": 0.2,
+          "curve": "smooth",
+          "attack": 0.02,
+          "release": 0.25
+        },
+        {
+          "id": "blacklight-m3",
+          "source": "bass",
+          "param": "pulseWidth",
+          "amount": -0.18,
+          "curve": "smooth",
+          "attack": 0.1,
+          "release": 0.6
+        },
+        {
+          "id": "blacklight-m4",
+          "source": "energy",
+          "param": "speed",
+          "amount": 0.14,
+          "curve": "smooth",
+          "attack": 0.6,
+          "release": 1.8
+        },
+        {
+          "id": "blacklight-m5",
+          "source": "snare",
+          "param": "post:chromatic",
+          "amount": 0.07,
+          "curve": "exp",
+          "attack": 0.01,
+          "release": 0.22
+        },
+        {
+          "id": "blacklight-m6",
+          "source": "sectionPulse",
+          "param": "mirror",
+          "amount": 0.2,
+          "curve": "exp",
+          "attack": 0.05,
+          "release": 2.5
+        }
+      ]
+    },
+    "smoothSpectrum": false,
+    "timeline": {
+      "enabled": false,
+      "scenes": [],
+      "lanes": []
+    },
+    "post": {
+      "bloom": 0.12,
+      "bloomThreshold": 1.25,
+      "exposure": 0.35,
+      "tonemap": true,
+      "vignette": 0.4,
+      "grain": 0.03,
+      "chromatic": 0.04
+    },
+    "motion": {
+      "rotation": 0.9,
+      "pulse": 1.15,
+      "detail": 1,
+      "spectrumSmooth": 0
+    },
+    "lyricStyle": {
+      "enabled": true,
+      "position": "bottom",
+      "size": 1,
+      "color": "#ffffff",
+      "fadeSec": 0.15,
+      "anim": "plain"
+    },
+    "audiogram": {
+      "progressBar": false,
+      "timeReadout": false,
+      "waveformStrip": false,
+      "position": "bottom",
+      "color": "#7c5cff"
+    },
+    "customDefs": [],
+    "builderStack": {
+      "layers": [
+        {
+          "id": "blacklight-b0",
+          "type": "wash",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "glow": 0.5,
+            "flash": 0.35
+          }
+        },
+        {
+          "id": "blacklight-b1",
+          "type": "stars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "density": 10,
+            "speed": 0.6,
+            "streak": 0.4
+          }
+        },
+        {
+          "id": "blacklight-b2",
+          "type": "bars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "height": 0.5,
+            "gap": 0.25,
+            "glow": 0.5,
+            "peaks": 1
+          }
+        },
+        {
+          "id": "blacklight-b3",
+          "type": "rings",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "start": 0.05,
+            "end": 0.48,
+            "sharp": 0.5,
+            "bright": 0.8
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,237 @@
+{
+  "kind": "bftheme",
+  "schemaVersion": 1,
+  "projectSchemaVersion": 14,
+  "appVersion": "2.95.0",
+  "meta": {
+    "name": "Meteor Hour",
+    "author": "Beatform",
+    "license": "CC0-1.0",
+    "description": "Flying through a wide-open sky at festival scale — the field thins out through a breakdown and refills as the track builds, and every section change throws a shower that burns out over the next few bars.",
+    "bpmHint": [
+      120,
+      160
+    ]
+  },
+  "document": {
+    "presetId": "particles",
+    "paramsByPreset": {
+      "particles": {
+        "hue": 268,
+        "hueVariance": 115,
+        "saturation": 1.15,
+        "lightness": 1.05,
+        "bandColor": 55,
+        "density": 9,
+        "size": 0.08,
+        "sizeVar": 0.5,
+        "fill": 0.5,
+        "layers": 3,
+        "clump": 0.34,
+        "mirror": 1,
+        "fly": 1,
+        "speed": 0.85,
+        "direction": 90,
+        "parallax": 0.8,
+        "streak": 0.8,
+        "wander": 0.5,
+        "wanderSpeed": 0.5,
+        "beatDance": 0.7,
+        "sizePulse": 0.9,
+        "energyDrive": 1.3,
+        "beatFlash": 0.12,
+        "beatPop": 0.35,
+        "shootingStars": 0.28,
+        "hotCore": 0.3,
+        "twinkle": 0.34,
+        "glow": 0.24,
+        "brightness": 0.45,
+        "bgLevel": 0.005,
+        "vignette": 0.65
+      }
+    },
+    "syncByPreset": {
+      "particles": {
+        "mode": "kick",
+        "smooth": 0.22,
+        "attack": 0.02,
+        "release": 0.42
+      }
+    },
+    "bgByPreset": {},
+    "centerImageByPreset": {},
+    "bg": {
+      "mode": 0,
+      "color": [
+        0,
+        0,
+        0
+      ]
+    },
+    "overlayLayers": [],
+    "assets": {},
+    "aspect": "16:9",
+    "modsByPreset": {
+      "particles": [
+        {
+          "id": "meteor-hour-m0",
+          "source": "kick",
+          "param": "beatFlash",
+          "amount": 0.3,
+          "curve": "exp",
+          "attack": 0.005,
+          "release": 0.18
+        },
+        {
+          "id": "meteor-hour-m1",
+          "source": "kick",
+          "param": "post:bloom",
+          "amount": 0.24,
+          "curve": "exp",
+          "attack": 0.01,
+          "release": 0.32
+        },
+        {
+          "id": "meteor-hour-m2",
+          "source": "bass",
+          "param": "speed",
+          "amount": 0.22,
+          "curve": "smooth",
+          "attack": 0.08,
+          "release": 0.55
+        },
+        {
+          "id": "meteor-hour-m3",
+          "source": "energy",
+          "param": "density",
+          "amount": 0.18,
+          "curve": "smooth",
+          "attack": 1.5,
+          "release": 3.5
+        },
+        {
+          "id": "meteor-hour-m4",
+          "source": "hat",
+          "param": "twinkle",
+          "amount": 0.25,
+          "curve": "exp",
+          "attack": 0.01,
+          "release": 0.22
+        },
+        {
+          "id": "meteor-hour-m5",
+          "source": "lfo:sine:8",
+          "param": "direction",
+          "amount": 0.05
+        },
+        {
+          "id": "meteor-hour-m6",
+          "source": "sectionPulse",
+          "param": "shootingStars",
+          "amount": 0.35,
+          "curve": "exp",
+          "attack": 0.05,
+          "release": 4
+        }
+      ]
+    },
+    "smoothSpectrum": false,
+    "timeline": {
+      "enabled": false,
+      "scenes": [],
+      "lanes": []
+    },
+    "post": {
+      "bloom": 0.18,
+      "bloomThreshold": 1.2,
+      "exposure": 0.45,
+      "tonemap": true,
+      "vignette": 0.35,
+      "grain": 0.02,
+      "chromatic": 0.06
+    },
+    "motion": {
+      "rotation": 1.15,
+      "pulse": 1.3,
+      "detail": 1,
+      "spectrumSmooth": 0.15
+    },
+    "lyricStyle": {
+      "enabled": true,
+      "position": "bottom",
+      "size": 1,
+      "color": "#ffffff",
+      "fadeSec": 0.15,
+      "anim": "plain"
+    },
+    "audiogram": {
+      "progressBar": false,
+      "timeReadout": false,
+      "waveformStrip": false,
+      "position": "bottom",
+      "color": "#7c5cff"
+    },
+    "customDefs": [],
+    "builderStack": {
+      "layers": [
+        {
+          "id": "meteor-hour-b0",
+          "type": "wash",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "glow": 0.5,
+            "flash": 0.35
+          }
+        },
+        {
+          "id": "meteor-hour-b1",
+          "type": "stars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "density": 10,
+            "speed": 0.6,
+            "streak": 0.4
+          }
+        },
+        {
+          "id": "meteor-hour-b2",
+          "type": "bars",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "height": 0.5,
+            "gap": 0.25,
+            "glow": 0.5,
+            "peaks": 1
+          }
+        },
+        {
+          "id": "meteor-hour-b3",
+          "type": "rings",
+          "enabled": true,
+          "opacity": 1,
+          "blend": "normal",
+          "hue": 210,
+          "hueSpread": 90,
+          "params": {
+            "start": 0.05,
+            "end": 0.48,
+            "sharp": 0.5,
+            "bright": 0.8
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "kind": "bfpreset",
+  "appVersion": "2.95.0",
+  "preset": {
+    "id": "up-trackc-abyssal-bloom",
+    "name": "Abyssal Bloom",
+    "presetId": "nebula",
+    "params": {
+      "hue": 210,
+      "hueRange": 40,
+      "midHueShift": 0,
+      "kaleido": 7,
+      "scale": 2.6,
+      "warp": 2.2,
+      "flow": 0.08,
+      "contrast": 0.95,
+      "saturation": 0.94,
+      "depth": 0.4,
+      "sparkle": 0.7,
+      "sparkleScale": 26,
+      "sparkleSharp": 36,
+      "hotCore": 1.2,
+      "brightFloor": 0.06,
+      "bassBright": 0.3,
+      "beatRipple": 0.4,
+      "rippleWidth": 24,
+      "beatBloom": 0.1,
+      "driveGlow": 0.08,
+      "spin": 0.2,
+      "vignette": 0.6,
+      "duo": 0.55,
+      "hue2": 285,
+      "stars": 0.35,
+      "windStrength": 0.22,
+      "windAngle": 190
+    },
+    "sync": {
+      "mode": "bass",
+      "smooth": 0.55,
+      "attack": 0.2,
+      "release": 0.7
+    },
+    "createdAt": "2026-08-14T00:00:00.000Z"
+  }
+}
