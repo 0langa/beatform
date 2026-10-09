@@ -773,12 +773,11 @@ describe("RealtimeAnalyzer presentation lag (eye/ear alignment)", SUITE, () => {
   it("zero lag presents the live frame on the same object the getter exposes", () => {
     const { engine, setNow } = fakeEngine(oneKick);
     const ana = new RealtimeAnalyzer(engine);
-    let f = ana.features;
     let fired = false;
     for (let n = 0; n < 120; n++) {
       const t = n / 60;
       setNow(t);
-      f = ana.update(t, t, 0);
+      const f = ana.update(t, t, 0);
       expect(f).toBe(ana.features);
       fired ||= f.kick === 1;
     }
