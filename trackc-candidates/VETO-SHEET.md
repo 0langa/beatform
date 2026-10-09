@@ -13,7 +13,7 @@ Everything here is reviewable from three places:
   with the track time each frame landed on logged. The JPEG copies live in
   `evidence-web/` (2.3 MB for the set, largest file 212 KB); the PNG
   originals (26 MB) were moved out of git history on 2026-10-09 to the
-  external dev drive, `agent-devstorageshared-cacheBeatformartifacts6-10-09_trackc-stillsevidence` (marked KEEP);
+  external dev drive, `agent-devstorage/shared-cache/Beatform/artifacts/2026-10-09_trackc-stills/evidence/` (marked KEEP);
 - `candidates.ts` and `looks.ts`, which are the typed source the files are
   emitted from, with the reasoning for each entry in the comments.
 
