@@ -72,9 +72,11 @@ export function wgslAcesTonemap(name: string): string {
  * The full-preset colour-control preamble: every authored HSL colour routes
  * through `presetColor`, whose saturation/lightness ride the shared
  * `P_saturation()` / `P_lightness()` params (pixel-neutral at their default
- * of 1). Used by the six "full colour controls" presets — spectrum-bars,
- * bass-circle, radial-burst, led-matrix, spectro-falls, lyric-stage — and
- * asserted per preset by colorControls.test.ts.
+ * of 1). Used by every preset that authors colour in HSL — spectrum-bars,
+ * bass-circle, radial-burst, led-matrix, spectro-falls, lyric-stage,
+ * gatefold, overgrowth, oscilloscope, synthwave — and asserted per preset by
+ * colorControls.test.ts. Presets that author colour as RGB (cosine palettes)
+ * use WGSL_RGB_CONTROLS below instead.
  */
 export const WGSL_COLOR_CONTROLS = `fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -83,6 +85,38 @@ export const WGSL_COLOR_CONTROLS = `fn colorScale(value: f32, control: f32) -> f
 
 fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
   return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
+}`;
+
+/**
+ * The authored-RGB counterpart of presetColor (HD-06): a whole-visual
+ * saturation / lightness map for colours that were never HSL — cosine
+ * palettes, tinted whites, cover art. Saturation mixes toward the colour's
+ * own luminance (Rec. 709 weights) and extrapolates past 1; lightness is a
+ * plain scale, clipped at white above 1 (the shape colorScale gives L).
+ *
+ * Spelled `rgb * s + gray * (1 - s)`, deliberately NOT `mix(gray, rgb, s)`:
+ * WGSL's mix lowers to HLSL lerp, x + s * (y - x), which is not an exact
+ * identity at s = 1 in f32 (0.3 + (0.7 - 0.3) is one ulp off 0.7), and the
+ * GPU matrix hashes 8-bit bytes, where one ulp on the wrong side of a
+ * quantisation edge moves a case. In this form the s = 1 result is
+ * rgb * 1.0 + gray * 0.0 = rgb exactly, under any fma contraction, so a
+ * preset that adopts it keeps its default frame bit-identical. led-matrix,
+ * lyric-stage and gatefold carry the older mix()-based copy of the same map;
+ * they were blessed with it in place and are left alone.
+ *
+ * presetRgbAt takes the two controls explicitly so a preset with its own
+ * saturation law (Kaleido Nebula, RP-6) can feed a derived control;
+ * presetRgb is the standard binding to P_saturation() / P_lightness().
+ */
+export const WGSL_RGB_CONTROLS = `fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
+  let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
+  let adjusted = rgb * saturation + gray * (1.0 - saturation);
+  if (lightness <= 1.0) { return adjusted * lightness; }
+  return min(adjusted * lightness, vec3f(1.0));
+}
+
+fn presetRgb(rgb: vec3f) -> vec3f {
+  return presetRgbAt(rgb, P_saturation(), P_lightness());
 }`;
 
 /**

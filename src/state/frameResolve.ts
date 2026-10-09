@@ -1,4 +1,5 @@
 import {
+  allParams,
   BG_IMAGE,
   BG_PRESET,
   BG_VIDEO,
@@ -7,7 +8,7 @@ import {
   type ParamValues,
 } from "../render/types";
 import { presetById } from "../render/presets";
-import { evalTimeline, type Timeline } from "./timeline";
+import { evalTimeline, snapsAutomation, type Timeline } from "./timeline";
 import type { ModRoute } from "./modMatrix";
 
 /**
@@ -69,6 +70,33 @@ function resolveSceneBg(sceneBg: BgSettings, baseBg: BgSettings): BgSettings {
   return assetMode && sceneBg.mode !== baseBg.mode ? { ...sceneBg, mode: BG_PRESET } : sceneBg;
 }
 
+/**
+ * Layer automation over `params`. Toggle / enum / snap params take whole
+ * numbers (HD-09) — rounded then clamped to the spec's range, exactly what
+ * the mod-matrix apply does for `mod: "snap"` — here, in the one function
+ * both loops share, so a lane between 0 and 1 on a switch resolves to 0 or 1
+ * in preview AND export, never 0.4. Params the preset does not declare
+ * (Builder virtual keys, a lane left over from another mode) pass through
+ * untouched, as they always did.
+ */
+function applyAutomation(
+  params: ParamValues,
+  automation: ParamValues,
+  presetId: string,
+): ParamValues {
+  const keys = Object.keys(automation);
+  if (keys.length === 0) return params;
+  const out: ParamValues = { ...params, ...automation };
+  const specs = allParams(presetById(presetId));
+  for (const key of keys) {
+    const spec = specs.find((s) => s.key === key);
+    if (spec && snapsAutomation(spec)) {
+      out[key] = Math.min(spec.max, Math.max(spec.min, Math.round(out[key])));
+    }
+  }
+  return out;
+}
+
 export function resolveActiveFrame(input: FrameResolveInput, t: number): ResolvedFrame {
   const { timeline, basePresetId, baseParams, baseMods, baseBg, paramsByPreset, modsByPreset } =
     input;
@@ -92,9 +120,7 @@ export function resolveActiveFrame(input: FrameResolveInput, t: number): Resolve
     mods = modsOf(presetId);
     bg = frame.scene.bg ? resolveSceneBg(frame.scene.bg, baseBg) : baseBg;
   }
-  if (Object.keys(frame.automation).length > 0) {
-    params = { ...params, ...frame.automation };
-  }
+  params = applyAutomation(params, frame.automation, presetId);
 
   let prev: ResolvedFrame["prev"] = null;
   if (frame.prevScene) {
@@ -104,8 +130,7 @@ export function resolveActiveFrame(input: FrameResolveInput, t: number): Resolve
       : baseOf(ppid);
     prev = {
       presetId: ppid,
-      params:
-        Object.keys(frame.automation).length > 0 ? { ...pParams, ...frame.automation } : pParams,
+      params: applyAutomation(pParams, frame.automation, ppid),
     };
   }
 

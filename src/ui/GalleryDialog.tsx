@@ -1,6 +1,11 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useVizStore } from "../state/store";
-import { entryGate, type AnyGalleryEntry, type GalleryEntryType } from "../state/gallery";
+import {
+  entryGate,
+  installedLookState,
+  type AnyGalleryEntry,
+  type GalleryEntryType,
+} from "../state/gallery";
 import { FACTORY_GALLERY_ENTRIES } from "../state/factoryThemes";
 import { useFocusTrap } from "./useFocusTrap";
 import { IconClose } from "./Icons";
@@ -30,6 +35,11 @@ const TYPE_EXPLAINERS: Record<GalleryEntryType, string> = {
  * so the two badges on a card tell one story — WHAT this is (look/theme)
  * and WHERE its bytes come from (fetched vs. already in the app). */
 const BUILTIN_BLURB = "Ships with the app — no download, works offline";
+
+/** HD-13: where an installed look is REMOVED — the Visuals dock's
+ * "Looks & themes" page (ParamsPanel), not this dialog. Named in one place so
+ * the card line, the tooltip and the guide cannot drift apart. */
+const REMOVAL_SURFACE = "Visuals ▸ Looks & themes";
 
 /** Text link into the Gallery dialog, optionally pre-filtered to one entry
  * type (A3 deep links) — used by the Themes section and the My Looks row. */
@@ -195,16 +205,16 @@ export function GalleryDialog() {
                 const isBuiltin = e.origin === "builtin";
                 const isBusy = busy === e.id;
                 const typeLabel = e.type === "look" ? "Look" : "Theme";
-                // A1: a look is Added only while the user preset its install
-                // created still exists — not because a stale session record
-                // says so. Themes (remote OR built-in) never persist an
-                // installed state; they get the transient "Applied ✓"
-                // instead (applying is repeatable).
-                const installedPresetId = installed[e.id];
-                const done =
-                  e.type === "look" &&
-                  installedPresetId !== undefined &&
-                  userPresets.some((p) => p.id === installedPresetId);
+                // A1 + HD-13: a look is Added only while the user preset its
+                // install created still exists AND the registry still carries
+                // the content that was installed — not because a stale record
+                // says so. A registry digest that moved since the install is
+                // an update the user can take. Themes (remote OR built-in)
+                // never persist an installed state; they get the transient
+                // "Applied ✓" instead (applying is repeatable).
+                const lookState = installedLookState(e, installed, userPresets);
+                const done = lookState === "current";
+                const outdated = lookState === "outdated";
                 const justApplied = e.type === "theme" && applied === e.id;
                 // P-6: a built-in never fetches, so none of the remote-only
                 // reasons a button goes disabled apply — including the
@@ -214,6 +224,8 @@ export function GalleryDialog() {
                 const disabled = isBuiltin
                   ? false
                   : done || isBusy || busy !== null || gate !== null;
+                // Gate outranks "Update look": an installed look whose NEWER
+                // version needs a newer app keeps its old copy and says so.
                 const label = done
                   ? "✓ Added"
                   : justApplied
@@ -222,18 +234,22 @@ export function GalleryDialog() {
                       ? "Verifying…"
                       : gate !== null
                         ? "Needs app update"
-                        : isBuiltin
-                          ? "Apply"
-                          : e.type === "look"
-                            ? "+ Add look"
-                            : "Apply theme";
+                        : outdated
+                          ? "Update look"
+                          : isBuiltin
+                            ? "Apply"
+                            : e.type === "look"
+                              ? "+ Add look"
+                              : "Apply theme";
                 const tooltip =
                   gate ??
                   (done
-                    ? "Already in My Looks — delete the look there to add it again"
-                    : e.type === "look"
-                      ? "Add to My Looks"
-                      : "Apply this theme");
+                    ? `Already in My Looks — remove it under ${REMOVAL_SURFACE} to add it again`
+                    : outdated
+                      ? "Update available — the Gallery has a newer version of this look; updating replaces your copy in My Looks"
+                      : e.type === "look"
+                        ? "Add to My Looks"
+                        : "Apply this theme");
                 return (
                   <div className="gallery-card" key={`${e.origin}:${e.id}`}>
                     {isBuiltin ? (
@@ -265,6 +281,16 @@ export function GalleryDialog() {
                         )}{" "}
                         · by {e.author.name} · {e.license}
                       </div>
+                      {/* HD-13 DECLARE: install lives here, removal lives on
+                          another surface. Say so on the card itself — a
+                          disabled button's tooltip is the one place a user
+                          cannot be relied on to hover. */}
+                      {lookState !== "absent" && (
+                        <div className="gallery-card-note">
+                          {outdated ? "An older version is in My Looks" : "In My Looks"} · remove it
+                          under {REMOVAL_SURFACE}
+                        </div>
+                      )}
                       <button
                         className="text-btn gallery-install-btn"
                         // Added DISABLES the button (A1): it used to stay

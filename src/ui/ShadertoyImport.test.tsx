@@ -279,3 +279,29 @@ describe("CRITICAL (whole-lane review) — apply() always settles busy, even on 
     }
   });
 });
+
+describe("HD-12 — pre-translate warnings for empty inputs", () => {
+  it("shows what the pasted code will lose, without blocking Translate", () => {
+    render(<ShadertoyImport />);
+    expect(screen.queryByRole("note", { name: "Import warnings" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Shadertoy GLSL source"), {
+      target: {
+        value:
+          "// Buffer A: feedback\nvoid mainImage(out vec4 fragColor, in vec2 fragCoord) { fragColor = texture(iChannel1, iMouse.xy); }",
+      },
+    });
+    const note = screen.getByRole("note", { name: "Import warnings" });
+    expect(note.textContent).toMatch(/iChannel1 is sampled/);
+    expect(note.textContent).toMatch(/iMouse is always zero/);
+    expect(note.textContent).toMatch(/Buffer A–D or Common/);
+    expect(isDisabled(screen.getByRole("button", { name: /Translate \+ add visual/ }))).toBe(false);
+    // Fixing the paste clears the warnings live.
+    fireEvent.change(screen.getByLabelText("Shadertoy GLSL source"), {
+      target: {
+        value:
+          "void mainImage(out vec4 fragColor, in vec2 fragCoord) { fragColor = texture(iChannel0, fragCoord); }",
+      },
+    });
+    expect(screen.queryByRole("note", { name: "Import warnings" })).toBeNull();
+  });
+});

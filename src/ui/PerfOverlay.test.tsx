@@ -37,7 +37,6 @@ const ALL_ON: PerfOverlayStats = {
   cpu: true,
   ram: true,
   disk: true,
-  gpu: true,
 };
 
 function renderOverlay(props: Partial<PerfOverlayProps> = {}) {
@@ -77,14 +76,13 @@ function fakeRaf() {
 describe("PerfOverlay", () => {
   it("shows one labelled row per enabled stat and none for disabled ones", () => {
     const { container } = renderOverlay({
-      show: { ...ALL_ON, disk: false, gpu: false },
+      show: { ...ALL_ON, disk: false },
     });
     const text = container.textContent ?? "";
     for (const label of ["FPS", "Frame", "Renderer", "JS heap", "CPU", "RAM"]) {
       expect(text).toContain(label);
     }
     expect(text).not.toContain("Disk");
-    expect(text).not.toContain("GPU");
   });
 
   it("renders nothing at all when every stat is toggled off", () => {
@@ -97,7 +95,6 @@ describe("PerfOverlay", () => {
         cpu: false,
         ram: false,
         disk: false,
-        gpu: false,
       },
     });
     expect(container.querySelector(".perf-overlay")).toBeNull();
@@ -146,7 +143,6 @@ describe("PerfOverlay", () => {
     expect(byLabel.get("CPU")).toBe("n/a");
     expect(byLabel.get("RAM")).toBe("n/a");
     expect(byLabel.get("Disk")).toBe("n/a");
-    expect(byLabel.get("GPU")).toBe("n/a");
   });
 
   it("reads the CAPPED rate when presents are skipped inside ticks", () => {

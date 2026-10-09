@@ -62,14 +62,19 @@ export interface TrackInput {
    * Drives features.sectionIndex / sectionPulse in the export walk exactly as
    * the live analyzer's setSections does in preview (P-15). */
   sections?: number[];
-  /** Imported stems (session-scoped, like the beat grid). Omitted by the
-   * batch queue — stem routes then read 0 and are silently inert. */
+  /** Imported stems — per LOADED track, cleared by every load (store.ts
+   * loadFile). Omitted by the batch queue on purpose: no batch track has
+   * any, and the session's belong to whichever track is loaded in the
+   * editor. Stem routes then read 0, and the batch panel says so before the
+   * run when the loaded track's stems are in use (batchInertSources, HD-03). */
   stems?: StemEntry[];
-  /** Timed lyrics + style (session-scoped, like stems). Omitted by the
-   * batch queue — batch tracks have no imported lyrics. Attached whenever
-   * lines exist, NOT only while the caption overlay is enabled: the caption
-   * path re-checks style.enabled itself, and the Lyric Stage plate reads the
-   * lines regardless (the mode replaces the caption, not the other way). */
+  /** Timed lyrics + style (per loaded track, like stems). Omitted by the
+   * batch queue — batch tracks have no imported lyrics, and the panel warns
+   * when the loaded track's lyrics feed the document (HD-03). Attached
+   * whenever lines exist, NOT only while the caption overlay is enabled: the
+   * caption path re-checks style.enabled itself, and the Lyric Stage plate
+   * reads the lines regardless (the mode replaces the caption, not the other
+   * way). */
   lyrics?: { lines: LyricLine[]; style: LyricStyle };
   /** The timed lines REGARDLESS of whether the overlay draws them — the
    * vocal-presence modulation source is about the singing, not the caption,

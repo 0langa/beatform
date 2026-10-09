@@ -121,21 +121,21 @@ export interface PerformAssetsMsg {
 
 /** Receiver -> publisher: "a performance surface is listening". Sent on
  * boot and in reply to `hi`. Activates the mirror and requests full state. */
-export interface PerformHelloMsg {
+interface PerformHelloMsg {
   type: "hello";
 }
 
 /** Receiver -> publisher: the surface is going away (pagehide). The Tauri
  * `perform:closed` window event covers the destroy() path where pagehide
  * may never fire; either one deactivates the mirror. */
-export interface PerformByeMsg {
+interface PerformByeMsg {
   type: "bye";
 }
 
 /** Publisher -> receiver: "the primary is up". Covers the boot-order race
  * where the performance surface said hello before the publisher existed
  * (browser dev: the /?perform tab opened first). */
-export interface PerformHiMsg {
+interface PerformHiMsg {
   type: "hi";
 }
 

@@ -47,7 +47,9 @@ repository HEAD when the last 2.x release (v2.110.x per
       operator window: any stutter, flicker, drift? Then the yank: pull the
       HDMI cable mid-show — expected: Windows relocates the window, the app
       keeps running, no crash; replug → reopen from the drawer → it re-places
-      on the second screen. Silence = pass; anything odd is filed in
+      on the second screen. Also: with Preferences ▸ Performance ▸ frame cap
+      at 30, the big screen must still run at display rate (2.110.0 lifts the
+      cap while the mirror is live). Silence = pass; anything odd is filed in
       BACKLOG.md and fixed before the tag.
 
 ## D — Release path (agent-executable, run against the 3.0.0 candidate)

@@ -4,6 +4,9 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { useVizStore } from "../state/store";
 import { useAppShortcuts } from "./useAppShortcuts";
 import shortcutsSource from "./useAppShortcuts.ts?raw"; // precedent: loopbackWorklet.test.ts
+// HD-20: the lyrics editor owns its own Ctrl+Z / Ctrl+Y (editor-local undo
+// history, LyricsEditPanel.tsx) — a second key handler the sheet must cover.
+import lyricsEditorSource from "./LyricsEditPanel.tsx?raw";
 import { SHORTCUT_SHEET, groupShortcutRows } from "./useAppShortcuts";
 
 afterEach(cleanup);
@@ -279,6 +282,20 @@ describe("SHORTCUT_SHEET covers the handler, both directions", () => {
   if (/e\.key\s*>=\s*"1"\s*&&\s*e\.key\s*<=\s*"9"/.test(shortcutsSource)) {
     for (let d = 1; d <= 9; d++) handlerLiterals.add(String(d));
   }
+  // HD-20: the lyrics editor's root onKeyDown is a second shortcut handler
+  // (Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y over its own undo history). Its literals
+  // join the coverage set so a key it handles can never again be missing
+  // from the sheet. Enter, Escape and F2 are excluded on purpose: inside the
+  // panel they are text-FIELD keys (commit a line, cancel a draft, start
+  // typing a time) that only fire on the focused input — not bindings a
+  // user learns from a sheet, same reasoning as Escape above.
+  const FIELD_KEYS = new Set(["Enter", "Escape", "F2"]);
+  const lyricsEditorLiterals = new Set(
+    [...lyricsEditorSource.matchAll(/e\.(?:key|code)\s*===\s*"([^"]+)"/g)]
+      .map((m) => m[1])
+      .filter((k) => !FIELD_KEYS.has(k)),
+  );
+  for (const k of lyricsEditorLiterals) handlerLiterals.add(k);
   const sheetLiterals = new Set(SHORTCUT_SHEET.flatMap((r) => r.literals));
 
   it("every handled key has a sheet row", () => {
@@ -286,6 +303,17 @@ describe("SHORTCUT_SHEET covers the handler, both directions", () => {
   });
   it("every sheet row exists in the handler", () => {
     expect([...sheetLiterals].filter((k) => !handlerLiterals.has(k))).toEqual([]);
+  });
+  it("the lyrics editor's own keys have lyrics-specific sheet rows, not just the app-wide undo rows (HD-20)", () => {
+    // z/Z/y/Y already appear on the app-wide Undo/Redo rows, so the union
+    // check above passes vacuously — the editor's rows must SAY they are the
+    // lyrics editor's, or a user reading the sheet learns nothing new.
+    expect(lyricsEditorLiterals.size).toBeGreaterThan(0); // the scan found the handler at all
+    const lyricsRows = SHORTCUT_SHEET.filter((r) => /lyric/i.test(r.action));
+    const lyricsSheetLiterals = new Set(lyricsRows.flatMap((r) => r.literals));
+    expect([...lyricsEditorLiterals].filter((k) => !lyricsSheetLiterals.has(k))).toEqual([]);
+    // ...and they sit with the other editing shortcuts.
+    for (const r of lyricsRows) expect(r.group).toBe("Editing");
   });
   it("rows carry friendly copy", () => {
     for (const r of SHORTCUT_SHEET) {

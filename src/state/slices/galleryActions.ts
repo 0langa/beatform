@@ -4,12 +4,46 @@ import {
   fetchEntryPreview,
   fetchRegistry,
   GalleryError,
+  installedLookState,
+  validGalleryInstalled,
+  type GalleryInstallRecord,
 } from "../gallery";
 import { FACTORY_GALLERY_ENTRIES } from "../factoryThemes";
+import { safeSetItem } from "../persistence";
 import { parseTheme, ThemeParseError } from "../themes";
-import { parseUserPreset, saveUserPresets, UserPresetParseError } from "../userPresets";
+import {
+  parseUserPreset,
+  saveUserPresets,
+  UserPresetParseError,
+  type UserPreset,
+} from "../userPresets";
 import type { VizState } from "../store";
 import type { GetFn, SetFn, SliceCtx } from "./ctx";
+
+/**
+ * HD-13: the gallery install record (entry id -> which preset the install
+ * created, and the registry digest of what was installed) is persisted as a
+ * sibling of `viz.userPresets.v1`. It has to survive a restart to be worth
+ * anything: an upstream update arrives days later, not in the session that
+ * installed the look — and without it the Gallery forgot every install on
+ * relaunch, so "+ Add look" happily stacked a second copy into My Looks.
+ * Validated at boot like the looks list (see validGalleryInstalled). Never
+ * pruned on delete: a record whose preset is gone reads as `absent` anyway
+ * and is overwritten by the next install of that entry.
+ */
+const LS_GALLERY_INSTALLED = "viz.galleryInstalled.v1";
+
+export function loadGalleryInstalled(): Record<string, GalleryInstallRecord> {
+  try {
+    return validGalleryInstalled(JSON.parse(localStorage.getItem(LS_GALLERY_INSTALLED) ?? "{}"));
+  } catch {
+    return {};
+  }
+}
+
+function saveGalleryInstalled(map: Record<string, GalleryInstallRecord>): void {
+  safeSetItem(LS_GALLERY_INSTALLED, JSON.stringify(map));
+}
 
 /** How long the theme card says "Applied ✓" before reverting (A1). */
 const APPLIED_FLASH_MS = 2500;
@@ -120,15 +154,13 @@ export function galleryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       }
       const entry = get().galleryEntries.find((e) => e.id === id);
       if (!entry || get().galleryBusy !== null) return;
-      // A1: an installed look that still exists is DONE — the card's button is
-      // disabled, and this guard backs it so a stray double-activation can
-      // never stack a duplicate into My Looks (the owner-repro bug).
-      const installedId = get().galleryInstalled[id];
-      if (
-        entry.type === "look" &&
-        installedId !== undefined &&
-        get().userPresets.some((p) => p.id === installedId)
-      ) {
+      // A1 + HD-13: an installed look whose content the registry still
+      // carries is DONE — the card's button is disabled, and this guard backs
+      // it so a stray double-activation can never stack a duplicate into My
+      // Looks (the owner-repro bug). An OUTDATED one (registry digest moved
+      // since the install) falls through: its install REPLACES the old copy
+      // below instead of adding a second one.
+      if (installedLookState(entry, get().galleryInstalled, get().userPresets) === "current") {
         return;
       }
       const gate = entryGate(entry);
@@ -148,20 +180,43 @@ export function galleryActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         // the drag-import paths run. Nothing persists until they pass.
         const text = await fetchEntryContent(entry);
         if (entry.type === "look") {
-          const preset = parseUserPreset(text);
-          const userPresets = [preset, ...get().userPresets];
+          const fresh = parseUserPreset(text);
+          // HD-13: re-read AFTER the await — the user may have deleted the
+          // look while this downloaded. If the copy this entry created is
+          // still in My Looks, install OVER it: same id, same slot, so the
+          // look stays where it was and anything holding its id (the active
+          // look, its chip) follows the new content. Otherwise the content
+          // lands as a fresh copy, exactly as a first install does.
+          const prior = get().galleryInstalled[id];
+          const replaceId =
+            prior !== undefined && get().userPresets.some((p) => p.id === prior.presetId)
+              ? prior.presetId
+              : null;
+          const preset: UserPreset = replaceId === null ? fresh : { ...fresh, id: replaceId };
+          const userPresets =
+            replaceId === null
+              ? [preset, ...get().userPresets]
+              : get().userPresets.map((p) => (p.id === replaceId ? preset : p));
           set({ userPresets });
           saveUserPresets(userPresets);
-          // Record WHICH user preset this install created: "✓ Added" is only
-          // honest while that preset survives, so the dialog checks the id
-          // against userPresets — deleting the look reverts the button (A1).
+          // Record WHICH user preset this install created and WHAT content
+          // (the registry digest): "✓ Added" is only honest while that preset
+          // survives, and "Already in My Looks" only while the registry still
+          // carries this exact content — installedLookState checks both.
           // UNCONDITIONAL, even if the apply below is skipped as stale: the
           // content DID install into My Looks either way — only whether it
           // ALSO became the active look is in question.
-          set({ galleryInstalled: { ...get().galleryInstalled, [id]: preset.id } });
+          const galleryInstalled = {
+            ...get().galleryInstalled,
+            [id]: { presetId: preset.id, sha256: entry.sha256 },
+          };
+          set({ galleryInstalled });
+          saveGalleryInstalled(galleryInstalled);
           if (myToken === latestUserActionToken) {
             get().applyUserPreset(preset.id);
-            ctx.flashNotice(`"${entry.name}" by ${entry.author.name} added to My Looks`);
+            ctx.flashNotice(
+              `"${entry.name}" by ${entry.author.name} ${replaceId === null ? "added to" : "updated in"} My Looks`,
+            );
           } else {
             // A later action (another install, or a built-in Apply) won the
             // race while this download was in flight — the look is safely

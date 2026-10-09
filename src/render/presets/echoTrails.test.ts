@@ -585,7 +585,10 @@ describe("echo-trails depth wave: default neutrality", () => {
     // (0.5 + spec) BY VALUE on the default path — same number, same bits.
     expect(block).not.toMatch(/\blevel\s*=/);
     expect(body).toContain("var level = spec;");
-    expect(body).toContain("col += ringHot * band * (0.5 + level) * P_inject() * deposit;");
+    // The injected ring rides presetRgb (HD-06); the energy budget is untouched.
+    expect(body).toContain(
+      "col += presetRgb(ringHot) * band * (0.5 + level) * P_inject() * deposit;",
+    );
   });
 });
 
@@ -602,7 +605,7 @@ describe("echo-trails cover source: bounded, frame-rate-exact fixed point", () =
   const body = echoTrails.wgsl;
 
   it("the injection is pre-scaled by (1 - loopGain) and carries deposit", () => {
-    const line = body.split("\n").find((l) => l.includes("col += coverSample"));
+    const line = body.split("\n").find((l) => l.includes("col += presetRgb(coverSample"));
     expect(line, "cover injection line not found").toBeTruthy();
     expect(line).toContain("* (1.0 - loopGain)");
     expect(line).toContain("* deposit");

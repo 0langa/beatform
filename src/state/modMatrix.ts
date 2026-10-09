@@ -86,7 +86,7 @@ export type ModSource =
   // lfoValue().
   | `lfo:${LfoWave}:${"0.25" | "0.5" | "1" | "2" | "4" | "8"}`;
 
-export type LfoWave = "sine" | "saw" | "square";
+type LfoWave = "sine" | "saw" | "square";
 
 /** Stem-source ids ("stem1:kick"). Kept in lockstep with stems.ts keys. */
 const STEM_SOURCE_RE = /^stem[1-4]:(energy|bass|mid|treble|kick|snare|hat)$/;

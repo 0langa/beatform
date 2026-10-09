@@ -49,6 +49,8 @@ vi.mock("../platform", async (importOriginal) => {
     // below override this to a deterministic filename when they need to
     // assert on the notice's content.
     quarantineSupersededAutosave: vi.fn(async () => null),
+    // HD-10: the theme import dialog; tests hand it a file or a cancel.
+    openTextFile: vi.fn(async () => null),
   };
 });
 
@@ -62,7 +64,7 @@ vi.mock("../persistence", async (importOriginal) => {
 });
 
 const { useVizStore } = await import("../store");
-const { isTauri, readAutosave, writeAutosave, quarantineSupersededAutosave } =
+const { isTauri, readAutosave, writeAutosave, quarantineSupersededAutosave, openTextFile } =
   await import("../platform");
 const { wasPreviousExitClean } = await import("../persistence");
 
@@ -817,5 +819,34 @@ describe("E2-D2 fix — an in-place custom-shader re-save must be undoable (.sup
     // openProjectText -> applyDocument never passes fromHistory — S1 keeps
     // the local (newer) edit exactly as it did before this fix.
     expect(store().customDefs.find((d) => d.id === ID)?.wgsl).toBe(EDITED);
+  });
+});
+
+describe("importThemeFromFile (HD-10)", () => {
+  it("applies a picked .bftheme through the same parser as the drop-import", async () => {
+    const { serializeTheme } = await import("../themes");
+    const contents = serializeTheme(
+      validateDocument({ presetId: OTHER_PRESET }),
+      { name: "Picked", author: "test", license: "CC0-1.0" },
+      "test",
+    );
+    vi.mocked(openTextFile).mockResolvedValueOnce({ name: "picked.bftheme", contents });
+    await useVizStore.getState().importThemeFromFile();
+    expect(useVizStore.getState().presetId).toBe(OTHER_PRESET);
+    expect(useVizStore.getState().error).toBeNull();
+  });
+
+  it("a cancelled dialog changes nothing", async () => {
+    const before = useVizStore.getState().presetId;
+    vi.mocked(openTextFile).mockResolvedValueOnce(null);
+    await useVizStore.getState().importThemeFromFile();
+    expect(useVizStore.getState().presetId).toBe(before);
+    expect(useVizStore.getState().error).toBeNull();
+  });
+
+  it("a file that is not a theme reports through the drop-import's own error path", async () => {
+    vi.mocked(openTextFile).mockResolvedValueOnce({ name: "junk.bftheme", contents: "{not json" });
+    await useVizStore.getState().importThemeFromFile();
+    expect(useVizStore.getState().error).toMatch(/^Could not import theme/);
   });
 });

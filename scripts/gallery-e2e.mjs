@@ -96,23 +96,31 @@ try {
   }
 
   // 3. Install a LOOK: verified download -> parseUserPreset -> My Looks +
-  // applied. A1: galleryInstalled now maps entry id -> the created user
-  // preset's id ("Added" is only real while that preset exists).
+  // applied. A1: galleryInstalled maps entry id -> a record of the created
+  // user preset's id ("Added" is only real while that preset exists) and,
+  // since HD-13, the registry digest that was installed (persisted under
+  // viz.galleryInstalled.v1 so a restart does not forget the install).
   const look = await cdp.eval(`(async () => {
     const before = window.__store.getState().userPresets.length;
     await window.__store.getState().installGalleryEntry("prism-cathedral");
     const st = window.__store.getState();
+    const rec = st.galleryInstalled["prism-cathedral"];
+    const entrySha = st.galleryEntries.find(e => e.id === "prism-cathedral")?.sha256 ?? null;
     return { before, after: st.userPresets.length,
              first: st.userPresets[0]?.name ?? null,
              presetId: st.presetId, error: st.error,
-             mapsToNewest: st.galleryInstalled["prism-cathedral"] === st.userPresets[0]?.id };
+             mapsToNewest: rec?.presetId === st.userPresets[0]?.id,
+             recordsDigest: rec?.sha256 === entrySha,
+             persisted: JSON.parse(localStorage.getItem("viz.galleryInstalled.v1") ?? "{}")["prism-cathedral"]?.sha256 === entrySha };
   })()`);
   console.log("LOOK-INSTALL:", JSON.stringify(look));
   if (
     look.after !== look.before + 1 ||
     look.first !== "Prism Cathedral" ||
     look.presetId !== "echo-trails" ||
-    !look.mapsToNewest
+    !look.mapsToNewest ||
+    !look.recordsDigest ||
+    !look.persisted
   ) {
     throw new Error(`look install failed: ${JSON.stringify(look)}`);
   }
@@ -239,6 +247,68 @@ try {
   await cdp.shot(path.join(outDir, "gallery-panel.png"));
   console.log("SHOT", path.join(outDir, "gallery-panel.png"));
 
+  // 5b. HD-13 in the DOM: an installed look whose UPSTREAM content has since
+  // changed reads "Update look" (ENABLED) plus the removal line, and taking
+  // the update installs OVER the old copy — same preset id, nothing stacked —
+  // after which the card reads "✓ Added" again. The live registry cannot be
+  // made to change under the test, so the RECORDED digest is moved instead:
+  // that is exactly the state a newer upstream leaves behind (record digest
+  // != registry digest), reached through the same store field the real
+  // install writes.
+  const update = await cdp.eval(`(async () => {
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+    const inp = document.querySelector(".gallery-search");
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+    setter.call(inp, "prism");
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    await delay(250);
+    const btn = () => document.querySelector(".gallery-dialog .gallery-install-btn");
+    const note = () => document.querySelector(".gallery-dialog .gallery-card-note")?.textContent ?? null;
+    const st0 = window.__store.getState();
+    const rec = st0.galleryInstalled["prism-cathedral"];
+    const entrySha = st0.galleryEntries.find(e => e.id === "prism-cathedral")?.sha256 ?? null;
+    const addedTxt = btn()?.textContent ?? null;
+    const addedNote = note();
+    window.__store.setState({
+      galleryInstalled: { ...st0.galleryInstalled, "prism-cathedral": { ...rec, sha256: "0".repeat(64) } },
+    });
+    await delay(250);
+    const outdatedTxt = btn()?.textContent ?? null;
+    const outdatedDisabled = !!btn()?.disabled;
+    const outdatedNote = note();
+    const before = window.__store.getState().userPresets.length;
+    await window.__store.getState().installGalleryEntry("prism-cathedral");
+    await delay(250);
+    const st1 = window.__store.getState();
+    const afterTxt = btn()?.textContent ?? null;
+    setter.call(inp, "");
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    await delay(200);
+    return {
+      addedTxt, addedNote, outdatedTxt, outdatedDisabled, outdatedNote,
+      before, after: st1.userPresets.length,
+      samePreset: st1.galleryInstalled["prism-cathedral"]?.presetId === rec?.presetId,
+      digestRestored: st1.galleryInstalled["prism-cathedral"]?.sha256 === entrySha,
+      persisted: JSON.parse(localStorage.getItem("viz.galleryInstalled.v1") ?? "{}")["prism-cathedral"]?.sha256 === entrySha,
+      afterTxt, error: st1.error,
+    };
+  })()`);
+  console.log("LOOK-UPDATE:", JSON.stringify(update));
+  if (
+    update.addedTxt !== "✓ Added" ||
+    !/Visuals ▸ Looks & themes/.test(update.addedNote ?? "") ||
+    update.outdatedTxt !== "Update look" ||
+    update.outdatedDisabled ||
+    !/older version/.test(update.outdatedNote ?? "") ||
+    update.after !== update.before ||
+    !update.samePreset ||
+    !update.digestRestored ||
+    !update.persisted ||
+    update.afterTxt !== "✓ Added"
+  ) {
+    throw new Error(`update path failed: ${JSON.stringify(update)}`);
+  }
+
   // 6. A1 in the DOM: the installed look reads "✓ Added" and is DISABLED;
   // deleting that look through the store flips the same card back to a live
   // "+ Add look" (the dialog re-checks userPresets, not the stale record).
@@ -253,7 +323,7 @@ try {
     const beforeTxt = btn()?.textContent ?? null;
     const beforeDisabled = !!btn()?.disabled;
     const st = window.__store.getState();
-    st.deleteUserPreset(st.galleryInstalled["prism-cathedral"]);
+    st.deleteUserPreset(st.galleryInstalled["prism-cathedral"].presetId);
     await delay(250);
     const afterTxt = btn()?.textContent ?? null;
     const afterDisabled = !!btn()?.disabled;

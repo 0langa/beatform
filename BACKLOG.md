@@ -52,144 +52,144 @@ evidence is recorded here.
 
 ### Export and batch
 
-- [ ] **HD-01 Batch export silently ignores the export panel's format.**
+- [x] **HD-01 Batch export silently ignores the export panel's format.**
       `startBatch` hardcodes `format: "mp4"` (src/state/slices/batchActions.ts:210)
       and never reads `settings.format` — pick PNG sequence, ProRes, AV1 10-bit,
       GIF or WebP, queue a batch, get MP4s with no notice. Deep-color follows
       format, so it is dropped too. Recommended: **FINISH-lite** — refuse the
       unsupported formats up front with a notice and label the batch panel
       "MP4 / WebM" (S); full lane parity for the sidecar formats is M.
-      Verdict: \_\_\_
-- [ ] **HD-02 Batch ignores Canvas-loop mode** (`settings.mode` never read;
+      Verdict: **FINISH-lite** — closed 2026-09-03 (88c97b1): `batchSettingsRefusal()` in `startBatch` refuses PNG/ProRes/AV1 10-bit/GIF/WebP (and canvas mode, HD-02) before the folder dialog, naming the tile and the fix; the panel disables Start with the same sentence and says "Batch renders whole tracks as MP4 / WebM". Code fact: `FormatPreset.format` is literally `"mp4"` and WebM rides the `vp9a` codec, which was already passed through — so the only admissible format id is mp4.
+- [x] **HD-02 Batch ignores Canvas-loop mode** (`settings.mode` never read;
       no segment, no loop crossfade, wrong size). Recommended: **FINISH-lite**
       — refuse canvas mode in batch with a notice (fold into HD-01) (S).
-      Verdict: \_\_\_
-- [ ] **HD-03 Batch drops stems and vocal spans** — `TrackInput` carries
+      Verdict: **FINISH-lite** — closed 2026-09-03 (88c97b1): canvas-loop mode refused in the same `batchSettingsRefusal()` path as HD-01, with tests for each refusal and for MP4 passing through.
+- [x] **HD-03 Batch drops stems and vocal spans** — `TrackInput` carries
       neither, so stem routes and the "Vocals (lyrics)" mod source read 0 in
       batch output while the interactive export honours them (same class as
       R2-05, one layer up). Recommended: **FINISH** — pass both through like
-      sections/audiogram (S). Verdict: \_\_\_
-- [ ] **HD-14 The A-B loop region cannot be exported** — `segment` is set only
+      sections/audiogram (S). Verdict: **DECLARE with a guard** (not the literal pass-through) — closed 2026-09-03 (88c97b1). The code refutes the row: `loadFile` clears `stems` and `lyrics` on every load because both are imports bounced/timed for ONE track; sections and the audiogram are recomputed per batch track from its own audio, stems and lyrics cannot be. Passing the loaded track's stems to twenty other songs would paint one song's drums onto every other — the opposite of the determinism law. An interactive export of any batch track, loaded fresh, carries neither, so batch already resolves the same frames. What ships: `TrackInput` stays free of stems/lyrics (pinned), and the Batch panel warns up front (`batchInertSources`) when the loaded track's stems or lyrics feed the setup (stem routes, Vocals source, captions). Guide updated.
+- [x] **HD-14 The A-B loop region cannot be exported** — `segment` is set only
       in canvas mode (src/state/slices/exportActions.ts:230); the loop is a
       preview-only tool. Recommended: **DECLARE** in the guide next to the A-B
-      keys (S); an "Export loop region" checkbox would be M. Verdict: \_\_\_
-- [ ] **HD-24 Batch progress shows only instantaneous fps** (no average
+      keys (S); an "Export loop region" checkbox would be M. Verdict: **DECLARE** — closed 2026-09-03 (e121697): the guide's A-B paragraph now says the loop is a preview tool and exports never render just the A-B region.
+- [x] **HD-24 Batch progress shows only instantaneous fps** (no average
       speed) and classifies errors without the single-export lane's
       translation + scratch re-measure + ffmpeg log tail. Recommended:
-      **FINISH** — reuse the single lane's helpers (S). Verdict: \_\_\_
+      **FINISH** — reuse the single lane's helpers (S). Verdict: **FINISH** — closed 2026-09-03 (88c97b1): the single lane's 5 s windowed rate ring became `SpeedMeter` (pure, tested) and both lanes use it; batch rows read `42 fps · avg 38`; failed batch jobs go through `describeFailure` = the single lane's `classifyError` + `translateExportError` over a fresh scratch re-measure. Ledger claim inverted: the old batch `fps` was the cumulative average, the single lane had the window. The ffmpeg log tail does not apply — batch never runs a sidecar. Loose end noted, not a row: `ExportDialog.tsx` computes `avgSpeed` but renders only `speed`.
 
 ### Rendering and modes
 
-- [ ] **HD-06 Nine of twenty modes lack the global Saturation + Lightness
+- [x] **HD-06 Nine of twenty modes lack the global Saturation + Lightness
       pair** the other eleven treat as standard (oscilloscope, tunnel-rings,
       nebula, metaballs, voice-orb, echo-trails, aurora, synthwave, Builder) —
       and exactly those nine have no `color/grayscale` pixel case. The most
       visible inconsistency in the mode strip. Recommended: **FINISH** as its
       own release v2.111.0 (L — nine shaders through `presetColor`, styles
       re-checked, GPU matrix re-bless with per-mode visual proof), else
-      **DECLARE** in the guide (S). Verdict: \_\_\_
-- [ ] **HD-07 The second-display window inherits the operator's fps cap.**
+      **DECLARE** in the guide (S). Verdict: **FINISH (eight modes) + DECLARE (Builder)** — executed 2026-09-03 on `wt/color` (796390d, b33e2a3, 2507b8d, 2e996f2, defb321), ships as v2.111.0. Code facts that corrected the row: six of the eight are cosine-palette RGB modes with no `hsl2rgb`, so the HSL `presetColor` contract cannot apply — they route through a new shared `presetRgb`/`presetRgbAt` in wgslLib.ts written as `rgb*s + gray*(1-s)` (exact identity at s = 1 under fma, unlike `mix`); Oscilloscope and Synthwave (HSL modes) route every `hsl2rgb` through `presetColor` and their tinted whites through `presetRgb`. Tunnel/Metaballs/Voice Orb/Aurora route the finished frame after tonemap; Echo Trails routes its three injection sites, never the fed-back history; Kaleido Nebula keeps its RP-6 `saturation` and gains `lightness` plus a final stage that only engages below saturation 1/16 (styles and the default untouched). Builder is DECLARED: its `paramsByPreset.builder2` is a derived mirror rewritten from the stack on every edit and load, so a real global key needs a `.bfbuilder` format change — colour stays per layer by design. Pixel neutrality at the defaults argued and pinned (shaderGolden snapshot: exactly 16 changed entries; gpuMatrix ids: +16). **Device gate pending:** `npm run test:gpu` must show 316 unchanged hashes, 16 moved `extreme/min|max` cases (they sweep the new keys) and 16 new `color/*` cases, then `npm run test:gpu:update` → 348 cases; visual checks per mode at saturation 0 / lightness 2.
+- [x] **HD-07 The second-display window inherits the operator's fps cap.**
       Cap-skipped tickless frames return before `publishPerformFrame`
       (src/state/services.ts:452) and ticked capped frames publish
       `advance-only`, which the receiver never presents
       (src/perform/performRuntime.ts:127). A battery knob throttles the
       audience. Recommended: **FINISH** — publish and present the mirror
       regardless of the preview cap (S/M; verify on the real second display).
-      Verdict: \_\_\_
-- [ ] **HD-09 Automation lanes on toggle/enum parameters interpolate
+      Verdict: **FINISH** — closed 2026-09-03 (46ab64c): `effectiveFpsCap` lifts the preview cap while the mirror is live (pure, unit-tested); the Preferences hint says so. Owner check A2 confirms it on the real second display.
+- [x] **HD-09 Automation lanes on toggle/enum parameters interpolate
       linearly** — the lane picker offers every param, but `addKeyframe`
       defaults `curve: "linear"` (src/state/timeline.ts:31,140), so a bool or
       enum lane yields fractional values between keys. Recommended:
       **FINISH** — default `hold` for non-numeric params and snap their lane
-      values (S). Verdict: \_\_\_
-- [ ] **HD-15 Three analysis fields are computed every frame and consumed by
+      values (S). Verdict: **FINISH** — closed 2026-09-03 (b799394): new keyframes on toggle/enum/snap params start on `hold`, dots land on whole values, and `resolveActiveFrame` rounds and clamps automated values for those params in the shared chokepoint (frameResolve tests).
+- [x] **HD-15 Three analysis fields are computed every frame and consumed by
       nothing** — `beatIndex`, `barIndex`, `chroma` (P-15 "reactivity fuel",
       src/audio/types.ts:83, "per-mode adoption is a later wave"); `vocal` and
       `sectionPulse` from the same batch ARE routable mod sources.
       Recommended: **DECLARE** — reword the comment to state exactly which
       fields have consumers and that the rest are an internal contract with
-      measured cost (S); **REMOVE** the three would also be S. Verdict: \_\_\_
-- [ ] **HD-23 Canvas2D fallback is one generic look and unreachable on
+      measured cost (S); **REMOVE** the three would also be S. Verdict: **DECLARE** — closed 2026-09-03 (e121697): the `AudioFeatures` comment names the consumers field by field and states that `beatIndex`/`barIndex`/`chroma` have none and adoption is not scheduled.
+- [x] **HD-23 Canvas2D fallback is one generic look and unreachable on
       healthy hardware** — no toggle forces it; only a real GPU loss reaches
       it; no pixel baseline. PREVIEW-EXPORT-CONTRACT already scopes it.
-      Recommended: **DECLARE** (already documented; 0). Verdict: \_\_\_
+      Recommended: **DECLARE** (already documented; 0). Verdict: **DECLARE** — closed 2026-09-03: already documented in PREVIEW-EXPORT-CONTRACT.md; nothing to change.
 
 ### Live performance and MIDI
 
-- [ ] **HD-18 MIDI must be re-enabled by hand on every launch.** Bindings
+- [x] **HD-18 MIDI must be re-enabled by hand on every launch.** Bindings
       persist (`LS_MIDI`, src/state/persistence.ts:612); `midiEnabled` is
       session-only and nothing re-enables at boot, so saved bindings do
       nothing until the user clicks Enable. Recommended: **FINISH** — persist
       the enable flag and re-enable on boot (permission is granted Rust-side)
-      (S). Verdict: \_\_\_
-- [ ] **HD-19 MIDI can bind only knob→param and note→mode.** Blackout,
+      (S). Verdict: **FINISH** — closed 2026-09-03 (9c7daf8): `midiEnabled` lives in AppPrefs (additive boolean, validator defaults a missing key to false); `initApp` calls `restoreMidi()` quietly at boot; Enable sets the flag, Disable clears it. Prefs + midiActions tests. Device check pending: relaunch with MIDI left on and confirm it re-arms without a click.
+- [x] **HD-19 MIDI can bind only knob→param and note→mode.** Blackout,
       play/pause, Stage, next/previous mode, volume and A-B keys — the Perform
       drawer's own controls — have no MIDI target (src/state/midi.ts:35); the
       drawer arms note-learn only, CC-learn lives on Visuals ▸ Live; CC learn
       is limited to the active mode's mod-targetable params (no Global motion,
       Post, volume). Recommended: **FINISH the VJ core** — blackout,
       play/pause, next/prev mode as note targets, CC-learn from the drawer
-      (M) — and **DECLARE** the rest (S). Verdict: \_\_\_
-- [ ] **HD-16 `loopback_died` is never polled.** The Rust command exists
+      (M) — and **DECLARE** the rest (S). Verdict: **FINISH core + DECLARE rest** — closed 2026-09-03 (9c7daf8): `CommandBinding` (blackout, playPause, nextMode, prevMode) dispatches the same store actions the keys take (`setBlackout` gated like the `0` key, `togglePlay`, `stepPreset` → beat-quantized queue); the Perform drawer carries a Pad picker with Learn note and a Knob picker with Learn CC over the active mode's mod targets; `validMidiBindings` round-trips the new kind and drops unknown commands. Guide MIDI text declares volume, A-B, Stage and Global/Post as keyboard-and-mouse only. Ledger claim corrected: the drawer never had play/pause or next/prev _buttons_ — the keys' store actions are the target. Device check pending: real controller pass (see the row's report).
+- [x] **HD-16 `loopback_died` is never polled.** The Rust command exists
       (src-tauri/src/loopback.rs:348, registered) and its doc says the
       frontend polls it to drop the "listening" indicator; no TS call site
       exists. A dead capture device leaves the broadcast icon lit over
       silence. Recommended: **FINISH** — poll or event it into the live-input
-      state (S). Verdict: \_\_\_
+      state (S). Verdict: **FINISH** — closed 2026-09-03 (63d3a78): the store polls `loopback_died` once a second while listening (`liveInputWatch.ts`, unit-tested) and tears the session down with a notice when the device is gone.
 
 ### Lyrics
 
-- [ ] **HD-17 Lyrics model manager can download but never verify or
+- [x] **HD-17 Lyrics model manager can download but never verify or
       remove.** `lyrics_model_verify` / `lyrics_model_remove` exist in Rust
       and as TS wrappers (src/state/platform.ts:302,307); no button calls
       either — multi-GB models cannot be reclaimed from inside the app.
       Recommended: **FINISH** — Verify and Remove actions in LyricsGenPanel
-      (S/M). Verdict: \_\_\_
-- [ ] **HD-08 Line re-align has no cancel and no progress.** Transcribe has a
+      (S/M). Verdict: **FINISH** — closed 2026-09-03 (afea521): LyricsGenPanel lists every model on disk with Verify (checksum re-check) and Remove (askConfirm first; also clears stalled `.part` downloads); a transient `modelOp` claim locks download/generate/re-align while one runs; both re-read `lyricsModelsState()` like the download path. Device check pending: Verify and Remove on a real model.
+- [x] **HD-08 Line re-align has no cancel and no progress.** Transcribe has a
       stage-weighted bar, ETA and cancel; re-align sets
       `lyricsRealign: { index }` and offers nothing else
       (src/state/slices/lyricsEditActions.ts:231). Recommended: **FINISH** —
-      cancel + indeterminate progress (M). Verdict: \_\_\_
-- [ ] **HD-11 `.srt` is read-only** — imports, drop-imports, but export always
+      cancel + indeterminate progress (M). Verdict: **FINISH** — closed 2026-09-03 (afea521): re-align shows an indeterminate bar with Cancel; `cancelLyricsRealign` reuses `lyrics_generate_cancel` (the sidecar's line-align job shares the generate slot, verified in lyrics.rs), a run-local token drops late results, `lyricsRealign` clears in `finally`, the document stays untouched (undo depth 0 pinned). No Rust change. Device check pending: Cancel during a real re-align.
+- [x] **HD-11 `.srt` is read-only** — imports, drop-imports, but export always
       writes `.lrc`. Recommended: **DECLARE** in the guide ("LRC is the
-      output format; SRT imports are converted") (S). Verdict: \_\_\_
-- [ ] **HD-20 The lyrics editor's Ctrl+Z / Ctrl+Y** (src/ui/LyricsEditPanel.tsx:335)
+      output format; SRT imports are converted") (S). Verdict: **DECLARE** — closed 2026-09-03 (afea521): guide paragraph states LRC is the format Beatform writes and that SRT imports convert (an SRT cue's explicit end time is not kept); Save .lrc / Import lyrics tooltips and the save-dialog filter label say the same; pinned by `guideContent.test.ts` and a lyricsEditActions test.
+- [x] **HD-20 The lyrics editor's Ctrl+Z / Ctrl+Y** (src/ui/LyricsEditPanel.tsx:335)
       appear in no shortcut sheet and no help prose; the coverage test scans
       only `useAppShortcuts.ts`. Recommended: **FINISH** — one sheet row (S).
-      Verdict: \_\_\_
+      Verdict: **FINISH** — closed 2026-09-03 (afea521): two Editing rows on the shortcut sheet; the coverage test now also scans `LyricsEditPanel.tsx` and asserts lyrics-specific rows exist (the plain union check passed vacuously because Ctrl+Z/Y exist app-wide). Ledger claim corrected: the guide prose already mentioned the editor's keys; the sheet and the test were the gap.
 
 ### Files, import, Gallery, Shadertoy
 
-- [ ] **HD-10 `.bftheme` imports only by drag-and-drop** — export has a native
+- [x] **HD-10 `.bftheme` imports only by drag-and-drop** — export has a native
       dialog (src/state/slices/projectIOActions.ts:76); import has no dialog,
       no button, no file input. Recommended: **FINISH** — "Import theme…" via
-      the existing dialog helper next to the export (S). Verdict: \_\_\_
-- [ ] **HD-13 Gallery: an updated upstream entry reads "Already in My Looks"
+      the existing dialog helper next to the export (S). Verdict: **FINISH** — closed 2026-09-03 (63d3a78): "Import theme…" beside "Save as theme…" opens the native dialog and feeds the drop-import's parser (`importThemeFromFile`, tested).
+- [x] **HD-13 Gallery: an updated upstream entry reads "Already in My Looks"
       forever** (`entryGate` compares only `minAppVersion`/`savedWith`, never
       the entry's hash against the installed copy), and removal lives on a
       different surface than install with no label on the card. Recommended:
       **FINISH** hash-aware gate (S/M) + **DECLARE** the removal location on
-      the card (S). Verdict: \_\_\_
-- [ ] **HD-12 Shadertoy import never warns.** `iChannel1-3` bind an empty
+      the card (S). Verdict: **FINISH + DECLARE** — closed 2026-09-03 (93fb127): `installedLookState` compares the registry's per-entry sha256 with the digest recorded at install; a changed entry reads "Update look" and installs over the old copy through the verified path. The install record moved from session-only to a validated localStorage map (`viz.galleryInstalled.v1`, additive; no file format touched) — which also fixed the Gallery forgetting every install after a restart. Installed cards say removal lives under Visuals ▸ Looks & themes. Ledger claim corrected: the gate compared `minAppVersion`/`schemaVersion` (no `savedWith` exists). Device check pending: `node scripts/gallery-e2e.mjs` step 5b (update path).
+- [x] **HD-12 Shadertoy import never warns.** `iChannel1-3` bind an empty
       texture, so shaders that sample them compile and silently render black
       there; multi-pass (Buffer A-D / Common) is not detected; the transpiler
       has no warning channel at all (src-tauri/src/shadertoy.rs,
       src/ui/ShadertoyImport.tsx:150). Recommended: **FINISH** — detect
       `iChannel1-3` and buffer references, surface warnings in the dialog for
-      the shader actually pasted (M). Verdict: \_\_\_
+      the shader actually pasted (M). Verdict: **FINISH** — closed 2026-09-03 (542606c): the import dialog scans the pasted GLSL and lists, before Translate, the empty channels it samples (iChannel1–3), that iMouse is always zero, and Buffer A–D / Common mentions; advisory, never a gate (`shadertoyWarnings.ts`, pure, tested; dialog test).
 
 ### Performance display
 
-- [ ] **HD-05 The GPU % stat can be enabled but never shows a value.**
+- [x] **HD-05 The GPU % stat can be enabled but never shows a value.**
       Toggle (src/ui/SettingsDialog.tsx:56) → overlay row
       (src/ui/PerfOverlay.tsx:204) → Rust field (src-tauri/src/perfstats.rs:85)
       is fully wired with no collector; it renders "—" forever. Recommended:
       **REMOVE** the toggle, row and field (S; Rust gates). Implementing a PDH
-      GPU-engine collector would be M. Verdict: \_\_\_
+      GPU-engine collector would be M. Verdict: **REMOVE** — closed 2026-09-03 (46ab64c): toggle, overlay row, prefs key and the Rust `gpu_pct` field are gone; old prefs blobs that still carry the key are ignored by the validator.
 
 ### Code that promises a second consumer
 
-- [ ] **HD-21 Dead or duplicated helpers.** `isExporting`
+- [x] **HD-21 Dead or duplicated helpers.** `isExporting`
       (src/state/store.ts:3415) is documented as the Escape/close guard but
       `useAppShortcuts.ts:86` re-implements it inline and differently
       (divergence risk); `saveBinaryFile` (platform.ts:57) has zero callers;
@@ -197,7 +197,7 @@ evidence is recorded here.
       test-only exports whose production callers re-implement the logic; 14
       more module-local exports have no importer. Recommended: **FINISH** —
       route the callers through the one helper, delete the rest (S).
-      Verdict: \_\_\_
+      Verdict: **FINISH** — closed 2026-09-03 (63d3a78): `isExporting` and `saveBinaryFile` deleted (no callers; the Escape handler gates the export and batch dialogs separately on purpose); 13 module-local helpers/types de-exported per knip. Test-only exports with production twins (`getPerformBridgeStats`, `isBindableMessage`, `LED_MATRIX_HUE_KEYS`) stay: their production callers read the same module state, not a copy.
 
 ### Pre-decided (recorded so nobody reopens them; verdict already DECLARE)
 

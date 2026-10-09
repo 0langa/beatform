@@ -1098,6 +1098,14 @@ button:disabled {
   user-select: text;
 }
 
+/* HD-12: advisory, not an error — the import still goes through. */
+.shader-warning {
+  color: #d9a441;
+  font-family: Consolas, monospace;
+  font-size: 11.5px;
+  user-select: text;
+}
+
 /* ---------- library panel ---------- */
 
 .library-panel {
@@ -1691,6 +1699,14 @@ button.row-value:focus-visible {
 }
 
 .gallery-card-meta {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* HD-13: the installed-state line under the meta row — "In My Looks · remove
+   it under Visuals ▸ Looks & themes". Same voice as the meta line; it is
+   status, not a control. */
+.gallery-card-note {
   font-size: 10px;
   color: var(--text-faint);
 }
@@ -2422,6 +2438,22 @@ button.row-value:focus-visible {
   height: 100%;
   background: linear-gradient(90deg, var(--accent-strong), var(--accent));
   transition: width 0.2s;
+}
+
+/* No percent to show (a line re-align reports none, HD-08): a short fill
+   sweeping the track — the update dialog's .update-progress-fill.indeterminate
+   idiom on the panel's own bar. The global reduced-motion rule stops it. */
+.progress-fill.indeterminate {
+  width: 35%;
+  animation: progress-indet 1.2s ease-in-out infinite alternate;
+}
+@keyframes progress-indet {
+  from {
+    margin-left: 0;
+  }
+  to {
+    margin-left: 65%;
+  }
 }
 
 .export-status {
@@ -4177,6 +4209,59 @@ kbd {
   gap: 2px;
 }
 
+/* A running line re-align (HD-08): bar + status + Cancel, under the head. */
+.lyr-realign {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ---- Lyrics model manager (HD-17): what is on disk, verify / remove ---- */
+
+.lyr-models {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.lyr-models-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lyr-model-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.lyr-model-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyr-model-size {
+  color: var(--text-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.lyr-model-btns {
+  display: flex;
+  gap: 2px;
+}
+
+.lyr-model-btns .text-btn {
+  padding: 2px 6px;
+  font-size: 11.5px;
+}
+
 /* The line list scrolls inside the panel section so a 40-line song doesn't
    bury the Audiogram section below it. */
 .lyr-list {
@@ -4969,4 +5054,15 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Connected input names beside the Disable button: one line, clipped —
+   the full list is the title. */
+.perform-midi-devices {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-dim);
 }

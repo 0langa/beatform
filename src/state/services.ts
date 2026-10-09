@@ -457,7 +457,7 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       // Live FPS cap (Preferences ▸ Performance): draw-skip, transport-keep.
       // Preview-only by design — exports walk every frame deterministically
       // and never consult this.
-      const fpsCap = getPrefs().fpsCap;
+      const fpsCap = effectiveFpsCap(getPrefs().fpsCap, performMirrorActive());
       const capSkipped = fpsCap > 0 && tMs - lastCapDraw < 1000 / fpsCap - 1;
       // R2-25: the cap gates the DSP too. When this frame will not present
       // AND the analyzer's fixed 60 Hz clock owes no tick, skip the whole
@@ -710,4 +710,19 @@ export function initServices(canvas: HTMLCanvasElement, hooks: ServiceHooks): ()
       lastRouteValues.clear();
     }
   };
+}
+
+/**
+ * The live-preview frame cap that actually applies this frame (HD-07).
+ *
+ * The cap is a battery/thermals knob for the operator's preview. The second
+ * display is fed from the SAME render call (publishPerformFrame rides the
+ * directive the preview consumed), so a capped preview used to publish
+ * advance-only ticks the mirror never presents — a laptop knob throttled the
+ * audience to 30 fps. While the mirror is live the cap is lifted: the
+ * preview and the mirror both run at display rate. Pure so the policy is
+ * unit-tested without a render rig.
+ */
+export function effectiveFpsCap(prefCap: number, mirrorActive: boolean): number {
+  return mirrorActive ? 0 : prefCap;
 }

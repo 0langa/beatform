@@ -73,9 +73,10 @@ describe("synthwave depth wave", () => {
   });
 
   describe("curated tier (re-curation contract)", () => {
-    it("main holds 10-12 knobs", () => {
-      expect(synthwave.params.length).toBeGreaterThanOrEqual(10);
-      expect(synthwave.params.length).toBeLessThanOrEqual(12);
+    it("main holds 10-12 designed knobs plus the strip-wide colour pair", () => {
+      // saturation/lightness (HD-06) ride on top of the re-curation budget.
+      expect(synthwave.params.length).toBeGreaterThanOrEqual(12);
+      expect(synthwave.params.length).toBeLessThanOrEqual(14);
     });
 
     it("main covers all five depth lenses: shape, color, motion, beat, texture", () => {

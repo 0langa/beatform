@@ -40,7 +40,7 @@ import {
   presetMasters,
 } from "../render/types";
 import { QUANTIZE_MODES } from "../state/quantize";
-import { bindingId } from "../state/midi";
+import { bindingId, midiCommandLabel } from "../state/midi";
 import {
   HERTZ,
   PERCENT,
@@ -1340,7 +1340,8 @@ export function ParamsPanel() {
               not a shortcut around it. */}
           <p className="section-hint">
             Complete themes — visual, colors, sync, post — live in the Gallery, ready to apply in
-            one click. Drop any .bftheme file onto the window to import; save yours to share.
+            one click. Import a .bftheme file with the button below or drop it onto the window; save
+            yours to share.
           </p>
           {savingTheme ? (
             <form
@@ -1386,6 +1387,13 @@ export function ParamsPanel() {
                 onClick={() => setSavingTheme(true)}
               >
                 + Save as theme…
+              </button>
+              <button
+                className="text-btn"
+                title="Open a .bftheme file — the same import as dropping it onto the window"
+                onClick={() => void store().importThemeFromFile()}
+              >
+                Import theme…
               </button>
             </div>
           )}
@@ -1941,7 +1949,7 @@ export function ParamsPanel() {
                 title={
                   lyricsGenPhase !== "idle"
                     ? "Generating lyrics — importing now would be overwritten when it finishes"
-                    : "Import timed lyrics (.lrc from any lyrics site, or .srt) — drawn as a karaoke overlay, identical in exports"
+                    : "Import timed lyrics (.lrc from any lyrics site, or .srt — converted to LRC; every save writes .lrc) — drawn as a karaoke overlay, identical in exports"
                 }
               >
                 + Import lyrics…
@@ -2232,7 +2240,9 @@ export function ParamsPanel() {
                   const label =
                     b.kind === "cc"
                       ? `CC ${b.cc} → ${allParams(preset).find((p) => p.key === b.param)?.label ?? b.param}`
-                      : `Note ${b.note} → ${b.presetId}`;
+                      : b.kind === "command"
+                        ? `Note ${b.note} → ${midiCommandLabel(b.command)}`
+                        : `Note ${b.note} → ${b.presetId}`;
                   return (
                     <div key={id} className="mod-row">
                       <span className="row-label" style={{ flex: 1 }}>

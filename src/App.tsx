@@ -1017,7 +1017,10 @@ export default function App() {
                 <Fragment key={group}>
                   <div className="shortcut-group-heading">{group}</div>
                   {rows.map((row) => (
-                    <div key={row.keys.join("+")} className="shortcut-row">
+                    // Keys alone are not unique: the lyrics editor's own
+                    // Ctrl+Z / Ctrl+Y rows (HD-20) share them with the
+                    // app-wide undo/redo — the action tells them apart.
+                    <div key={`${row.keys.join("+")} ${row.action}`} className="shortcut-row">
                       <span className="shortcut-keys">
                         {row.keys.flatMap((k, i) =>
                           i === 0 ? [<kbd key={k}>{k}</kbd>] : [" / ", <kbd key={k}>{k}</kbd>],

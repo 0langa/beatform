@@ -68,6 +68,15 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       }
     },
 
+    async importThemeFromFile() {
+      // The dialog twin of the .bftheme drop-import (HD-10): same parser, same
+      // apply path, so a picked file and a dropped one cannot diverge. Before
+      // this, import existed only as a drop target while export had a dialog.
+      const picked = await openTextFile([{ name: "Beatform theme", extensions: ["bftheme"] }]);
+      if (!picked) return;
+      get().importThemeText(picked.contents);
+    },
+
     async exportCurrentTheme(meta) {
       try {
         const path = await saveTextFile(

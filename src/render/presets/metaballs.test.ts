@@ -41,9 +41,10 @@ describe("metaballs depth wave", () => {
     for (const lens of ["shape", "color", "motion", "reaction", "glow"]) {
       expect(mainGroups.has(lens), `main tier missing ${lens}`).toBe(true);
     }
-    // Curated means curated: enough to define the mode, few enough to scan.
-    expect(metaballs.params.length).toBeGreaterThanOrEqual(8);
-    expect(metaballs.params.length).toBeLessThanOrEqual(10);
+    // Curated means curated: enough to define the mode, few enough to scan —
+    // 8-10 designed knobs plus the strip-wide saturation/lightness pair (HD-06).
+    expect(metaballs.params.length).toBeGreaterThanOrEqual(10);
+    expect(metaballs.params.length).toBeLessThanOrEqual(12);
   });
 
   it("every depth param defaults to its neutral value", () => {

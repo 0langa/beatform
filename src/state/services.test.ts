@@ -1004,3 +1004,14 @@ describe("services.ts frame loop — live presentation lag (eye/ear alignment)",
     expect(trackTime).toBe(10);
   });
 });
+
+describe("effectiveFpsCap (HD-07)", () => {
+  it("lifts the preview cap while the second display is live", async () => {
+    const { effectiveFpsCap } = await import("./services");
+    expect(effectiveFpsCap(30, false)).toBe(30);
+    expect(effectiveFpsCap(60, false)).toBe(60);
+    expect(effectiveFpsCap(0, false)).toBe(0);
+    expect(effectiveFpsCap(30, true)).toBe(0);
+    expect(effectiveFpsCap(60, true)).toBe(0);
+  });
+});

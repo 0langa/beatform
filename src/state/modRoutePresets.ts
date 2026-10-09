@@ -25,7 +25,7 @@ export interface ModRouteRecipe {
 }
 
 /** One route of a recipe, with its target expressed as a PREFERENCE list. */
-export interface ModRouteSpec {
+interface ModRouteSpec {
   source: ModSource;
   /**
    * Ordered param-key preferences. "post:*" entries are always available

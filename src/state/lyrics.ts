@@ -67,7 +67,7 @@ export type LyricAnim = "plain" | "slide" | "pop" | "wipe";
 
 export const LYRIC_ANIMS: LyricAnim[] = ["plain", "slide", "pop", "wipe"];
 
-export function isLyricAnim(v: unknown): v is LyricAnim {
+function isLyricAnim(v: unknown): v is LyricAnim {
   return v === "plain" || v === "slide" || v === "pop" || v === "wipe";
 }
 

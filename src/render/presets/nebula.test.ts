@@ -40,7 +40,9 @@ describe("RP-6: saturation is the roster colour-tier scaler", () => {
   it("spec carries the contract shape (0..2, neutral 1) in the colour lens", () => {
     expect([spec.min, spec.max, spec.default]).toEqual([0, 2, 1]);
     expect(spec.group).toBe("color");
-    // Alignment, not promotion: the knob stays in the expert tier.
+    // The ABI keeps the knob in advanced[] (RP-6 froze it there; abiOrder.test.ts
+    // forbids a move). HD-06 later re-tiered it curated IN PLACE beside
+    // lightness — colorControls.test.ts holds that side.
     expect(nebula.advanced!.some((p) => p.key === "saturation")).toBe(true);
   });
 

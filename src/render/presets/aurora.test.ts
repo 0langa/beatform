@@ -221,7 +221,8 @@ describe("depth-wave params: neutral at default, tagged per wave-0", () => {
   });
 
   it("the curated tier covers shape/color/motion/reaction/glow + the scene", () => {
-    expect(aurora.params).toHaveLength(12);
+    // The designed 12 plus the strip-wide saturation/lightness pair (HD-06).
+    expect(aurora.params).toHaveLength(14);
     const mainGroups = groupParams(aurora, aurora.params).map((v) => v.group.id);
     for (const lens of ["shape", "color", "motion", "reaction", "glow", "backdrop"]) {
       expect(mainGroups, `curated tier misses ${lens}`).toContain(lens);

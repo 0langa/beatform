@@ -69,11 +69,13 @@ import {
   openTextFile,
   readBinaryFromPath,
   saveTextFile,
+  loopbackDied,
   startLoopback,
   stopLoopback,
   writeAutosave,
   type LibraryTrack,
 } from "./platform";
+import { watchLiveInput } from "./liveInputWatch";
 import {
   pruneBitmapCache,
   rasterizeOverlay,
@@ -196,8 +198,8 @@ import { lyricsEditActions } from "./slices/lyricsEditActions";
 import { lyricsGenActions } from "./slices/lyricsGenActions";
 import { midiActions } from "./slices/midiActions";
 import { overlayActions } from "./slices/overlayActions";
-import { galleryActions } from "./slices/galleryActions";
-import type { GalleryEntry, GalleryEntryType } from "./gallery";
+import { galleryActions, loadGalleryInstalled } from "./slices/galleryActions";
+import type { GalleryEntry, GalleryEntryType, GalleryInstallRecord } from "./gallery";
 import { projectIOActions } from "./slices/projectIOActions";
 import { stemsModsActions } from "./slices/stemsModsActions";
 
@@ -357,11 +359,13 @@ interface SessionSlice {
   galleryPreviews: Record<string, string>;
   /** entry id currently downloading/installing, else null. */
   galleryBusy: string | null;
-  /** Look entry id -> the user-preset id its install created (A1). "✓ Added"
-   * holds only while that preset still EXISTS in My Looks — the dialog
-   * re-checks against userPresets, so deleting the look reverts the card to
-   * "+ Add look" instead of trusting a stale record. Themes never enter. */
-  galleryInstalled: Record<string, string>;
+  /** Look entry id -> what its install created and which content (A1 +
+   * HD-13). "✓ Added" holds only while that preset still EXISTS in My Looks
+   * and the registry digest still matches — `installedLookState` re-checks
+   * both, so deleting the look reverts the card to "+ Add look" and an
+   * upstream update flips it to "Update look" instead of trusting a stale
+   * record. Persisted (`viz.galleryInstalled.v1`). Themes never enter. */
+  galleryInstalled: Record<string, GalleryInstallRecord>;
   /** Theme entry id that just applied — transient (~2.5 s) "Applied ✓"
    * feedback (A1). Applying a theme is legitimately repeatable, so themes get
    * no persistent installed state at all. */
@@ -521,6 +525,9 @@ interface Actions {
   setSwitchQuantize(mode: QuantizeMode): void;
   /** Request Web MIDI access and start listening (user-gesture initiated). */
   enableMidi(): Promise<void>;
+  /** HD-18: at boot, re-enable MIDI when the user left it on last session
+   * (prefs `midiEnabled`). Quiet on failure — no per-launch toast. */
+  restoreMidi(): Promise<void>;
   disableMidi(): void;
   /** Feed one raw MIDI packet through learn/apply (also the adapter's sink). */
   handleMidiMessage(data: ArrayLike<number>): void;
@@ -570,6 +577,8 @@ interface Actions {
   applyTheme(document: ProjectDocument, name: string): void;
   /** Parse + apply a .bftheme file's text (drag-import). */
   importThemeText(contents: string): void;
+  /** Native open dialog → importThemeText (HD-10). */
+  importThemeFromFile(): Promise<void>;
   /** Save the current setup as a shareable .bftheme file. */
   exportCurrentTheme(meta: ThemeMeta): Promise<void>;
   /** Show/hide the Gallery dialog; first open loads the registry. An
@@ -636,6 +645,12 @@ interface Actions {
    * loadLyricsText exactly like an imported .lrc. */
   generateLyrics(tier: LyricsTier, language: string): Promise<void>;
   cancelLyricsGenerate(): void;
+  /** Re-hash one installed lyrics model against the manifest (HD-17);
+   * the outcome lands as a notice (intact) or an error (damaged). */
+  verifyLyricsModel(id: string): Promise<void>;
+  /** Delete one lyrics model — or its stalled partial download — from
+   * disk, after asking. Refreshes the manifest state like a download. */
+  removeLyricsModel(id: string): Promise<void>;
   // --- lyrics correction editor (FEAT-004 phase 4) ---
   /** Replace line i's text (word timings follow; see lyricsEdit.setLineText). */
   editLyricLineText(i: number, text: string): void;
@@ -662,6 +677,9 @@ interface Actions {
   exportLyricsLrc(): Promise<void>;
   /** Re-run forced alignment for one line against the loaded track. */
   realignLyricLine(i: number): Promise<void>;
+  /** Cancel the running line re-align (HD-08): the shared sidecar cancel,
+   * and whatever it still returns is dropped — the lyrics stay untouched. */
+  cancelLyricsRealign(): void;
   setLyricStyle(patch: Partial<LyricStyle>): void;
   /** Toggle/adjust the audiogram overlay elements. */
   setAudiogram(patch: Partial<AudiogramSettings>): void;
@@ -927,6 +945,8 @@ let unclaimedAnalysisId: number | null = null;
  * second click from running a second start path whose failure cleanup would
  * tear down the first click's worklet. */
 let liveToggling = false;
+/** HD-16: stops the `loopback_died` poll (liveInputWatch.ts) while listening. */
+let stopLiveWatch: (() => void) | null = null;
 /** Trailing timer: reset on every scheduleAutosave() call, fires
  * autosaveIntervalSec after the LAST edit (the "quiet period" write). */
 let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1699,7 +1719,7 @@ export const useVizStore = create<VizState>((set, get) => {
     galleryEntries: [],
     galleryPreviews: {},
     galleryBusy: null,
-    galleryInstalled: {},
+    galleryInstalled: loadGalleryInstalled(),
     galleryApplied: null,
     galleryOpenFilter: "all" as const,
     showGallery: false,
@@ -2058,6 +2078,15 @@ export const useVizStore = create<VizState>((set, get) => {
           else unlistenCloseRequested = un;
         })().catch((e) => console.warn("[autosave] could not install the close handler", e));
       }
+
+      // HD-18: MIDI bindings persist, so the enable state must too — without
+      // this every launch started with saved bindings that did nothing until
+      // the user clicked Enable. Restored here, beside the teardown below that
+      // stops the listener, and only when the pref says it was left on. In
+      // the desktop shell the WebView2 permission is granted from Rust
+      // (midi_permission.rs, on_page_load), so this never prompts; anywhere
+      // else a denied prompt just stays quiet.
+      void get().restoreMidi();
 
       return () => {
         clearTimeout(idleTimer);
@@ -2743,6 +2772,8 @@ export const useVizStore = create<VizState>((set, get) => {
       try {
         const engine = getEngine();
         if (get().liveInputActive) {
+          stopLiveWatch?.();
+          stopLiveWatch = null;
           await stopLoopback().catch(() => undefined);
           engine.stopLiveInput();
           getAnalyzer().reset("source");
@@ -2791,6 +2822,17 @@ export const useVizStore = create<VizState>((set, get) => {
             error: null,
           });
           flashNotice(`Listening to ${info.device}`);
+          // HD-16: Rust flips `loopback_died` when the device goes away and
+          // nothing pushes that to the page. Poll it; on death tear down
+          // exactly as a manual stop would (the stop path resets the flag
+          // too) and say why the icon went dark.
+          stopLiveWatch?.();
+          stopLiveWatch = watchLiveInput(loopbackDied, () => {
+            stopLiveWatch = null;
+            void get()
+              .toggleLiveInput()
+              .then(() => set({ error: "System-audio device was lost — listening stopped" }));
+          });
         } catch (e) {
           // Clear the Rust side too: a half-started (or orphaned) capture
           // would wedge every future toggle on "already running".
@@ -3410,14 +3452,6 @@ useVizStore.subscribe((s) => {
   // leaves the stage to the mode's no-lyrics treatment).
   resetLyricPlate();
 });
-
-/** True while an export is running — guards Escape-to-close and modal close. */
-export function isExporting(): boolean {
-  const s = useVizStore.getState();
-  // batchStatus matters on its own: `exporting` goes null between jobs while
-  // the next track decodes, and a batch is still very much exporting there.
-  return s.exporting !== null || s.batchStatus === "running";
-}
 
 /**
  * FEAT-009 — the mirror publisher's state side, wired at module scope like

@@ -25,6 +25,13 @@ import { allParams, type PresetDef } from "../types";
  * Baselines below were generated from the v2.81.0 tree, BEFORE the 2.82.0
  * curation pass, and committed unchanged: the promotions provably moved
  * nothing.
+ *
+ * HD-06 (2.111.0) is the one deliberate edit since: the global
+ * saturation,lightness pair INSERTED into eight rows (after the hue keys, or
+ * beside nebula's RP-6 saturation in advanced[]) — a genuine param addition,
+ * the case this file's rule explicitly allows. Every accessor is regenerated
+ * from the same list, so the shifted indexes render identically; only the
+ * extreme/min|max matrix cases move, because they sweep the new keys.
  */
 const ABI_BASELINE: Record<string, string> = {
   "spectrum-bars":
@@ -32,15 +39,15 @@ const ABI_BASELINE: Record<string, string> = {
   "radial-burst":
     "hue,hueSpread,saturation,lightness,innerRadius,symmetry,angle,rotSpeed,glow,peaks,cover,coverHue,barLen,ringBreathe,coreSize,corePump,coreBeat,wobBase,wobAmp,wobClamp,spinBase,spinEnergy,coreBright,detailRing,detailPos,beatBloom,coverMix,coverBright,coverFit,coverZoom,coverX,coverY,rimBright,vignette",
   oscilloscope:
-    "hue,gain,calm,glow,traceBright,fill,mirror,traces,renderMode,persist,display,traceClamp,coreWidth,traceSpread,agFloor,agRange,hueWave,bandHue,ghostDim,fillDim,bandDim,graticule,gridLevel,gridBeat,scanline,beatLift,bgLevel,vignette,kaleido,xyRotate",
+    "hue,saturation,lightness,gain,calm,glow,traceBright,fill,mirror,traces,renderMode,persist,display,traceClamp,coreWidth,traceSpread,agFloor,agRange,hueWave,bandHue,ghostDim,fillDim,bandDim,graticule,gridLevel,gridBeat,scanline,beatLift,bgLevel,vignette,kaleido,xyRotate",
   particles:
     "hue,saturation,lightness,density,size,speed,direction,beatDance,sizePulse,fly,clump,streak,hotCore,shootingStars,constellation,energyDrive,wander,wanderSpeed,fill,layers,parallax,hueVariance,twinkle,glow,brightness,beatFlash,bgLevel,vignette,mirror,sizeVar,bandColor,beatPop",
   "tunnel-rings":
-    "hue,hueSpread,colorFade,speed,rings,spokes,material,beatPulse,junction,curve,coverWall,centerGlow,cruiseFloor,curveScale,cruiseEnergy,beatSpeed,tileLevel,tileSpectrum,pulseWidth,tileSat,checker,groutWidth,groutLevel,fogNear,fogFar,vignette,mirror,twist,roundness,surfaceWarp,beatBright",
+    "hue,hueSpread,saturation,lightness,colorFade,speed,rings,spokes,material,beatPulse,junction,curve,coverWall,centerGlow,cruiseFloor,curveScale,cruiseEnergy,beatSpeed,tileLevel,tileSpectrum,pulseWidth,tileSat,checker,groutWidth,groutLevel,fogNear,fogFar,vignette,mirror,twist,roundness,surfaceWarp,beatBright",
   nebula:
-    "hue,scale,flow,kaleido,contrast,sparkle,beatRipple,duo,hue2,windStrength,stars,warp,angle,spin,depth,hueRange,midHueShift,brightFloor,bassBright,saturation,sparkleScale,sparkleSharp,rippleWidth,rippleWarp,beatBloom,driveGlow,vignette,hotCore,windAngle",
+    "hue,scale,flow,kaleido,contrast,sparkle,beatRipple,duo,hue2,windStrength,stars,warp,angle,spin,depth,hueRange,midHueShift,brightFloor,bassBright,saturation,lightness,sparkleScale,sparkleSharp,rippleWidth,rippleWarp,beatBloom,driveGlow,vignette,hotCore,windAngle",
   metaballs:
-    "hue,count,size,speed,glow,threshold,gloss,beatSwell,smear,orbitX,orbitY,radiusFloor,energyGrow,radiusBand,rimStart,innerGrad,hueField,beatBright,bgLevel,vignette,mirror,lightAngle,squash,bassWeight,eccentric,environment",
+    "hue,saturation,lightness,count,size,speed,glow,threshold,gloss,beatSwell,smear,orbitX,orbitY,radiusFloor,energyGrow,radiusBand,rimStart,innerGrad,hueField,beatBright,bgLevel,vignette,mirror,lightAngle,squash,bassWeight,eccentric,environment",
   "led-matrix":
     "display,cols,rows,gap,rounded,hueShift,saturation,lightness,ghost,scrollSpeed,beatBoost,dim,hueLow,hueHigh,spectrumColor,gradStart,gradEnd,litLevel,hotBoost,bassGlow,beatFlash,peaks,peakBright,bloom,histFade,scanline,flicker,panelVariance,vignette",
   // P-19: the spectrogram-waterfall archetype. New in this release, so its
@@ -59,9 +66,9 @@ const ABI_BASELINE: Record<string, string> = {
   overgrowth:
     "form,scale,speed,hue,hueSpread,saturation,lightness,duo,growth,etch,surge,seeds,glow,relief,flow,contrast,seedSize,barSurge,paper,haze,floorLevel,bassGlow,vignette,grain",
   "voice-orb":
-    "hue,size,satellites,ring,ringStyle,mirror,texture,response,voiceFocus,wobble,sparkle,flare,rmsBlend,growth,idleBreath,wobScale,mode1,mode2,mode3,coreGlow,breathGlow,rimGlow,ringDist,ringWave,ringCount,satSize,satDist,satOrbit,sparkleScale,bgLevel,vignette",
+    "hue,saturation,lightness,size,satellites,ring,ringStyle,mirror,texture,response,voiceFocus,wobble,sparkle,flare,rmsBlend,growth,idleBreath,wobScale,mode1,mode2,mode3,coreGlow,breathGlow,rimGlow,ringDist,ringWave,ringCount,satSize,satDist,satOrbit,sparkleScale,bgLevel,vignette",
   "echo-trails":
-    "hue,decay,zoom,swirl,radius,source,react,inject,beatZoom,flowSwirl,thick,hueSpin,hueDrift,kickFlash,vignette,mirror,echoHue,sides,beatStar,warp,centerX,centerY",
+    "hue,saturation,lightness,decay,zoom,swirl,radius,source,react,inject,beatZoom,flowSwirl,thick,hueSpin,hueDrift,kickFlash,vignette,mirror,echoHue,sides,beatStar,warp,centerX,centerY",
   "particle-flow":
     "hue,saturation,lightness,field,flowStrength,swirl,beatBurst,size,brightness,density,ribbon,flowScale,damping,gravity,attractor,audioFlow,midSwirl,trebleJitter,sizePulse,hueSpread,speedColor,sat,spawnRadius,vignette,bgLevel",
   // 2.102.0: ",terrainSmooth" APPENDED for the Waveform terrain layout
@@ -70,9 +77,9 @@ const ABI_BASELINE: Record<string, string> = {
   "spectrum-scape":
     "hue,heightScale,camPitch,camDist,camSpin,emissive,layout,barShape,saturation,lightness,hotBeat,bandGlow,fov,hueRange,barWidth,spacing,light,camYaw,targetY,driveHeight,hotDrive,glowBeat,hotWindow,hueLift,fillLight,ambientLight,fogDensity,terrainSmooth",
   aurora:
-    "hue,bright,react,flow,thick,baseY,wave,layers,beatPulse,palWarm,moon,ground,specAmt,bassSwell,drift,reflect,horizon,reflectFade,hueStep,hueSpread,palSpan,rays,sat,stars,bgGlow,mirror,groundRough,moonX,moonY,moonGlow",
+    "hue,saturation,lightness,bright,react,flow,thick,baseY,wave,layers,beatPulse,palWarm,moon,ground,specAmt,bassSwell,drift,reflect,horizon,reflectFade,hueStep,hueSpread,palSpan,rays,sat,stars,bgGlow,mirror,groundRough,moonX,moonY,moonGlow",
   synthwave:
-    "hue,gridHue,speed,react,beatPulse,sunR,roadW,skyline,mountains,gridGlow,scan,sunWarm,sunY,sunX,scanCount,scanWidth,scanPhase,sunRays,roadLanes,roadGlow,skyDensity,windows,gridScale,horizonY,stars,starDensity,gridLock,fog,vignette",
+    "hue,gridHue,saturation,lightness,speed,react,beatPulse,sunR,roadW,skyline,mountains,gridGlow,scan,sunWarm,sunY,sunX,scanCount,scanWidth,scanPhase,sunRays,roadLanes,roadGlow,skyDensity,windows,gridScale,horizonY,stars,starDensity,gridLock,fog,vignette",
   "bass-circle":
     "hue,saturation,lightness,radius,pump,barLen,segments,particles,spin,rimBright,cover,coreFill,coverHue,symmetry,angle,hueSpread,beatPump,gap,segGap,barGlow,partDensity,partFill,partFloat,beatBurst,partBeat,coverMix,coverBright,coverFit,coverZoom,coverX,coverY,vignette",
   builder2:

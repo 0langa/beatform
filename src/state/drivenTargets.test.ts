@@ -4,7 +4,7 @@ import { presets } from "../render/presets";
 import { allParams, defaultParams, paramSpecMap, type PresetDef } from "../render/types";
 import { drivenParamKeys } from "./drivenTargets";
 import { resolveActiveFrame } from "./frameResolve";
-import type { AutomationLane, Timeline } from "./timeline";
+import { snapsAutomation, type AutomationLane, type Timeline } from "./timeline";
 import { applyMods, type ModRoute } from "./modMatrix";
 
 /**
@@ -63,10 +63,21 @@ function keysAppliedByEngine(p: PresetDef, mods: ModRoute[]): Set<string> {
 /** A one-keyframe lane that provably moves `key` on `p`: its value is the
  *  factory default plus one, so "did the resolved frame change?" is decidable
  *  for every spec in the registry without knowing any of their ranges. */
-const laneOn = (p: PresetDef, key: string): AutomationLane => ({
-  param: key,
-  keyframes: [{ id: `k-${key}`, t: 0, value: (defaultParams(p)[key] ?? 0) + 1, curve: "linear" }],
-});
+const laneOn = (p: PresetDef, key: string): AutomationLane => {
+  const base = defaultParams(p)[key] ?? 0;
+  const spec = allParams(p).find((s) => s.key === key);
+  // HD-09: resolveActiveFrame rounds and clamps automation on toggle / enum /
+  // snap params, so "default + 1" on a toggle already at its max clamps back
+  // to the default and reads as not moved. Probe those with the nearest OTHER
+  // whole number inside the range; everything else keeps the plain offset.
+  const value =
+    spec && snapsAutomation(spec)
+      ? base < spec.max
+        ? Math.min(spec.max, Math.floor(base) + 1)
+        : Math.max(spec.min, Math.ceil(base) - 1)
+      : base + 1;
+  return { param: key, keyframes: [{ id: `k-${key}`, t: 0, value, curve: "linear" }] };
+};
 
 const timeline = (lanes: AutomationLane[], enabled = true): Timeline => ({
   enabled,
@@ -305,7 +316,9 @@ describe("drivenParamKeys: automation lanes", () => {
     // The standing guard on the lane half drifting from the chokepoint, the way
     // D6 is for the modulation half. Exact equality in BOTH directions is
     // available here where D6 only gets a subset: automation writes the value
-    // straight in, with no amount, no range and no clamp to lose it to.
+    // straight in, with no amount and no range to lose it to — the one
+    // exception being HD-09's rounding of toggle/enum/snap lanes, which
+    // laneOn sidesteps by probing with a different in-range whole number.
     for (const p of presets) {
       const lanes = allParams(p).map((s) => laneOn(p, s.key));
       lanes.push(laneOn(p, "__not-a-param-of-anything"));

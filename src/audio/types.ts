@@ -78,11 +78,20 @@ export interface AudioFeatures {
    * ---- Additive "reactivity fuel" fields (P-15) -------------------------
    * Optional AT THE TYPE LEVEL ONLY, so hand-built feature frames elsewhere
    * (tests, demo/thumbnail frames) stay valid without churn: the pipeline
-   * itself ALWAYS populates every one of them. CPU-side contract for the
-   * modulation engine and Canvas2D consumers — no GPU uniform carries them
-   * yet (per-mode adoption is a later wave). All of them resolve from track
+   * itself ALWAYS populates every one of them. All of them resolve from track
    * time or offline track analysis, never wall clock, so they are
    * deterministic and seek-stable like everything else here.
+   *
+   * Who consumes what (HD-15, declared for 3.0 — verify with grep before
+   * trusting this list): `vocal` and `sectionPulse` are routable mod
+   * sources (modMatrix.ts) and `sectionIndex`/`sectionPulse` drive the
+   * export path's section handling (exportCore.ts). `beatIndex`, `barIndex`
+   * and `chroma` have NO consumer: the first two are integer derivations of
+   * the beat grid the pipeline already walks (free), `chroma` folds the
+   * existing spectrum into 12 bins per tick with a precomputed bin map. They
+   * stay in the contract so a future mod source or mode needs no pipeline
+   * change; per-mode adoption is not scheduled, and no GPU uniform carries
+   * any of these fields.
    */
   /** Integer count of beats since track start at the current time, from the
    * offline beat grid (the same grid behind bpm/beatPhase). −1 until

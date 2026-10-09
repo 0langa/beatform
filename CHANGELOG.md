@@ -11,6 +11,88 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.111.0] - UNRELEASED
+
+"Nothing half-done": every surface that was started and left unfinished got
+one verdict on the road to 3.0.0 — finished, removed, or written down as a
+deliberate limit. Plus the Saturation + Lightness pair on every mode.
+
+### Changed
+
+- **Every mode on the strip now has the global Saturation and Lightness
+  pair.** Oscilloscope, Tunnel, Kaleido Nebula, Metaballs, Voice Orb, Echo
+  Trails, Aurora and Synthwave join the other eleven. The defaults are
+  pixel-identical to before, so existing projects and looks render exactly as
+  they did; turn Saturation to 0 for a true grayscale of any mode. Builder keeps
+  colour per layer by design.
+
+### Fixed
+
+- **Automation lanes on switches and dropdowns now step, never glide.** A
+  lane on a toggle or a choice parameter used to interpolate between keyframes
+  and hand the renderer fractions of a switch. New keyframes on such parameters
+  start on the hold curve, dots land on whole values, and preview and export
+  resolve the same whole number.
+- **Live input notices when the audio device goes away.** Losing the output
+  device mid-listen left the broadcast icon lit over silence. Listening now
+  stops within a second, with a notice saying why.
+- **The second display is no longer throttled by the preview frame cap.** A
+  30 fps battery cap on the operator's preview used to reach the audience.
+  While the second display is live the cap is lifted for both.
+- **Gallery updates.** A look you added now shows **Update look** when the
+  Gallery carries a newer version, and updating replaces your copy instead of
+  adding a second one. The Gallery also remembers what you installed across
+  restarts, and each installed card says where removal lives (Visuals ▸ Looks
+  & themes).
+- **MIDI stays enabled across launches.** Leave it on and your saved bindings
+  work from the moment Beatform starts; Disable turns it off for good.
+- **MIDI pads can fire the Perform drawer's own controls** — Blackout,
+  Play/pause, Next mode and Previous mode — and both note-learn and CC-learn for
+  the current mode's parameters now live in the drawer, so you never leave it
+  mid-set. Volume, A-B loop, Stage mode and the Global motion / post controls
+  remain keyboard-and-mouse only.
+- **Batch render says no before it writes the wrong thing.** Choosing PNG
+  frames, ProRes, AV1 10-bit, GIF, WebP or Canvas-loop mode in the Export panel
+  used to produce a queue of plain MP4s with no notice. The batch now refuses
+  those settings up front, names the setting to change, and the panel states
+  that batch renders whole tracks as MP4 / WebM before you queue.
+- **Batch rows show the current render rate and the job's average side by
+  side**, and a failed job gets the same disk-space diagnosis the single export
+  gives (a full working drive is named as such, not as a permission problem).
+- **Line re-align shows progress and can be cancelled.** A cancelled re-align
+  leaves your lyrics exactly as they were.
+- **The lyrics editor's own Ctrl+Z / Ctrl+Y** now appear on the shortcut sheet
+  (H) and in the guide.
+
+### Added
+
+- **Import theme…** opens a file dialog for `.bftheme` files — the same import
+  as dropping the file onto the window.
+- **Shadertoy import warns before you translate** when the pasted code samples
+  `iChannel1–3`, reads `iMouse`, or mentions other passes — those inputs are
+  empty in Beatform, so the affected parts would render black with no error.
+- **Lyrics models can be verified and removed.** The Lyrics section lists every
+  downloaded model with its size; Verify re-checks a file against its checksum,
+  Remove (after confirming) deletes it — or a stalled partial download — to free
+  the space.
+
+### Removed
+
+- **The GPU % performance stat.** It could be switched on but never showed a
+  value (Windows offers no collector without undocumented APIs). The toggle and
+  the row are gone rather than shipping a permanent "—".
+
+### Documented limits
+
+- The A-B loop is a preview tool: exports render the whole track or the
+  Canvas-loop segment, never just the A-B region (guide).
+- Stems and lyrics belong to the one track they were imported for, so batched
+  videos render without them. The Batch panel now warns before a run when the
+  loaded track's stems or lyrics feed your setup (stem routes, the Vocals
+  source, captions).
+- SRT files import; LRC is what Beatform writes. Every lyrics save is an
+  `.lrc`, also when the lyrics came in as `.srt` (guide and tooltips say so).
+
 ## [2.110.0] - 2026-10-09
 
 The visuals follow the music again. Three changes to how Beatform listens,

@@ -132,6 +132,11 @@ export function semverGte(a: string, b: string): boolean {
  * Newer content is listed but gated — seeing what exists is the nudge to
  * update; silently hiding it would look like an empty gallery.
  *
+ * This is the version/format half of the gate. The other half — what My
+ * Looks already holds for a look, and whether the registry has moved past
+ * it — is {@link installedLookState}; the dialog and the install action
+ * consult both.
+ *
  * P-6: a built-in is NEVER gated — it has no `minAppVersion` and no
  * `schemaVersion` to compare (it shipped with this exact build), so this
  * returns null before touching either field. Falling through to the
@@ -149,6 +154,84 @@ export function entryGate(entry: GalleryEntry | BuiltinGalleryEntry): string | n
     return "Saved by a newer app version — update the app to install this";
   }
   return null;
+}
+
+/**
+ * What the app records about a Gallery LOOK it installed (HD-13). Keyed by
+ * gallery entry id in the store's `galleryInstalled` map and persisted under
+ * `viz.galleryInstalled.v1`. This is the app's OWN record: it never enters
+ * the .bfpreset file and the installed UserPreset itself is untouched, so
+ * neither public file format changes. Before HD-13 the map was session-only
+ * and held a bare preset id — after a restart the Gallery forgot every
+ * install, and within a session it could not tell an entry the author had
+ * since updated from the one installed.
+ */
+export interface GalleryInstallRecord {
+  /** The user preset the install created (A1): "✓ Added" holds only while
+   * that preset still EXISTS in My Looks — {@link installedLookState}
+   * re-checks against the list, so a stale record is a hint, never a claim. */
+  presetId: string;
+  /** The registry's `sha256` for the content that was installed. Optional: a
+   * record without one (or whose digest failed validation at load) reads as
+   * "installed, version unknown" — i.e. the pre-HD-13 behaviour — and never
+   * as an update. */
+  sha256?: string;
+}
+
+export type InstalledLookState = "absent" | "current" | "outdated";
+
+/**
+ * The hash-aware half of the gate (HD-13): what My Looks already holds for
+ * this entry. The registry's `sha256` is the content's identity end to end
+ * (it is what `verifiedFetch` checks the bytes against), so "the digest the
+ * install recorded differs from the digest the registry carries now" is
+ * exactly "the author published a newer version" — and a re-pinned commit
+ * with identical bytes is NOT an update, because the digest did not move.
+ *
+ *  - `absent`: nothing recorded, or the preset the install created has
+ *    since been deleted (the record is a hint; My Looks is the truth — A1).
+ *    Reads "+ Add look".
+ *  - `current`: installed, and either the digests agree or the record
+ *    carries none (installed before provenance existed). Reads "✓ Added" /
+ *    "Already in My Looks".
+ *  - `outdated`: installed, and the registry's digest moved. Reads
+ *    "Update look"; installing replaces the old copy in place.
+ *
+ * Themes and built-ins never have an installed state: applying a theme is
+ * repeatable by design and persists nothing to compare against.
+ */
+export function installedLookState(
+  entry: AnyGalleryEntry,
+  installed: Readonly<Record<string, GalleryInstallRecord>>,
+  userPresets: readonly { id: string }[],
+): InstalledLookState {
+  if (entry.origin === "builtin" || entry.type !== "look") return "absent";
+  const rec = installed[entry.id];
+  if (rec === undefined || !userPresets.some((p) => p.id === rec.presetId)) return "absent";
+  if (rec.sha256 === undefined || rec.sha256 === entry.sha256) return "current";
+  return "outdated";
+}
+
+/**
+ * Validate the persisted install map — localStorage, so untrusted at rest —
+ * and build a clean copy from ONLY its known fields, the way validUserPreset
+ * does for the looks list. A record that fails on its load-bearing field
+ * (which preset it points at) or sits under a malformed entry id is dropped;
+ * one whose digest is merely missing or malformed is kept WITHOUT the digest
+ * and then reads as `current` rather than `outdated` — a broken record must
+ * never manufacture an "update" that would overwrite the user's copy.
+ */
+export function validGalleryInstalled(raw: unknown): Record<string, GalleryInstallRecord> {
+  const out: Record<string, GalleryInstallRecord> = {};
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!ID_RE.test(id)) continue;
+    const r = v as { presetId?: unknown; sha256?: unknown } | null;
+    if (typeof r !== "object" || r === null || typeof r.presetId !== "string") continue;
+    const sha = typeof r.sha256 === "string" ? r.sha256.toLowerCase() : "";
+    out[id] = { presetId: r.presetId, ...(SHA256_RE.test(sha) ? { sha256: sha } : {}) };
+  }
+  return out;
 }
 
 function validEntry(v: unknown): GalleryEntry | null {

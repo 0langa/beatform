@@ -66,8 +66,19 @@ describe("voice-orb depth wave", () => {
     const newKeys = allParams(voiceOrb)
       .map((p) => p.key)
       .filter((k) => !(k in PRE_WAVE_DEFAULTS));
+    // ...plus the strip-wide saturation/lightness pair (HD-06, 2.111.0), which
+    // is not part of the wave but is part of the census.
     expect(newKeys.sort()).toEqual(
-      ["ringCount", "ringStyle", "satDist", "satOrbit", "satSize", "satellites"].sort(),
+      [
+        "ringCount",
+        "ringStyle",
+        "satDist",
+        "satOrbit",
+        "satSize",
+        "satellites",
+        "saturation",
+        "lightness",
+      ].sort(),
     );
     // The two feature gates: 0 = off / classic line. Everything else is a
     // tuning knob behind those gates, so its default cannot change pixels.
@@ -90,9 +101,13 @@ describe("voice-orb depth wave", () => {
     expect(lineBranch).toContain("col += ringPal * exp(-dRing * 120.0) * 0.18;");
   });
 
-  it("curates the designed 12 with every lens represented in Essentials", () => {
+  it("curates the designed 12 plus the roster colour pair, every lens in Essentials", () => {
+    // saturation/lightness are the strip-wide pair (HD-06), slotted after hue
+    // like every other mode's.
     expect(voiceOrb.params.map((p) => p.key)).toEqual([
       "hue",
+      "saturation",
+      "lightness",
       "size",
       "satellites",
       "ring",

@@ -21,7 +21,7 @@ When something looks wrong or you get lost, _Project ▸ New project_ resets the
 
 ### Loop a section while you tune
 
-Press <kbd>I</kbd> at the start of a drop and <kbd>O</kbd> at the end, or use the **A**/**B** buttons beside the player. The selected region appears on the seek bar; drag either marker to adjust it, then press <kbd>L</kbd> to loop it. Click **×** beside A/B to clear the markers without turning the loop off — <kbd>L</kbd> then covers the whole track again. A-B markers are session-only and reset when another track loads.
+Press <kbd>I</kbd> at the start of a drop and <kbd>O</kbd> at the end, or use the **A**/**B** buttons beside the player. The selected region appears on the seek bar; drag either marker to adjust it, then press <kbd>L</kbd> to loop it. Click **×** beside A/B to clear the markers without turning the loop off — <kbd>L</kbd> then covers the whole track again. A-B markers are session-only and reset when another track loads. The loop is a preview tool: an export renders the whole track (or the Canvas-loop segment), never just the A-B region.
 
 One bit of vocabulary that comes up throughout the rest of this guide: a **Style** is a chip a visual ships with, a **Look** is a control set you save for one mode, a **Theme** is a whole document in one file, and the **Gallery** is where other people's looks and themes live.
 
@@ -171,6 +171,8 @@ The Scene page's Layers section adds text and image overlays. Text supports `{ti
 
 Drop an `.lrc` or `.srt` file onto the window — the current line follows the music karaoke-style, live and in every export. Position, size, color, fade timing and an _Animation_ (Plain, Slide up, Pop, or Karaoke — the line fills bright left to right as it is sung) live on the Text page. Drop the lyrics alongside the track or after it — they attach to the loaded track just like an imported stem does. And when the words deserve the whole frame, the **Lyric Stage** visual mode puts them centre stage: big audio-reactive type with the same word-by-word fill, the sung word carrying the light — no caption needed.
 
+LRC is the lyrics format Beatform writes. An `.srt` subtitle file imports just the same — drop it, or use **Import lyrics** — but it is converted on the way in, and every save writes an `.lrc`; there is no SRT export. The one thing the conversion cannot keep is an SRT cue's explicit end time: in LRC a line simply runs until the next one starts.
+
 ### Generate lyrics (desktop)
 
 No .lrc at hand? The Text page can generate timed lyrics from the loaded track, entirely on your PC. The mix is transcribed by OpenAI's Whisper running on whisper.cpp; in parallel, an Ultimate Vocal Remover (UVR) MDX-Net model isolates the vocal, and each word is then timed against that isolated vocal by a wav2vec2 forced aligner — so the karaoke fill follows the singer word by word. (Enhanced .lrc files with word tags from other tools get the same per-word fill when imported.) The AI models download once (size and a time estimate are shown first, and each one is checksum-verified) and nothing ever leaves your machine. Sung words are hard even for good models — expect to fix a few lines, and thanks to the UVR and whisper.cpp projects for making local isolation and transcription possible.
@@ -181,7 +183,7 @@ Once a track has lyrics — imported or generated — the Text page's **Edit lyr
 
 A selected line's toolbar can nudge it earlier or later, split it at the text cursor, merge it into the next line, insert an empty line above or below, delete it (<kbd>Ctrl+Z</kbd> brings it straight back), or re-align it — re-running the word aligner against the isolated vocal for that line's text (desktop only, once the lyrics models are downloaded and a track is loaded). Lines the aligner wasn't confident about are flagged red or amber, and a **⚑ next** button jumps to the next one.
 
-Opening a line's word view breaks the karaoke timing down word by word: edit a word's text, nudge its start time, or reset the whole line with **⇤⇥ even** to space every word out evenly when the alignment came out scrambled. Editing here has its own undo/redo (<kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>), separate from the rest of the app, and **Save .lrc** writes the corrected lyrics back out, word timing included.
+Opening a line's word view breaks the karaoke timing down word by word: edit a word's text, nudge its start time, or reset the whole line with **⇤⇥ even** to space every word out evenly when the alignment came out scrambled. Editing here has its own undo/redo (<kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>), separate from the rest of the app, and **Save .lrc** writes the corrected lyrics back out, word timing included — always as .lrc, even when the lyrics came in as .srt.
 
 ### Audiogram
 
@@ -221,7 +223,7 @@ The broadcast icon in the top bar visualizes whatever Windows is playing — Spo
 - **Stage mode** (<kbd>S</kbd>) hides every piece of chrome and the cursor for a clean full-bleed output — project it, capture it, or screen-share it. The mode name flashes briefly on each switch so you can drive blind.
 - **Second display** (the Perform drawer, <kbd>D</kbd>): open a dedicated output window on a projector or TV while every control stays on your screen — mode pads, quantize, blackout, the monitor picker and fullscreen all live in the drawer. A feedback mode (Spectro Falls, Overgrowth) opened on the output mid-song builds its trail history from that moment on, like starting a capture. During a batch render the output window pauses on its last frame until the batch finishes.
 - **Blackout** (<kbd>0</kbd> in Stage mode or with the performance window open) cuts to black — the classic VJ cut. <kbd>Esc</kbd> steps back out of Stage mode and leaves the rest of your workspace exactly as it was.
-- **MIDI** (the Live page): map a controller's knobs to any parameter and pads to modes. _Learn CC_, then move a knob, binds it to the selected parameter. The _Learn note →_ button always names whichever mode you currently have open — switch to that mode first, click it, then play a pad to bind that note to switching there (note switches obey the beat-quantize too). Bindings are remembered.
+- **MIDI** (the Perform drawer, or the Live page): map a controller's knobs to the current mode's parameters, and its pads to modes or to the drawer's own controls. Pick a target, click _Learn CC_ and move a knob — or _Learn note_ and hit a pad. Pad targets are the mode you currently have open, Blackout, Play / pause, Next mode and Previous mode; each takes exactly the path the button or key takes, so a pad switch obeys the beat-quantize and a blackout pad only works in Stage mode or with the performance window open. One meaning per pad — re-learning a pad replaces what it did. Bindings are remembered, and MIDI stays enabled across launches until you click _Disable_. Not mappable: volume, the A-B loop keys, Stage mode, and the Global motion and post-processing controls — those stay on the keyboard and mouse.
 
 Everything here is preview-only — a live session never changes what an export renders.
 
@@ -244,7 +246,7 @@ Resolutions follow the project's frame aspect — 720p through 4K on 16:9, 1080�
 
 ### Batch
 
-Press <kbd>B</kbd>, drop a folder of tracks, and Beatform renders one video per track, titled from each file's own tags (anything untagged falls back to the filename and is flagged). A failed file costs that one video, never the whole night — and if you cancel a run, the jobs it never reached stay queued so you can resume or retry them. That queue lives in the session: closing the app clears it.
+Press <kbd>B</kbd>, drop a folder of tracks, and Beatform renders one video per track, titled from each file's own tags (anything untagged falls back to the filename and is flagged). A batch renders whole tracks as MP4 / WebM at the Export panel's codec, resolution and frame rate — PNG frames, ProRes, AV1 10-bit, GIF, WebP and Canvas loops are single-track exports, and the panel says so before you start. Stems and lyrics belong to the track you have loaded, so batched videos render without them; when the loaded track's stems or lyrics feed your setup, the panel warns you first. A failed file costs that one video, never the whole night — and if you cancel a run, the jobs it never reached stay queued so you can resume or retry them. That queue lives in the session: closing the app clears it.
 
 <a id="projects"></a>
 
@@ -265,7 +267,7 @@ On desktop, Beatform saves your project automatically in the background (how qui
 
 The _Gallery_ button in the top bar opens a curated, public collection of looks and themes you can use without leaving the app — including Beatform's own factory theme pack, marked _Built-in_ and available even with no connection at all. Filter it by _All_, _Looks_ or _Themes_, or search it by name.
 
-- **+ Add look** puts that entry into your own saved looks for the mode it belongs to, and applies it straight away.
+- **+ Add look** puts that entry into your own saved looks for the mode it belongs to, and applies it straight away. The card then reads _✓ Added_. Removing the look happens where your looks live, not in the Gallery: delete it under _Looks & themes_ in the Visuals dock and the card flips back to _+ Add look_. When the Gallery later carries a newer version of a look you added, the card offers **Update look**, which replaces your copy in place rather than adding a second one.
 - **Apply theme** (a built-in entry's button just says **Apply**) replaces your whole setup with that entry — mode, controls, background, layers, post, the lot. As with any theme, <kbd>Ctrl+Z</kbd> undoes it.
 
 _Looks & themes_ in the Visuals dock has its own two shortcuts into the Gallery, pre-filtered to whichever of the two you were looking at.
@@ -340,6 +342,8 @@ Press <kbd>H</kbd> for the full list — that overlay is also where the button t
 - <kbd>Ctrl/Cmd+Z</kbd> — Undo the last change
 - <kbd>Ctrl/Cmd+Shift+Z</kbd> — Redo the last undone change (same key as Undo, plus Shift)
 - <kbd>Ctrl/Cmd+Y</kbd> — Redo the last undone change
+- <kbd>Ctrl/Cmd+Z</kbd> — Undo the last lyric edit (with focus in the Edit lyrics section, which keeps its own undo history)
+- <kbd>Ctrl/Cmd+Y</kbd> / <kbd>Ctrl/Cmd+Shift+Z</kbd> — Redo the last undone lyric edit (with focus in the Edit lyrics section)
 
 Every performance shortcut has a letter or digit as its main binding, so it sits on the same labeled key on every keyboard layout — QWERTZ and AZERTY included. The punctuation keys some of them also answer to (<kbd>[</kbd>, <kbd>]</kbd>, <kbd>\</kbd>, <kbd>.</kbd>) are kept for US-layout muscle memory and are bound by physical position, not by the character printed on them. And <kbd>Esc</kbd> closes whatever's open — except in Stage mode, where it only steps back out of Stage and leaves your panels as they were.
 
@@ -373,11 +377,11 @@ No. Live system audio never gets a beat grid — Beatform can't analyze a track 
 
 ### Does MIDI mapping need special drivers?
 
-No — Beatform talks to controllers directly through the Web MIDI API. There's nothing to install: open the Live page, click _Learn CC_ or _Learn note_, move the control or hit the pad, and the binding is saved from then on.
+No — Beatform talks to controllers directly through the Web MIDI API. There's nothing to install: open the Perform drawer (<kbd>D</kbd>) or the Live page, click _Learn CC_ or _Learn note_, move the control or hit the pad, and the binding is saved from then on. MIDI itself stays on across launches until you click _Disable_.
 
 ### What Shadertoy shaders can I import?
 
-Single-pass shaders using the Image tab — paste the source and Beatform translates it to WGSL locally, keeping the author and license with the visual. Multipass buffers, cubemap/video/keyboard channels, static textures on iChannel1–3, and channels chosen at runtime instead of written literally aren't supported yet. An unsupported shader gets a diagnostic naming the reason rather than a silent failure.
+Single-pass shaders using the Image tab — paste the source and Beatform translates it to WGSL locally, keeping the author and license with the visual. Multipass buffers, cubemap/video/keyboard channels, static textures on iChannel1–3, and channels chosen at runtime instead of written literally aren't supported yet. An unsupported shader gets a diagnostic naming the reason rather than a silent failure, and the import dialog warns before you translate when the pasted code samples iChannel1–3, reads iMouse, or mentions other passes — those inputs are empty in Beatform, so the affected parts render black.
 
 ### How does the Gallery keep a download from being something malicious?
 

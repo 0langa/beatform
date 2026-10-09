@@ -258,12 +258,23 @@ describe("tunnel depth wave (v2.76)", () => {
     }
   });
 
-  it("adds exactly the three wave params on top of the pre-wave set", () => {
+  it("adds exactly the three wave params (and the HD-06 colour pair) on top of the pre-wave set", () => {
+    // saturation/lightness are the strip-wide pair every mode carries since
+    // 2.111.0 — not part of the wave, but part of the census.
     expect(
       allParams(tunnelRings)
         .map((p) => p.key)
         .sort(),
-    ).toEqual([...Object.keys(PRE_WAVE_DEFAULTS), "material", "coverWall", "junction"].sort());
+    ).toEqual(
+      [
+        ...Object.keys(PRE_WAVE_DEFAULTS),
+        "material",
+        "coverWall",
+        "junction",
+        "saturation",
+        "lightness",
+      ].sort(),
+    );
   });
 
   it("the legacy nine styles head the deck, untouched by any wave param", () => {

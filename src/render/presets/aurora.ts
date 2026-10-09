@@ -1,5 +1,5 @@
 import type { PresetDef } from "../types";
-import { WGSL_PALETTE_PHASE } from "../wgslLib";
+import { WGSL_PALETTE_PHASE, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
  * Aurora — layered curtains of light that waver on an fbm flow, brightened by
@@ -300,6 +300,26 @@ export const aurora: PresetDef = {
       hint: "Base curtain color",
     },
     {
+      key: "saturation",
+      label: "Saturation",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual color intensity — 0 = grayscale, 1 = authored color, 2 = double (clipped at vivid)",
+    },
+    {
+      key: "lightness",
+      label: "Lightness",
+      group: "color",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+      hint: "Whole-visual lightness — 0 = black, 1 = authored lightness, 2 = double (clipped at white)",
+    },
+    {
       key: "bright",
       label: "Brightness",
       group: "glow",
@@ -526,13 +546,13 @@ export const aurora: PresetDef = {
     },
     {
       key: "sat",
-      label: "Saturation",
+      label: "Palette saturation",
       group: "color",
       min: 0,
       max: 1,
       step: 0.02,
       default: 0.8,
-      hint: "Color saturation",
+      hint: "Chroma of the curtain palette itself — the whole-visual Saturation scales the finished frame on top",
     },
     {
       key: "stars",
@@ -614,6 +634,8 @@ export const aurora: PresetDef = {
     },
   ],
   wgsl: /* wgsl */ `
+${WGSL_RGB_CONTROLS}
+
 // Bounded, continuous noise clock (seconds of TRACK time in, noise coordinate
 // out). u.time grows without bound and fbm's top octave multiplies its input by
 // ~17 before hashing the integer cell index, so a long render walks that index
@@ -902,6 +924,11 @@ fn preset(uv: vec2f) -> vec4f {
   }
 
   col = tonemap(col * 1.1);
+  // Whole-visual saturation / lightness (HD-06): the finished, tonemapped
+  // frame rides the RGB map once, before the dither — every palette, tint and
+  // white in it at one stroke. Identity at the defaults (rgb * 1 + gray * 0),
+  // so the default frame is bit-identical.
+  col = presetRgb(col);
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }

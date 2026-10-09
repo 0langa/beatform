@@ -88,7 +88,7 @@ export const GUIDE: readonly GuideSection[] = [
           { strong: "×" },
           " beside A/B to clear the markers without turning the loop off — ",
           { kbd: "L" },
-          " then covers the whole track again. A-B markers are session-only and reset when another track loads.",
+          " then covers the whole track again. A-B markers are session-only and reset when another track loads. The loop is a preview tool: an export renders the whole track (or the Canvas-loop segment), never just the A-B region.",
         ],
       },
       {
@@ -457,6 +457,17 @@ export const GUIDE: readonly GuideSection[] = [
           " visual mode puts them centre stage: big audio-reactive type with the same word-by-word fill, the sung word carrying the light — no caption needed.",
         ],
       },
+      {
+        p: [
+          "LRC is the lyrics format Beatform writes. An ",
+          { code: ".srt" },
+          " subtitle file imports just the same — drop it, or use ",
+          { strong: "Import lyrics" },
+          " — but it is converted on the way in, and every save writes an ",
+          { code: ".lrc" },
+          "; there is no SRT export. The one thing the conversion cannot keep is an SRT cue's explicit end time: in LRC a line simply runs until the next one starts.",
+        ],
+      },
       { h4: "Generate lyrics (desktop)" },
       {
         p: [
@@ -490,7 +501,7 @@ export const GUIDE: readonly GuideSection[] = [
           { kbd: "Ctrl+Y" },
           "), separate from the rest of the app, and ",
           { strong: "Save .lrc" },
-          " writes the corrected lyrics back out, word timing included.",
+          " writes the corrected lyrics back out, word timing included — always as .lrc, even when the lyrics came in as .srt.",
         ],
       },
       { h4: "Audiogram" },
@@ -605,11 +616,13 @@ export const GUIDE: readonly GuideSection[] = [
           ],
           [
             { strong: "MIDI" },
-            " (the Live page): map a controller's knobs to any parameter and pads to modes. ",
+            " (the Perform drawer, or the Live page): map a controller's knobs to the current mode's parameters, and its pads to modes or to the drawer's own controls. Pick a target, click ",
             { em: "Learn CC" },
-            ", then move a knob, binds it to the selected parameter. The ",
-            { em: "Learn note →" },
-            " button always names whichever mode you currently have open — switch to that mode first, click it, then play a pad to bind that note to switching there (note switches obey the beat-quantize too). Bindings are remembered.",
+            " and move a knob — or ",
+            { em: "Learn note" },
+            " and hit a pad. Pad targets are the mode you currently have open, Blackout, Play / pause, Next mode and Previous mode; each takes exactly the path the button or key takes, so a pad switch obeys the beat-quantize and a blackout pad only works in Stage mode or with the performance window open. One meaning per pad — re-learning a pad replaces what it did. Bindings are remembered, and MIDI stays enabled across launches until you click ",
+            { em: "Disable" },
+            ". Not mappable: volume, the A-B loop keys, Stage mode, and the Global motion and post-processing controls — those stay on the keyboard and mouse.",
           ],
         ],
       },
@@ -687,7 +700,7 @@ export const GUIDE: readonly GuideSection[] = [
         p: [
           "Press ",
           { kbd: "B" },
-          ", drop a folder of tracks, and Beatform renders one video per track, titled from each file's own tags (anything untagged falls back to the filename and is flagged). A failed file costs that one video, never the whole night — and if you cancel a run, the jobs it never reached stay queued so you can resume or retry them. That queue lives in the session: closing the app clears it.",
+          ", drop a folder of tracks, and Beatform renders one video per track, titled from each file's own tags (anything untagged falls back to the filename and is flagged). A batch renders whole tracks as MP4 / WebM at the Export panel's codec, resolution and frame rate — PNG frames, ProRes, AV1 10-bit, GIF, WebP and Canvas loops are single-track exports, and the panel says so before you start. Stems and lyrics belong to the track you have loaded, so batched videos render without them; when the loaded track's stems or lyrics feed your setup, the panel warns you first. A failed file costs that one video, never the whole night — and if you cancel a run, the jobs it never reached stay queued so you can resume or retry them. That queue lives in the session: closing the app clears it.",
         ],
       },
     ],
@@ -772,7 +785,15 @@ export const GUIDE: readonly GuideSection[] = [
         ul: [
           [
             { strong: "+ Add look" },
-            " puts that entry into your own saved looks for the mode it belongs to, and applies it straight away.",
+            " puts that entry into your own saved looks for the mode it belongs to, and applies it straight away. The card then reads ",
+            { em: "✓ Added" },
+            ". Removing the look happens where your looks live, not in the Gallery: delete it under ",
+            { em: "Looks & themes" },
+            " in the Visuals dock and the card flips back to ",
+            { em: "+ Add look" },
+            ". When the Gallery later carries a newer version of a look you added, the card offers ",
+            { strong: "Update look" },
+            ", which replaces your copy in place rather than adding a second one.",
           ],
           [
             { strong: "Apply theme" },
@@ -918,17 +939,21 @@ export const GUIDE: readonly GuideSection[] = [
       { h4: "Does MIDI mapping need special drivers?" },
       {
         p: [
-          "No — Beatform talks to controllers directly through the Web MIDI API. There's nothing to install: open the Live page, click ",
+          "No — Beatform talks to controllers directly through the Web MIDI API. There's nothing to install: open the Perform drawer (",
+          { kbd: "D" },
+          ") or the Live page, click ",
           { em: "Learn CC" },
           " or ",
           { em: "Learn note" },
-          ", move the control or hit the pad, and the binding is saved from then on.",
+          ", move the control or hit the pad, and the binding is saved from then on. MIDI itself stays on across launches until you click ",
+          { em: "Disable" },
+          ".",
         ],
       },
       { h4: "What Shadertoy shaders can I import?" },
       {
         p: [
-          "Single-pass shaders using the Image tab — paste the source and Beatform translates it to WGSL locally, keeping the author and license with the visual. Multipass buffers, cubemap/video/keyboard channels, static textures on iChannel1–3, and channels chosen at runtime instead of written literally aren't supported yet. An unsupported shader gets a diagnostic naming the reason rather than a silent failure.",
+          "Single-pass shaders using the Image tab — paste the source and Beatform translates it to WGSL locally, keeping the author and license with the visual. Multipass buffers, cubemap/video/keyboard channels, static textures on iChannel1–3, and channels chosen at runtime instead of written literally aren't supported yet. An unsupported shader gets a diagnostic naming the reason rather than a silent failure, and the import dialog warns before you translate when the pasted code samples iChannel1–3, reads iMouse, or mentions other passes — those inputs are empty in Beatform, so the affected parts render black.",
         ],
       },
       { h4: "How does the Gallery keep a download from being something malicious?" },
