@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.113.0] - 2026-10-11
+
 ### Changed
 
 - **Tunnel flies forward, continuously.** Loudness and beats used to push the
@@ -3361,7 +3363,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.112.1...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.113.0...HEAD
+[2.113.0]: https://github.com/0langa/beatform/compare/v2.112.1...v2.113.0
 [2.112.1]: https://github.com/0langa/beatform/compare/v2.112.0...v2.112.1
 [2.112.0]: https://github.com/0langa/beatform/compare/v2.111.0...v2.112.0
 [2.111.0]: https://github.com/0langa/beatform/compare/v2.110.0...v2.111.0
