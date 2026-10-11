@@ -316,7 +316,21 @@ four newest modes): no defect found. **Shipped as v2.113.0 "Tunnel flies
 forward" on 2026-10-11** (`release.mjs`; see the release row below for the
 publish evidence). Device battery toward the 3.0 cut, run on this tree:
 `node scripts/export-color-verify.mjs` PASS 2026-10-11 (ProRes 4444 and
-AV1 10-bit both tag and convert BT.709/tv, Y'(red) 0.2135).
+AV1 10-bit both tag and convert BT.709/tv, Y'(red) 0.2135);
+`npm run test:shadertoy:built` PASS (60 frames, 60 distinct hashes,
+deterministic across two export runs). **Loopback smoke harness defect
+found and fixed:** both legs failed "known tone did not reach analyzer"
+with the tone plainly in the bins (maxTone 0.83) but `maxDrive` 0 — the
+smoke played 220 + 880 Hz while the default Sync source ("Kicks", AX-1)
+derives drive from the 40–120 Hz band, which `BandLevel` reads as exactly
+0 at the MIN_DB floor on a digitally silent mixer; earlier green runs had
+mixer noise in that band. The harness now also plays 60 Hz (inside the
+kick band): `test:loopback:built` PASS (48 kHz, response 266 ms, depth
+69.3 ms, visible 100 %, 0 underruns) and `test:loopback:built:30` PASS
+(response 267 ms, depth 89.3 ms, visible 100 %, 0 underruns), both on the
+2.113 tree + Radial Burst. Remaining battery rows for the 3.0 cut: gallery
+E2E and lyrics E2E (both green 2026-10-10/11 on the 2.112 tree; rerun on
+the final tree).
 
 - [x] **Tunnel travel model — continuous flight.** Cause found in the
       shader: `travelT = t·v + drive·k + kick·stride` — loudness and the beat
@@ -364,6 +378,13 @@ AV1 10-bit both tag and convert BT.709/tv, Y'(red) 0.2135).
       Hyperdrive, Waterslide, Ice Cave, Vector Grid, Honeycomb, Ember;
       paused frame pairs at 6.0 / 6.3 s show rings and motes streaming
       outward).
+- [x] **v2.113.0 "Tunnel flies forward" published 2026-10-11** —
+      `release.mjs` end to end: CI run 38142700509 green in 20 min, release
+      published as latest, `latest.json` serves 2.113.0 with a 444-char
+      signature and a URL on the tag, installer 60,192,906 bytes, SHA-256
+      `4b1ccdeb…54a2` matches SHA256SUMS. Owner-manual after the in-app
+      update: ALIGN-002 `DisplayVersion` = 2.113.0 after one ordinary
+      relaunch.
 - [x] **Radial Burst wave spin reversed on the beat** (owner picked this
       as the next feel item). `spin = (t·spinBase + drive·spinEnergy·3)·u.spin`
       was a bounded loudness OFFSET on the edge-wave phase: forward on every

@@ -52,7 +52,14 @@ async function evaluate(url) {
       window.__prefs.set({ fpsCap: ${testFps} });
       let toneCtx = null;
       let oscillators = [];
-      const toneBins = [220, 880].map(hz =>
+      // Three tones, not two: 60 Hz sits INSIDE the 40-120 Hz kick band that
+      // the default Sync source ("Kicks", AX-1) derives drive from. With only
+      // 220 + 880 Hz the kick band read the MIN_DB floor on a digitally
+      // silent mixer, BandLevel returns exactly 0 there, and the maxDrive
+      // criterion below failed on a perfectly healthy capture (2026-10-11);
+      // earlier green runs had leaked mixer noise into that band.
+      const TONES = [60, 220, 880];
+      const toneBins = TONES.map(hz =>
         Math.max(0, Math.min(95, Math.floor(96 * Math.log(hz / 30) / Math.log(16000 / 30))))
       );
       const snapshot = () => {
@@ -114,7 +121,7 @@ async function evaluate(url) {
         const gain = toneCtx.createGain();
         gain.gain.value = 0.04;
         gain.connect(toneCtx.destination);
-        for (const hz of [220, 880]) {
+        for (const hz of TONES) {
           const osc = toneCtx.createOscillator();
           osc.type = "sine";
           osc.frequency.value = hz;
