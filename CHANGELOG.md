@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [2.112.0] - 2026-10-11
+
 ### Added
 
 - **Exports say how long is left.** Once a render is a few percent in, the
@@ -3312,7 +3314,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.111.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v2.112.0...HEAD
+[2.112.0]: https://github.com/0langa/beatform/compare/v2.111.0...v2.112.0
 [2.111.0]: https://github.com/0langa/beatform/compare/v2.110.0...v2.111.0
 [2.110.0]: https://github.com/0langa/beatform/compare/v2.108.0...v2.110.0
 [2.108.0]: https://github.com/0langa/beatform/compare/v2.107.0...v2.108.0
