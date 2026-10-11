@@ -301,6 +301,11 @@ evidence is recorded here.
 
 ## Done 2026-10-10 — "do everything still open" pass (owner-initiated)
 
+**Shipped as v2.112.0 "Lyrics on time" on 2026-10-11** (CI green, published
+latest, signature present, SHA256SUMS match). Owner-manual after the in-app
+update: ALIGN-002 `DisplayVersion` = 2.112.0 after one ordinary relaunch, then
+A1 (regenerate lyrics first).
+
 Owner asked for every open row, test and nearby defect to be finished, with
 "requires the owner" notes treated as possibly stale. Gates: web set green
 (typecheck, lint, format, 3,233 vitest tests, build); Rust set green (fmt, clippy
