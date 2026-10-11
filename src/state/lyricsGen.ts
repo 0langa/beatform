@@ -459,6 +459,30 @@ export function formatBytes(bytes: number): string {
   return `${Math.round(bytes / 1e6)} MB`;
 }
 
+/**
+ * Out-of-memory, as the three runtimes in the lyrics pipeline report it:
+ * DirectML/Windows (HRESULT 8007000E, localized "not enough memory" text —
+ * German Windows says "Speicherressourcen"), ggml/whisper.cpp (an assert on a
+ * failed buffer allocation) and Rust itself ("memory allocation of N bytes
+ * failed", paging-file exhaustion as os error 1455).
+ */
+const OUT_OF_MEMORY =
+  /8007000e|e_outofmemory|out of memory|not enough (memory|storage)|speicherressourcen|ggml_assert\(buffer\)|memory allocation of \d+ bytes failed|os error 1455|paging file|auslagerungsdatei|bad_alloc/i;
+
+/**
+ * The sentence a user reads when generation or re-align fails. Known causes
+ * get plain words; anything else passes through as reported. Measured
+ * 2026-10-10 on a PC short of memory: the raw text was a DirectML stack
+ * trace ("Non-zero status code returned while running DmlFusedConv node …
+ * 8007000E …") that names no cause a user can act on.
+ */
+export function describeLyricsFailure(message: string): string {
+  if (OUT_OF_MEMORY.test(message)) {
+    return "your PC ran out of free memory. Close other programs (browsers and games use the most) and try again; the Small model needs the least.";
+  }
+  return message;
+}
+
 /** Seconds -> compact countdown ("3:05", "0:12"). */
 export function formatEta(sec: number): string {
   const s = Math.max(0, Math.round(sec));

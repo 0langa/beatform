@@ -10,6 +10,11 @@
 //   5. note learn + apply: note binding switches the preset
 //   6. reconnect: disableMidi() + enableMidi() => still exactly ONE change
 //      per message (no stacked handlers / duplicate subscriptions)
+//   7. pad commands (HD-19): note-learn Play/pause, Next mode, Previous mode
+//      and Blackout; each pad fires the store action its key fires, and the
+//      blackout pad obeys the key's arming rule (inert outside Stage)
+//   8. relaunch (HD-18): MIDI left enabled survives a restart — the next
+//      launch re-arms by itself (no click) and a saved CC binding applies
 //
 //   node scripts/midi-e2e.mjs
 // Prereqs: Vite dev on 127.0.0.1:1420; loopMIDI running with a port whose
@@ -43,15 +48,17 @@ function send(messages) {
 }
 
 let app;
-try {
-  app = spawnApp({
+const spawnMidiApp = () =>
+  spawnApp({
     root,
     portBase: 9380, // see the map in lib/app.mjs
     profileName: "wv2-midi-profile",
   });
+try {
+  app = spawnMidiApp();
   // Probe with the hook wait, not TAURI_WARMUP (deleted — see lib/app.mjs):
   // a cold-cache Vite reload mid-poll still trips the recovery retry.
-  const cdp = await attachWithRecovery(app, (c) => waitHooks(c, ["__store"]), {
+  let cdp = await attachWithRecovery(app, (c) => waitHooks(c, ["__store"]), {
     retrySleepMs: 2000,
   });
 
@@ -196,7 +203,109 @@ try {
     throw new Error(`post-reconnect: expected exactly 1 change, got ${re2.n} (stacked handlers?)`);
   }
 
-  console.log("MIDI-E2E OK: permission+discovery+ccLearn+ccApply+noteApply+reconnect all pass");
+  // 7: pad commands (HD-19). Quantize off so a mode step lands at once; a
+  // demo track so play/pause has something to play.
+  await cdp.eval(`(async () => {
+    const st = window.__store.getState();
+    st.setSwitchQuantize("off");
+    st.setStageMode(false);
+    st.setBlackout(false);
+    await st.loadDemo("groove");
+    return true;
+  })()`);
+  for (const [note, command] of [
+    ["3E", "playPause"],
+    ["40", "nextMode"],
+    ["41", "prevMode"],
+    ["43", "blackout"],
+  ]) {
+    await cdp.eval(
+      `window.__store.getState().setMidiLearn({ kind: "command", command: "${command}" }); true`,
+      false,
+    );
+    send(`90-${note}-7F`);
+    await sleep(500);
+  }
+  const cmdBindings = await cdp.eval(
+    `window.__store.getState().midiBindings.filter(b => b.kind === "command").map(b => b.command + "@" + b.note).sort().join(",")`,
+    false,
+  );
+  console.log("COMMANDS:", cmdBindings);
+  if (cmdBindings !== "blackout@67,nextMode@64,playPause@62,prevMode@65") {
+    throw new Error(`command learn failed: ${cmdBindings}`);
+  }
+  const before = await cdp.eval(
+    `({ preset: window.__store.getState().presetId, playing: window.__store.getState().playback.playing })`,
+    false,
+  );
+  send("90-40-7F"); // next mode
+  await sleep(600);
+  const afterNext = await cdp.eval(`window.__store.getState().presetId`, false);
+  send("90-41-7F"); // previous mode
+  await sleep(600);
+  const afterPrev = await cdp.eval(`window.__store.getState().presetId`, false);
+  send("90-3E-7F"); // play / pause
+  await sleep(1500);
+  const playing = await cdp.eval(`window.__store.getState().playback.playing`, false);
+  send("90-43-7F"); // blackout outside Stage: must stay inert
+  await sleep(500);
+  const inertBlackout = await cdp.eval(`window.__store.getState().blackout`, false);
+  await cdp.eval(`window.__store.getState().setStageMode(true); true`, false);
+  send("90-43-7F"); // blackout inside Stage
+  await sleep(500);
+  const armedBlackout = await cdp.eval(`window.__store.getState().blackout`, false);
+  await cdp.eval(`window.__store.getState().setStageMode(false); true`, false);
+  const cmd = { before, afterNext, afterPrev, playing, inertBlackout, armedBlackout };
+  console.log("COMMAND-APPLY:", JSON.stringify(cmd));
+  if (afterNext === before.preset) throw new Error("next-mode pad did not step");
+  if (afterPrev !== before.preset) throw new Error("previous-mode pad did not step back");
+  if (playing === before.playing) throw new Error("play/pause pad did not toggle playback");
+  if (inertBlackout) throw new Error("blackout pad fired outside Stage (arming rule broken)");
+  if (!armedBlackout) throw new Error("blackout pad did not fire in Stage");
+
+  // 8: relaunch (HD-18). Leave MIDI enabled, give WebView2 time to flush
+  // localStorage (the kill below is not graceful), restart on the SAME
+  // profile and never call enableMidi: the app must re-arm by itself.
+  if (playing) await cdp.eval(`window.__store.getState().togglePlay().then(() => true)`);
+  await sleep(8000);
+  killTree(app);
+  await sleep(2000);
+  app = spawnMidiApp();
+  cdp = await attachWithRecovery(app, (c) => waitHooks(c, ["__store"]), { retrySleepMs: 2000 });
+  const relaunch = await cdp.eval(`(async () => {
+    const store = window.__store;
+    const t0 = Date.now() + 15000;
+    while (!store.getState().midiEnabled && Date.now() < t0) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+    store.getState().switchPreset?.("particles");
+    window.__ccChanges = 0;
+    let last = store.getState().paramsByPreset?.particles?.speed;
+    store.subscribe((s) => {
+      const v = s.paramsByPreset?.particles?.speed;
+      if (v !== last) { last = v; window.__ccChanges++; }
+    });
+    return { enabled: store.getState().midiEnabled, devices: store.getState().midiDevices };
+  })()`);
+  console.log("RELAUNCH:", JSON.stringify(relaunch));
+  if (!relaunch.enabled) throw new Error("MIDI did not re-arm after relaunch (HD-18)");
+  send("B0-07-7F");
+  await sleep(600);
+  const reApply = await cdp.eval(
+    `({ v: window.__store.getState().paramsByPreset?.particles?.speed, n: window.__ccChanges })`,
+    false,
+  );
+  console.log("RELAUNCH-APPLY:", JSON.stringify(reApply));
+  if (Math.abs(reApply.v - 1.5) > 1e-6 || reApply.n !== 1) {
+    throw new Error(`saved CC binding did not apply after relaunch: ${JSON.stringify(reApply)}`);
+  }
+  // Leave the profile as a fresh install would be: MIDI off.
+  await cdp.eval(`window.__store.getState().disableMidi(); true`, false);
+  await sleep(6000);
+
+  console.log(
+    "MIDI-E2E OK: permission+discovery+ccLearn+ccApply+noteApply+reconnect+padCommands+relaunch all pass",
+  );
 } finally {
   killTree(app);
 }

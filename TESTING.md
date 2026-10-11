@@ -35,7 +35,11 @@ repository HEAD when the last 2.x release (v2.110.x per
 
 ## A — Owner checks (human; the two that survived the 2026-09-02 reset)
 
-- [ ] **A1. Lyric Stage word timing (~3 min) — closes FEAT-004.** Load a song
+- [ ] **A1. Lyric Stage word timing (~3 min) — closes FEAT-004.** Timing is
+      now measured by `node scripts/lyrics-timing-probe.mjs` (PASS 2026-10-10:
+      54 words, median 0.04 s, worst 0.15 s, after the sidecar fix in
+      BACKLOG.md "Done 2026-10-10"); this check is the owner's taste pass on a
+      real song. Regenerate — an LRC made before the fix keeps the old timing. Load a song
       you know well (with vocals). _Visuals ▸ Text_ ▸ generate lyrics if none
       are present (small tier, auto language). Switch to **Lyric Stage**, play.
       PASS = words light up when the vocalist actually sings them — not
@@ -65,8 +69,16 @@ repository HEAD when the last 2.x release (v2.110.x per
       `%APPDATA%\com.olanga.audiovisualizer`): first run boots to the
       onboarding empty state, a demo track plays, one short MP4 export
       completes and decodes with the bundled ffmpeg (exit 0).
-- [ ] **D3. Visuals dock + section rail device pass** (added in v2.81.0; the
-      one surface never run on device). Open with **G** and check, in one
+- [x] **D3. Visuals dock + section rail device pass** (added in v2.81.0; the
+      one surface never run on device). **DONE 2026-10-10 by
+      `node scripts/dock-device-pass.mjs`: 23 checks green on the debug
+      shell.** One item had gone stale: the letterbox was replaced by the
+      full-bleed stage (the dock floats over the image on glass, App.css
+      `.stage`), so the probe asserts the current contract — the canvas fills
+      the window and never resizes for a dock drag (no trail strobe possible),
+      while strip, toasts, timeline, drop overlay and perf overlay keep to the
+      column left of the dock, clamped to at least 560 px. Every other line
+      below is asserted as written. Open with **G** and check, in one
       pass: **Letterbox** — the canvas gives up the dock's width instead of
       hiding under it, at Fill and at 16:9; drag the dock's left edge
       end-to-end on a feedback mode (Echo Trails) and the trails must NOT

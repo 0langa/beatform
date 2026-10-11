@@ -335,6 +335,53 @@ async function runEditorLeg(cdp) {
     .map((w) => `${w.t.toFixed(2)}${w.end != null ? `-${w.end.toFixed(2)}` : ""} ${w.text}`)
     .join(" | ");
   console.log(`EDITOR: re-align OK on line ${target} ("${targetText}") -> ${spans}`);
+
+  // -- HD-08: Cancel during a REAL re-align — the document must not move ----
+  const beforeCancel = JSON.stringify(await cdp.eval(LINES, false));
+  await call(`realignLyricLine(${target})`);
+  await sleep(1500); // decode done, isolation underway
+  const running = await cdp.eval(SNAPSHOT, false);
+  if (running.realign === null) fatal("editor: re-align finished before Cancel could be tested");
+  await call(`cancelLyricsRealign()`);
+  const c0 = Date.now();
+  for (;;) {
+    const snap = await cdp.eval(SNAPSHOT, false);
+    if (snap.error) fatal(`editor: cancelled re-align surfaced error: ${snap.error}`);
+    if (snap.realign === null) break;
+    if (Date.now() - c0 > 15_000) fatal("editor: re-align still running 15 s after Cancel");
+    await sleep(250);
+  }
+  if (JSON.stringify(await cdp.eval(LINES, false)) !== beforeCancel) {
+    fatal("editor: a cancelled re-align changed the lines");
+  }
+  console.log(`EDITOR: re-align Cancel OK — stopped in ${Date.now() - c0} ms, lines untouched`);
+}
+
+/** HD-17: Verify and Remove through the store on a real downloaded model.
+ * Remove's confirm is a native dialog no harness can answer, so the delete
+ * itself goes through the same Rust command the button calls; the store's
+ * confirm flow is unit-tested (lyricsGenActions.test.ts). */
+async function runModelLeg(cdp) {
+  const notice = await cdp.eval(`(async () => {
+    const st = window.__store.getState();
+    await st.verifyLyricsModel("mdx-voc-ft");
+    const s = window.__store.getState();
+    return { notice: s.notice, error: s.error, op: s.lyricsGen.modelOp };
+  })()`);
+  if (notice.error) fatal(`verify through the store surfaced: ${notice.error}`);
+  if (!/verified/.test(notice.notice ?? "") || notice.op !== null) {
+    fatal(`verify through the store: ${JSON.stringify(notice)}`);
+  }
+  const removed = await cdp.eval(`(async () => {
+    await window.__invoke("lyrics_model_remove", { id: "mdx-voc-ft" });
+    await window.__store.getState().refreshLyricsGen();
+    const m = window.__store.getState().lyricsGen.models?.models.find((x) => x.id === "mdx-voc-ft");
+    return { installed: m?.installed ?? null, part: m?.partBytes ?? null };
+  })()`);
+  if (removed.installed !== false || removed.part !== 0) {
+    fatal(`remove left the model behind: ${JSON.stringify(removed)}`);
+  }
+  console.log(`MODELS OK: store Verify -> "${notice.notice}"; Remove -> not installed, no .part`);
 }
 
 // --- media server: corpus + Madness, read in place -------------------------
@@ -629,6 +676,11 @@ try {
   if (cancelled.lyricsLen != null) fatal("cancel must not land lyrics");
   if (cancelled.error) fatal(`cancel must be silent, got error: ${cancelled.error}`);
   console.log("GEN-CANCEL OK: idle again, no lyrics, no error");
+
+  // ---- 3b. model manager: Verify + Remove (HD-17) — last user of mdx in
+  // the --skip-madness run; the full run re-downloads nothing it needs
+  // later because the prep step deletes mdx on every start anyway.
+  if (args.has("--skip-madness")) await runModelLeg(cdp);
 
   // ---- 4. the owner's dense mix ------------------------------------------
   if (!args.has("--skip-madness")) {

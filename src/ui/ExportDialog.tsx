@@ -8,6 +8,7 @@ import {
 } from "../state/store";
 import { exportCodecOptions, exportFormatOptions, type ExportOption } from "../state/exportConfig";
 import { BG_TRANSPARENT } from "../render/types";
+import { etaLabel } from "../export/speedMeter";
 import { isTauri, showInFolder } from "../state/platform";
 import { Slider } from "./Slider";
 import { Switch } from "./Switch";
@@ -148,6 +149,11 @@ export function ExportDialog() {
     ? Math.round((exporting.done / Math.max(1, exporting.total)) * 100)
     : 0;
   const exportSpeed = exporting?.speed != null ? exporting.speed.toFixed(0) : null;
+  // Time left reads the run's long-run average, not the windowed fps shown
+  // beside it (a window swings with every hiccup; see export/speedMeter.ts).
+  const exportEta = exporting
+    ? etaLabel(exporting.done, exporting.total, exporting.avgSpeed)
+    : null;
   // Both dismissal paths gate on this (E2-U5) — a run that hasn't reached
   // `exporting` yet is still a run, and closing the dialog on it must not
   // orphan the save dialog / disk pre-flight / its own "Low disk space?"
@@ -442,6 +448,7 @@ export function ExportDialog() {
               <span>
                 {exportPct}% — frame {exporting.done}/{exporting.total}
                 {exportSpeed ? ` · ${exportSpeed} fps` : ""}
+                {exportEta ? ` · ${exportEta}` : ""}
               </span>
               <button className="text-btn danger" onClick={() => store().cancelExport()}>
                 Cancel

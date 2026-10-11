@@ -25,6 +25,7 @@
 //   10380  segment-parity-probe.mjs    (moved off 10220 — three scripts had
 //                                       independently claimed it)
 //   10460  deepcolor-verify.mjs --prores  (same collision, same move)
+//   10540  dock-device-pass.mjs
 //
 //   (gpu-pixel-matrix.mjs predates this map and rolls 9400 + pid % 500 —
 //   a span that overlaps several bases above. It accepts --port=<n>; pass

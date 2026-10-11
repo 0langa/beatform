@@ -33,7 +33,7 @@ import {
   splitLine,
   writeLrc,
 } from "../lyricsEdit";
-import type { LineDetail } from "../lyricsGen";
+import { describeLyricsFailure, type LineDetail } from "../lyricsGen";
 import { wavFromPcm } from "../../audio/dsp/wav";
 import { pcmFromAudioBuffer } from "../../audio/offlineSource";
 import {
@@ -296,7 +296,7 @@ export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       } catch (e) {
         const message = String((e as Error).message ?? e);
         if (message !== "cancelled") {
-          set({ error: `Re-align failed: ${message}` });
+          set({ error: `Re-align failed: ${describeLyricsFailure(message)}` });
         }
       } finally {
         set({ lyricsRealign: null });

@@ -107,7 +107,7 @@ class LoopbackFeed extends AudioWorkletProcessor {
       const s = pcm16 ? new Int16Array(d.data) : new Float32Array(d);
       const scale = pcm16 ? 1 / 32768 : 1;
       const frames = s.length >> 1;
-      this.delivered = true;
+      if (frames > 0) this.delivered = true;
       // Never wrap over unread frames (R2-32e). On a stalled graph `rd`
       // freezes while capture keeps delivering; the old writer wrapped and
       // silently REPLACED the audio `rd` pointed at, while `w - rd` kept

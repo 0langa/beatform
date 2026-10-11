@@ -93,6 +93,12 @@ export class AudioEngine {
   private _loopEpoch = 0;
   /** Cycle number observed on the current one-shot BufferSource clock. */
   private observedLoopCycle = 0;
+  /** Counts loop/region reconfigurations that MOVED the playhead (enabling
+   * the loop from outside the A-B region, a marker that shuts the playhead
+   * out). Callers compare it before/after instead of diffing currentTime:
+   * while playing, two reads of currentTime straddle render quanta (2.67 ms
+   * at 48 kHz), so a time diff cannot tell a teleport from the clock ticking. */
+  private _relocations = 0;
 
   onStateChange: ((s: PlaybackState) => void) | null = null;
   onEnded: (() => void) | null = null;
@@ -351,6 +357,7 @@ export class AudioEngine {
     this._loop = v;
     const region = this.loopRegion;
     const normalized = v && region ? this.positionInsideRegion(position, region) : position;
+    if (normalized !== position) this._relocations++;
 
     // Re-anchor the JS clock at the audio node's current playhead. This keeps
     // disabling a loop after several laps from jumping currentTime to the end
@@ -386,6 +393,11 @@ export class AudioEngine {
   /** Increments once per audio loop wrap, including sub-250 ms A-B regions. */
   get loopEpoch(): number {
     return this._loopEpoch;
+  }
+
+  /** See `_relocations`. */
+  get relocations(): number {
+    return this._relocations;
   }
 
   setLoopStart(time: number): void {
@@ -531,6 +543,7 @@ export class AudioEngine {
     const region = this.loopRegion;
     const normalized =
       this._loop && region ? this.positionInsideRegion(position, region) : position;
+    if (normalized !== position) this._relocations++;
     this.offset = normalized;
     this.startedAt = this.ctx.currentTime;
     this.observedLoopCycle = 0;

@@ -2,7 +2,12 @@
 //! assembled lines, computed from the ISOLATED VOCAL STEM (research: the
 //! stem's guaranteed value is VAD + alignment) at 16 kHz mono.
 //!
-//! Per line: slice the stem around the line's [start, end] (±PAD_SEC), run
+//! Driven per whisper SEGMENT (`align_segments`): the whole segment is
+//! aligned, then cut into lines at the singer's pauses (lines.rs explains
+//! why the cuts must wait for acoustic timing). A segment that will not
+//! align whole falls back to its token-cut lines, aligned one by one.
+//!
+//! Per window: slice the stem around [start, end] (±PAD_SEC), run
 //! wav2vec2-base-960h emissions on the CPU EP (the spike measured DirectML
 //! 4x SLOWER for this model — REPORT adjustment 2), then a classic CTC
 //! Viterbi trellis over the line's characters (blank-interleaved states,
@@ -14,7 +19,8 @@
 //! timing (empty `words`) and the job continues — never abort a whole
 //! transcript over one hard line.
 
-use crate::lines::{Line, Word};
+use crate::lines::{self, Line, Staged, Word};
+use crate::vad::Region;
 use ort::session::Session;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -371,56 +377,80 @@ pub struct Summary {
 }
 
 pub enum Outcome {
-    Done(Summary),
+    Done { lines: Vec<Line>, summary: Summary },
     Cancelled,
 }
 
-/// Align every assembled line against the 16 kHz mono stem, filling
-/// `line.words` in place. `on_line(done, total)` after each line.
-pub fn align_lines(
+/// Align every staged segment against the 16 kHz mono stem and return the
+/// final lines (cut, capped, lead-in applied — `lines::finish`).
+/// `on_segment(done, total)` after each segment.
+pub fn align_segments(
     aligner: &mut Aligner,
     stem16: &[f32],
-    lines: &mut [Line],
+    staged: Staged,
+    regions: &[Region],
     cancel: &AtomicBool,
-    mut on_line: impl FnMut(usize, usize),
+    mut on_segment: impl FnMut(usize, usize),
 ) -> Outcome {
     let track_sec = stem16.len() as f64 / crate::resample::OUT_RATE as f64;
-    let total = lines.len();
+    let Staged {
+        segments,
+        vad_trusted,
+    } = staged;
+    let total = segments.len();
+    let next_starts: Vec<f64> = (0..total)
+        .map(|i| segments.get(i + 1).map_or(track_sec, |n| n.line.t))
+        .collect();
+    let mut out: Vec<Line> = Vec::new();
+    for (i, seg) in segments.into_iter().enumerate() {
+        if cancel.load(Ordering::SeqCst) {
+            return Outcome::Cancelled;
+        }
+        match align_bounded(aligner, stem16, track_sec, &seg.line, next_starts[i]) {
+            Ok(words) if !words.is_empty() => {
+                out.extend(lines::split_aligned(words, regions, vad_trusted));
+            }
+            whole => {
+                if let Err(e) = whole {
+                    eprintln!("[lyrics-sidecar] segment {i} aligned line by line: {e}");
+                }
+                for mut line in seg.fallback {
+                    match align_one(aligner, stem16, track_sec, &line) {
+                        Ok(words) => line.words = words,
+                        // Local degradation: this line keeps line-level timing.
+                        Err(e) => eprintln!("[lyrics-sidecar] align skipped a line: {e}"),
+                    }
+                    out.push(line);
+                }
+            }
+        }
+        on_segment(i + 1, total);
+    }
+    let lines = lines::finish(out);
     let mut summary = Summary {
         words: 0,
         aligned_lines: 0,
         low_conf_lines: 0,
     };
-    for (i, line) in lines.iter_mut().enumerate() {
-        if cancel.load(Ordering::SeqCst) {
-            return Outcome::Cancelled;
+    for (i, line) in lines.iter().enumerate() {
+        if line.words.is_empty() {
+            summary.low_conf_lines += 1;
+            continue;
         }
-        match align_one(aligner, stem16, track_sec, line) {
-            Ok(words) => {
-                let conf_sum: f64 = words.iter().map(|w| w.conf).sum();
-                let conf = conf_sum / words.len().max(1) as f64;
-                // Diagnostic only (stderr is not protocol): per-line confidence
-                // for tuning the LOW_CONF threshold against real material.
-                eprintln!(
-                    "[lyrics-sidecar] align line {i}: conf {conf:.3}, {} words",
-                    words.len()
-                );
-                summary.words += words.len();
-                summary.aligned_lines += 1;
-                if conf < LOW_CONF {
-                    summary.low_conf_lines += 1;
-                }
-                line.words = words;
-            }
-            Err(e) => {
-                // Local degradation: this line keeps line-level timing.
-                eprintln!("[lyrics-sidecar] align skipped line {i}: {e}");
-                summary.low_conf_lines += 1;
-            }
+        let conf = line.words.iter().map(|w| w.conf).sum::<f64>() / line.words.len() as f64;
+        // Diagnostic only (stderr is not protocol): per-line confidence for
+        // tuning the LOW_CONF threshold against real material.
+        eprintln!(
+            "[lyrics-sidecar] align line {i}: conf {conf:.3}, {} words",
+            line.words.len()
+        );
+        summary.words += line.words.len();
+        summary.aligned_lines += 1;
+        if conf < LOW_CONF {
+            summary.low_conf_lines += 1;
         }
-        on_line(i + 1, total);
     }
-    Outcome::Done(summary)
+    Outcome::Done { lines, summary }
 }
 
 /// Align ONE line. Public for the `--align-line` mode (phase 4), which
@@ -431,9 +461,36 @@ pub fn align_one(
     track_sec: f64,
     line: &Line,
 ) -> Result<Vec<Word>, String> {
+    align_bounded(aligner, stem16, track_sec, line, track_sec)
+}
+
+/// The alignment window: [t, end] widened by PAD_SEC on each side, except
+/// that the TRAILING pad never reaches past `hi` (the next segment's start).
+/// Measured on device (scripts/lyrics-timing-probe.mjs): with the pad running
+/// into the next line, "rain"'s final 'n' was matched to the 'N' of the next
+/// line's "Nothing" and the word stayed lit 2.4 s into the breath. The
+/// leading pad stays free on purpose: bounding it too at the previous
+/// segment's end made a word late wherever whisper put that boundary after
+/// the next line had already begun ("Every" moved +76 -> +256 ms). The span
+/// itself is never cut — a segment overlapping its neighbor keeps [t, end].
+pub fn window(line: &Line, track_sec: f64, hi: f64) -> (f64, f64) {
     let line_end = line.end.max(line.t + 0.05);
     let ws = (line.t - PAD_SEC).max(0.0);
-    let we = (line_end + PAD_SEC).min(track_sec);
+    let we = (line_end + PAD_SEC).min(hi.max(line_end)).min(track_sec);
+    (ws, we)
+}
+
+/// `align_one` with the trailing pad bounded by the next segment (see
+/// `window`).
+pub fn align_bounded(
+    aligner: &mut Aligner,
+    stem16: &[f32],
+    track_sec: f64,
+    line: &Line,
+    hi: f64,
+) -> Result<Vec<Word>, String> {
+    let line_end = line.end.max(line.t + 0.05);
+    let (ws, we) = window(line, track_sec, hi);
     if we - ws < MIN_WINDOW_SEC {
         return Err(format!("window too small ({:.2}s)", we - ws));
     }
@@ -591,6 +648,29 @@ mod tests {
         // char IS the argmax on its frames, so the relative peak is 0.
         assert!(spans[0].mean_logp > -0.02 && spans[0].mean_logp <= 0.0);
         assert!(spans[0].peak_rel_logp.abs() < 1e-9, "{spans:?}");
+    }
+
+    fn span_line(t: f64, end: f64) -> Line {
+        Line {
+            t,
+            end,
+            text: "x".into(),
+            words: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_trailing_pad_stops_at_the_next_segment_but_never_cuts_the_span() {
+        let l = span_line(10.0, 20.0);
+        // A free neighbor: the full pad both ways.
+        assert_eq!(window(&l, 100.0, 100.0), (10.0 - PAD_SEC, 20.0 + PAD_SEC));
+        // The next segment starts where this one ends: no trailing pad, the
+        // leading pad stays.
+        assert_eq!(window(&l, 100.0, 20.0), (10.0 - PAD_SEC, 20.0));
+        // A next segment overlapping the span: the span stays whole.
+        assert_eq!(window(&l, 100.0, 18.0), (10.0 - PAD_SEC, 20.0));
+        // Track edges still clamp.
+        assert_eq!(window(&span_line(0.1, 5.0), 5.2, 99.0), (0.0, 5.2));
     }
 
     #[test]

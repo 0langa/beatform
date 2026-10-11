@@ -303,6 +303,28 @@ describe("stalled-graph overflow protection (R2-32e)", () => {
     expect(last).toBeGreaterThan(1000); // fixture sanity: data actually flowed
   });
 
+  /**
+   * An empty chunk is not a delivery. Rust never sends one today, but the
+   * guard must key on frames actually written: armed by a zero-length chunk,
+   * the pre-delivery idle that follows would count as underruns and mint the
+   * credit the hard-skip ceiling then spends on the first REAL batch.
+   */
+  it("a zero-frame chunk does not arm delivery", () => {
+    const Ctor = loadWorklet();
+    const node = new Ctor();
+    const push = makePush(node);
+    const L = new Float32Array(QUANTUM);
+    const R = new Float32Array(QUANTUM);
+
+    node.port.onmessage?.({ data: new ArrayBuffer(0) });
+    node.port.onmessage?.({ data: { type: "pcm16", data: new ArrayBuffer(0) } });
+    for (let q = 0; q < Math.round(SR / QUANTUM); q++) node.process(null, [[L, R]]);
+    expect(statsOf(node).underrunFrames).toBe(0);
+
+    push(1000, Math.round(SR * 0.5)); // late, large first real batch
+    expect(statsOf(node).hardSkippedFrames).toBe(0);
+  });
+
   it("pre-delivery idle arms nothing: zero underrun stats, zero credit to hard-skip real audio with", () => {
     const Ctor = loadWorklet();
     const node = new Ctor();

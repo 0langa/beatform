@@ -131,7 +131,9 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
       if (e.ctrlKey || e.metaKey) {
         if (e.key === ",") {
           e.preventDefault();
-          s.setShowSettings(!s.showSettings);
+          // Stage hides every dialog (App.css), so opening one there is an
+          // invisible action the next Esc would reveal — inert instead.
+          if (!s.stageMode) s.setShowSettings(!s.showSettings);
         } else if (e.key === "s" || e.key === "S") {
           e.preventDefault();
           void s.saveProject();
@@ -187,8 +189,9 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         case "h":
         case "H":
           // H is the layout-proof binding; ? kept for muscle memory (README
-          // and docs historically said "press ?").
-          s.setShowHelp(!s.showHelp);
+          // and docs historically said "press ?"). Inert in Stage, which
+          // hides dialogs (see Ctrl+, above).
+          if (!s.stageMode) s.setShowHelp(!s.showHelp);
           break;
         // Letters and digits are the only keys whose printed label matches on
         // every major layout (QWERTY/QWERTZ/AZERTY/…) — symbol keys move or
@@ -245,7 +248,9 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
         case "B":
           // Same guard the ✕, Escape and the backdrop enforce: a running queue
           // must not be dismissable behind the user's back.
-          if (!(s.showBatch && s.batchStatus === "running")) s.setShowBatch(!s.showBatch);
+          // Inert in Stage, which hides dialogs (see Ctrl+, above).
+          if (!s.stageMode && !(s.showBatch && s.batchStatus === "running"))
+            s.setShowBatch(!s.showBatch);
           break;
         case "q":
         case "Q":

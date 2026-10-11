@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  describeLyricsFailure,
   blendMeasuredRtf,
   estimateGenerateSeconds,
   formatBytes,
@@ -516,5 +517,29 @@ describe("reduceGenProgress (FEAT-004 follow-up a)", () => {
     });
     expect(arrived.starting).toBe(false);
     expect(arrived.stage).toBe("transcribe");
+  });
+});
+
+describe("describeLyricsFailure", () => {
+  it("puts every runtime's out-of-memory report into plain words", () => {
+    for (const raw of [
+      // DirectML on German Windows (the 2026-10-10 device run, verbatim tail)
+      "MDX inference failed: Non-zero status code returned while running DmlFusedConv node. Exception(3) tid(7340) 8007000E Für diesen Vorgang sind nicht genügend Speicherressourcen verfügbar.",
+      // whisper.cpp
+      "whisper-cli failed (exit code: 0xc0000409): load_backend: loaded CPU backend | ggml-backend.cpp:194: GGML_ASSERT(buffer) failed",
+      // Rust's allocator and the paging file
+      "memory allocation of 1835256 bytes failed",
+      "failed to mmap file: The paging file is too small for this operation to complete. (os error 1455)",
+    ]) {
+      expect(describeLyricsFailure(raw)).toMatch(/ran out of free memory/);
+    }
+  });
+
+  it("passes every other failure through unchanged", () => {
+    const raw = "No vocals found — the track appears to be instrumental";
+    expect(describeLyricsFailure(raw)).toBe(raw);
+    expect(describeLyricsFailure("whisper-cli failed (exit code: 1): bad model")).toBe(
+      "whisper-cli failed (exit code: 1): bad model",
+    );
   });
 });

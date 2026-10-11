@@ -259,4 +259,45 @@ describe("audio graph", { timeout: 30_000 }, () => {
     (engine.ctx as unknown as { currentTime: number }).currentTime = 13;
     expect(engine.currentTime).toBe(3);
   });
+
+  /**
+   * The store resets the analyzer only when a loop/region action really moved
+   * the playhead, and it learns that from this counter — diffing currentTime
+   * misfired on a playing clock (see loopToggleReset.test.ts).
+   */
+  it("counts only reconfigurations that move the playhead", async () => {
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    vi.resetModules();
+    const { AudioEngine } = await import("./engine");
+
+    const buffer = {
+      duration: 10,
+      length: 480000,
+      numberOfChannels: 2,
+      sampleRate: 48000,
+      getChannelData: () => new Float32Array(480000),
+    } as unknown as AudioBuffer;
+    const engine = new AudioEngine();
+    engine.loadBuffer(buffer, "moves.wav");
+    await engine.play();
+    const ctx = engine.ctx as unknown as { currentTime: number };
+
+    ctx.currentTime = 5; // playhead 5 s
+    engine.setLoopStart(4);
+    engine.setLoopEnd(6);
+    engine.loop = true; // inside the region: stays put
+    engine.loop = false;
+    engine.clearLoopRegion();
+    expect(engine.relocations).toBe(0);
+
+    engine.setLoopStart(7);
+    engine.setLoopEnd(9);
+    engine.loop = true; // outside: teleports to 7
+    expect(engine.currentTime).toBe(7);
+    expect(engine.relocations).toBe(1);
+
+    engine.setLoopStart(8); // region 8..9 shuts the playhead (7) out
+    expect(engine.currentTime).toBe(8);
+    expect(engine.relocations).toBe(2);
+  });
 });

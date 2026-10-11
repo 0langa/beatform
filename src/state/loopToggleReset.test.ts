@@ -29,12 +29,22 @@ const engineState = {
   currentTime: 0,
   loopStart: null as number | null,
   loopEnd: null as number | null,
+  relocations: 0,
+  /** Seconds the audio clock advances per currentTime read — a playing
+   * AudioContext ticks a render quantum (128 frames ≈ 2.67 ms at 48 kHz)
+   * between two reads more often than not. 0 = a paused clock. */
+  tickPerRead: 0,
 };
 
 const engine = {
   ctx: { decodeAudioData: vi.fn() },
   get currentTime() {
-    return engineState.currentTime;
+    const t = engineState.currentTime;
+    engineState.currentTime += engineState.tickPerRead;
+    return t;
+  },
+  get relocations() {
+    return engineState.relocations;
   },
   get loop() {
     return engineState.loop;
@@ -52,7 +62,10 @@ const engine = {
         : null;
     if (v && region) {
       const pos = engineState.currentTime;
-      if (!(pos >= region.start && pos < region.end)) engineState.currentTime = region.start;
+      if (!(pos >= region.start && pos < region.end)) {
+        engineState.currentTime = region.start;
+        engineState.relocations++;
+      }
     }
   },
   duration: 30,
@@ -87,6 +100,8 @@ beforeEach(() => {
   engineState.currentTime = 0;
   engineState.loopStart = null;
   engineState.loopEnd = null;
+  engineState.relocations = 0;
+  engineState.tickPerRead = 0;
   analyzer.reset.mockClear();
 });
 
@@ -106,6 +121,24 @@ describe("toggleLoop fires the discontinuity reset only when the playhead moved 
     engineState.currentTime = 12;
     s().toggleLoop();
     expect(engineState.currentTime).toBe(12);
+    expect(analyzer.reset).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The detector used to diff currentTime before/after the toggle with a 1 ms
+   * threshold. While playing, the audio clock advances a render quantum
+   * (2.67 ms) between the reads, so an inside-region enable — which moves
+   * nothing — still fired a reset ("seek") and flashed the analyzer. The
+   * engine now counts its own teleports and the store compares that count.
+   */
+  it("a render-quantum tick between reads is not a teleport (playing clock)", () => {
+    engineState.loopStart = 10;
+    engineState.loopEnd = 14;
+    engineState.currentTime = 12;
+    engineState.tickPerRead = 128 / 48000;
+    s().toggleLoop(); // on, inside the region
+    s().toggleLoop(); // off
+    expect(engineState.relocations).toBe(0); // fixture sanity: nothing moved
     expect(analyzer.reset).not.toHaveBeenCalled();
   });
 

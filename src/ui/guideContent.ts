@@ -598,7 +598,7 @@ export const GUIDE: readonly GuideSection[] = [
             { strong: "Stage mode" },
             " (",
             { kbd: "S" },
-            ") hides every piece of chrome and the cursor for a clean full-bleed output — project it, capture it, or screen-share it. The mode name flashes briefly on each switch so you can drive blind.",
+            ") hides every piece of chrome and the cursor for a clean full-bleed output — project it, capture it, or screen-share it. The mode name flashes briefly on each switch so you can drive blind. Dialogs stay closed while you are on stage: the help, Preferences and batch keys do nothing there.",
           ],
           [
             { strong: "Second display" },

@@ -11,6 +11,40 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- **Exports say how long is left.** Once a render is a few percent in, the
+  progress line reads "about 3 min left" next to the frame count and fps. The
+  estimate comes from the run's long-run speed, so it does not jump with every
+  brief slowdown.
+
+### Fixed
+
+- **Generated lyrics light up when the words are sung.** On a song that opens
+  with an instrumental intro, the first words of the first line could light up
+  seconds before the singer started. Word timing now comes from the vocal
+  itself across the whole passage, and lines break where the singer pauses, so
+  two sung lines no longer run together as one. Measured on a test song: every
+  word now lands within 0.16 s of its real start (the worst word used to be
+  3.7 s early). Generate the lyrics again to get the new timing.
+- **Lyrics generation no longer fails on a busy PC after the long vocal
+  step.** The vocal-isolation stage kept about 2 GB of memory while the speech
+  model loaded, so with little free memory the job stopped with a
+  "whisper-cli failed" error after minutes of work. That memory is now freed
+  first, and if a PC still runs out of memory the error says so in plain words
+  instead of showing a graphics-driver stack trace.
+- **A failed update names the reason.** The update dialog showed an empty
+  error when an update could not install (for example with a full system
+  drive); it now says what went wrong.
+- **Turning the loop on or off while playing no longer flashes the visuals.**
+  The app sometimes mistook the audio clock moving on for a jump in the
+  track and reset the analysis, which showed as a short visual hiccup. Only a
+  real jump (a loop that moves the playhead into the A-B region) resets it
+  now.
+- **Dialog keys stay quiet in Stage mode.** Stage hides every dialog, so H,
+  Ctrl+, and B used to open a dialog nobody could see — and the next Esc
+  revealed it. In Stage those keys now do nothing.
+
 ## [2.111.0] - 2026-10-09
 
 "Nothing half-done": every surface that was started and left unfinished got

@@ -257,6 +257,50 @@ describe("Perform drawer + blackout gating", () => {
   });
 });
 
+/**
+ * Stage hides every .modal-backdrop (App.css) so nothing but the visual ever
+ * reaches the audience. A dialog opened from the keyboard inside Stage was
+ * therefore invisible — and the first Esc then left Stage to reveal a dialog
+ * the performer never saw open. The dialog keys are inert in Stage instead.
+ */
+describe("dialog keys inside Stage", () => {
+  function stageState() {
+    return {
+      stageMode: true,
+      showHelp: false,
+      showSettings: false,
+      showBatch: false,
+      batchStatus: "idle",
+      setShowHelp: vi.fn(),
+      setShowSettings: vi.fn(),
+      setShowBatch: vi.fn(),
+    };
+  }
+
+  it("H, ?, Ctrl+, and B open nothing while Stage hides dialogs", () => {
+    const state = stageState();
+    render(<Harness state={state} />);
+    fireEvent.keyDown(window, { key: "h", code: "KeyH" });
+    fireEvent.keyDown(window, { key: "?", code: "Slash" });
+    fireEvent.keyDown(window, { key: ",", code: "Comma", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "b", code: "KeyB" });
+    expect(state.setShowHelp).not.toHaveBeenCalled();
+    expect(state.setShowSettings).not.toHaveBeenCalled();
+    expect(state.setShowBatch).not.toHaveBeenCalled();
+  });
+
+  it("the same keys still open their dialogs outside Stage", () => {
+    const state = { ...stageState(), stageMode: false };
+    render(<Harness state={state} />);
+    fireEvent.keyDown(window, { key: "h", code: "KeyH" });
+    fireEvent.keyDown(window, { key: ",", code: "Comma", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "b", code: "KeyB" });
+    expect(state.setShowHelp).toHaveBeenCalledWith(true);
+    expect(state.setShowSettings).toHaveBeenCalledWith(true);
+    expect(state.setShowBatch).toHaveBeenCalledWith(true);
+  });
+});
+
 describe("SHORTCUT_SHEET covers the handler, both directions", () => {
   // Every quoted literal the handler compares e.key / e.code against.
   // Matches `e.key === "X"` / `e.code === "KeyX"`, and the `case "X":` lines

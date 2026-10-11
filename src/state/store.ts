@@ -2893,13 +2893,16 @@ export const useVizStore = create<VizState>((set, get) => {
 
     toggleLoop() {
       const engine = getEngine();
-      const before = engine.currentTime;
+      const before = engine.relocations;
       engine.loop = !engine.loop;
       // Enabling the loop with the playhead outside the A-B region teleports
       // it to the region start (engine's setter) — a discontinuity exactly
       // like its siblings below, and a FORWARD teleport is one the frame
-      // loop's backward-jump heuristic can never catch (R2-32c).
-      if (Math.abs(engine.currentTime - before) > 0.001) {
+      // loop's backward-jump heuristic can never catch (R2-32c). The engine
+      // COUNTS its teleports: diffing currentTime instead misfired while
+      // playing, because the audio clock ticks a render quantum (2.67 ms)
+      // between the two reads.
+      if (engine.relocations !== before) {
         getAnalyzer().reset("seek");
         // The teleport is a seek in every sense, so it gets the R2-31c
         // bookkeeping too: without it a forward jump across a beat/bar
@@ -2910,23 +2913,23 @@ export const useVizStore = create<VizState>((set, get) => {
 
     setLoopStart(time) {
       const engine = getEngine();
-      const before = engine.currentTime;
-      engine.setLoopStart(time ?? before);
-      if (Math.abs(engine.currentTime - before) > 0.001) getAnalyzer().reset("seek");
+      const before = engine.relocations;
+      engine.setLoopStart(time ?? engine.currentTime);
+      if (engine.relocations !== before) getAnalyzer().reset("seek");
     },
 
     setLoopEnd(time) {
       const engine = getEngine();
-      const before = engine.currentTime;
-      engine.setLoopEnd(time ?? before);
-      if (Math.abs(engine.currentTime - before) > 0.001) getAnalyzer().reset("seek");
+      const before = engine.relocations;
+      engine.setLoopEnd(time ?? engine.currentTime);
+      if (engine.relocations !== before) getAnalyzer().reset("seek");
     },
 
     clearLoopRegion() {
       const engine = getEngine();
-      const before = engine.currentTime;
+      const before = engine.relocations;
       engine.clearLoopRegion();
-      if (Math.abs(engine.currentTime - before) > 0.001) getAnalyzer().reset("seek");
+      if (engine.relocations !== before) getAnalyzer().reset("seek");
     },
 
     applyVolume(volume, muted) {

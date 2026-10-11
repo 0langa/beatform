@@ -348,6 +348,10 @@ fn run_align_line(args: AlignLineArgs) {
             Err(e) => fail(&e),
         }
     };
+    // Same reason as run(): release the isolation session and the decoded
+    // slice before the aligner loads its own model.
+    drop(session);
+    drop(slice);
     let stem16 = resample::stem_to_16k_mono(&stem.0, &stem.1);
     drop(stem);
     if cancel.cancelled() {
@@ -447,6 +451,14 @@ fn run(args: Args) {
             Err(e) => fail(&e),
         }
     };
+    // The isolation session (an ONNX Runtime session, DirectML or CPU) and
+    // the decoded mix are done the moment the stem exists. Held to the end of
+    // run(), they kept ~2 GB committed while whisper-cli started next — and
+    // on a machine with that little headroom whisper died allocating its
+    // model (GGML_ASSERT(buffer)), so generation failed AFTER the long
+    // isolation stage had already succeeded.
+    drop(session);
+    drop(mix);
     let isolate_wall = t0.elapsed().as_secs_f64();
     emit(&Event::StageDone {
         stage: Stage::Isolate,
@@ -520,7 +532,19 @@ fn run(args: Args) {
     let assemble_wall = t0.elapsed().as_secs_f64();
 
     // ---- align (phase 3 — only when the model was provided) ------------
-    let align_summary = align_stage(&args, &stem16, &mut assembled, &cancel, duration);
+    let align_summary = align_stage(
+        &args,
+        &stem16,
+        &mut assembled,
+        lines::AssembleInput {
+            segments: &parsed.transcription,
+            vad: &regions,
+            stem_peak_db: verdict.stem_peak_db,
+            track_duration_sec: duration,
+        },
+        &cancel,
+        duration,
+    );
     drop(stem16);
 
     // ---- write ---------------------------------------------------------
@@ -572,7 +596,8 @@ fn run(args: Args) {
 fn align_stage(
     args: &Args,
     stem16: &[f32],
-    assembled: &mut [lines::Line],
+    assembled: &mut Vec<lines::Line>,
+    input: lines::AssembleInput,
     cancel: &Arc<Canceller>,
     duration: f64,
 ) -> Option<align::Summary> {
@@ -600,11 +625,12 @@ fn align_stage(
         }
     };
     let started = Instant::now();
-    let total_lines = assembled.len();
-    let outcome = align::align_lines(
+    let regions = input.vad;
+    let outcome = align::align_segments(
         &mut aligner,
         stem16,
-        assembled,
+        lines::stage_segments(input),
+        regions,
         &cancel.flag,
         |done, total| {
             let elapsed = started.elapsed().as_secs_f64();
@@ -617,9 +643,22 @@ fn align_stage(
         },
     );
     match outcome {
-        align::Outcome::Done(summary) => {
+        // Segment staging applies the same filters as the line-level pass,
+        // so an empty result here means every segment's text normalized
+        // away — keep the line-level lines rather than ship nothing.
+        align::Outcome::Done { lines, .. } if lines.is_empty() => {
+            emit(&Event::StageDone {
+                stage: Stage::Align,
+                wall_sec: t0.elapsed().as_secs_f64(),
+                rtf: None,
+                detail: Some("nothing to align — line timing only"),
+            });
+            None
+        }
+        align::Outcome::Done { lines, summary } => {
+            *assembled = lines;
             let wall = t0.elapsed().as_secs_f64();
-            let detail = format!("{}/{total_lines} lines", summary.aligned_lines);
+            let detail = format!("{}/{} lines", summary.aligned_lines, assembled.len());
             emit(&Event::StageDone {
                 stage: Stage::Align,
                 wall_sec: wall,

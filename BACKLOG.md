@@ -24,15 +24,28 @@ battery. The tag waits for the owner's explicit go.
 
 ## Open after 2.111.0 (found 2026-10-10 on the owner's machine)
 
-- [ ] **ALIGN-002 regressed: the HKCU uninstall entry does not follow in-app
-      updates.** After 2.108.0 → 2.110.0 → 2.111.0 through the in-app updater,
-      `beatform.exe` reports ProductVersion 2.111.0 but
-      `HKCU\...\Uninstall\*` DisplayVersion still reads **2.108.0** (checked
-      after both updates). The NSIS `/UPDATE` path installs the files and
-      skips (or fails to write) the uninstall registry values. Reproduce:
-      install an older setup exe, update in-app, read DisplayVersion. Fix
-      lives in the NSIS template / tauri bundler config, then re-verify per
-      GATES.md §4. Size S–M.
+- [x] **ALIGN-002 "regressed": the HKCU uninstall entry did not follow two
+      in-app updates.** DECLARED 2026-10-10 — not a Beatform regression; the
+      cause sits outside the repo, and the existing boot self-heal repairs it
+      on the next normal launch. Evidence, all from the owner's machine:
+      (1) the tauri-cli 2.12.1 NSIS template still writes `DisplayVersion`
+      unconditionally in its Install section; (2) the 2.111.0 installer DID
+      run that section — it wrote `uninstall.exe` at 00:13:43 and relaunched
+      the app the same second — yet the key's LastWriteTime stayed at
+      2026-08-21 (the 2.108.0 install): none of its registry writes landed;
+      (3) the app's own boot heal (`uninstall_entry.rs`) ran in that relaunched
+      process and did not land either; (4) the SAME installed binary started
+      normally healed the key at once (its stderr said "DisplayVersion healed to
+      2.111.0"; the key reads 2.111.0 since); (5) key ACL,
+      owner and integrity are normal and an unsigned probe writes the key fine.
+      Only processes descending from the updater-launched installer were
+      refused. What changed on the machine between the good 2.108.0 install
+      and the two failing updates: Avira Security (installed 2026-09-23) and
+      Avira System Speedup (2026-10-07). Most likely the security product
+      blocks registry writes from that process tree; its logs record nothing
+      for Beatform, so this stays a strong suspicion, not a proof. Re-check
+      at TESTING.md D1: read `DisplayVersion` after ONE ordinary relaunch, not
+      only straight after the update.
 - [x] **Updater error dialog showed no reason** — Tauri plugin commands
       reject with a plain string, `(e as Error).message` was `undefined`.
       Fixed on main (`errorText` in `src/state/updater.ts`, two tests). The
@@ -41,18 +54,26 @@ battery. The tag waits for the owner's explicit go.
 
 ## Owner-pending (only the owner can close these)
 
-- [ ] **Verdict round** — one word per HD row below: _finish_ / _remove_ /
-      _declare_, or "take the recommendations". Nothing in v2.111.0 starts
-      before this.
+- [x] **Verdict round** — done: every HD row below carries its verdict and
+      shipped in v2.111.0 (row stayed open by oversight; closed 2026-10-10).
 - [x] **Merge dependabot PRs** — DONE 2026-09-02 on the owner's go: #26
       (rust-cache action), #29 (lofty 0.25.1, cpal 0.18.2, naga 30.0.1) and
       #31 (the npm minor/patch group, 13 updates incl. mediabunny 1.55.4,
       vite 8.2.2, vitest 4.1.11, eslint 10.9.1; #30 was dependabot's earlier
       copy of the same group, closed by dependabot) squash-merged after CI.
 - [ ] **A1 Lyric Stage word timing** (~3 min) — TESTING.md § A1. Closes
-      FEAT-004.
+      FEAT-004. **The measurable half is done (2026-10-10):** the new probe
+      `scripts/lyrics-timing-probe.mjs` (speech with sample-exact word onsets
+      over a music bed, the real sidecar end to end) found the first words of
+      a song with an intro lit **3.7 s early** and two sung lines run together
+      per line; fixed in the sidecar (see "Done 2026-10-10"), the probe now
+      passes (54 words, worst 0.15 s, median 0.04 s) and two public-domain
+      sung recordings split into exactly their real lines. What is left is
+      taste only: generate lyrics for a song you know and say whether it
+      feels right — the fix needs a REGENERATE, old LRCs keep old timing.
 - [ ] **A2 Second-display eyes + HDMI yank** (~5 min) — TESTING.md § A2.
-      Closes FEAT-009.
+      Closes FEAT-009. Still needs a second physical display (this machine
+      has one monitor). The fps-cap lift is unit-tested (`effectiveFpsCap`).
 - [ ] **Launch kit** (not a gate) — hero pick, `[SLOT]` fills, `[VERIFY]`
       flags, three screen recordings, posting.
       Kit: `OneDrive\Documents\doc\beatform-launch-kit\`.
@@ -139,7 +160,7 @@ evidence is recorded here.
       session-only and nothing re-enables at boot, so saved bindings do
       nothing until the user clicks Enable. Recommended: **FINISH** — persist
       the enable flag and re-enable on boot (permission is granted Rust-side)
-      (S). Verdict: **FINISH** — closed 2026-09-03 (9c7daf8): `midiEnabled` lives in AppPrefs (additive boolean, validator defaults a missing key to false); `initApp` calls `restoreMidi()` quietly at boot; Enable sets the flag, Disable clears it. Prefs + midiActions tests. Device check pending: relaunch with MIDI left on and confirm it re-arms without a click.
+      (S). Verdict: **FINISH** — closed 2026-09-03 (9c7daf8): `midiEnabled` lives in AppPrefs (additive boolean, validator defaults a missing key to false); `initApp` calls `restoreMidi()` quietly at boot; Enable sets the flag, Disable clears it. Prefs + midiActions tests. Device check DONE 2026-10-10: `scripts/midi-e2e.mjs` leg 8 relaunches on the same profile, never calls Enable, and sees MIDI re-armed plus a saved CC binding applying exactly once (loopMIDI virtual port, the real WebView2 Web MIDI path).
 - [x] **HD-19 MIDI can bind only knob→param and note→mode.** Blackout,
       play/pause, Stage, next/previous mode, volume and A-B keys — the Perform
       drawer's own controls — have no MIDI target (src/state/midi.ts:35); the
@@ -147,7 +168,7 @@ evidence is recorded here.
       is limited to the active mode's mod-targetable params (no Global motion,
       Post, volume). Recommended: **FINISH the VJ core** — blackout,
       play/pause, next/prev mode as note targets, CC-learn from the drawer
-      (M) — and **DECLARE** the rest (S). Verdict: **FINISH core + DECLARE rest** — closed 2026-09-03 (9c7daf8): `CommandBinding` (blackout, playPause, nextMode, prevMode) dispatches the same store actions the keys take (`setBlackout` gated like the `0` key, `togglePlay`, `stepPreset` → beat-quantized queue); the Perform drawer carries a Pad picker with Learn note and a Knob picker with Learn CC over the active mode's mod targets; `validMidiBindings` round-trips the new kind and drops unknown commands. Guide MIDI text declares volume, A-B, Stage and Global/Post as keyboard-and-mouse only. Ledger claim corrected: the drawer never had play/pause or next/prev _buttons_ — the keys' store actions are the target. Device check pending: real controller pass (see the row's report).
+      (M) — and **DECLARE** the rest (S). Verdict: **FINISH core + DECLARE rest** — closed 2026-09-03 (9c7daf8): `CommandBinding` (blackout, playPause, nextMode, prevMode) dispatches the same store actions the keys take (`setBlackout` gated like the `0` key, `togglePlay`, `stepPreset` → beat-quantized queue); the Perform drawer carries a Pad picker with Learn note and a Knob picker with Learn CC over the active mode's mod targets; `validMidiBindings` round-trips the new kind and drops unknown commands. Guide MIDI text declares volume, A-B, Stage and Global/Post as keyboard-and-mouse only. Ledger claim corrected: the drawer never had play/pause or next/prev _buttons_ — the keys' store actions are the target. Device check DONE 2026-10-10: `scripts/midi-e2e.mjs` leg 7 note-learns all four commands through the real Web MIDI path; next/previous step the strip, play/pause toggles the transport, the blackout pad is inert outside Stage and fires inside it. A hardware controller sends the same messages through the same Windows MIDI stack.
 - [x] **HD-16 `loopback_died` is never polled.** The Rust command exists
       (src-tauri/src/loopback.rs:348, registered) and its doc says the
       frontend polls it to drop the "listening" indicator; no TS call site
@@ -187,7 +208,7 @@ evidence is recorded here.
       the entry's hash against the installed copy), and removal lives on a
       different surface than install with no label on the card. Recommended:
       **FINISH** hash-aware gate (S/M) + **DECLARE** the removal location on
-      the card (S). Verdict: **FINISH + DECLARE** — closed 2026-09-03 (93fb127): `installedLookState` compares the registry's per-entry sha256 with the digest recorded at install; a changed entry reads "Update look" and installs over the old copy through the verified path. The install record moved from session-only to a validated localStorage map (`viz.galleryInstalled.v1`, additive; no file format touched) — which also fixed the Gallery forgetting every install after a restart. Installed cards say removal lives under Visuals ▸ Looks & themes. Ledger claim corrected: the gate compared `minAppVersion`/`schemaVersion` (no `savedWith` exists). Device check pending: `node scripts/gallery-e2e.mjs` step 5b (update path).
+      the card (S). Verdict: **FINISH + DECLARE** — closed 2026-09-03 (93fb127): `installedLookState` compares the registry's per-entry sha256 with the digest recorded at install; a changed entry reads "Update look" and installs over the old copy through the verified path. The install record moved from session-only to a validated localStorage map (`viz.galleryInstalled.v1`, additive; no file format touched) — which also fixed the Gallery forgetting every install after a restart. Installed cards say removal lives under Visuals ▸ Looks & themes. Ledger claim corrected: the gate compared `minAppVersion`/`schemaVersion` (no `savedWith` exists). Device check DONE 2026-10-10: `node scripts/gallery-e2e.mjs` green against the live registry, step 5b included ("Update look" enabled, update installs over the old copy, same preset id, digest restored, persisted).
 - [x] **HD-12 Shadertoy import never warns.** `iChannel1-3` bind an empty
       texture, so shaders that sample them compile and silently render black
       there; multi-pass (Buffer A-D / Common) is not detected; the transpiler
@@ -239,24 +260,106 @@ evidence is recorded here.
       correctly; nothing to fix. Artifacts on devstorage
       (`artifacts/2026-09-02_webcodecs-color-probe`).
       user-reaching).
-- [ ] GPU matrix: transitions are proven on one non-feedback pair
+- [x] GPU matrix: transitions are proven on one non-feedback pair
       (spectrum-bars ← radial-burst) and post/motion on two modes; add a
       feedback-mode pair and a Builder pair (re-bless with proof).
-- [ ] `paramsTab` pref (src/state/prefs.ts:73) is frozen — validated,
+      **DONE 2026-10-10:** `transition/pair-feedback/mid` (echo-trails ←
+      spectrum-bars) and `transition/pair-builder/mid` (builder2 default stack
+      ← spectrum-bars), crossfade at mix 0.5 (`TRANSITION_PAIR_CASES`,
+      gpuMatrix.ts). `npm run test:gpu` first: the 348 existing hashes all
+      matched, the only drift was the two added ids; both rendered at 960×540
+      through the real WebGPU renderer and checked by eye (a clean 50/50 blend,
+      the echo history intact — no black frame); then `test:gpu:update` →
+      350 cases, baseline diff = 14 added lines, 0 changed.
+- [x] `paramsTab` pref (src/state/prefs.ts:73) is frozen — validated,
       persisted and diffed, consumed only by its own migration to
-      `visualsPage`. Drop it with a prefs migration + test, or leave with a
-      one-line comment.
+      `visualsPage`. **Closed 2026-10-10 as "leave":** its FROZEN (P-1)
+      docblock already says why it stays, and dropping it is a persisted-prefs
+      change the v3 program rules out.
 - [ ] Overgrowth mist seam sub-LSB inset (F4 nit): below one 8-bit LSB, frozen
       into the blessed baseline, cosmetic only — **parked** by decision.
 - [ ] exportWorker bundle duplicates the codec+renderer stacks (~1.0 MB,
       lazy-loaded; disk-only cost) — **parked** by decision.
 - [ ] mediabunny upstream: WebM CodecDelay=0 / SeekPreRoll misuse — issue text
       drafted in the archived audit reports; **posting is the owner's action**.
-- [ ] Review nanos, recorded: toggleLoop's 1 ms jump detector can misfire on an
-      AudioContext quantum tick; loopback worklet arms `delivered` on a
-      zero-frame delivery (Rust never sends one); redo after
-      shader-delete-undo does not re-delete (library merge semantics); Esc
-      with Stage active AND a dialog open exits Stage first.
+- [x] Review nanos — all four closed 2026-10-10:
+      (1) **toggleLoop's 1 ms jump detector misfired on a playing clock** —
+      FIXED: the engine counts its own playhead relocations
+      (`AudioEngine.relocations`) and the four loop/region actions compare
+      that count; a render-quantum tick between reads is no longer a
+      "teleport" (red-first test with a ticking clock in
+      loopToggleReset.test.ts, engine counter test in engineGraph.test.ts,
+      mutation-checked). (2) **loopback worklet armed `delivered` on a
+      zero-frame chunk** — FIXED (`if (frames > 0)`; red-first test).
+      (3) **redo after shader-delete-undo does not re-delete** — DECLARED: the
+      custom-shader library lives outside the document snapshots, so redo is
+      conservative (the shader stays in the library; nothing is lost). Making
+      redo delete again would need library state in the undo history.
+      (4) **Esc with Stage active and a dialog open** — FIXED at the cause:
+      Stage hides every `.modal-backdrop`, so H / Ctrl+, / B opened dialogs
+      nobody could see; those keys are now inert in Stage (guide says so).
+
+## Done 2026-10-10 — "do everything still open" pass (owner-initiated)
+
+Owner asked for every open row, test and nearby defect to be finished, with
+"requires the owner" notes treated as possibly stale. Gates: web set green
+(typecheck, lint, format, 3,233 vitest tests, build); Rust set green (fmt, clippy
+`-D warnings`, `cargo test --workspace`; on this machine with `-j 1`, see
+the environment note below).
+
+- [x] **Lyrics: first words lit seconds early; sung lines run together.**
+      Found by the new `scripts/lyrics-timing-probe.mjs` (A1's measurable
+      half). whisper.cpp token times are spread across a segment, not
+      measured, so a segment opening on an intro put its first words in the
+      intro and the per-line alignment window never held the voice (3.7 s
+      early). Now the sidecar aligns each whole whisper segment and cuts lines
+      at the singer's real pauses (`stage_segments` → `align_segments` →
+      `split_aligned` → `finish` in lines.rs/align.rs): a long gap always, a
+      0.6 s gap the VAD confirms, a breath near the middle of an over-long
+      line; a lone word rejoins the line it belongs to; the trailing
+      alignment pad stops at the next segment (it let "rain" grab the 'N' of
+      the next "Nothing"). Probe: 54/54 words, median 0.04 s, worst 0.15 s,
+      8 clean lines; Star-Spangled Banner solo → exactly its 8 lines; "Over
+      There" (1917) → its real lines. 60 sidecar unit tests.
+- [x] **Lyrics generation failed late on a PC short of memory.** The sidecar
+      held the isolation session (~2 GB) while whisper loaded; whisper died on
+      `GGML_ASSERT(buffer)` after the long isolation stage. Session and
+      decoded mix are now dropped first (shipped 2.111.0 sidecar fails both
+      real songs on this machine; the new one completes them). A remaining
+      out-of-memory now reads as plain words (`describeLyricsFailure`).
+- [x] **Export dialog shows time left** (finishes the HD-24 loose end:
+      `avgSpeed` was computed "for ETA math" and never shown) — `etaLabel`
+      in speedMeter.ts, silent before 5 %, tests in both files.
+- [x] **Device checks closed:** HD-18 + HD-19 (`midi-e2e.mjs` legs 7–8 over
+      loopMIDI), HD-13 (`gallery-e2e.mjs` incl. 5b), TESTING.md D3
+      (new `scripts/dock-device-pass.mjs`, 23 checks green — the letterbox
+      item was superseded by the full-bleed stage; the probe asserts the
+      current contract). HD-08 and HD-17 legs added to `lyrics-e2e.mjs`
+      (Cancel during a real re-align; Verify through the store + Remove), run
+      green 2026-10-11: see below.
+- [x] **Run `npm run test:lyrics:quick` after a reboot.** PASSED 2026-10-11
+      after a reboot (non-paged pool back to 0.57 GB): every leg OK —
+      download/cancel/resume/verify, generation (9 lines, 79 words timed),
+      editor leg incl. real re-align, **re-align Cancel (HD-08) stopped in
+      1.3 s with lines untouched**, mid-run cancel, **store Verify + Remove
+      (HD-17)**; exit 0. Before the reboot it was tried twice: it
+      passed download/cancel/resume/verify, then died in generation on memory
+      (DirectML 8007000E once, whisper aborting while loading the audio once) — this machine's
+      non-paged kernel pool sat at ~6.8 GB (a driver leak; candidates: the
+      Avira Security / Phantom VPN drivers installed 2026-09-23), leaving
+      ~2 GB of commit for the debug app plus the sidecar. Not a Beatform
+      defect; the same leg passed before the leak.
+- [x] **Pre-release device set for 2.112.0** (2026-10-11): `test:gpu` 350
+      cases, 0 raw hash deltas; `test:loopback:built` and `:30` green (the
+      30 fps leg failed twice only because a YouTube tab was playing — the
+      harness's own "idle baseline was not silent" note; green once paused).
+- [ ] **Full `npm run test:lyrics` cannot reach its Madness leg:** the
+      fixture `Muse - Madness.flac` is gone from devstorage (the hardcoded
+      path in `scripts/lyrics-e2e.mjs` still names the pre-rename
+      `claude-cache/beatform/bf-test/media/` layout; no copy anywhere on F:
+      outside `user-files`). Every leg before it passed on 2026-10-11. Needs
+      the owner's copy of the file restored to
+      `shared-cache\Beatform\` and the constant pointed at it.
 
 ## Done 2026-10-09 — beat-sync audit (owner-initiated; owner picked "fix all three")
 

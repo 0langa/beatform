@@ -11,6 +11,7 @@ import { wavFromPcm } from "../../audio/dsp/wav";
 import { pcmFromAudioBuffer } from "../../audio/offlineSource";
 import {
   blendMeasuredRtf,
+  describeLyricsFailure,
   formatBytes,
   missingModels,
   parseDownloadProgress,
@@ -308,7 +309,7 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       } catch (e) {
         const message = String((e as Error).message ?? e);
         if (message !== "cancelled") {
-          set({ error: `Lyrics generation failed: ${message}` });
+          set({ error: `Lyrics generation failed: ${describeLyricsFailure(message)}` });
         }
       } finally {
         set({ lyricsGen: { ...get().lyricsGen, phase: "idle", gen: null } });

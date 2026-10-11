@@ -5,6 +5,17 @@
 //! VAD is used to (a) drop hallucinated lines inside instrumental stretches,
 //! (b) split run-on segments that bridge a long vocal gap, and (c) keep
 //! timestamps monotonic. Deterministic post-processing, no model.
+//!
+//! Two ways to cut a segment into lines. Without the alignment model,
+//! `assemble` cuts at whisper's TOKEN timestamps. With it, the whole segment
+//! is aligned first (`stage_segments` -> align -> `split_aligned`) and the
+//! cuts fall on the ACOUSTIC word timing. That matters because whisper.cpp
+//! token times are not measured — without DTW they are spread across the
+//! segment — so a segment opening on an instrumental intro put its first
+//! words seconds before they were sung, and the per-line alignment window
+//! built from those times never contained the voice at all (measured
+//! 2026-10-10 with scripts/lyrics-timing-probe.mjs: the first three words of
+//! a song with a 4 s intro landed 3.7 s early).
 
 use crate::vad::{self, Region};
 use crate::whisper::{is_meta_token, is_non_speech_text, WhisperSegment};
@@ -44,6 +55,23 @@ const SPLIT_GAP_SEC: f64 = 1.5;
 const MAX_LINE_CHARS: usize = 120;
 /// Successive lines may not share a timestamp; nudge by this much.
 const MONOTONIC_STEP: f64 = 0.01;
+/// With acoustic word timing, a silence this long between two sung words
+/// ends a line — when the VAD agrees the gap is silent. A held note is not a
+/// gap to the VAD, even where CTC's spiky character spans leave one between
+/// the word boundaries.
+const PHRASE_GAP_SEC: f64 = 0.6;
+/// A worded line becomes active this long before its first word, so the
+/// line has faded in by the time the first word lights — never earlier than
+/// the previous line's end.
+const LINE_LEAD_SEC: f64 = 0.2;
+/// A worded line longer than this is cut at its widest inner pause of at
+/// least `SOFT_GAP_SEC` near the middle — two sung lines that one whisper
+/// segment and a VAD bridging the short breath between them ran together
+/// (measured on the Star-Spangled Banner solo: "...dawn's early light What so
+/// proudly..." came out as one 106-character line). Without such a pause the
+/// line stays whole up to the hard `MAX_LINE_CHARS` cap.
+const SOFT_LINE_CHARS: usize = 64;
+const SOFT_GAP_SEC: f64 = 0.35;
 
 /// When the VAD found less than this fraction of the track active AND less
 /// than this many absolute seconds — while the stem still HAS energy — the
@@ -63,13 +91,20 @@ pub struct AssembleInput<'a> {
     pub track_duration_sec: f64,
 }
 
-pub fn assemble(input: AssembleInput) -> Vec<Line> {
+fn vad_is_trusted(input: &AssembleInput) -> bool {
     let vad_active = vad::total_active(input.vad);
-    let vad_trusted = vad_active >= VAD_TRUST_MIN_SEC
+    vad_active >= VAD_TRUST_MIN_SEC
         || vad_active >= VAD_TRUST_MIN_FRACTION * input.track_duration_sec.max(1.0)
-        || input.stem_peak_db < vad::SILENT_STEM_PEAK_DB;
+        || input.stem_peak_db < vad::SILENT_STEM_PEAK_DB
+}
 
-    let mut lines: Vec<Line> = Vec::new();
+/// The segments that survive the non-speech and (a) hallucination filters,
+/// with their spans in seconds.
+fn kept_segments<'a>(
+    input: &AssembleInput<'a>,
+    vad_trusted: bool,
+) -> Vec<(&'a WhisperSegment, f64, f64)> {
+    let mut kept = Vec::new();
     for seg in input.segments {
         let text = seg.text.trim();
         if text.is_empty() || is_non_speech_text(text) {
@@ -89,14 +124,189 @@ pub fn assemble(input: AssembleInput) -> Vec<Line> {
                 continue;
             }
         }
+        kept.push((seg, s, e));
+    }
+    kept
+}
+
+/// Line-level assembly: segments cut at whisper's token timestamps. The
+/// result when no alignment model is available, and the per-segment fallback
+/// when a segment cannot be aligned as a whole.
+pub fn assemble(input: AssembleInput) -> Vec<Line> {
+    let vad_trusted = vad_is_trusted(&input);
+    let mut lines: Vec<Line> = Vec::new();
+    for (seg, s, e) in kept_segments(&input, vad_trusted) {
         // (b) run-on split at long internal vocal gaps, recursively.
         split_segment(seg, s, e, input.vad, vad_trusted, &mut lines);
     }
+    finish(lines)
+}
 
-    // (c) defensive length cap + monotonic timestamps.
+/// One kept whisper segment, unsplit, ready to be aligned as a whole.
+pub struct StagedSegment {
+    /// The whole segment as one line: its span is the alignment window.
+    pub line: Line,
+    /// The same segment cut at token timestamps (`assemble`'s answer) — used
+    /// when the segment cannot be aligned as a whole.
+    pub fallback: Vec<Line>,
+}
+
+pub struct Staged {
+    pub segments: Vec<StagedSegment>,
+    pub vad_trusted: bool,
+}
+
+/// Input to segment-level alignment: the kept segments, NOT cut into lines
+/// yet — the cuts wait for acoustic word timing (`split_aligned`).
+pub fn stage_segments(input: AssembleInput) -> Staged {
+    let vad_trusted = vad_is_trusted(&input);
+    let segments = kept_segments(&input, vad_trusted)
+        .into_iter()
+        .filter_map(|(seg, s, e)| {
+            let mut fallback = Vec::new();
+            split_segment(seg, s, e, input.vad, vad_trusted, &mut fallback);
+            let toks: String = seg
+                .tokens
+                .iter()
+                .filter(|t| !is_meta_token(&t.text))
+                .map(|t| t.text.as_str())
+                .collect();
+            let text = normalize_text(if toks.trim().is_empty() {
+                &seg.text
+            } else {
+                &toks
+            });
+            if text.is_empty() || is_non_speech_text(&text) {
+                return None;
+            }
+            Some(StagedSegment {
+                line: Line {
+                    t: s,
+                    end: e,
+                    text,
+                    words: Vec::new(),
+                },
+                fallback,
+            })
+        })
+        .collect();
+    Staged {
+        segments,
+        vad_trusted,
+    }
+}
+
+/// Cut one aligned segment into lines at the singer's real pauses: an
+/// inter-word gap of `SPLIT_GAP_SEC` always, or of `PHRASE_GAP_SEC` when a
+/// trusted VAD agrees the gap is mostly silent. Each line spans its own
+/// words; `finish` adds the lead-in and the length cap.
+pub fn split_aligned(words: Vec<Word>, regions: &[Region], vad_trusted: bool) -> Vec<Line> {
+    let mut pieces: Vec<Vec<Word>> = Vec::new();
+    let mut cur: Vec<Word> = Vec::new();
+    for w in words {
+        if let Some(prev) = cur.last() {
+            let gap = w.t - prev.end;
+            let silent = vad_trusted
+                && gap >= PHRASE_GAP_SEC
+                && vad::overlap(regions, prev.end, w.t) < 0.5 * gap;
+            if gap >= SPLIT_GAP_SEC || silent {
+                pieces.push(std::mem::take(&mut cur));
+            }
+        }
+        cur.push(w);
+    }
+    if !cur.is_empty() {
+        pieces.push(cur);
+    }
+    pieces.into_iter().map(worded_line).collect()
+}
+
+/// How far back a lone word that CLOSES a phrase (ends in punctuation) may
+/// reach to rejoin the line it ends.
+const ORPHAN_REACH_SEC: f64 = 2.5;
+
+/// A single word alone on a line is almost never how a song is sung — it is
+/// a held note or a breath cut out of its line, often at a whisper segment
+/// boundary. Measured on "Over There" (1917): "Send the word, send the word
+/// over" | "there." | "That the Yanks are coming". The lone word rejoins:
+/// - the line it CLOSES, when it ends in punctuation and sits within
+///   `ORPHAN_REACH_SEC` of it (whisper's period says which side it belongs to);
+/// - otherwise the nearer neighbour, when that gap is under `SPLIT_GAP_SEC`.
+///
+/// A word set apart by long gaps on both sides stays alone — that one really
+/// is on its own. Only word-timed lines take part.
+fn rejoin_orphans(mut lines: Vec<Line>) -> Vec<Line> {
+    let gap = |a: &Line, b: &Line| b.words[0].t - a.words[a.words.len() - 1].end;
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].words.len() != 1 {
+            i += 1;
+            continue;
+        }
+        let prev = (i > 0 && !lines[i - 1].words.is_empty()).then(|| gap(&lines[i - 1], &lines[i]));
+        let next = (i + 1 < lines.len() && !lines[i + 1].words.is_empty())
+            .then(|| gap(&lines[i], &lines[i + 1]));
+        let closes = lines[i].words[0]
+            .text
+            .ends_with(['.', '!', '?', ',', ';', ':']);
+        let into_prev = match (prev, next) {
+            (Some(p), _) if closes && p < ORPHAN_REACH_SEC => Some(true),
+            (Some(p), Some(n)) if p.min(n) < SPLIT_GAP_SEC => Some(p <= n),
+            (Some(p), None) if p < SPLIT_GAP_SEC => Some(true),
+            (None, Some(n)) if n < SPLIT_GAP_SEC => Some(false),
+            _ => None,
+        };
+        match into_prev {
+            Some(true) => {
+                let orphan = lines.remove(i);
+                let mut words = std::mem::take(&mut lines[i - 1].words);
+                words.extend(orphan.words);
+                lines[i - 1] = worded_line(words);
+            }
+            Some(false) => {
+                let following = lines.remove(i + 1);
+                let mut words = std::mem::take(&mut lines[i].words);
+                words.extend(following.words);
+                lines[i] = worded_line(words);
+                i += 1;
+            }
+            None => i += 1,
+        }
+    }
+    lines
+}
+
+fn worded_line(words: Vec<Word>) -> Line {
+    let t = words[0].t;
+    let end = words
+        .iter()
+        .map(|w| w.end)
+        .fold(t + MONOTONIC_STEP, f64::max);
+    Line {
+        t,
+        end,
+        text: words
+            .iter()
+            .map(|w| w.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
+        words,
+    }
+}
+
+/// (c) for any line list: lone words rejoined, defensive length cap, a short
+/// lead-in for worded lines (never into the previous line), then strictly
+/// monotonic timestamps.
+pub fn finish(lines: Vec<Line>) -> Vec<Line> {
     let mut capped: Vec<Line> = Vec::new();
-    for line in lines {
+    for line in rejoin_orphans(lines) {
         cap_length(line, &mut capped);
+    }
+    for i in 0..capped.len() {
+        if let Some(first) = capped[i].words.first().map(|w| w.t) {
+            let floor = if i > 0 { capped[i - 1].end } else { 0.0 };
+            capped[i].t = (first - LINE_LEAD_SEC).max(floor).min(first).max(0.0);
+        }
     }
     for i in 1..capped.len() {
         if capped[i].t <= capped[i - 1].t {
@@ -223,8 +433,19 @@ pub fn normalize_text(text: &str) -> String {
 /// for the tail are interpolated by character position — a defensive path
 /// (real whisper lines rarely hit the cap), so approximate timing is fine.
 fn cap_length(line: Line, out: &mut Vec<Line>) {
-    if line.text.chars().count() <= MAX_LINE_CHARS {
+    let chars = line.text.chars().count();
+    if chars > SOFT_LINE_CHARS && chars <= MAX_LINE_CHARS && line.words.len() >= 2 {
+        if let Some(k) = middle_boundary(&line, SOFT_GAP_SEC) {
+            split_worded_at(line, k, out);
+            return;
+        }
+    }
+    if chars <= MAX_LINE_CHARS {
         out.push(line);
+        return;
+    }
+    if line.words.len() >= 2 {
+        cap_worded(line, out);
         return;
     }
     let chars: Vec<char> = line.text.chars().collect();
@@ -263,10 +484,254 @@ fn cap_length(line: Line, out: &mut Vec<Line>) {
     }
 }
 
+/// The widest inter-word pause of at least `min_gap` among the boundaries
+/// in the middle 40% of the line's text (by characters), if any.
+fn middle_boundary(line: &Line, min_gap: f64) -> Option<usize> {
+    let total = line.text.chars().count() as f64;
+    let mut chars_before = 0usize;
+    let mut best: Option<(usize, f64)> = None;
+    for k in 1..line.words.len() {
+        chars_before += line.words[k - 1].text.chars().count() + 1;
+        let frac = chars_before as f64 / total;
+        let gap = line.words[k].t - line.words[k - 1].end;
+        if (frac - 0.5).abs() <= 0.2 && gap >= min_gap && best.is_none_or(|(_, g)| gap > g) {
+            best = Some((k, gap));
+        }
+    }
+    best.map(|(k, _)| k)
+}
+
+fn split_worded_at(line: Line, k: usize, out: &mut Vec<Line>) {
+    let mut words = line.words;
+    let tail = words.split_off(k);
+    cap_length(worded_line(words), out);
+    cap_length(worded_line(tail), out);
+}
+
+/// Word-timed lines split at a word boundary, so both halves keep exact
+/// timing: the widest pause among boundaries in the middle 40% of the text
+/// (by characters), else the boundary nearest the middle.
+fn cap_worded(line: Line, out: &mut Vec<Line>) {
+    let total = line.text.chars().count() as f64;
+    let mut chars_before = 0usize;
+    let mut best: Option<(usize, f64, f64)> = None; // (index, gap, distance)
+    for k in 1..line.words.len() {
+        chars_before += line.words[k - 1].text.chars().count() + 1;
+        let frac = chars_before as f64 / total;
+        let gap = line.words[k].t - line.words[k - 1].end;
+        let dist = (frac - 0.5).abs();
+        let better = match best {
+            None => true,
+            Some((_, best_gap, best_dist)) => match (dist <= 0.2, best_dist <= 0.2) {
+                (true, false) => true,
+                (false, true) => false,
+                (true, true) => gap > best_gap,
+                (false, false) => dist < best_dist,
+            },
+        };
+        if better {
+            best = Some((k, gap, dist));
+        }
+    }
+    let Some((k, _, _)) = best else {
+        out.push(line);
+        return;
+    };
+    let mut words = line.words;
+    let tail = words.split_off(k);
+    cap_length(worded_line(words), out);
+    cap_length(worded_line(tail), out);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::whisper::{MsSpan, WhisperToken};
+
+    fn word(t: f64, end: f64, text: &str) -> Word {
+        Word {
+            t,
+            end,
+            conf: 0.9,
+            text: text.to_string(),
+        }
+    }
+
+    /// The device probe's failure, reduced: a sung line after a 4 s intro and
+    /// a second line after a 1.6 s breath, all inside ONE whisper segment that
+    /// starts at 0. With acoustic word times the cut lands in the breath and
+    /// each line starts at its first word (minus the lead), not in the intro.
+    #[test]
+    fn aligned_words_cut_at_the_breath_and_lines_start_with_their_words() {
+        let words = vec![
+            word(4.0, 4.3, "Turn"),
+            word(4.5, 4.7, "the"),
+            word(4.8, 5.3, "lights"),
+            word(6.9, 7.2, "We"),
+            word(7.3, 7.6, "can"),
+            word(7.7, 8.2, "dance"),
+        ];
+        let vad = vec![region(4.0, 5.4), region(6.9, 8.3)];
+        let lines = finish(split_aligned(words, &vad, true));
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(lines[0].text, "Turn the lights");
+        assert_eq!(lines[1].text, "We can dance");
+        assert!((lines[0].t - 3.8).abs() < 1e-9, "{lines:?}");
+        assert!((lines[1].t - 6.7).abs() < 1e-9, "{lines:?}");
+        assert!((lines[0].end - 5.3).abs() < 1e-9);
+    }
+
+    /// A held note: CTC's spiky spans leave 0.8 s between two words, but the
+    /// VAD says the singer never stopped — no cut. The same gap over silence
+    /// IS a cut.
+    #[test]
+    fn a_held_note_is_not_a_phrase_gap_but_silence_is() {
+        // Two-word halves, so the lone-word rejoin cannot be what decides.
+        let words = |second: f64| {
+            vec![
+                word(1.0, 1.2, "Hold"),
+                word(1.25, 1.4, "on"),
+                word(second, second + 0.2, "tight"),
+                word(second + 0.25, second + 0.4, "now"),
+            ]
+        };
+        let sung_through = vec![region(0.9, 2.7)];
+        assert_eq!(split_aligned(words(2.2), &sung_through, true).len(), 1);
+        let breath = vec![region(0.9, 1.45), region(2.15, 2.7)];
+        assert_eq!(split_aligned(words(2.2), &breath, true).len(), 2);
+        // An untrusted VAD can only cut at the long gap.
+        assert_eq!(split_aligned(words(2.2), &breath, false).len(), 1);
+        assert_eq!(split_aligned(words(3.0), &[], false).len(), 2);
+    }
+
+    /// "Over There": a breath before the last word must not leave it alone
+    /// on a line — but a word set apart by a long gap stays on its own.
+    #[test]
+    fn a_lone_word_after_a_short_pause_rejoins_its_line() {
+        let words = vec![
+            word(10.0, 10.3, "send"),
+            word(10.4, 10.7, "the"),
+            word(10.8, 11.2, "word"),
+            word(11.3, 11.7, "over"),
+            word(12.5, 13.0, "there."),
+        ];
+        let breath = vec![region(9.9, 11.75), region(12.45, 13.1)];
+        let lines = finish(split_aligned(words, &breath, true));
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0].text, "send the word over there.");
+
+        let far = vec![
+            word(10.0, 10.3, "hey"),
+            word(10.4, 10.8, "you"),
+            word(13.0, 13.4, "there"),
+        ];
+        let lines = finish(split_aligned(far, &[], false));
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(lines[1].text, "there");
+    }
+
+    /// The device case exactly: the lone word sits at a whisper segment
+    /// boundary, 1.54 s after the line it closes and touching the next one.
+    /// Its period says it ends the line before.
+    #[test]
+    fn a_lone_closing_word_rejoins_the_line_it_ends_across_segments() {
+        let lines = finish(vec![
+            worded_line(vec![word(76.46, 76.9, "word"), word(77.06, 77.34, "over")]),
+            worded_line(vec![word(78.88, 78.98, "there.")]),
+            worded_line(vec![word(78.92, 79.1, "That"), word(79.18, 79.5, "the")]),
+        ]);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(lines[0].text, "word over there.");
+        assert_eq!(lines[1].text, "That the");
+    }
+
+    /// Two sung lines one whisper segment ran together: over the soft limit
+    /// they part at the breath near the middle; a long line with no such
+    /// breath stays whole.
+    #[test]
+    fn a_long_line_parts_at_a_breath_near_its_middle() {
+        let text = "O say can you see by the dawn's early light What so proudly we hailed at the twilight's last gleaming";
+        let mut words = Vec::new();
+        let mut t = 0.0;
+        for w in text.split(' ') {
+            t += if w == "What" { 0.6 } else { 0.1 };
+            words.push(word(t, t + 0.3, w));
+            t += 0.3;
+        }
+        let lines = finish(vec![worded_line(words)]);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(lines[0].text, "O say can you see by the dawn's early light");
+        assert!(lines[1].text.starts_with("What so proudly"));
+
+        let even: Vec<Word> = text
+            .split(' ')
+            .enumerate()
+            .map(|(i, w)| word(i as f64 * 0.4, i as f64 * 0.4 + 0.3, w))
+            .collect();
+        assert_eq!(finish(vec![worded_line(even)]).len(), 1);
+    }
+
+    /// The lead-in never reaches back into the previous line.
+    #[test]
+    fn the_lead_in_stops_at_the_previous_line() {
+        let lines = finish(vec![
+            worded_line(vec![word(1.0, 1.5, "one"), word(1.6, 2.0, "two")]),
+            worded_line(vec![word(2.1, 2.3, "three"), word(2.35, 2.5, "four")]),
+        ]);
+        assert!((lines[0].t - 0.8).abs() < 1e-9);
+        assert!((lines[1].t - 2.0).abs() < 1e-9, "{lines:?}");
+        assert!(lines[1].t <= lines[1].words[0].t);
+    }
+
+    /// Over-long worded lines split at a word boundary, keeping every word's
+    /// timing, and prefer the widest pause near the middle.
+    #[test]
+    fn over_long_worded_lines_split_at_the_widest_middle_pause() {
+        let mut words = Vec::new();
+        let mut t = 0.0;
+        for i in 0..30 {
+            // A 0.5 s pause before word 16; 0.05 s everywhere else.
+            t += if i == 16 { 0.5 } else { 0.05 };
+            words.push(word(t, t + 0.2, "abcd"));
+            t += 0.2;
+        }
+        let lines = finish(vec![worded_line(words)]);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(lines[0].words.len(), 16);
+        assert_eq!(lines[1].words.len(), 14);
+        for l in &lines {
+            assert!(l.text.chars().count() <= MAX_LINE_CHARS);
+            assert_eq!(l.words.len(), l.text.split_whitespace().count());
+        }
+    }
+
+    #[test]
+    fn staged_segments_stay_whole_and_carry_the_token_split_as_fallback() {
+        let segments = vec![seg(
+            0,
+            25_000,
+            " first phrase second phrase",
+            &[
+                (0, 4_000, " first"),
+                (4_000, 9_000, " phrase"),
+                (15_000, 20_000, " second"),
+                (20_000, 25_000, " phrase"),
+            ],
+        )];
+        let vad = vec![region(0.0, 10.0), region(15.0, 25.0)];
+        let staged = stage_segments(AssembleInput {
+            segments: &segments,
+            vad: &vad,
+            stem_peak_db: -10.0,
+            track_duration_sec: 30.0,
+        });
+        assert!(staged.vad_trusted);
+        assert_eq!(staged.segments.len(), 1);
+        let s = &staged.segments[0];
+        assert_eq!(s.line.text, "first phrase second phrase");
+        assert!((s.line.t - 0.0).abs() < 1e-9 && (s.line.end - 25.0).abs() < 1e-9);
+        assert_eq!(s.fallback.len(), 2);
+    }
 
     fn seg(from_ms: i64, to_ms: i64, text: &str, tokens: &[(i64, i64, &str)]) -> WhisperSegment {
         WhisperSegment {

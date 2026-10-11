@@ -54,3 +54,31 @@ export class SpeedMeter {
     };
   }
 }
+
+/** Below this fraction done the long-run average still carries the startup
+ * burst (the encoder queue filling at render speed — see `speed` above), so
+ * an estimate would promise too little time. */
+export const ETA_MIN_FRACTION = 0.05;
+
+/**
+ * "About 3 min left" for a running export, from the long-run average — never
+ * from the windowed `speed`, which swings with every momentary hiccup. Null
+ * when there is nothing honest to say yet: too early in the run, no average,
+ * or nothing left.
+ */
+export function etaLabel(
+  done: number,
+  total: number,
+  avgSpeed: number | null | undefined,
+): string | null {
+  if (!avgSpeed || avgSpeed <= 0 || total <= 0 || done >= total) return null;
+  if (done / total < ETA_MIN_FRACTION) return null;
+  const sec = (total - done) / avgSpeed;
+  if (!Number.isFinite(sec)) return null;
+  if (sec < 10) return "a few seconds left";
+  const fives = Math.round(sec / 5) * 5;
+  if (fives < 60) return `about ${fives} s left`;
+  const min = Math.max(1, Math.round(sec / 60));
+  if (min < 60) return `about ${min} min left`;
+  return `about ${Math.floor(min / 60)} h ${min % 60} min left`;
+}

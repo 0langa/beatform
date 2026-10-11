@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SPEED_WINDOW_MS, SpeedMeter } from "./speedMeter";
+import { SPEED_WINDOW_MS, SpeedMeter, etaLabel } from "./speedMeter";
 
 /**
  * HD-24 — one fps meter for both export lanes.
@@ -52,5 +52,35 @@ describe("SpeedMeter", () => {
     const r = m.sample(500, 0);
     expect(r.speed).toBeNull();
     expect(r.avgSpeed).toBeNull();
+  });
+});
+
+/**
+ * The export dialog's time-left readout. It reads the long-run average
+ * (avgSpeed), never the window, and stays silent until the run is past the
+ * startup burst — a first-second estimate is the one users learn to ignore.
+ */
+describe("etaLabel", () => {
+  it("is silent before the run is 5% through, without an average, or when done", () => {
+    expect(etaLabel(4, 100, 10)).toBeNull();
+    expect(etaLabel(50, 100, null)).toBeNull();
+    expect(etaLabel(50, 100, undefined)).toBeNull();
+    expect(etaLabel(50, 100, 0)).toBeNull();
+    expect(etaLabel(100, 100, 10)).toBeNull();
+    expect(etaLabel(0, 0, 10)).toBeNull();
+  });
+
+  it("reads the remaining frames over the long-run average", () => {
+    // 900 frames left at 30 fps = 30 s.
+    expect(etaLabel(100, 1000, 30)).toBe("about 30 s left");
+    // 7200 frames left at 40 fps = 180 s.
+    expect(etaLabel(800, 8000, 40)).toBe("about 3 min left");
+  });
+
+  it("uses coarse steps a user can read at a glance", () => {
+    expect(etaLabel(95, 100, 1)).toBe("a few seconds left"); // 5 s
+    expect(etaLabel(50, 100, 50 / 57)).toBe("about 55 s left"); // 57 s → 55
+    expect(etaLabel(10, 100, 90 / 59)).toBe("about 1 min left"); // 59 s → never "60 s"
+    expect(etaLabel(10, 100, 90 / 3900)).toBe("about 1 h 5 min left"); // 65 min
   });
 });

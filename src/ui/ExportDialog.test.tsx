@@ -227,6 +227,23 @@ describe("an unavailable tile refuses input but stays reachable", () => {
   });
 });
 
+/**
+ * The run's long-run average (avgSpeed) was computed "for ETA math" and then
+ * never shown. The status line now says how long is left, once the run is
+ * far enough along for the average to be honest (export/speedMeter.ts).
+ */
+describe("time left", () => {
+  it("shows the estimate from the long-run average beside the live fps", () => {
+    mount({ exporting: { done: 500, total: 1000, speed: 40, avgSpeed: 50 } });
+    expect(screen.getByText(/frame 500\/1000 · 40 fps · about 10 s left/)).toBeTruthy();
+  });
+
+  it("stays quiet before the average means anything", () => {
+    mount({ exporting: { done: 10, total: 1000, speed: 40, avgSpeed: 90 } });
+    expect(screen.getByText(/frame 10\/1000 · 40 fps$/)).toBeTruthy();
+  });
+});
+
 describe("the codec row is the machine's capability map", () => {
   it("shows all four codecs on a machine that supports only H.264", () => {
     // Pre-P-8 this row vanished below two supported codecs — on exactly the
