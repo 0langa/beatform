@@ -20,7 +20,7 @@
 
 Tauri 2 + React + TypeScript, WebGPU rendering (Canvas2D fallback), Rust core.
 
-Runs on **Windows 10/11 (x64)** — a ~57 MB installer from [Releases](https://github.com/0langa/beatform/releases/latest), no account, no setup wizard questions. macOS/Linux builds aren't offered yet; the stack (Tauri 2) supports them, so open an issue if you'd use one.
+Runs on **Windows 10/11 (x64)** — a ~60 MB installer from [Releases](https://github.com/0langa/beatform/releases/latest), no account, no setup wizard questions. macOS/Linux builds aren't offered yet; the stack (Tauri 2) supports them, so open an issue if you'd use one.
 
 Free and open source. Built to become a professional-grade tool for producers and artists — local-first, no cloud rendering, no watermarks, no subscriptions.
 
@@ -285,14 +285,17 @@ shipped** — beat-quantized switching, Web MIDI, Stage mode, and the
 second-display output window with its Perform drawer all landed (v2.104.0).
 Everything stays free and open source, GitHub-only, with no monetization.
 
-**Toward 3.0.0.** Version 3.0.0 is the release after which Beatform can sit
-stable for a while: nothing that was started ships half-done, every 2.x
-project, look, theme and shader file opens unchanged, and the updater carries
-every 2.x install forward. It is not a feature release. The ordered plan is
-[`docs/V3-RELEASE-PLAN.md`](docs/V3-RELEASE-PLAN.md); the open rows, the
-half-done inventory with its verdicts, and the explicit non-goals live in
-[`BACKLOG.md`](BACKLOG.md) — the canonical detailed queue. Development
-continues on the 2.x line until that plan closes.
+**3.0.0 — the stable cut.** Version 3.0.0 is the release after which
+Beatform sits still for a while: nothing that was started ships half-done,
+every 2.x project, look, theme and shader file opens unchanged, and the
+updater carries every 2.x install forward. It is not a feature release —
+the features landed across the 2.x line, the last of them in v2.113.0. How
+it was prepared is [`docs/V3-RELEASE-PLAN.md`](docs/V3-RELEASE-PLAN.md);
+the ledger with every verdict and the explicit non-goals is
+[`BACKLOG.md`](BACKLOG.md). After 3.0.0 the project sits; when work
+resumes it runs on the 3.x line under the same gates, the same ledger and
+the same determinism law — new ideas go through the ledger, never straight
+into a release.
 
 Manual acceptance evidence lives in [`TESTING.md`](TESTING.md) (the current
 batch) and [`archive/ledgers/`](archive/ledgers/README.md) (every earlier run,

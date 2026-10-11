@@ -5,6 +5,18 @@ _Re-cut 2026-09-02 against v2.108.0 (shipped 2026-08-21). Supersedes the
 started. The live work ledger stays `BACKLOG.md` — rows close there; this
 document orders them and defines what "ready" means._
 
+> **Status 2026-10-11.** Steps 1–3 are shipped (v2.111.0 … v2.113.0). The
+> agent side of step 5 is prepared on `main`: the `[Unreleased]` changelog
+> holds the 3.0.0 milestone note, the README roadmap reads for the 3.0 era,
+> and the device battery was run on the v2.113.0 tree (GPU matrix, export
+> colorimetry, Shadertoy smoke, both loopback smokes, gallery E2E, lyrics
+> E2E — evidence in `BACKLOG.md`). Open: the owner's A1 and A2 checks
+> (`TESTING.md`) and the owner's go. The cut is then one command,
+> `node scripts/release.mjs 3.0.0 --title "Beatform 3.0" --gates-ran`,
+> rerun with `--continue` after it scaffolds the changelog heading (the
+> notes are already written); the 3.0.0 diff must carry no `schemaVersion`,
+> migration or preset-ID edit — review that in the release commit._
+
 ## The bar
 
 v3.0.0 has always been a conviction bar — _"this is exactly how I want Beatform

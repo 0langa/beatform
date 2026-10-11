@@ -13,9 +13,12 @@ pixel matrix, export colorimetry, gallery E2E, loopback smokes, Shadertoy
 smoke, lyrics E2E) guard every surface they can; the items below are only what
 automation cannot judge — the owner's eyes and the install/update path.
 
-**State as of:** _batch not yet opened — fill in the installed version and
-repository HEAD when the last 2.x release (v2.110.x per
-[docs/V3-RELEASE-PLAN.md](docs/V3-RELEASE-PLAN.md)) is installed._
+**State as of 2026-10-11:** the last 2.x release is **v2.113.0** "Tunnel
+flies forward" (published and verified; the owner's in-app update to it is
+the first manual step below). Repository HEAD carries the 3.0.0 docs diff on
+top of it; the 3.0.0 candidate is that tree plus the version bump
+`release.mjs` makes. A1 and A2 below are the only open gates before the
+owner's go.
 
 ## Environment facts (read first)
 

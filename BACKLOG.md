@@ -52,6 +52,31 @@ battery. The tag waits for the owner's explicit go.
       live failure behind it was C: at 10 MB free: the updater writes the
       60 MB installer to `%TEMP%` first; freeing space fixed the update.
 
+## 3.0.0 readiness (prepared 2026-10-11 — the cut waits for the owner)
+
+Everything agent-side from docs/V3-RELEASE-PLAN.md §5 is on `main`:
+
+- [x] Half-done inventory empty (every HD row closed, verdicts executed and
+      shipped in v2.111.0).
+- [x] The 3.0.0 changelog is written under `## [Unreleased]` (milestone note + the delta since v2.113.0); `release.mjs` moves it under the
+      `## [3.0.0]` heading it scaffolds.
+- [x] README roadmap, TESTING.md state line, the plan's status note and the
+      CLAUDE.md v3 rule read for the 3.0 era; no "2.x-era" phrasing left in
+      the public docs; the guide needed no regeneration (no UI string moved).
+- [x] Device battery on the v2.113.0 tree (+ Radial Burst, docs only
+      since): GPU matrix (351 cases, blessed with exact drift), export
+      colorimetry PASS, Shadertoy smoke PASS, loopback 60 + 30 fps PASS,
+      gallery E2E and lyrics E2E — see the rows below for the evidence
+      lines.
+- [ ] **A1** and **A2** (TESTING.md) — owner.
+- [ ] **The owner's go.** Then, from a clean `main`:
+      `node scripts/release.mjs 3.0.0 --title "Beatform 3.0" --gates-ran`,
+      rerun with `--continue` once it has scaffolded the heading. Review the
+      release commit for the one rule a major version does not relax: no
+      `schemaVersion`, migration or preset-ID edit. After publish: TESTING.md
+      D1 / D2, supersede the RECALL `beatform.latest_release` card, close
+      this ledger section.
+
 ## Owner-pending (only the owner can close these)
 
 - [x] **Verdict round** — done: every HD row below carries its verdict and
@@ -328,9 +353,13 @@ mixer noise in that band. The harness now also plays 60 Hz (inside the
 kick band): `test:loopback:built` PASS (48 kHz, response 266 ms, depth
 69.3 ms, visible 100 %, 0 underruns) and `test:loopback:built:30` PASS
 (response 267 ms, depth 89.3 ms, visible 100 %, 0 underruns), both on the
-2.113 tree + Radial Burst. Remaining battery rows for the 3.0 cut: gallery
-E2E and lyrics E2E (both green 2026-10-10/11 on the 2.112 tree; rerun on
-the final tree).
+2.113 tree + Radial Burst. `node scripts/gallery-e2e.mjs` GALLERY-E2E OK
+against the live registry; `npm run test:lyrics:quick` LYRICS-E2E OK
+(download + cancel + resume + verify, corpus generation 8 lines / 79 words
+timed, editor leg with a real re-align and its Cancel in 1.07 s, mid-run
+cancel, store Verify + Remove) — both 2026-10-11 on the same tree. That
+completes the six-row battery of docs/V3-RELEASE-PLAN.md §5 on the 3.0.0
+candidate (docs-only commits since).
 
 - [x] **Tunnel travel model — continuous flight.** Cause found in the
       shader: `travelT = t·v + drive·k + kick·stride` — loudness and the beat

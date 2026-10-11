@@ -11,6 +11,32 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+**Beatform 3.0.** The release after which Beatform sits still for a while:
+nothing that was started ships half-done, every 2.x project, look, theme and
+shader file opens unchanged, and every 2.x install updates straight into it.
+Not a feature release — the features landed across the 2.x line. This is
+what Beatform is now:
+
+- **Twenty visual modes**, every one with factory looks, the global
+  Saturation + Lightness pair and the same curated-knob layout — from
+  Spectrum Bars and Tunnel to the four newest: Spectro Falls (the song draws
+  itself), Lyric Stage (the words take the stage), Gatefold (the artwork is
+  the show) and Overgrowth (a living culture the music farms). Plus the
+  Builder, a layer compositor, and Shadertoy import.
+- **Frame-exact exports.** Preview and export resolve the same frames from the
+  same project, by law: everything time-dependent reads track time, never the
+  clock. MP4 / WebM, PNG frames, ProRes 4444 and AV1 10-bit with true deep
+  colour and alpha, GIF and WebP, canvas loops, batch renders.
+- **Lyrics, locally.** Generate word-timed lyrics on your own PC — vocal
+  isolation, transcription, alignment; nothing leaves the machine — correct
+  them in the editor, render them as captions or on the Lyric Stage.
+- **Live performance.** Stage mode, beat-quantized switching, Web MIDI knobs
+  and pads, a second-display output window with its Perform drawer, and
+  system-audio capture for a set with no file at all.
+- **The Gallery.** Community looks and themes, reviewed and verified before
+  they touch your setup; one click to apply, one to update.
+- **Free, open source, GitHub-only.** No paid tier, no cloud, no telemetry.
+
 ### Changed
 
 - **Radial Burst's edge waves no longer whip back and forth on the beat.**
