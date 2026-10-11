@@ -305,6 +305,10 @@ export function demoFeatures(t: number): AudioFeatures {
     sectionPulse: Math.exp(-(t % 15) * 4),
     chroma,
     vocal: 0.45 + 0.35 * Math.sin(t * 0.8), // slow sung/instrumental swell
+    // Loudness-integrated time: a gentle, strictly monotonic swell around t
+    // (d/dt = 1 + 0.104·sin(1.3t) > 0) so the u.travel lane the GPU matrix
+    // pins carries a real loud/quiet deviation, not a copy of u.time.
+    travel: t + 0.08 * (1 - Math.cos(t * 1.3)),
   };
 }
 

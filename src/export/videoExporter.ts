@@ -9,6 +9,7 @@ import type { BgSettings, ParamValues } from "../render/types";
 // bundle (exportWorker.ts) keeps its own static import, unchanged.
 import type { ExportCoreResult, ExportJob, LoudnessJob, LoudnessResult } from "./exportCore";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
+import { shiftTravelCurve, type TravelCurve } from "../audio/analysis/travel";
 import type { VocalSpan } from "../audio/vocalPresence";
 import type { VideoCodecId } from "./codecProbe";
 import { shiftStemAnalysis, type StemEntry } from "../audio/stems";
@@ -67,6 +68,8 @@ export interface ExportOptions {
   beatGrid?: BeatGrid;
   /** Section boundaries in TRACK time; shifted for segments like the grid. */
   sections?: number[];
+  /** Loudness-integrated time curve in TRACK time; rebased for segments. */
+  travel?: TravelCurve;
   /** Sung spans in TRACK time (vocal presence); shifted like the grid. */
   vocalSpans?: VocalSpan[];
   /** Modulation routes for the active preset. */
@@ -501,6 +504,10 @@ export async function exportVideo(audio: AudioBuffer, o: ExportOptions): Promise
     // export slices the audio to 0, so unshifted boundaries would fire
     // sectionPulse at the wrong moments (or, for a late segment, never).
     sections: o.sections && o.segment ? o.sections.map((t) => t - o.segment!.start) : o.sections,
+    // The travel curve is TRACK time like the grid: rebased so the clip's
+    // travel starts at 0 with its time, and every per-frame difference is
+    // the one the preview shows at the same track moment.
+    travel: o.travel && o.segment ? shiftTravelCurve(o.travel, o.segment.start) : o.travel,
     vocalSpans:
       o.vocalSpans && o.segment
         ? o.vocalSpans.map((s) => ({

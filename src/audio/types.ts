@@ -121,6 +121,18 @@ export interface AudioFeatures {
    * NOT a DSP estimate; `voice` remains the voice-band energy. 0 when no
    * timed lyrics are loaded. */
   vocal?: number;
+  /**
+   * Loudness-integrated track time, seconds (analysis/travel.ts): advances
+   * at 1 s/s on average over the whole track, faster through loud passages,
+   * slower through quiet ones, never backwards. Equals `time` until the
+   * track's analysis lands, on live input, and for constant-loudness audio.
+   * The deterministic stand-in for "integrate loudness into speed": modes
+   * that want a camera to surge with the music read `u.travel` instead of
+   * folding `drive` into a position (which runs backwards when the music
+   * drops). Clip-relative like `time` — a segment export's curve is rebased
+   * so every per-frame difference matches the preview at the same moment.
+   */
+  travel?: number;
 }
 
 /** What the visuals react to — the primary sync source. */

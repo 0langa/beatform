@@ -106,7 +106,13 @@ const engine = {
   dispose: vi.fn(),
 };
 
-const analyzer = { setSync: vi.fn(), setBeatGrid: vi.fn(), setSections: vi.fn(), reset: vi.fn() };
+const analyzer = {
+  setSync: vi.fn(),
+  setBeatGrid: vi.fn(),
+  setSections: vi.fn(),
+  setTravel: vi.fn(),
+  reset: vi.fn(),
+};
 
 vi.mock("./services", () => ({
   initServices: vi.fn(() => vi.fn()),
@@ -302,7 +308,7 @@ async function loadAndAnalysePreviousTrack() {
   engineState.buffer = OLD_AUDIO;
   const analysis = armAnalysis();
   s().analyzeCurrentTrack();
-  analysis.resolve({ grid: OLD_GRID, key: OLD_KEY, sections: OLD_SECTIONS });
+  analysis.resolve({ grid: OLD_GRID, key: OLD_KEY, sections: OLD_SECTIONS, travel: null });
   await flush();
   expect(s().beatGrid).toEqual(OLD_GRID);
   expect(s().sections).toEqual(OLD_SECTIONS);
@@ -384,7 +390,7 @@ async function completeTheLoad(
   const analysis = armAnalysis();
   tagScans[0].resolve("Next");
   await flush();
-  analysis.resolve({ grid, key, sections });
+  analysis.resolve({ grid, key, sections, travel: null });
   await flush();
 }
 
@@ -430,7 +436,7 @@ beforeEach(async () => {
   // so every test starts with nothing outstanding.
   const drain = armAnalysis();
   s().analyzeCurrentTrack();
-  drain.resolve({ grid: OLD_GRID, key: null, sections: OLD_SECTIONS });
+  drain.resolve({ grid: OLD_GRID, key: null, sections: OLD_SECTIONS, travel: null });
   await flush();
   expect(s().analyzing).toBe(false);
   vi.mocked(analyzeTrack).mockReset();
@@ -537,7 +543,7 @@ describe("a load voids the previous track's analysis at the audio, not at the ta
     const analysis = armAnalysis();
     engineState.play.resolve();
     await flush();
-    analysis.resolve({ grid: NEW_GRID, key: NEW_KEY, sections: NEW_SECTIONS });
+    analysis.resolve({ grid: NEW_GRID, key: NEW_KEY, sections: NEW_SECTIONS, travel: null });
     await load;
     await flush();
 
@@ -704,7 +710,7 @@ describe("`analyzing` is never left stuck by the earlier invalidation", () => {
 
     expect(s().error).toContain("Could not decode");
     expect(s().analyzing).toBe(true); // still coming — do not open the gate
-    analysis.resolve({ grid: NEW_GRID, key: null, sections: NEW_SECTIONS });
+    analysis.resolve({ grid: NEW_GRID, key: null, sections: NEW_SECTIONS, travel: null });
     await flush();
     expect(s().analyzing).toBe(false);
     expect(s().beatGrid).toEqual(NEW_GRID);
@@ -768,7 +774,7 @@ describe("`analyzing` is never left stuck by the earlier invalidation", () => {
     const analysis = armAnalysis();
     tagScans[1].resolve("B");
     await flush();
-    analysis.resolve({ grid: NEW_GRID, key: null, sections: NEW_SECTIONS });
+    analysis.resolve({ grid: NEW_GRID, key: null, sections: NEW_SECTIONS, travel: null });
     await loadB;
     await flush();
 
@@ -829,7 +835,7 @@ describe("a queued quantized switch cannot survive onto new content (R2-19)", ()
       const analysis = armAnalysis();
       engineState.play.resolve();
       await flush();
-      analysis.resolve({ grid: NEW_GRID, key: NEW_KEY, sections: NEW_SECTIONS });
+      analysis.resolve({ grid: NEW_GRID, key: NEW_KEY, sections: NEW_SECTIONS, travel: null });
       await load;
       await flush();
       expect(s().beatGrid).toEqual(NEW_GRID);
@@ -959,7 +965,7 @@ describe("a superseding load releases the waiter it inherits", () => {
     // …and A's worker then replies into a store that DROPS the result at
     // `id !== analysisId`. Nobody downstream of A settles anything after that,
     // which is precisely why the superseding load has to do it.
-    jobA.resolve({ grid: OLD_GRID, key: OLD_KEY, sections: OLD_SECTIONS });
+    jobA.resolve({ grid: OLD_GRID, key: OLD_KEY, sections: OLD_SECTIONS, travel: null });
 
     // Woken by the release, and refused rather than rendered: `buf` is A's
     // audio and everything read after the wait would be B's. Waited for by
@@ -982,7 +988,7 @@ describe("a superseding load releases the waiter it inherits", () => {
     const jobB = armAnalysis();
     tagScans[1].resolve("B");
     await flush();
-    jobB.resolve({ grid: NEW_GRID, key: NEW_KEY, sections: NEW_SECTIONS });
+    jobB.resolve({ grid: NEW_GRID, key: NEW_KEY, sections: NEW_SECTIONS, travel: null });
     await loadB;
     await flush();
     expect(s().beatGrid).toEqual(NEW_GRID);

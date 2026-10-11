@@ -181,6 +181,10 @@ export interface PipelineInput {
   /** Lyrics-derived vocal presence for this frame — sources resolve it from
    * the timed-lyrics spans via `vocalPresenceAt` (undefined = keep previous). */
   vocal?: number;
+  /** Loudness-integrated track time for this frame — sources resolve it from
+   * the track's travel curve via `travelAt`. Undefined = plain `time` (NOT
+   * keep-previous: a frame without a curve must still move at 1 s/s). */
+  travel?: number;
 }
 
 /**
@@ -352,6 +356,7 @@ export class FeaturePipeline {
       sectionPulse: 0,
       chroma: this.chromaSmooth,
       vocal: 0,
+      travel: 0,
     };
   }
 
@@ -770,6 +775,7 @@ export class FeaturePipeline {
     if (input.sectionIndex !== undefined) f.sectionIndex = input.sectionIndex;
     if (input.sectionPulse !== undefined) f.sectionPulse = input.sectionPulse;
     if (input.vocal !== undefined) f.vocal = input.vocal;
+    f.travel = input.travel !== undefined ? input.travel : input.time;
 
     f.time = input.time;
     f.duration = input.duration;
@@ -850,6 +856,7 @@ export class FeaturePipeline {
       this.features.sectionIndex = -1;
       this.features.sectionPulse = 0;
       this.features.vocal = 0;
+      this.features.travel = 0;
       this.chromaSmooth.fill(0);
       // R2-32a: the grid readouts join them. The keep-previous convention
       // otherwise held the DEAD track's BPM/phases across a load or live

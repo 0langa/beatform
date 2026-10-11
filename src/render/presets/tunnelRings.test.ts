@@ -225,7 +225,11 @@ describe("tunnel depth wave (v2.76)", () => {
     hue: 15,
     hueSpread: 70,
     colorFade: 0,
-    speed: 0.15,
+    // 0.15 through 2.112; retuned to 0.45 by the 3.0 travel rework (its own
+    // deliberate commit, with the whole tunnel re-blessed): with the loudness
+    // and beat shoves gone from the camera POSITION, the cruise is the
+    // motion, and 0.15 idled. Saved documents keep their stored value.
+    speed: 0.45,
     rings: 7,
     spokes: 12,
     beatPulse: 0.7,
@@ -258,9 +262,10 @@ describe("tunnel depth wave (v2.76)", () => {
     }
   });
 
-  it("adds exactly the three wave params (and the HD-06 colour pair) on top of the pre-wave set", () => {
+  it("adds exactly the three wave params (the HD-06 colour pair, and the 3.0 travel trio) on top of the pre-wave set", () => {
     // saturation/lightness are the strip-wide pair every mode carries since
-    // 2.111.0 — not part of the wave, but part of the census.
+    // 2.111.0 — not part of the wave, but part of the census. sway/lamps/dust
+    // are the 3.0 travel rework's three opt-in cues.
     expect(
       allParams(tunnelRings)
         .map((p) => p.key)
@@ -273,6 +278,10 @@ describe("tunnel depth wave (v2.76)", () => {
         "junction",
         "saturation",
         "lightness",
+        "sway",
+        "lamps",
+        "dust",
+        "roll",
       ].sort(),
     );
   });
@@ -485,6 +494,7 @@ describe("tunnel depth wave (v2.76)", () => {
       "gallery",
       "interchange",
       "slipstream",
+      "metro",
     ]);
     expect(byId.get("honeycomb")?.values.material).toBe(1);
     expect(byId.get("vector")?.values.material).toBe(2);
@@ -497,5 +507,186 @@ describe("tunnel depth wave (v2.76)", () => {
     for (const opt of spec?.control === "enum" ? spec.options : []) {
       expect(used, `material ${opt.value} has no look`).toContain(opt.value);
     }
+  });
+});
+
+/**
+ * The 3.0 travel rework: continuous flight. Loudness and beats used to be
+ * added to the camera's POSITION, so the wall ran backwards when the music
+ * dropped and every kick shoved-then-slid. These tests run the prelude's own
+ * beatRide() and the shader's off-axis unwrap, lifted from the WGSL, so a
+ * regression toward position shoves fails here, not on the owner's screen.
+ */
+describe("tunnel travel rework (3.0)", () => {
+  const body = tunnelRings.wgsl;
+  const specs = new Map(allParams(tunnelRings).map((p) => [p.key, p]));
+
+  it("the Detail master thins flutes and rings, passing the authored counts through bit-exactly at 1", () => {
+    expect(body).toContain(
+      "let spokeCount = select(P_spokes(), mix(4.0, P_spokes(), u.detail), u.detail < 0.999);",
+    );
+    expect(body).toContain(
+      "let ringCount = select(P_rings(), mix(3.0, P_rings(), u.detail), u.detail < 0.999);",
+    );
+    // Every count read goes through the master — no raw P_spokes()/P_rings()
+    // survives outside the two select() lines.
+    const raw = body.replace(/let (spokeCount|ringCount) = select\([^\n]*\n/g, "");
+    expect(raw).not.toContain("P_spokes()");
+    expect(raw).not.toContain("P_rings()");
+  });
+
+  it("travel is the blended clock plus the beat ride — never a position offset", () => {
+    expect(body).toContain("let cruiseMix = clamp(P_cruiseEnergy() * 0.5, 0.0, 1.0);");
+    expect(body).toContain(
+      "let cruiseT = mix(u.time, u.travel, cruiseMix) * P_speed() * P_cruiseFloor() * 2.2;",
+    );
+    expect(body).toContain(
+      "let travelT = cruiseT + beatRide() * softLimit(P_beatSpeed() * u.pulse, 0.4);",
+    );
+    // The old shoves are gone for good.
+    expect(body).not.toContain("u.drive * P_cruiseEnergy()");
+    expect(body).not.toContain("kickPos");
+  });
+
+  /** The prelude's beatRide(), lifted, on a fake uniform block. */
+  const beatRide = (() => {
+    const src = /fn beatRide\(\) -> f32 \{([\s\S]*?)\n\}/.exec(SHADER_SOURCES.header)?.[1];
+    if (!src) throw new Error("beatRide not found in the prelude");
+    const js = src
+      .replace(/let /g, "const ")
+      .replace(
+        /if \(u\.bpm < 1\.0\) \{ return u\.driveBeat; \}/,
+        "if (u.bpm < 1) return u.driveBeat;",
+      );
+    return new Function(
+      "u",
+      `${WGSL_SHIM}
+       const exp = Math.exp, floor = Math.floor;
+       ${js}`,
+    ) as (u: { bpm: number; beatCount: number; driveBeat: number }) => number;
+  })();
+
+  it("beatRide climbs exactly one unit per beat, continuous and monotonic across every boundary", () => {
+    const ride = (c: number) => beatRide({ bpm: 120, beatCount: c, driveBeat: 0 });
+    // Integers at the beat boundaries...
+    for (const c of [-1, 0, 1, 2, 17]) expect(ride(c)).toBeCloseTo(c, 6);
+    // ...no step at the wrap (the ease is normalised to land exactly at 1)...
+    expect(ride(3 - 1e-6)).toBeCloseTo(ride(3), 4);
+    // ...monotonic through the whole lead-in and the first few beats...
+    let prev = ride(-1);
+    for (let c = -1; c < 4; c += 0.01) {
+      const v = ride(c);
+      expect(v).toBeGreaterThanOrEqual(prev - 1e-9);
+      prev = v;
+    }
+    // ...and front-loaded: most of a beat's stride is spent in its first fifth.
+    expect(ride(0.2)).toBeGreaterThan(0.65);
+    expect(ride(0.5)).toBeGreaterThan(0.94);
+  });
+
+  it("beatRide falls back to the bounded onset nudge without a grid", () => {
+    expect(beatRide({ bpm: 0, beatCount: -1, driveBeat: 0.37 })).toBe(0.37);
+  });
+
+  it("the three cues are opt-in: default 0, guarded, in their lenses", () => {
+    for (const [key, group] of [
+      ["sway", "motion"],
+      ["lamps", "glow"],
+      ["dust", "backdrop"],
+    ] as const) {
+      const spec = specs.get(key);
+      expect(spec, key).toMatchObject({ min: 0, max: 1, step: 0.01, default: 0, group });
+      expect(spec !== undefined && isModTarget(spec), key).toBe(true);
+    }
+    expect(body).toContain("if (swayAmt > 1e-4) {");
+    expect(body).toContain("if (lampAmt > 1e-4) {");
+    expect(body).toContain("if (dustAmt > 1e-4) {");
+    // Roll is the fourth: a signed slider (not a degree dial), gated by the
+    // Rotation master so Motion → Rotation 0 still means a dead-still frame.
+    expect(specs.get("roll")).toMatchObject({ min: -1, max: 1, default: 0, group: "motion" });
+    expect(specs.get("roll")?.control).toBeUndefined();
+    expect(body).toContain("if (abs(rollAmt) > 1e-4) {");
+    expect(body).toContain("let ra = u.time * rollAmt * u.spin * 0.35;");
+    // The pinhole depth stands untouched outside the drift branch.
+    expect(body).toContain("var depth = 1.0 / r;");
+  });
+
+  it("the off-axis unwrap is exact: the wall sits at radius 1, and cam 0 is the pinhole depth", () => {
+    // |q*z + cam| = 1 solved for z, as the shader writes it.
+    const unwrap = (q: [number, number], cam: [number, number]) => {
+      const qq = Math.max(q[0] * q[0] + q[1] * q[1], 4e-6);
+      const qc = q[0] * cam[0] + q[1] * cam[1];
+      const disc = Math.max(qc * qc - qq * (cam[0] * cam[0] + cam[1] * cam[1] - 1), 0);
+      const z = (-qc + Math.sqrt(disc)) / qq;
+      return { z, w: [q[0] * z + cam[0], q[1] * z + cam[1]] };
+    };
+    for (const q of [
+      [0.3, 0.1],
+      [-0.45, 0.2],
+      [0.05, -0.6],
+    ] as [number, number][]) {
+      for (const cam of [
+        [0, 0],
+        [0.2, -0.1],
+        [-0.33, 0.29],
+      ] as [number, number][]) {
+        const { z, w } = unwrap(q, cam);
+        expect(z).toBeGreaterThan(0);
+        expect(Math.hypot(w[0], w[1])).toBeCloseTo(1, 9);
+      }
+      expect(unwrap(q, [0, 0]).z).toBeCloseTo(1 / Math.hypot(q[0], q[1]), 9);
+    }
+    // The drift amplitude in the shader keeps |cam| under the bore radius.
+    expect(body).toContain("* swayAmt * 0.22;");
+  });
+
+  it("hue is a rotation of the finished palette, not a phase inside its drift", () => {
+    expect(body).toContain("let t = fract(travel * 0.05);");
+    expect(body).toContain("pal = hueRotate(pal, P_hue());");
+    expect(body).not.toContain("travel * 0.05 + P_hue()");
+  });
+
+  /** The prelude's hueRotate, lifted. */
+  const hueRotate = (() => {
+    const src = /fn hueRotate\(c: vec3f, deg: f32\) -> vec3f \{([\s\S]*?)\n\}/.exec(
+      SHADER_SOURCES.header,
+    )?.[1];
+    if (!src) throw new Error("hueRotate not found in the prelude");
+    expect(src).toContain("let k = vec3f(0.57735027);");
+    return (c: [number, number, number], deg: number): [number, number, number] => {
+      const a = (deg * TAU) / 360;
+      const k = 0.57735027;
+      const cs = Math.cos(a);
+      const sn = Math.sin(a);
+      const cross = [k * c[2] - k * c[1], k * c[0] - k * c[2], k * c[1] - k * c[0]];
+      const d = k * (c[0] + c[1] + c[2]);
+      return [0, 1, 2].map((i) => c[i] * cs + cross[i] * sn + k * d * (1 - cs)) as [
+        number,
+        number,
+        number,
+      ];
+    };
+  })();
+
+  it("hueRotate walks the wheel: red → green at 120°, blue at 240°, identity at 0 and 360", () => {
+    const red: [number, number, number] = [1, 0, 0];
+    expect(hueRotate(red, 0)).toEqual(red);
+    const g = hueRotate(red, 120);
+    expect(g[1]).toBeCloseTo(1, 6);
+    expect(g[0]).toBeCloseTo(0, 6);
+    expect(g[2]).toBeCloseTo(0, 6);
+    const b = hueRotate(red, 240);
+    expect(b[2]).toBeCloseTo(1, 6);
+    expect(hueRotate(red, 360)[0]).toBeCloseTo(1, 6);
+    // Grey is on the axis: untouched at any angle.
+    const grey = hueRotate([0.4, 0.4, 0.4], 77);
+    for (const ch of grey) expect(ch).toBeCloseTo(0.4, 6);
+  });
+
+  it("Metro wears all three cues; Hyperdrive and Waterslide each adopt one", () => {
+    const byId = new Map((tunnelRings.styles ?? []).map((s) => [s.id, s]));
+    expect(byId.get("metro")?.values).toMatchObject({ sway: 0.5, lamps: 0.85, dust: 0.35 });
+    expect(byId.get("hyper")?.values.dust).toBe(0.7);
+    expect(byId.get("waterslide")?.values.sway).toBe(0.35);
   });
 });

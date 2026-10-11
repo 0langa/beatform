@@ -131,7 +131,13 @@ function fakeAudioBuffer(): AudioBuffer {
   } as unknown as AudioBuffer;
 }
 
-const analyzer = { setSync: vi.fn(), setBeatGrid: vi.fn(), setSections: vi.fn(), reset: vi.fn() };
+const analyzer = {
+  setSync: vi.fn(),
+  setBeatGrid: vi.fn(),
+  setSections: vi.fn(),
+  setTravel: vi.fn(),
+  reset: vi.fn(),
+};
 /** The REAL engine, rebuilt per test (see beforeEach). Read lazily by the
  * services mock, exactly as production's `getEngine()` singleton is. */
 let engine: AudioEngine;

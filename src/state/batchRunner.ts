@@ -214,6 +214,7 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
       let buf: AudioBuffer;
       let grid: Awaited<ReturnType<typeof analyzeTrack>["result"]>["grid"];
       let sections: number[];
+      let travel: Awaited<ReturnType<typeof analyzeTrack>["result"]>["travel"];
       try {
         // Decode on the engine's context, NOT a fresh OfflineAudioContext:
         // decodeAudioData resamples to the context rate, so decoding at 44.1k
@@ -233,6 +234,9 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
         // left features.sectionIndex / sectionPulse dead in every batched
         // render while a single export of the same track reacted.
         sections = analysis.sections;
+        // The travel curve rides with them: a loudness-driven camera in a
+        // batched render moves exactly as the same track's single export.
+        travel = analysis.travel;
       } catch (e) {
         // A file that cannot be decoded fails its jobs and nothing else.
         // failureStatus maps our own AbortError the same way it maps a real
@@ -301,6 +305,7 @@ export async function runBatch(run: BatchRun, hooks: BatchRunnerHooks): Promise<
                 coverArt: track.coverArt,
                 beatGrid: grid,
                 sections,
+                travel,
                 audiogram,
                 // Frozen with the run: without the defs, a custom-preset doc
                 // resolves to the default visual inside the worker's empty

@@ -11,6 +11,41 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- **Tunnel flies forward, continuously.** Loudness and beats used to push the
+  camera's _position_, so the wall slid backwards whenever the music got
+  quieter and every kick shoved you forward and then back — a tube that
+  pumped rather than one you travelled down. The flight now has three
+  one-way parts: a cruise that follows the track's loudness (loud passages
+  surge, quiet ones coast, never backwards — computed once per track, so a
+  seek, a preview and an export all agree), a stride on every grid beat that
+  stays gained, and the base speed, whose default rises from 0.15 to 0.45 so
+  the stock tube reads as flight on its own. Saved projects keep their own
+  speed value; their motion simply stops running backwards.
+- **Tunnel's Hue dial finally turns the whole wheel.** It used to nudge the
+  palette's phase by a fraction of a turn, so every look lived in one
+  red-to-magenta band — Ice Cave at hue 195 rendered pink and Vector Grid
+  never saw its phosphor green. The dial is now a true hue rotation; the
+  factory looks render in the colours their names promise.
+
+### Added
+
+- **Tunnel: Camera drift, Lamps and Dust.** Three new controls on the Mode
+  page, all off by default. _Camera drift_ lets the camera wander off the
+  tube's axis — the near wall leans in and swings past, the far end stays
+  ahead. _Lamps_ hangs ceiling lights at fixed intervals down the bore that
+  approach, flare overhead and recede. _Dust_ fills the air with motes on
+  three depth layers that rush past the camera with real parallax, drawn as
+  dots at a crawl and as streaks at speed. _Roll_ turns the camera slowly
+  about the tube's axis (a barrel roll, scaled by Motion → Rotation), and
+  the global **Detail** master now thins the tunnel's flutes and rings like
+  it thins every other mode. A new **Metro** look wears the three cues;
+  Hyperdrive gains dust streaks and Waterslide a gentle drift.
+- **Custom shaders get `u.travel` and `u.beatCount`** — the loudness-integrated
+  clock and a never-wrapping beat counter — plus a `beatRide()` helper and
+  `hueRotate()`. See docs/presets.md.
+
 ## [2.112.1] - 2026-10-11
 
 ### Fixed

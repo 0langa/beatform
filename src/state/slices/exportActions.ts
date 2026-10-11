@@ -554,6 +554,7 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
               coverArt: get().coverArt,
               beatGrid: get().beatGrid,
               sections: get().sections,
+              travel: get().travel,
               stems: get().stems,
               // Ungated on the caption toggle (since the lyric plate): the
               // caption path re-checks style.enabled itself (hasDynamics /

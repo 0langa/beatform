@@ -74,6 +74,7 @@ exports[`matrix case enumeration (R2-16) > the full id list is the census — ad
   "tunnel-rings/style/gallery",
   "tunnel-rings/style/interchange",
   "tunnel-rings/style/slipstream",
+  "tunnel-rings/style/metro",
   "tunnel-rings/color/grayscale",
   "tunnel-rings/color/bright-grayscale",
   "nebula/@defaults",

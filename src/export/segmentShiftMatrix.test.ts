@@ -3,6 +3,7 @@ import { DEFAULT_LYRIC_STYLE, type LyricLine } from "../state/lyrics";
 import { DEFAULT_AUDIOGRAM } from "../state/audiogram";
 import { DEFAULT_MOTION, DEFAULT_POST } from "../render/types";
 import type { StemAnalysis, StemEntry } from "../audio/stems";
+import { travelAt } from "../audio/analysis/travel";
 import type { ExportJob } from "./exportCore";
 
 /**
@@ -89,6 +90,9 @@ const TIME_BEARING = [
   "pcm",
   "beatGrid",
   "sections",
+  // The travel curve is indexed BY track time (values[i] sits at i*hopSec):
+  // a segment rebases it so the clip's travel starts at 0 with its time.
+  "travel",
   "vocalSpans",
   "timeline",
   "lyrics",
@@ -243,6 +247,13 @@ function options(overrides: Partial<ExportOptions> = {}): ExportOptions {
     loopCrossfadeSec: 2,
     beatGrid: { bpm: 120, beatTimes: new Float32Array([138, 138.5, 139, 190]), hopSec: 0.0116 },
     sections: [137, 160, 195],
+    // A curve that runs at 0.002 s/s: its VALUES are travel, not timestamps,
+    // and are kept far below the sentinel band so the sweep never mistakes
+    // one for an unshifted instant; the rebase is asserted by value below.
+    travel: {
+      hopSec: 1,
+      values: new Float32Array(Array.from({ length: 260 }, (_, i) => i * 0.002)),
+    },
     vocalSpans: [
       { start: 141, end: 143 },
       { start: 175, end: 178 },
@@ -405,6 +416,18 @@ describe("segment-shift checklist: field by field", () => {
 
   it("shifts the section boundaries", async () => {
     expect((await buildJob({ segment })).sections).toEqual([0, 23, 58]);
+  });
+
+  it("rebases the travel curve onto the clip: 0 at the clip start, the same motion after", async () => {
+    const job = await buildJob({ segment });
+    const curve = job.travel!;
+    expect(travelAt(curve, 0)).toBe(0);
+    // The fixture runs at 0.002 s/s everywhere, so 10 s into the clip reads
+    // 0.02 — exactly what the full-track curve reads between start and
+    // start + 10.
+    expect(travelAt(curve, 10)).toBeCloseTo(0.02, 6);
+    const full = (await buildJob()).travel!;
+    expect(travelAt(full, segment.start + 10) - travelAt(full, segment.start)).toBeCloseTo(0.02, 6);
   });
 
   it("shifts both ends of every vocal span", async () => {

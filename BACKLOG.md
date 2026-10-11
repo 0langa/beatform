@@ -299,6 +299,81 @@ evidence is recorded here.
       Stage hides every `.modal-backdrop`, so H / Ctrl+, / B opened dialogs
       nobody could see; those keys are now inert in Stage (guide says so).
 
+## 2026-10-11 — "polish everything toward 3.0.0" pass (owner-initiated)
+
+Owner's brief: find and fix anything still bugged or unoptimal, deepen the
+modes (Tunnel named as the example: "doesn't feel like travelling through an
+actual tunnel continuously"), full permission to change mode behaviour. Ships
+as the next 2.x; each row records its gate evidence. **Gates on the tree
+below (2026-10-11):** typecheck, lint, format, 3,251 vitest tests, build —
+all green; `src-tauri/` untouched (Rust set not required); GPU matrix
+re-blessed with the exact tunnel-only drift recorded in its row. Also in
+this pass: every Builder layer control gained a hover hint (the nine layer
+kinds had none — the panel footer said "Hover a control to see what it
+does" and showed nothing). UI sweep in the browser dev build (every
+Visuals page, Export, Preferences, Gallery, Perform drawer, Timeline, the
+four newest modes): no defect found.
+
+- [x] **Tunnel travel model — continuous flight.** Cause found in the
+      shader: `travelT = t·v + drive·k + kick·stride` — loudness and the beat
+      were POSITION offsets, so the wall ran backwards on every dip and every
+      kick shoved-then-slid; at the shipped defaults those shoves were most
+      of the visible motion (cruise 0.1155 depth-units/s vs a 0.27-unit
+      loudness swing). Fix: (1) a per-track **travel curve** — loudness-
+      integrated time computed at analysis beside the grid/sections
+      (`src/audio/analysis/travel.ts`, 50 ms RMS hops, mean-normalised so it
+      runs 1 s/s on average, floored so silence never parks), carried through
+      the live analyzer, the export job (rebased for segments like the grid)
+      and the batch runner, and surfaced as **`u.travel`**; (2) a continuous
+      **`u.beatCount`** uniform (beatIndex + phase) and a prelude
+      **`beatRide()`** (one unit per beat, front-loaded ease, monotonic); (3)
+      the shader blends `u.time` toward `u.travel` by Cruise energy and adds
+      `beatRide()·stride` — every term one-way; (4) default `speed` 0.15 →
+      0.45. Tests: travel curve (monotonic, normalised, floor, interpolation,
+      segment rebase), export key census + segment-shift matrix carry
+      `travel`, beatRide lifted from the prelude (integers at boundaries,
+      no wrap step, monotonic, front-loaded), store/analyzer mocks.
+- [x] **Tunnel Hue dial was a phase nudge.** The hue entered the palette as
+      a phase offset of `t` under a cosine of frequency `spread`
+      (0.08–0.67 cycles), so the 0..360 dial moved the colour by at most
+      that fraction of the wheel:
+      every look sat in one red-to-magenta band (Ice Cave at 195 rendered
+      pink; Vector Grid at 130 never green — confirmed on screen before the
+      fix). Fix: prelude `hueRotate()` (Rodrigues about the grey axis, exact
+      identity at 0) applied to the finished palette; the depth drift keeps
+      its spread. Lifted test: red → green at 120°, blue at 240°, grey fixed.
+- [x] **Tunnel depth cues** — three opt-in params appended to `params[]`
+      (abiOrder baseline updated; defaults 0, guarded off): **Camera drift**
+      (exact off-axis unwrap: `|q·z + cam| = 1` solved per fragment, so the
+      near wall leans in while the vanishing point holds — tested: wall at
+      radius 1 for every q/cam, pinhole depth at cam 0), **Lamps** (ceiling
+      fixtures at travel stations, pool + bulb, before the fog), **Dust**
+      (three shells inside the bore, one hashed mote per (angle, travel)
+      cell drawn at its exact projection, radial metric stretched by cruise
+      rate → streaks at speed), plus **Roll** (signed slider, camera turns
+      about the axis on `u.time`, gated by the Rotation master) and the
+      **Detail** master wired to flute/ring counts (`select()` guard keeps
+      the authored counts bit-exact at 1 — the Global motion page used to
+      offer the tunnel only Pulse). New **Metro** style; Hyperdrive `dust 0.7`,
+      Waterslide `sway 0.35`, Vector Grid speed 0.45 → 0.5 (it restated the
+      new default). Verified on screen in the browser dev build (Metro,
+      Hyperdrive, Waterslide, Ice Cave, Vector Grid, Honeycomb, Ember;
+      paused frame pairs at 6.0 / 6.3 s show rings and motes streaming
+      outward).
+- [x] **Shader prelude ABI** — `Uniforms` grows `travel`/`beatCount`
+      (bytes 144/148, `UNIFORM_SIZE` 160); `demoFeatures` carries a mild
+      monotonic travel deviation so the matrix exercises the blend;
+      `docs/presets.md` documents both uniforms, `beatRide()` and
+      `hueRotate()`. shaderGolden + gpuMatrix census snapshots re-blessed
+      (`tunnel-rings/style/metro` added). **GPU matrix re-blessed
+      2026-10-11:** `npm run test:gpu` first (case drift: the added Metro
+      id), then `test:gpu:update` and a diff of the new baseline against
+      git — 350 → 351 cases, **exactly 19 moved, all `tunnel-rings/*`**
+      (defaults, 15 styles, both colour cases, `extreme/max`), 1 added,
+      0 missing; `tunnel-rings/extreme/min` and every other mode's case
+      kept its hash — the new uniforms and prelude helpers are inert
+      outside the one mode that reads them.
+
 ## Done 2026-10-10 — "do everything still open" pass (owner-initiated)
 
 **Shipped as v2.112.0 "Lyrics on time" on 2026-10-11** (CI green, published

@@ -252,7 +252,7 @@ describe("runBatch cancel leaves a coherent state", () => {
     } as unknown as ReturnType<typeof getEngine>);
     vi.mocked(analyzeTrack).mockReturnValue({
       id: 1,
-      result: Promise.resolve({ grid: null, key: null, sections: [] }),
+      result: Promise.resolve({ grid: null, key: null, sections: [], travel: null }),
     });
     vi.mocked(exportVideo).mockResolvedValue({
       bytes: 1234,
@@ -331,7 +331,7 @@ describe("runBatch carries sections + audiogram into the job build (R2-05)", () 
     } as unknown as ReturnType<typeof getEngine>);
     vi.mocked(analyzeTrack).mockReturnValue({
       id: 1,
-      result: Promise.resolve({ grid: null, key: null, sections }),
+      result: Promise.resolve({ grid: null, key: null, sections, travel: null }),
     });
     vi.mocked(exportVideo).mockResolvedValue({ bytes: 1, seconds: 1, audioCodec: "aac" });
   }
@@ -390,7 +390,7 @@ describe("runBatch aborts the whole run when WebGPU is unavailable (F2)", () => 
     } as unknown as ReturnType<typeof getEngine>);
     vi.mocked(analyzeTrack).mockReturnValue({
       id: 1,
-      result: Promise.resolve({ grid: null, key: null, sections: [] }),
+      result: Promise.resolve({ grid: null, key: null, sections: [], travel: null }),
     });
     // Exactly what exportCore throws when WebGPURenderer.create() fails.
     vi.mocked(exportVideo).mockImplementation(() => {
@@ -435,7 +435,7 @@ describe("runBatch aborts the whole run when WebGPU is unavailable (F2)", () => 
     } as unknown as ReturnType<typeof getEngine>);
     vi.mocked(analyzeTrack).mockReturnValue({
       id: 1,
-      result: Promise.resolve({ grid: null, key: null, sections: [] }),
+      result: Promise.resolve({ grid: null, key: null, sections: [], travel: null }),
     });
     vi.mocked(exportVideo)
       .mockImplementationOnce(() => {
@@ -466,7 +466,7 @@ function primeDecodeOk() {
   } as unknown as ReturnType<typeof getEngine>);
   vi.mocked(analyzeTrack).mockReturnValue({
     id: 1,
-    result: Promise.resolve({ grid: null, key: null, sections: [] }),
+    result: Promise.resolve({ grid: null, key: null, sections: [], travel: null }),
   });
 }
 

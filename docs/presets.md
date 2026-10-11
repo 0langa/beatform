@@ -98,6 +98,8 @@ enforces that and `abiOrder.test.ts` catches a moved spec in seconds.
 | `drive`                                                              | Smoothed envelope of the user's Sync source. **Use this** so the Sync panel matters.                                                                                                                                                                                                      |
 | `driveBeat`                                                          | Onset pulse of the Sync source: 1 on a hit, exponential decay.                                                                                                                                                                                                                            |
 | `bpm`, `beatPhase`, `barPhase`                                       | Beat grid: tempo, 0..1 within the beat, 0..1 within a 4-beat bar. 0 when no grid.                                                                                                                                                                                                         |
+| `beatCount`                                                          | Continuous beat clock from the same grid: beat index + phase, never wrapping. −1 → 0 through the lead-in before the first beat; −1 with no grid. Pair with `beatRide()`.                                                                                                                  |
+| `travel`                                                             | Loudness-integrated track time: 1 s/s on average, faster through loud passages, slower through quiet ones, never backwards. Equals `time` with no analysis. Blend toward it for a camera that surges with the music without ever running backwards.                                       |
 | `bass`, `mid`, `treble`, `voice`                                     | Band energies 0..1.                                                                                                                                                                                                                                                                       |
 | `kick`, `snare`, `hat`                                               | Per-drum onset envelopes.                                                                                                                                                                                                                                                                 |
 | `rms`, `energy`                                                      | Instant / slow (~0.8 s) loudness.                                                                                                                                                                                                                                                         |
@@ -125,6 +127,10 @@ enforces that and `abiOrder.test.ts` catches a moved spec in seconds.
 - `beatRamp()` — continuous beats-into-bar counter (0..4): tempo-locked
   scroll/travel that stays continuous across the bar wrap when you move an
   integer number of cells per beat.
+- `beatRide()` — travel that pushes forward on every grid beat and never
+  comes back: one unit per beat, spent fast after the kick and coasting before
+  the next. Multiply by your stride. Falls back to `driveBeat` (a bounded
+  nudge) when the track has no grid.
 - `hsl2rgb(h°, s, l)`, `hash21(p)`, `hash11(x)`, `noise2(p)`, `fbm(p)`,
   `rot2(a)`, `centered(uv)` (aspect-corrected, origin center), `TAU`.
 - `coverSample(uv)` / `hasCover()` — the track's embedded album art.

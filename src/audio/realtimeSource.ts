@@ -8,6 +8,7 @@ import { stereoWidth } from "./dsp/stereo";
 import { gridPhase, type BeatGrid } from "./analysis/beatGrid";
 import { sectionStateAt } from "./analysis/sections";
 import { vocalPresenceAt, type VocalSpan } from "./vocalPresence";
+import { travelAt, type TravelCurve } from "./analysis/travel";
 import { displaySpectrumFftSize, spectrumResolution } from "./dsp/displaySpectrum";
 
 /**
@@ -135,6 +136,8 @@ export class RealtimeAnalyzer {
   private sections: number[] | null = null;
   /** Timed-lyrics sung spans (null = no timed lyrics loaded). */
   private vocalSpans: VocalSpan[] | null = null;
+  /** The track's travel curve (null = none yet: travel reads as time). */
+  private travel: TravelCurve | null = null;
   private lastFrameAt: number | null = null;
   /**
    * Time owed to the fixed analysis clock, seconds. Onset detection steps once
@@ -265,6 +268,13 @@ export class RealtimeAnalyzer {
    * spans, so preview and export agree by construction. */
   setVocalSpans(spans: VocalSpan[] | null): void {
     this.vocalSpans = spans;
+  }
+
+  /** Attach the track's travel curve (analysis/travel.ts; null = none yet).
+   * `features.travel` then resolves per frame from track time, exactly as
+   * the offline path resolves it from the job's copy of the same curve. */
+  setTravel(curve: TravelCurve | null): void {
+    this.travel = curve;
   }
 
   /**
@@ -437,6 +447,7 @@ export class RealtimeAnalyzer {
       ...(this.grid ? { bpm: this.grid.bpm, ...gridPhase(this.grid, trackTime) } : {}),
       ...(this.sections ? sectionStateAt(this.sections, trackTime) : {}),
       ...(this.vocalSpans ? { vocal: vocalPresenceAt(this.vocalSpans, trackTime) } : {}),
+      ...(this.travel ? { travel: travelAt(this.travel, trackTime) } : {}),
     });
     return this.present(live, now, presentLag);
   }
@@ -516,6 +527,7 @@ export class RealtimeAnalyzer {
     out.sectionIndex = live.sectionIndex;
     out.sectionPulse = live.sectionPulse;
     out.vocal = live.vocal;
+    out.travel = live.travel;
     return out;
   }
 

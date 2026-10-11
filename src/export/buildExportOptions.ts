@@ -1,5 +1,6 @@
 import { DEFAULT_SYNC } from "../audio/types";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
+import type { TravelCurve } from "../audio/analysis/travel";
 import { vocalSpansFromLyrics } from "../audio/vocalPresence";
 import { presetById } from "../render/presets";
 import {
@@ -62,6 +63,10 @@ export interface TrackInput {
    * Drives features.sectionIndex / sectionPulse in the export walk exactly as
    * the live analyzer's setSections does in preview (P-15). */
   sections?: number[];
+  /** The track's loudness-integrated time curve (analysis/travel.ts, like
+   * the grid and sections). Drives features.travel in the export walk as
+   * the live analyzer's setTravel does in preview. */
+  travel?: TravelCurve | null;
   /** Imported stems — per LOADED track, cleared by every load (store.ts
    * loadFile). Omitted by the batch queue on purpose: no batch track has
    * any, and the session's belong to whichever track is loaded in the
@@ -192,6 +197,7 @@ export function buildExportOptions(
         : undefined,
     beatGrid: track.beatGrid ?? undefined,
     sections: track.sections,
+    travel: track.travel ?? undefined,
     vocalSpans: track.vocalLines ? vocalSpansFromLyrics(track.vocalLines) : undefined,
     stems: track.stems,
     lyrics: track.lyrics,

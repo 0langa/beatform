@@ -4,6 +4,7 @@ declare const self: DedicatedWorkerGlobalScope;
 import { analyzeBeatGrid } from "./beatGrid";
 import { estimateKey } from "./keyDetect";
 import { detectSections } from "./sections";
+import { travelCurveOf } from "./travel";
 import type { PcmData } from "../types";
 
 /**
@@ -29,8 +30,10 @@ self.onmessage = (e: MessageEvent<InMessage>) => {
     }
     const key = estimateKey(mono, msg.pcm.sampleRate);
     const sections = detectSections(mono, msg.pcm.sampleRate);
-    self.postMessage({ type: "analysis", id: msg.id, grid, key, sections }, [
+    const travel = travelCurveOf(mono, msg.pcm.sampleRate);
+    self.postMessage({ type: "analysis", id: msg.id, grid, key, sections, travel }, [
       grid.beatTimes.buffer,
+      ...(travel ? [travel.values.buffer] : []),
     ]);
   } catch (err) {
     self.postMessage({ type: "error", id: msg.id, message: (err as Error).message });

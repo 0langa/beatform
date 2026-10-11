@@ -11,6 +11,7 @@ import { DEFAULT_POST, DEFAULT_MOTION, type PresetDef } from "../render/types";
 import type { BuilderLayer } from "../render/builder2";
 import { DEFAULT_SYNC } from "../audio/types";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
+import type { TravelCurve } from "../audio/analysis/travel";
 import { STEM_TRACK_KEYS, type StemEntry, type StemTrackKey } from "../audio/stems";
 import { vocalSpansFromLyrics } from "../audio/vocalPresence";
 import { DEFAULT_LYRIC_STYLE, type LyricLine } from "../state/lyrics";
@@ -88,6 +89,7 @@ const EXPORT_OPTION_KEYS: Record<keyof ExportOptions, true> = {
   coverArt: true,
   beatGrid: true,
   sections: true,
+  travel: true,
   vocalSpans: true,
   stems: true,
   lyrics: true,
@@ -194,11 +196,13 @@ describe("buildExportOptions", () => {
       params: [],
       wgsl: "fn preset(uv: vec2f) -> vec4f { return vec4f(uv, 0.0, 1.0); }",
     };
+    const travel: TravelCurve = { hopSec: 0.05, values: new Float32Array([0, 0.04, 0.1]) };
     const trackIn: TrackInput = {
       ...track,
       coverArt: "data:cover",
       beatGrid,
       sections: [0, 12.5, 40],
+      travel,
       stems: [stem],
       lyrics: { lines, style: { ...DEFAULT_LYRIC_STYLE, position: "top" } },
       vocalLines: lines,
@@ -267,6 +271,7 @@ describe("buildExportOptions", () => {
     // Track.
     expect(o.beatGrid).toBe(beatGrid);
     expect(o.sections).toEqual([0, 12.5, 40]);
+    expect(o.travel).toBe(travel);
     expect(o.vocalSpans).toEqual(vocalSpansFromLyrics(lines));
     expect(o.vocalSpans).not.toHaveLength(0);
     expect(o.stems).toEqual([stem]);

@@ -42,8 +42,12 @@ const ABI_BASELINE: Record<string, string> = {
     "hue,saturation,lightness,gain,calm,glow,traceBright,fill,mirror,traces,renderMode,persist,display,traceClamp,coreWidth,traceSpread,agFloor,agRange,hueWave,bandHue,ghostDim,fillDim,bandDim,graticule,gridLevel,gridBeat,scanline,beatLift,bgLevel,vignette,kaleido,xyRotate",
   particles:
     "hue,saturation,lightness,density,size,speed,direction,beatDance,sizePulse,fly,clump,streak,hotCore,shootingStars,constellation,energyDrive,wander,wanderSpeed,fill,layers,parallax,hueVariance,twinkle,glow,brightness,beatFlash,bgLevel,vignette,mirror,sizeVar,bandColor,beatPop",
+  // 3.0 travel rework: sway, lamps, dust, roll APPENDED to params[] (so the
+  // advanced block shifts by four) — a genuine param addition, same class
+  // as HD-06. Every tunnel hash moved with the travel model in the same
+  // commit; nothing outside the mode reads the new keys.
   "tunnel-rings":
-    "hue,hueSpread,saturation,lightness,colorFade,speed,rings,spokes,material,beatPulse,junction,curve,coverWall,centerGlow,cruiseFloor,curveScale,cruiseEnergy,beatSpeed,tileLevel,tileSpectrum,pulseWidth,tileSat,checker,groutWidth,groutLevel,fogNear,fogFar,vignette,mirror,twist,roundness,surfaceWarp,beatBright",
+    "hue,hueSpread,saturation,lightness,colorFade,speed,rings,spokes,material,beatPulse,junction,curve,coverWall,centerGlow,sway,lamps,dust,roll,cruiseFloor,curveScale,cruiseEnergy,beatSpeed,tileLevel,tileSpectrum,pulseWidth,tileSat,checker,groutWidth,groutLevel,fogNear,fogFar,vignette,mirror,twist,roundness,surfaceWarp,beatBright",
   nebula:
     "hue,scale,flow,kaleido,contrast,sparkle,beatRipple,duo,hue2,windStrength,stars,warp,angle,spin,depth,hueRange,midHueShift,brightFloor,bassBright,saturation,lightness,sparkleScale,sparkleSharp,rippleWidth,rippleWarp,beatBloom,driveGlow,vignette,hotCore,windAngle",
   metaballs:

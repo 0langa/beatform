@@ -20,6 +20,7 @@ import {
 } from "mediabunny";
 import { OfflineAnalyzer } from "../audio/offlineSource";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
+import type { TravelCurve } from "../audio/analysis/travel";
 import type { AudioFeatures, PcmData, SyncSettings } from "../audio/types";
 import { integratedLufs, normalizationGainDb } from "../audio/dsp/lufs";
 import { TruePeakLimiter } from "../audio/dsp/truepeak";
@@ -126,6 +127,9 @@ export interface ExportJob {
   /** Section boundaries in seconds (already shifted for segments) — resolve
    * features.sectionIndex / sectionPulse, the preview path's setSections. */
   sections?: number[];
+  /** Loudness-integrated time curve (already rebased for segments) —
+   * resolves features.travel, the preview path's setTravel. */
+  travel?: TravelCurve;
   /** Sung spans in seconds (already shifted for segments) driving
    * features.vocal. Deliberately NOT derived from `lyrics` above: that field
    * only travels when the lyric OVERLAY is enabled, and a modulation source
@@ -931,6 +935,7 @@ export async function runExportJob(
       job.sections ?? null,
       vocalSpans,
       timeOrigin,
+      job.travel ?? null,
     );
     // Analyzer construction mixes the whole track down to mono and primes the
     // pipeline — seconds each on a long track, silently (AX-3).
@@ -972,6 +977,7 @@ export async function runExportJob(
           // applyMods too (below), so an unstamped one would resolve a
           // different LFO phase for the feedback history than for the pixels.
           timeOrigin,
+          job.travel ?? null,
         )
       : null;
     const feedbackClock = anyPresetUsesFeedback ? new FixedFeedbackClock() : null;

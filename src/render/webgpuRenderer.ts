@@ -27,12 +27,13 @@ const RT_IDLE_FRAMES = 300;
 /** Downsampled waveform points exposed to shaders */
 const WAVE_POINTS = 512;
 /** Uniform struct size in bytes (scalars + vec4 bgColor + sync block + motion
- * + the background fit block). 36 f32 lanes, but the struct is 144 not 140:
- * bgOffset is a vec2f, whose 8-byte alignment lands it at byte 136, and WGSL
- * rounds the struct up to a multiple of its largest member alignment (bgColor's
- * 16). Keep this in step with the Uniforms struct below — a short buffer makes
- * every read past it zero, which reads as "the background snapped to stretch". */
-const UNIFORM_SIZE = 144;
+ * + the background fit block + the travel pair). 38 f32 lanes, but the
+ * struct is 160 not 152: bgOffset is a vec2f, whose 8-byte alignment lands it
+ * at byte 136, travel/beatCount follow at 144/148, and WGSL rounds the struct
+ * up to a multiple of its largest member alignment (bgColor's 16). Keep this
+ * in step with the Uniforms struct below — a short buffer makes every read
+ * past it zero, which reads as "the background snapped to stretch". */
+const UNIFORM_SIZE = 160;
 /**
  * The scene (preset + background + overlay + crossfade) renders into an HDR
  * intermediate at this format; the post chain then tonemaps/blooms it to the
@@ -254,6 +255,17 @@ struct Uniforms {
   bgZoom: f32,
   // vec2f, so it aligns to 8 and sits at byte 136 — see UNIFORM_SIZE.
   bgOffset: vec2f,
+  // Loudness-integrated track time (audio/analysis/travel.ts): 1 s/s on
+  // average, faster through loud passages, slower through quiet ones, never
+  // backwards; equals u.time with no analysis. The deterministic way to make
+  // a camera surge with the music — blend toward it instead of adding
+  // u.drive to a position, which runs backwards when the music drops.
+  travel: f32,
+  // Continuous beat clock from the track's grid: beatIndex + beatPhase, so
+  // it crosses every beat boundary without a wrap. Runs from -1 toward 0
+  // through the lead-in before the first beat; -1 (and bpm 0) with no grid.
+  // Pair it with beatRide() for travel that pushes forward on every beat.
+  beatCount: f32,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> bins: array<f32>;
@@ -474,6 +486,22 @@ fn gridPulse(sharp: f32) -> f32 {
  * stays continuous across the bar wrap. 0 when the track has no grid. */
 fn beatRamp() -> f32 { return u.barPhase * 4.0; }
 
+/**
+ * Travel that pushes forward on every beat and never comes back: one unit per
+ * grid beat, spent fast right after the beat and coasting before the next
+ * (a (1-exp(-6φ)) ease, normalised so beat boundaries are exactly integers —
+ * C0-continuous and monotonic over the whole track). Multiply by a stride.
+ * Without a grid there is no clock to ride, so it falls back to the bounded
+ * onset nudge: the pulse's own decay, which is what every mode shipped with.
+ */
+fn beatRide() -> f32 {
+  if (u.bpm < 1.0) { return u.driveBeat; }
+  let c = u.beatCount;
+  let i = floor(c);
+  let ease = (1.0 - exp(-fract(c) * 6.0)) / (1.0 - exp(-6.0));
+  return i + ease;
+}
+
 fn hash21(p: vec2f) -> f32 {
   var q = fract(p * vec2f(123.34, 345.45));
   q += dot(q, q + 34.345);
@@ -527,6 +555,22 @@ fn rot2(a: f32) -> mat2x2f {
  */
 fn cosPalette(t: f32, a: vec3f, b: vec3f, c: vec3f, d: vec3f) -> vec3f {
   return a + b * cos(TAU * (c * t + d));
+}
+
+/**
+ * Rotate an RGB colour's hue by deg degrees about the grey axis (Rodrigues'
+ * rotation around (1,1,1)/sqrt(3)): red at 0, green at 120, blue at 240, so a
+ * palette authored in red turns into every colour on the Hue dial's wheel.
+ * Exact identity at 0 (c*1 + 0 + 0), so a mode that rotates by its Hue knob
+ * renders bit-identically at Hue 0. Lightness-preserving along the grey axis;
+ * not perceptual, which is right for synthetic cosine palettes.
+ */
+fn hueRotate(c: vec3f, deg: f32) -> vec3f {
+  let a = deg * TAU / 360.0;
+  let k = vec3f(0.57735027);
+  let cs = cos(a);
+  let sn = sin(a);
+  return c * cs + cross(k, c) * sn + k * dot(k, c) * (1.0 - cs);
 }
 
 /**
@@ -3864,6 +3908,13 @@ export class WebGPURenderer implements Renderer {
     this.uniformF32[33] = bgFit?.zoom ?? 1;
     this.uniformF32[34] = bgFit?.offsetX ?? 0;
     this.uniformF32[35] = bgFit?.offsetY ?? 0;
+    // The travel pair. `travel` falls back to the render clock when a frame
+    // carries none (hand-built frames, thumbnails of old shapes), so it never
+    // reads 0 against a running `time`; `beatCount` is the grid's continuous
+    // beat clock, -1 + phase through the lead-in and -1 without a grid.
+    this.uniformF32[36] = f.travel ?? time;
+    const beatIndex = f.beatIndex ?? -1;
+    this.uniformF32[37] = beatIndex >= 0 ? beatIndex + f.beatPhase : f.beatPhase - 1;
     // Feedback path is active only when the preset opts in AND this call is
     // not presenting a crossfade — mid-fade, state advances through the F3
     // split's raw advance-only call above, never through the fading branch.

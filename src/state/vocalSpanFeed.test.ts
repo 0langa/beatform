@@ -32,7 +32,12 @@ vi.mock("./services", () => ({
     onEnded: null,
     dispose: vi.fn(),
   })),
-  getAnalyzer: vi.fn(() => ({ setSync: vi.fn(), setBeatGrid: vi.fn(), setSections: vi.fn() })),
+  getAnalyzer: vi.fn(() => ({
+    setSync: vi.fn(),
+    setBeatGrid: vi.fn(),
+    setSections: vi.fn(),
+    setTravel: vi.fn(),
+  })),
   peekAnalyzer: vi.fn(() => ({ setVocalSpans })),
   getRenderer: vi.fn(() => null),
   setLiveRenderPaused: vi.fn(),

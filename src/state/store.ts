@@ -39,6 +39,7 @@ import { vocalSpansFromLyrics } from "../audio/vocalPresence";
 import { analyzeTrack } from "../audio/analysis/trackAnalysis";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { KeyEstimate } from "../audio/analysis/keyDetect";
+import type { TravelCurve } from "../audio/analysis/travel";
 import { type ModRoute, type ModSource } from "./modMatrix";
 import { historyDepths, pushHistory } from "./history";
 import { deriveTimelineEnabled, type Timeline } from "./timeline";
@@ -391,6 +392,10 @@ interface SessionSlice {
   trackKey: KeyEstimate | null;
   /** Section boundaries (seconds) — seek-bar markers, future scene seeds. */
   sections: number[];
+  /** Loudness-integrated time curve of the loaded track (analysis/travel.ts);
+   * null before analysis lands. Feeds `features.travel` through the analyzer
+   * and rides into every export job like the grid and sections. */
+  travel: TravelCurve | null;
   /** Downsampled |peak| envelope of the loaded track (timeline overview). */
   waveformOverview: Float32Array | null;
   showTimeline: boolean;
@@ -1595,11 +1600,13 @@ export const useVizStore = create<VizState>((set, get) => {
       beatGrid: null,
       trackKey: null,
       sections: [],
+      travel: null,
       waveformOverview: null,
       analyzing: true,
     });
     getAnalyzer().setBeatGrid(null);
     getAnalyzer().setSections(null);
+    getAnalyzer().setTravel(null);
     return id;
   };
 
@@ -1731,6 +1738,7 @@ export const useVizStore = create<VizState>((set, get) => {
     beatGrid: null,
     trackKey: null,
     sections: [],
+    travel: null,
     waveformOverview: null,
     showTimeline: getPrefs().timelineOpen,
     analyzing: false,
@@ -2807,6 +2815,7 @@ export const useVizStore = create<VizState>((set, get) => {
           analysisId++;
           getAnalyzer().setBeatGrid(null);
           getAnalyzer().setSections(null);
+          getAnalyzer().setTravel(null);
           // Through settleAnalysis, not a bare `analyzing: false`: this is the
           // one place outside a load path that stops expecting a grid, and it
           // has to release the barrier and drop the unclaimed-invalidation
@@ -2818,6 +2827,7 @@ export const useVizStore = create<VizState>((set, get) => {
             beatGrid: null,
             trackKey: null,
             sections: [],
+            travel: null,
             libraryActivePath: null,
             error: null,
           });
@@ -3293,17 +3303,21 @@ export const useVizStore = create<VizState>((set, get) => {
         throw e; // same surface as before: loadFile's catch reports it
       }
       void started.result.then(
-        ({ grid, key, sections }) => {
+        ({ grid, key, sections, travel }) => {
           if (id !== analysisId) return; // a newer track superseded this job
           getAnalyzer().setBeatGrid(grid);
           // Sections travel with the grid, always: features.sectionIndex /
           // sectionPulse resolve from these boundaries the same way the export
           // path resolves them from the job's copy (P-15).
           getAnalyzer().setSections(sections);
+          // The travel curve too: features.travel resolves from it per frame
+          // in preview exactly as the export walk resolves it from the job's
+          // copy, so a loudness-driven camera cannot diverge between the two.
+          getAnalyzer().setTravel(travel);
           // Grid and flag in one write, then the waiters — `awaitAnalysis`
           // promises that whoever it resolves reads the result, not the
           // instant before it.
-          settleAnalysis({ beatGrid: grid, trackKey: key, sections });
+          settleAnalysis({ beatGrid: grid, trackKey: key, sections, travel });
         },
         // trackAnalysis resolves nulls for every failure it can SEE (worker
         // error message, failed boot, inline throw), so the only way here is a

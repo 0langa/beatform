@@ -397,128 +397,135 @@
     },
     {
       "id": "tunnel-rings/@defaults",
-      "hash": "8561448f",
-      "signature": "hSM1jDpKsG9+2K+64LzHxI2etm6Eq2B3rGF4sGt/v4ua3brE37rEu3WHmD9SfyExqkFZsF9yzZ2q38DJx4udn1BphDFKaCE1fytGdy5DpFVtxYqc4cHKz5+rplprii0/nD5SwXyO4b7H0aKwollviC5LUhYoRRQlRhQlWBcrcCY8sWuA1qq34L3Hv3qMo0JYjT1NwYeV5cnRyIyflEFbUBcnSRcqcjtccTtbVBsycCE6o01pzJKl6c3V0ZioumN5nkhbyZCf48fPuH2PgjVMWxgsVCE4sIuisIqhViI5YRkwkT9YwIGV5cjQ0qCtqE5juVly0JKk6MzUzpCknUViZxszUxkvczxccjtcUBkuYBkvnUVhz5Sn5srSypCfoUdbrEhgxX6R4b3H1KSzpFpxcic9aRo0URYrTxUpWRcrnkFhtm2F2au55MPNy4qbq0dfiy5AqVttz5+s4cHLyYyfr1l2fi9GjjBPcSM7jjVRqFRvzY6i4sHL1aOxu2Z8xXKHhiQ2pEVbw3uP37TA37vGxI2euW+GtWV/sGN7vnKLx4+g5MDL27G9vHaIokVanjBH",
-      "meanLuma": 117.189748640046,
+      "hash": "f00d5746",
+      "signature": "hDggi0s4sH9v2Lqv4MW9xJuQt4BzqG5iqnBjsHtvwJeN3cO738S6u4h0mFQ8fjQeqVw8r3NdzKmd38jBx5qOn2JXg0A3bzEsgT02dDkypWhcxZmN4cnCzqqdpmxYikIrnFU8wo974ce+0K2joWhdiUE4Ux8dRRkbRRobWCAfcDQtrHRo07Cm4Ma9v415o1tAjVA8xJmK5dDJyJyQlVNJUyAeSx4hdUJSdUJRViMndjMvol9UzKGU6NTN1rCguHldnl1GyaCR487IuIuAhkc+XCIgVigvr4Spr4OpWCkwYyQjm1tRwJGF5c/J1bKkqGVMuHNV0qaT6NTMzqGUnVlNaSglVCEldkNSdkJSUiElaConnllNz6WZ5tHK066eoV5FrWNFxZJ94ce+07Clo2pecjUuaiclUR4fTxwdWyEfn1ZMsnhr1bKo5MzDzJ6Kq2JFjEMsqW9az6ue4crCyZyPsG9gfT01kUQ8eTYwjUU8qGhbzZ+S4srC1K+iun1kxIhqhjkho11Dw49638C138W8xJyQuYFztHdprnJlvoZ4x52S5MnA272xvIl1olxCnUss",
+      "meanLuma": 126.80301355131179,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/ember",
-      "hash": "8561448f",
-      "signature": "hSM1jDpKsG9+2K+64LzHxI2etm6Eq2B3rGF4sGt/v4ua3brE37rEu3WHmD9SfyExqkFZsF9yzZ2q38DJx4udn1BphDFKaCE1fytGdy5DpFVtxYqc4cHKz5+rplprii0/nD5SwXyO4b7H0aKwollviC5LUhYoRRQlRhQlWBcrcCY8sWuA1qq34L3Hv3qMo0JYjT1NwYeV5cnRyIyflEFbUBcnSRcqcjtccTtbVBsycCE6o01pzJKl6c3V0ZioumN5nkhbyZCf48fPuH2PgjVMWxgsVCE4sIuisIqhViI5YRkwkT9YwIGV5cjQ0qCtqE5juVly0JKk6MzUzpCknUViZxszUxkvczxccjtcUBkuYBkvnUVhz5Sn5srSypCfoUdbrEhgxX6R4b3H1KSzpFpxcic9aRo0URYrTxUpWRcrnkFhtm2F2au55MPNy4qbq0dfiy5AqVttz5+s4cHLyYyfr1l2fi9GjjBPcSM7jjVRqFRvzY6i4sHL1aOxu2Z8xXKHhiQ2pEVbw3uP37TA37vGxI2euW+GtWV/sGN7vnKLx4+g5MDL27G9vHaIokVanjBH",
-      "meanLuma": 117.189748640046,
+      "hash": "f00d5746",
+      "signature": "hDggi0s4sH9v2Lqv4MW9xJuQt4BzqG5iqnBjsHtvwJeN3cO738S6u4h0mFQ8fjQeqVw8r3NdzKmd38jBx5qOn2JXg0A3bzEsgT02dDkypWhcxZmN4cnCzqqdpmxYikIrnFU8wo974ce+0K2joWhdiUE4Ux8dRRkbRRobWCAfcDQtrHRo07Cm4Ma9v415o1tAjVA8xJmK5dDJyJyQlVNJUyAeSx4hdUJSdUJRViMndjMvol9UzKGU6NTN1rCguHldnl1GyaCR487IuIuAhkc+XCIgVigvr4Spr4OpWCkwYyQjm1tRwJGF5c/J1bKkqGVMuHNV0qaT6NTMzqGUnVlNaSglVCEldkNSdkJSUiElaConnllNz6WZ5tHK066eoV5FrWNFxZJ94ce+07Clo2pecjUuaiclUR4fTxwdWyEfn1ZMsnhr1bKo5MzDzJ6Kq2JFjEMsqW9az6ue4crCyZyPsG9gfT01kUQ8eTYwjUU8qGhbzZ+S4srC1K+iun1kxIhqhjkho11Dw49638C138W8xJyQuYFztHdprnJlvoZ4x52S5MnA272xvIl1olxCnUss",
+      "meanLuma": 126.80301355131179,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/wireframe",
-      "hash": "fa1d0922",
-      "signature": "YAomYRYwl0xs06S73LXItHaSpk12kjhglDhiq097uneX37fL2Ka/sFWAjyFPkhRIlyFUmDdhyo+r4L/OtW+QiTJYZBY0UA8nUhAocBg8n0BswXSa48DS2aO+sEJ3wWCPiiNOo1J23rjLy5SvgTVVTxAnOwwdSxQqThUsRAwhaRU2oD9t1Zm447vPuFyJvmiQchw8rGmG5crXrWyKYh44VA8qThswiVNxiVNxWiA6fytQhiVPvHOX6czav3GXmyhbtz17z4Oq6svbv26XfCBGRQ0iYy1Gyaq0yaq0aC5JWQ8sp0R02qLA8trm57/T47DKeB5Ar2uJ5svXsW+Nah88WRAsTxsxilRxiVNxWyE6gixSiSdSvnSZ6MzZwXKYmyhbiiNOplR537nLzJSwgTVVUhIpPAwdTRUrTxUsQwwhbBY4oT9t1Zm447vPuFuIv2mRlCBSlzdgyo+r377OtW+QjTNbYRUyTw8mUw8obxg7nT9rwHOa48DR2qS/sUJ4wmGQXwsmXxYvl0xr1KS73LXItHWSpEx1jzdekThfqk97uneX4LjL2afAsVWBkiJRlBVL",
-      "meanLuma": 101.7313099826409,
+      "hash": "0641ccc8",
+      "signature": "AUVRDEpUPIWNl8rOqtPXZ6asOZKaJ36GJoCIOpifZqyyq9jbls7TPJ2lDXWBAnOBC32KJ5SefLm+ttjcXqasIGlxDE9WCD1DCT9FDVlhIHuDX7K4ttzffcTJXLnAR622ClZhQJGartjbhcPIKG92CjxCCC0xDTY5DTc6BzQ4ClBYKoyUks/TtN7hQaWuC3qGD1xnWZ2kw9/iXp6kFU9WCEFGFT9BToF/TYF/FkZIH2xxFm93X62zxOPlWq+2EYGMG6CracHIwuTnV6+1EmVtCT5CJ1hYo8a+osW9KFxcGWJnL5Sajs/T0+3vsODjntreEV9qWqCmw+DjYKKoFFZdCUZLFUBBToGAToF/FkdJH290FnJ7YK+1w+LlW7C3EYGMClNeQZObrtjbhcPIJ251Cz9FCC0xDjc6DDc6BzQ4C1NbKYyUkc/Us97iQKWtDHuIC3mFJpKdfLi+ttjbXaetIG10DExTCDxCCD9FDVhgIHmBXrG3ttzffcXKXLnAR6+3AkRQDElSPISMlsrOqtTXZ6asOZKZJ3qCJ3yEOpaeZ6yxq9jbl8/TPZ6nDneDA3eF",
+      "meanLuma": 124.42485553626531,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/corkscrew",
-      "hash": "9e17d369",
-      "signature": "hB+0gS6vkVS1uJTPwKPVqXzIkWC5ZT6QYz6OhFmrsorN0rbj0rbiwZbXtoXOs37MiSi4nEnDvIrVya3bp3jIekSrQyF1LxhcWjSQVS6IZz2UvJnUya7b0LPgg0apbSiaeiaqp2LIzq3hsYrMbEKYUiaNJRVRPR4+Nxw6JxZRNRtjakKVrIjHw6XWmmi5WRyHaSaXrHHK1brlrHnNWTCKMRhnTyEkekZbekZbUyUoWTqLhVquv53Wz7ffw57YYCWNZyiUr3jN0bbip3HLaDOgKBZYWys0ro23roy2Wyw0OiZpkGe4xqbb0bjhzq/fZymUZSaTp3DG0LfgqXjKaDWdOxx2UyIlfEdce0ZcXCgrRSd9dUuixKDb3sfrx6DcaiaYaCCZlFm4xabZr4nLbEKYQSB3LBdhQR9CSiNKLRlhdESpdkaks4vP3MTqyJ/cmlW+dhypjUG3vozYzK7frnvPdkGnZS+gazinPhx3UieLkVm8v5rXyq3d1bXlxpXbwYzXjSC8mTjDrmPPy5/g0Kzjt4TVlFy9d0SmdEOko27ItIXRxKXZv5rVo2bEsHDNx5Tc",
-      "meanLuma": 109.70862911844144,
+      "hash": "93136a08",
+      "signature": "hCS0iDe1kFe1wp/YwKXVpHzEmmzAZkGRY0CNmHC7rYjJ0bfi07nixJ/ZvZLTvI/ShCqznlDFuIvSya/cmHG6dUWlVS6LLhlbVTOLYjqVcUieoXzAzbXew6LXlV24ikqvcyejpGXG0LDis47ObEWYTSeHIhVKKB1YIBhHHhNENR1iakWVrIvH18HmiVesWyCKZimUoG6/1LvlrH3NUzCDLhljJB9OSlZ7SlZ7KSNRY0eVbUabmHK50Lnfl2u3YSiOZSuRoXO/0LjhpHPHZzafIxVOLy9bjLSyi7SxMDBcIhRNj2i2vJrUz7fgn3K9ZyyUZyqVmmy60LngnHS+YTaVPSB6JiBRSld9SlZ8LCZbPyV2WjOMwqDa3MbppnbEaCqWbSWelFu4zK3fsI3LbUWZQCJ0KBdaJhxWMSNqJxZXaT6gdkmkuJPS38nrwZjXgz6tgCWxlEm9uozUzrLgpnfIfEitbTinZzmkPR90az2ih1W1nXTAy6/dzavgyJzdt3/RkyrBnULGsGrRy6Pgz67itIXSoG3FdUekdUelrH3OrYLMxKfZ1brknmLBvIfVx5fb",
+      "meanLuma": 111.63862288773214,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/cathedral",
-      "hash": "1042a99b",
-      "signature": "ahsjVRogYSsxlVVekVpilU5ZbjA5XScvWCUsXiwzczxElFxkg01UXiowqGpxLAoNPxIWaykxoVhjm2VthUNNViQrQxgdOxQZQxYcYSYuWCQscDtDn2ZvgUdPTyEmNA8SayEpezdAo2hxk1Ndby44ThkhPBMZMhIXMREXMRAVPBUbYiszhE1Vr3qBrHF4ThgdWR4khEFKsHV/nlFeWiIqPxMZQBggZzhGZThFQxsjORIYVyEpekBIpXF5cztCSRoffCo1mU1YtHeBjkZRYiIsPRMZSSApqYGOqYCOSSEqNxEXVh8ngUBKqnF6h0RNYiIpZSIqhkJLrHN8jEhScyk1TBYeSBojaDlHZzhHRx0lQBMaXyQsrm14rXV+fj9IUBwheSYvpE5bsm96k1NdejI9VBskRRQcQBUcOhIZRRQcVhskdTE7k1Ndr3qBdDQ8Xh0kVRcdZygvmVFcsG95fT9Iei87dCc0XRwmShceUBsiYCYujUVQoGZvtnqDaSgvPhEVVRMZkTRBejQ9lFReqWVwiEVPbzA5bSw1cS03gDdCpV1omV1mnlpkai41Wxwjk05W",
-      "meanLuma": 68.77610542052462,
+      "hash": "e22f4413",
+      "signature": "Y0QJTjYOWkUej3hAjHdJjnQ4aE8iWEEbUz4bWUQhbVcvj3pKf2o+WEMdoo1QJxkEOSYJZEoYmoA9loJTf2YwVkAbPisQNyUNPioPW0IZXEUda1YumoVUe2Y2STcXLx8IY0YOdFskqpRYjnY/aU8fSTEQOCQNLx8NLh8NLR4LNyYPXEYff2o+xraHqJRbRzENUjsRfWQtqpZfmHw2VDwWOiYMOicSZUw0Y0wzOScSNSMMUTsWdF0xnotebFcsRDEQdFYUknczr5lfiGwvW0EVOSUNRjIbqo2Bqo2ARjIcMyELUDkUe2IvpZFdgGcwW0ITXkQSf2Yup5NfhWwzbE4YRy4NQiwTZk00ZU00PSoTOyYMWUAYqJFTp5JeeGAuSjUQcVIQnoEttqBajXU/dFcfTzYRQSkNOycONiMNQSoNUDcQblMgjnY/xbWHbVUiVj0PTjQKYEgYknk5q5VWd18ud1kdbU4VWDsQRS4OSjMRY0oehmwwm4VTsJtgYkkYOCUITTIGiWkWc1khjndApIxMgmgxaFAhZ00cak8deV0knoVCk35LmYFEY0wfVDsOkHc4",
+      "meanLuma": 86.93363933256208,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/hyper",
-      "hash": "b2b89038",
-      "signature": "UwFsjhWksU3C1rDd4sPown/QoUu2hi2giy2msVfEvoHM4sTp37bmxWXSx2jTkwKsiQehgyaYy5TW6M7tvHLMeySXXA5+YhGGXBGAXA9+hSWhuHDI6tHv1JzdpCi4lQatfwuYulLJ4cTnzZvYdy2QPQtaPg1hPhdfOBZXNwtYVwx7mDGy05vd5sXsvE/MuDPJfBOTrWm77Nfwrm++exqaPwthZDAzoXGDoXGDaTI1URJ1fRmdzoza7tjywmvQsT/DqBi8wXXO69XwqGG6ZxSIOQxafEhQ0rbS0bbSgkxVUBN0kzOuuWPL79rzzHfY0nTdjRWjuGrG7NfxwnTRZBaCNwpXZDAzonKEoXGDbjQ3XBWBqkzAv3LO7tnzw2vQtj/Gnw22tk7G5MTqzpvZhy6hTQxuPQxgPhdfRRhpTRByWAx7lzCx1p3g5cTr147gtCzFewaWkSemypTU5s3ss27DhCWgXw6CZhGKbBSQag+NjCWoyXzW69Lw2Z7iqii9tRjHegOUoBa1t03H3bLl4sPovX7LsVDFkS6siy2mq1K/yIPV5cXs27Djy2bXy2nXmwOy",
-      "meanLuma": 106.32208181905948,
+      "hash": "010b6cc8",
+      "signature": "OByATiyajXHDysDh2NDqqpvTg3G9Y1GoaFatnIrPo5XL2NHr2M7snX/QbUC5XyyzViupX0SfuqvZ3djup5fTWkijOi2MWVGcMSmANyyIYU6qn4/M39juvq7egFrBdka/UiyhlnnK18/pv7PeWEmYJx9rIiBlKCtlKy5jIiBjPjSNcVy4yLzk3NPunH3QekjDRCiKuqzY5eDzlojCUD+gIh9oLjVkcIShcoajMThrMy9/UkCjwLPh6eP1wa7hb0K6glTGrpjW497xkIDAOCyEHh1cRVF7v8jVvsfUR1R/KCZ1Szugn4zQ5uDzxLLjw6vkWDSkp5DS6uX1q5rXPjGGHxxhLjVkdoundoqmMzpvPDeKf2/BpZTS6uT2wq/ic0W9ajy4lnjL2dHsvrLdYVCmRj6JIyFoJytkKi9uKSh1QDWRcl24zMHn29Ltt5/efkzHVSuob02xuqzZ3dftmovHXUunOi6NNy6MPjSTRTebaVWzuarf4NnwxbPkg1zEiFTMRR6aXDSplHbJ0sbp2NDqpJbMmYXPalexZ1StjnvGr5/X29Puz8PmpobWeknEaDK7",
+      "meanLuma": 123.13143603395083,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/kaleidoTube",
-      "hash": "dff733b4",
-      "signature": "E3WjOJ2+Zq3FqNLftNnjk87byYuNwXyBwHyByYuOk83atdnkp9HeZazEN5y+FHajHnylTaC9m87dvt/pmLzIvnR7slVmiDNDiDREs1VnvnN6mLzIvt/oms7dTaC9HXulPaDBa7TLut3nn9PfuXZ7jztKnUBeXBsyXBozmz9djztKund8n9Pgut3oa7TLPaDBV67Kf73RxuHqlbrGyH2HcyY4WB44f0Z2f0Z2WB04cyY5yH2IlrrGx+Lrf77RV6/LTK/LiMjaxePs1qKiwXWBkjFQbSxToKfBoKbAbi1TkS9PwXSB1qKjxePrh8fZTK/MWLDLf77SxuLql7zHyHyHcyY4WR44f0Z2f0V2WR44cyU4yX2Il7zHxuLqf77SV6/KPqDBbLTMut3nn9PfuXV6kDxLnD9eXRszXBoynD9ekDtKund7n9Pfut3narPKPqHBHnylTaC9m87dvt/ol7vGvnR7slRliDNEiDNEs1VmvXN6l7vHvt/om87eTJ+8HXulFHekOJy+Zq3Fp9LftNnjk87byIqNwXyBwXyByoyOk87btdnkp9LeZazEOJ2+FXek",
-      "meanLuma": 142.5084119116534,
+      "hash": "06461957",
+      "signature": "lQqFryijv1643KPY4LHe0oLQu1q6s0uyskqyvFu60YHP4bLf26PXvl63riejlguFnBWOv0q225XW57zlz33NskWypzGrcRd4cRh5pzKrskWyzn3M5rzk2pXWv0q2mxSNryKjxWO/4rTf3JvaqEqoehyAhieURhNYRRNYhSaSeh2AqUup3Jva4rTgxmO/ryGjtiurzXjH6cbnz3/NtT+2WxJnQRpWYlKHYVKHQRlWXBJntT+3z3/N6sfozXjItyyswzG51oDR7crr1YfToSqkbhJ+TClolbq4lLq3TCppbRF8oSqk1YjT7Mnr1X/QwzK6ty2szXjI6cbn0IHPtD+2XBNnQRpWYlKHYlGHQRpXWxJmtkC30IDO6cbnznjItiyrryKjxmO/4bPf3JvaqEqnex2AhieTRhRZRBJXhSaTeh2AqUqo3Jva4rTfxGK+sCKknBWNv0q225XW5rvkzXzLskazpjGqcRh4cRh4pzGrskWyzXzL5rvk25bXvkm2mxSNlgyGryikv1+426PY4LHe0YHPu1q6skuyskqyvFu70YHP4bLf26PYvl64ryiklgyG",
+      "meanLuma": 112.53299254436659,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/iceCave",
-      "hash": "2f48d8b6",
-      "signature": "hRRGpjFtsU+Cv4CgxI+qum2XrleFcy1NkUBnjEJlv3qexJCr2KnCxoOmxICiSwkgdxY+qT11xXmi2aTCu2eVbilHfiJOQA8jdyVLeChOcCpJz5Oz1ae/sGyOxYCjgi1RkSNXnEdwy5SxwHmep0J4UxMuOQ0fNw8gQBEmNgwdgTBXfTJVvoKhx5OuoFN3vHKXqTVxqFiA1Ke/uGSRbCFCWBEwRRYsd0Fhd0FhRhgtdCxNaCBAzpOz2q/GxICkz4yvsjd7xGuc26rGtlyNhSNTRQ4lVSI9u5eku5ajWSVARA8lnkt1yYir477S1Z+71Zm5szp7vGKT2arEv2mZdiNJVhAvRhYseEFid0FhTRkyfi1UciNH0JS11Ki/qFmAzoyvmSZenUhxyZOvuHaYhTNaeRtIRw4mTBMsPQ8jQw0kZRc5zYuvyIaqzZWyp1V+wXWbahM2oDlstW+S0566wmudiC5agCFPiyVZVhIumjJpgSxU0JC05b/U26bCzYOrmDJiYgwsoi9pt1GI0Y2zypGvvW6ZoUV1p0V5iTJcwWmbyX+oypGvxYKlz4iv0o6ytlaH",
-      "meanLuma": 101.42443362268335,
+      "hash": "aeb30211",
+      "signature": "B2N3HIqcPaGvc7C5hLe/U5WgR5unJV9qMnqGQYeTU4+Zhbe/ns3ThMLKImt6BDNDCU5gJ4ydZrS/l87VUaCrIFplFmVzCzA4G2BsHFxoIVtmhsLJn8vRY6Gsaq+5CDxMDlJkQZ6rib7Gaa23MJCeD0xYCi41DCwyDjM5Ci00KXF8KGh0aKStibvDkcfODkxcFGp8TqSwnsrQUZ6pGFVhCjxGEjk+PW5vPW5uFj1BFEJKGVJecLC5pdDWgL/HVaWxHJOlVrG+ntHYTKezFmd1Cjc/HklMj7eujreuH0lMDjtDL3qGjsbNt9vglMrRfb/IHIudT6u4n8/VU6WxGF9sCjlCEzo/Pm5vPW5uFkJHF1NdGltocbO8nsnQgb/IGmp7D11vQZ+tiLvDaKWvJ257EWJxCjdADjxDDDE3CjhAIGt3fL/Gb7O9icDHkMjPD1ZoCUNTJoSUYaWwksfPVrG8Im98FGVzGXJ/DEJNIoKPIWp3a7S+tt3il87VarjCCFdqBUZZEmt+Paa0fMPMhb3FUpijPJShM5CdJXOAV7C7VKGshbzFdLW/hsnRe8PMPpyq",
+      "meanLuma": 122.4520509741508,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/waterslide",
-      "hash": "0f522eab",
-      "signature": "kRR0vEanxX+34r7b1p3Ns2mlqk+ajTx9rFSdrGCexo6758Xh0ZnGwW6x0YXC1o/IjSJzyWi44bPZ1aPMsF2hii55dh5lWhVMWRhKhDF0u2yu4bHZ6srkyYK7ozmNhRFokTJ7xIO36cbjx3u6hDBzURJESBhBVR5OThZFbCNel0SHtWqo3bPW1qTNrVKahxlsq0GV0ZnG3LPVrlufex5pVBZLonh/q4OMYShcaCJbeiJpzoLC2qjS4LbZ3aPSliJ8w06w3aLU3q/VpVSWYBlRUxtMupSkxKG2ZC5gVxNKeB9nuWyr1JzK47rc4avX25fPpECO0JbF4LfZtWOnhCJyYBRTZzBkajVoWRpQeCFoiyd4ynq92abQ3bLV1pLKnCGCkTB6w3+258fhzIfAmTqIgBtuVxJKYBVTaBNYiyV5oz2Sy36/7cvo2J7Or02ckRp1niGDx2G24avY4rHbwW+znDyLlieEgCBuqTiXnj2NyHK62KLP5bze57bfrzWYkxF1shyXsDWZxHS13rPW263T04bHwGOytlmmyW27z4fD5LLc58Ph0I3EvU2p25DOriaT",
-      "meanLuma": 118.22108000578656,
+      "hash": "86e662bf",
+      "signature": "EnKFOZmogMLKvt3hm8zRaKiwSZafO3+IVqavXp2mjL7FxuPnrtfdp9bcSqWyCmh9IGt8YKaysNjdo8/VXKCoKXB6HGRrGl9mGlRbL3qDabG5kcbMxeLmmMvSN4uaKoGSMoqZhcPLxODkfcHJL3uFE05UGEVGIFRTFENFH1thLnmDba+4xOPmpdDXUZ6rhMfQR7PAmdDXtNvgW56nHneBFUhKa52Re6qdKl5dF09VH2dwVqOtud7iyefqhcXOiMrTRJqnotTbsdvgWq64GmJrGlFTi7apocW2MGRjGFVbNo2WTZqkpNHXutzhaLTAk9DYPY+dlMXNt9ndZqy1Im54EklOL2RjNGpoGE5RJHN8Jn6JmtTZpdPZxuToYa66Uaq3MZqqfsHKxuToicrSRKu1GWp1E1RbE09WFmJrH3iDPJWheL7Hz+vuntLZTKe1GYGVJqKzWrO/p9Xbr9fcb7K7PZejM5ynIHWAMZKdPZKdbbvEodHXyujsqtzindbdEIabEHSJNZuqcbO+tNvhrdjeic7WY6+5WrC6YrW+isnQs9/kyefrjcbOS6q3d8rTPq28",
+      "meanLuma": 149.8808430844918,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/foundry",
-      "hash": "8b8b73b2",
-      "signature": "ynuK3aSv4rnC6c3T6tHW5sbN3bS+1qq106ex2rK76MnQ6tHW5crQ16+23re9uW160I2a26y16MrQ8Nne5sTM1aezyZKguoCQuYCPzpqo06ax48PK69Xa5MbM1KevyIWR05ik3re/7dXa6s3U4bbCxIuasXGEnmJ1q2yAqWx9voiW2a+56MzS7dXa37jA1Jmk3qu24b/G7tre5MTL1aOwwoCUoGV4sYKYsYGXqm+Dv4OU16i15sjP8d3i58jO7M7T4q+658XM8Nvg5MHK0p2stXOHpm2D1rvI1bvHqXKHsHCD06Ov48DI79rf48PK7dHW5rS/6cbN8t3h6snR2aa0wn6TrGqCs4OZsYKYpWd8zZWm16Sy5sbO79vf4sDH6szS3aKv5L3F79bb6s7U3bG9x42dtnOHtXCHp2V6uHOJyI6e6MXO6s7U7dXa3be+05mk15Oh3K226MnP7dbb5cPM3a26152uxoeZxoeZ0Zmp2aq26MfP8t7j6svS3K220IyZy3yL26Ku3rW86s7U7dTZ7MvT47nE3K6637C95LrG6cvS7NPY68/V6cfN57/Hz4GQ",
-      "meanLuma": 180.30908563850323,
+      "hash": "ee8b8762",
+      "signature": "yZdt3bqb4sey6dbK6tnP5c/C3cGx1ren07Sk2r6v5tLF6tnP5dPH1rup5dC/uIVh0KSB27uk6NTF8OHW5c7A1balx6COupB/uZB/zaiW0rOj4cq969zT5M/C1LWgx5t62rWW3cSx7d3S6tbK4cSyw5uJsYJznnFmq3xwqXxuvpeH2bys6NTJ7N3S3sSz5s672LWa4cq77uDY5M7A1bOgwZOAoHJqsoyNsouNqn10w5qL1rWk5dHD8ePb5tHB5My42rid5tDB8OLZ5M2+06+dtYV1qHt21rrI1rnIrYF8sIFy2byt4su97+HY486+276n4cCj6NHA8ePa6tTF2bejw5SBrHtxtI2Os4yNpXZtzKST1rSh5c7B7uHY4su84sm24r+e48q27t7T6tfL3cCux56MtoV1tYJ1p3ZquId2yJ+M58/A6tfL7d3T3cOx5s+71qyG27yl59PF7d3U5M6/3Lyq1q+axpqGxZqGz6iU2bmn59DB8uTa6tXH3L2lz6SAyphu2reZ3cKu6dfK7dzR69bH48e13L2r38Ct5Mm26NPG7NvQ69jL59C+69bEzp1y",
+      "meanLuma": 189.08100254629665,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/honeycomb",
-      "hash": "06eb8257",
-      "signature": "lCtBqEpgt3eG27S/4L/IzJalt3OGsGN5q2B1u3WJ0qOw4cHJ27S/26y52aayoDFKiS9Ar2F016m148XNy5SjpFhtjDdOeik+eio/hzZLo1hsypGh58jQ16e1vmyBtUdjnkFWyIeY48LL1qq2q2J2ei5BWhsrWh4uUhsqYiEyiztQtmh/37fD7NLZx4OVuFJts1Vsw4yZ583UxI6dm0lgaSEzWCEygk1kgU1kWiEyfzBGpU5nzZSl69DXz5WkxnuOsVZt1J2s6MzUyYyel0NaWRsrYi0/v5ytv5usaDBEaR4yvneNz5Ck6s3V6MfPwWJ8sVdsyI+e6s/XypKioUtjaCAzXyI0g01lgk1kZiY6kj9Xr1Rw0Jan6s7W05iow2J9t1Jsw4GS5cTN16q3rmN4izRMaR8zYR4xZR8zaB4xmEBZwW+J5cHL5sXO4rrEu1VwtEdjvGp/1KWy58jRypGirVxzmz5ZlDNPkjJNoEBdsmB52qm458jR6srTwm+GsERfmC1DuV10y4ea27S/4L/I0p6txHuSt2d/vGqDwXqP0Jmq5cLN4bjEyoSXwl55uENi",
-      "meanLuma": 127.78538188657598,
+      "hash": "1bc90945",
+      "signature": "dVoLoIgnuahf1cuj3tWxzsCJsZ5crZdKp5FJtKFcw7WA3dWy5d68vaxf2M6Sw7JbgWgWqpZEzMCQ4Ni5wbJ7o4xCh2wkbFIZbVIag2gkootB2Myb5N265+C9uqZHp40Zl34itKNh39azz8SWqpVMdlweVTwSUTkUUDgVWkEWfGEfsp1O1MiX7ObKxrVkr5clrJUtxbd35N3CxLZ8i3MxYUYUVT0agWhLgGdKVj4aclYbnIQ40cSQ6OHDzL59tJ8+qJIwx7l+5d7Bvq5yjHItVDsSYUkowaegwKegbVMwY0cSsZtTx7d05+DBz8J/uaM0o4wuxbZ35+HDybt+kXgyYUYUW0AbgmlLgWhLZEogfF4co4k11sqW5+DD0MJ6vKYwrpYlxrVl49u20MSWrZdMiWwgYEUUW0AWXUEVYkYTjnEgvqlQ2MyX49q0xLVks5wmpIoZuaZH18yW5Ny5y71/rpdEl3olhGYbg2UbnIAmsJlDzb5/5N252MyTvapHrZUjm4ATtZ81vq1g3dSo3NSxx7mCv6xdtJ5Lu6VNvKlf1smS49qz29KkybliuqQrpYoP",
+      "meanLuma": 153.36872780671234,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/vector",
-      "hash": "32dbc0c8",
-      "signature": "DQACHQYLYi48x56s17bBoWZ5iEFYZio7aCs9kUxipm2A2LfCyaCuay8/KgcOGwIGoTFWjzFQrXqK38PNi1JjORIcIgcNHgULHwYMJggPQBMekFNm38PNsXyNzpys5MHNGgUJZDA+4b/MxYyhVx8vNAoVIAcONA8aNRAaIQcNTx8tcT5N3bfE69TcbjNDKAYMIQcMhE1c59DYilJjShIiSA0dQBglh1NriFNrQhkmkExjdkRTkFRn6NLajE9hMAoSrjhkx3mX7NLctmCBdxo3RAwcXSw+x6qwx6mwZzNGjEVdy5Wp5MLO9ufs7NLb7M/ZJQgOhk5e59HZjVNlTBMjSQ0dQBgliFRriFRrQxknkExjd0VUkVVo59HZjU9iMAoRGwUJZjE/4L/LxYyhVh8vNQsWIAcNNRAbNA8aIQcNUB8tcT5M3LfE69TcbTJCKQcNoDBVjjFQrXqL3sLMilFiOhMdIAYMHgULHgYLJQcOPhMejlJl38PNsXyNzZys5MHMDQIDHAYKYi47x56s17bBoGZ5h0BXZCk6Zis8kUxipW2A2LfCyqCuazBAKwgPHAMH",
-      "meanLuma": 89.53781402391868,
-      "litFraction": 0.9979263117283951
+      "hash": "f24067e9",
+      "signature": "AQ0CBx0JVKRlocipude/aqByR4lRR4FPSoNSUpJcbaN2utjAo8mro8+rCCoNAhsFOKFPHlonfq6HxuDMbq16IFEmCCILDjMREDYUCSYMMGA2l8SfyeLPf7GJTY1YxeTKBRwIVaNmvNrCkcSbKGIxBx0JCygNFDgWFTkXDCwPCCIKUoNYt9q9w9/IqdKxBygLCCILUIVZ1OrZZaRwDCkPEkkWHUEfX4hdX4ldHUMfVpFaDjISkcGa2+7fU4xdCzEQP6xZgMeR2/Phabd5KYc3IGsnNF80s8ens8emO2k8jrmRtNm4yOXN+f361ezZz+rUCSUNUYda1erZZ6dyDCoPEkkXHUEfX4ldX4ldHkMgVZBaDzQTk8Kb2u3fU41dCzAPBhsIV6RnvNrCkMSbKGEwBx4JCigNFTkXFDgWDSwPCCMKUYJXt9q9wt7IqNGvCCkMN6BOHlknfq2Hxt/Lbax5IFInCCAKDjMRDzUTCSUML181lsOeyeLOgLKKTI1XxeTKAg0DBxwJVKRlocepude/aZ9yR4dQR4BPSoFRUpFcbaN2utjAo8qrpM+sCSsNAxwG",
+      "meanLuma": 112.94494076003099,
+      "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/gullet",
-      "hash": "67885654",
-      "signature": "lC8znkVKsGpuzaCj1K2ws32BnFtgmVVbjk1TlVhdtX6D1rK0zqapqGptqGNls29woT1CqlldxpKW27i7wYOJrFtjei82aSMqYiInbysxtXB2x5OX27q9zaKkunx+vX1/pUVKtnB017G0x5aauGpyhjI7TxkfQhccQBYbUBshpVtirGlw1q6x3b2/w4yOkjs/q09Uv4CE3sDCuX6Dm0ZPZyAnWyIrfEpXe0lWajE5WhwisGtyvoiN48fJw4uOnUVKrlVaxImN4MHDxoWMrlFcWRwiXCs0upKoupKnXiw1aikwjzxF1Kaq5MnL0KGko0tQsFNZwoKH38HDvIGGnklScSMsYyQufUtYfUpXdTQ+biIqunN6xY2S5MfJx46SpUpPqUlOuXJ22LK1x5aavW12mjxHYB0kURsiTxkgZyIpt2dxvXV827K14L/CyJCTp0hNqEFHsF1iyZSY3Li7yIiOvGhyn0FMlzdDkzQ/nUBLx36H0pyi4L7B1qmsxoSIyIaJozo/qExRuG900KKm1q+yvoOJsGdtsmRsql1ksGduyo2T3be7162wvXh8vXJ2xH1/",
-      "meanLuma": 120.81445215084784,
+      "hash": "b1c28a20",
+      "signature": "myxBpEJWtGd3zZyn0aixs3mGmlZkk0pZjEhWllRis3mF1a63zKCps3J+tG57s2d1ozZMrlRnx46b27S9wX6OqFJndSk4aB8uYB4qcCk3sGR2xo+b3brCz6CquXOBv3mGrEJZuWx92a+5x5KetWB2gis+UxgjRRYgPxQdURkkpldqn1Zm0qSv3bvDxo2ZlzVIr0lgw32N3r3FuHqIlT5SaR0tWh8ufEdae0dZai49XBont3GCw4qX48TLvHmIokFUtFFnx4WU4L7Gw32Or0tmXRonXCk3uZGquZCpXys6ayY1izVJ0J2q5MbNzpqlqUhctE5lxYCQ4L7GunuKmUBVdCAyYiEyfUhbfEdadDFDcB8xwHeKyY+d5MTLwn2NqUZbsUZdvW+A2a+5xpKeuWJ5lzRMYxsqVBonTxcjaR8vuGF5tGF22Ki04b3FzJCdq0JZrDxUtFltypGe27W+xoKTt1x0mTdPli9JjyxEnDpSxHKJ0Zel4b3G16ayxHyMyoGRqjZPr0lfu2x+0Z+q1aq0vX6NrmBysVlvqVVpsGJ0x4WW3LO91qaxxH6NxXqKxHSF",
+      "meanLuma": 117.80997508680441,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/gallery",
-      "hash": "10de346e",
-      "signature": "mzBGdSU0nFFixY+d16a1x4GYolBojT1Tkj5Wp1NtuHGG3bO/xo+eo1Rnhis91aGsch4sjT1Nt3uK1am2rmh8nkJfdCE5XhksZRswnD1dpE9pr2h93bfCv4CQnERXiyY5iSs9pFdpzp+suYCQhTxPYRouZxgxQxEiSBIkWxgsXxoslUJZwoSX06KwsF5ymTJJmzhNtmx/2LG8r2l9byg7QxAeSBcpcz1dcz1dShgqVxMmiTBKuW6F3bS/v3KHrEhguFBryoCV3rXBumuEhitHURIlVSI5tI+ls4+lWSM7WRIoljlXyYac5cPN2qi11Zemq0NcwHOH3bTAvHGIhy9JUxMlSBcpdT5ecz1dThkuVhMmiTBLuW+G27O+v3OHp0BYmzNKsl9z0qKvwIOViz1SYRstWxUqUBQpRxEkeyNBcx83nERew4WX06Kvr11xmzRKhiQ3mEJVvH6N1am2rGZ6n0NflzJUbhw0ZRovgSVBsVZ0uW2E3rjDxIOUoEZajyc8oTRLeyg3n1Jkxo+e2Ke2vnSLrVZxmEFbkz9XqVRu0ZCm4LXCzZOjr1twlDJG2KOu",
-      "meanLuma": 101.74631915509292,
+      "hash": "4aff4315",
+      "signature": "YCERiEQtnGNQxZ2Pz6ufyJWFomNUjU5CkVBDp2hYuYR1z6yfxp6Po2hTrnVceS4XezUfjE87t4t70LCmrnlrkU1AdTEoWiEcYCQenlRHjEo9r3pr07Knv5F/nFpCnlg8rGA/pWtWzqyfvJCDhUtAYSYgaCUiRRgZSxobVB0bYCYflVRHyZ+R0rCisHNc1a+aoVc5t4Fr2byyr3pseDowRBcVSh0gdkRTdkRTUCIlVx0amVdLuYJy3b+0v4hxsm1PuHBNy5d/38G2u4FwiD8zVRwaVykvs4issoisWiowZSQimFBDy5yM5s7E27mo1qyWrGFBwIly3b+0u4R0jkY5UxwZSx4heEVUdkRTVSQnWB0amlhLuYNz3L60v4hysWtMtWpGsnVd0q+iwpWHi01BYCYgWB0bUx0eShoafDMvdC4mnFhKyp+R06+jrnJb17CbjD8ll1ZAu4190bCmrHdpk05BmUo9aichYSQegjctnlZHuYFw1bSow5WCn1xDoVo9aiYUjUcvnmVRxp6P0Kygvoh4rWxbmVVHk1FEqmlZ0aSU1LCjzaOTr3FatnthhjYc",
+      "meanLuma": 113.4645953896611,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/interchange",
-      "hash": "c5b8c974",
-      "signature": "kQpljxlprFKR2arM47vZyH61pkuNulKikzR3t1efwnuv4bvX3KrP1ovEpSGAmA5tlRBrvD6e1pbG5sTdvHKpoDGDZBJIgBdiUww6bhNQiixuxXSx68ni4a3UqjaKoyZ+fhNYslaY5L3a2pvLljd7WQ4/jit2YA5JThA7SAw0lyp6pDmI2aLM5L3auVefmxdzgRpduG6j6c7iu3KohR9nWwpAXh5OiFxdh1tcTxdAUwk6lyx6xnSz7dDmzXW4ujaZoCF8yXq0683jumeldRhYQQkuWiROxKG1xKC0XSVRSgg0ih9sw2mt89nt7cPk56nasSSNy3O17c/lxXWxgB5jQgkuShU7i11fiVxdUxhDdxZbnS1/xHSx+OX08snp8cXolRZttVec4r3Z0pjDmzd/hhNmUAo5WBBDWhBFXw1FeRRarTqR5rTa9tvw2GLC0zi3jhBlqDaI2JbI6cXgyHO0jy1zgBNgZQ1IkBpxcxNVsTuVxXOy9+Hy56bb11K/ziGvlwtqqR2Dyl6y3avQ4rvXx321vlWnnjaCw1arrk2VzX6789bt78bm12DBzyqxzRus",
-      "meanLuma": 110.15315284529234,
+      "hash": "57f40caf",
+      "signature": "DGqWGWmPU5KsqszZvNnjf7bJS4ylVKO7NXeTVJuzfrHDvNfhqs/bh8HTLIeqCmeTD2KMP527k8LSxd7md6/CM4ajFE9sGGKAD0BZGFt5On+aib7Py+PslMTVUJ24D2SPE1R5Vpexvdrkm8vaOH2YDjtUEEFYD0lgDzdJCSs+LHyXO4mlmcXUvtrkWJ+4F3KaGl2Bb6O5z+PqdKy/H2KAC0RfI1lqSXh/SXh+F0BOEERdIGyLh77P1OjvdLfMLJCzI32ie7XJzePraKW6GFZzCi1AJU5Znry/nru/JVFdCTVLGmWEaq7D3/D2weLspNflJImtdLXK0ObteLXIHl58CjBEFTtKSnuCSXmAGENSIGqEIXKRkMPT4PH3zOryx+jxF2uTWJy1vdnjmMLROIKdFGaGCjRKEEBTEEVZCj9YEFFwPJKu1+70wOPsZMLYQ7vVDl2HOY+ulMTVxuHpeLjMMXuXFmWFD01pHHGPGF58Qpu1kcTU2u/1mtXjVL/XH63NC2uXH4WqX7HJq9Ddu9fhf7fJVKO8N4KeWazCTpStl8rZ2O70r9vnYsHXLLHPIK3O",
+      "meanLuma": 137.49640257523143,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/style/slipstream",
-      "hash": "fac67608",
-      "signature": "LEdbQltsh56ruMbNu8bMna20gZOaboGIdIeOd4iPoLC2wc3Ss8DHobO9VHKFXX2RQF9zXnWEnq21xM7TlqeuYHB2TFxgQU1QOURGWmpuZnh/kqKpxM7Tp7jBdZGhWH2TZ4mdi6KvvMfNo7C2c4aNPEdLNTk6NTMzOTY2MTQ1UF5hiJqhwMzR0tvgssPMm7PAWXeKlam0zdfbk6OpTFpfPERFQDg5e11we1xwPzc5PENEYXJ3mKiv0drel6y3Z4eaUGt8kqSuytPYj6CnXnB1Ky8vUkJHrK3Cq6zCVUVLNTk6hpaamauy0NndnK+6ZoWYXn2PkqaxzNXZlKSrT15jLTM0PTY3fF1xfF1xSUFCXmZmYXJ4na+21d7iorfBbo+hcJKmlq67x9LYssHHeYyTSlhcMjY2Pzw8Ozg4PUJCUF5iiZyjrbvBws7UrL7HoLjETnGHcIubpLS9wszRj5+ma32EW2xwPUhLR1VXVGVpa32En7C3yNPYq7zFdpKiXoSZOVlwTGh6hZyps8HIwMzRobG4eYqReo6VcoWMiJuipLS6wMvRxtPYqr3HYIGUZoic",
-      "meanLuma": 135.52442457562168,
+      "hash": "a632e077",
+      "signature": "PjRJWE5jkYecxb/Nx8LOpJuxjoKheW6OgneZgniUpJyyz8rWv7nHl42icWV+YVRvZVlydWyBrqe2zMfSpJuza2CBUkhwQTlhOjNXWE11d2yOopmwzMfTwLnHjYKaiHyUiXyWmpClxsHNraa3fXGSPjZYLitRJyhKKixPJyRETENrjYKjw7zN2NPdwrvJuK+/c2eApZ2w1dHboJevUklnNzFaKzJTTnGETnCDLDJUOTRbZVqAppy01NDaq6K2h3qUaF10opqr0MzWnJOsZVmCJyRDNENhsrmzsrmzN0ZlLSpRjYKmr6W91M/araS3g3eQfnGLpp2w087ZoZmwV01uKSVEKjBPT3GETnGEMzpfVU57ZlqArKO73dnisqm8in2Xk4agrKK30MrWu7THgXWXSUBoKSZJLjBXKixRNDBbUEZwk4ept7DDzMfTp5yyu7LCcGN+hnuStK29ysXRnZOreW2RW1B7PjZdRj1oW1B7eW6Rr6a90cvYw7zKkIWdkYWdTkNaZltzkomdv7nHzMbTqKC2g3mWiXyffXKTlYqpqaC2zcjV083Zo5mufXCKcGJ+",
+      "meanLuma": 129.4176845003825,
+      "litFraction": 1
+    },
+    {
+      "id": "tunnel-rings/style/metro",
+      "hash": "42528be1",
+      "signature": "VTkOY0UTjW4rt55gsZtqiGw8gWEnZkgcY0YcfV4pgGc6r5prw7B+g2cuXkEUVDoRXT8QaEscl31JuqZ2nX49ZEUZYkcggmlBfGM8W0IgWj4XnYJJt6N1ln1JZ0sdWT0QdFIShWcqs55unoVQaEodXkAXLhsIMx4KNB4KKxkHVzsXclYorJZksp5ugmUrbUwToHwbrI4+x7WFlXc6WzwSPCUMOSMPZEkyZEkyOiQQPCYNXD0SknU5yriLw65yuJ9ahmIZooU/xrOCmHg1YD8QOSIKRi4YqY9/qYuBRzAZOCEJWjsPkHE1w7CBmX08d1UWbUwTkXQ3w7CEk3Y7Y0ISRSkJPycPZkwyZEoxOyUPQiYIYEATkHQ6wa+DjXE3ZkcSa0kOkHErxK9zr5VSkW0iVjUMNyAIRSsPTTMVNh8IUzQLqotDrZJSzbyMiWopaEcPfVYMlHAdu6FTwq13k3U4Z0gYY0ANTjAKTzAKZEEOaEgXk3U4wax3zLh8imgcdE8Llm8PhV8RknIorJRbspxqnH8+o4IzgWAiiGcmq4s7mn0+sp1rrJRbkXAng14TtpxL",
+      "meanLuma": 101.69608853202242,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/color/grayscale",
-      "hash": "a965ef00",
-      "signature": "OTk5TExMfn5+ubm5xMTEmpqaf39/cXFxc3Nze3t7l5eXwsLCw8PDhoaGU1NTNjY2WVlZcXFxqKiox8fHmZmZY2NjREREMjIyPz8/Pz8/Z2dnl5eXyMjIqqqqa2trQkJCU1NTjIyMxsbGra2tampqQ0NDJCQkICAgICAgJiYmODg4e3t7tLS0xcXFioqKWFhYT09PlJSUz8/PmpqaVVVVJCQkIyMjSUlJSUlJKSkpNDQ0YWFhoKCg09PTpaWld3d3XFxcnZ2dzs7Oi4uLR0dHJycnLi4ulJSUlJSULy8vKioqUlJSkJCQzs7OrKysY2Njb29voaGh09PTn5+fWlpaLS0tJycnSkpKSUlJJiYmKioqWlpaoqKi0NDQnZ2dXFxcX19fjo6OxcXFr6+vbGxsOTk5LS0tJCQkIyMjJiYmV1dXfn5+tra2y8vLmZmZXl5eQ0NDbW1tqqqqycnJmpqabW1tQkJCRkZGNjY2SkpKaGhonZ2dycnJr6+venp6hYWFOjo6W1tbjIyMvr6+w8PDm5ubgICAeHh4dXV1hISEnJycyMjIu7u7hoaGWlpaSUlJ",
-      "meanLuma": 117.19102044753086,
+      "hash": "fe2eba5d",
+      "signature": "RkZGWFhYiIiIv7+/ysrKo6Oji4uLenp6e3t7hYWFn5+fyMjIycnJkZGRYWFhQkJCampqf39/sLCwzc3No6Ojbm5uTU1NPj4+S0tLRUVFdHR0oaGhzs7OsbGxd3d3T09PYmJimZmZzMzMtLS0c3NzT09PKioqIyMjIyMjLCwsQEBAf39/t7e3y8vLlpaWaGhoW1tboaGh1NTUpKSkYGBgKysrKCgoTk5OTk5OLi4uQUFBbW1tqamp2NjYt7e3hISEaWlpp6en09PTlJSUVFRULi4uMjIykJCQj4+PNDQ0MjIyaGhom5ub1NTUuLi4cXFxgICAra2t2NjYqampZ2dnNjY2LCwsT09PTk5OLCwsNzc3Z2dnra2t1dXVtLS0ampqcXFxm5ubzMzMt7e3dXV1QUFBNTU1KSkpJycnLS0tZWVlg4ODubm50NDQp6encHBwUVFRenp6srKyzs7OpKSkfHx8SkpKVFRUREREVFRUdXV1qKiozs7Otra2iYmJkpKSSEhIampqmZmZxsbGysrKo6OjjIyMgoKCfn5+kZGRpaWlzs7OwsLCkpKSaWlpWlpa",
+      "meanLuma": 126.80738811728395,
       "litFraction": 1
     },
     {
       "id": "tunnel-rings/color/bright-grayscale",
-      "hash": "bf97c9fa",
-      "signature": "c3NzmZmZ+/v7/v7+/v7+/v7++/v74+Pj5ubm9vb2/v7+/////v7+/v7+p6enbW1tsrKy4+Pj/v7+////////x8fHiYmJY2Njfn5+fn5+z8/P/////////v7+1tbWhISEp6en/v7+/v7+////1dXViIiIR0dHQEBAQUFBTU1NcHBw7Ozs/////////v7+sbGxoKCg/v7+/v7+/f39qqqqSUlJR0dHk5OTkpKSU1NTaGhow8PD/v7+/////v7+7u7uuLi4/v7+/v7+/v7+j4+PTk5OXFxc/v7+/v7+Xl5eVVVVpaWl/v7+/v7+/v7+xcXF3t7e/////v7+////tbW1WlpaTk5Ok5OTk5OTTExMVVVVtLS0/v7+/v7+////uLi4v7+//v7+/v7+////2dnZcXFxWlpaSEhIR0dHTU1Nrq6u8PDw/////v7+/v7+vLy8hoaG2tra/v7+/v7+/v7+29vbhISEjIyMbGxslZWV0dHR/v7+/v7+////9PT0/v7+dXV1tra2/v7+/v7+/v7+/v7+/Pz87u7u6enp/////v7+/v7+/v7+/v7+tLS0kZGR",
-      "meanLuma": 196.96349344135803,
+      "hash": "fcb932be",
+      "signature": "jY2Nr6+v/v7+/v7+/v7+/v7+/v7+8fHx8/Pz/////v7+/////v7+/v7+wsLChoaG09PT/Pz8/v7+////////3d3dm5ubfHx8lZWVioqK6enp/////////v7+7u7un5+fxcXF/v7+/v7+////6Ojon5+fU1NTR0dHR0dHWVlZgYGB8vLy/////////v7+0tLSuLi4/v7+/v7+/f39wcHBVlZWUFBQnJycnJycXV1dg4OD2dnZ/v7+/////v7+/v7+0tLS/v7+/v7+/v7+qKioXFxcZWVl/v7+/v7+Z2dnZWVl0dHR/v7+/v7+/v7+4+Pj/v7+/////v7+////zs7ObGxsWVlZnZ2dnZ2dV1dXb29vzc3N/v7+/v7+////1dXV4uLi/v7+/v7+////7Ozsg4ODampqUVFRT09PWlpaysrK+Pj4/////v7+/v7+39/foqKi9PT0/v7+/v7+/v7+9/f3lZWVqKioh4eHqKio6+vr/v7+/v7+/////v7+/v7+kJCQ1NTU/v7+/v7+/v7+/v7+/v7+/Pz89vb2/////v7+/v7+/v7+/v7+0tLStLS0",
+      "meanLuma": 207.8939525462963,
       "litFraction": 1
     },
     {
@@ -1888,9 +1895,9 @@
     },
     {
       "id": "tunnel-rings/extreme/max",
-      "hash": "6b5d286f",
-      "signature": "/v7+/v7+/tD+/pT+/v7+/v7+/v7+/v7+/v7+/////v7+/////pT+/s/+/v7+/v7+/v7+/vz+/v7+/////////v7+/v7+/uz+/+3//v7+/v7+/////////v7+/vz+/v3+/pP+/oD+/tv+/////v7+/v7+/nb+/iD+/h/+/nX+/v7+/////////9v//oH+/pP+/vb+/sD+/vv+/f39/v7+/s/+1wDY7RX+7RX+1wDY/s/+/v7+/v7+//v//sD+/vf+/v7+/v7+/v7+/v7+/v7+/yv//gf+607+6k3+/wj//in+/v7+/v7+/v7+/v7+/////vf+/8D//vv+/////v7+/8//2ADZ7RX/7RT+2ADZ/s/+/////v7+/vv+/8D//vf+/5P//oH+/tr+/////v7+/////nX+/yD//h/+/nX+/v7+/v7+/////tv+/oD+/5T///7//vz+/v7+/v7+/v7+/v7+/v7+/uz+/+z//v7+/v7+/v7+/v7+/////vz+/v7+/v7+/v7+/tD+/pT+/v7+/v7+/v7+/////v7+/////v7+/v7+/pT+/s/+/v7+/v7+",
-      "meanLuma": 219.19171233603345,
+      "hash": "70e61d18",
+      "signature": "/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/////v7+/////v7+/v7+/v7+/v7+/v7+/v7+/v7+/////////v7+/v7+/v7+/////v7+/v7+/////////v7+/v7+/v7+/vz+/v7+/v7+/////v7+/v7+/lr+/gD+/gD+/ln+/v7+/////////////v7+/vz+/v7+/v7+/v7+/f39/v7+/o7+/gH+/Gz+/Gz+/gH+/o7+/v7+/v7+/////v7+/v7+/v7+/v7+/v7+/v7+/v7+/xD//mb+9Wv+9Wv+/2f//g/+/v7+/v7+/v7+/v7+/////v7+/////v7+/////v7+/47//gH+/W3//Gz+/wL//o7+/////v7+/v7+/////v7+//z//v7+/v7+/////v7+/////ln+/wD//gD+/ln+/v7+/v7+/////v7+/v7+//z//////v7+/v7+/v7+/v7+/v7+/v7+/v7+/////v7+/v7+/v7+/v7+//7//v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/////v7+/////v7+/v7+/v7+/v7+/v7+/v7+",
+      "meanLuma": 229.33143795331472,
       "litFraction": 1
     },
     {

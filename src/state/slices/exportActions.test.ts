@@ -71,7 +71,13 @@ let engineBuffer: AudioBuffer | null = TRACK_A;
  * engine-visible difference live mode makes to this action. */
 let engineTrackName = "probe.wav";
 
-const analyzer = { setSync: vi.fn(), setBeatGrid: vi.fn(), setSections: vi.fn(), reset: vi.fn() };
+const analyzer = {
+  setSync: vi.fn(),
+  setBeatGrid: vi.fn(),
+  setSections: vi.fn(),
+  setTravel: vi.fn(),
+  reset: vi.fn(),
+};
 
 /** ONE engine object with LIVE accessors, because that is what production has:
  * `getEngine()` returns a module singleton (services.ts) and `audioBuffer` is a
@@ -291,7 +297,7 @@ describe("an export started mid-analysis waits for the grid (E2-R2)", () => {
     // assertion here — the claim is about the JOB's payload, so let an
     // unguarded implementation build its job and be judged on what is in it.
     for (let i = 0; i < 10; i++) await Promise.resolve();
-    gate.resolve({ grid: GRID, key: null, sections: SECTIONS });
+    gate.resolve({ grid: GRID, key: null, sections: SECTIONS, travel: null });
     await run;
 
     expect(exportVideo).toHaveBeenCalledTimes(1);
@@ -311,7 +317,7 @@ describe("an export started mid-analysis waits for the grid (E2-R2)", () => {
     // behind a visible Cancel rather than a dead button.
     expect(s().exporting).not.toBeNull();
 
-    gate.resolve({ grid: GRID, key: null, sections: SECTIONS });
+    gate.resolve({ grid: GRID, key: null, sections: SECTIONS, travel: null });
     await run;
   });
 
@@ -381,7 +387,7 @@ describe("the wait is bounded and interruptible", () => {
     // A drop during the wait. `buf` was captured from the OLD track; letting
     // the export continue would render old audio against new analysis.
     shared.trackLoadGen++;
-    gate.resolve({ grid: GRID, key: null, sections: SECTIONS });
+    gate.resolve({ grid: GRID, key: null, sections: SECTIONS, travel: null });
     await run;
 
     expect(exportVideo).not.toHaveBeenCalled();
@@ -665,7 +671,7 @@ describe("exportDonePath — the machine-readable companion to exportDone", () =
     expect(s().exporting).not.toBeNull();
     expect(s().exportDonePath).toBeNull();
 
-    gate.resolve({ grid: GRID, key: null, sections: SECTIONS });
+    gate.resolve({ grid: GRID, key: null, sections: SECTIONS, travel: null });
     await run;
   });
 

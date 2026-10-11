@@ -8,6 +8,7 @@ import { stereoWidth } from "./dsp/stereo";
 import { gridPhase, type BeatGrid } from "./analysis/beatGrid";
 import { sectionStateAt } from "./analysis/sections";
 import { vocalPresenceAt, type VocalSpan } from "./vocalPresence";
+import { travelAt, type TravelCurve } from "./analysis/travel";
 import { displaySpectrumFftSize, spectrumResolution } from "./dsp/displaySpectrum";
 
 /**
@@ -149,6 +150,7 @@ export class OfflineAnalyzer {
   private sections: number[] | null;
   private vocalSpans: VocalSpan[] | null;
   private timeOrigin: number;
+  private travel: TravelCurve | null;
 
   constructor(
     pcm: PcmData,
@@ -176,11 +178,16 @@ export class OfflineAnalyzer {
      * here would double-shift every one of them.
      */
     timeOrigin = 0,
+    /** The track's travel curve (analysis/travel.ts), ALREADY rebased onto
+     * the clip for a segment export — drives `features.travel` exactly like
+     * the live path's setTravel. Null = travel reads as plain time. */
+    travel: TravelCurve | null = null,
   ) {
     this.grid = grid;
     this.sections = sections;
     this.vocalSpans = vocalSpans;
     this.timeOrigin = timeOrigin;
+    this.travel = travel;
     this.fps = fps;
     this.sampleRate = pcm.sampleRate;
     this.duration = pcm.duration;
@@ -464,6 +471,7 @@ export class OfflineAnalyzer {
       ...(this.grid ? { bpm: this.grid.bpm, ...gridPhase(this.grid, t) } : {}),
       ...(this.sections ? sectionStateAt(this.sections, t) : {}),
       ...(this.vocalSpans ? { vocal: vocalPresenceAt(this.vocalSpans, t) } : {}),
+      ...(this.travel ? { travel: travelAt(this.travel, t) } : {}),
     });
     // Stamped HERE rather than in nextFrameFeatures() because both of that
     // method's return paths hand back this same object: pipeline.update()

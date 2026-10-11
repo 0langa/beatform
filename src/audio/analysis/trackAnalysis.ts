@@ -2,6 +2,7 @@ import type { BeatGrid } from "./beatGrid";
 import { analyzeBeatGrid } from "./beatGrid";
 import { estimateKey, type KeyEstimate } from "./keyDetect";
 import { detectSections } from "./sections";
+import { travelCurveOf, type TravelCurve } from "./travel";
 import type { PcmData } from "../types";
 import { pcmFromAudioBuffer } from "../offlineSource";
 
@@ -15,6 +16,9 @@ export interface TrackAnalysis {
   key: KeyEstimate | null;
   /** Section boundaries, seconds. Empty when undetected. */
   sections: number[];
+  /** Loudness-integrated time curve (travel.ts). Null when the audio is too
+   * short — consumers then read travel as plain time. */
+  travel: TravelCurve | null;
 }
 
 let worker: Worker | null = null;
@@ -33,6 +37,7 @@ function ensureWorker(): Worker | null {
             grid: BeatGrid;
             key: KeyEstimate | null;
             sections: number[];
+            travel: TravelCurve | null;
           }
         | { type: "error"; id: number; message: string }
       >,
@@ -42,15 +47,17 @@ function ensureWorker(): Worker | null {
       if (!resolve) return;
       pending.delete(msg.id);
       if (msg.type === "analysis") {
-        resolve({ grid: msg.grid, key: msg.key, sections: msg.sections });
+        resolve({ grid: msg.grid, key: msg.key, sections: msg.sections, travel: msg.travel });
       } else {
         console.error("[analysis]", msg.message);
-        resolve({ grid: null, key: null, sections: [] });
+        resolve({ grid: null, key: null, sections: [], travel: null });
       }
     };
     worker.onerror = () => {
       // Worker failed to boot — resolve everything null; callers fall back
-      for (const resolve of pending.values()) resolve({ grid: null, key: null, sections: [] });
+      for (const resolve of pending.values()) {
+        resolve({ grid: null, key: null, sections: [], travel: null });
+      }
       pending.clear();
     };
   }
@@ -75,9 +82,10 @@ export function analyzeTrack(audio: AudioBuffer): { id: number; result: Promise<
             grid: analyzeBeatGrid(copy),
             key: estimateKey(mono, copy.sampleRate),
             sections: detectSections(mono, copy.sampleRate),
+            travel: travelCurveOf(mono, copy.sampleRate),
           };
         } catch {
-          return { grid: null, key: null, sections: [] };
+          return { grid: null, key: null, sections: [], travel: null };
         }
       }),
     };

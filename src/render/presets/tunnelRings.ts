@@ -27,6 +27,20 @@ import { WGSL_PALETTE_PHASE, WGSL_RGB_CONTROLS } from "../wgslLib";
  * rings, never event state — that flash with the beat grid and race past.
  * All three default to off/Tiles and the tile math is untouched, so every
  * pre-wave document renders bit-identically.
+ *
+ * The 3.0 travel rework makes the flight CONTINUOUS. Loudness and beats used
+ * to be added to the camera's POSITION (travel = t·v + k·drive + kick), so
+ * the wall ran backwards every time the music dropped and every kick shoved
+ * you forward and then slid you back — a tube that pumped instead of one you
+ * flew down. Now travel has three monotonic terms: the cruise clock is
+ * u.time blended toward u.travel (the track's loudness-integrated time —
+ * loud passages surge, quiet ones coast, never backwards), and each grid
+ * beat adds a fixed stride that stays added (beatRide()). Three opt-in cues
+ * sell the bore as a place: Camera drift (an exact off-axis unwrap — the
+ * near wall leans in, the far axis stays put), ceiling Lamps at fixed
+ * stations that approach, flare past and recede, and Dust in the air of the
+ * tube on three depth shells, streaking past the camera with real parallax.
+ * All three default to 0 and are guarded off.
  */
 export const tunnelRings: PresetDef = {
   id: "tunnel-rings",
@@ -144,6 +158,9 @@ export const tunnelRings: PresetDef = {
         groutLevel: 0.22,
         roundness: 0.4,
         vignette: 0.25,
+        // Dust streaks are the hyperspace cue — at this cruise the motes
+        // stretch into lines (see the dust block's radial metric).
+        dust: 0.7,
       },
     },
     // Kaleido Tube — 6-fold fold of the tube itself — spectrum-lit stained glass.
@@ -223,6 +240,8 @@ export const tunnelRings: PresetDef = {
         cruiseFloor: 0.6,
         cruiseEnergy: 1.2,
         vignette: 0.4,
+        // The rider sways through the bends as well as leaning into them.
+        sway: 0.35,
       },
     },
     // Foundry — few huge high-contrast tiles, heavy checker — molten plates flying past.
@@ -283,7 +302,7 @@ export const tunnelRings: PresetDef = {
         material: 2,
         hue: 130,
         hueSpread: 12,
-        speed: 0.45,
+        speed: 0.5,
         rings: 9,
         spokes: 16,
         twist: 0,
@@ -399,6 +418,40 @@ export const tunnelRings: PresetDef = {
         fogFar: 0.9,
       },
     },
+    // Metro — the travel-rework look: a sodium-lit transit tube at night,
+    // lamps strobing overhead at a steady cadence, dust in the headlight,
+    // the camera drifting off-axis like a train on a long curve.
+    {
+      id: "metro",
+      name: "Metro",
+      values: {
+        hue: 38,
+        hueSpread: 14,
+        speed: 0.6,
+        rings: 6,
+        spokes: 10,
+        twist: 0,
+        roundness: 0.85,
+        surfaceWarp: 0.5,
+        tileLevel: 0.12,
+        tileSat: 0.6,
+        tileSpectrum: 0.2,
+        checker: 0.04,
+        groutWidth: 0.035,
+        groutLevel: 0.16,
+        fogFar: 0.8,
+        centerGlow: 0.12,
+        beatPulse: 0.35,
+        beatBright: 0.08,
+        beatSpeed: 0.12,
+        cruiseFloor: 0.5,
+        cruiseEnergy: 1.2,
+        vignette: 0.45,
+        sway: 0.5,
+        lamps: 0.85,
+        dust: 0.35,
+      },
+    },
   ],
   params: [
     {
@@ -466,7 +519,12 @@ export const tunnelRings: PresetDef = {
       min: 0.05,
       max: 2,
       step: 0.05,
-      default: 0.15,
+      // 0.15 through 2.112: the old loudness/beat position shoves supplied
+      // most of the visible motion, so the cruise itself could idle. With
+      // travel monotonic, the cruise IS the motion, and 0.45 is where the
+      // stock tube reads as flight (about one ring a second plus the beat
+      // strides). Saved documents keep their own value.
+      default: 0.45,
       hint: "Base flight speed into the tunnel",
     },
     {
@@ -576,6 +634,50 @@ export const tunnelRings: PresetDef = {
       default: 0.2,
       hint: "Glow at the tunnel's vanishing point",
     },
+    // ---- 3.0 travel rework: three opt-in cues. A genuine param addition at
+    // the tail of params[] (abiOrder.test.ts records the new order). Default
+    // 0 = guarded off, so every saved look renders exactly as the travel
+    // model alone dictates.
+    {
+      key: "sway",
+      label: "Camera drift",
+      group: "motion",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "The camera wanders off the tube's axis as you fly — the near wall leans in and swings, the far end stays ahead",
+    },
+    {
+      key: "lamps",
+      label: "Lamps",
+      group: "glow",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "Ceiling lamps at fixed intervals down the bore — they approach, flare past overhead and recede",
+    },
+    {
+      key: "dust",
+      label: "Dust",
+      group: "backdrop",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      hint: "Motes in the air of the tube, rushing past in the foreground — the closer, the faster",
+    },
+    {
+      key: "roll",
+      label: "Roll",
+      group: "motion",
+      min: -1,
+      max: 1,
+      step: 0.02,
+      default: 0,
+      hint: "The camera rolls around the tube's axis as you fly — slow barrel roll; negative rolls the other way. Scaled by Motion → Rotation",
+    },
   ],
   advanced: [
     {
@@ -586,7 +688,7 @@ export const tunnelRings: PresetDef = {
       max: 1,
       step: 0.01,
       default: 0.35,
-      hint: "Minimum speed even in silence",
+      hint: "Base cruise rate — the flow the tube keeps before the music adds its own",
     },
     {
       key: "curveScale",
@@ -606,7 +708,7 @@ export const tunnelRings: PresetDef = {
       max: 2,
       step: 0.05,
       default: 0.9,
-      hint: "How much track loudness raises speed",
+      hint: "How much the flight follows the track's loudness — loud passages surge, quiet ones coast, never backwards",
     },
     {
       key: "beatSpeed",
@@ -616,7 +718,7 @@ export const tunnelRings: PresetDef = {
       max: 0.5,
       step: 0.02,
       default: 0.08,
-      hint: "Brief acceleration on each beat",
+      hint: "How far each beat pushes you down the tube — a stride that stays, never a shove that slides back",
     },
     {
       key: "tileLevel",
@@ -827,35 +929,31 @@ fn preset(uv: vec2f) -> vec4f {
   // Beat kick, tempo-grid locked with a flux fallback.
   let kickP = max(u.driveBeat, gridPulse(6.0));
 
-  // POSITION gets its own beat envelope. kickP's instant attack is right for
-  // brightness pops and wrong for travel: the camera crossing the whole shove
-  // distance in one frame is the owner's "camera is just teleporting". With a
-  // tempo grid the shove rises over the first tenth of the beat and has
-  // decayed to zero by the wrap, so travel is CONTINUOUS across every beat
-  // boundary (the 1.5 restores unit peak -- rise*decay tops out near 0.66 at
-  // phase 0.1). Without a grid there is no phase to ease across (determinism
-  // forbids accumulated smoothing), so driveBeat's attack stays and the
-  // saturated amplitude below keeps it a nudge rather than a jump.
-  var kickPos = u.driveBeat;
-  if (u.bpm > 0.5) {
-    kickPos = 1.5 * smoothstep(0.0, 0.1, u.beatPhase)
-            * max(exp(-u.beatPhase * 4.0) - 0.018, 0.0) / 0.982;
-  }
-
-  // What multiplies u.time is PARAMS-ONLY. Folding u.drive/kickP into the speed
-  // made travel = t*v(t) instead of the integral of v, so every change in
-  // loudness snapped the whole wall forward or back by t*(speed change): fine
-  // in the first seconds, a hard stutter/strobe after ~30 s of track. Loudness
-  // and beats are now BOUNDED additive travel offsets — they still shove you
-  // down the pipe, but the ring pattern can never be re-seeded mid-track.
-  // The beat shove is GATED by the pulse master and SATURATES: softLimit is
-  // identity through the whole default range (0.08 * pulse 2 sits far below
-  // the 0.288 knee, so stock feel is untouched), while Beat speed kick maxed
-  // out at pulse 200% lands on the 0.4-depth-unit ceiling instead of shoving
-  // a full depth unit -- punchy, never a teleport.
-  let travelT = u.time * P_speed() * P_cruiseFloor() * 2.2
-              + u.drive * P_cruiseEnergy() * 0.3
-              + kickPos * softLimit(P_beatSpeed() * u.pulse, 0.4);
+  // TRAVEL -- the camera's distance down the bore. Every term is MONOTONIC in
+  // track time, which is the whole point: the shipped model added loudness
+  // and the beat to the camera's POSITION (t*v + k*drive + kick), so the wall
+  // ran BACKWARDS whenever the music dropped and every kick shoved you forward
+  // and slid you back -- a tube that pumped, not one you flew down.
+  //
+  //  1. The cruise clock. u.travel is the track's loudness-integrated time
+  //     (1 s/s on average, faster through loud passages, slower through quiet
+  //     ones, never backwards -- precomputed at analysis, so a seek and an
+  //     export read the identical value). Cruise energy blends u.time toward
+  //     it: 0 = pure clock, 2 = speed follows loudness outright. What
+  //     multiplies the clock is PARAMS-ONLY, so the ring pattern can never be
+  //     re-seeded mid-track.
+  //  2. The beat ride. beatRide() climbs exactly one unit per grid beat --
+  //     spent fast right after the kick, coasting before the next -- and
+  //     never comes back, so each beat is a stride down the tube that STAYS.
+  //     Gated by the pulse master and saturating as before: softLimit is
+  //     identity through the default range, and Beat speed kick maxed at
+  //     pulse 200% lands on the 0.4-unit ceiling instead of a full unit.
+  //     Without a grid beatRide() is the bounded onset nudge the mode always
+  //     had (there is no clock to ride, and determinism forbids accumulating
+  //     one).
+  let cruiseMix = clamp(P_cruiseEnergy() * 0.5, 0.0, 1.0);
+  let cruiseT = mix(u.time, u.travel, cruiseMix) * P_speed() * P_cruiseFloor() * 2.2;
+  let travelT = cruiseT + beatRide() * softLimit(P_beatSpeed() * u.pulse, 0.4);
 
   // Waterslide curvature: the cross-section centre this fragment belongs to
   // is displaced by where the centreline sits at the fragment's depth,
@@ -891,14 +989,51 @@ fn preset(uv: vec2f) -> vec4f {
     q = p - off;
   }
   let r = max(length(q), 2e-3);
-  let a = atan2(q.y, q.x);
+
+  // Roll (opt-in): the camera turns about the tube's own axis -- a slow
+  // barrel roll, the one cue the twist (a spiral of the WALL) cannot give.
+  // Pure time, gated by the Rotation master like every other spin in the
+  // app; at 0 the frame is untouched. Applied to the direction, so every
+  // wall feature, lamp and mote rolls together.
+  let rollAmt = P_roll();
+  if (abs(rollAmt) > 1e-4) {
+    let ra = u.time * rollAmt * u.spin * 0.35;
+    q = vec2f(q.x * cos(ra) - q.y * sin(ra), q.x * sin(ra) + q.y * cos(ra));
+  }
 
   // Depth. 1/r is the pinhole distance down the axis of a cylinder: the centre
   // of the frame (r -> 0) is infinitely far, the frame edge is the near mouth
   // of the tube. Adding time streams every wall feature from the vanishing
   // point OUTWARD toward the viewer -- the actual motion of flying down a
   // pipe, not a texture being zoomed.
-  let depth = 1.0 / r;
+  var depth = 1.0 / r;
+  var a = atan2(q.y, q.x);
+
+  // Camera drift (opt-in): the camera leaves the tube's AXIS. A wall point at
+  // angle w and depth z projects to (w - cam) / z for a camera at lateral
+  // offset cam inside the unit bore, so the fragment direction q sees the
+  // wall where |q*z + cam| = 1 -- one quadratic in z, solved exactly. The
+  // near wall on the camera's side leans in and sweeps past faster, the far
+  // wall recedes, and the vanishing point stays dead ahead (the axis
+  // direction is unchanged) -- a rider drifting across a real pipe rather
+  // than a picture sliding sideways. The offset is a function of the smooth
+  // cruise distance (not the beat strides, which would jerk the camera), so
+  // a parked camera holds its place. |cam| stays below 0.35 so the quadratic
+  // is always real and the wall never reaches the lens. Guarded: at 0 the
+  // pinhole depth above stands untouched, bit for bit.
+  var cam = vec2f(0.0);
+  let swayAmt = P_sway();
+  if (swayAmt > 1e-4) {
+    let st = cruiseT * 0.6;
+    cam = vec2f(sin(st * 0.23) + 0.5 * sin(st * 0.071),
+                cos(st * 0.17) * 0.8 + 0.5 * cos(st * 0.053)) * swayAmt * 0.22;
+    let qq = max(dot(q, q), 4e-6);
+    let qc = dot(q, cam);
+    let disc = max(qc * qc - qq * (dot(cam, cam) - 1.0), 0.0);
+    depth = (-qc + sqrt(disc)) / qq;
+    let w = q * depth + cam;
+    a = atan2(w.y, w.x);
+  }
   let travel = depth + travelT;
   // Corkscrew: flutes spiral with depth like a waterslide auger.
   let aTwist = a + travel * P_twist() * 0.15;
@@ -948,7 +1083,16 @@ fn preset(uv: vec2f) -> vec4f {
 
   // Cosine palette by depth -- consecutive rings are related, saturated
   // colours instead of a drifting hue (a drifting hue is how this went muddy).
-  let t = fract(travel * 0.05 + P_hue() / 360.0);
+  //
+  // Hue is applied as a ROTATION of the finished palette (hueRotate, below
+  // the fade), not as a phase inside t. Through 2.112 it was the phase, and
+  // the cosine's frequency here is spread -- 0.08..0.67 of a cycle -- so
+  // the whole 0..360 dial moved the colour by at most that fraction of the
+  // wheel: every look lived in one red-to-magenta band, Ice Cave at hue 195
+  // rendered pink and Vector Grid at 130 never saw its phosphor green. The
+  // rotation gives the dial the wheel its rainbow track promises; the
+  // depth drift (spread) is untouched.
+  let t = fract(travel * 0.05);
   let spread = max(P_hueSpread() / 360.0, 0.08);
   var pal = cosPalette(t, vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, ${WGSL_PALETTE_PHASE});
 
@@ -979,11 +1123,13 @@ fn preset(uv: vec2f) -> vec4f {
                            vec3f(0.5), vec3f(0.5), vec3f(1.0) * spread, ${WGSL_PALETTE_PHASE});
     pal = mix(pal, palIn, mw);
   }
+  pal = hueRotate(pal, P_hue());
 
   // Circular rings stacked in depth, rushing outward past the viewer. Thin
   // BRIGHT bands on a dark wall (high contrast) read as pipe segments flying
   // by -- the previous version summed everything to a flat wash.
-  let ringF = travel * P_rings() * 0.35;
+  let ringCount = select(P_rings(), mix(3.0, P_rings(), u.detail), u.detail < 0.999);
+  let ringF = travel * ringCount * 0.35;
   let ringD = fract(ringF);
   let ringLine = smoothstep(P_groutWidth() * 1.6, 0.0, min(ringD, 1.0 - ringD));
   let ringParity = f32(i32(floor(ringF)) & 1);
@@ -996,13 +1142,17 @@ fn preset(uv: vec2f) -> vec4f {
   // instead of streaming. Ring structure (lines + parity checker) fades to
   // 30% there; flutes, palette drift and fog are angular/low-frequency and
   // keep carrying the sense of speed without aliasing.
-  let ringRate = P_speed() * P_cruiseFloor() * 2.2 * P_rings() * 0.35;
+  let ringRate = P_speed() * P_cruiseFloor() * 2.2 * ringCount * 0.35;
   let ringVis = 1.0 - 0.7 * smoothstep(11.0, 21.0, ringRate);
 
   // Longitudinal flutes running down the tube LENGTH and converging at the
   // vanishing point. Converging perspective lines are the single strongest
   // "this is a round 3D tube" cue.
-  let fluteF = aTwist / TAU * P_spokes();
+  // Detail master: fewer flutes and rings as it falls (never below the
+  // panel's own minimums); guarded so the authored count passes through
+  // bit-exactly at the default 1.
+  let spokeCount = select(P_spokes(), mix(4.0, P_spokes(), u.detail), u.detail < 0.999);
+  let fluteF = aTwist / TAU * spokeCount;
   let fluteD = fract(fluteF);
   let fluteLine = smoothstep(P_groutWidth() * 2.2, 0.0, min(fluteD, 1.0 - fluteD));
   let fluteShade = 0.5 + 0.5 * cos(fluteF * TAU);
@@ -1083,7 +1233,7 @@ fn preset(uv: vec2f) -> vec4f {
     // rounding), and the row index -- odd rows lattice A, even lattice B --
     // wraps mod 64 so hash21 never sees the huge phases that lose mantissa
     // late in long tracks (grain()'s fract(u.time) precedent).
-    let spokeN = max(P_spokes(), 4.0);
+    let spokeN = max(spokeCount, 4.0);
     let ix = select(ib.x, ia.x, useA);
     let ixw = ix - spokeN * floor(ix / spokeN);
     let iy = select(ib.y * 2.0, ia.y * 2.0 + 1.0, useA);
@@ -1158,12 +1308,87 @@ fn preset(uv: vec2f) -> vec4f {
     col += pal * mouth * kickP * jAmt * 0.9;
   }
 
+  // Ceiling lamps (opt-in): fixtures at fixed TRAVEL stations on the top of
+  // the bore -- features of the tube like the rings, so a parked camera holds
+  // one still and flying brings the next one up out of the haze, overhead,
+  // past, and gone. Each throws a pool of light down the wall (wide in angle,
+  // tight along the bore) and carries a hot bulb at its centre. Warm, lightly
+  // tinted by the palette so they belong to the tube, and barely shaped by
+  // the spectrum: steady lamps are the road-tunnel cue, the beat ring and the
+  // wall flash do the music. Sits BEFORE the fog so far lamps dim into the
+  // distance; the depth fade keeps the far bulbs from sparkling at sub-pixel
+  // size.
+  let lampAmt = P_lamps();
+  if (lampAmt > 1e-4) {
+    let lampD = fract(travel * 0.4) - 0.5;
+    // Angular distance to the ceiling (a = -pi/2 in screen space, y down) in
+    // half-turns: 0 overhead, 1 underfoot, continuous across the wrap.
+    let dCeil = abs(fract((a + TAU * 0.25) / TAU + 0.5) * 2.0 - 1.0);
+    let lampFade = smoothstep(14.0, 5.0, depth);
+    let pool = exp(-dCeil * dCeil * 7.0) * exp(-lampD * lampD * 40.0);
+    let bulb = exp(-dCeil * dCeil * 400.0) * exp(-lampD * lampD * 900.0);
+    let lampCol = mix(vec3f(1.0, 0.93, 0.8), pal, 0.25);
+    col += lampCol * (pool * 0.55 + bulb * 3.0) * lampAmt * lampFade * (0.85 + 0.15 * v);
+  }
+
   // Depth cue: near (frame edge) bright, far (centre) recedes into haze. This
   // is what turns a flat disc into a tube you are flying INTO.
   let near = smoothstep(P_fogNear() * 0.4, 0.6, r);
   let far = 1.0 - exp(-depth * P_fogFar() * 0.35);
   col *= near;
   col = mix(col, pal * 0.05, clamp(far, 0.0, 0.9));
+
+  // Dust (opt-in): motes in the AIR of the tube, on three shells inside the
+  // bore (0.5 / 0.66 / 0.82 of its radius). A fragment's ray crosses each
+  // shell at depth rho/r (through the same quadratic as the wall when the
+  // camera is off-axis); that crossing's (angle, travel) cell owns at most one
+  // mote, hashed into existence by the Dust amount and jittered inside the
+  // cell, and the mote is drawn at its EXACT projected position -- so the
+  // near shell streams past fast, the far shell slowly: parallax, the one
+  // depth cue a wall texture cannot give. The spot's metric is stretched
+  // along the radial by the sustained cruise rate, so motes draw as dots at
+  // a crawl and as streaks at hyperdrive. Cells wrap mod 256 before hashing
+  // (hash21 loses mantissa on huge phases, grain()'s precedent). After the
+  // fog: motes hang in front of the wall, and fade with their own depth.
+  let dustAmt = P_dust();
+  if (dustAmt > 1e-4) {
+    let stretch = 1.0 + clamp(P_speed() * P_cruiseFloor() * 2.2, 0.0, 3.0) * 2.0;
+    var dustAcc = 0.0;
+    for (var k = 0u; k < 3u; k++) {
+      let rho = 0.5 + f32(k) * 0.16;
+      // Shell crossing depth: the wall quadratic with radius rho.
+      let qq = max(dot(q, q), 4e-6);
+      let qc = dot(q, cam);
+      let disc = max(qc * qc - qq * (dot(cam, cam) - rho * rho), 0.0);
+      let dk = (-qc + sqrt(disc)) / qq;
+      let wk = q * dk + cam;
+      let ak = atan2(wk.y, wk.x);
+      let cellA = floor(ak / TAU * 20.0 + f32(k) * 7.0);
+      let cellT = floor((dk + travelT) * 2.5);
+      let cw = cellT - 256.0 * floor(cellT / 256.0);
+      let seed = vec2f(cellA + 0.31 + f32(k) * 13.0, cw + 0.77);
+      let h = hash21(seed);
+      if (h < dustAmt * 0.55) {
+        let ja = hash21(seed + vec2f(5.1, 2.3)) * 0.6 + 0.2;
+        let jt = hash21(seed + vec2f(1.7, 8.9)) * 0.6 + 0.2;
+        let ma = (cellA + ja - f32(k) * 7.0) / 20.0 * TAU;
+        let md = (cellT + jt) / 2.5 - travelT;
+        if (md > 0.3) {
+          let ms = (vec2f(cos(ma), sin(ma)) * rho - cam) / md;
+          let dir = normalize(ms + vec2f(1e-5, 0.0));
+          let dv = q - ms;
+          let along = dot(dv, dir) / stretch;
+          let across = dv - dir * dot(dv, dir);
+          let d2 = dot(across, across) + along * along;
+          let size = 0.0045 / md + 0.0008;
+          let spot = exp(-d2 / (size * size));
+          dustAcc += spot * (0.5 + 0.5 * hash21(seed + vec2f(3.3, 4.4)))
+                   * smoothstep(12.0, 3.0, md) * exp(-md * P_fogFar() * 0.2);
+        }
+      }
+    }
+    col += mix(pal, vec3f(1.0), 0.6) * dustAcc * dustAmt * 1.3 * (0.7 + 0.3 * kickP);
+  }
 
   // Travelling beat ring, launched at the viewer and receding to the core.
   var pt = 1.0 - u.driveBeat;

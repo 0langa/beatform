@@ -100,9 +100,9 @@ function recorderGpu() {
     queue: {
       writeBuffer: (buffer: BufferStub, _offset: number, data: ArrayBuffer | ArrayBufferView) => {
         // The scene uniform is the constructor's first allocation and the
-        // only 144-byte buffer in these walks (no shadertoy preset is ever
+        // only 160-byte buffer in these walks (no shadertoy preset is ever
         // set; the particle slot buffer is nine 256-byte slots).
-        if (buffer.__idx === 0 && buffer.__size === 144) {
+        if (buffer.__idx === 0 && buffer.__size === 160) {
           const f32 = toF32(data);
           trace.push(`uni fb=${f32[27]} dt=${f32[9].toFixed(5)}`);
         }
