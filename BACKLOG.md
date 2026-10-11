@@ -383,7 +383,9 @@ the environment note below).
       0.74 s (deterministic over two runs). Synthetic probe unchanged
       (median 41 ms, worst 154 ms). Two red-first tests, four mutants
       caught. Gates: web + Rust sets, `test:lyrics` (full, gate live) and
-      `test:lyrics:quick`.
+      `test:lyrics:quick`. **Shipped as v2.112.1 "Lyrics stay on the beat"
+      on 2026-10-11** (CI green, published latest, signature present,
+      SHA256SUMS match). A1 should run on 2.112.1, lyrics regenerated.
 
 ## Done 2026-10-09 — beat-sync audit (owner-initiated; owner picked "fix all three")
 
