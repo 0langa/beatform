@@ -346,6 +346,8 @@ exports[`matrix case enumeration (R2-16) > the full id list is the census — ad
   "transition/zoom/mid",
   "transition/glitch/mid",
   "transition/cut/mid",
+  "transition/pair-feedback/mid",
+  "transition/pair-builder/mid",
   "bg/solid",
   "bg/transparent",
   "bg/image",

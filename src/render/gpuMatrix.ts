@@ -178,6 +178,19 @@ export function feedbackCasePresets(): PresetDef[] {
 const TRANSITION_CASE_INCOMING = "spectrum-bars";
 const TRANSITION_CASE_OUTGOING = "radial-burst";
 
+/**
+ * The two transition paths the fixed pair avoids on purpose (hardening row,
+ * 2026-10-10): fading INTO a feedback mode (its history buffer advances while
+ * the outgoing mode still owns half the frame) and INTO the Builder (the
+ * layer-stack bridge). One crossfade case each, frozen mid-blend like the
+ * kind cases. Builder renders its boot (default-stack) def here, the same one
+ * the presets loop pins at `builder2/@defaults`.
+ */
+export const TRANSITION_PAIR_CASES = [
+  { id: "pair-feedback", incoming: "echo-trails", outgoing: TRANSITION_CASE_INCOMING },
+  { id: "pair-builder", incoming: "builder2", outgoing: TRANSITION_CASE_INCOMING },
+] as const;
+
 /** The single mode the background and deep-capture probes render through. */
 const BG_DEEP_PROBE_PRESET = "spectrum-bars";
 
@@ -284,6 +297,7 @@ export function expectedMatrixCaseIds(): string[] {
   ids.push(`${builder.id}/@defaults`);
   for (const preset of feedbackCasePresets()) ids.push(`${preset.id}/feedback/export-walk`);
   for (const kind of TRANSITION_KINDS) ids.push(`transition/${kind}/mid`);
+  for (const pair of TRANSITION_PAIR_CASES) ids.push(`transition/${pair.id}/mid`);
   for (const probe of BG_PROBES) ids.push(`bg/${probe.id}`);
   ids.push(`deep/${BG_DEEP_PROBE_PRESET}`);
   return ids;
@@ -545,6 +559,25 @@ export async function runGpuPixelMatrix(width = 192, height = 108): Promise<GpuP
           id: `transition/${TRANSITION_KINDS[kind]}/mid`,
           ...(await readPixels(canvas)),
         });
+      }
+      const crossfade = TRANSITION_KINDS.indexOf("crossfade");
+      for (const pair of TRANSITION_PAIR_CASES) {
+        const into = probePreset(pair.incoming);
+        const from = probePreset(pair.outgoing);
+        renderer.setPreset(into);
+        renderer.setTransitionPreset(from);
+        const intoParams = defaultParams(into);
+        const fromParams = defaultParams(from);
+        for (let frame = 0; frame <= 30; frame++) {
+          const t = frame / 60;
+          renderer.render(demoFeatures(t), t, intoParams, {
+            params: fromParams,
+            mix: 0.5,
+            kind: crossfade,
+          });
+        }
+        await renderer.gpuDone();
+        cases.push({ id: `transition/${pair.id}/mid`, ...(await readPixels(canvas)) });
       }
     } finally {
       renderer.setTransitionPreset(null);

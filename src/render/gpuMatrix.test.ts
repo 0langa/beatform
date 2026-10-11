@@ -165,6 +165,9 @@ describe("matrix case enumeration (R2-16)", () => {
     const ids = expectedMatrixCaseIds();
     expect(TRANSITION_KINDS).toHaveLength(7);
     for (const kind of TRANSITION_KINDS) expect(ids).toContain(`transition/${kind}/mid`);
+    // ...plus the two paths the fixed pair avoids: into a feedback mode, into Builder.
+    expect(ids).toContain("transition/pair-feedback/mid");
+    expect(ids).toContain("transition/pair-builder/mid");
     for (const bg of ["bg/solid", "bg/transparent", "bg/image"]) expect(ids).toContain(bg);
     expect(ids).toContain("deep/spectrum-bars");
     expect(ids).toContain("builder/@defaults"); // R2-15 rides the same census

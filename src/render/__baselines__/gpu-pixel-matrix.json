@@ -2412,6 +2412,20 @@
       "litFraction": 1
     },
     {
+      "id": "transition/pair-feedback/mid",
+      "hash": "951c90d1",
+      "signature": "AwMIAwQLBAYOBAwRUaLY////////mdX/W4nNR3i9Jj9mFR4xDhIfCQwVBggPBAULBAUMBQgSBQ0aBxcf////bIG3BQYPBQcPBwkSUaTwUqn8JkZyEh82CQ0ZBwkRBAYMBAcQBQ4hBxYxCSgz////BgcSCAoVCg4YCg4YBwkUT7n1TrX/HTdbDRUnBwsWBAUNFRwrICxBP1d8Bys+wf//CAoXDhQgGicxGicwDRIeCAwYZf//K2ObEiA3CA0aBggSHyo9GypCNVB+Ikliev//Cg8gERkpOVlhOFleExooCQsXaP//O5HWFChFChAfBgkSGCY9FSRBKER6HD1dDWx7Pv//JitGPkdjGyg4Oz1VDiAzY///O47LFSxICxEgBggSESE6Dx8+Gzd1FC1TOXOoJ8nYT///JzNZKy1QWHeyOcrySMX8LmmXEyU+CA4dBwkTCx05CRk7DipuDB1HID+IFU9+MKf1KePwNOz6WNz/RqPZUYS/Hj1fEBovCg0cBQYPBhgzBhU0CCFhBxM8ChxzCBxREy+VFD57HEqJNku4LUWFUU2sLipgVTd5KxU+Lx45",
+      "meanLuma": 68.1951098958333,
+      "litFraction": 1
+    },
+    {
+      "id": "transition/pair-builder/mid",
+      "hash": "e0849076",
+      "signature": "BQUNBgkVCAwcCQ4eChAiCxImDBQpDBQqDBQqDBQpCxImChAiCQ4dCAsYBggTBQUNBggTCA0eChEoCxEmDBMpDRYtDhcxERw3DxkzDhcxDRYtDBQpCxEkCQ4dBwsXBgcRBwsaCRQvDBlADBUvDhYvDxk1EBs5ER08ER08EBs5FiE+DhYuDBMoChAiCQwbBwkUGSM6JzZVRFqSDhk/Dxk2ERw8Eh5BEyFGEyFFEh5AERw6DxgzDRUsCxElCQ4eBwoXIjZVHzNcPF2xKDZmEBs+Eh1DFCBJIz6QIz6NFCBHEh09EBk1DhUuDBImCg4fCAsYL1eOLFCWSHLpOEmNERxPMTxyKzZrOUJ/FyJSP0d3Ehw+EBk2DhUuDBInCg4fCAoYKmWxJ1izKlzlMUm4T17IMz2IS1GqMjSKTEyUYVmoHSNJEBc1DhQtDBAmCg0fCAoXE1SpEUeqFkrWFDCyM0PnKiq4TUDqPyW5Ui+5ZkHIOC1xOjJlExQyDw8nDAwfCggXDUWPDTuPDz26DSWVESPLEBGfIRLRJw+fNRChVhTWVBSpiivheSGwsD/ffCyVoTet",
+      "meanLuma": 39.49309907407388,
+      "litFraction": 1
+    },
+    {
       "id": "bg/solid",
       "hash": "f5d98aed",
       "signature": "IhJYIhRbIxVeIxRcJBVcJBVdJBVdJBZdJBZdJBVdJBVdJBVcIxRbIxRaIxNYIhJXIxVcIxlkIxpqJBdhJRdgJRdhJRhhJhhiJhhhJhhhJRdgJRdfJRZeJBVdJBRbIxNZIxhiISJ3ISWGJRpqJhlkJhllJxpmJxpnJxpmJxpmJxlkJhljJhhhJRdgJBZeJBVcP0GJTlijgJrsJB98JxtpJxtrKBxrKBxsKBxrKRxrKBtoJxpmJhlkJhhiJRdgJBZdTVqhRFKkaYnsUFSrJx1yJxxyKR1zKh51Kh5xKh1xKBxrKBtoJxplJhljJRdhJRZeQFKgOEqkUXfrQkiqJR+DWlWwT0eiZFiyKx53dGi1KRxsKBtpJxpmJxlkJRdhJRZeMkqeLUKhOWTnMzunb3zwRUCsf3n0UEGuXUqvpob1Oit8KhprJxlmJxhjJhdhJBZeJUCbITmeIVDiJi+jQlLpMCunUEftPSqpSDCpfE/tXz+obU2sKRhnKBdkKBZiJRVdHTaTHTGUF0LSHSWaFyrgHRigIhbkKxWiMxejUxrkRx2igzrjWCafp1zfYyiabUGY",
