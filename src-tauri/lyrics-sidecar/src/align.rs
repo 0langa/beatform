@@ -4,8 +4,11 @@
 //!
 //! Driven per whisper SEGMENT (`align_segments`): the whole segment is
 //! aligned, then cut into lines at the singer's pauses (lines.rs explains
-//! why the cuts must wait for acoustic timing). A segment that will not
-//! align whole falls back to its token-cut lines, aligned one by one.
+//! why the cuts must wait for acoustic timing). A segment whose start sits
+//! inside continuous voice aligns behind its predecessor's text
+//! (`needs_context`).
+//! A segment that will not align whole falls back to its token-cut lines,
+//! aligned one by one.
 //!
 //! Per window: slice the stem around [start, end] (±PAD_SEC), run
 //! wav2vec2-base-960h emissions on the CPU EP (the spike measured DirectML
@@ -381,9 +384,77 @@ pub enum Outcome {
     Cancelled,
 }
 
+/// A whisper boundary this far or more inside a voiced run is not at a vocal
+/// onset (the VAD pads its regions by 0.2 s; whisper's onsets land within a
+/// few hundred ms of the voice).
+const CONTEXT_VOICED_LEAD_SEC: f64 = 0.5;
+
+/// Which segments align BEHIND their predecessor's text. A whisper boundary
+/// that falls inside continuous voice is not one the aligner can trust: in
+/// Green Day's "American Idiot" whisper started the "Welcome to…" segment at
+/// 28.0 s, inside the previous line's held last note (sung to 28.6 s; the
+/// new line begins at 30.8 s). Aligned alone, that segment matched its first
+/// two words to the held note — lit 3.2 s early (lyrics-e2e dense leg,
+/// 2026-10-11). Aligned behind its predecessor's text, the held note belongs
+/// to the predecessor's last word and the new line's words move to their own
+/// voice. Only the segment's OWN words are kept from that run; the
+/// predecessor keeps the words of its own alignment.
+///
+/// Pairs, never chains: whisper cuts dense vocals every 8-10 s and nearly
+/// every such cut sits inside voice, so a chain of joined segments runs into
+/// `MAX_WINDOW_SEC` and leaves the boundary where it breaks unprotected
+/// (measured: the chained version of this fix missed exactly this line).
+///
+/// Segment `j` gets its predecessor as context when a trusted-VAD voiced
+/// region holds its start at least `CONTEXT_VOICED_LEAD_SEC` deep, the
+/// predecessor reaches into that same region, and the pair's span plus pads
+/// stays within `MAX_WINDOW_SEC`. `spans` are the staged (start, end).
+pub fn needs_context(spans: &[(f64, f64)], regions: &[Region], vad_trusted: bool) -> Vec<bool> {
+    (0..spans.len())
+        .map(|j| {
+            j > 0 && vad_trusted && {
+                let (prev_start, prev_end) = spans[j - 1];
+                let (b, end) = spans[j];
+                (end + PAD_SEC) - (prev_start - PAD_SEC) <= MAX_WINDOW_SEC
+                    && regions.iter().any(|r| {
+                        r.start <= b - CONTEXT_VOICED_LEAD_SEC && b < r.end && prev_end >= r.start
+                    })
+            }
+        })
+        .collect()
+}
+
+/// Align `seg` behind `prev`'s text over both spans; keep `seg`'s own words
+/// (`align_bounded` yields exactly one word per display word, so they are
+/// the last N of the joint run).
+fn align_with_context(
+    aligner: &mut Aligner,
+    stem16: &[f32],
+    track_sec: f64,
+    prev: &Line,
+    seg: &Line,
+    hi: f64,
+) -> Result<Vec<Word>, String> {
+    let joint = Line {
+        t: prev.t,
+        end: prev.end.max(seg.end),
+        text: format!("{} {}", prev.text, seg.text),
+        words: Vec::new(),
+    };
+    let own = seg.text.split_whitespace().count();
+    let mut words = align_bounded(aligner, stem16, track_sec, &joint, hi)?;
+    if own == 0 || words.len() < own {
+        return Err("joint alignment lost words".into());
+    }
+    Ok(words.split_off(words.len() - own))
+}
+
 /// Align every staged segment against the 16 kHz mono stem and return the
-/// final lines (cut, capped, lead-in applied — `lines::finish`).
-/// `on_segment(done, total)` after each segment.
+/// final lines (cut, capped, lead-in applied — `lines::finish`). A segment
+/// whose start sits inside continuous voice aligns behind its predecessor's
+/// text (`needs_context`); if that fails it aligns alone, and if THAT fails
+/// it falls back to its token-cut lines. `on_segment(done, total)` after
+/// each segment.
 pub fn align_segments(
     aligner: &mut Aligner,
     stem16: &[f32],
@@ -401,12 +472,27 @@ pub fn align_segments(
     let next_starts: Vec<f64> = (0..total)
         .map(|i| segments.get(i + 1).map_or(track_sec, |n| n.line.t))
         .collect();
+    let spans: Vec<(f64, f64)> = segments.iter().map(|s| (s.line.t, s.line.end)).collect();
+    let context = needs_context(&spans, regions, vad_trusted);
     let mut out: Vec<Line> = Vec::new();
+    let mut prev: Option<Line> = None;
     for (i, seg) in segments.into_iter().enumerate() {
         if cancel.load(Ordering::SeqCst) {
             return Outcome::Cancelled;
         }
-        match align_bounded(aligner, stem16, track_sec, &seg.line, next_starts[i]) {
+        let lines::StagedSegment { line, fallback } = seg;
+        let mut with_context = None;
+        if let (true, Some(p)) = (context[i], prev.as_ref()) {
+            match align_with_context(aligner, stem16, track_sec, p, &line, next_starts[i]) {
+                Ok(words) => with_context = Some(words),
+                Err(e) => eprintln!("[lyrics-sidecar] segment {i} aligned without context: {e}"),
+            }
+        }
+        let whole = match with_context {
+            Some(words) => Ok(words),
+            None => align_bounded(aligner, stem16, track_sec, &line, next_starts[i]),
+        };
+        match whole {
             Ok(words) if !words.is_empty() => {
                 out.extend(lines::split_aligned(words, regions, vad_trusted));
             }
@@ -414,16 +500,17 @@ pub fn align_segments(
                 if let Err(e) = whole {
                     eprintln!("[lyrics-sidecar] segment {i} aligned line by line: {e}");
                 }
-                for mut line in seg.fallback {
-                    match align_one(aligner, stem16, track_sec, &line) {
-                        Ok(words) => line.words = words,
+                for mut fl in fallback {
+                    match align_one(aligner, stem16, track_sec, &fl) {
+                        Ok(words) => fl.words = words,
                         // Local degradation: this line keeps line-level timing.
                         Err(e) => eprintln!("[lyrics-sidecar] align skipped a line: {e}"),
                     }
-                    out.push(line);
+                    out.push(fl);
                 }
             }
         }
+        prev = Some(line);
         on_segment(i + 1, total);
     }
     let lines = lines::finish(out);
@@ -657,6 +744,53 @@ mod tests {
             text: "x".into(),
             words: Vec::new(),
         }
+    }
+
+    fn voiced(start: f64, end: f64) -> Region {
+        Region { start, end }
+    }
+
+    #[test]
+    fn a_segment_starting_inside_continuous_voice_aligns_behind_its_predecessor() {
+        // The measured shape (American Idiot, 2026-10-11): the previous line
+        // is sung until 28.6 s, silence, the next line from 30.8 s — but
+        // whisper starts the next segment at 28.0 s, inside the held note.
+        let spans = [(26.0, 28.0), (28.0, 36.0)];
+        let regions = [voiced(25.8, 28.8), voiced(30.6, 36.2)];
+        assert_eq!(needs_context(&spans, &regions, true), vec![false, true]);
+        // Whisper's boundary at the next line's own onset: no context needed.
+        let spans = [(26.0, 28.6), (30.7, 36.0)];
+        assert_eq!(needs_context(&spans, &regions, true), vec![false, false]);
+        // A boundary just inside the next line's voice is an onset too.
+        let spans = [(26.0, 28.6), (30.9, 36.0)];
+        assert_eq!(needs_context(&spans, &regions, true), vec![false, false]);
+        // ...even when whisper lets the previous segment spill past it.
+        let spans = [(26.0, 31.0), (30.9, 36.0)];
+        assert_eq!(needs_context(&spans, &regions, true), vec![false, false]);
+        // An untrusted VAD never asks for context.
+        let spans = [(26.0, 28.0), (28.0, 36.0)];
+        assert_eq!(needs_context(&spans, &regions, false), vec![false, false]);
+    }
+
+    #[test]
+    fn context_is_per_pair_so_every_cut_in_a_long_voiced_run_is_covered() {
+        // Dense vocals: one unbroken voiced run, whisper cutting it every
+        // 10 s. Each cut gets its own pair — a chain of joined segments would
+        // pass MAX_WINDOW_SEC after three and leave the fourth cut alone.
+        let spans = [(0.0, 10.0), (10.0, 20.0), (20.0, 30.0), (30.0, 40.0)];
+        let regions = [voiced(0.0, 40.0)];
+        assert_eq!(
+            needs_context(&spans, &regions, true),
+            vec![false, true, true, true]
+        );
+        // A pair that would pass the window cap aligns alone.
+        let spans = [(0.0, 20.0), (20.0, 40.0)];
+        assert_eq!(needs_context(&spans, &regions, true), vec![false, false]);
+        // A predecessor that ends before the voiced run began has no audio
+        // in it to lose: no context.
+        let spans = [(10.0, 12.0), (20.0, 30.0)];
+        let regions = [voiced(9.8, 12.2), voiced(18.0, 30.2)];
+        assert_eq!(needs_context(&spans, &regions, true), vec![false, false]);
     }
 
     #[test]

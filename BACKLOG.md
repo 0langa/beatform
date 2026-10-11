@@ -358,13 +358,32 @@ the environment note below).
       cases, 0 raw hash deltas; `test:loopback:built` and `:30` green (the
       30 fps leg failed twice only because a YouTube tab was playing — the
       harness's own "idle baseline was not silent" note; green once paused).
-- [ ] **Full `npm run test:lyrics` cannot reach its Madness leg:** the
-      fixture `Muse - Madness.flac` is gone from devstorage (the hardcoded
-      path in `scripts/lyrics-e2e.mjs` still names the pre-rename
-      `claude-cache/beatform/bf-test/media/` layout; no copy anywhere on F:
-      outside `user-files`). Every leg before it passed on 2026-10-11. Needs
-      the owner's copy of the file restored to
-      `shared-cache\Beatform\` and the constant pointed at it.
+- [x] **Full `npm run test:lyrics` lost its dense-mix song** — FIXED
+      2026-10-11. `Muse - Madness.flac` vanished from the old
+      `claude-cache/beatform/bf-test/media/` layout. The leg now uses Green
+      Day - American Idiot from the owner's library, kept in a KEEP folder
+      (`shared-cache\Beatform\artifacts\lyrics-fixtures\`, README there),
+      and it gained a GATE: generated line starts against the song's real
+      synced `.lrc` (`compareWithReference`): ≥ 40 % of real lines found,
+      median ≤ 0.75 s, no line > 1.5 s off. The owner's first pick
+      (Linkin Park - Numb.mp3) is a mislabelled file — 0/28 lines found; a
+      whisper screen of five candidates scored it 22 % vs 80-94 % for real
+      ones. Flag renamed `--skip-dense` (`--skip-madness` still works).
+- [x] **Lyrics: a line lit up 3 s early after a held note** — FIXED
+      2026-10-11, found by that gate. Whisper started the "Welcome to…"
+      segment at 28.0 s, inside the previous line's held last note (voice
+      to 28.6 s, silence, next line from 30.8 s); aligned alone, the
+      segment matched its first two words to the held note (−3.16 s). Now a
+      segment whose start sits inside continuous voice aligns BEHIND its
+      predecessor's text and keeps only its own words (`needs_context` in
+      align.rs). Pairs, not chains: the first version joined neighbours into
+      chains, hit the 35 s window cap at exactly this boundary and changed
+      nothing — whisper cuts dense vocals every 8-10 s, nearly all inside
+      voice. Result: that line −3.16 → +0.74 s; song median 0.41 s, worst
+      0.74 s (deterministic over two runs). Synthetic probe unchanged
+      (median 41 ms, worst 154 ms). Two red-first tests, four mutants
+      caught. Gates: web + Rust sets, `test:lyrics` (full, gate live) and
+      `test:lyrics:quick`.
 
 ## Done 2026-10-09 — beat-sync audit (owner-initiated; owner picked "fix all three")
 

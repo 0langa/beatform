@@ -19,15 +19,19 @@
 //      finally a REAL per-line re-align (sidecar --align-line) on the
 //      edited text, words verified against the line + conf attached
 //   3. cancel mid-isolation: phase returns to idle, no lyrics, no error
-//   4. (unless --skip-madness) the owner's dense-mix test file
-//      (Muse - Madness.flac, read in place from devstorage) through the
-//      same store flow — the case the spike corpus could not cover — with
-//      the same word assertions + an honest per-word sample report
-//   5. (unless --skip-compare) direct-sidecar run on Madness (with the
+//   4. (unless --skip-dense) a dense-mix test song from the owner's library
+//      (Green Day - American Idiot.mp3, read in place from the KEEP folder
+//      on devstorage) through the same store flow — a wall of guitars and
+//      drums under the voice, the case the spike corpus could not cover —
+//      with the same word assertions, an honest per-word sample report, and
+//      generated line timing GATED against the song's real synced .lrc
+//      (compareWithReference)
+//   5. (unless --skip-compare) direct-sidecar run on the dense song (with the
 //      alignment stage) + --dump-stem + a whisper pass on the ISOLATED
 //      STEM, so the isolated-vs-mix transcripts can be compared honestly
 //
-//   node scripts/lyrics-e2e.mjs [--skip-madness] [--skip-compare] [--out=<dir>]
+//   node scripts/lyrics-e2e.mjs [--skip-dense] [--skip-compare] [--out=<dir>]
+//   (--skip-madness is the old name of --skip-dense and still works)
 //
 // Prereqs: Vite dev on 127.0.0.1:1420; debug build of the app (fetch scripts
 // + build-lyrics-sidecar run); spike model cache on devstorage.
@@ -73,7 +77,16 @@ mkdirSync(outDir, { recursive: true });
 const exe = process.env.BEATFORM_EXE ?? debugExe(root);
 const CACHE = "F:/agent-devstorage/shared-cache/Beatform/cache/feat004-models";
 const CORPUS = "F:/agent-devstorage/shared-cache/Beatform/artifacts/feat004-spike/corpus";
-const MADNESS = "F:/agent-devstorage/claude-cache/beatform/bf-test/media/Muse - Madness.flac";
+// The dense-mix song + its real synced lyrics. Muse - Madness.flac held this
+// slot until it vanished from the old claude-cache layout (2026-10-11); the
+// replacement lives in a KEEP folder so the janitor never evicts it. The
+// folder's README records why: the first pick (Linkin Park - Numb.mp3) is a
+// mislabelled file — the reference match rate below is what caught it.
+const DENSE_DIR = "F:/agent-devstorage/shared-cache/Beatform/artifacts/lyrics-fixtures";
+const DENSE_NAME = "Green Day - American Idiot";
+const DENSE_AUDIO = path.join(DENSE_DIR, `${DENSE_NAME}.mp3`);
+const DENSE_LRC = path.join(DENSE_DIR, `${DENSE_NAME}.lrc`);
+const skipDense = args.has("--skip-dense") || args.has("--skip-madness");
 const E2E_MODELS = path.join(CACHE, "e2e-app-models");
 const port = harnessPort(10060); // see the map in lib/app.mjs
 let app;
@@ -171,6 +184,74 @@ function assertWordTiming(lines, label) {
     fatal(`${label}: only ${aligned}/${lines.length} lines have word timing (<80%)`);
   }
   return aligned;
+}
+
+// --- dense-mix reference check ---------------------------------------------
+/** Words for matching: lower case, letters and digits only ("don't" ->
+ * "dont"); parenthesised backing vocals dropped. */
+function matchWords(text) {
+  return text
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[^\p{L}\p{N}\s]+/gu, "")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** The song's real synced lyrics: `[mm:ss.xx] text` lines; blank and
+ * backing-vocal-only lines are dropped. */
+function parseReferenceLrc(text) {
+  const out = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const m = /^\[(\d+):(\d+(?:\.\d+)?)\](.*)$/.exec(raw.trim());
+    if (!m) continue;
+    const words = matchWords(m[3]);
+    if (words.length > 0) out.push({ t: Number(m[1]) * 60 + Number(m[2]), words });
+  }
+  return out;
+}
+
+/** WHEN, not WHAT: compare generated word starts with the song's real line
+ * starts. Each reference line is found by its first two words as a
+ * consecutive pair among the generated words within ±4 s of the reference
+ * time (one word for a one-word line); the nearest hit's start minus the
+ * reference time is that line's error. A line whisper did not hear counts as
+ * unmatched, not as an error — what was heard is the word assertions' job. */
+function compareWithReference(lines, refText) {
+  const WINDOW = 4;
+  const ref = parseReferenceLrc(refText);
+  const gen = [];
+  for (const l of lines) {
+    if (l.words && l.words.length > 0) {
+      for (const w of l.words) for (const mw of matchWords(w.text)) gen.push({ w: mw, t: w.t });
+    } else {
+      // No word timing: only the line's first word has a known start.
+      matchWords(l.text).forEach((mw, k) => gen.push({ w: mw, t: k === 0 ? l.t : NaN }));
+    }
+  }
+  const rows = [];
+  for (const r of ref) {
+    let best = null;
+    for (let i = 0; i < gen.length; i++) {
+      if (gen[i].w !== r.words[0]) continue;
+      if (r.words.length > 1 && gen[i + 1]?.w !== r.words[1]) continue;
+      const err = gen[i].t - r.t;
+      if (!(Math.abs(err) <= WINDOW)) continue;
+      if (best == null || Math.abs(err) < Math.abs(best)) best = err;
+    }
+    rows.push({ t: r.t, err: best });
+  }
+  const errs = rows.filter((r) => r.err != null).map((r) => r.err);
+  const abs = errs.map(Math.abs).sort((a, b) => a - b);
+  const q = (p) => (abs.length ? abs[Math.min(abs.length - 1, Math.floor(p * abs.length))] : NaN);
+  return {
+    rows,
+    refLines: ref.length,
+    matched: errs.length,
+    medianAbs: q(0.5),
+    p90Abs: q(0.9),
+    meanSigned: errs.reduce((a, b) => a + b, 0) / Math.max(1, errs.length),
+  };
 }
 
 // --- phase-4 correction-editor leg -----------------------------------------
@@ -384,11 +465,12 @@ async function runModelLeg(cdp) {
   console.log(`MODELS OK: store Verify -> "${notice.notice}"; Remove -> not installed, no .part`);
 }
 
-// --- media server: corpus + Madness, read in place -------------------------
+// --- media server: corpus + the dense song, read in place ------------------
 const MEDIA = {
   "/ssb.wav": path.join(CORPUS, "ssb-navy-solo.wav"),
-  "/madness.flac": MADNESS,
+  "/dense.mp3": DENSE_AUDIO,
 };
+const MEDIA_TYPES = { ".flac": "audio/flac", ".mp3": "audio/mpeg", ".wav": "audio/wav" };
 
 function startMediaServer() {
   mediaServer = createHttpServer((req, res) => {
@@ -399,7 +481,7 @@ function startMediaServer() {
     }
     const size = statSync(file).size;
     res.writeHead(200, {
-      "Content-Type": req.url.endsWith(".flac") ? "audio/flac" : "audio/wav",
+      "Content-Type": MEDIA_TYPES[path.extname(file).toLowerCase()] ?? "application/octet-stream",
       "Content-Length": size,
       "Access-Control-Allow-Origin": "*",
     });
@@ -678,53 +760,86 @@ try {
   console.log("GEN-CANCEL OK: idle again, no lyrics, no error");
 
   // ---- 3b. model manager: Verify + Remove (HD-17) — last user of mdx in
-  // the --skip-madness run; the full run re-downloads nothing it needs
+  // the --skip-dense run; the full run re-downloads nothing it needs
   // later because the prep step deletes mdx on every start anyway.
-  if (args.has("--skip-madness")) await runModelLeg(cdp);
+  if (skipDense) await runModelLeg(cdp);
 
   // ---- 4. the owner's dense mix ------------------------------------------
-  if (!args.has("--skip-madness")) {
-    if (!existsSync(MADNESS)) fatal(`Madness.flac not found at ${MADNESS}`);
+  if (!skipDense) {
+    for (const f of [DENSE_AUDIO, DENSE_LRC]) {
+      if (!existsSync(f)) fatal(`dense-mix fixture not found at ${f}`);
+    }
     await cdp.eval(`(async () => {
-      await window.__loadFile("http://127.0.0.1:${mediaPort}/madness.flac", "Muse - Madness.flac");
+      await window.__loadFile("http://127.0.0.1:${mediaPort}/dense.mp3", ${JSON.stringify(`${DENSE_NAME}.mp3`)});
       window.__store.getState().pause?.();
       window.__store.getState().clearLyrics();
       return true;
     })()`);
     const t0 = Date.now();
     await cdp.eval(`window.__store.getState().generateLyrics("small", "auto"); true`, false);
-    await pollUntil(cdp, (s) => s.phase === "generating", 60_000, "madness-start");
+    await pollUntil(cdp, (s) => s.phase === "generating", 60_000, "dense-start");
     const mdone = await pollUntil(
       cdp,
       (s) => s.phase === "idle" && s.lyricsLen != null,
       25 * 60_000,
-      "madness-finish",
+      "dense-finish",
     );
     const mlines = await cdp.eval(
       `JSON.parse(JSON.stringify(window.__store.getState().lyrics))`,
       false,
     );
     for (let i = 1; i < mlines.length; i++) {
-      if (!(mlines[i].t > mlines[i - 1].t)) fatal(`madness timestamps not monotonic at ${i}`);
+      if (!(mlines[i].t > mlines[i - 1].t)) fatal(`dense timestamps not monotonic at ${i}`);
     }
-    const mAligned = assertWordTiming(mlines, "madness");
+    const mAligned = assertWordTiming(mlines, "dense");
     if (!/words timed/.test(mdone.notice ?? "")) {
-      fatal(`madness notice must report word timing, got: ${mdone.notice}`);
+      fatal(`dense notice must report word timing, got: ${mdone.notice}`);
     }
     const wall = Math.round((Date.now() - t0) / 1000);
+    const vsRef = compareWithReference(mlines, readFileSync(DENSE_LRC, "utf8"));
     writeFileSync(
-      path.join(outDir, "madness-app-flow.json"),
-      JSON.stringify({ wallSec: wall, fileName: mdone.fileName, lines: mlines }, null, 2),
+      path.join(outDir, "dense-app-flow.json"),
+      JSON.stringify({ wallSec: wall, fileName: mdone.fileName, lines: mlines, vsRef }, null, 2),
     );
     console.log(
-      `MADNESS OK: ${mlines.length} lines (${mAligned} word-timed) in ${wall}s via the real store flow — transcript saved to ${outDir}`,
+      `DENSE OK: ${mlines.length} lines (${mAligned} word-timed) in ${wall}s via the real store flow — transcript saved to ${outDir}`,
     );
-    console.log(`MADNESS NOTICE: ${mdone.notice}`);
+    console.log(`DENSE NOTICE: ${mdone.notice}`);
     for (const l of mlines) console.log(`  [${l.t.toFixed(2)}] ${l.text}`);
+    console.log(
+      `DENSE vs REAL LRC: ${vsRef.matched}/${vsRef.refLines} lines found, ` +
+        `median |err| ${vsRef.medianAbs.toFixed(2)} s, p90 ${vsRef.p90Abs.toFixed(2)} s, ` +
+        `mean ${vsRef.meanSigned >= 0 ? "+" : ""}${vsRef.meanSigned.toFixed(2)} s (+ = late)`,
+    );
+    for (const r of vsRef.rows) {
+      console.log(
+        `  ref ${r.t.toFixed(2)} ${r.err == null ? "not found" : `${r.err >= 0 ? "+" : ""}${r.err.toFixed(2)} s`}`,
+      );
+    }
+    // The gate (2026-10-11, American Idiot with the pair-context sidecar):
+    // 16/30 found, median 0.41 s, worst 0.74 s. The reference times are a
+    // human's line marks, so the bar is "never seconds off", not
+    // milliseconds — the synthetic probe owns precision. What each limit
+    // caught on this machine: the worst-line cap, the 3.16 s early "Welcome
+    // to" the sidecar produced before needs_context; the found share, a
+    // mislabelled fixture (0/28 found on the first pick).
+    const worst = Math.max(
+      0,
+      ...vsRef.rows.filter((r) => r.err != null).map((r) => Math.abs(r.err)),
+    );
+    if (vsRef.matched < 0.4 * vsRef.refLines) {
+      fatal(
+        `dense: only ${vsRef.matched}/${vsRef.refLines} real lines found — wrong song file, or the transcript collapsed`,
+      );
+    }
+    if (vsRef.medianAbs > 0.75)
+      fatal(`dense: median line error ${vsRef.medianAbs.toFixed(2)} s > 0.75 s`);
+    if (worst > 1.5)
+      fatal(`dense: a line lands ${worst.toFixed(2)} s off its real start (> 1.5 s)`);
     // Honest per-word sample: the first three word-timed lines with their
     // spans, so the timing quality is inspectable against the actual song —
     // machine timings on the owner's local file, judged by ear.
-    console.log("MADNESS WORD SAMPLE (first 3 word-timed lines):");
+    console.log("DENSE WORD SAMPLE (first 3 word-timed lines):");
     for (const l of mlines.filter((x) => x.words && x.words.length > 0).slice(0, 3)) {
       const spans = l.words
         .map((w) => `${w.t.toFixed(2)}${w.end != null ? `-${w.end.toFixed(2)}` : ""} ${w.text}`)
@@ -734,12 +849,12 @@ try {
   }
 
   // ---- 5. isolated-vs-mix comparison (direct sidecar) --------------------
-  if (!args.has("--skip-compare") && !args.has("--skip-madness")) {
-    console.log("COMPARE: direct sidecar run on Madness with --dump-stem…");
-    const lrcOut = path.join(outDir, "madness-direct-mix.lrc");
-    const stemOut = path.join(outDir, "madness-stem.wav");
-    const events = runSidecarDirect(MADNESS, lrcOut, stemOut);
-    writeFileSync(path.join(outDir, "madness-direct-events.json"), JSON.stringify(events, null, 2));
+  if (!args.has("--skip-compare") && !skipDense) {
+    console.log("COMPARE: direct sidecar run on the dense song with --dump-stem…");
+    const lrcOut = path.join(outDir, "dense-direct-mix.lrc");
+    const stemOut = path.join(outDir, "dense-stem.wav");
+    const events = runSidecarDirect(DENSE_AUDIO, lrcOut, stemOut);
+    writeFileSync(path.join(outDir, "dense-direct-events.json"), JSON.stringify(events, null, 2));
     const result = events.find((e) => e.type === "result");
     const iso = events.find((e) => e.type === "stageDone" && e.stage === "isolate");
     const alignDone = events.find((e) => e.type === "stageDone" && e.stage === "align");
@@ -753,9 +868,9 @@ try {
         `alignWall=${alignDone.wallSec?.toFixed(1)}s (${alignDone.detail ?? ""})`,
     );
     console.log("COMPARE: whisper small on the ISOLATED STEM…");
-    const stemText = runWhisperOnStem(stemOut, path.join(outDir, "madness-stem-transcript"));
+    const stemText = runWhisperOnStem(stemOut, path.join(outDir, "dense-stem-transcript"));
     const mixLrc = readFileSync(lrcOut, "utf8");
-    writeFileSync(path.join(outDir, "madness-mix.lrc"), mixLrc);
+    writeFileSync(path.join(outDir, "dense-mix.lrc"), mixLrc);
     const norm = (t) =>
       t
         .toLowerCase()
@@ -776,7 +891,7 @@ try {
   console.log(
     "LYRICS-E2E OK: download+cancel+resume+verify, corpus generation, editor leg " +
       "(conf transport, edits, undo walk, LRC round-trip, real re-align), mid-run cancel" +
-      (args.has("--skip-madness") ? "" : ", dense-mix generation + stem comparison") +
+      (skipDense ? "" : ", dense-mix generation + real-LRC timing + stem comparison") +
       " all pass",
   );
 } finally {

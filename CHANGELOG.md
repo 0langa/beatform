@@ -11,6 +11,16 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Generated lyrics no longer jump ahead after a long held note.** In loud
+  songs, the first words of a line could light up seconds early, on the
+  last held note of the line before, and then sit there through the pause.
+  Each line is now timed together with the line before it, so the held note
+  stays with its own word. Measured on a loud rock song: the worst line went
+  from 3.2 s early to 0.7 s late. Generate the lyrics again to get the new
+  timing.
+
 ## [2.112.0] - 2026-10-11
 
 ### Added
