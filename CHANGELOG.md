@@ -11,6 +11,15 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- **Radial Burst's edge waves no longer whip back and forth on the beat.**
+  Loudness used to nudge the waves' rotation forward and let it slide back
+  as each pulse faded. Their spin now follows the track's loudness the way
+  Tunnel's flight does: faster through loud passages, slower through quiet
+  ones, never backwards. _Spin energy_ sets how much — 0 is a steady spin,
+  full is a spin that lives entirely on the loudness.
+
 ## [2.113.0] - 2026-10-11
 
 ### Changed

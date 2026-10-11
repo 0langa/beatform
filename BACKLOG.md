@@ -312,7 +312,11 @@ this pass: every Builder layer control gained a hover hint (the nine layer
 kinds had none — the panel footer said "Hover a control to see what it
 does" and showed nothing). UI sweep in the browser dev build (every
 Visuals page, Export, Preferences, Gallery, Perform drawer, Timeline, the
-four newest modes): no defect found.
+four newest modes): no defect found. **Shipped as v2.113.0 "Tunnel flies
+forward" on 2026-10-11** (`release.mjs`; see the release row below for the
+publish evidence). Device battery toward the 3.0 cut, run on this tree:
+`node scripts/export-color-verify.mjs` PASS 2026-10-11 (ProRes 4444 and
+AV1 10-bit both tag and convert BT.709/tv, Y'(red) 0.2135).
 
 - [x] **Tunnel travel model — continuous flight.** Cause found in the
       shader: `travelT = t·v + drive·k + kick·stride` — loudness and the beat
@@ -360,6 +364,22 @@ four newest modes): no defect found.
       Hyperdrive, Waterslide, Ice Cave, Vector Grid, Honeycomb, Ember;
       paused frame pairs at 6.0 / 6.3 s show rings and motes streaming
       outward).
+- [x] **Radial Burst wave spin reversed on the beat** (owner picked this
+      as the next feel item). `spin = (t·spinBase + drive·spinEnergy·3)·u.spin`
+      was a bounded loudness OFFSET on the edge-wave phase: forward on every
+      kick, back as the pulse decayed — the same class as Tunnel's shove.
+      Now `spinClock = mix(u.time, u.travel, spinEnergy/1.5)` × spinBase:
+      loud passages spin faster, quiet slower, never backwards (the ring's
+      own rotation was already time-only). New `radialBurst.test.ts` pins
+      both clocks. **GPU matrix re-blessed 2026-10-11:** 351 cases, exactly
+      15 moved — the 10 `radial-burst/*` cases that are not black
+      (`extreme/min` is lightness 0) plus the 5 `transition/<kind>/mid`
+      cases, whose fixed pair renders Radial Burst as the OUTGOING half;
+      the two pair cases (spectrum-bars outgoing) and every other mode kept
+      their hash. Checked every other older mode's clocks (LED Matrix scroll,
+      Voice Orb satellites, Metaballs, Aurora drift, Synthwave grid, the
+      3D camera yaw): all time-only or beat-locked already — Radial Burst
+      was the last audio-in-phase term.
 - [x] **Shader prelude ABI** — `Uniforms` grows `travel`/`beatCount`
       (bytes 144/148, `UNIFORM_SIZE` 160); `demoFeatures` carries a mild
       monotonic travel deviation so the matrix exercises the blend;

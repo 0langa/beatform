@@ -46,7 +46,7 @@ export const tunnelRings: PresetDef = {
   id: "tunnel-rings",
   name: "Tunnel",
   description:
-    "Flying into a tiled tunnel — the spectrum lights tile columns, grout lines flash on beats.",
+    "A real tube you fly down, without ever slowing into reverse: the track's loudness sets the pace, every beat is a stride, the spectrum lights the wall — and ceiling lamps, dust and a drifting camera sell the depth.",
   styles: [
     // Ember — the defaults — a lit tiled tube with travelling beat rings.
     { id: "ember", name: "Ember", values: {} },

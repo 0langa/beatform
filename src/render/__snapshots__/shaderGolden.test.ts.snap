@@ -6212,14 +6212,19 @@ fn preset(uv: vec2f) -> vec4f {
   // envelope; hard clamp keeps the core inside the bar ring.
   let pump = 1.0 + (u.drive * P_corePump() + beatP * P_coreBeat()) * u.pulse;
   let coreR = inner * P_coreSize() * pump;
-  // What multiplies u.time is params-only. With u.drive inside the rate the
-  // wave phase was t*v(t), not the integral of v, so every transient whipped
-  // the crests by t*(rate change) — a fraction of a radian early in a track,
-  // several radians two minutes in. Loudness now adds a BOUNDED phase offset:
-  // it still visibly stirs the waves, and the error no longer grows with time.
-  // Both terms stay behind Motion->Rotation (u.spin), as before, so Rotation 0
-  // still means a dead-still edge.
-  let spin = (u.time * P_spinBase() + u.drive * P_spinEnergy() * 3.0) * u.spin;
+  // The wave clock is u.time blended toward u.travel — the track's
+  // loudness-integrated time (1 s/s on average, faster through loud passages,
+  // slower through quiet ones, never backwards) — by Spin energy. Two earlier
+  // shapes both lied: u.drive inside the RATE made the phase t*v(t) (crests
+  // whipped by t*(rate change), growing with track time), and the bounded
+  // offset that replaced it (drive * k) whipped the crests forward on every
+  // kick and slid them BACK as the pulse decayed — the same back-and-forth
+  // the ring's own rotation was cured of long ago. A blended clock is
+  // monotonic by construction: loud passages spin the waves faster, quiet
+  // ones slower, and nothing ever reverses. Still behind Motion->Rotation
+  // (u.spin), so Rotation 0 means a dead-still edge.
+  let spinClock = mix(u.time, u.travel, clamp(P_spinEnergy() / 1.5, 0.0, 1.0));
+  let spin = spinClock * P_spinBase() * u.spin;
   let amp = inner * (P_wobBase() + u.drive * P_wobAmp());
   var wob = sin(a * 3.0 + spin) * amp
           + sin(a * 6.0 - spin * 0.7 + 1.3) * amp * 0.35;
