@@ -290,9 +290,10 @@ Beatform sits still for a while: nothing that was started ships half-done,
 every 2.x project, look, theme and shader file opens unchanged, and the
 updater carries every 2.x install forward. It is not a feature release —
 the features landed across the 2.x line, the last of them in v2.113.0. How
-it was prepared is [`docs/V3-RELEASE-PLAN.md`](docs/V3-RELEASE-PLAN.md);
-the ledger with every verdict and the explicit non-goals is
-[`BACKLOG.md`](BACKLOG.md). After 3.0.0 the project sits; when work
+it was prepared is [`archive/ledgers/V3-RELEASE-PLAN.md`](archive/ledgers/V3-RELEASE-PLAN.md);
+the ledger with every verdict and the evidence is
+[`archive/ledgers/BACKLOG-through-v3.0.0.md`](archive/ledgers/BACKLOG-through-v3.0.0.md);
+open work, if any, lives in [`BACKLOG.md`](BACKLOG.md). After 3.0.0 the project sits; when work
 resumes it runs on the 3.x line under the same gates, the same ledger and
 the same determinism law — new ideas go through the ledger, never straight
 into a release.

@@ -1,5 +1,9 @@
 # v3.0.0 Release Plan
 
+> **ARCHIVED 2026-10-12.** The plan that carried the program to the `v3.0.0`
+> tag, moved here from `docs/` at the cut. History, not instructions: the
+> live ledger is [/BACKLOG.md](../../BACKLOG.md).
+
 _Re-cut 2026-09-02 against v2.108.0 (shipped 2026-08-21). Supersedes the
 2026-08-23 plan, which stalled after twelve idle days with none of its phases
 started. The live work ledger stays `BACKLOG.md` — rows close there; this
