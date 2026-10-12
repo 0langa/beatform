@@ -13,14 +13,26 @@ Rules unchanged: never rename a persisted ID without a migration; new modes
 follow registry + grid + matrix re-bless discipline; GATES.md is canonical for
 "done"; quality over speed.
 
-## v3.0.0 program (ACTIVE — owner re-cut 2026-09-02)
+## v3.0.0 program — SHIPPED 2026-10-12 (owner re-cut 2026-09-02; owner's go 2026-10-12)
 
 The bar: **nothing that was started ships half-done.** Ordered plan and release
 train in **[docs/V3-RELEASE-PLAN.md](docs/V3-RELEASE-PLAN.md)**: v2.109.0
 housekeeping → owner verdict round → v2.111.0 (one release, HD-06 included;
 v2.110.0 became the 2026-10-09 beat-sync release)
 → owner checks A1/A2 → 3.0.0 docs/version-only diff after a full device
-battery. The tag waits for the owner's explicit go.
+battery. **Done.** `v3.0.0` "Beatform 3.0" (commit e1ded12) went through
+`release.mjs` end to end on 2026-10-12: CI run 38188149433 green in 20 min,
+published as latest, `latest.json` serves 3.0.0 with a 436-char signature
+and a URL on the tag, installer `Beatform_3.0.0_x64-setup.exe` 60,197,943
+bytes, SHA-256 `126afed8…8c14d` matches SHA256SUMS; the release commit holds
+only the five version files and the changelog (no `schemaVersion`, migration
+or preset-ID edit — checked against v2.113.0 before the cut). The project
+sits. 3.x work runs under the same gates, ledger and determinism law.
+
+**Still owner-manual after this release:** TESTING.md D1 (the installed 2.x
+app updates into 3.0.0 through the live manifest; `DisplayVersion` reads
+3.0.0 after one ordinary relaunch — ALIGN-002) and D2 (fresh install on a
+clean profile). Both are checks of the published artifact, not gates on it.
 
 ## Open after 2.111.0 (found 2026-10-10 on the owner's machine)
 
@@ -52,7 +64,7 @@ battery. The tag waits for the owner's explicit go.
       live failure behind it was C: at 10 MB free: the updater writes the
       60 MB installer to `%TEMP%` first; freeing space fixed the update.
 
-## 3.0.0 readiness (prepared 2026-10-11 — the cut waits for the owner)
+## 3.0.0 readiness (prepared 2026-10-11 — closed 2026-10-12, shipped)
 
 Everything agent-side from docs/V3-RELEASE-PLAN.md §5 is on `main`:
 
@@ -79,7 +91,8 @@ Everything agent-side from docs/V3-RELEASE-PLAN.md §5 is on `main`:
       (physical). Observation, not a defect: the harness's primary alone
       measured 30.0 fps with the chat window covering it, 43.6 once the
       uncovered output on DISPLAY2 was live — occlusion, not a cap.
-- [ ] **The owner's go.** Then, from a clean `main`:
+- [x] **The owner's go** — given 2026-10-12 ("Go"); executed from a clean
+      `main`, evidence in the program section above. The command was:
       `node scripts/release.mjs 3.0.0 --title "Beatform 3.0" --gates-ran`,
       rerun with `--continue` once it has scaffolded the heading. Review the
       release commit for the one rule a major version does not relax: no

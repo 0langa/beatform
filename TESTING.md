@@ -112,3 +112,9 @@ batch prepares it, it never triggers it.
   (12/12) and the yank waived, both by the owner's instruction; installed
   app v2.112.1 pending the owner's in-app update; HEAD = the 3.0.0 docs
   diff on main. D1–D2 run against the 3.0.0 candidate after the tag.
+- 2026-10-12 — **v3.0.0 published** (commit e1ded12, CI 38188149433, live
+  manifest 3.0.0, signature present, SHA256SUMS match). D1 and D2 are now
+  checks of the published artifact: D1 = the installed 2.x app's next
+  launch offers and installs 3.0.0, `ProductVersion` and HKCU
+  `DisplayVersion` read 3.0.0 after one ordinary relaunch; D2 = fresh
+  install on a clean profile. Both owner-run.
