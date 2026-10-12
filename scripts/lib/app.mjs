@@ -26,6 +26,7 @@
 //                                       independently claimed it)
 //   10460  deepcolor-verify.mjs --prores  (same collision, same move)
 //   10540  dock-device-pass.mjs
+//   10620  second-display-pass.mjs    (TESTING.md A2, the automatable half)
 //
 //   (gpu-pixel-matrix.mjs predates this map and rolls 9400 + pid % 500 —
 //   a span that overlaps several bases above. It accepts --port=<n>; pass

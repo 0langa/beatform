@@ -68,7 +68,17 @@ Everything agent-side from docs/V3-RELEASE-PLAN.md §5 is on `main`:
       colorimetry PASS, Shadertoy smoke PASS, loopback 60 + 30 fps PASS,
       gallery E2E and lyrics E2E — see the rows below for the evidence
       lines.
-- [ ] **A1** and **A2** (TESTING.md) — owner.
+- [x] **A1** and **A2** — closed 2026-10-12 on the owner's instruction
+      ("do it yourself, otherwise waive it"): A1 waived on its measured
+      evidence (probe median 0.04 s / worst 0.15 s; real-song gate median
+      0.41 s / worst 0.74 s; sidecar unchanged since); A2's automatable half
+      DONE by the new `scripts/second-display-pass.mjs` (12/12 on a real
+      second monitor — placement on DISPLAY2 exact, 3 min at the primary's
+      cadence with 4 frames in flight and ≤ 2.2 ms lag, the 30 fps preview
+      cap never reached the output, clean close), the HDMI yank waived
+      (physical). Observation, not a defect: the harness's primary alone
+      measured 30.0 fps with the chat window covering it, 43.6 once the
+      uncovered output on DISPLAY2 was live — occlusion, not a cap.
 - [ ] **The owner's go.** Then, from a clean `main`:
       `node scripts/release.mjs 3.0.0 --title "Beatform 3.0" --gates-ran`,
       rerun with `--continue` once it has scaffolded the heading. Review the
@@ -86,7 +96,8 @@ Everything agent-side from docs/V3-RELEASE-PLAN.md §5 is on `main`:
       #31 (the npm minor/patch group, 13 updates incl. mediabunny 1.55.4,
       vite 8.2.2, vitest 4.1.11, eslint 10.9.1; #30 was dependabot's earlier
       copy of the same group, closed by dependabot) squash-merged after CI.
-- [ ] **A1 Lyric Stage word timing** (~3 min) — TESTING.md § A1. Closes
+- [x] **A1 Lyric Stage word timing** (~3 min) — TESTING.md § A1 — WAIVED
+      by the owner 2026-10-12 on the measured evidence below. Closes
       FEAT-004. **The measurable half is done (2026-10-10):** the new probe
       `scripts/lyrics-timing-probe.mjs` (speech with sample-exact word onsets
       over a music bed, the real sidecar end to end) found the first words of
@@ -96,9 +107,10 @@ Everything agent-side from docs/V3-RELEASE-PLAN.md §5 is on `main`:
       sung recordings split into exactly their real lines. What is left is
       taste only: generate lyrics for a song you know and say whether it
       feels right — the fix needs a REGENERATE, old LRCs keep old timing.
-- [ ] **A2 Second-display eyes + HDMI yank** (~5 min) — TESTING.md § A2.
-      Closes FEAT-009. Still needs a second physical display (this machine
-      has one monitor). The fps-cap lift is unit-tested (`effectiveFpsCap`).
+- [x] **A2 Second-display eyes + HDMI yank** (~5 min) — TESTING.md § A2.
+      Closes FEAT-009. CLOSED 2026-10-12: the owner connected a second
+      display; `scripts/second-display-pass.mjs` ran the automatable half
+      green (12/12), the yank waived by the owner.
 - [ ] **Launch kit** (not a gate) — hero pick, `[SLOT]` fills, `[VERIFY]`
       flags, three screen recordings, posting.
       Kit: `OneDrive\Documents\doc\beatform-launch-kit\`.

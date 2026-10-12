@@ -38,7 +38,7 @@ owner's go.
 
 ## A — Owner checks (human; the two that survived the 2026-09-02 reset)
 
-- [ ] **A1. Lyric Stage word timing (~3 min) — closes FEAT-004.** Timing is
+- [x] **A1. Lyric Stage word timing (~3 min) — closes FEAT-004.** **WAIVED by the owner 2026-10-12** (away from the machine; "do it yourself, otherwise waive it"). The measurable half stands as the verdict: `scripts/lyrics-timing-probe.mjs` 54/54 words, median 0.04 s, worst 0.15 s; the real-song gate in `npm run test:lyrics` (Green Day — American Idiot against its synced .lrc) median 0.41 s, worst 0.74 s; the sidecar binary is unchanged since those runs (2026-10-11). Timing is
       now measured by `node scripts/lyrics-timing-probe.mjs` (PASS 2026-10-10:
       54 words, median 0.04 s, worst 0.15 s, after the sidecar fix in
       BACKLOG.md "Done 2026-10-10"); this check is the owner's taste pass on a
@@ -48,7 +48,7 @@ owner's go.
       PASS = words light up when the vocalist actually sings them — not
       noticeably early or late, sane line breaks, nothing embarrassing. Record
       the verdict here in one sentence.
-- [ ] **A2. Second-display eyes (~5 min) — closes FEAT-009.** Press **D** →
+- [x] **A2. Second-display eyes (~5 min) — closes FEAT-009.** **DONE 2026-10-12, the automatable half, by `node scripts/second-display-pass.mjs --minutes=3`** on the debug shell with a real second monitor (DISPLAY2, 1920×1080 at x=2160): 12/12 checks — the app enumerates both monitors, the output window opens through the drawer's own store actions and its OS rectangle sits exactly on DISPLAY2 (2160,0 1920×1080), it ran 3 min at the primary's cadence (43.6 fps both, 0 → 4 frames in flight the whole time, delivery lag ≤ 2.2 ms, never degraded), the preview cap at 30 did not touch it (43.6 → 43.4), and it closed through the store with the primary still playing. **The HDMI yank is WAIVED by the owner** (physical; nobody at the machine); the owner's smoothness verdict with it. Press **D** →
       Perform drawer → open the output on the HDMI screen, play a track. Look:
       sharp and smooth on the big screen? Let it run ~5 min while using the
       operator window: any stutter, flicker, drift? Then the yank: pull the
@@ -107,3 +107,8 @@ owner's go.
 Record evidence here when an item goes green (date, installed version, HEAD,
 one line of evidence). The tag is still the owner's explicit call — a green
 batch prepares it, it never triggers it.
+
+- 2026-10-12 — A1 waived with measured evidence, A2 automatable half green
+  (12/12) and the yank waived, both by the owner's instruction; installed
+  app v2.112.1 pending the owner's in-app update; HEAD = the 3.0.0 docs
+  diff on main. D1–D2 run against the 3.0.0 candidate after the tag.
