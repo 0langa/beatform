@@ -30,10 +30,10 @@ release ritual — never straight into a release.
 - [ ] **TESTING.md D2, the owner's half** — the fresh 3.0.0 install on this
       machine boots (installed-runtime smoke: title, canvas, WebGPU) and
       wrote a clean profile; the owner's eyes on "a demo plays, one short MP4
-      exports and decodes" remain. Pre-3.0 app data sits beside the fresh
-      profile as `com.olanga.audiovisualizer.pre-3.0-backup-2026-10-12`
-      (Roaming and Local, each with a RESTORE.md); the lyrics models were
-      moved back so nothing re-downloads.
+      exports and decodes" remain. The pre-3.0 app data (looks, prefs,
+      autosave, WebView profile) went to the Recycle Bin on the owner's
+      decision 2026-10-12; the lyrics models were moved into the fresh
+      install so nothing re-downloads.
 - **Nothing else is open.** Bugs and ideas go to the external notes queue or
   a new row here; the ledger's one-item-at-a-time discipline continues.
 
