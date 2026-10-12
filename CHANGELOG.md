@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-12
+
 **Beatform 3.0.** The release after which Beatform sits still for a while:
 nothing that was started ships half-done, every 2.x project, look, theme and
 shader file opens unchanged, and every 2.x install updates straight into it.
@@ -3398,7 +3400,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v2.113.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/0langa/beatform/compare/v2.113.0...v3.0.0
 [2.113.0]: https://github.com/0langa/beatform/compare/v2.112.1...v2.113.0
 [2.112.1]: https://github.com/0langa/beatform/compare/v2.112.0...v2.112.1
 [2.112.0]: https://github.com/0langa/beatform/compare/v2.111.0...v2.112.0
