@@ -11,6 +11,7 @@ import { wavFromPcm } from "../../audio/dsp/wav";
 import { pcmFromAudioBuffer } from "../../audio/offlineSource";
 import {
   blendMeasuredRtf,
+  cudaReady,
   describeLyricsFailure,
   formatBytes,
   missingModels,
@@ -19,8 +20,10 @@ import {
   reduceGenProgress,
   tierDownloadBytes,
   TIER_WHISPER_ID,
+  whisperRtfKey,
   type LyricsTier,
   type MeasuredRtf,
+  type ProgressProfile,
   type SidecarEvent,
 } from "../lyricsGen";
 import {
@@ -35,6 +38,9 @@ import {
   lyricsModelRemove,
   lyricsModelsState,
   lyricsModelVerify,
+  lyricsRuntimeDownload,
+  lyricsRuntimeRemove,
+  lyricsRuntimesState,
   lyricsStageAudio,
 } from "../platform";
 import { getPrefs, setPrefs } from "../prefs";
@@ -65,6 +71,12 @@ function formatTrackDuration(sec: number): string {
   return h > 0 ? `${h} h ${m} min` : `${m} min`;
 }
 
+/** Set by cancelLyricsGenerate for the run in flight, cleared when a run
+ * starts — the same token lyricsEditActions keeps for a re-align. A cancel's
+ * side effects (the Rust sweep of staged audio, a killed sidecar) reach the
+ * run as ordinary errors; the token is what keeps them silent. */
+let generateCancelled = false;
+
 export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
   return {
     async refreshLyricsGen() {
@@ -76,17 +88,106 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         set({ error: `Could not read lyrics models: ${(e as Error).message ?? e}` });
         return;
       }
+      // Runtime packs ride the same refresh: the CUDA whisper build is what
+      // decides the recommended tier and the estimate's whisper row.
+      try {
+        const runtimes = await lyricsRuntimesState();
+        set({ lyricsGen: { ...get().lyricsGen, runtimes } });
+      } catch {
+        // No pack state = no pack offered; the models still work.
+      }
       // The GPU probe spawns the sidecar once (~1 s) and is cached Rust-side;
       // fire it lazily after the models land so the estimate can be honest.
-      if (get().lyricsGen.dml === null) {
+      if (get().lyricsGen.gpu === null) {
         try {
-          const dml = await lyricsGpuProbe();
-          set({ lyricsGen: { ...get().lyricsGen, dml } });
+          const gpu = await lyricsGpuProbe();
+          set({ lyricsGen: { ...get().lyricsGen, gpu, dml: gpu.dml } });
         } catch {
           // Probe failure = estimate falls back to CPU numbers; not an error
           // worth a toast — generation itself still auto-detects.
-          set({ lyricsGen: { ...get().lyricsGen, dml: false } });
+          set({
+            lyricsGen: {
+              ...get().lyricsGen,
+              dml: false,
+              gpu: { dml: false, cudaCapable: false, gpuName: null, vramMb: null },
+            },
+          });
         }
+      }
+    },
+
+    async downloadLyricsRuntime(id: string) {
+      const s = get();
+      if (!isTauri() || s.lyricsGen.phase !== "idle" || s.lyricsGen.modelOp) return;
+      const rt = s.lyricsGen.runtimes?.runtimes.find((r) => r.id === id);
+      if (!rt || rt.installed) return;
+      // Same synchronous claim as downloadLyricsTier (R2-31g): the disk probe
+      // awaits, and two clicks must not start the same 678 MB twice.
+      set({
+        lyricsGen: {
+          ...get().lyricsGen,
+          phase: "downloading",
+          download: { id, received: rt.partBytes, total: rt.zipBytes },
+        },
+      });
+      try {
+        // The zip lands next to the unpacked files, so the peak is both.
+        const remaining = Math.max(0, rt.zipBytes - rt.partBytes) + rt.bytes;
+        const disk = await diskSpace(s.lyricsGen.runtimes?.runtimesDir ?? "");
+        if (disk && disk.freeBytes < remaining + DISK_MARGIN_BYTES) {
+          const proceed = await askConfirm(
+            `GPU acceleration needs ${Math.round(remaining / 1e6)} MB while it installs and drive ` +
+              `${disk.root} has ${Math.round(disk.freeBytes / 1e6)} MB free. Download anyway?`,
+            "Low disk space",
+          );
+          if (!proceed) return;
+        }
+        await lyricsRuntimeDownload(id, (line) => {
+          const p = parseDownloadProgress(line);
+          if (!p) return;
+          set({ lyricsGen: { ...get().lyricsGen, download: p } });
+        });
+        const gpuName = get().lyricsGen.gpu?.gpuName;
+        ctx.flashNotice(
+          `GPU acceleration ready — Whisper now runs on ${gpuName ?? "your NVIDIA GPU"}`,
+        );
+      } catch (e) {
+        const message = String((e as Error).message ?? e);
+        if (message !== "cancelled") {
+          set({ error: `GPU acceleration download failed: ${message}` });
+        }
+      } finally {
+        const runtimes = await lyricsRuntimesState().catch(() => get().lyricsGen.runtimes);
+        set({
+          lyricsGen: { ...get().lyricsGen, phase: "idle", download: null, runtimes },
+        });
+      }
+    },
+
+    async removeLyricsRuntime(id: string) {
+      const s = get();
+      if (!isTauri() || s.lyricsGen.phase !== "idle" || s.lyricsGen.modelOp || s.lyricsRealign) {
+        return;
+      }
+      const rt = s.lyricsGen.runtimes?.runtimes.find((r) => r.id === id);
+      if (!rt || (!rt.installed && rt.partBytes <= 0)) return;
+      const size = formatBytes(rt.installed ? rt.bytes : rt.partBytes);
+      set({ lyricsGen: { ...get().lyricsGen, modelOp: { id, kind: "remove" } } });
+      try {
+        const proceed = await askConfirm(
+          rt.installed
+            ? `Remove GPU acceleration (${size}) from this PC? Whisper goes back to the CPU until it is downloaded again.`
+            : `Delete the partial GPU acceleration download (${size})? The next download starts over.`,
+          "Remove GPU acceleration",
+        );
+        if (!proceed) return;
+        await lyricsRuntimeRemove(id);
+        ctx.flashNotice(`GPU acceleration removed — ${size} freed`);
+      } catch (e) {
+        set({ error: `Could not remove GPU acceleration: ${(e as Error).message ?? e}` });
+      } finally {
+        const runtimes = await lyricsRuntimesState().catch(() => get().lyricsGen.runtimes);
+        set({ lyricsGen: { ...get().lyricsGen, modelOp: null, runtimes } });
       }
     },
 
@@ -200,14 +301,20 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           gen: { stage: "decode", pct: null, etaSec: null, overall: 0, starting: false },
         },
       });
+      // Whisper runs on the CUDA pack when it is installed and an NVIDIA
+      // driver is present; the progress bar's stage weights follow the GPU
+      // shape whenever either GPU stage is in play.
+      const cuda = cudaReady(s.lyricsGen.gpu, s.lyricsGen.runtimes);
+      const profile: ProgressProfile = cuda || s.lyricsGen.dml === true ? "gpu" : "cpu";
       // The terminal result event carries the phase-3 word-timing stats
       // (words, low-confidence lines) — the LRC text itself only carries the
       // timings. Captured here for the post-load notice (an object property,
       // not a bare let: closure writes defeat TS's flow narrowing on locals).
       // stageRtf (follow-up b) rides the same object: the isolate/transcribe/
       // align stageDone events each carry a measured `rtf`, kept here until a
-      // successful run's end, where `stats.ep` (dml vs cpu) and `tier`
-      // resolve which persisted MeasuredRtf slot each sample blends into.
+      // successful run's end, where `stats.ep` (dml vs cpu), `stats.whisper`
+      // (cuda vs cpu) and `tier` resolve which persisted MeasuredRtf slot each
+      // sample blends into.
       const captured: {
         result: Extract<SidecarEvent, { type: "result" }> | null;
         stageRtf: Partial<Record<"isolate" | "transcribe" | "align", number>>;
@@ -230,16 +337,22 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           // starting=true, pct/eta null — "starting <next stage>…" instead
           // of a stale "<finished stage> — 100%" sitting for however long
           // the next stage takes to emit its own first event.
-          set({ lyricsGen: { ...get().lyricsGen, gen: reduceGenProgress(ev) } });
+          set({ lyricsGen: { ...get().lyricsGen, gen: reduceGenProgress(ev, profile) } });
         }
       };
       // One attempt = stage the decoded track as WAV (works for every source
       // — file, drag-drop, library — because it reads the engine's own
-      // buffer), then run the sidecar to completion.
+      // buffer), then run the sidecar to completion. `useGpu` false means
+      // BOTH GPU stages stay off — the retry below exists because a driver
+      // crash can come from either.
       const attempt = async (useGpu: boolean) => {
         await lyricsStageAudio(wavFromPcm(pcmFromAudioBuffer(buf)));
-        return lyricsGenerate({ whisperModelId: TIER_WHISPER_ID[tier], useGpu, language }, onLine);
+        return lyricsGenerate(
+          { whisperModelId: TIER_WHISPER_ID[tier], useGpu, useCuda: useGpu && cuda, language },
+          onLine,
+        );
       };
+      generateCancelled = false; // a new run, a fresh token
       try {
         let lrc: string;
         try {
@@ -250,8 +363,9 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
           // (observed on the reference Iris Xe under sustained thermal load:
           // exit 0xffffffff mid-isolation). Nothing in-process can catch
           // that — the honest recovery is one retry with the GPU stage
-          // disabled, announced, not silent.
-          if (!/exited abnormally/.test(message)) throw e;
+          // disabled, announced, not silent. A run the user cancelled is
+          // never retried, whatever it died of.
+          if (generateCancelled || !/exited abnormally/.test(message)) throw e;
           ctx.flashNotice("Graphics acceleration crashed — retrying on CPU (slower)");
           captured.result = null; // no stale stats from the crashed attempt
           captured.stageRtf = {}; // ...and no stale RTF (isolate reruns on CPU)
@@ -286,8 +400,7 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
             else samples.isolateCpu = captured.stageRtf.isolate;
           }
           if (captured.stageRtf.transcribe != null) {
-            if (tier === "medium") samples.whisperMedium = captured.stageRtf.transcribe;
-            else samples.whisperSmall = captured.stageRtf.transcribe;
+            samples[whisperRtfKey(tier, stats.whisper)] = captured.stageRtf.transcribe;
           }
           if (captured.stageRtf.align != null) samples.align = captured.stageRtf.align;
           if (Object.keys(samples).length > 0) {
@@ -306,9 +419,21 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
               (low > 0 ? `; ${low} low-confidence line${low === 1 ? "" : "s"}` : ""),
           );
         }
+        // The pack is installed and the driver answered, yet whisper ran on
+        // the CPU: the sidecar reports what actually happened, so say it
+        // rather than let the user believe the GPU did the work.
+        if (stats != null && cuda && stats.whisper !== "cuda") {
+          ctx.flashNotice(
+            "Whisper ran on the CPU — the GPU acceleration pack found no CUDA device",
+          );
+        }
       } catch (e) {
         const message = String((e as Error).message ?? e);
-        if (message !== "cancelled") {
+        // After a Cancel, whatever the run dies of is the cancel: the Rust
+        // cancel sweeps the staging temps too, so a cancel that lands while
+        // the track is still being staged surfaces as "No audio staging in
+        // progress" from the next chunk — not an error to show.
+        if (message !== "cancelled" && !generateCancelled) {
           set({ error: `Lyrics generation failed: ${describeLyricsFailure(message)}` });
         }
       } finally {
@@ -317,6 +442,7 @@ export function lyricsGenActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     },
 
     cancelLyricsGenerate() {
+      if (get().lyricsGen.phase === "generating") generateCancelled = true;
       void lyricsGenerateCancel();
     },
 

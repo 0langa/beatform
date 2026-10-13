@@ -473,6 +473,12 @@ describe("prefs: measuredRtf (FEAT-004 follow-up b)", () => {
       isolateCpu: null,
       whisperSmall: null,
       whisperMedium: null,
+      whisperTurbo: null,
+      whisperLarge: null,
+      whisperSmallCuda: null,
+      whisperMediumCuda: null,
+      whisperTurboCuda: null,
+      whisperLargeCuda: null,
       align: null,
     });
     expect(getPrefs().volume).toBe(0.5);
@@ -488,8 +494,18 @@ describe("prefs: measuredRtf (FEAT-004 follow-up b)", () => {
       isolateCpu: null,
       whisperSmall: null,
       whisperMedium: null,
+      whisperTurbo: null,
+      whisperLarge: null,
+      whisperSmallCuda: null,
+      whisperMediumCuda: null,
+      whisperTurboCuda: null,
+      whisperLargeCuda: null,
       align: 0.14,
     });
+    // A CUDA-tier slot (2026-10-13) round-trips like the original five.
+    seed(JSON.stringify({ measuredRtf: { whisperTurboCuda: 0.032 } }));
+    const fresh = await importFresh();
+    expect(fresh.getPrefs().measuredRtf.whisperTurboCuda).toBe(0.032);
   });
 
   it("degrades a wrong-typed or non-positive stored value to null, keeping the rest of the blob", async () => {

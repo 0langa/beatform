@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cudaReady,
   describeLyricsFailure,
   blendMeasuredRtf,
   estimateGenerateSeconds,
@@ -13,10 +14,13 @@ import {
   overallProgress,
   parseDownloadProgress,
   parseSidecarEvent,
+  recommendedTier,
   reduceGenProgress,
   tierDownloadBytes,
   tierInstalled,
   tierModelIds,
+  tierOptions,
+  whisperRtfKey,
   type LyricsModelsState,
   type MeasuredRtf,
 } from "./lyricsGen";
@@ -60,7 +64,21 @@ describe("sidecar protocol parsing", () => {
       vocalSec: 82.86000000000001,
       ep: "dml",
       language: "en",
+      whisper: "cpu",
+      whisperDevice: undefined,
       lineDetails: undefined,
+    });
+    // 2026-10-13: the result names the whisper runtime; a CUDA run carries
+    // the device, an older sidecar's line (no field) reads as CPU.
+    expect(
+      parseSidecarEvent(
+        '{"type":"result","lrcPath":"z.lrc","lines":34,"words":245,"alignedLines":34,"lowConfLines":0,' +
+          '"vocalSec":107.2,"ep":"dml","language":"en","whisper":"cuda","whisperDevice":"NVIDIA GeForce RTX 5060 Ti"}',
+      ),
+    ).toMatchObject({
+      type: "result",
+      whisper: "cuda",
+      whisperDevice: "NVIDIA GeForce RTX 5060 Ti",
     });
     // Phase-4 per-line confidence rides the result; malformed entries
     // degrade instead of rejecting the event.
@@ -209,6 +227,34 @@ describe("tier math", () => {
       "wav2vec2-vocab",
       "whisper-medium",
     ]);
+    // The GPU-era tiers share everything but their whisper model.
+    expect(tierModelIds("turbo")[3]).toBe("whisper-turbo");
+    expect(tierModelIds("large")[3]).toBe("whisper-large");
+  });
+
+  it("recommends Large v3 Turbo on a CUDA machine and Small everywhere else", () => {
+    expect(recommendedTier(true)).toBe("turbo");
+    expect(recommendedTier(false)).toBe("small");
+    const gpuOpts = tierOptions(true);
+    expect(gpuOpts.map((o) => o.value)).toEqual(["small", "medium", "turbo", "large"]);
+    expect(gpuOpts.find((o) => o.value === "turbo")?.label).toMatch(/recommended/);
+    expect(gpuOpts.find((o) => o.value === "small")?.label).not.toMatch(/recommended/);
+    const cpuOpts = tierOptions(false);
+    expect(cpuOpts.find((o) => o.value === "small")?.label).toMatch(/recommended/);
+    expect(cpuOpts.find((o) => o.value === "large")?.label).toMatch(/slow/);
+    // cudaReady needs BOTH the driver and the installed pack.
+    const gpu = { dml: true, cudaCapable: true, gpuName: "x", vramMb: 16311 };
+    const pack = (installed: boolean) => ({
+      runtimesDir: "r",
+      runtimes: [
+        { id: "whisper-cuda", dirName: "d", installed, bytes: 1, zipBytes: 1, partBytes: 0 },
+      ],
+    });
+    expect(cudaReady(gpu, pack(true))).toBe(true);
+    expect(cudaReady(gpu, pack(false))).toBe(false);
+    expect(cudaReady({ ...gpu, cudaCapable: false }, pack(true))).toBe(false);
+    expect(cudaReady(null, pack(true))).toBe(false);
+    expect(cudaReady(gpu, null)).toBe(false);
   });
 
   it("missing/installed reflect per-model state", () => {
@@ -297,6 +343,47 @@ describe("time estimates (sustained-thermal — spike adjustment 1)", () => {
     expect(cpuSmall.lowSec).toBeGreaterThan(dmlSmall.lowSec * 2);
   });
 
+  it("a CUDA machine lands a 4-minute song under a minute on turbo (2026-10-13 desktop runs)", () => {
+    const d = 240;
+    const hw = { cuda: true, discreteGpu: true };
+    // Measured: isolate 0.018-0.031, turbo 0.031-0.047, align 0.010-0.018 —
+    // the static rows carry margin for smaller cards; the sidecar did it in
+    // 10-22 s. The estimate's LOW end must stay honest for that machine and
+    // the HIGH end must still be minutes, not the laptop's quarter hour.
+    const turbo = estimateGenerateSeconds(d, "turbo", true, NO_MEASURED_RTF, hw);
+    expect(turbo.lowSec).toBeLessThan(60);
+    expect(turbo.highSec).toBeLessThan(4 * 60);
+    // large is the slow GPU tier, but still far under the CPU row.
+    const large = estimateGenerateSeconds(d, "large", true, NO_MEASURED_RTF, hw);
+    expect(large.lowSec).toBeGreaterThan(turbo.lowSec);
+    const largeCpu = estimateGenerateSeconds(d, "large", true, NO_MEASURED_RTF, { cuda: false });
+    expect(largeCpu.lowSec).toBeGreaterThan(large.highSec * 2);
+    // The CUDA flag alone (no discrete-GPU row) keeps the iGPU isolation row.
+    const noDiscrete = estimateGenerateSeconds(d, "turbo", true, NO_MEASURED_RTF, { cuda: true });
+    expect(noDiscrete.lowSec).toBeGreaterThan(turbo.lowSec);
+    // No hardware argument = the laptop CPU-whisper table, byte for byte.
+    expect(estimateGenerateSeconds(d, "small", true)).toEqual(
+      estimateGenerateSeconds(d, "small", true, NO_MEASURED_RTF, {}),
+    );
+  });
+
+  it("measured whisper RTF keys split on tier AND runtime — a CUDA run never blends into the CPU slot", () => {
+    expect(whisperRtfKey("small", "cpu")).toBe("whisperSmall");
+    expect(whisperRtfKey("turbo", "cuda")).toBe("whisperTurboCuda");
+    expect(whisperRtfKey("large", "cpu")).toBe("whisperLarge");
+    expect(whisperRtfKey("medium", "cuda")).toBe("whisperMediumCuda");
+    // A CPU turbo sample must not touch a CUDA turbo estimate, and vice versa.
+    const cpuSample: MeasuredRtf = { ...NO_MEASURED_RTF, whisperTurbo: 5 };
+    const gpuRun = estimateGenerateSeconds(240, "turbo", true, cpuSample, { cuda: true });
+    expect(gpuRun).toEqual(
+      estimateGenerateSeconds(240, "turbo", true, NO_MEASURED_RTF, { cuda: true }),
+    );
+    const gpuSample: MeasuredRtf = { ...NO_MEASURED_RTF, whisperTurboCuda: 0.03 };
+    const cpuRun = estimateGenerateSeconds(240, "turbo", true, gpuSample);
+    expect(cpuRun).toEqual(estimateGenerateSeconds(240, "turbo", true));
+    expect(Object.keys(NO_MEASURED_RTF)).toHaveLength(11);
+  });
+
   it("formats honestly at both extremes", () => {
     expect(formatEstimate({ lowSec: 20, highSec: 45 })).toBe("under a minute");
     expect(formatEstimate({ lowSec: 130, highSec: 300 })).toBe("≈2-5 min");
@@ -335,10 +422,9 @@ describe("measured-RTF blending (FEAT-004 follow-up b)", () => {
 
   it("blends a measured value into BOTH bounds by an even split, narrowing the range", () => {
     const measured: MeasuredRtf = {
+      ...NO_MEASURED_RTF,
       isolateDml: 0.6,
-      isolateCpu: null,
       whisperSmall: 0.3,
-      whisperMedium: null,
       align: 0.2,
     };
     const est = estimateGenerateSeconds(240, "small", true, measured);
@@ -385,10 +471,10 @@ describe("measured-RTF blending (FEAT-004 follow-up b)", () => {
 
   it("blendMeasuredRtf only touches the keys present in the sample — everything else is preserved", () => {
     const prev: MeasuredRtf = {
+      ...NO_MEASURED_RTF,
       isolateDml: 0.5,
       isolateCpu: 2.0,
       whisperSmall: 0.3,
-      whisperMedium: null,
       align: 0.2,
     };
     const next = blendMeasuredRtf(prev, { align: 0.3 });

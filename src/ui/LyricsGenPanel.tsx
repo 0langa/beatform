@@ -6,18 +6,25 @@
  * the Text tab's Lyrics section. The approval gate's disclosure rule shapes
  * this UI: disk and time costs are visible BEFORE any download or run, and
  * the time estimate uses sustained-thermal device measurements — with the
- * DirectML-vs-CPU difference probed, not guessed.
+ * DirectML-vs-CPU difference probed, not guessed, and (2026-10-13) the
+ * CUDA whisper pack offered only where an NVIDIA driver answers.
  */
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
+  CUDA_RUNTIME_ID,
+  cudaReady,
+  cudaRuntime,
   estimateGenerateSeconds,
   formatBytes,
   formatEstimate,
   formatEta,
   LYRICS_LANGUAGES,
+  recommendedTier,
+  TIER_NAMES,
   tierDownloadBytes,
   tierInstalled,
+  tierOptions,
   type LyricsTier,
   type SidecarStage,
 } from "../state/lyricsGen";
@@ -45,11 +52,18 @@ function trackDuration(): number {
   }
 }
 
+/** What a download row calls itself — models by id, the pack by what it is. */
+function downloadLabel(id: string): string {
+  return id === CUDA_RUNTIME_ID ? "GPU acceleration" : id;
+}
+
 export function LyricsGenPanel() {
   const lyricsGen = useVizStore((s) => s.lyricsGen);
   const realign = useVizStore((s) => s.lyricsRealign);
   const store = useVizStore.getState;
-  const [tier, setTier] = useState<LyricsTier>("small");
+  // null = the user has not picked: follow the recommendation, which moves
+  // to Large v3 Turbo the moment the GPU pack lands.
+  const [tierChoice, setTierChoice] = useState<LyricsTier | null>(null);
   const [language, setLanguage] = useState("auto");
   const desktop = isTauri();
   // getPrefs() is a stable reference until setPrefs actually changes a
@@ -70,20 +84,31 @@ export function LyricsGenPanel() {
     );
   }
 
-  const { models, dml, phase, download, gen, modelOp } = lyricsGen;
+  const { models, dml, gpu, runtimes, phase, download, gen, modelOp } = lyricsGen;
+  const cuda = cudaReady(gpu, runtimes);
+  const tier = tierChoice ?? recommendedTier(cuda);
   const duration = trackDuration();
   const estimate =
     duration > 0
-      ? formatEstimate(estimateGenerateSeconds(duration, tier, dml === true, measuredRtf))
+      ? formatEstimate(
+          estimateGenerateSeconds(duration, tier, dml === true, measuredRtf, {
+            cuda,
+            discreteGpu: gpu?.cudaCapable === true,
+          }),
+        )
       : null;
 
   // HD-17: the model manager — what is on disk, with Verify (installed
   // files) and Remove (installed files and stalled partial downloads). It
   // rides under every phase view so a download in progress still shows what
   // already landed, locked with the reason on each button; the store guards
-  // the same conditions, this is the visible half.
+  // the same conditions, this is the visible half. Runtime packs list here
+  // too (Remove only — their files are verified at unpack time).
   const onDisk = models?.models.filter((m) => m.installed || m.partBytes > 0) ?? [];
-  const onDiskBytes = onDisk.reduce((n, m) => n + (m.installed ? m.bytes : m.partBytes), 0);
+  const packsOnDisk = runtimes?.runtimes.filter((r) => r.installed || r.partBytes > 0) ?? [];
+  const onDiskBytes =
+    onDisk.reduce((n, m) => n + (m.installed ? m.bytes : m.partBytes), 0) +
+    packsOnDisk.reduce((n, r) => n + (r.installed ? r.bytes : r.partBytes), 0);
   const modelsBusyWhy =
     phase === "downloading"
       ? "Wait for the download to finish"
@@ -91,13 +116,13 @@ export function LyricsGenPanel() {
         ? "Wait for the running lyrics job"
         : modelOp
           ? modelOp.kind === "verify"
-            ? `Checking ${modelOp.id}…`
-            : `Removing ${modelOp.id}…`
+            ? `Checking ${downloadLabel(modelOp.id)}…`
+            : `Removing ${downloadLabel(modelOp.id)}…`
           : realign
             ? "Wait for the running line re-align"
             : null;
   const modelManager =
-    models != null && onDisk.length > 0 ? (
+    models != null && onDisk.length + packsOnDisk.length > 0 ? (
       <div className="lyr-models">
         <div className="lyr-models-head" title={`Stored in ${models.modelsDir}`}>
           <span className="lyr-count">Models on this PC · {formatBytes(onDiskBytes)}</span>
@@ -145,6 +170,35 @@ export function LyricsGenPanel() {
             </div>
           );
         })}
+        {packsOnDisk.map((r) => {
+          const mine = modelOp?.id === r.id ? modelOp.kind : null;
+          return (
+            <div key={r.id} className="lyr-model-row" data-lyr-runtime={r.id}>
+              <span className="lyr-model-name" title={r.dirName}>
+                {downloadLabel(r.id)}
+              </span>
+              <span className="lyr-model-size">
+                {r.installed ? formatBytes(r.bytes) : `${formatBytes(r.partBytes)} partial`}
+              </span>
+              <span className="lyr-model-btns">
+                <button
+                  type="button"
+                  className="text-btn danger"
+                  disabled={modelsBusyWhy !== null}
+                  title={
+                    modelsBusyWhy ??
+                    (r.installed
+                      ? "Delete the GPU runtime from disk — Whisper goes back to the CPU until it is downloaded again"
+                      : "Delete the partial download — the next download starts over")
+                  }
+                  onClick={() => void store().removeLyricsRuntime(r.id)}
+                >
+                  {mine === "remove" ? "removing…" : "Remove"}
+                </button>
+              </span>
+            </div>
+          );
+        })}
       </div>
     ) : null;
 
@@ -157,7 +211,7 @@ export function LyricsGenPanel() {
         </div>
         <div className="export-status">
           <span>
-            Downloading {download.id} — {formatBytes(download.received)} of{" "}
+            Downloading {downloadLabel(download.id)} — {formatBytes(download.received)} of{" "}
             {formatBytes(download.total)}
           </span>
           <button className="text-btn danger" onClick={() => store().cancelLyricsDownload()}>
@@ -200,21 +254,68 @@ export function LyricsGenPanel() {
 
   const ready = models != null && tierInstalled(models, tier);
   const dl = models ? tierDownloadBytes(models, tier) : null;
+  // The GPU acceleration row: offered where an NVIDIA driver answered, shown
+  // as on once the pack is installed, and honest about the CPU elsewhere.
+  const pack = cudaRuntime(runtimes);
+  const gpuLabel = gpu?.gpuName ?? "your NVIDIA GPU";
+  const firstCudaRun =
+    cuda &&
+    measuredRtf.whisperSmallCuda == null &&
+    measuredRtf.whisperMediumCuda == null &&
+    measuredRtf.whisperTurboCuda == null &&
+    measuredRtf.whisperLargeCuda == null;
+  const gpuRow =
+    gpu == null ? null : gpu.cudaCapable ? (
+      pack?.installed ? (
+        <p className="section-hint" data-lyr-gpu="on">
+          GPU acceleration on — Whisper runs on {gpuLabel}
+          {gpu.vramMb != null ? ` (${Math.round(gpu.vramMb / 1024)} GB)` : ""}, which is what makes
+          the Large models quick.
+          {firstCudaRun
+            ? " The first GPU run prepares Whisper's kernels for this card — allow an extra minute or two, once."
+            : ""}
+        </p>
+      ) : (
+        <>
+          <button
+            className="text-btn"
+            disabled={pack == null || modelsBusyWhy !== null}
+            data-lyr-gpu="offer"
+            title={
+              modelsBusyWhy ??
+              "One-time download of whisper.cpp's official CUDA build from its GitHub release; the zip and every file in it are checksum-verified"
+            }
+            onClick={() => void store().downloadLyricsRuntime(CUDA_RUNTIME_ID)}
+          >
+            Download GPU acceleration
+            {pack ? ` (${formatBytes(Math.max(0, pack.zipBytes - pack.partBytes))})` : "…"}
+          </button>
+          <p className="section-hint">
+            {gpuLabel} can run Whisper 10-20x faster than the CPU and make the Large models the
+            sensible choice. The pack is {pack ? formatBytes(pack.bytes) : "about 1.1 GB"} on disk
+            once unpacked.
+          </p>
+        </>
+      )
+    ) : (
+      <p className="section-hint" data-lyr-gpu="none">
+        No NVIDIA driver found — Whisper runs on the CPU
+        {dml === true ? " (vocal isolation still uses the GPU through DirectML)" : ""}. Small is the
+        quick choice here; the larger models read sung words better and take proportionally longer.
+      </p>
+    );
   return (
     <div className="lyrics-gen">
       <SelectRow
         label="AI model"
-        hint="Which speech model transcribes the vocals — Medium reads sung words better but takes several times longer"
+        hint="Which speech model transcribes the vocals — larger ones read sung words better; the estimate on the button says what each costs on this PC"
         value={tier}
-        onChange={(v) => setTier(v)}
-        options={[
-          { value: "small" as const, label: "Small — recommended" },
-          { value: "medium" as const, label: "Medium — better words, much slower" },
-        ]}
+        onChange={(v) => setTierChoice(v)}
+        options={tierOptions(cuda)}
       />
       <SelectRow
         label="Language"
-        hint="Spoken language in the track — Auto-detect works well for clear vocals; naming it directly helps on quieter or accented singing"
+        hint="Spoken language in the track — Auto-detect listens to the isolated vocal; naming it directly helps on quieter or accented singing"
         value={language}
         onChange={(v) => setLanguage(v)}
         options={LYRICS_LANGUAGES}
@@ -239,17 +340,20 @@ export function LyricsGenPanel() {
           disabled={models == null || modelsBusyWhy !== null}
           title={
             modelsBusyWhy ??
-            "One-time download from Beatform's model mirror; every file is checksum-verified"
+            "One-time download from Beatform's model mirror (the Large models from whisper.cpp's own Hugging Face release); every file is checksum-verified"
           }
           onClick={() => void store().downloadLyricsTier(tier)}
         >
           Download models{dl ? ` (${formatBytes(dl.remaining)})` : "…"}
         </button>
       )}
+      {gpuRow}
       <p className="section-hint">
-        Runs entirely on this PC — vocals are isolated (UVR MDX-Net), transcribed (Whisper {tier}),
-        then every word is timed against the vocal (wav2vec2 forced alignment) so the karaoke fill
-        follows the singer word by word{estimate ? `; ${estimate} for this track` : ""}
+        Runs entirely on this PC — vocals are isolated (UVR MDX-Net
+        {dml === true ? " on DirectML" : ""}), transcribed (Whisper {TIER_NAMES[tier]}
+        {cuda ? " on the GPU" : ""}), then every word is timed against the vocal (wav2vec2 forced
+        alignment) so the karaoke fill follows the singer word by word
+        {estimate ? `; ${estimate} for this track` : ""}
         {dml === false ? " (no GPU acceleration found — CPU timing)" : ""}. Word timing happens
         automatically once its model is installed. Words will need a few fixes — that is normal for
         sung vocals.

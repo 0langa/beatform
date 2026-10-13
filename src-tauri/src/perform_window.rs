@@ -113,6 +113,38 @@ fn monitor_list<R: Runtime>(app: &AppHandle<R>) -> Result<Vec<PerformMonitor>, S
         .collect())
 }
 
+/// DEBUG BUILDS ONLY: park the operator window on another monitor at
+/// startup when `BEATFORM_DEV_MONITOR` is set — `secondary` (the largest
+/// non-primary monitor, the same pick the performance window makes) or a
+/// monitor index. The device harnesses spawn the debug shell dozens of times
+/// a session; each spawn used to land a 1280x780 window on the owner's main
+/// screen, on top of whatever they were doing (2026-10-13). Centered on the
+/// target in physical coordinates; the window keeps its configured size.
+/// Release builds ignore the variable entirely.
+#[cfg(debug_assertions)]
+pub(crate) fn park_for_dev<R: Runtime>(app: &AppHandle<R>) {
+    let Ok(want) = std::env::var("BEATFORM_DEV_MONITOR") else {
+        return;
+    };
+    let Some(window) = app.get_webview_window(MAIN_LABEL) else {
+        return;
+    };
+    let Ok(monitors) = monitor_list(app) else {
+        return;
+    };
+    let index = resolve_monitor(&monitors, want.trim().parse::<usize>().ok());
+    let Some(m) = monitors.get(index) else {
+        return;
+    };
+    let size = window
+        .outer_size()
+        .map(|s| (s.width, s.height))
+        .unwrap_or((1280, 780));
+    let x = m.x + (m.width.saturating_sub(size.0) / 2) as i32;
+    let y = m.y + (m.height.saturating_sub(size.1) / 2) as i32;
+    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+}
+
 fn place<R: Runtime>(
     window: &tauri::WebviewWindow<R>,
     target: Option<&PerformMonitor>,

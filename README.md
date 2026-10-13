@@ -160,6 +160,11 @@ Free and open source. Built to become a professional-grade tool for producers an
   −1 dBTP ceiling by a look-ahead true-peak limiter, so nothing clips when a
   streaming service re-encodes it. Audio-only — toggling normalization does
   not change that export's visual analysis or raw frames. Off by default
+- **Automatic lyrics, locally**: vocal isolation (UVR MDX-Net on DirectML),
+  Whisper transcription (Small / Medium / Large v3 Turbo / Large v3 — on an
+  NVIDIA card a one-time GPU acceleration download runs whisper.cpp's CUDA
+  build, 10-20x the CPU speed), language read off the isolated vocal, and
+  wav2vec2 word timing; nothing leaves the machine
 - **Timed lyrics (.lrc / .srt)**: drop a lyrics file on the window and the
   current line renders karaoke-style over the visual — position, size, color
   and fades configurable from the same timed definition in every export
@@ -267,7 +272,6 @@ npm run lint         # eslint
 npm run typecheck    # tsc --noEmit
 ```
 
-
 ## Roadmap
 
 The foundations → workstation → visual-ceiling → pro-delivery → ecosystem →
@@ -275,5 +279,3 @@ storytelling → motion → live-performance ("Stage") arc is **complete and
 shipped** — beat-quantized switching, Web MIDI, Stage mode, and the
 second-display output window with its Perform drawer all landed (v2.104.0).
 Everything stays free and open source, GitHub-only, with no monetization.
-
-

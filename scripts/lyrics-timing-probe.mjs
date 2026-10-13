@@ -36,8 +36,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bin = path.join(root, "src-tauri", "binaries");
 const FFMPEG = path.join(bin, "ffmpeg-x86_64-pc-windows-msvc.exe");
 const SIDECAR = path.join(bin, "lyrics-sidecar-x86_64-pc-windows-msvc.exe");
-const MODELS = "F:/agent-devstorage/shared-cache/Beatform/cache/feat004-models/e2e-app-models";
+// Model cache + bed: env overrides first (BEATFORM_LYRICS_MODELS,
+// BEATFORM_LYRICS_BED), then the historical devstorage layout.
+const MODELS =
+  process.env.BEATFORM_LYRICS_MODELS ??
+  "F:/agent-devstorage/shared-cache/Beatform/cache/feat004-models/e2e-app-models";
 const BED =
+  process.env.BEATFORM_LYRICS_BED ??
   "F:/agent-devstorage/shared-cache/Beatform/artifacts/feat004-spike/corpus/synthetic-instrumental.wav";
 const outDir =
   (process.argv.find((a) => a.startsWith("--out=")) ?? "").slice("--out=".length) ||
@@ -266,6 +271,11 @@ for (const [label, bedGain] of [
       path.join(MODELS, "wav2vec2-base-960h-ctc-int8.onnx"),
       "--align-vocab",
       path.join(MODELS, "wav2vec2-base-960h-vocab.json"),
+      // BEATFORM_LYRICS_DTW=small: whisper's measured token times (the app
+      // passes the model's preset); unset = the evenly-spread offsets.
+      ...(process.env.BEATFORM_LYRICS_DTW
+        ? ["--whisper-dtw", process.env.BEATFORM_LYRICS_DTW]
+        : []),
     ],
     `lyrics sidecar (${label})`,
   );

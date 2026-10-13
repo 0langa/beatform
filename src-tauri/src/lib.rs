@@ -283,6 +283,20 @@ pub fn run() {
                     midi_permission::allow_midi(_webview);
                 }
             }
+            // Dev convenience (debug builds, BEATFORM_DEV_MONITOR): park the
+            // operator window on another monitor so harness runs stay off the
+            // owner's main screen. Once, on the main window's first load.
+            #[cfg(debug_assertions)]
+            {
+                use std::sync::atomic::{AtomicBool, Ordering};
+                use tauri::Manager;
+                static PARKED: AtomicBool = AtomicBool::new(false);
+                if _webview.label() == perform_window::MAIN_LABEL
+                    && !PARKED.swap(true, Ordering::SeqCst)
+                {
+                    perform_window::park_for_dev(_webview.app_handle());
+                }
+            }
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -362,6 +376,9 @@ pub fn run() {
             lyrics::lyrics_download_cancel,
             lyrics::lyrics_model_verify,
             lyrics::lyrics_model_remove,
+            lyrics::lyrics_runtimes_state,
+            lyrics::lyrics_runtime_download,
+            lyrics::lyrics_runtime_remove,
             lyrics::lyrics_audio_begin,
             lyrics::lyrics_audio_chunk,
             lyrics::lyrics_audio_end,

@@ -175,7 +175,7 @@ LRC is the lyrics format Beatform writes. An `.srt` subtitle file imports just t
 
 ### Generate lyrics (desktop)
 
-No .lrc at hand? The Text page can generate timed lyrics from the loaded track, entirely on your PC. The mix is transcribed by OpenAI's Whisper running on whisper.cpp; in parallel, an Ultimate Vocal Remover (UVR) MDX-Net model isolates the vocal, and each word is then timed against that isolated vocal by a wav2vec2 forced aligner — so the karaoke fill follows the singer word by word. (Enhanced .lrc files with word tags from other tools get the same per-word fill when imported.) The AI models download once (size and a time estimate are shown first, and each one is checksum-verified) and nothing ever leaves your machine. Sung words are hard even for good models — expect to fix a few lines, and thanks to the UVR and whisper.cpp projects for making local isolation and transcription possible.
+No .lrc at hand? The Text page can generate timed lyrics from the loaded track, entirely on your PC. The mix is transcribed by OpenAI's Whisper running on whisper.cpp; in parallel, an Ultimate Vocal Remover (UVR) MDX-Net model isolates the vocal, and each word is then timed against that isolated vocal by a wav2vec2 forced aligner — so the karaoke fill follows the singer word by word. (Enhanced .lrc files with word tags from other tools get the same per-word fill when imported.) Four Whisper models are on offer — Small, Medium, Large v3 Turbo and Large v3 — and the button's time estimate says what each costs on your PC. On a PC with an NVIDIA graphics card, a one-time GPU acceleration download (whisper.cpp's own CUDA build, about 680 MB) runs Whisper on the card: ten to twenty times faster, which is what makes the Large models the recommended choice there — a four-minute song in well under a minute. The language is read from the isolated vocal before transcription starts, so an instrumental intro cannot mislead it. The AI models download once (size and a time estimate are shown first, and each one is checksum-verified) and nothing ever leaves your machine. Sung words are hard even for good models — expect to fix a few lines, and thanks to the UVR and whisper.cpp projects for making local isolation and transcription possible.
 
 ### Edit lyrics
 
@@ -369,7 +369,7 @@ A project (`.bfproj`) saves wherever you choose in the native save dialog — Be
 
 ### What do I need for automatic lyrics, and is there a length limit?
 
-Generating lyrics needs the desktop app: Whisper (via whisper.cpp) transcribes the mix, an Ultimate Vocal Remover model isolates the vocal, and a wav2vec2 aligner times each word against it — all locally, and the models download once with their size shown up front. Tracks over 90 minutes are declined before any processing starts, to avoid running the machine out of memory partway through.
+Generating lyrics needs the desktop app: Whisper (via whisper.cpp) transcribes the mix, an Ultimate Vocal Remover model isolates the vocal, and a wav2vec2 aligner times each word against it — all locally, and the models download once with their size shown up front. Any PC can run it on the CPU (Small is the quick choice there); an NVIDIA graphics card can take over Whisper after the one-time GPU acceleration download, which makes the Large v3 models fast enough to be the default. Tracks over 90 minutes are declined before any processing starts, to avoid running the machine out of memory partway through.
 
 ### I turned on system-audio visualization and there's no BPM or beat-synced pulse — is that a bug?
 

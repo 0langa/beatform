@@ -11,6 +11,53 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+The GPU release of the lyrics pipeline — measured on an RTX 5060 Ti /
+Ryzen 9 9900X desktop after every previous number came from an Iris Xe
+laptop.
+
+- **Whisper on your graphics card.** PCs with an NVIDIA driver get a
+  one-time **Download GPU acceleration** button in the Lyrics section:
+  whisper.cpp's official CUDA build (678 MB download, 1.15 GB on disk, the
+  zip and all 17 files SHA-256-pinned, resumable), unpacked into the app's
+  data folder — the installer stays small. Transcription then runs 10-20x
+  faster (a 2-minute track in 4 s on the reference card), the sidecar
+  reports which runtime actually ran, and the time estimate uses the
+  desktop numbers. No NVIDIA driver, no offer; the pack without a device
+  falls back to the CPU and says so.
+- **Two new Whisper models: Large v3 Turbo and Large v3.** Pinned to
+  whisper.cpp's own Hugging Face conversions (1.62 GB and 3.1 GB). Turbo
+  becomes the recommended tier once the GPU pack is installed — its
+  transcript of a sung anthem was word-perfect where Small stumbled.
+  Both run on the CPU too, slowly, and the estimate says so.
+- **The language is read from the isolated vocal.** Whisper's own
+  auto-detect listens to the first 30 seconds of whatever it gets, and on a
+  full mix that is often an instrumental intro — the Medium model heard
+  Khmer on an English rock song and spent 103 s decoding nothing. The
+  sidecar now asks Whisper to identify the language on up to 30 s of the
+  isolated vocal first, then transcribes with it pinned.
+- **Measured token times for the generated lines.** whisper.cpp's DTW
+  alignment heads (`-dtw`, which the sidecar now runs with flash attention
+  off, the one way they work in 1.9) replace the evenly-spread token
+  offsets, so a line that opens on an instrumental intro no longer starts
+  seconds before its first word.
+- **The sidecar uses your cores.** Thread count follows the physical core
+  count (4-16) instead of the old laptop's constant 4 — CPU Whisper on a
+  12-core desktop ran at a third of its speed because of it.
+- Lyrics time estimates now carry desktop rows (CUDA Whisper, discrete-GPU
+  isolation) next to the laptop rows, per-tier-and-runtime measured-RTF
+  memory, and a GPU-shaped progress bar.
+- Dev: `BEATFORM_DEV_MONITOR=secondary` (or an index) parks the debug
+  shell's window on another monitor at startup — the device harnesses no
+  longer land a window on the main screen every run.
+- Dev: the GPU pixel baselines are re-blessed on the new reference card
+  (RTX 5060 Ti): 321 of 348 cases were bit-identical to the Iris Xe
+  baselines, 26 moved within the perceptual tolerances, one (the glitch
+  transition's noise) beyond — the strict verdict names the set.
+- Dev: `scripts/lyrics-e2e.mjs` and `scripts/lyrics-timing-probe.mjs` take
+  their fixture paths from `BEATFORM_LYRICS_*` env vars (the devstorage
+  drive is gone); the e2e installs the GPU pack for real on an NVIDIA
+  machine and proves Whisper ran on it.
+
 ## [3.0.0] - 2026-10-12
 
 **Beatform 3.0.** The release after which Beatform sits still for a while:

@@ -34,8 +34,15 @@
 //   (--skip-madness is the old name of --skip-dense and still works)
 //
 // Prereqs: Vite dev on 127.0.0.1:1420; debug build of the app (fetch scripts
-// + build-lyrics-sidecar run); spike model cache on devstorage.
-// Env: BEATFORM_EXE overrides the app path (e.g. a CARGO_TARGET_DIR build).
+// + build-lyrics-sidecar run); the model cache + corpus (paths below).
+// Env: BEATFORM_EXE overrides the app path (e.g. a CARGO_TARGET_DIR build);
+// BEATFORM_LYRICS_CACHE / _CORPUS / _DENSE_DIR / _OUT override the
+// historical devstorage layout (2026-10-13: the machine changed, the drive
+// letters with it); BEATFORM_LYRICS_TIER picks the whisper tier the
+// generation legs run ("small" default — "turbo"/"large" need their model
+// seeded under <cache>/ggml/ like ggml-small.bin), and when the GPU probe
+// reports an NVIDIA driver the run also installs the CUDA runtime pack
+// through the store (a real 678 MB download) and proves whisper ran on it.
 //
 // Boot stays LOCAL (built-app smoke family — media server, model prep,
 // BEATFORM_EXE override); attach + page-poll + CDP client come from
@@ -69,20 +76,38 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = new Set(process.argv.slice(2).filter((a) => !a.startsWith("--out=")));
 const outDir =
   (process.argv.find((a) => a.startsWith("--out=")) ?? "").slice("--out=".length) ||
+  process.env.BEATFORM_LYRICS_OUT ||
   // p3: phase-2's artifacts under feat004-p2-e2e are frozen ledger evidence —
   // word-timing runs land in their own directory.
   "F:/agent-devstorage/shared-cache/Beatform/artifacts/feat004-p3-e2e";
 mkdirSync(outDir, { recursive: true });
 
 const exe = process.env.BEATFORM_EXE ?? debugExe(root);
-const CACHE = "F:/agent-devstorage/shared-cache/Beatform/cache/feat004-models";
-const CORPUS = "F:/agent-devstorage/shared-cache/Beatform/artifacts/feat004-spike/corpus";
+const CACHE =
+  process.env.BEATFORM_LYRICS_CACHE ??
+  "F:/agent-devstorage/shared-cache/Beatform/cache/feat004-models";
+const CORPUS =
+  process.env.BEATFORM_LYRICS_CORPUS ??
+  "F:/agent-devstorage/shared-cache/Beatform/artifacts/feat004-spike/corpus";
+/** The whisper tier the generation legs run; its ggml file must sit under
+ * CACHE/ggml/ exactly like ggml-small.bin does. */
+const TIER = process.env.BEATFORM_LYRICS_TIER ?? "small";
+const TIER_FILE = {
+  small: "ggml-small.bin",
+  medium: "ggml-medium.bin",
+  turbo: "ggml-large-v3-turbo.bin",
+  large: "ggml-large-v3.bin",
+}[TIER];
+if (!TIER_FILE)
+  throw new Error(`BEATFORM_LYRICS_TIER must be small|medium|turbo|large, got ${TIER}`);
 // The dense-mix song + its real synced lyrics. Muse - Madness.flac held this
 // slot until it vanished from the old claude-cache layout (2026-10-11); the
 // replacement lives in a KEEP folder so the janitor never evicts it. The
 // folder's README records why: the first pick (Linkin Park - Numb.mp3) is a
 // mislabelled file — the reference match rate below is what caught it.
-const DENSE_DIR = "F:/agent-devstorage/shared-cache/Beatform/artifacts/lyrics-fixtures";
+const DENSE_DIR =
+  process.env.BEATFORM_LYRICS_DENSE_DIR ??
+  "F:/agent-devstorage/shared-cache/Beatform/artifacts/lyrics-fixtures";
 const DENSE_NAME = "Green Day - American Idiot";
 const DENSE_AUDIO = path.join(DENSE_DIR, `${DENSE_NAME}.mp3`);
 const DENSE_LRC = path.join(DENSE_DIR, `${DENSE_NAME}.lrc`);
@@ -111,10 +136,12 @@ const ALIGN_CACHE = path.join(CACHE, "wav2vec2-int8");
 
 function prepModelsDir() {
   mkdirSync(E2E_MODELS, { recursive: true });
-  const small = path.join(E2E_MODELS, "ggml-small.bin");
-  if (!existsSync(small)) {
-    console.log("seeding ggml-small.bin into the e2e models dir (one-time copy)…");
-    copyFileSync(path.join(CACHE, "ggml", "ggml-small.bin"), small);
+  for (const file of new Set(["ggml-small.bin", TIER_FILE])) {
+    const dst = path.join(E2E_MODELS, file);
+    if (!existsSync(dst)) {
+      console.log(`seeding ${file} into the e2e models dir (one-time copy)…`);
+      copyFileSync(path.join(CACHE, "ggml", file), dst);
+    }
   }
   // The download leg must start from nothing: no installed file, no .part.
   rmSync(path.join(E2E_MODELS, "UVR-MDX-NET-Voc_FT.onnx"), { force: true });
@@ -418,11 +445,22 @@ async function runEditorLeg(cdp) {
   console.log(`EDITOR: re-align OK on line ${target} ("${targetText}") -> ${spans}`);
 
   // -- HD-08: Cancel during a REAL re-align — the document must not move ----
+  // No sleep before the cancel: on a desktop GPU the whole re-align (decode,
+  // DirectML isolation, CTC) finishes in under a second, so the laptop-era
+  // "wait 1.5 s for isolation to be underway" found nothing left to cancel
+  // (2026-10-13). Cancel the instant the flight state shows; if the job
+  // still beat the cancel, that is a machine too fast to cancel, not a bug —
+  // the cancel path itself is unit-tested (lyricsGenActions.test.ts HD-08).
   const beforeCancel = JSON.stringify(await cdp.eval(LINES, false));
   await call(`realignLyricLine(${target})`);
-  await sleep(1500); // decode done, isolation underway
   const running = await cdp.eval(SNAPSHOT, false);
-  if (running.realign === null) fatal("editor: re-align finished before Cancel could be tested");
+  if (running.realign === null) {
+    console.log("EDITOR: re-align finished before Cancel could land — too fast to cancel here");
+    if (JSON.stringify(await cdp.eval(LINES, false)) === beforeCancel) {
+      fatal("editor: a re-align that finished must have applied its words");
+    }
+    return;
+  }
   await call(`cancelLyricsRealign()`);
   const c0 = Date.now();
   for (;;) {
@@ -642,7 +680,7 @@ try {
     return true;
   })()`);
   const models0 = await cdp.eval(`window.__store.getState().lyricsGen.models`, false);
-  if (!models0 || models0.models.length !== 5)
+  if (!models0 || models0.models.length !== 7)
     fatal(`models state wrong: ${JSON.stringify(models0)}`);
   const mdx0 = models0.models.find((m) => m.id === "mdx-voc-ft");
   const small0 = models0.models.find((m) => m.id === "whisper-small");
@@ -652,6 +690,50 @@ try {
   console.log(
     `SETUP OK: hooks + models override; small seeded, mdx absent, align ${alignSeeded ? "cached" : "will download"}`,
   );
+
+  // ---- 0. GPU: the probe, and (NVIDIA only) the CUDA runtime pack --------
+  // The probe is the honest "what can this PC do" answer the panel builds
+  // its offer on; an NVIDIA driver means the pack download is exercised
+  // for real: a 678 MB zip, resumable, hash-verified, 17 files unpacked and
+  // each pinned — through the same store action the button calls.
+  const gpu = await cdp.eval(`(async () => {
+    await window.__store.getState().refreshLyricsGen();
+    const s = window.__store.getState().lyricsGen;
+    return { gpu: s.gpu, dml: s.dml, runtimes: s.runtimes };
+  })()`);
+  if (!gpu.gpu || typeof gpu.gpu.cudaCapable !== "boolean")
+    fatal(`gpu probe wrong: ${JSON.stringify(gpu)}`);
+  if (!gpu.runtimes || gpu.runtimes.runtimes.length !== 1)
+    fatal(`runtimes state wrong: ${JSON.stringify(gpu)}`);
+  console.log(
+    `GPU PROBE: ${JSON.stringify(gpu.gpu)} dml=${gpu.dml} pack installed=${gpu.runtimes.runtimes[0].installed}`,
+  );
+  const wantCuda = gpu.gpu.cudaCapable;
+  if (wantCuda && !gpu.runtimes.runtimes[0].installed) {
+    // The app resumes a .part on the next click (and auto-resumes a dropped
+    // connection in place); this leg clicks up to three times and reports
+    // the store's own error text when it still fails.
+    const t0 = Date.now();
+    let after = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      await cdp.eval(
+        `window.__store.getState().downloadLyricsRuntime("whisper-cuda"); true`,
+        false,
+      );
+      await pollUntil(cdp, (s) => s.phase === "downloading", 60_000, "pack-start");
+      const end = await pollUntil(cdp, (s) => s.phase === "idle", 15 * 60_000, "pack-finish");
+      after = await cdp.eval(`window.__store.getState().lyricsGen.runtimes.runtimes[0]`, false);
+      if (after.installed) break;
+      console.log(
+        `GPU PACK: attempt ${attempt} ended with ${after.partBytes} bytes on disk — ${end.error ?? "no error surfaced"}`,
+      );
+      await cdp.eval(`window.__store.setState({ error: null }); true`, false);
+    }
+    if (!after?.installed) fatal(`pack download did not install: ${JSON.stringify(after)}`);
+    console.log(
+      `GPU PACK OK: whisper-cuda installed in ${Math.round((Date.now() - t0) / 1000)} s (${after.bytes} bytes on disk)`,
+    );
+  }
 
   // ---- 1. download -> cancel -> resume -> verify (live release) ----------
   await cdp.eval(`window.__store.getState().downloadLyricsTier("small"); true`, false);
@@ -712,7 +794,10 @@ try {
     window.__store.getState().clearLyrics();
     return true;
   })()`);
-  await cdp.eval(`window.__store.getState().generateLyrics("small", "auto"); true`, false);
+  await cdp.eval(
+    `window.__store.getState().generateLyrics(${JSON.stringify(TIER)}, "auto"); true`,
+    false,
+  );
   await pollUntil(cdp, (s) => s.phase === "generating", 60_000, "gen-start");
   const done = await pollUntil(
     cdp,
@@ -740,16 +825,41 @@ try {
     `GEN OK: ${lines.length} lines (${corpusAligned} word-timed) in store via loadLyricsText (${done.fileName})`,
   );
   console.log(`GEN NOTICE: ${done.notice}`);
+  // Which whisper ran: the measured-RTF prefs slot the run blended into is
+  // keyed by tier AND runtime, so a CUDA run leaves its mark there.
+  const rtf = await cdp.eval(
+    `JSON.parse(localStorage.getItem("beatform.prefs.v1")).measuredRtf`,
+    false,
+  );
+  const slot = {
+    small: "whisperSmall",
+    medium: "whisperMedium",
+    turbo: "whisperTurbo",
+    large: "whisperLarge",
+  }[TIER];
+  const ranCuda = rtf[`${slot}Cuda`] != null;
+  if (wantCuda && !ranCuda)
+    fatal(`the CUDA pack is installed but whisper ran on the CPU: ${JSON.stringify(rtf)}`);
+  if (!wantCuda && ranCuda)
+    fatal(`no NVIDIA driver, yet a CUDA RTF was recorded: ${JSON.stringify(rtf)}`);
+  console.log(
+    `GEN RUNTIME: whisper ${TIER} on ${ranCuda ? "CUDA" : "CPU"} — rtf ${ranCuda ? rtf[`${slot}Cuda`] : rtf[slot]}, isolate ${rtf.isolateDml ?? rtf.isolateCpu} (${rtf.isolateDml != null ? "DirectML" : "CPU"}), align ${rtf.align}`,
+  );
 
   // ---- 2b. the correction editor on those lines --------------------------
   await runEditorLeg(cdp);
 
   // ---- 3. cancel mid-isolation -------------------------------------------
   await cdp.eval(`window.__store.getState().clearLyrics(); true`, false);
-  await cdp.eval(`window.__store.getState().generateLyrics("small", "auto"); true`, false);
+  await cdp.eval(
+    `window.__store.getState().generateLyrics(${JSON.stringify(TIER)}, "auto"); true`,
+    false,
+  );
+  // Any stage past decode: on a GPU the isolation stage lasts ~3 s for a
+  // 2-minute track, less than the poll could reliably catch at 5 %+.
   await pollUntil(
     cdp,
-    (s) => s.phase === "generating" && s.stage === "isolate" && (s.pct ?? 0) > 5,
+    (s) => s.phase === "generating" && s.stage !== null && s.stage !== "decode",
     120_000,
     "cancel-arm",
   );
@@ -776,7 +886,10 @@ try {
       return true;
     })()`);
     const t0 = Date.now();
-    await cdp.eval(`window.__store.getState().generateLyrics("small", "auto"); true`, false);
+    await cdp.eval(
+      `window.__store.getState().generateLyrics(${JSON.stringify(TIER)}, "auto"); true`,
+      false,
+    );
     await pollUntil(cdp, (s) => s.phase === "generating", 60_000, "dense-start");
     const mdone = await pollUntil(
       cdp,

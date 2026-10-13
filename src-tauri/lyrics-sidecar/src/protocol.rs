@@ -96,6 +96,13 @@ pub enum Event<'a> {
         ep: &'a str,
         /// Language whisper reported.
         language: &'a str,
+        /// Which whisper runtime transcribed: "cuda" (the NVIDIA GPU build the
+        /// app can install on demand) or "cpu" (the bundled OpenBLAS build, or
+        /// the GPU build falling back because no CUDA device answered).
+        whisper: &'a str,
+        /// The CUDA device name when `whisper` is "cuda".
+        #[serde(skip_serializing_if = "Option::is_none")]
+        whisper_device: Option<&'a str>,
         /// Per-line confidence detail (phase 4), present when alignment ran.
         #[serde(skip_serializing_if = "Option::is_none")]
         line_details: Option<&'a [LineDetail]>,
@@ -147,11 +154,13 @@ mod tests {
             vocal_sec: 180.25,
             ep: "dml",
             language: "en",
+            whisper: "cuda",
+            whisper_device: Some("NVIDIA GeForce RTX 5060 Ti"),
             line_details: None,
         };
         assert_eq!(
             serde_json::to_string(&r).unwrap(),
-            r#"{"type":"result","lrcPath":"C:/t/out.lrc","lines":42,"words":310,"alignedLines":40,"lowConfLines":3,"vocalSec":180.25,"ep":"dml","language":"en"}"#
+            r#"{"type":"result","lrcPath":"C:/t/out.lrc","lines":42,"words":310,"alignedLines":40,"lowConfLines":3,"vocalSec":180.25,"ep":"dml","language":"en","whisper":"cuda","whisperDevice":"NVIDIA GeForce RTX 5060 Ti"}"#
         );
         assert_eq!(serde_json::to_string(&Stage::Align).unwrap(), r#""align""#);
 
@@ -175,11 +184,13 @@ mod tests {
             vocal_sec: 10.0,
             ep: "cpu",
             language: "en",
+            whisper: "cpu",
+            whisper_device: None,
             line_details: Some(&details),
         };
         assert_eq!(
             serde_json::to_string(&r).unwrap(),
-            r#"{"type":"result","lrcPath":"o.lrc","lines":2,"words":2,"alignedLines":1,"lowConfLines":1,"vocalSec":10.0,"ep":"cpu","language":"en","lineDetails":[{"conf":0.81,"words":[0.9,0.72]},{"words":[]}]}"#
+            r#"{"type":"result","lrcPath":"o.lrc","lines":2,"words":2,"alignedLines":1,"lowConfLines":1,"vocalSec":10.0,"ep":"cpu","language":"en","whisper":"cpu","lineDetails":[{"conf":0.81,"words":[0.9,0.72]},{"words":[]}]}"#
         );
         let words = vec![AlignedWord {
             t: 0.42,

@@ -268,15 +268,18 @@ function positiveOrNull(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
 }
 
+/** Every slot read independently, keyed off NO_MEASURED_RTF so a new slot
+ * (the CUDA whisper tiers, 2026-10-13) is validated the day it is added —
+ * a hand-written field list silently dropped new slots on every read. */
 function validMeasuredRtf(raw: unknown): MeasuredRtf {
-  const p = (typeof raw === "object" && raw !== null ? raw : {}) as Partial<MeasuredRtf>;
-  return {
-    isolateDml: positiveOrNull(p.isolateDml),
-    isolateCpu: positiveOrNull(p.isolateCpu),
-    whisperSmall: positiveOrNull(p.whisperSmall),
-    whisperMedium: positiveOrNull(p.whisperMedium),
-    align: positiveOrNull(p.align),
-  };
+  const p = (typeof raw === "object" && raw !== null ? raw : {}) as Partial<
+    Record<keyof MeasuredRtf, unknown>
+  >;
+  const out: MeasuredRtf = { ...NO_MEASURED_RTF };
+  for (const key of Object.keys(NO_MEASURED_RTF) as (keyof MeasuredRtf)[]) {
+    out[key] = positiveOrNull(p[key]);
+  }
+  return out;
 }
 
 /**
@@ -526,15 +529,10 @@ function sameOverlayStats(a: PerfOverlayStats, b: PerfOverlayStats): boolean {
   );
 }
 
-/** Content equality for measuredRtf — same reason as sameOverlayStats. */
+/** Content equality for measuredRtf — same reason as sameOverlayStats, over
+ * the same key list validMeasuredRtf reads. */
 function sameMeasuredRtf(a: MeasuredRtf, b: MeasuredRtf): boolean {
-  return (
-    a.isolateDml === b.isolateDml &&
-    a.isolateCpu === b.isolateCpu &&
-    a.whisperSmall === b.whisperSmall &&
-    a.whisperMedium === b.whisperMedium &&
-    a.align === b.align
-  );
+  return (Object.keys(NO_MEASURED_RTF) as (keyof MeasuredRtf)[]).every((k) => a[k] === b[k]);
 }
 
 /**

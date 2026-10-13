@@ -7,7 +7,7 @@
  */
 
 import { getPrefs, setPrefs } from "./prefs";
-import type { LyricsModelsState } from "./lyricsGen";
+import type { GpuProbe, LyricsModelsState, LyricsRuntimesState } from "./lyricsGen";
 
 export function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in window;
@@ -301,10 +301,34 @@ export async function lyricsModelRemove(id: string): Promise<void> {
   await invoke("lyrics_model_remove", { id });
 }
 
-/** Can the sidecar create DirectML sessions here? Cached Rust-side. */
-export async function lyricsGpuProbe(): Promise<boolean> {
+/** What the GPU can do for the pipeline: DirectML sessions (the sidecar's
+ * probe) and an NVIDIA driver/card (the CUDA pack). Cached Rust-side. */
+export async function lyricsGpuProbe(): Promise<GpuProbe> {
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<boolean>("lyrics_gpu_probe");
+  return invoke<GpuProbe>("lyrics_gpu_probe");
+}
+
+/** Manifest + install/resume state of the runtime packs (CUDA whisper). */
+export async function lyricsRuntimesState(): Promise<LyricsRuntimesState> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<LyricsRuntimesState>("lyrics_runtimes_state");
+}
+
+/** Download + unpack one runtime pack (Range-resume, zip and per-file
+ * SHA-256 on the Rust side). Same progress lines as a model download. */
+export async function lyricsRuntimeDownload(
+  id: string,
+  onProgress: (line: string) => void,
+): Promise<void> {
+  const { invoke, Channel } = await import("@tauri-apps/api/core");
+  const ch = new Channel<string>();
+  ch.onmessage = onProgress;
+  await invoke("lyrics_runtime_download", { id, onProgress: ch });
+}
+
+export async function lyricsRuntimeRemove(id: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("lyrics_runtime_remove", { id });
 }
 
 /** Stage the loaded track's WAV for generation (ProRes-style chunking —
@@ -323,7 +347,7 @@ export async function lyricsStageAudio(wav: Uint8Array): Promise<void> {
  * `onEvent` receives the sidecar's raw JSON lines (parseSidecarEvent).
  * Rejects with the string "cancelled" on a user cancel. */
 export async function lyricsGenerate(
-  opts: { whisperModelId: string; useGpu: boolean; language: string },
+  opts: { whisperModelId: string; useGpu: boolean; useCuda: boolean; language: string },
   onEvent: (line: string) => void,
 ): Promise<string> {
   const { invoke, Channel } = await import("@tauri-apps/api/core");
@@ -332,6 +356,7 @@ export async function lyricsGenerate(
   return invoke<string>("lyrics_generate", {
     whisperModelId: opts.whisperModelId,
     useGpu: opts.useGpu,
+    useCuda: opts.useCuda,
     language: opts.language,
     onEvent: ch,
   });

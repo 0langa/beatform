@@ -41,12 +41,21 @@ export type SidecarEvent =
       vocalSec: number;
       ep: "dml" | "cpu";
       language: string;
+      /** Which whisper runtime transcribed (2026-10-13): the CUDA pack on an
+       * NVIDIA GPU, or the CPU build (also the pack falling back without a
+       * driver). Keys the measured-RTF slot the run blends into. */
+      whisper: WhisperBackend;
+      /** The CUDA device name when `whisper` is "cuda". */
+      whisperDevice?: string;
       /** Present when the alignment stage ran (phase 4). */
       lineDetails?: LineDetail[];
     }
   | { type: "error"; message: string }
   | { type: "cancelled" }
   | { type: "probe"; dml: boolean };
+
+/** The whisper runtime a transcription ran on. */
+export type WhisperBackend = "cuda" | "cpu";
 
 const STAGES: SidecarStage[] = ["decode", "isolate", "vad", "transcribe", "align", "assemble"];
 
@@ -127,6 +136,8 @@ export function parseSidecarEvent(line: string): SidecarEvent | null {
         vocalSec: typeof o.vocalSec === "number" ? o.vocalSec : 0,
         ep: o.ep === "dml" ? "dml" : "cpu",
         language: typeof o.language === "string" ? o.language : "",
+        whisper: o.whisper === "cuda" ? "cuda" : "cpu",
+        whisperDevice: typeof o.whisperDevice === "string" ? o.whisperDevice : undefined,
         lineDetails: parseLineDetails(o.lineDetails),
       };
     case "error":
@@ -169,7 +180,14 @@ export interface LyricsModelInfo {
   fileName: string;
   bytes: number;
   sha256: string;
-  role: "isolation" | "whisper-small" | "whisper-medium" | "alignment" | string;
+  role:
+    | "isolation"
+    | "whisper-small"
+    | "whisper-medium"
+    | "whisper-turbo"
+    | "whisper-large"
+    | "alignment"
+    | string;
   installed: boolean;
   partBytes: number;
 }
@@ -179,17 +197,103 @@ export interface LyricsModelsState {
   models: LyricsModelInfo[];
 }
 
+// ---------------------------------------------------------------------------
+// GPU probe + runtime packs (mirror lyrics.rs GpuProbe / RuntimesState)
+
+/** What the GPU can do for the pipeline, probed once per app run. */
+export interface GpuProbe {
+  /** The sidecar can create DirectML sessions (vocal isolation on the GPU). */
+  dml: boolean;
+  /** An NVIDIA driver is installed — the CUDA whisper pack would find a device. */
+  cudaCapable: boolean;
+  /** The first NVIDIA GPU's name, when known. */
+  gpuName: string | null;
+  /** Its VRAM in MB, when known. */
+  vramMb: number | null;
+}
+
+/** One downloadable runtime pack (today: the whisper.cpp CUDA build). */
+export interface LyricsRuntimeInfo {
+  id: string;
+  dirName: string;
+  installed: boolean;
+  /** On-disk size once unpacked. */
+  bytes: number;
+  /** The download (zip) size. */
+  zipBytes: number;
+  /** Bytes already on disk in a resumable zip .part (0 = none). */
+  partBytes: number;
+}
+
+export interface LyricsRuntimesState {
+  runtimesDir: string;
+  runtimes: LyricsRuntimeInfo[];
+}
+
+export const CUDA_RUNTIME_ID = "whisper-cuda";
+
+export function cudaRuntime(state: LyricsRuntimesState | null): LyricsRuntimeInfo | null {
+  return state?.runtimes.find((r) => r.id === CUDA_RUNTIME_ID) ?? null;
+}
+
+/** Whisper will run on the GPU: the CUDA pack is installed AND an NVIDIA
+ * driver is present (the pack without a driver silently runs on the CPU). */
+export function cudaReady(gpu: GpuProbe | null, runtimes: LyricsRuntimesState | null): boolean {
+  return gpu?.cudaCapable === true && cudaRuntime(runtimes)?.installed === true;
+}
+
 /** The user-facing tier choice = which whisper model transcribes. */
-export type LyricsTier = "small" | "medium";
+export type LyricsTier = "small" | "medium" | "turbo" | "large";
+
+export const LYRICS_TIERS: LyricsTier[] = ["small", "medium", "turbo", "large"];
 
 export const TIER_WHISPER_ID: Record<LyricsTier, string> = {
   small: "whisper-small",
   medium: "whisper-medium",
+  turbo: "whisper-turbo",
+  large: "whisper-large",
 };
 
+export const TIER_NAMES: Record<LyricsTier, string> = {
+  small: "Small",
+  medium: "Medium",
+  turbo: "Large v3 Turbo",
+  large: "Large v3",
+};
+
+/** The tier the picker opens on: Large v3 Turbo once whisper runs on a GPU
+ * (measured 2026-10-13, RTX 5060 Ti: a 4-minute song in ~10 s with a
+ * transcript the small model cannot match), Small on the CPU — where turbo
+ * costs 5x small's time for its better words, a trade the user makes
+ * knowingly from the estimate, not by default. */
+export function recommendedTier(cuda: boolean): LyricsTier {
+  return cuda ? "turbo" : "small";
+}
+
+export interface TierOption {
+  value: LyricsTier;
+  label: string;
+}
+
+/** Picker rows, the recommended one marked. Plain words about the trade —
+ * the estimate next to the Generate button carries the time. */
+export function tierOptions(cuda: boolean): TierOption[] {
+  const rec = recommendedTier(cuda);
+  const blurb: Record<LyricsTier, string> = {
+    small: "fastest, any PC",
+    medium: "better words, slower",
+    turbo: cuda ? "best words per second" : "near-best words, slow on CPU",
+    large: cuda ? "most accurate, 3x turbo's time" : "most accurate, very slow on CPU",
+  };
+  return LYRICS_TIERS.map((value) => ({
+    value,
+    label: `${TIER_NAMES[value]} — ${blurb[value]}${value === rec ? " (recommended)" : ""}`,
+  }));
+}
+
 /** Model ids a tier needs installed. Isolation and the phase-3 alignment
- * pair (word timing) are shared by both tiers — the small tier stays the
- * ~0.68 GB default bundle, medium adds only the bigger whisper. */
+ * pair (word timing) are shared by every tier — the small tier stays the
+ * ~0.68 GB default bundle, the others add only their bigger whisper. */
 export function tierModelIds(tier: LyricsTier): string[] {
   return ["mdx-voc-ft", "wav2vec2-align", "wav2vec2-vocab", TIER_WHISPER_ID[tier]];
 }
@@ -312,32 +416,65 @@ export const LYRICS_LANGUAGES: LyricsLanguageOption[] = [
 // Time estimates — sustained-thermal numbers (spike adjustment 1)
 
 /**
- * Measured realtime factors (wall seconds per audio second) on the reference
- * machine (i5-1135G7 / Iris Xe / 16 GB), from the FEAT-004 phase-1 spike
- * REPORT plus the phase-2 device runs. Deliberately the SUSTAINED numbers:
- * the spike showed cold-run CPU RTF is 2-3x better than thermal steady
- * state, and an estimate built on cold numbers lies to everyone with a warm
- * laptop (adjustment 1).
+ * Measured realtime factors (wall seconds per audio second) on two reference
+ * machines. The LAPTOP rows (i5-1135G7 / Iris Xe / 16 GB) come from the
+ * FEAT-004 phase-1 spike REPORT plus the phase-2 device runs, deliberately the
+ * SUSTAINED numbers: the spike showed cold-run CPU RTF is 2-3x better than
+ * thermal steady state, and an estimate built on cold numbers lies to
+ * everyone with a warm laptop (adjustment 1). The DESKTOP rows (Ryzen 9
+ * 9900X / RTX 5060 Ti 16 GB, 2026-10-13, four sung tracks of 2-5.5 min) are
+ * what an NVIDIA machine sees once the CUDA whisper pack is installed; their
+ * high ends leave room for older or smaller cards.
  */
+interface RtfRange {
+  low: number;
+  high: number;
+}
 const ISOLATE_RTF = {
-  dml: { low: 0.45, high: 0.7 }, // measured 0.435-0.52 on Iris Xe
-  cpu: { low: 1.9, high: 2.5 }, // sustained 1.86-2.45
+  /** DirectML on a discrete NVIDIA card: RTX 5060 Ti measured 0.018-0.031. */
+  dmlDiscrete: { low: 0.02, high: 0.1 },
+  /** DirectML on an integrated GPU: measured 0.435-0.52 on Iris Xe. */
+  dml: { low: 0.45, high: 0.7 },
+  /** CPU fallback, laptop sustained 1.86-2.45 (the 12-core desktop: 0.14). */
+  cpu: { low: 1.9, high: 2.5 },
 };
-const WHISPER_RTF: Record<LyricsTier, { low: number; high: number }> = {
-  small: { low: 0.25, high: 0.45 }, // measured 0.24-0.42
-  medium: { low: 1.5, high: 2.1 }, // measured 1.5-2.01
+const WHISPER_RTF: Record<WhisperBackend, Record<LyricsTier, RtfRange>> = {
+  cpu: {
+    small: { low: 0.25, high: 0.45 }, // laptop measured 0.24-0.42 (desktop 0.06)
+    medium: { low: 1.5, high: 2.1 }, // laptop measured 1.5-2.01 (desktop 0.16)
+    // The large tiers on a laptop CPU: scaled from the medium row by the
+    // desktop's measured ratios (turbo 0.14 and large 0.31 vs medium 0.16).
+    turbo: { low: 1.3, high: 2.0 },
+    large: { low: 3.0, high: 4.2 },
+  },
+  cuda: {
+    small: { low: 0.02, high: 0.06 }, // measured 0.023-0.028
+    medium: { low: 0.03, high: 0.1 }, // measured 0.025-0.054 (language pinned)
+    turbo: { low: 0.03, high: 0.1 }, // measured 0.031-0.047
+    large: { low: 0.07, high: 0.25 }, // measured 0.065-0.141
+  },
 };
 /** Word alignment (phase 3, CPU-only by design — DML measured 4x slower for
- * this model). Device: whole-stage RTF 0.12-0.14 cool (corpus + dense-mix
- * runs), 0.37 thermally degraded — the high end honors adjustment 1's
- * sustained-thermal rule, same as the other stages. */
+ * this model on the laptop iGPU). Laptop: whole-stage RTF 0.12-0.14 cool
+ * (corpus + dense-mix runs), 0.37 thermally degraded — the high end honors
+ * adjustment 1's sustained-thermal rule. (The 12-core desktop: 0.010-0.018;
+ * the measured-RTF blend below brings such a machine down to its own
+ * number within a run or two.) */
 const ALIGN_RTF = { low: 0.1, high: 0.4 };
-/** decode + VAD + assembly + model/session loads. */
+/** decode + VAD + language pre-pass + assembly + model/session loads. */
 const OVERHEAD_SEC = { low: 8, high: 25 };
 
 export interface EstimateRange {
   lowSec: number;
   highSec: number;
+}
+
+/** What the estimate knows about this machine beyond the DirectML probe. */
+export interface EstimateHardware {
+  /** Whisper will run on the CUDA pack (installed + NVIDIA driver present). */
+  cuda?: boolean;
+  /** A discrete NVIDIA card drives DirectML — the desktop isolation row. */
+  discreteGpu?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -356,13 +493,20 @@ export interface EstimateRange {
 
 /** One persisted realtime-factor sample per estimate component. Keyed
  * exactly like the static tables above: isolate splits on DML-vs-CPU
- * (ISOLATE_RTF), whisper splits on tier (WHISPER_RTF), align does not
- * split. null = no completed run has reported this one yet. */
+ * (ISOLATE_RTF), whisper splits on tier AND runtime (WHISPER_RTF — a CUDA
+ * run is 10-20x a CPU run and must never blend into its slot), align does
+ * not split. null = no completed run has reported this one yet. */
 export interface MeasuredRtf {
   isolateDml: number | null;
   isolateCpu: number | null;
   whisperSmall: number | null;
   whisperMedium: number | null;
+  whisperTurbo: number | null;
+  whisperLarge: number | null;
+  whisperSmallCuda: number | null;
+  whisperMediumCuda: number | null;
+  whisperTurboCuda: number | null;
+  whisperLargeCuda: number | null;
   align: number | null;
 }
 
@@ -371,8 +515,28 @@ export const NO_MEASURED_RTF: MeasuredRtf = {
   isolateCpu: null,
   whisperSmall: null,
   whisperMedium: null,
+  whisperTurbo: null,
+  whisperLarge: null,
+  whisperSmallCuda: null,
+  whisperMediumCuda: null,
+  whisperTurboCuda: null,
+  whisperLargeCuda: null,
   align: null,
 };
+
+/** The MeasuredRtf slot a whisper run of `tier` on `backend` belongs to. */
+export function whisperRtfKey(tier: LyricsTier, backend: WhisperBackend): keyof MeasuredRtf {
+  const base: Record<
+    LyricsTier,
+    "whisperSmall" | "whisperMedium" | "whisperTurbo" | "whisperLarge"
+  > = {
+    small: "whisperSmall",
+    medium: "whisperMedium",
+    turbo: "whisperTurbo",
+    large: "whisperLarge",
+  };
+  return backend === "cuda" ? `${base[tier]}Cuda` : base[tier];
+}
 
 /**
  * Blend rule 1 of 2 — updating the persisted history: an exponential moving
@@ -427,12 +591,18 @@ export function estimateGenerateSeconds(
   tier: LyricsTier,
   dmlAvailable: boolean,
   measured: MeasuredRtf = NO_MEASURED_RTF,
+  hw: EstimateHardware = {},
 ): EstimateRange {
   const d = Math.max(0, durationSec);
-  const iso = dmlAvailable ? ISOLATE_RTF.dml : ISOLATE_RTF.cpu;
-  const wh = WHISPER_RTF[tier];
+  const iso = dmlAvailable
+    ? hw.discreteGpu
+      ? ISOLATE_RTF.dmlDiscrete
+      : ISOLATE_RTF.dml
+    : ISOLATE_RTF.cpu;
+  const backend: WhisperBackend = hw.cuda ? "cuda" : "cpu";
+  const wh = WHISPER_RTF[backend][tier];
   const isoMeasured = dmlAvailable ? measured.isolateDml : measured.isolateCpu;
-  const whMeasured = tier === "medium" ? measured.whisperMedium : measured.whisperSmall;
+  const whMeasured = measured[whisperRtfKey(tier, backend)];
   const isoLow = blendBound(iso.low, isoMeasured);
   const isoHigh = blendBound(iso.high, isoMeasured);
   const whLow = blendBound(wh.low, whMeasured);
@@ -493,23 +663,43 @@ export function formatEta(sec: number): string {
 /** Overall progress 0..1 across the whole pipeline for one progress bar.
  * Stages are weighted by their typical share of wall time; within a stage
  * the sidecar's own pct interpolates. Purely cosmetic — the stage label and
- * per-stage ETA carry the honest numbers. */
-const STAGE_WEIGHTS: Record<SidecarStage, number> = {
-  decode: 0.02,
-  isolate: 0.52,
-  vad: 0.01,
-  transcribe: 0.36,
-  align: 0.07,
-  assemble: 0.02,
+ * per-stage ETA carry the honest numbers. Two profiles: the laptop shape
+ * (isolation dominates, alignment is a sliver) and the GPU shape measured
+ * 2026-10-13 with the CUDA pack + DirectML isolation + 12-thread alignment
+ * (isolate 36 %, transcribe 38 %, align 20 % of a 10-20 s run). */
+export type ProgressProfile = "cpu" | "gpu";
+
+const STAGE_WEIGHTS: Record<ProgressProfile, Record<SidecarStage, number>> = {
+  cpu: {
+    decode: 0.02,
+    isolate: 0.52,
+    vad: 0.01,
+    transcribe: 0.36,
+    align: 0.07,
+    assemble: 0.02,
+  },
+  gpu: {
+    decode: 0.02,
+    isolate: 0.36,
+    vad: 0.01,
+    transcribe: 0.38,
+    align: 0.2,
+    assemble: 0.03,
+  },
 };
 
-export function overallProgress(stage: SidecarStage, pctInStage: number | null): number {
+export function overallProgress(
+  stage: SidecarStage,
+  pctInStage: number | null,
+  profile: ProgressProfile = "cpu",
+): number {
+  const weights = STAGE_WEIGHTS[profile];
   let before = 0;
   for (const s of STAGES) {
     if (s === stage) break;
-    before += STAGE_WEIGHTS[s];
+    before += weights[s];
   }
-  const inStage = ((pctInStage ?? 0) / 100) * STAGE_WEIGHTS[stage];
+  const inStage = ((pctInStage ?? 0) / 100) * weights[stage];
   return Math.min(1, before + inStage);
 }
 
@@ -528,7 +718,12 @@ export interface LyricsGenState {
   modelOp: { id: string; kind: "verify" | "remove" } | null;
   /** DirectML availability on this machine; null until probed. */
   dml: boolean | null;
-  /** Live download progress while phase === "downloading". */
+  /** The full GPU probe (DirectML + NVIDIA driver/card); null until probed. */
+  gpu: GpuProbe | null;
+  /** Runtime-pack manifest + install state; null until the first refresh. */
+  runtimes: LyricsRuntimesState | null;
+  /** Live download progress while phase === "downloading" — a model or a
+   * runtime pack, told apart by `id`. */
   download: { id: string; received: number; total: number } | null;
   /** Live pipeline progress while phase === "generating". */
   gen: {
@@ -552,6 +747,8 @@ export const IDLE_LYRICS_GEN: LyricsGenState = {
   models: null,
   modelOp: null,
   dml: null,
+  gpu: null,
+  runtimes: null,
   download: null,
   gen: null,
 };
@@ -576,6 +773,7 @@ type GenState = NonNullable<LyricsGenState["gen"]>;
  */
 export function reduceGenProgress(
   ev: Extract<SidecarEvent, { type: "progress" | "stageDone" }>,
+  profile: ProgressProfile = "cpu",
 ): GenState {
   if (ev.type === "progress") {
     return {
@@ -583,7 +781,7 @@ export function reduceGenProgress(
       pct: ev.pct ?? null,
       etaSec: ev.etaSec ?? null,
       starting: false,
-      overall: overallProgress(ev.stage, ev.pct ?? null),
+      overall: overallProgress(ev.stage, ev.pct ?? null, profile),
     };
   }
   const next = nextStage(ev.stage);
@@ -593,7 +791,7 @@ export function reduceGenProgress(
       pct: null,
       etaSec: null,
       starting: true,
-      overall: overallProgress(ev.stage, 100),
+      overall: overallProgress(ev.stage, 100, profile),
     };
   }
   return {
@@ -601,6 +799,6 @@ export function reduceGenProgress(
     pct: 100,
     etaSec: null,
     starting: false,
-    overall: overallProgress(ev.stage, 100),
+    overall: overallProgress(ev.stage, 100, profile),
   };
 }

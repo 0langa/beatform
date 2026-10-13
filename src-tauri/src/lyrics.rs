@@ -16,6 +16,11 @@
 //!    return the finished LRC text. Cancel = one "cancel" line down the
 //!    sidecar's stdin (graceful, ack'd within a chunk) with a bounded kill
 //!    fallback; app shutdown kills the child (lib.rs window-destroyed hook).
+//! 4. **Runtime packs** (2026-10-13): the official whisper.cpp CUDA build,
+//!    downloaded on demand like a model (one SHA-256-pinned zip, resumable),
+//!    unpacked into `<appdata>/runtimes` with every shipped file pinned too.
+//!    The installer stays at its ~60 MB; an NVIDIA owner opts into the 1.1 GB
+//!    of CUDA DLLs that make the large whisper models practical.
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -33,6 +38,13 @@ use tauri::Manager;
 /// cross-checked against the upstream HF LFS oids byte-for-byte).
 const MODELS_BASE_URL: &str = "https://github.com/beatform-app/models/releases/download/v1/";
 
+/// The upstream ggml conversions of OpenAI's weights, published by the
+/// whisper.cpp project. Hugging Face serves LFS files with Range support, and
+/// an LFS object's oid IS its SHA-256 — the pins below are those oids. The
+/// two large-v3 tiers (2026-10-13) fetch from here until the Beatform mirror
+/// carries them; switching is one constant per entry.
+const HF_WHISPER_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/";
+
 #[derive(Clone, Copy)]
 pub struct ModelSpec {
     pub id: &'static str,
@@ -40,8 +52,11 @@ pub struct ModelSpec {
     pub bytes: u64,
     pub sha256: &'static str,
     /// "isolation" (always required) | "whisper-small" | "whisper-medium" |
-    /// "alignment" (phase 3 word timing; part of every tier).
+    /// "whisper-turbo" | "whisper-large" | "alignment" (phase 3 word timing;
+    /// part of every tier).
     pub role: &'static str,
+    /// Where the file is fetched from (`file_name` is appended).
+    pub base_url: &'static str,
 }
 
 pub const MODELS: &[ModelSpec] = &[
@@ -51,6 +66,7 @@ pub const MODELS: &[ModelSpec] = &[
         bytes: 66_762_490,
         sha256: "534b2070fcc7df514b13ef660dc8cbb328679c2374d04354a5c42bb14ecce111",
         role: "isolation",
+        base_url: MODELS_BASE_URL,
     },
     ModelSpec {
         id: "whisper-small",
@@ -58,6 +74,7 @@ pub const MODELS: &[ModelSpec] = &[
         bytes: 487_601_967,
         sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
         role: "whisper-small",
+        base_url: MODELS_BASE_URL,
     },
     ModelSpec {
         id: "whisper-medium",
@@ -65,6 +82,28 @@ pub const MODELS: &[ModelSpec] = &[
         bytes: 1_533_763_059,
         sha256: "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
         role: "whisper-medium",
+        base_url: MODELS_BASE_URL,
+    },
+    // The GPU-era tiers (2026-10-13, measured on an RTX 5060 Ti with the CUDA
+    // runtime pack): large-v3-turbo transcribes a 4-minute song in ~10 s with
+    // a transcript the small model cannot match; large-v3 is the most
+    // accurate whisper there is, at ~3x turbo's time and 4.2 GB of VRAM. On
+    // the CPU both are slow enough that the UI says so up front.
+    ModelSpec {
+        id: "whisper-turbo",
+        file_name: "ggml-large-v3-turbo.bin",
+        bytes: 1_624_555_275,
+        sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+        role: "whisper-turbo",
+        base_url: HF_WHISPER_BASE_URL,
+    },
+    ModelSpec {
+        id: "whisper-large",
+        file_name: "ggml-large-v3.bin",
+        bytes: 3_095_033_483,
+        sha256: "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
+        role: "whisper-large",
+        base_url: HF_WHISPER_BASE_URL,
     },
     // Phase-3 word alignment: first-party ONNX export from the Apache-2.0
     // facebook/wav2vec2-base-960h safetensors, MatMul-only dynamic int8
@@ -77,6 +116,7 @@ pub const MODELS: &[ModelSpec] = &[
         bytes: 121_925_528,
         sha256: "788e9cef53464fd9229ee5a1b48a307971d8209f2a040439f14c4aec586e15bf",
         role: "alignment",
+        base_url: MODELS_BASE_URL,
     },
     ModelSpec {
         id: "wav2vec2-vocab",
@@ -84,6 +124,7 @@ pub const MODELS: &[ModelSpec] = &[
         bytes: 392,
         sha256: "8ae64b2ec10a2ea5c4416ed0394dcad8643b764ef979109fbf5261cb88eb836f",
         role: "alignment",
+        base_url: MODELS_BASE_URL,
     },
 ];
 
@@ -92,6 +133,199 @@ fn spec_by_id(id: &str) -> Result<&'static ModelSpec, String> {
         .iter()
         .find(|m| m.id == id)
         .ok_or(format!("unknown model id: {id}"))
+}
+
+/// whisper.cpp's alignment-heads preset for a transcription model — the
+/// `-dtw` argument that turns on measured token timestamps (the sidecar adds
+/// `-nfa`, which DTW requires). Names are whisper-cli's own table; a model
+/// without one runs with whisper's evenly-spread offsets as before.
+fn whisper_dtw_preset(role: &str) -> Option<&'static str> {
+    match role {
+        "whisper-small" => Some("small"),
+        "whisper-medium" => Some("medium"),
+        "whisper-turbo" => Some("large.v3.turbo"),
+        "whisper-large" => Some("large.v3"),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Runtime packs
+
+/// One file of a runtime pack, pinned like a model.
+#[derive(Clone, Copy)]
+pub struct RuntimeFile {
+    pub name: &'static str,
+    pub bytes: u64,
+    pub sha256: &'static str,
+}
+
+/// A downloadable runtime: one official zip (pinned by SHA-256, resumable)
+/// whose wanted members are unpacked, each verified again against its own
+/// pin before it gets its final name.
+#[derive(Clone, Copy)]
+pub struct RuntimeSpec {
+    pub id: &'static str,
+    /// Install directory name under `<appdata>/runtimes` — versioned, so an
+    /// upgrade of the pin lands beside the old pack instead of over it.
+    pub dir_name: &'static str,
+    pub zip_url: &'static str,
+    pub zip_bytes: u64,
+    pub zip_sha256: &'static str,
+    /// Members under the zip's `Release/` folder, in extraction order.
+    pub files: &'static [RuntimeFile],
+}
+
+/// whisper.cpp v1.9.1's official CUDA 12.4 build, the same release as the
+/// bundled CPU build (scripts/fetch-whisper.mjs pins the sibling zip): the
+/// CLI, the ggml/whisper DLLs, the CPU-variant DLLs ggml still needs for its
+/// non-GPU ops, and the three NVIDIA runtime DLLs the CUDA backend links
+/// (cudart, cublas, cublasLt — `dumpbin /dependents`, 2026-10-13; the zip's
+/// nvrtc/SDL2/demo binaries are not ours to ship). 678 MB down, 1.15 GB on
+/// disk. Needs an NVIDIA driver (nvcuda.dll); without one ggml loads no CUDA
+/// backend and whisper-cli runs on the CPU, which the sidecar reports.
+///
+/// Blackwell note: the build carries SASS up to sm_90 plus PTX, so an RTX
+/// 50-series card JIT-compiles the kernels on its first run (measured ~90 s
+/// once on an RTX 5060 Ti, instant afterwards).
+const WHISPER_CUDA_FILES: &[RuntimeFile] = &[
+    RuntimeFile {
+        name: "whisper-cli.exe",
+        bytes: 489_984,
+        sha256: "789fddb0f05c0c28043b3c4f3bcf15a0ae839df24292c60f90c4edb8d02a5ab5",
+    },
+    RuntimeFile {
+        name: "whisper.dll",
+        bytes: 1_308_160,
+        sha256: "0c76791ffda66ce58b6247424ca750a4b1bff12fd52928abb81de3037172ce1b",
+    },
+    RuntimeFile {
+        name: "ggml.dll",
+        bytes: 66_560,
+        sha256: "3063b832600f58fb0e15af50a9ace99dbc15de02b8cb325df64390bfbcf22796",
+    },
+    RuntimeFile {
+        name: "ggml-base.dll",
+        bytes: 641_024,
+        sha256: "2fdf1dea0cbab9d796d1a6c2bca672a3784c5faec2f1df2a3812212fa7409747",
+    },
+    RuntimeFile {
+        name: "ggml-cuda.dll",
+        bytes: 564_585_984,
+        sha256: "bdf5ba84f7014eaa8a4fae7a090ce222edf03432ef8d39d57fb615beea5c68ac",
+    },
+    RuntimeFile {
+        name: "ggml-cpu-alderlake.dll",
+        bytes: 789_504,
+        sha256: "e9e27720fd14a33e86d13c1c8fee5a6afbf6a702e8472abb84cde23ccb4fb654",
+    },
+    RuntimeFile {
+        name: "ggml-cpu-cannonlake.dll",
+        bytes: 833_536,
+        sha256: "63c136e823b85e519a2fd5d5085c7f28e9b07a7d23df99b6e2abd05dbcf4b47c",
+    },
+    RuntimeFile {
+        name: "ggml-cpu-cascadelake.dll",
+        bytes: 830_976,
+        sha256: "9ab872d0e6e0dd6c5becd585cc84e1684ddfc603443904bc007af4a14e4a52fb",
+    },
+    RuntimeFile {
+        name: "ggml-cpu-haswell.dll",
+        bytes: 790_528,
+        sha256: "cb4b01954b8b7bec4d891024192d3ed80c43102a4d17447ceefc4e183632df1f",
+    },
+    RuntimeFile {
+        name: "ggml-cpu-icelake.dll",
+        bytes: 830_976,
+        sha256: "e97d8c4744c92e74190979a7d87a690d02d26373724d203722284e1cc837becb",
+    },
+    RuntimeFile {
+        name: "ggml-cpu-sandybridge.dll",
+        bytes: 763_904,
+        sha256: "695b93cd2a2b4d30c60b722d0ff92870b308af82bf76be45a1ceb9aea8c3f611",
+    },
+    RuntimeFile {
+        name: "ggml-cpu-skylakex.dll",
+        bytes: 833_536,
+        sha256: "37ee8dd2620aa8e350f50ccc22e3fd3995ef63edb696d42c12830b06ef81ff28",
+    },
+    RuntimeFile {
+        name: "ggml-cpu-sse42.dll",
+        bytes: 751_104,
+        sha256: "25db1975a6664ae7f77db3bce0ee6f35d4894514717a39cf97f833bf56a7d2c4",
+    },
+    RuntimeFile {
+        name: "ggml-cpu-x64.dll",
+        bytes: 752_128,
+        sha256: "b338f13d391470fd3dab3029df226f6306ca8140c69bc381725e39507b4d59f4",
+    },
+    RuntimeFile {
+        name: "cudart64_12.dll",
+        bytes: 553_984,
+        sha256: "d28e42265da7462162a54da6b7a99ea4fa2caf8139d862bb500db875d0b32dfc",
+    },
+    RuntimeFile {
+        name: "cublas64_12.dll",
+        bytes: 100_033_536,
+        sha256: "e40202fe4223c1cd2d2dce7beec59e1ed61c7801bd827309183be9b50e358f4c",
+    },
+    RuntimeFile {
+        name: "cublasLt64_12.dll",
+        bytes: 473_551_360,
+        sha256: "2a896460bef60ed57ef32b0875812f355a6984e671d638bb632f5e8c1d7a831f",
+    },
+];
+
+pub const RUNTIMES: &[RuntimeSpec] = &[RuntimeSpec {
+    id: "whisper-cuda",
+    dir_name: "whisper-cuda-v1.9.1",
+    zip_url: "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.1/whisper-cublas-12.4.0-bin-x64.zip",
+    zip_bytes: 677_887_125,
+    zip_sha256: "106a2030eff8998e4ef320fe72e263a78449e9040386ee27c41ea80b001b601b",
+    files: WHISPER_CUDA_FILES,
+}];
+
+fn runtime_by_id(id: &str) -> Result<&'static RuntimeSpec, String> {
+    RUNTIMES
+        .iter()
+        .find(|r| r.id == id)
+        .ok_or(format!("unknown runtime id: {id}"))
+}
+
+impl RuntimeSpec {
+    /// Bytes the unpacked runtime occupies.
+    pub fn installed_bytes(&self) -> u64 {
+        self.files.iter().map(|f| f.bytes).sum()
+    }
+
+    /// Installed = every file present at its pinned size (the hashes ran at
+    /// extraction, before each file got its final name — the model rule).
+    fn is_installed_in(&self, dir: &Path) -> bool {
+        self.files.iter().all(|f| {
+            dir.join(f.name)
+                .metadata()
+                .map(|m| m.len() == f.bytes)
+                .unwrap_or(false)
+        })
+    }
+}
+
+/// Threads for the sidecar's CPU work — the CPU whisper build, the MDX CPU
+/// fallback, the aligner's intra-op pool. The PHYSICAL core count, clamped
+/// to 4..=16: the old constant 4 was the reference laptop's core count, and
+/// a 12-core desktop ran CPU whisper at a third of its speed because of it.
+/// Physical, not logical: ggml's matmuls gain nothing from SMT siblings and
+/// lose to their cache contention (whisper.cpp's own guidance); 16 is where
+/// whisper stops scaling.
+fn whisper_threads() -> usize {
+    let physical = sysinfo::System::physical_core_count()
+        .or_else(|| {
+            std::thread::available_parallelism()
+                .ok()
+                .map(|n| n.get() / 2)
+        })
+        .unwrap_or(4);
+    physical.clamp(4, 16)
 }
 
 /// A running sidecar plus everything terminating it has to clean up.
@@ -132,11 +366,11 @@ pub struct LyricsState {
     pub staging: Mutex<Option<(std::fs::File, PathBuf)>>,
     /// Sealed staged WAV waiting for lyrics_generate.
     pub staged: Mutex<Option<PathBuf>>,
-    /// One model download at a time; cancel keeps the .part for resume.
+    /// One model/runtime download at a time; cancel keeps the .part for resume.
     pub downloading: AtomicBool,
     pub download_cancel: AtomicBool,
-    /// Cached sidecar --probe-gpu answer (None = not probed yet).
-    pub gpu_probe: Mutex<Option<bool>>,
+    /// Cached GPU probe (None = not probed yet).
+    pub gpu_probe: Mutex<Option<GpuProbe>>,
     /// DEBUG BUILDS ONLY: E2E override for the models directory.
     #[cfg(debug_assertions)]
     pub models_dir_override: Mutex<Option<PathBuf>>,
@@ -223,6 +457,31 @@ fn models_dir(app: &tauri::AppHandle, state: &LyricsState) -> Result<PathBuf, St
         .app_data_dir()
         .map(|d| d.join("models"))
         .map_err(|e| format!("no app data dir: {e}"))
+}
+
+/// `<appdata>/runtimes` — a sibling of the models dir, so the E2E override
+/// of the models dir moves the runtimes with it.
+fn runtimes_dir(app: &tauri::AppHandle, state: &LyricsState) -> Result<PathBuf, String> {
+    let models = models_dir(app, state)?;
+    Ok(models
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or(models)
+        .join("runtimes"))
+}
+
+/// The installed CUDA whisper-cli, when the pack is complete; None = use
+/// the bundled CPU build.
+fn installed_runtime_cli(
+    app: &tauri::AppHandle,
+    state: &LyricsState,
+    id: &str,
+) -> Result<Option<PathBuf>, String> {
+    let spec = runtime_by_id(id)?;
+    let dir = runtimes_dir(app, state)?.join(spec.dir_name);
+    Ok(spec
+        .is_installed_in(&dir)
+        .then(|| dir.join("whisper-cli.exe")))
 }
 
 // ---------------------------------------------------------------------------
@@ -408,10 +667,47 @@ pub async fn lyrics_model_download(
         std::fs::remove_file(&final_path).map_err(|e| e.to_string())?;
     }
 
+    let url = format!("{}{}", spec.base_url, spec.file_name);
+    download_part(
+        &state,
+        spec.id,
+        &url,
+        &part_path,
+        spec.bytes,
+        spec.sha256,
+        &on_progress,
+    )
+    .await?;
+    std::fs::rename(&part_path, &final_path).map_err(|e| format!("install failed: {e}"))?;
+    Ok(())
+}
+
+/// 2 s, 4 s, 6 s, 8 s between resume attempts. Parked on the blocking pool
+/// rather than a tokio timer: the app has no direct tokio dependency and
+/// tauri's runtime handle is enough for a sleep.
+async fn resume_backoff(attempt: u32) {
+    let wait = Duration::from_secs(2 * u64::from(attempt));
+    let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(wait)).await;
+}
+
+/// The download step shared by models and runtime packs: Range-resume `url`
+/// into `part_path` (kept on cancel for a later resume), then SHA-256-verify
+/// the whole file against `sha256` — a mismatch deletes the part so the next
+/// attempt starts clean. Returns with the verified bytes still under the
+/// .part name; the caller renames or unpacks.
+async fn download_part(
+    state: &LyricsState,
+    id: &str,
+    url: &str,
+    part_path: &Path,
+    total: u64,
+    sha256: &str,
+    on_progress: &tauri::ipc::Channel<String>,
+) -> Result<(), String> {
     let offset = part_path.metadata().map(|m| m.len()).unwrap_or(0);
     // A .part at (or beyond) full size skips straight to verification —
     // beyond happens when a previous run appended after a 200-not-206.
-    if offset < spec.bytes {
+    if offset < total {
         // reqwest with `rustls-no-provider` PANICS (not Err) on Client build
         // unless a process-level crypto provider is installed first — the
         // updater installs one on its own path, but this download must not
@@ -426,76 +722,254 @@ pub async fn lyrics_model_download(
             .read_timeout(Duration::from_secs(60))
             .build()
             .map_err(|e| e.to_string())?;
-        let url = format!("{MODELS_BASE_URL}{}", spec.file_name);
-        let mut req = client.get(&url);
-        if offset > 0 {
-            req = req.header(reqwest::header::RANGE, format!("bytes={offset}-"));
-        }
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| format!("download failed (offline?): {e}"))?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(format!("download failed: HTTP {status} for {url}"));
-        }
-        // 206 = server honored the resume; anything else restarts the file.
-        let resumed = status == reqwest::StatusCode::PARTIAL_CONTENT;
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(resumed)
-            .write(true)
-            .truncate(!resumed)
-            .open(&part_path)
-            .map_err(|e| format!("open {}: {e}", part_path.display()))?;
-        let mut received = if resumed { offset } else { 0 };
-        let total = spec.bytes;
-        let mut last_reported = 0u64;
-        let mut stream = resp;
+        // A connection that dies mid-body is resumed in place, up to
+        // RESUME_ATTEMPTS times, from the bytes already on disk: the first
+        // 678 MB runtime-pack download on the reference desktop dropped at
+        // 320 MB (GitHub closed the stream), and a user who then has to
+        // click again has been failed by the app, not the network. Cancel
+        // stays immediate; a non-success status (a 404 pin) stays fatal.
+        const RESUME_ATTEMPTS: u32 = 4;
+        let mut offset = offset;
+        let mut attempt = 0u32;
         loop {
-            if state.download_cancel.load(Ordering::SeqCst) {
-                return Err("cancelled".into());
+            let mut req = client.get(url);
+            if offset > 0 {
+                req = req.header(reqwest::header::RANGE, format!("bytes={offset}-"));
             }
-            let chunk = stream
-                .chunk()
-                .await
-                .map_err(|e| format!("download interrupted: {e}"))?;
-            let Some(chunk) = chunk else { break };
-            file.write_all(&chunk)
-                .map_err(|e| format!("write failed: {e}"))?;
-            received += chunk.len() as u64;
-            if received - last_reported >= 512 * 1024 || received == total {
-                last_reported = received;
-                let _ = on_progress.send(format!(
-                    "{{\"id\":\"{}\",\"received\":{received},\"total\":{total}}}",
-                    spec.id
-                ));
+            let resp = match req.send().await {
+                Ok(r) => r,
+                Err(_) if attempt < RESUME_ATTEMPTS => {
+                    attempt += 1;
+                    resume_backoff(attempt).await;
+                    continue;
+                }
+                Err(e) => return Err(format!("download failed (offline?): {e}")),
+            };
+            let status = resp.status();
+            if !status.is_success() {
+                return Err(format!("download failed: HTTP {status} for {url}"));
+            }
+            // 206 = server honored the resume; anything else restarts the file.
+            let resumed = status == reqwest::StatusCode::PARTIAL_CONTENT;
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(resumed)
+                .write(true)
+                .truncate(!resumed)
+                .open(part_path)
+                .map_err(|e| format!("open {}: {e}", part_path.display()))?;
+            let mut received = if resumed { offset } else { 0 };
+            let mut last_reported = 0u64;
+            let mut stream = resp;
+            let interrupted = loop {
+                if state.download_cancel.load(Ordering::SeqCst) {
+                    return Err("cancelled".into());
+                }
+                let chunk = match stream.chunk().await {
+                    Ok(c) => c,
+                    Err(e) => break Some(e),
+                };
+                let Some(chunk) = chunk else { break None };
+                file.write_all(&chunk)
+                    .map_err(|e| format!("write failed: {e}"))?;
+                received += chunk.len() as u64;
+                if received - last_reported >= 512 * 1024 || received == total {
+                    last_reported = received;
+                    let _ = on_progress.send(format!(
+                        "{{\"id\":\"{id}\",\"received\":{received},\"total\":{total}}}"
+                    ));
+                }
+            };
+            file.flush().map_err(|e| e.to_string())?;
+            // A clean EOF short of `total` is a dropped connection too (a CDN
+            // closing the stream reads as end-of-body, not as an error).
+            match interrupted {
+                None if received >= total => break,
+                Some(e) if attempt >= RESUME_ATTEMPTS || received >= total => {
+                    return Err(format!("download interrupted: {e}"));
+                }
+                None if attempt >= RESUME_ATTEMPTS => break, // the size check below reports it
+                _ => {
+                    attempt += 1;
+                    offset = received;
+                    resume_backoff(attempt).await;
+                }
             }
         }
-        file.flush().map_err(|e| e.to_string())?;
     }
 
     // Verify BEFORE the artifact gains its final (trusted) name — a mismatch
     // deletes the part so the next attempt starts clean.
     let got = part_path.metadata().map(|m| m.len()).unwrap_or(0);
-    if got != spec.bytes {
+    if got != total {
         return Err(format!(
-            "download incomplete: {got} of {} bytes — resume by downloading again",
-            spec.bytes
+            "download incomplete: {got} of {total} bytes — resume by downloading again"
         ));
     }
-    let part_for_hash = part_path.clone();
+    let part_for_hash = part_path.to_path_buf();
     let hash = tauri::async_runtime::spawn_blocking(move || sha256_file(&part_for_hash))
         .await
         .map_err(|e| e.to_string())??;
-    if hash != spec.sha256 {
-        let _ = std::fs::remove_file(&part_path);
+    if hash != sha256 {
+        let _ = std::fs::remove_file(part_path);
         return Err(format!(
-            "checksum mismatch for {} — expected {}, got {hash}. The download was discarded; try again.",
-            spec.file_name, spec.sha256
+            "checksum mismatch for {id} — expected {sha256}, got {hash}. The download was discarded; try again."
         ));
     }
-    std::fs::rename(&part_path, &final_path).map_err(|e| format!("install failed: {e}"))?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Runtime pack manager
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeState {
+    id: String,
+    dir_name: String,
+    installed: bool,
+    /// On-disk size of the unpacked runtime.
+    bytes: u64,
+    /// The download size (the zip).
+    zip_bytes: u64,
+    /// Bytes already on disk in a resumable zip .part (0 = none).
+    part_bytes: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimesState {
+    runtimes_dir: String,
+    runtimes: Vec<RuntimeState>,
+}
+
+#[tauri::command]
+pub fn lyrics_runtimes_state(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LyricsState>,
+) -> Result<RuntimesState, String> {
+    crate::assert_main_window(&window)?;
+    let dir = runtimes_dir(&app, &state)?;
+    let runtimes = RUNTIMES
+        .iter()
+        .map(|r| RuntimeState {
+            id: r.id.into(),
+            dir_name: r.dir_name.into(),
+            installed: r.is_installed_in(&dir.join(r.dir_name)),
+            bytes: r.installed_bytes(),
+            zip_bytes: r.zip_bytes,
+            part_bytes: dir
+                .join(format!("{}.zip.part", r.id))
+                .metadata()
+                .map(|m| m.len())
+                .unwrap_or(0),
+        })
+        .collect();
+    Ok(RuntimesState {
+        runtimes_dir: dir.to_string_lossy().into_owned(),
+        runtimes,
+    })
+}
+
+/// Unpack the wanted members of a VERIFIED zip into `dir`: each lands under a
+/// temp name, is hashed against its own pin, and only then renamed — the
+/// model rule, per file. The zip's hash already pins every byte inside it;
+/// the per-file check guards the extraction itself (a torn write, a wrong
+/// member) and leaves nothing half-trusted under its final name.
+fn extract_runtime(zip_path: &Path, dir: &Path, spec: &RuntimeSpec) -> Result<(), String> {
+    let file = std::fs::File::open(zip_path).map_err(|e| format!("open runtime zip: {e}"))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("could not read the runtime zip: {e}"))?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("create runtime dir: {e}"))?;
+    for f in spec.files {
+        let member = format!("Release/{}", f.name);
+        let mut entry = archive
+            .by_name(&member)
+            .map_err(|e| format!("{member} missing from the verified zip: {e}"))?;
+        let tmp = dir.join(format!("{}.tmp", f.name));
+        {
+            let mut out =
+                std::fs::File::create(&tmp).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+            std::io::copy(&mut entry, &mut out).map_err(|e| format!("unpack {}: {e}", f.name))?;
+        }
+        let hash = sha256_file(&tmp)?;
+        if hash != f.sha256 {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!(
+                "{} does not match its pin inside a hash-verified zip (expected {}, got {hash})",
+                f.name, f.sha256
+            ));
+        }
+        std::fs::rename(&tmp, dir.join(f.name)).map_err(|e| format!("install {}: {e}", f.name))?;
+    }
+    Ok(())
+}
+
+/// Download a runtime pack (resumable, zip SHA-256-verified), unpack its
+/// pinned files, delete the zip. Same progress protocol and cancel contract
+/// as a model download; the unpack step reports no progress (seconds).
+#[tauri::command]
+pub async fn lyrics_runtime_download(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LyricsState>,
+    id: String,
+    on_progress: tauri::ipc::Channel<String>,
+) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
+    let spec = *runtime_by_id(&id)?;
+    if state.downloading.swap(true, Ordering::SeqCst) {
+        return Err("A model download is already running".into());
+    }
+    let _guard = DownloadGuard(&state);
+    state.download_cancel.store(false, Ordering::SeqCst);
+
+    let root = runtimes_dir(&app, &state)?;
+    std::fs::create_dir_all(&root).map_err(|e| format!("create runtimes dir: {e}"))?;
+    let dir = root.join(spec.dir_name);
+    if spec.is_installed_in(&dir) {
+        return Ok(());
+    }
+    let part_path = root.join(format!("{}.zip.part", spec.id));
+    download_part(
+        &state,
+        spec.id,
+        spec.zip_url,
+        &part_path,
+        spec.zip_bytes,
+        spec.zip_sha256,
+        &on_progress,
+    )
+    .await?;
+    let (zip_for_unpack, dir_for_unpack) = (part_path.clone(), dir.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        extract_runtime(&zip_for_unpack, &dir_for_unpack, &spec)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let _ = std::fs::remove_file(&part_path);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn lyrics_runtime_remove(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LyricsState>,
+    id: String,
+) -> Result<(), String> {
+    crate::assert_main_window(&window)?;
+    let spec = runtime_by_id(&id)?;
+    let root = runtimes_dir(&app, &state)?;
+    let dir = root.join(spec.dir_name);
+    if dir.is_dir() {
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("remove {}: {e}", dir.display()))?;
+    }
+    let part = root.join(format!("{}.zip.part", spec.id));
+    if part.exists() {
+        std::fs::remove_file(&part).map_err(|e| format!("remove {}: {e}", part.display()))?;
+    }
     Ok(())
 }
 
@@ -726,16 +1200,96 @@ mod proc_tree {
 // ---------------------------------------------------------------------------
 // GPU probe + generation job
 
-/// Cached sidecar `--probe-gpu` run: can DirectML sessions be created here?
-/// Drives the honest time estimate BEFORE any model download.
+/// What the GPU can do for the lyrics pipeline, probed once per app run:
+/// DirectML (vocal isolation) through the sidecar, and an NVIDIA driver +
+/// card (the CUDA whisper runtime pack) through the driver's own files.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuProbe {
+    /// The sidecar can create DirectML sessions here.
+    pub dml: bool,
+    /// An NVIDIA driver is installed (System32\nvcuda.dll) — the CUDA pack
+    /// would find a device.
+    pub cuda_capable: bool,
+    /// The first NVIDIA GPU's name, from nvidia-smi (None when unknown).
+    pub gpu_name: Option<String>,
+    /// Its total VRAM in MB, from nvidia-smi (None when unknown).
+    pub vram_mb: Option<u64>,
+}
+
+/// NVIDIA presence and the first card's name/VRAM. The driver is the honest
+/// signal for "CUDA would work": nvcuda.dll is what cudart binds to, and
+/// nvidia-smi ships with every driver. No driver = CPU transcription, and the
+/// UI says so instead of offering a 678 MB download that cannot help.
+#[cfg(windows)]
+fn nvidia_info() -> (bool, Option<String>, Option<u64>) {
+    let system32 = Path::new(&std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into()))
+        .join("System32");
+    if !system32.join("nvcuda.dll").is_file() {
+        return (false, None, None);
+    }
+    let mut cmd = Command::new(system32.join("nvidia-smi.exe"));
+    cmd.args([
+        "--query-gpu=name,memory.total",
+        "--format=csv,noheader,nounits",
+    ])
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null());
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let Ok(out) = cmd.output() else {
+        return (true, None, None);
+    };
+    if !out.status.success() {
+        return (true, None, None);
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let (name, vram) = parse_nvidia_smi(&text);
+    (true, name, vram)
+}
+
+#[cfg(not(windows))]
+fn nvidia_info() -> (bool, Option<String>, Option<u64>) {
+    (false, None, None)
+}
+
+/// "NVIDIA GeForce RTX 5060 Ti, 16311" -> (name, MB). Pure, for the test.
+fn parse_nvidia_smi(text: &str) -> (Option<String>, Option<u64>) {
+    let line = text.lines().map(str::trim).find(|l| !l.is_empty());
+    let Some(line) = line else {
+        return (None, None);
+    };
+    let mut parts = line.rsplitn(2, ',');
+    let vram = parts.next().and_then(|v| v.trim().parse::<u64>().ok());
+    let name = parts
+        .next()
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty());
+    match (name, vram) {
+        (None, _) => (Some(line.to_string()), None),
+        (name, vram) => (name, vram),
+    }
+}
+
+/// Cached GPU probe: the sidecar's `--probe-gpu` (DirectML) plus the NVIDIA
+/// driver check. Drives the honest time estimate and the runtime-pack offer
+/// BEFORE any download.
 #[tauri::command(async)]
 pub fn lyrics_gpu_probe(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, LyricsState>,
-) -> Result<bool, String> {
+) -> Result<GpuProbe, String> {
     crate::assert_main_window(&window)?;
-    if let Some(cached) = *state.gpu_probe.lock().map_err(|_| "state poisoned")? {
+    if let Some(cached) = state
+        .gpu_probe
+        .lock()
+        .map_err(|_| "state poisoned")?
+        .clone()
+    {
         return Ok(cached);
     }
     let exe = sidecar_exe(&app)?;
@@ -767,8 +1321,15 @@ pub fn lyrics_gpu_probe(
         .lines()
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
         .any(|v| v["type"] == "probe" && v["dml"] == true);
-    *state.gpu_probe.lock().map_err(|_| "state poisoned")? = Some(dml);
-    Ok(dml)
+    let (cuda_capable, gpu_name, vram_mb) = nvidia_info();
+    let probe = GpuProbe {
+        dml,
+        cuda_capable,
+        gpu_name,
+        vram_mb,
+    };
+    *state.gpu_probe.lock().map_err(|_| "state poisoned")? = Some(probe.clone());
+    Ok(probe)
 }
 
 /// Kill + bounded reap. TerminateProcess is near-instant in practice; the
@@ -964,6 +1525,7 @@ pub fn lyrics_generate(
     state: tauri::State<'_, LyricsState>,
     whisper_model_id: String,
     use_gpu: bool,
+    use_cuda: bool,
     language: String,
     on_event: tauri::ipc::Channel<String>,
 ) -> Result<String, String> {
@@ -973,6 +1535,7 @@ pub fn lyrics_generate(
     if !whisper_spec.role.starts_with("whisper") {
         return Err(format!("{whisper_model_id} is not a transcription model"));
     }
+    let whisper_dtw = whisper_dtw_preset(whisper_spec.role);
     let dir = models_dir(&app, &state)?;
     let mdx_spec = spec_by_id("mdx-voc-ft")?;
     let mdx_path = dir.join(mdx_spec.file_name);
@@ -1047,10 +1610,22 @@ pub fn lyrics_generate(
             return Err(e);
         }
     };
+    // The CUDA pack's whisper-cli when it is installed and asked for; the
+    // bundled CPU build otherwise. (The pack on a PC without an NVIDIA driver
+    // would run on the CPU too — the sidecar reports what actually ran.)
     let resolved = (|| -> Result<(PathBuf, PathBuf, PathBuf), String> {
+        let cuda_cli = if use_cuda {
+            installed_runtime_cli(&app, &state, "whisper-cuda")?
+        } else {
+            None
+        };
+        let whisper_cli = match cuda_cli {
+            Some(p) => p,
+            None => resolve_bundled(&app, "whisper/whisper-cli.exe")?,
+        };
         Ok((
             ffmpeg_exe(&app)?,
-            resolve_bundled(&app, "whisper/whisper-cli.exe")?,
+            whisper_cli,
             resolve_bundled(&app, "onnxruntime/onnxruntime.dll")?,
         ))
     })();
@@ -1090,7 +1665,10 @@ pub fn lyrics_generate(
         .arg("--language")
         .arg(&language)
         .arg("--threads")
-        .arg("4");
+        .arg(whisper_threads().to_string());
+    if let Some(dtw) = whisper_dtw {
+        cmd.arg("--whisper-dtw").arg(dtw);
+    }
     if let Some((align_model, align_vocab)) = &align_paths {
         cmd.arg("--align-model")
             .arg(align_model)
@@ -1298,7 +1876,7 @@ pub fn lyrics_align_line(
         .arg("--gpu")
         .arg(if use_gpu { "auto" } else { "cpu" })
         .arg("--threads")
-        .arg("4")
+        .arg(whisper_threads().to_string())
         .arg("--line-t")
         .arg(format!("{line_t:.3}"))
         .arg("--line-end")
@@ -1455,7 +2033,7 @@ mod tests {
         // the phase-2 prep uploaded and GitHub's asset digests confirm). A
         // drive-by edit here would repoint the download at unverified bytes,
         // so the test pins the pins.
-        assert_eq!(MODELS.len(), 5);
+        assert_eq!(MODELS.len(), 7);
         let voc = spec_by_id("mdx-voc-ft").unwrap();
         assert_eq!(voc.file_name, "UVR-MDX-NET-Voc_FT.onnx");
         assert_eq!(voc.bytes, 66_762_490);
@@ -1492,6 +2070,116 @@ mod tests {
         );
         assert_eq!(vocab.role, "alignment");
         assert!(spec_by_id("nope").is_err());
+        // The GPU-era tiers: the upstream ggml conversions, pinned to their
+        // Hugging Face LFS oids (= SHA-256) and byte sizes.
+        let turbo = spec_by_id("whisper-turbo").unwrap();
+        assert_eq!(turbo.file_name, "ggml-large-v3-turbo.bin");
+        assert_eq!(turbo.bytes, 1_624_555_275);
+        assert_eq!(
+            turbo.sha256,
+            "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"
+        );
+        assert_eq!(turbo.role, "whisper-turbo");
+        assert_eq!(turbo.base_url, HF_WHISPER_BASE_URL);
+        let large = spec_by_id("whisper-large").unwrap();
+        assert_eq!(large.file_name, "ggml-large-v3.bin");
+        assert_eq!(large.bytes, 3_095_033_483);
+        assert_eq!(
+            large.sha256,
+            "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2"
+        );
+        assert_eq!(large.role, "whisper-large");
+        for mirrored in [
+            "mdx-voc-ft",
+            "whisper-small",
+            "whisper-medium",
+            "wav2vec2-align",
+        ] {
+            assert_eq!(spec_by_id(mirrored).unwrap().base_url, MODELS_BASE_URL);
+        }
+    }
+
+    #[test]
+    fn the_cuda_runtime_pack_is_pinned_file_by_file() {
+        // The zip hash is the release contract (fetch-whisper.mjs pins the
+        // sibling CPU zip the same way); the per-file pins are what the
+        // extraction verifies before any DLL gets its final name.
+        assert_eq!(RUNTIMES.len(), 1);
+        let cuda = runtime_by_id("whisper-cuda").unwrap();
+        assert_eq!(cuda.dir_name, "whisper-cuda-v1.9.1");
+        assert!(cuda
+            .zip_url
+            .ends_with("/v1.9.1/whisper-cublas-12.4.0-bin-x64.zip"));
+        assert_eq!(cuda.zip_bytes, 677_887_125);
+        assert_eq!(
+            cuda.zip_sha256,
+            "106a2030eff8998e4ef320fe72e263a78449e9040386ee27c41ea80b001b601b"
+        );
+        assert_eq!(cuda.files.len(), 17);
+        assert_eq!(cuda.installed_bytes(), 1_148_406_784);
+        for f in cuda.files {
+            assert_eq!(f.sha256.len(), 64, "{}", f.name);
+            assert!(
+                f.sha256.chars().all(|c| c.is_ascii_hexdigit()),
+                "{}",
+                f.name
+            );
+            assert!(f.bytes > 0, "{}", f.name);
+        }
+        assert!(cuda.files.iter().any(|f| f.name == "whisper-cli.exe"));
+        assert!(cuda.files.iter().any(|f| f.name == "ggml-cuda.dll"));
+        assert!(cuda.files.iter().any(|f| f.name == "cublasLt64_12.dll"));
+        assert!(runtime_by_id("nope").is_err());
+        // Nothing installed in an empty dir; every file at its pinned size
+        // counts as installed (the hashes ran at extraction).
+        let dir = std::env::temp_dir().join(format!("bf-runtime-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!cuda.is_installed_in(&dir));
+        for f in cuda.files.iter().take(3) {
+            std::fs::write(dir.join(f.name), vec![0u8; f.bytes as usize]).unwrap();
+        }
+        assert!(
+            !cuda.is_installed_in(&dir),
+            "three of seventeen is not installed"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn whisper_threads_follow_the_physical_cores_within_bounds() {
+        let t = whisper_threads();
+        assert!((4..=16).contains(&t), "{t}");
+        if let Some(physical) = sysinfo::System::physical_core_count() {
+            assert_eq!(t, physical.clamp(4, 16));
+        }
+    }
+
+    #[test]
+    fn dtw_presets_name_whispers_own_alignment_tables() {
+        assert_eq!(whisper_dtw_preset("whisper-small"), Some("small"));
+        assert_eq!(whisper_dtw_preset("whisper-medium"), Some("medium"));
+        assert_eq!(whisper_dtw_preset("whisper-turbo"), Some("large.v3.turbo"));
+        assert_eq!(whisper_dtw_preset("whisper-large"), Some("large.v3"));
+        assert_eq!(whisper_dtw_preset("isolation"), None);
+    }
+
+    #[test]
+    fn nvidia_smi_output_parses_name_and_vram() {
+        assert_eq!(
+            parse_nvidia_smi(
+                "NVIDIA GeForce RTX 5060 Ti, 16311
+"
+            ),
+            (Some("NVIDIA GeForce RTX 5060 Ti".into()), Some(16311))
+        );
+        // A name with its own comma still splits on the LAST one.
+        assert_eq!(
+            parse_nvidia_smi("NVIDIA RTX A6000, 48 GB edition, 49140"),
+            (Some("NVIDIA RTX A6000, 48 GB edition".into()), Some(49140))
+        );
+        assert_eq!(parse_nvidia_smi(""), (None, None));
+        assert_eq!(parse_nvidia_smi("garbage"), (Some("garbage".into()), None));
     }
 
     #[test]

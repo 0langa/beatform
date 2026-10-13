@@ -18,7 +18,7 @@
 //! a song with a 4 s intro landed 3.7 s early).
 
 use crate::vad::{self, Region};
-use crate::whisper::{is_meta_token, is_non_speech_text, WhisperSegment};
+use crate::whisper::{is_meta_token, is_non_speech_text, WhisperSegment, WhisperToken};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {
@@ -335,17 +335,8 @@ fn split_segment(
         None
     };
     // Tokens with real text inside [start, end).
-    let toks: Vec<(f64, f64, &str)> = seg
-        .tokens
-        .iter()
-        .filter(|t| !is_meta_token(&t.text))
-        .map(|t| {
-            (
-                t.offsets.from as f64 / 1000.0,
-                t.offsets.to as f64 / 1000.0,
-                t.text.as_str(),
-            )
-        })
+    let toks: Vec<(f64, f64, &str)> = token_spans(&seg.tokens)
+        .into_iter()
         .filter(|(s, _, _)| *s >= start - 1e-9 && *s < end)
         .collect();
 
@@ -359,7 +350,10 @@ fn split_segment(
                     let (first, second) = toks.split_at(split_idx);
                     push_token_line(first, out);
                     // Recurse on the second half by synthesizing its span.
+                    // Token membership follows the same (DTW-aware) starts
+                    // the split was decided on.
                     let second_start = second[0].0;
+                    let spans = token_spans(&seg.tokens);
                     let sub = WhisperSegment {
                         offsets: crate::whisper::MsSpan {
                             from: (second_start * 1000.0) as i64,
@@ -369,14 +363,14 @@ fn split_segment(
                         tokens: seg
                             .tokens
                             .iter()
-                            .filter(|t| {
-                                !is_meta_token(&t.text)
-                                    && t.offsets.from as f64 / 1000.0 >= second_start - 1e-9
-                            })
-                            .map(|t| crate::whisper::WhisperToken {
+                            .filter(|t| !is_meta_token(&t.text))
+                            .zip(spans.iter())
+                            .filter(|(_, (s, _, _))| *s >= second_start - 1e-9)
+                            .map(|(t, _)| crate::whisper::WhisperToken {
                                 text: t.text.clone(),
                                 offsets: t.offsets,
                                 p: t.p,
+                                t_dtw: t.t_dtw,
                             })
                             .collect(),
                     };
@@ -401,6 +395,46 @@ fn split_segment(
     } else {
         push_token_line(&toks, out);
     }
+}
+
+/// (start, end, text) for every real (non-meta) token, in order.
+///
+/// With DTW timestamps (whisper-cli `-dtw`, available since the app passes
+/// the model's alignment-heads preset) a token starts where whisper's
+/// cross-attention actually heard it and ends where the next token starts —
+/// measured times, so a segment that opens on an instrumental intro no longer
+/// puts its first words seconds early. Without them (older runs, a model with
+/// no preset) whisper's evenly-spread `offsets` stand in, exactly as before.
+/// DTW times can jitter a frame backwards; starts are kept monotonic.
+///
+/// Units: `offsets` are milliseconds, but `t_dtw` is whisper's own 10 ms
+/// tick (the `-ojf` writer scales t0/t1 and leaves t_dtw raw — verified
+/// 2026-10-13 against the spoken intro of the SSB corpus clip).
+pub fn token_spans(tokens: &[WhisperToken]) -> Vec<(f64, f64, &str)> {
+    let real: Vec<&WhisperToken> = tokens.iter().filter(|t| !is_meta_token(&t.text)).collect();
+    let dtw = !real.is_empty() && real.iter().all(|t| t.t_dtw >= 0);
+    let mut out = Vec::with_capacity(real.len());
+    let mut prev_start = f64::NEG_INFINITY;
+    for (i, t) in real.iter().enumerate() {
+        let (mut s, mut e) = if dtw {
+            let next = real
+                .get(i + 1)
+                .map(|n| n.t_dtw as f64 / 100.0)
+                .unwrap_or(t.offsets.to as f64 / 1000.0);
+            (t.t_dtw as f64 / 100.0, next)
+        } else {
+            (t.offsets.from as f64 / 1000.0, t.offsets.to as f64 / 1000.0)
+        };
+        if s < prev_start {
+            s = prev_start;
+        }
+        if e < s {
+            e = s;
+        }
+        prev_start = s;
+        out.push((s, e, t.text.as_str()));
+    }
+    out
 }
 
 fn push_token_line(toks: &[(f64, f64, &str)], out: &mut Vec<Line>) {
@@ -746,9 +780,93 @@ mod tests {
                     text: s.to_string(),
                     offsets: MsSpan { from: *f, to: *t },
                     p: 0.9,
+                    t_dtw: -1,
                 })
                 .collect(),
         }
+    }
+
+    /// With `-dtw` every real token carries a measured time: the token-cut
+    /// lines start where the word was heard, not where whisper's even
+    /// spread put it (the 2026-10-10 probe's 3.7 s-early first words).
+    #[test]
+    fn dtw_token_times_replace_the_even_spread_when_present() {
+        let mut s = seg(
+            0,
+            8_000,
+            " hello world again",
+            &[
+                (0, 2_700, " hello"),
+                (2_700, 5_400, " world"),
+                (5_400, 8_000, " again"),
+            ],
+        );
+        // Without DTW: whisper's spread, untouched.
+        assert_eq!(
+            token_spans(&s.tokens),
+            vec![
+                (0.0, 2.7, " hello"),
+                (2.7, 5.4, " world"),
+                (5.4, 8.0, " again")
+            ]
+        );
+        // With DTW (10 ms ticks): starts are the measured times, ends the
+        // next start, the last end stays whisper's; a backwards jitter is
+        // clamped.
+        s.tokens[0].t_dtw = 402;
+        s.tokens[1].t_dtw = 450;
+        s.tokens[2].t_dtw = 448;
+        assert_eq!(
+            token_spans(&s.tokens),
+            vec![
+                (4.02, 4.5, " hello"),
+                (4.5, 4.5, " world"),
+                (4.5, 8.0, " again")
+            ]
+        );
+        // A partial DTW (one token unmeasured) falls back whole.
+        s.tokens[1].t_dtw = -1;
+        assert_eq!(token_spans(&s.tokens)[0], (0.0, 2.7, " hello"));
+        // Meta tokens never take part.
+        s.tokens.insert(
+            0,
+            WhisperToken {
+                text: "[_BEG_]".into(),
+                offsets: MsSpan { from: 0, to: 0 },
+                p: 1.0,
+                t_dtw: -1,
+            },
+        );
+        assert_eq!(token_spans(&s.tokens).len(), 3);
+    }
+
+    /// The assembled line opens on the first DTW time, so an instrumental
+    /// intro inside the whisper segment no longer lights the line early.
+    #[test]
+    fn a_segment_with_an_intro_starts_its_line_at_the_measured_first_word() {
+        let mut s = seg(
+            0,
+            9_000,
+            " turn the lights",
+            &[
+                (0, 3_000, " turn"),
+                (3_000, 6_000, " the"),
+                (6_000, 9_000, " lights"),
+            ],
+        );
+        s.tokens[0].t_dtw = 400;
+        s.tokens[1].t_dtw = 440;
+        s.tokens[2].t_dtw = 480;
+        let vad = vec![region(3.9, 5.5)];
+        let lines = assemble(AssembleInput {
+            segments: &[s],
+            vad: &vad,
+            stem_peak_db: -10.0,
+            track_duration_sec: 10.0,
+        });
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!((lines[0].t - 4.0).abs() < 1e-9, "{lines:?}");
+        assert_eq!(lines[0].text, "turn the lights");
     }
 
     fn region(start: f64, end: f64) -> Region {

@@ -39,6 +39,17 @@ pub struct WhisperToken {
     /// only breaks ties when choosing split points.
     #[serde(default)]
     pub p: f64,
+    /// DTW-measured token time (ms) when whisper-cli ran with `-dtw` (the
+    /// alignment-heads pass whisper.cpp computes from the decoder's
+    /// cross-attention); -1 when it did not. Unlike `offsets`, which whisper
+    /// spreads evenly across a segment, this is where the token was actually
+    /// heard — lines.rs prefers it for the token-cut lines.
+    #[serde(default = "no_dtw")]
+    pub t_dtw: i64,
+}
+
+fn no_dtw() -> i64 {
+    -1
 }
 
 #[derive(Deserialize, Debug, Clone, Copy)]
@@ -126,6 +137,21 @@ mod tests {
         assert_eq!(seg.tokens.len(), 2);
         assert!(is_meta_token(&parsed.transcription[0].tokens[0].text));
         assert!((seg.tokens[0].p - 0.963371).abs() < 1e-9);
+        // The sample ran without `-dtw`: every token reads "not measured".
+        assert_eq!(seg.tokens[0].t_dtw, -1);
+    }
+
+    #[test]
+    fn dtw_times_parse_and_default_to_unmeasured() {
+        let parsed = parse(
+            r#"{ "transcription": [ { "offsets": {"from": 0, "to": 900}, "text": " hi there",
+                 "tokens": [ { "text": " hi", "offsets": {"from": 0, "to": 450}, "t_dtw": 120 },
+                             { "text": " there", "offsets": {"from": 450, "to": 900} } ] } ] }"#,
+        )
+        .unwrap();
+        let toks = &parsed.transcription[0].tokens;
+        assert_eq!(toks[0].t_dtw, 120);
+        assert_eq!(toks[1].t_dtw, -1);
     }
 
     #[test]

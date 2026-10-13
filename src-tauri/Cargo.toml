@@ -47,6 +47,10 @@ sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 sha2 = "0.11"
+# Runtime packs (lyrics.rs): unpack the pinned whisper.cpp CUDA zip. The
+# `zip` crate is already in the tree via tauri-plugin-updater; "deflate" is
+# the one feature the official zips need, and flate2 is in the tree too.
+zip = { version = "4", default-features = false, features = ["deflate"] }
 
 [target."cfg(windows)".dependencies]
 # Web MIDI permission handler (midi_permission.rs): Chromium denies

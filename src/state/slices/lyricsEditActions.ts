@@ -295,7 +295,12 @@ export function lyricsEditActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
         ctx.flashNotice(`Line re-aligned — ${words.length} words timed`);
       } catch (e) {
         const message = String((e as Error).message ?? e);
-        if (message !== "cancelled") {
+        // After a Cancel, whatever the run dies of is the cancel: the Rust
+        // cancel sweeps the staging temps too, so a cancel that lands while
+        // the slice is still being staged surfaces as "No audio staging in
+        // progress" from the next chunk (measured 2026-10-13 on a GPU fast
+        // enough for the cancel to land there) — not an error to show.
+        if (message !== "cancelled" && !realignCancelled) {
           set({ error: `Re-align failed: ${describeLyricsFailure(message)}` });
         }
       } finally {

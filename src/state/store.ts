@@ -641,7 +641,8 @@ interface Actions {
    *  was open, and clearing unconditionally at that point would delete
    *  content the confirm never asked about. Returns whether it cleared. */
   clearLyricsIfUnchanged(expectedFileName: string | null): boolean;
-  /** Refresh lyrics model manifest state + (once) the DirectML probe. */
+  /** Refresh lyrics model + runtime-pack manifest state and (once) the GPU
+   * probe (DirectML + NVIDIA). */
   refreshLyricsGen(): Promise<void>;
   /** Download the missing models of a tier (resume + SHA-256 in Rust). */
   downloadLyricsTier(tier: LyricsTier): Promise<void>;
@@ -656,6 +657,11 @@ interface Actions {
   /** Delete one lyrics model — or its stalled partial download — from
    * disk, after asking. Refreshes the manifest state like a download. */
   removeLyricsModel(id: string): Promise<void>;
+  /** Download + unpack a runtime pack (the CUDA whisper build) — the model
+   * download flow, pack-shaped. */
+  downloadLyricsRuntime(id: string): Promise<void>;
+  /** Delete an installed runtime pack (or its partial download), after asking. */
+  removeLyricsRuntime(id: string): Promise<void>;
   // --- lyrics correction editor (FEAT-004 phase 4) ---
   /** Replace line i's text (word timings follow; see lyricsEdit.setLineText). */
   editLyricLineText(i: number, text: string): void;

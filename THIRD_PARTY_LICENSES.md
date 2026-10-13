@@ -12,11 +12,25 @@ in this repository) that orchestrates the following third-party components:
   external process for speech-to-text. License: **MIT** (The ggml authors).
   The bundled `libopenblas.dll` is **BSD-3-Clause** (OpenBLAS). Full texts:
   `WHISPER-LICENSE.txt` next to the binaries.
+- **whisper.cpp CUDA build (optional GPU acceleration pack)** — the same
+  v1.9.1 release's official `whisper-cublas-12.4.0-bin-x64.zip`, downloaded
+  by the user on demand from the whisper.cpp GitHub release (never bundled
+  in the installer), SHA-256-verified as a whole and file by file in-app,
+  and unpacked under the app's data folder. It contains whisper.cpp / ggml
+  binaries (**MIT**) plus three NVIDIA CUDA runtime libraries the CUDA
+  backend links — `cudart64_12.dll`, `cublas64_12.dll`, `cublasLt64_12.dll`
+  — which NVIDIA distributes under the **NVIDIA CUDA Toolkit End User
+  License Agreement**, whose redistributable-components terms permit
+  shipping them with an application; they are proprietary, not open
+  source, and ship exactly as the whisper.cpp project packages them. Using
+  them requires the user's own NVIDIA driver.
 - **Whisper models** (OpenAI; ggml conversions from
   <https://huggingface.co/ggerganov/whisper.cpp>) — downloaded on first use
   from Beatform's pinned mirror
-  (<https://github.com/beatform-app/models/releases/tag/v1>), SHA-256-verified
-  in-app. License: **MIT** (OpenAI Whisper weights).
+  (<https://github.com/beatform-app/models/releases/tag/v1>) or, for the
+  Large v3 and Large v3 Turbo models, directly from the whisper.cpp
+  project's Hugging Face repository, SHA-256-verified in-app in both cases.
+  License: **MIT** (OpenAI Whisper weights).
 - **Ultimate Vocal Remover (UVR) MDX-Net vocal model**
   (`UVR-MDX-NET-Voc_FT.onnx`) — trained and published by the UVR project
   (<https://github.com/Anjok07/ultimatevocalremovergui>), downloaded on first
@@ -89,23 +103,24 @@ JavaScript like any other npm dependency.
 The desktop app (`src-tauri`) links a Rust dependency tree of ~540 crates,
 locked in `src-tauri/Cargo.lock`. The direct dependencies are:
 
-| Crate                                             | Purpose                                                | License           |
-| ------------------------------------------------- | ------------------------------------------------------ | ----------------- |
-| `tauri`, `tauri-plugin-dialog`, `tauri-plugin-fs` | Desktop shell, native dialogs, filesystem access       | MIT OR Apache-2.0 |
-| `tauri-plugin-updater`, `tauri-plugin-process`    | Signed auto-updates and the post-update restart        | MIT OR Apache-2.0 |
-| `cpal`                                            | Cross-platform audio I/O (WASAPI loopback capture)     | Apache-2.0        |
-| `lofty`                                           | Audio metadata/tag reading for the library scanner     | MIT OR Apache-2.0 |
-| `walkdir`                                         | Recursive directory traversal for the library scanner  | MIT OR Unlicense  |
-| `serde`, `serde_json`                             | Serialization                                          | MIT OR Apache-2.0 |
-| `reqwest`, `rustls`, `sha2`                       | Verified lyrics-model downloads (also used by updater) | MIT OR Apache-2.0 |
-| `naga`                                            | WGSL validation for the Shadertoy import transpiler    | MIT OR Apache-2.0 |
-| `base64`                                          | Loopback audio frames over the IPC bridge              | MIT OR Apache-2.0 |
-| `sysinfo`                                         | Performance-overlay CPU/memory sampling                | MIT               |
-| `webview2-com`, `windows-core`                    | WebView2 COM interop (Web MIDI permission grant)       | MIT               |
-| `winreg`                                          | Uninstall-entry version alignment after auto-update    | MIT               |
-| `ort` (lyrics sidecar)                            | ONNX Runtime bindings for MDX-Net vocal isolation      | MIT OR Apache-2.0 |
-| `realfft` (lyrics sidecar)                        | Real-signal STFT for the MDX-Net pipeline              | MIT               |
-| `rustfft` (lyrics sidecar)                        | FFT engine under `realfft`                             | MIT OR Apache-2.0 |
+| Crate                                             | Purpose                                                    | License           |
+| ------------------------------------------------- | ---------------------------------------------------------- | ----------------- |
+| `tauri`, `tauri-plugin-dialog`, `tauri-plugin-fs` | Desktop shell, native dialogs, filesystem access           | MIT OR Apache-2.0 |
+| `tauri-plugin-updater`, `tauri-plugin-process`    | Signed auto-updates and the post-update restart            | MIT OR Apache-2.0 |
+| `cpal`                                            | Cross-platform audio I/O (WASAPI loopback capture)         | Apache-2.0        |
+| `lofty`                                           | Audio metadata/tag reading for the library scanner         | MIT OR Apache-2.0 |
+| `walkdir`                                         | Recursive directory traversal for the library scanner      | MIT OR Unlicense  |
+| `serde`, `serde_json`                             | Serialization                                              | MIT OR Apache-2.0 |
+| `reqwest`, `rustls`, `sha2`                       | Verified lyrics-model downloads (also used by updater)     | MIT OR Apache-2.0 |
+| `zip`                                             | Unpacking the GPU acceleration pack (also used by updater) | MIT               |
+| `naga`                                            | WGSL validation for the Shadertoy import transpiler        | MIT OR Apache-2.0 |
+| `base64`                                          | Loopback audio frames over the IPC bridge                  | MIT OR Apache-2.0 |
+| `sysinfo`                                         | Performance-overlay CPU/memory sampling                    | MIT               |
+| `webview2-com`, `windows-core`                    | WebView2 COM interop (Web MIDI permission grant)           | MIT               |
+| `winreg`                                          | Uninstall-entry version alignment after auto-update        | MIT               |
+| `ort` (lyrics sidecar)                            | ONNX Runtime bindings for MDX-Net vocal isolation          | MIT OR Apache-2.0 |
+| `realfft` (lyrics sidecar)                        | Real-signal STFT for the MDX-Net pipeline                  | MIT               |
+| `rustfft` (lyrics sidecar)                        | FFT engine under `realfft`                                 | MIT OR Apache-2.0 |
 
 These and their transitive dependencies are overwhelmingly dual-licensed
 `MIT OR Apache-2.0` (the Rust ecosystem convention). The authoritative,

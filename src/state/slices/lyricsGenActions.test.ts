@@ -79,6 +79,17 @@ vi.mock("../platform", async (importOriginal) => {
     // test here (confirm-first, result surfacing, state refresh, guards).
     lyricsModelVerify: vi.fn(async () => true),
     lyricsModelRemove: vi.fn(async () => {}),
+    // 2026-10-13: runtime packs + the richer GPU probe. No pack, no NVIDIA
+    // by default — the CPU shape every existing case was written against.
+    lyricsRuntimesState: vi.fn(async () => ({ runtimesDir: "C:/r", runtimes: [] })),
+    lyricsRuntimeDownload: vi.fn(async () => {}),
+    lyricsRuntimeRemove: vi.fn(async () => {}),
+    lyricsGpuProbe: vi.fn(async () => ({
+      dml: false,
+      cudaCapable: false,
+      gpuName: null,
+      vramMb: null,
+    })),
     // HD-08: the ONE sidecar cancel — lyrics_align_line shares the job slot
     // with lyrics_generate, so the same Rust command reaches a re-align.
     lyricsGenerateCancel: vi.fn(async () => {}),
@@ -376,6 +387,30 @@ describe("generateLyrics measured-RTF persistence", () => {
     expect(rtf.whisperSmall).toBeNull();
   });
 
+  it("a CUDA whisper run lands in the tier's CUDA slot, never the CPU one", async () => {
+    const done = s().generateLyrics("turbo", "auto");
+    await until(() => h.onLine !== null);
+    h.onLine!(JSON.stringify({ type: "stageDone", stage: "transcribe", wallSec: 4, rtf: 0.032 }));
+    h.onLine!(
+      JSON.stringify({
+        type: "result",
+        lrcPath: "x.lrc",
+        lines: 3,
+        vocalSec: 50,
+        ep: "dml",
+        language: "en",
+        whisper: "cuda",
+        whisperDevice: "NVIDIA GeForce RTX 5060 Ti",
+      }),
+    );
+    h.resolveGenerate!(LRC);
+    await done;
+    const rtf = getPrefs().measuredRtf;
+    expect(rtf.whisperTurboCuda).toBe(0.032);
+    expect(rtf.whisperTurbo).toBeNull();
+    expect(rtf.whisperSmall).toBeNull();
+  });
+
   it("a second completed run blends (EWMA) rather than overwriting the first", async () => {
     setPrefs({ measuredRtf: { ...NO_MEASURED_RTF, align: 0.2 } });
     const done = s().generateLyrics("small", "auto");
@@ -577,6 +612,54 @@ describe("realignLyricLine cancel (HD-08)", () => {
 
     expect(lyricsAlignLine).not.toHaveBeenCalled();
     expect(s().lyricsRealign).toBeNull();
+    expect(s().error).toBeNull();
+  });
+
+  it("a Cancel that lands while the slice is staging stays silent even when the staging then fails", async () => {
+    // The Rust cancel sweeps the staging temps, so the staging call that
+    // was in flight rejects with the "no staging" message — measured on a
+    // GPU fast enough for the cancel to land there (2026-10-13). After a
+    // Cancel that is the cancel, never an error.
+    const { lyricsAlignLine } = await import("../platform");
+    vi.mocked(lyricsAlignLine).mockClear();
+    s().loadLyricsText("song.lrc", LRC);
+    let failStage!: (e: Error) => void;
+    vi.mocked(lyricsStageAudio).mockImplementationOnce(
+      () =>
+        new Promise<void>((_r, reject) => {
+          failStage = reject;
+        }),
+    );
+    const done = s().realignLyricLine(2);
+    await until(() => vi.mocked(lyricsStageAudio).mock.calls.length === 1);
+    s().cancelLyricsRealign();
+    failStage(new Error("No audio staging in progress — call lyrics_audio_begin first"));
+    await done;
+    expect(lyricsAlignLine).not.toHaveBeenCalled();
+    expect(s().lyricsRealign).toBeNull();
+    expect(s().error).toBeNull();
+  });
+
+  it("the same for generateLyrics: a cancelled run that dies of the swept staging raises no error and no CPU retry", async () => {
+    let failStage!: (e: Error) => void;
+    vi.mocked(lyricsStageAudio).mockImplementationOnce(
+      () =>
+        new Promise<void>((_r, reject) => {
+          failStage = reject;
+        }),
+    );
+    const { lyricsGenerate } = await import("../platform");
+    vi.mocked(lyricsGenerate).mockClear();
+    const done = s().generateLyrics("small", "auto");
+    await until(() => vi.mocked(lyricsStageAudio).mock.calls.length === 1);
+    s().cancelLyricsGenerate();
+    expect(lyricsGenerateCancel).toHaveBeenCalledTimes(1);
+    failStage(new Error("lyrics sidecar exited abnormally (exit code: 1)"));
+    await done;
+    // Neither the "exited abnormally" CPU retry nor an error toast: the run
+    // was cancelled, so it ends quietly without a second attempt.
+    expect(lyricsGenerate).not.toHaveBeenCalled();
+    expect(s().lyricsGen.phase).toBe("idle");
     expect(s().error).toBeNull();
   });
 

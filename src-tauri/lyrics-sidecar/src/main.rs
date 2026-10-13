@@ -54,6 +54,10 @@ struct Args {
     /// job stays line-level, exactly the phase-2 behavior.
     align_model: Option<PathBuf>,
     align_vocab: Option<PathBuf>,
+    /// whisper.cpp alignment-heads preset for DTW token timestamps (`-dtw`,
+    /// e.g. "small", "large.v3.turbo"). The app derives it from the model it
+    /// picked; absent = whisper's evenly-spread token offsets, as before.
+    whisper_dtw: Option<String>,
 }
 
 /// `--align-line` (phase 4): re-align ONE line's text against a short WAV
@@ -187,9 +191,17 @@ fn parse_args(argv: &[String]) -> Result<Mode, String> {
         dump_stem: map.remove("dump-stem").map(PathBuf::from),
         align_model: map.remove("align-model").map(PathBuf::from),
         align_vocab: map.remove("align-vocab").map(PathBuf::from),
+        whisper_dtw: map.remove("whisper-dtw"),
     };
     if args.align_model.is_some() != args.align_vocab.is_some() {
         return Err("--align-model and --align-vocab must be passed together".into());
+    }
+    // The preset reaches whisper-cli's argv verbatim; whisper.cpp's own names
+    // are letters, digits and dots ("large.v3.turbo").
+    if let Some(d) = &args.whisper_dtw {
+        if d.is_empty() || !d.chars().all(|c| c.is_ascii_alphanumeric() || c == '.') {
+            return Err(format!("bad --whisper-dtw: {d}"));
+        }
     }
     if let Some(k) = map.keys().next() {
         return Err(format!("unknown argument: --{k}"));
@@ -489,7 +501,6 @@ fn run(args: Args) {
     let verdict = vad::detect(&stem.0, &stem.1);
     let regions = verdict.regions;
     let vocal_sec = vad::total_active(&regions).max(0.0);
-    drop(stem);
     emit(&Event::StageDone {
         stage: Stage::Vad,
         wall_sec: t0.elapsed().as_secs_f64(),
@@ -497,19 +508,38 @@ fn run(args: Args) {
         detail: None,
     });
 
+    // ---- language (from the vocal stem, before the stem is dropped) ----
+    let language = if args.language == "auto" {
+        match detect_language(&args, &stem, &regions, &cancel) {
+            Some(code) => {
+                eprintln!("[lyrics-sidecar] language {code} (whisper on the vocal stem)");
+                code
+            }
+            None if cancel.cancelled() => cancelled_exit(),
+            None => "auto".to_string(),
+        }
+    } else {
+        args.language.clone()
+    };
+    drop(stem);
+
     // ---- transcribe (full mix — spike adjustment 3) --------------------
     let t0 = Instant::now();
-    let parsed = match transcribe(&args, duration, &cancel) {
+    let Transcript {
+        json: parsed,
+        backend,
+    } = match transcribe(&args, &language, duration, &cancel) {
         Ok(p) => p,
         Err(TranscribeError::Cancelled) => cancelled_exit(),
         Err(TranscribeError::Failed(e)) => fail(&e),
     };
     let transcribe_wall = t0.elapsed().as_secs_f64();
+    let backend_label = backend.label();
     emit(&Event::StageDone {
         stage: Stage::Transcribe,
         wall_sec: transcribe_wall,
         rtf: Some(transcribe_wall / duration),
-        detail: None,
+        detail: Some(&backend_label),
     });
     if cancel.cancelled() {
         cancelled_exit();
@@ -585,6 +615,8 @@ fn run(args: Args) {
         vocal_sec,
         ep,
         language: &parsed.result.language,
+        whisper: if backend.cuda { "cuda" } else { "cpu" },
+        whisper_device: backend.device.as_deref(),
         line_details: line_details.as_deref(),
     });
 }
@@ -676,13 +708,172 @@ enum TranscribeError {
     Failed(String),
 }
 
+/// Which runtime whisper-cli actually used, read off its own log lines
+/// (`ggml_cuda_init: found 1 CUDA devices:` / `  Device 0: <name>, ...`).
+/// The CUDA build on a PC without an NVIDIA driver loads no CUDA backend and
+/// runs on the CPU — this reports that honestly instead of assuming.
+#[derive(Debug, Default, PartialEq)]
+struct WhisperBackend {
+    cuda: bool,
+    device: Option<String>,
+}
+
+impl WhisperBackend {
+    /// Fold one whisper-cli stderr line into the detection.
+    fn observe(&mut self, line: &str) {
+        if line.contains("CUDA device") && line.contains("found") {
+            self.cuda = true;
+        }
+        if let Some(rest) = line.trim_start().strip_prefix("Device 0:") {
+            let name = rest.split(',').next().unwrap_or("").trim();
+            if !name.is_empty() {
+                self.device = Some(name.to_string());
+            }
+        }
+    }
+
+    /// The transcribe stage's detail text: "CUDA · <device>" or "CPU".
+    fn label(&self) -> String {
+        if self.cuda {
+            format!("CUDA · {}", self.device.as_deref().unwrap_or("NVIDIA GPU"))
+        } else {
+            "CPU".to_string()
+        }
+    }
+}
+
+struct Transcript {
+    json: whisper::WhisperJson,
+    backend: WhisperBackend,
+}
+
+/// Seconds of vocal audio the language pre-pass listens to — whisper's
+/// language id reads exactly one 30 s window, so feed it voice and nothing
+/// else.
+const LANGUAGE_SAMPLE_SEC: f64 = 30.0;
+
+/// The voiced regions of the stem, in order, concatenated up to
+/// `LANGUAGE_SAMPLE_SEC` — the audio the language pre-pass hears. Pure.
+fn language_sample(stem: &mdx::StemChannels, regions: &[vad::Region]) -> audio::Stereo {
+    let rate = audio::SAMPLE_RATE as f64;
+    let budget = (LANGUAGE_SAMPLE_SEC * rate) as usize;
+    let mut left = Vec::with_capacity(budget);
+    let mut right = Vec::with_capacity(budget);
+    for r in regions {
+        if left.len() >= budget {
+            break;
+        }
+        let s0 = ((r.start.max(0.0) * rate) as usize).min(stem.0.len());
+        let s1 = ((r.end.max(0.0) * rate) as usize).min(stem.0.len());
+        if s1 <= s0 {
+            continue;
+        }
+        let take = (s1 - s0).min(budget - left.len());
+        left.extend_from_slice(&stem.0[s0..s0 + take]);
+        right.extend_from_slice(&stem.1[s0..s0 + take]);
+    }
+    audio::Stereo { left, right }
+}
+
+/// A whisper language code is 2-3 lowercase letters (its g_lang table);
+/// anything else — or the empty "auto" echo — is not worth forcing.
+fn valid_language_code(code: &str) -> bool {
+    (2..=3).contains(&code.len()) && code.chars().all(|c| c.is_ascii_lowercase())
+}
+
+/// Language identification on the VOCAL STEM (2026-10-13). whisper's own
+/// auto-detect reads the first 30 s of whatever it is given, and on the full
+/// mix that is often an instrumental intro: the medium model "heard" Khmer on
+/// an English rock song and spent 103 s decoding garbage (RTF 0.32 against
+/// 0.05 on the same card with the language pinned). The isolated stem's
+/// voiced regions, through whisper-cli's `-dl` mode, name the language in
+/// under a second on a GPU before the real pass starts. None = nothing
+/// usable (no voice found, the probe failed, or the job was cancelled) and
+/// the pass runs with "auto" exactly as before.
+fn detect_language(
+    args: &Args,
+    stem: &mdx::StemChannels,
+    regions: &[vad::Region],
+    cancel: &Arc<Canceller>,
+) -> Option<String> {
+    let sample = language_sample(stem, regions);
+    if sample.duration_sec() < 1.0 {
+        return None;
+    }
+    let prefix = std::env::temp_dir().join(format!(
+        "beatform-lyrics-lang-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or_default()
+    ));
+    let wav_path = PathBuf::from(format!("{}.wav", prefix.to_string_lossy()));
+    let json_path = PathBuf::from(format!("{}.json", prefix.to_string_lossy()));
+    let cleanup = || {
+        let _ = std::fs::remove_file(&wav_path);
+        let _ = std::fs::remove_file(&json_path);
+    };
+    if std::fs::write(&wav_path, audio::wav_s16(&sample)).is_err() {
+        cleanup();
+        return None;
+    }
+    let mut cmd = Command::new(&args.whisper_cli);
+    cmd.arg("-m")
+        .arg(&args.whisper_model)
+        .arg("-f")
+        .arg(&wav_path)
+        .arg("-dl")
+        .arg("-ojf")
+        .arg("-of")
+        .arg(&prefix)
+        .arg("-t")
+        .arg(args.threads.to_string())
+        .arg("-l")
+        .arg("auto")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[lyrics-sidecar] language probe spawn failed: {e}");
+            cleanup();
+            return None;
+        }
+    };
+    *cancel.child.lock().expect("cancel mutex") = Some(child);
+    let status = wait_registered_child(cancel);
+    let code = match status {
+        Ok(s) if s.success() => std::fs::read_to_string(&json_path)
+            .ok()
+            .and_then(|j| whisper::parse(&j).ok())
+            .map(|w| w.result.language)
+            .filter(|c| valid_language_code(c)),
+        Ok(s) => {
+            eprintln!("[lyrics-sidecar] language probe failed ({s}) — auto");
+            None
+        }
+        Err(_) => None,
+    };
+    cleanup();
+    code
+}
+
 /// Spawn whisper-cli on the ORIGINAL input file (full mix), stream progress
-/// from its stderr, parse the `-ojf` JSON it writes.
+/// from its stderr, parse the `-ojf` JSON it writes. `language` is the
+/// forced code (or "auto").
 fn transcribe(
     args: &Args,
+    language: &str,
     duration: f64,
     cancel: &Arc<Canceller>,
-) -> Result<whisper::WhisperJson, TranscribeError> {
+) -> Result<Transcript, TranscribeError> {
     // Unique output prefix in the OS temp dir; whisper appends ".json".
     let prefix = std::env::temp_dir().join(format!(
         "beatform-lyrics-{}-{}",
@@ -707,10 +898,20 @@ fn transcribe(
         .arg("-bs")
         .arg("5")
         .arg("-l")
-        .arg(&args.language)
-        .arg("-pp")
-        .arg("-np")
-        .stdin(Stdio::null())
+        .arg(language)
+        .arg("-pp");
+    // `-np` used to silence whisper's log entirely; the log is now READ: the
+    // backend lines (CUDA found / device name) are the only honest source of
+    // which runtime transcribed, and the bounded tail still serves failures.
+    if let Some(dtw) = &args.whisper_dtw {
+        // whisper.cpp 1.9 enables flash attention by default and silently
+        // DISABLES dtw under it ("dtw_token_timestamps is not supported with
+        // flash_attn") — measured 2026-10-13: every token came back -1 until
+        // `-nfa` rode along. The measured timestamps are worth the slower
+        // attention path on the token-cut lines.
+        cmd.arg("-nfa").arg("-dtw").arg(dtw);
+    }
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
     #[cfg(windows)]
@@ -727,6 +928,7 @@ fn transcribe(
     let started = Instant::now();
     let reader = std::thread::spawn(move || {
         let mut tail: Vec<String> = Vec::new();
+        let mut backend = WhisperBackend::default();
         let mut buf = String::new();
         let mut r = std::io::BufReader::new(stderr);
         loop {
@@ -746,6 +948,7 @@ fn transcribe(
                             rtf: None,
                         });
                     } else if !line.is_empty() {
+                        backend.observe(line);
                         tail.push(line.to_string());
                         if tail.len() > 8 {
                             tail.remove(0);
@@ -755,7 +958,7 @@ fn transcribe(
                 Err(_) => break,
             }
         }
-        tail.join(" | ")
+        (tail.join(" | "), backend)
     });
 
     // Register for cancel-kill, then wait.
@@ -767,7 +970,7 @@ fn transcribe(
             return Err(e);
         }
     };
-    let stderr_tail = reader.join().unwrap_or_default();
+    let (stderr_tail, backend) = reader.join().unwrap_or_default();
     if cancel.cancelled() {
         let _ = std::fs::remove_file(&json_path);
         return Err(TranscribeError::Cancelled);
@@ -782,7 +985,8 @@ fn transcribe(
     let json = std::fs::read_to_string(&json_path)
         .map_err(|e| TranscribeError::Failed(format!("whisper output missing: {e}")))?;
     let _ = std::fs::remove_file(&json_path);
-    whisper::parse(&json).map_err(TranscribeError::Failed)
+    let json = whisper::parse(&json).map_err(TranscribeError::Failed)?;
+    Ok(Transcript { json, backend })
 }
 
 /// Wait for the child currently registered with the canceller, killing it the
@@ -826,7 +1030,9 @@ fn wait_registered_child(cancel: &Canceller) -> Result<std::process::ExitStatus,
     }
 }
 
-/// "whisper_print_progress_callback: progress =   5%" -> 5.0
+/// "whisper_print_progress_callback: progress =   5%" -> 5.0. Only the
+/// progress line is parsed to a number; the rest of whisper's log reaches
+/// `WhisperBackend::observe` and the failure tail.
 fn parse_whisper_progress(line: &str) -> Option<f64> {
     let idx = line.find("progress =")?;
     let rest = line[idx + "progress =".len()..].trim();
@@ -873,10 +1079,13 @@ mod tests {
             "C:/w2v2.onnx",
             "--align-vocab",
             "C:/vocab.json",
+            "--whisper-dtw",
+            "large.v3.turbo",
         ]);
         let Ok(Mode::Run(args)) = parse_args(&argv) else {
             panic!("should parse");
         };
+        assert_eq!(args.whisper_dtw.as_deref(), Some("large.v3.turbo"));
         assert_eq!(args.gpu, mdx::GpuMode::Cpu);
         assert_eq!(args.language, "en");
         assert_eq!(args.threads, 2);
@@ -1107,6 +1316,68 @@ mod tests {
             panic!("a clean exit must not read as an error");
         };
         assert!(status.success());
+    }
+
+    #[test]
+    fn the_backend_is_read_off_whispers_own_log_lines() {
+        let mut b = WhisperBackend::default();
+        assert_eq!(b.label(), "CPU");
+        for line in [
+            "whisper_init_with_params_no_state: use gpu    = 1",
+            "ggml_cuda_init: found 1 CUDA devices:",
+            "  Device 0: NVIDIA GeForce RTX 5060 Ti, compute capability 12.0, VMM: yes",
+        ] {
+            b.observe(line);
+        }
+        assert!(b.cuda);
+        assert_eq!(b.device.as_deref(), Some("NVIDIA GeForce RTX 5060 Ti"));
+        assert_eq!(b.label(), "CUDA · NVIDIA GeForce RTX 5060 Ti");
+        // The CPU build (and the CUDA build without a driver) prints neither.
+        let mut cpu = WhisperBackend::default();
+        cpu.observe("whisper_backend_init_gpu: no GPU found");
+        assert_eq!(cpu, WhisperBackend::default());
+    }
+
+    #[test]
+    fn the_language_sample_is_the_first_thirty_voiced_seconds() {
+        let rate = audio::SAMPLE_RATE as usize;
+        let stem: mdx::StemChannels = (vec![0.5f32; rate * 60], vec![0.25f32; rate * 60]);
+        let regions = [
+            vad::Region {
+                start: 2.0,
+                end: 12.0,
+            },
+            vad::Region {
+                start: 20.0,
+                end: 50.0,
+            },
+        ];
+        let sample = language_sample(&stem, &regions);
+        // 10 s from the first region + 20 s of the second = the 30 s budget.
+        assert!((sample.duration_sec() - LANGUAGE_SAMPLE_SEC).abs() < 1e-6);
+        assert_eq!(sample.left[0], 0.5);
+        assert_eq!(sample.right[0], 0.25);
+        // No voice at all: nothing to listen to.
+        assert_eq!(language_sample(&stem, &[]).duration_sec(), 0.0);
+        // Regions past the stem clamp instead of panicking.
+        let short = language_sample(
+            &stem,
+            &[vad::Region {
+                start: 58.0,
+                end: 99.0,
+            }],
+        );
+        assert!((short.duration_sec() - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn whisper_language_codes_are_two_or_three_lowercase_letters() {
+        for ok in ["en", "de", "yue", "km"] {
+            assert!(valid_language_code(ok), "{ok}");
+        }
+        for bad in ["", "auto", "EN", "e", "english", "e1"] {
+            assert!(!valid_language_code(bad), "{bad}");
+        }
     }
 
     #[test]
