@@ -282,7 +282,24 @@ async function download(url, file) {
 }
 
 function printGatesChecklist() {
-  const gates = readFileSync(path.join(root, "GATES.md"), "utf8");
+  const gatesFile = path.join(root, "GATES.md");
+  if (!existsSync(gatesFile)) {
+    // GATES.md left with the legacy instruction files (2026-10-13); the
+    // canonical gate set is the one .github/workflows/release.yml runs
+    // before it builds — the same commands, so they are listed here.
+    console.log("\n--- gates (the release workflow's own set; run them on this HEAD) ---");
+    console.log(
+      [
+        "  npm run typecheck && npm run lint && npm run format:check && npm test",
+        "  (cd src-tauri && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace --lib --bins)",
+        "  npm run build",
+        "  the device harnesses that touch what changed (TESTING.md names them)",
+      ].join("\n"),
+    );
+    console.log("--- end of gates ---\n");
+    return;
+  }
+  const gates = readFileSync(gatesFile, "utf8");
   const lines = gates.split(/\r?\n/);
   const start = lines.findIndex((l) => l.startsWith("## 1."));
   const end = lines.findIndex((l) => l.startsWith("## 4."));
