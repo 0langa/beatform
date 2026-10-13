@@ -693,34 +693,41 @@ export async function renderPresetFrames(
   const times = opts.times ?? [1, 3];
   const canvas = new OffscreenCanvas(width, height);
   const renderer = await WebGPURenderer.create(canvas);
-  renderer.resize(width, height, 1);
-  renderer.setBackground({ mode: 0, color: [0, 0, 0] });
-  renderer.setPost(DEFAULT_POST);
-  renderer.setMotion({ ...DEFAULT_MOTION, ...opts.motion });
-  renderer.setBuilderParams(packBuilderParams(defaultBuilderStack()));
-  const errors = await renderer.compilePresetCheck(preset);
-  if (errors.length) throw new Error(`${presetId} does not compile: ${errors.join("; ")}`);
-  renderer.setPreset(preset);
-  const params = defaultParams(preset);
-  for (const [key, value] of Object.entries(values)) {
-    if (typeof value === "number") params[key] = value;
-  }
-  const out: { t: number; png: string }[] = [];
-  let frame = 0;
-  for (const target of [...times].sort((a, b) => a - b)) {
-    const last = Math.round(target * 60);
-    for (; frame <= last; frame++) {
-      const t = frame / 60;
-      renderer.render(demoFeatures(t), t, params);
+  // Disposed in the finally like the matrix's own renderer: the harness
+  // calls this once per case, and a dev session that dumps a few hundred
+  // frames must not keep a few hundred device-sized texture sets alive.
+  try {
+    renderer.resize(width, height, 1);
+    renderer.setBackground({ mode: 0, color: [0, 0, 0] });
+    renderer.setPost(DEFAULT_POST);
+    renderer.setMotion({ ...DEFAULT_MOTION, ...opts.motion });
+    renderer.setBuilderParams(packBuilderParams(defaultBuilderStack()));
+    const errors = await renderer.compilePresetCheck(preset);
+    if (errors.length) throw new Error(`${presetId} does not compile: ${errors.join("; ")}`);
+    renderer.setPreset(preset);
+    const params = defaultParams(preset);
+    for (const [key, value] of Object.entries(values)) {
+      if (typeof value === "number") params[key] = value;
     }
-    await renderer.gpuDone();
-    const blob = await canvas.convertToBlob({ type: "image/png" });
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    let bin = "";
-    for (let i = 0; i < bytes.length; i += 0x8000) {
-      bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const out: { t: number; png: string }[] = [];
+    let frame = 0;
+    for (const target of [...times].sort((a, b) => a - b)) {
+      const last = Math.round(target * 60);
+      for (; frame <= last; frame++) {
+        const t = frame / 60;
+        renderer.render(demoFeatures(t), t, params);
+      }
+      await renderer.gpuDone();
+      const blob = await canvas.convertToBlob({ type: "image/png" });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      }
+      out.push({ t: target, png: `data:image/png;base64,${btoa(bin)}` });
     }
-    out.push({ t: target, png: `data:image/png;base64,${btoa(bin)}` });
+    return out;
+  } finally {
+    renderer.dispose();
   }
-  return out;
 }

@@ -24,7 +24,7 @@ import { mergeEmbeddedDefs, registerCustomPreset } from "../render/presets/custo
 import { WebGPURenderer } from "../render/webgpuRenderer";
 import { stemValuesAt, type StemEntry, type StemSlot } from "../audio/stems";
 import { defaultParams } from "../render/types";
-import { presetById, presets } from "../render/presets";
+import { knownPresetId, presetById, presets } from "../render/presets";
 import { extractCoverPalette, type CoverPalette } from "./coverPalette";
 import { APP_VERSION } from "../version";
 import {
@@ -147,6 +147,7 @@ import {
   loadStoredExportSettings,
   loadStoredSmoothSpectrum,
   saveStoredSmoothSpectrum,
+  markCleanExit,
   markSessionDirty,
   setAutosaveFlushOnPagehide,
   setWriteFailureNotifier,
@@ -1193,8 +1194,8 @@ export const useVizStore = create<VizState>((set, get) => {
 
   /** Record ONE history entry for `key`, then run `fn` with inner record()
    * calls suppressed — a compound action must cost exactly one Ctrl+Z. */
-  const asOneGesture = (key: string, fn: () => void) => {
-    record(key);
+  const asOneGesture = (key: string, fn: () => void, extraDefs?: PresetDef[]) => {
+    record(key, extraDefs);
     recordSuspended = true;
     try {
       fn();
@@ -2000,7 +2001,16 @@ export const useVizStore = create<VizState>((set, get) => {
             set({ performOpen: true });
           });
           const unClosed = await listen("perform:closed", () => {
-            set({ performOpen: false });
+            // The output window takes its blackout with it: setStageMode
+            // leaves `blackout` standing while performOpen (it belongs to the
+            // audience surface, not the operator's local view), so a `0`
+            // pressed with Stage off and the window then closed had no owner
+            // left to clear it — the Perform button sat disabled on "Blacked
+            // out — tap to restore", `0`/`.` were inert, `S` later entered
+            // Stage straight into black, and reopening the window published
+            // blackout:true. In Stage the blackout is the operator's own and
+            // stays, clearable the usual way.
+            set({ performOpen: false, ...(get().stageMode ? {} : { blackout: false }) });
             // destroy() can skip the page's own pagehide "bye" — make the
             // publisher stop regardless.
             notePerformWindowClosed();
@@ -2081,6 +2091,16 @@ export const useVizStore = create<VizState>((set, get) => {
                 console.warn(
                   "[autosave] close-flush did not finish in time — closing with the last completed write",
                 );
+              } else {
+                // The flush landed, so the file matches the document: this IS
+                // a clean exit. Marked here because destroy() below can skip
+                // the page's own `pagehide` — the only other writer of the
+                // marker — so every ordinary desktop quit left it at "0" and
+                // the next launch falsely said "Recovered your work from the
+                // last session". A timed-out or failed flush leaves it alone
+                // on purpose: the file on disk is then older than what was on
+                // screen, which is exactly what recovery is for.
+                markCleanExit();
               }
             } catch (e) {
               console.error("[autosave] close-flush failed", e);
@@ -2792,6 +2812,26 @@ export const useVizStore = create<VizState>((set, get) => {
           engine.stopLiveInput();
           getAnalyzer().reset("source");
           set({ liveInputActive: false });
+          // Entering live voided the loaded track's grid/key/sections/travel
+          // (and superseded any in-flight job) so the dead track could not
+          // pulse over live audio — but the track is still loaded and resumes
+          // from its frozen playhead, and nothing else ever re-runs the
+          // analysis (only the load paths call analyzeCurrentTrack). Without
+          // this it played — and EXPORTED, awaitAnalysis having nothing to
+          // wait for — with bpm 0 / beatPhase 0 / sectionIndex -1 until the
+          // file was dropped again. A load path that leaves live on its way
+          // to a NEW track supersedes this job like any other (its own
+          // invalidateAnalysis bumps analysisId).
+          if (engine.audioBuffer) {
+            try {
+              get().analyzeCurrentTrack();
+            } catch (e) {
+              // analyzeTrack can throw synchronously (RangeError copying a
+              // very long track's PCM); loadFile reports that through its own
+              // catch, and the toggle has no caller to report to.
+              set({ error: `Could not re-analyse the track: ${(e as Error).message}` });
+            }
+          }
           return;
         }
         if (!isTauri()) {
@@ -3059,7 +3099,10 @@ export const useVizStore = create<VizState>((set, get) => {
         // overwrite + persist over a local same-id shader that has since
         // been edited — the local version stays in the library AND the
         // registry, and the user is told. Identical/new defs import as
-        // before, keeping registration idempotent for undo/redo.
+        // before, keeping registration idempotent for undo/redo. (The
+        // registry half holds because validateDocument never overwrites an
+        // id that is already registered — parse is not apply; `register`
+        // below is the only registration that decides.)
         const { merged, register, kept } = mergeEmbeddedDefs(
           customDefs,
           doc.customDefs,
@@ -3227,6 +3270,14 @@ export const useVizStore = create<VizState>((set, get) => {
       const s = get();
       const preset = s.userPresets.find((p) => p.id === id);
       if (!preset) return; // nothing applied -> nothing recorded
+      // A look for a custom visual that is not loaded (validUserPreset keeps
+      // those — see userPresets.ts's lookHostKnown) must not fall through
+      // presetById's default-mode fallback and paint its values onto the
+      // wrong visual. Nothing applied -> nothing recorded, same as above.
+      if (!knownPresetId(preset.presetId)) {
+        flashNotice(`"${preset.name}" needs a custom visual that isn't loaded — import it first`);
+        return;
+      }
       // One gesture: switchPreset + params + setSync used to push up to three
       // history entries, so one Ctrl+Z stepped through half-applied states.
       asOneGesture("look", () => {

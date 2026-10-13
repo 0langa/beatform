@@ -11,7 +11,11 @@ import {
 } from "../render/types";
 import { canonicalPresetId, knownPresetId, presets } from "../render/presets";
 import { NEBULA_SAT_AUTHORED } from "../render/presets/nebula";
-import { registerCustomPreset, validCustomPreset } from "../render/presets/custom";
+import {
+  customPresetById,
+  registerCustomPreset,
+  validCustomPreset,
+} from "../render/presets/custom";
 import type { PresetDef } from "../render/types";
 import { validLyricStyle, type LyricStyle } from "./lyrics";
 import { defaultBuilderStack, validBuilderStack, type BuilderStack } from "../render/builder2";
@@ -399,12 +403,24 @@ export function validateDocument(rawDoc: Partial<ProjectDocument>): ProjectDocum
   // validTimeline both resolve custom-* ids through the runtime registry, so
   // a project that embeds the defs it references must have them registered
   // before those validators run — otherwise the preset falls back to the
-  // default mode and timeline scenes are dropped. Registration is idempotent
-  // (a re-import of the same id replaces the entry) and deliberately a side
-  // effect of validation: every consumer (projects, themes, undo snapshots)
-  // needs the same guarantee.
+  // default mode and timeline scenes are dropped. Deliberately a side effect
+  // of validation: every consumer (projects, themes, undo snapshots) needs
+  // the same guarantee.
+  //
+  // But only for ids the registry does NOT already hold. Parsing is not
+  // applying: a document can be parsed and then refused (the boot
+  // anti-clobber guard, a gallery apply that lost the token race), or applied
+  // with its embedded copy REJECTED in favour of the newer local one
+  // (mergeEmbeddedDefs' S1 keep). Overwriting here put the GPU on the
+  // document's — usually older — WGSL while `customDefs`, the editor, the
+  // save file and the export worker all held the library's copy: preview
+  // rendered v1, export rendered v2. An already-registered id resolves either
+  // way, so applyDocument's merge is the sole authority on which copy the
+  // registry ends up holding.
   const customDefs = validCustomDefs(doc.customDefs);
-  for (const def of customDefs) registerCustomPreset(def);
+  for (const def of customDefs) {
+    if (!customPresetById(def.id)) registerCustomPreset(def);
+  }
   const assets = validAssets(doc.assets);
   const bg = validBg(doc.bg);
   // Image/video background referencing a missing asset degrades to the

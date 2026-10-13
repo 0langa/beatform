@@ -186,6 +186,24 @@ export function parseVerifiedVersion(output) {
 }
 
 /** Post-push check: what still does not match HEAD on the remote. */
+/**
+ * The 8-byte key id inside a minisign public key or signature, as hex. Tauri
+ * stores both as base64 of the whole minisign FILE — an "untrusted comment"
+ * line, then the base64 payload (a signature file carries two more lines
+ * after it) — and the payload's bytes 2..10, after the two-byte algorithm
+ * tag, name the key. A release whose .sig was made by any key but the one
+ * pinned in tauri.conf.json publishes just as green and is rejected by every
+ * installed app, so release.yml and the verify step compare the two ids.
+ */
+export function updaterKeyId(fileBase64) {
+  const text = Buffer.from(fileBase64, "base64").toString("utf8");
+  const payload = text.split(/\r?\n/).filter((l) => l.trim())[1];
+  if (!payload) throw new Error("updaterKeyId: not a minisign file (no payload line)");
+  const raw = Buffer.from(payload, "base64");
+  if (raw.length < 10) throw new Error("updaterKeyId: minisign payload too short");
+  return raw.subarray(2, 10).toString("hex");
+}
+
 export function remoteMismatches(head, { remoteMain, remoteTagTarget }, tag) {
   const problems = [];
   if (remoteMain !== head) {

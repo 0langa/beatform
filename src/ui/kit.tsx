@@ -340,8 +340,10 @@ export function SliderField(props: {
           onPointerUp={onReadoutTap}
           onKeyDown={(e) => {
             // Enter/F2 is the spreadsheet idiom, Space is what a button owes
-            // its user — and Space has to stop here, because the global map
-            // reads it as play/pause.
+            // its user. The global map now skips Space on any focused
+            // <button> (useAppShortcuts), so stopping it here is belt and
+            // braces — kept, because this readout opens an editor on Space
+            // and must not depend on a guard in another file for that.
             if (e.key !== "Enter" && e.key !== "F2" && e.key !== " ") return;
             e.preventDefault();
             e.stopPropagation();

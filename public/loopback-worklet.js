@@ -71,8 +71,20 @@ class LoopbackFeed extends AudioWorkletProcessor {
     this.underrunCredit = 0;
     this.maxDepth = 0;
     this.primed = false;
+    // Set by the engine's {type:"close"} on stopLiveInput. A processor whose
+    // process() returns true is an active source the context keeps alive —
+    // port.close() and node.disconnect() do not end it — so without this
+    // every live session leaked a processor and its two 2 s rings for the
+    // life of the context. Once closed, process() returns false and the
+    // node can be collected.
+    this.closed = false;
     this.port.onmessage = (e) => {
       const d = e.data;
+      if (this.closed) return; // a chunk racing the close: nobody will read it
+      if (d && d.type === "close") {
+        this.closed = true;
+        return;
+      }
       if (d && d.type === "stats") {
         this.port.postMessage({
           type: "stats",
@@ -140,6 +152,7 @@ class LoopbackFeed extends AudioWorkletProcessor {
     };
   }
   process(_inputs, outputs) {
+    if (this.closed) return false; // outputs stay zeroed; the node may be collected
     const out = outputs[0];
     const L = out[0];
     const R = out[1] ?? out[0];

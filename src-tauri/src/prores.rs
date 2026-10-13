@@ -30,7 +30,19 @@ pub struct ProresJob {
     /// ProRes muxes a staged WAV; GIF/WebP sessions have no audio input.
     wav_path: Option<PathBuf>,
     log_path: PathBuf,
+    /// The path the user picked. Touched by exactly ONE operation: the
+    /// rename in `publish`, after ffmpeg exited cleanly. Never ffmpeg's
+    /// target and never removed — see `partial_path`.
     out_path: PathBuf,
+    /// `<out_path>.partial`, the file ffmpeg actually writes (R2-02, the
+    /// MP4/WebM lane's rule, applied here). ffmpeg used to run with `-y`
+    /// straight on `out_path`, so re-exporting over an existing file
+    /// truncated the user's previous render the instant the session began,
+    /// and every abnormal end — cancel, a failed encode, disk full, app
+    /// close — then UNLINKED what was left of it. Every one of those paths
+    /// now removes only this sibling; the previous file at `out_path`
+    /// survives untouched until a finished render replaces it atomically.
+    partial_path: PathBuf,
 }
 
 #[derive(Default)]
@@ -319,11 +331,11 @@ fn anim_args(format: &str, fps: u32, out: &str) -> Vec<String> {
 /// True only for a plain LOCAL absolute path (a drive-letter path on Windows).
 ///
 /// `is_absolute()` alone is not a sufficient gate: on Windows it also returns
-/// true for UNC (`\\host\share\x.mov`). ffmpeg is spawned with `-y`, which
-/// truncates unconditionally, and `prores_finish` removes the target on
-/// failure — so accepting UNC turned "pick an output file" into a write/delete
-/// primitive against an arbitrary remote host, plus an outbound NTLM
-/// authentication to it. Only local disks are accepted.
+/// true for UNC (`\\host\share\x.mov`). ffmpeg is spawned with `-y` on the
+/// `.partial` sibling, which is then renamed over the target (and removed on
+/// failure) — so accepting UNC turned "pick an output file" into a
+/// write/replace primitive against an arbitrary remote host, plus an outbound
+/// NTLM authentication to it. Only local disks are accepted.
 fn is_local_absolute(path: &Path) -> bool {
     #[cfg(windows)]
     {
@@ -351,12 +363,12 @@ fn has_extension(path: &Path, ext: &str) -> bool {
 /// The complete output-path policy for a sidecar session.
 ///
 /// `scope_allows` is `app.fs_scope().is_allowed(out)` — the SAME gate
-/// `scan_audio_library` is given, and the reason it belongs here too: ffmpeg is
-/// spawned with `-y` (unconditional truncate) and both `prores_finish` and
-/// `prores_abort` `remove_file(out_path)`. Validating only the SHAPE of the
-/// path therefore left "start an export" as a truncate-and-delete primitive
-/// against any local .mov/.gif/.webp a script running in the webview could
-/// name — the path never had to be one the user chose.
+/// `scan_audio_library` is given, and the reason it belongs here too: ffmpeg
+/// writes the `.partial` sibling with `-y` and a clean finish renames it over
+/// `out`. Validating only the SHAPE of the path therefore left "start an
+/// export" as a replace-any-file primitive against any local .mov/.gif/.webp
+/// a script running in the webview could name — the path never had to be one
+/// the user chose.
 ///
 /// tauri-plugin-dialog's `save()` calls `allow_file` on whatever the user
 /// picked, so the real flow (pickSavePath -> proresBegin) passes; a path the
@@ -592,6 +604,7 @@ pub fn prores_begin(
         .map_err(|_| "state poisoned")?
         .take()
         .ok_or("No audio staged — call prores_audio_begin/chunk/end first")?;
+    let partial = stage_partial(&app, &out_path);
 
     // From here the staged WAV is this function's to clean up: a spawn
     // failure must not leak it in %TEMP% (pending_wav was already taken).
@@ -600,7 +613,7 @@ pub fn prores_begin(
         width,
         height,
         &wav_path.to_string_lossy(),
-        &out.to_string_lossy(),
+        &partial.to_string_lossy(),
     )) {
         Ok(v) => v,
         Err(e) => {
@@ -614,8 +627,23 @@ pub fn prores_begin(
         wav_path: Some(wav_path),
         log_path,
         out_path: out,
+        partial_path: partial,
     });
     Ok(())
+}
+
+/// Where ffmpeg writes: the `.partial` sibling of the CHECKED target —
+/// `check_out_path` has already bound `out_path` to the user's dialog pick,
+/// so the sibling is derived strictly from an allowed path, exactly the
+/// rule `export_allow_partial` (lib.rs) applies for the MP4/WebM lane. The
+/// same grant is extended to it here: the save dialog's runtime grant covers
+/// only the picked file, and the sibling is the file this session actually
+/// produces (and the one a refused publish leaves behind for the user).
+/// Best-effort — nothing on this side goes through the fs scope to reach it.
+fn stage_partial(app: &tauri::AppHandle, out_path: &str) -> PathBuf {
+    let partial = PathBuf::from(crate::partial_sibling(out_path));
+    let _ = app.fs_scope().allow_file(&partial);
+    partial
 }
 
 /// Begin a 10-bit AV1 (.mp4) session. Mirrors prores_begin exactly — the
@@ -656,6 +684,7 @@ pub fn av1_begin(
         .map_err(|_| "state poisoned")?
         .take()
         .ok_or("No audio staged — call prores_audio_begin/chunk/end first")?;
+    let partial = stage_partial(&app, &out_path);
 
     // From here the staged WAV is this function's to clean up: a spawn
     // failure must not leak it in %TEMP% (pending_wav was already taken).
@@ -664,7 +693,7 @@ pub fn av1_begin(
         width,
         height,
         &wav_path.to_string_lossy(),
-        &out.to_string_lossy(),
+        &partial.to_string_lossy(),
     )) {
         Ok(v) => v,
         Err(e) => {
@@ -678,6 +707,7 @@ pub fn av1_begin(
         wav_path: Some(wav_path),
         log_path,
         out_path: out,
+        partial_path: partial,
     });
     Ok(())
 }
@@ -709,13 +739,15 @@ pub fn anim_begin(
     }
     let out = PathBuf::from(&out_path);
     check_out_path(app.fs_scope().is_allowed(&out), &out, &format)?;
-    let (mut child, log_path) = spawn_sidecar(anim_args(&format, fps, &out.to_string_lossy()))?;
+    let partial = stage_partial(&app, &out_path);
+    let (mut child, log_path) = spawn_sidecar(anim_args(&format, fps, &partial.to_string_lossy()))?;
     *state.stdin.lock().map_err(|_| "state poisoned")? = child.stdin.take();
     *job_guard = Some(ProresJob {
         child,
         wav_path: None,
         log_path,
         out_path: out,
+        partial_path: partial,
     });
     Ok(())
 }
@@ -818,7 +850,7 @@ fn wait_bounded(child: &mut Child, timeout: Duration) -> std::io::Result<Option<
 /// Terminal state of a finalize wait. Every variant except `Cancelled` hands
 /// back the job, because the caller owns the cleanup from there.
 enum Finalize {
-    /// ffmpeg exited 0 — the output file is complete.
+    /// ffmpeg exited 0 — the `.partial` is complete and ready to publish.
     Done(ProresJob),
     /// ffmpeg exited non-zero, or `try_wait` itself failed.
     Failed(ProresJob),
@@ -883,7 +915,8 @@ fn await_finalize(job: &Mutex<Option<ProresJob>>, timeout: Duration) -> Result<F
     }
 }
 
-/// Close the frame pipe (EOF), wait for ffmpeg, verify success.
+/// Close the frame pipe (EOF), wait for ffmpeg, verify success, publish the
+/// `.partial` over the user's path (see `settle` / `publish`).
 ///
 /// `async` because the wait can legitimately take minutes — finalizing a
 /// multi-GB ProRes movie or running GIF `paletteuse`. As a blocking command
@@ -908,21 +941,28 @@ pub fn prores_finish(
     // concurrent prores_abort still finds a killable child (see await_finalize).
     // It also means a `prores_begin` fired during finalize is refused instead of
     // spawning a second ffmpeg into the first one's stdin slot.
-    match await_finalize(&state.job, FINISH_TIMEOUT)? {
+    settle(await_finalize(&state.job, FINISH_TIMEOUT)?)
+}
+
+/// What each way a finalize can end does to the files — split from the
+/// command so a test can drive it without a window. Only `Done` touches the
+/// user's path; the other two remove the `.partial` and nothing else.
+fn settle(outcome: Finalize) -> Result<(), String> {
+    match outcome {
         Finalize::Done(job) => {
             cleanup(&job);
-            Ok(())
+            publish(&job)
         }
         Finalize::Failed(job) => {
             let tail = log_tail(&job.log_path);
             cleanup(&job);
-            let _ = std::fs::remove_file(&job.out_path); // no half-written movs
+            let _ = std::fs::remove_file(&job.partial_path); // no half-written movs
             Err(format!("ffmpeg failed: {tail}"))
         }
         Finalize::TimedOut(job) => {
             let tail = log_tail(&job.log_path);
             cleanup(&job);
-            let _ = std::fs::remove_file(&job.out_path);
+            let _ = std::fs::remove_file(&job.partial_path);
             Err(format!(
                 "ffmpeg stopped responding while finishing the file (waited {} minutes) and was \
                  stopped; the incomplete output was removed. {tail}",
@@ -931,6 +971,26 @@ pub fn prores_finish(
         }
         Finalize::Cancelled => Err("Export cancelled while finishing".into()),
     }
+}
+
+/// The one moment the user's path is touched: the finished `.partial` moves
+/// over it. `std::fs::rename` is MoveFileExW with MOVEFILE_REPLACE_EXISTING
+/// on Windows — the same primitive the MP4/WebM lane's publish (plugin-fs
+/// `rename`) and the autosave's writeFileAtomic stake their design on — so
+/// replacing an existing target is one atomic step. A refused replace (the
+/// classic cause: the target is open in a player) KEEPS the sibling: those
+/// bytes are a finished, possibly hour-long render, the most valuable thing
+/// this module ever holds. The error names both files and the way out,
+/// word for word the MP4 lane's message (videoExporter.ts, makeTauriWriter).
+fn publish(job: &ProresJob) -> Result<(), String> {
+    std::fs::rename(&job.partial_path, &job.out_path).map_err(|_| {
+        format!(
+            "Could not replace \"{}\" — the file is in use. Your finished render is saved as \
+             \"{}\"; close the program using the target and rename it.",
+            job.out_path.display(),
+            job.partial_path.display()
+        )
+    })
 }
 
 /// Cancel: kill ffmpeg, remove the partial output, and hand back the tail of
@@ -974,7 +1034,9 @@ fn abort_job(state: &ProresState) -> Result<String, String> {
         }
         // The log's dying words, BEFORE cleanup() unlinks the file.
         tail = log_tail_capped(&job.log_path);
-        let _ = std::fs::remove_file(&job.out_path);
+        // ONLY the sibling: whatever was at the user's path before this
+        // session began is still there, untouched, and stays that way.
+        let _ = std::fs::remove_file(&job.partial_path);
         cleanup(&job);
     }
     Ok(tail)
@@ -1001,7 +1063,7 @@ pub fn kill_running_job(state: &ProresState) {
             if let Ok(mut s) = state.stdin.lock() {
                 drop(s.take());
             }
-            let _ = std::fs::remove_file(&job.out_path);
+            let _ = std::fs::remove_file(&job.partial_path);
             cleanup(&job);
         }
     }
@@ -1421,7 +1483,103 @@ mod tests {
             wav_path: None,
             log_path: temp_path("test-finalize.log", u64::MAX),
             out_path: temp_path("test-finalize.mov", u64::MAX),
+            partial_path: temp_path("test-finalize.mov.partial", u64::MAX),
         }
+    }
+
+    /// A job whose output pair is on disk: the user's previous render at
+    /// `out` and this session's bytes in the `.partial` sibling.
+    fn staged_job(child: Child, tag: &str) -> (ProresJob, PathBuf, PathBuf) {
+        use std::io::Write as _;
+        let (mut f, out_path) = create_temp_new(&format!("{tag}-out.mov")).unwrap();
+        f.write_all(b"previous render").unwrap();
+        drop(f);
+        let partial_path = PathBuf::from(crate::partial_sibling(&out_path.to_string_lossy()));
+        std::fs::write(&partial_path, b"new render").unwrap();
+        let (f, log_path) = create_temp_new(&format!("{tag}.log")).unwrap();
+        drop(f);
+        let job = ProresJob {
+            child,
+            wav_path: None,
+            log_path,
+            out_path: out_path.clone(),
+            partial_path: partial_path.clone(),
+        };
+        (job, out_path, partial_path)
+    }
+
+    #[test]
+    fn a_clean_finish_publishes_the_partial_over_the_previous_render() {
+        // The whole point of staging: the user's existing file is replaced
+        // by ONE rename after ffmpeg exited 0, and the sibling is gone.
+        let (job, out_path, partial_path) = staged_job(spawn_exiting(0), "test-publish");
+        let slot = Mutex::new(Some(job));
+        let outcome = await_finalize(&slot, Duration::from_secs(30)).unwrap();
+        assert!(matches!(outcome, Finalize::Done(_)));
+        settle(outcome).unwrap();
+        assert_eq!(std::fs::read(&out_path).unwrap(), b"new render");
+        assert!(
+            !partial_path.exists(),
+            "the sibling moved, it was not copied"
+        );
+        let _ = std::fs::remove_file(&out_path);
+    }
+
+    #[test]
+    fn a_failed_finish_removes_only_the_partial() {
+        // ffmpeg exited non-zero (a bad frame, disk full): the session's
+        // bytes go, the previous render at the user's path stays exactly as
+        // it was. Before the sibling, THIS path unlinked the user's file.
+        let (job, out_path, partial_path) = staged_job(spawn_exiting(3), "test-failed");
+        let slot = Mutex::new(Some(job));
+        let outcome = await_finalize(&slot, Duration::from_secs(30)).unwrap();
+        assert!(matches!(outcome, Finalize::Failed(_)));
+        assert!(settle(outcome).is_err());
+        assert!(
+            !partial_path.exists(),
+            "the half-written sibling is removed"
+        );
+        assert_eq!(
+            std::fs::read(&out_path).unwrap(),
+            b"previous render",
+            "the user's previous render must survive a failed re-export"
+        );
+        let _ = std::fs::remove_file(&out_path);
+    }
+
+    #[test]
+    fn a_refused_publish_keeps_the_finished_partial() {
+        // The target cannot be replaced (here: it is a directory, standing
+        // in for a file open in a player). The finished bytes are the most
+        // valuable thing this module holds — they stay, and the error names
+        // both files like the MP4 lane's does.
+        let (f, dir_stand_in) = create_temp_new("test-refused-publish.mov").unwrap();
+        drop(f);
+        std::fs::remove_file(&dir_stand_in).unwrap();
+        std::fs::create_dir(&dir_stand_in).unwrap();
+        std::fs::write(dir_stand_in.join("busy"), b"x").unwrap();
+        let partial_path = PathBuf::from(crate::partial_sibling(&dir_stand_in.to_string_lossy()));
+        std::fs::write(&partial_path, b"finished render").unwrap();
+        let (f, log_path) = create_temp_new("test-refused-publish.log").unwrap();
+        drop(f);
+        let job = ProresJob {
+            child: spawn_exiting(0),
+            wav_path: None,
+            log_path,
+            out_path: dir_stand_in.clone(),
+            partial_path: partial_path.clone(),
+        };
+        let slot = Mutex::new(Some(job));
+        let outcome = await_finalize(&slot, Duration::from_secs(30)).unwrap();
+        let err = settle(outcome).expect_err("a refused replace must surface");
+        assert!(err.contains("Your finished render is saved as"), "{err}");
+        assert!(
+            err.contains(&partial_path.display().to_string()),
+            "the error must name the surviving file: {err}"
+        );
+        assert_eq!(std::fs::read(&partial_path).unwrap(), b"finished render");
+        let _ = std::fs::remove_file(&partial_path);
+        let _ = std::fs::remove_dir_all(&dir_stand_in);
     }
 
     #[test]
@@ -1501,8 +1659,11 @@ mod tests {
         let (mut f, log_path) = create_temp_new("test-abort-tail.log").unwrap();
         writeln!(f, "[libwebp_anim @ 0x1] Conversion failed!").unwrap();
         drop(f);
-        let (f, out_path) = create_temp_new("test-abort-tail-out.mov").unwrap();
+        let (mut f, out_path) = create_temp_new("test-abort-tail-out.mov").unwrap();
+        f.write_all(b"previous render").unwrap();
         drop(f);
+        let partial_path = PathBuf::from(crate::partial_sibling(&out_path.to_string_lossy()));
+        std::fs::write(&partial_path, b"half").unwrap();
         let mut child = spawn_wedged();
         *state.stdin.lock().unwrap() = child.stdin.take();
         *state.job.lock().unwrap() = Some(ProresJob {
@@ -1510,6 +1671,7 @@ mod tests {
             wav_path: None,
             log_path: log_path.clone(),
             out_path: out_path.clone(),
+            partial_path: partial_path.clone(),
         });
 
         let tail = abort_job(&state).unwrap();
@@ -1519,9 +1681,18 @@ mod tests {
             "the tail must carry the log's dying words: {tail:?}"
         );
         assert!(!log_path.exists(), "cleanup still unlinks the log");
-        assert!(!out_path.exists(), "the partial output is still removed");
+        assert!(
+            !partial_path.exists(),
+            "the partial output is still removed"
+        );
+        assert_eq!(
+            std::fs::read(&out_path).unwrap(),
+            b"previous render",
+            "a cancelled re-export must leave the previous render alone"
+        );
         assert!(state.job.lock().unwrap().is_none(), "job slot cleared");
         assert!(state.stdin.lock().unwrap().is_none(), "frame pipe released");
+        let _ = std::fs::remove_file(&out_path);
     }
 
     #[test]
@@ -1556,13 +1727,17 @@ mod tests {
         // finalized a truncated file at the user's chosen path, while the
         // mezzanine WAV stranded in %TEMP% forever. Shutdown must end the
         // child AND make the half-export end up absent, never valid-looking.
+        use std::io::Write as _;
         let state = ProresState::default();
         let (f, wav_path) = create_temp_new("test-shutdown-audio.wav").unwrap();
         drop(f);
         let (f, log_path) = create_temp_new("test-shutdown-ffmpeg.log").unwrap();
         drop(f);
-        let (f, out_path) = create_temp_new("test-shutdown-out.mov").unwrap();
+        let (mut f, out_path) = create_temp_new("test-shutdown-out.mov").unwrap();
+        f.write_all(b"previous render").unwrap();
         drop(f);
+        let partial_path = PathBuf::from(crate::partial_sibling(&out_path.to_string_lossy()));
+        std::fs::write(&partial_path, b"half").unwrap();
         // A sealed-but-unconsumed WAV from a next export the user never
         // started must be swept too.
         let (f, staged_path) = create_temp_new("test-shutdown-staged.wav").unwrap();
@@ -1576,6 +1751,7 @@ mod tests {
             wav_path: Some(wav_path.clone()),
             log_path: log_path.clone(),
             out_path: out_path.clone(),
+            partial_path: partial_path.clone(),
         });
 
         kill_running_job(&state);
@@ -1583,12 +1759,18 @@ mod tests {
         assert!(state.job.lock().unwrap().is_none(), "job slot cleared");
         assert!(state.stdin.lock().unwrap().is_none(), "frame pipe released");
         assert!(
-            !out_path.exists(),
-            "no truncated output may remain at the user's chosen path"
+            !partial_path.exists(),
+            "no truncated output may remain next to the user's chosen path"
+        );
+        assert_eq!(
+            std::fs::read(&out_path).unwrap(),
+            b"previous render",
+            "the previous render at the chosen path survives an app close"
         );
         assert!(!wav_path.exists(), "mezzanine WAV cleaned from %TEMP%");
         assert!(!log_path.exists(), "stderr log cleaned from %TEMP%");
         assert!(!staged_path.exists(), "staged audio cleaned from %TEMP%");
+        let _ = std::fs::remove_file(&out_path);
     }
 
     #[test]

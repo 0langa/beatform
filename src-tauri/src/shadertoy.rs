@@ -559,9 +559,21 @@ fn specialize_sampler_params(src: &str) -> Result<String, Vec<TranspileError>> {
             for (i, (span_start, span_end)) in clone_spans.iter().enumerate() {
                 if start >= *span_start && end <= *span_end {
                     let body_start = span_start + clones[i].sig.len() + 2; // sig + " {"
-                    clones[i]
-                        .body
-                        .replace_range(start - body_start..end - body_start, &replacement);
+                    let body_end = body_start + clones[i].body.len();
+                    // A call can sit in the clone's SIGNATURE rather than its
+                    // body — `vec4 g(sampler2D a, float x(iChannel0))` with a
+                    // sampler helper `x` queues a rewrite inside `g`'s
+                    // rendered parameter list. `start - body_start` then
+                    // underflowed: a debug panic, and in release a wrapped
+                    // index that made `replace_range` panic instead — either
+                    // way the app went down on a paste. The rewrite is
+                    // skipped; the signature is not ours to edit and naga
+                    // reports the malformed parameter in its own words.
+                    if start >= body_start && end <= body_end {
+                        clones[i]
+                            .body
+                            .replace_range(start - body_start..end - body_start, &replacement);
+                    }
                     break;
                 }
             }
@@ -842,7 +854,32 @@ pub fn transpile(glsl: &str) -> TranspileResult {
     if glsl.trim().is_empty() {
         return fail_one(None, "Shader source is empty");
     }
+    // The panic boundary wraps EVERYTHING below, not only naga (see
+    // `translate`): the hand-written scanners between here and the parser
+    // run on the same hostile paste, and a crafted sampler helper took the
+    // app down from inside `specialize_sampler_params` — outside the old,
+    // naga-only boundary, on the main thread (the command is sync). The
+    // fuzz tests drive `transpile_unguarded` directly so a scanner panic
+    // still fails THEM; this boundary is for the user.
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| transpile_unguarded(glsl))) {
+        Ok(result) => result,
+        Err(_) => parser_crashed(),
+    }
+}
 
+/// The import error a caught panic degrades to — a bad paste, never a
+/// window going down.
+fn parser_crashed() -> TranspileResult {
+    fail_one(
+        None,
+        "The GLSL parser crashed on this shader. It is almost certainly malformed — check for unbalanced braces or a truncated paste.",
+    )
+}
+
+/// Everything `transpile` does past its size and emptiness checks, without
+/// the outer panic boundary. The tests run this so a panic in the scanners
+/// stays a test failure rather than an error result that looks intended.
+fn transpile_unguarded(glsl: &str) -> TranspileResult {
     let cleaned = clean_user_source(glsl);
     // Channel-helper specialization BEFORE the pre-scan: functions taking
     // sampler2D params are resolved into per-channel clones; only genuinely
@@ -872,15 +909,17 @@ pub fn transpile(glsl: &str) -> TranspileResult {
     // `Frontend` and `Validator` are built per call — so there is no
     // half-updated structure left behind to worry about, which is what
     // AssertUnwindSafe is asserting.
+    //
+    // This inner boundary stays even though `transpile` now has an outer
+    // one: the fuzz tests enter below the outer boundary on purpose, and a
+    // naga panic is a known, tolerated upstream fault — a scanner panic is
+    // not. Only the inner catch keeps the two distinguishable to the tests.
     let translated = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         translate(&wrapped, header_lines, user_lines)
     }));
     match translated {
         Ok(result) => result,
-        Err(_) => fail_one(
-            None,
-            "The GLSL parser crashed on this shader. It is almost certainly malformed — check for unbalanced braces or a truncated paste.",
-        ),
+        Err(_) => parser_crashed(),
     }
 }
 
@@ -1593,9 +1632,18 @@ mod fuzz {
 
     /// Everything `transpile` promises its one caller. Panicking IS the
     /// failure mode under test, so there is nothing to catch here: a panic
-    /// inside this function or inside the translator fails the test.
+    /// inside this function or inside the scanners fails the test — which is
+    /// why this enters BELOW `transpile`'s outer panic boundary (that one
+    /// would turn the panic into an error result that looks intended). The
+    /// size and emptiness refusals are `transpile`'s own first branches and
+    /// are taken from there, so the mutator's oversize inputs still prove
+    /// the guard.
     fn check(src: &str) {
-        let result = transpile(src);
+        let result = if src.len() > MAX_GLSL_BYTES || src.trim().is_empty() {
+            transpile(src)
+        } else {
+            transpile_unguarded(src)
+        };
         if result.ok {
             let wgsl = result
                 .wgsl
@@ -1695,12 +1743,35 @@ mod fuzz {
         }
     }
 
+    /// A sampler helper called INSIDE another sampler helper's parameter
+    /// list. The call is queued as a rewrite that lands in the rendered
+    /// clone's signature, before its body, and `start - body_start`
+    /// underflowed — a panic outside the old naga-only boundary, on the main
+    /// thread, from a paste. It is an import error now, twice over: the
+    /// rewrite is skipped and the whole transpile sits behind the boundary.
+    const CALL_IN_CLONE_SIGNATURE: &str = "vec4 x(sampler2D q) { return texture(q, vec2(0.0)); }\nvec4 g(sampler2D a, float x(iChannel0)) { return vec4(0.0); }\nvoid mainImage(out vec4 f, in vec2 c) { f = g(iChannel0, 1.0); }\n";
+
+    #[test]
+    fn a_call_inside_a_clones_signature_is_an_error_not_a_crash() {
+        // Through the user-facing entry point: whatever happens inside, the
+        // command must return.
+        let r = transpile(CALL_IN_CLONE_SIGNATURE);
+        assert!(!r.ok, "a malformed parameter list cannot transpile");
+        assert!(r.wgsl.is_none());
+        assert!(!r.errors.is_empty(), "the import dialog needs a message");
+        // And below the boundary: the scanner itself no longer panics.
+        let r = transpile_unguarded(CALL_IN_CLONE_SIGNATURE);
+        assert!(!r.ok);
+        assert!(!r.errors.is_empty());
+    }
+
     /// The mutator generates plausible GLSL, so it rarely lands on the exact
     /// byte sequence that trips a given scanner. These are the ones worth
     /// naming — each is a shape the code has an explicit branch for.
     #[test]
     fn transpile_survives_named_edges() {
         let edges = [
+            CALL_IN_CLONE_SIGNATURE,
             "{",
             "}",
             "(((((((((((((((((((((((((((((((((",

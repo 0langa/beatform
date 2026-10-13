@@ -34,6 +34,13 @@ import type { ParamSpec, PresetDef } from "../types";
  *    modes (Oscilloscope, Metaballs, Echo Trails) take no kit at all: their
  *    output IS next frame's history, and a flash or grain applied there
  *    would compound frame over frame.
+ * 4. THE FINISH IS SCREEN-SPACE. Grain and scanlines are drawn in the frame's
+ *    own uv, never the folded one: a mirror must not mirror the grain, a spin
+ *    must not tilt the scanlines, a beat zoom must not pump them. And in the
+ *    transparent delivery (bgMode 2, where composite() derives coverage from
+ *    the light) grain scales with the light under it, as the post chain's
+ *    does — grain on nothing would otherwise read as speckled coverage over
+ *    the empty frame of a PNG-sequence, VP9-alpha or ProRes 4444 export.
  *
  * Masters: the kit's spin honours Motion→Rotation (u.spin) and its beat zoom
  * and flash honour Motion→Pulse (u.pulse), and the terms are only emitted for
@@ -270,13 +277,25 @@ export function kitWgsl(choice: KitChoice): string {
   if (choice.grain) {
     // ±0.1 at the top of the slider: judged on device, 0.35 turned a tunnel
     // into a sandstorm at max, while 0.2 still reads as a damaged print there
-    // and as texture around 0.3.
-    finish.push("  let gr = P_grain();", "  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }");
+    // and as texture around 0.3. Transparent delivery (rule 4): the grain
+    // scales with the light it lands on, so it never manufactures coverage.
+    finish.push(
+      "  let gr = P_grain();",
+      "  if (gr > 0.0) {",
+      "    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);",
+      "    rgb += vec3f(grain(uv, gr * 0.2) * lit);",
+      "  }",
+    );
   }
+  // The window's edges overlap in range (Low edge up to 0.75, High edge down
+  // to 0.25), so two sliders or a modulation route can cross them; a crossed
+  // window reads the same slice the right way round, never a reversed
+  // spectrum. At the defaults mix(0, 1, x) is exactly x.
   const freq = choice.freq
     ? [
-        "fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }",
-        "fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }",
+        "fn kitWin(x: f32) -> f32 { let lo = P_freqLo(); let hi = P_freqHi(); return mix(min(lo, hi), max(lo, hi), x); }",
+        "fn kitBin(x: f32) -> f32 { return binAt(kitWin(x)); }",
+        "fn kitPeak(x: f32) -> f32 { return peakAt(kitWin(x)); }",
       ]
     : [];
   return [
@@ -294,9 +313,8 @@ export function kitWgsl(choice: KitChoice): string {
     "  return rgb;",
     "}",
     "fn preset(uv: vec2f) -> vec4f {",
-    "  let kuv = kitFold(uv);",
-    "  let c = presetBody(kuv);",
-    "  return vec4f(kitFinish(c.rgb, kuv), c.a);",
+    "  let c = presetBody(kitFold(uv));",
+    "  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)",
     "}",
     "",
   ].join("\n");

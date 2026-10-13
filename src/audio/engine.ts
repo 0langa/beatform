@@ -115,6 +115,25 @@ export class AudioEngine {
     this.analyser.fftSize = fftSize;
     this.displayAnalyser = this.ctx.createAnalyser();
     this.displayAnalyser.fftSize = fftSize;
+    for (const a of [this.analyser, this.displayAnalyser]) {
+      // Channel parity with the offline analysers. Export slices the PCM to
+      // its first two channels (videoExporter.ts) and beat/section/travel
+      // analysis does the same (trackAnalysis.ts), so both analyse c0 for
+      // mono and (c0+c1)/2 otherwise. An AnalyserNode at its defaults
+      // ("max" / "speakers") instead takes EVERY channel and down-mixes it
+      // by the speaker rules — a 5.1 file's live preview analysed
+      // L·√½ + R·√½ + C + ½(SL+SR), a different signal from the export's.
+      // "clamped-max" at 2 with "discrete" hands it exactly c0 and c1 of
+      // anything wider while leaving mono and stereo untouched — the
+      // obvious "explicit" would up-mix mono to [m, 0] and halve it in the
+      // node's own mono down-mix. Set on the analysers, NOT the tap: the tap
+      // also feeds the speakers, and a 5.1 file's centre channel must still
+      // be heard. The L/R analysers hang off a ChannelSplitter, which is
+      // discrete by definition and already saw the first two channels.
+      a.channelCount = 2;
+      a.channelCountMode = "clamped-max";
+      a.channelInterpretation = "discrete";
+    }
     this.analyserL = this.ctx.createAnalyser();
     this.analyserR = this.ctx.createAnalyser();
     this.analyserL.fftSize = fftSize;
@@ -218,6 +237,12 @@ export class AudioEngine {
   /** Back to track mode. Safe to call when live input is not active. */
   stopLiveInput(): void {
     if (!this.liveNode) return;
+    // Tell the processor to stand down BEFORE the port shuts. Closing the
+    // port and disconnecting the node do not end an AudioWorkletProcessor:
+    // one whose process() keeps returning true stays an active source for
+    // the life of the context, so every live session leaked a processor
+    // (and its two 2-second Float32 rings) until the app closed.
+    this.liveNode.port.postMessage({ type: "close" });
     this.liveNode.port.close();
     this.liveNode.disconnect();
     this.liveNode = null;

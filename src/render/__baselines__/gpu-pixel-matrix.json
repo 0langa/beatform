@@ -1804,9 +1804,9 @@
     },
     {
       "id": "gatefold/style/turntable",
-      "hash": "d592c2b6",
-      "signature": "CgorDg44EhJEGRhYJSR1KCd5JyZ3KCd5JyZ3JCNxJCNxIiFvHBtfFBNJDw86DAwtDA0xEBA8FBVLHR1iKyp9Wl6uZnbFYGS1ZGStPDuaOzqaLS2CHR1jFhZQEBE9DQ0wDQ4zEBE/FhdSHR5kKyt/anvJQl7DbXfTgoLeQ1S8NkeqLy+FISFrFhZREhJBDg81Dg84EhNFGBlUICFoMDGIOU6zQ1G1yK73zLH7R0muNTiaMjOMICFqFxhTEhNEDA02DxE7EBJFGRpXIyVwMTKKP0WtODugU0y0VEitNy6OMiaDMDGHISNrFxlXExRGDg84DxE7ExZIGx1cJCZxMTOJLymHMyiHTjedakW+bEK/Zju0LzGFIiRvGRtYEhRFDxE7DhE7EhVKGhxaIyVuMzWOLBhmKRNYKQ9PKQ1LKA1IXVCILjCHISRsFxlUEhRGDhA6DxE9ExZJGRxYIyZxLzKJMzGJNjSONjWQNTOLMDCGNzmULTCEICJoGBtWEBNFDhA4FiJ0HCR7IimKJyuOJSeDKCmDJCZ0IiVwIiVvIyZzJCdzJCZyHiFmFBdREhRDDRA3",
-      "meanLuma": 47.61458901427498,
+      "hash": "30820842",
+      "signature": "CgoqDQ01EhJEGRhXJCNxJyZ3JyZ3JiZ1JSVzJCNxIyNvISBrHBteFBNIDw84DAwsDA0xEBA8FRVMHBxgKip9XGCxZXXCX2OzZ2axPDuaOjmXLi2EHh1kFRZOEBE+DQ0xDQ41ERJBFhdRHh5mLS2EanvKQl7FcXvchIThQ1W8OEmwMDCJICFrFxdTEhNDDg82Dg83ERJCFxhTICFoLy+EN0uvQ1G1xKrxxavyR0mtNDeYMDCHHyBoFxhTERJCDA01DxE6EBJFGRtYIiRuMDGJQEexODufUUuyVUmwOC+PMSWAMDGIIiNtFxlVEhRGDhA4DxE9FBZKGx1cJCZyMzWOMCmIMyiHUTmjbEfCa0K+aT25MDKKIiRuGhxZExVIDxE7DhE7EhRHGRtYIyVuMjSKKhhiKRNYKA9OKAxIKAxIXVCHLC6CISNqFxlUERNEDhA4DhE8ExZJGh1aIyVwLzKHNDKMNjSONjSNNTONMTCINTeRLjCEICNqGBtVEBNEDhA6FyJ2HSaAIymLJyuPJymIKSqFJCZzIyZ0IyZyIyZzJSh1JSh2HSFnFRhSEhVFDRA4",
+      "meanLuma": 47.62307713155906,
       "litFraction": 1
     },
     {
@@ -1951,10 +1951,10 @@
     },
     {
       "id": "spectrum-bars/extreme/max",
-      "hash": "1652a798",
-      "signature": "aHQ7ZnI3hJJPmaddjJpUjpxUlqRbg5BQZ3M3bnlBT1gsS1ItSE4vLDAbEBMICgwFgotef41IhpVMrLtvtshwtsJypbZkr8Bsq7VxfotKfYlMa3VDUVkySE4tNDkiIycXeoZKgY5Nm6tbqrxjssRsxdN2v85vq71jrr9mobFeiJVRg49QaXM+SlIqPEIhMjcfSlIrjZtUl6ZbobNc1+qGwdBx09qI4PGGv9JwrL1jqLligpBJcX1AcHpEUFgwLzYXSE8rZGxCe4ZQobJdw8uf0uJ90tqV3eeK3uiJzNSGtMZttsdykZ9Ye4dNaHI+TVUuSE4uUFgwVF0wdH9It8puv9J1ztZ+4OqUy+B0zdWAx9V3nq9amKdZjpxXWmUwVF0wNTshPkUlUlsxYGo7ZnE7iZZVytZ/ztWG4PaHztiA0diFucxtm6pciphTeYVHWWMzMzgjQkctNTscRU0kWWM0X2k3e4dKmaJmqrd1u89sv8eaqrpoqLlnkqBZb3pBYm04ERMIJioWOT4kOkAiW2M9WGE0Xmg5cHtGb3tBc39CmKhWq7tpiZhRgI1Kg49SXmc3",
-      "meanLuma": 136.04570895061698,
-      "litFraction": 0.9972029320987654
+      "hash": "9fb93332",
+      "signature": "Vl40VmAxYGo3cXxGYGszeYVNaHM9ZW89XGU3SlMqREsoMjgbJSoTIiUVHR8UDxEKkJlsj51alaRaucZ6pLVht8hzt8h0malYo7JnkJ5adIBFZW89T1gvPUMkKi8XGBsLjJtTsMFtt8pqz+V76f2O5/KJ+P+Z6vqP1et+wtZyp7lglKNWcX49a3ZCSFAoQUcqOD4faXRAf4tPhpRRkqFXm6tbprdkqbpog5NFiphRgo5Pcn1FZm9AS1MsMjgZKi8XRUwoWmM2hI5brL1oytSk0+V/3/CE6fOY1+d95fCWucxvp7hmlqRdcHxAa3VDTlYvT1YvWWMya3c9hZJP3fGG8PmZ//+h//+w//+1+v+f9P+T4vCLuMtrqblnkJ5ZdH9HJioWNDkgP0UnU1o1XGQ6W2U2hJNJm6tcpLRjqLhpm6pfhpRPb3s+WmQvVl8yTFMuIiYTNzwiOT8eT1cvXGU3aHI9eIRJlaFixdOPssVnuMGTrL1nrLxtk6FbiJRYYGo3GBwLJCkRMDcXQkojV2AycXtGd4NHfIlHkJ1Yi5tMzuJ9y959vM9zo7RhiZhPdoJE",
+      "meanLuma": 135.80239566936763,
+      "litFraction": 0.9966724537037037
     },
     {
       "id": "radial-burst/extreme/min",
@@ -1965,10 +1965,10 @@
     },
     {
       "id": "radial-burst/extreme/max",
-      "hash": "8a9a1db4",
-      "signature": "AQMACxAHDRUIRE46r6+vn5+fnJycqampl5eXpqamw8PDz8/PISsWEhsMCw8HFxsTBQsCCBICGygT/Pz8zMzM39/f5OTk6enp7+/v4+Pj3Nzc2dnZ////IC0TDxkICQ0HBgsDDxgHZ3Jbubm5qKioyMjIv7+/vLy8u7u7wMDAvLy8srKyp6enaHNcEhsKEhYNCw8HDxYLc3NzcnJyiIiIioqKiIiIkJCQmZmZgoKCi4uLiIiIeXl59PT0CA4DCQwGCAsFExwLqKiorq6usLCwvb29wcHBy8vLwcHBxcXFuLi4tLS0pKSk9fX1FiANFRoQDxgIJTEZoqqbysrK6enp39/f8/Pz9vb28PDw4uLi4uLi2traz8/P////HysUEBgJCxEGBg4CMDwlnZ2dtLS0urq6uLi4t7e3ubm5xsbGsrKyoaGhoqKig454DBQHFhwQDBAJCxAIGyMU9PT0goKCfHx8f39/ioqKjIyMg4ODg4ODe3t7////GSERCg8HBwkFCAwGGR8UEx0MMTwlv7+/rq6urKyspaWlurq6t7e3u7u7////QU03ExwMDhQJFRoR",
-      "meanLuma": 127.7826321952169,
-      "litFraction": 0.9564043209876543
+      "hash": "81bd80b9",
+      "signature": "Cg0HBgkFChEGRU09gICAhYWFfHx8g4ODgoKCeXl5kJCQo6OjFh4OEhkNFBgQCg0HHSMYGR4TGSMP7+/vnp6esLCwuLi4rq6usbGxvr6+pKSkpqam////GiQPDRMJBQkCEBQMJTAbcX9j19fX1tbW2NjY8PDw7Ozs5ubm4uLi1tbWzs7OuLi4iJZ6ERoIGCARCw8HFRwQf39/h4eHhISEiYmJk5OTm5ubfn5+j4+PkZGRiYmJg4OD9PT0CQ4GCw8IDxQMHCYUs7OzrKysvb29vLy8tra2xcXFu7u7zc3Nu7u7rq6upKSk9vb2IisYDxQLFBwMFyINl5+PysrK3Nzc6urq7u7u8PDw9/f37Ozs5ubm4eHhwcHB////JTEaGSITCQ0GEhcOIywajo6OioqKh4eHf39/j4+Pk5OTmJiYjo6Of39/cnJyU1xKDRQJDBAICAwFFh0QFiAM////oqKiqqqqtra2wMDAwMDAqKioqqqqo6Oj////GCAQHycXAwcABQgEChEEDhkGNEEm5+fnzMzMzc3Ny8vL19fXvLy84eHh////U2BFFyIODBAIBwoE",
+      "meanLuma": 127.55966929012375,
+      "litFraction": 0.9490258487654321
     },
     {
       "id": "oscilloscope/extreme/min",
@@ -2063,10 +2063,10 @@
     },
     {
       "id": "voice-orb/extreme/max",
-      "hash": "5a89f2ce",
-      "signature": "SiIEUBkAqUQA+1pM/9zJ////////////////+vr6/Pz8/r6g/3UogTMAMw0AIAoCRBgAbSMA6moA/5nP/////f39+/v7/v7+////+fn5////+/v7/3601UwAWSAAMRIAVB8AuEwA/4QM/fn0/////Pz8/v7+////+vr6////////////////+YAKji8ATiUDZCwA2lQA/5Gg/////////////Pz8////////+fn5/////////////4WZtT8AShkAWCIAw0sA/+P5+fn5/////////////////f39/////Pz8/////f39/N/3xFEAViIAWiYB0lEA/3mX/////Pz8/////f39////////////+Pj4/////v7+/3+Xy08AUxkAQRUAlzUA/30A+vr2/////////Pz8/////v7+////////////+fn5/3oIwk0AWSAAMxQAWiIAzU0A/3eh/Pz8/////////////Pz8////+/v7+/v7/46+7WcAiDgATh0BKBMEMA8AezMA9VIm/8KT/////////////////////Pz8/NG+/2MwoDQAbDEBQRcA",
-      "meanLuma": 182.76189104938322,
-      "litFraction": 0.9977816358024691
+      "hash": "72d61265",
+      "signature": "NxgCQBUAeysA/VMw+5+R/////f39/v7+/Pz8+Pj4/f39+5V1/UUUXiQANBgDHw4AYjICgjYA+mwA/5PN/////////////////////////////////362104AVBwAKwwAbCgA7V8A/5gK/////////////////////////////////////////58OuEAAYCsAQxcAqEIA/2+W+/v7+/v7+fn5/f39+/v78/Pz+/v7+vr6+Pj4/v7+/F2EiiwAORQBVB8AwkkA/93//////////////////////////////////////////+P/yFAAUx4BZykA6FUA/5av/////////////////////////////////////////623/m0AeDIAMxMAeC4A8WEK//z1/////Pz89vb2+fn5+fn5/////f39+vr6+PTv7VIHijEARhwALxABXiYA20wA/3+z/////////////////////////////////5rM+2gAjD8ARBQAJgsBPhEAiSwA/3Es/+u6//////////////////////////np/4VazUwAbCYATRsA",
+      "meanLuma": 182.58780878665104,
+      "litFraction": 0.9972511574074074
     },
     {
       "id": "echo-trails/extreme/min",
@@ -2119,9 +2119,9 @@
     },
     {
       "id": "aurora/extreme/max",
-      "hash": "9689127a",
-      "signature": "/////////v7+/////////v7+////////8fHx/////////v7+////////+Pj4////////////+fn5////////+vr6/v7+////////////////+Pj4/////////v7+/////////////////f39/////////////////Pz8/f39/////////////////v7+////79HHtOXT/////Pz8/////f39////////////9/f3////+vr69/f3/////Pz8+vr6+tXQZXp1/9zl3dDO/////////v7+////////+vr6////////////////////+fn55+7m/+30/4PyNcnN/9DyfaKY+/v7////////+vr6/////////Pz8////////////6KWX/9Ht/////7nS+Lyv/9P+3bOn1crD/////v7+////////////9vb2/////Pz8//n7/9HfANPf//j/y+TZzeTI2867/7XurnVr/6/k/////////////Pz8/////////4jk1aGb/6/0p3ty/8rv/f7y3OnSrdXN/931AMDM+/v7////////9/f3////////",
-      "meanLuma": 240.34209913194445,
+      "hash": "042a5238",
+      "signature": "/Pz8/Pz8/f39+vr6+vr6/////f39/v7++/v7+Pj4/f39+fn5+fX4////+/v7////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////9LWohqqc////+/v7+/v7+fn5/f39+/v78vLy+/v7+/v79/f3/v7++/v7+/v79fX1/+XtW3Jt/+by//r1/////////////////////////////////////////////////////////6n/P+/0//X/pdbI////////////////////////////////////////xoF2/7Ls+9ja/5a07aac/5HIp3JppZyN+vr6/////f39+fn5+fn59fX1+/v7/Pz8//L4/8zyAN/u//7/4PDr3OzW48q3/7b/wI2D/7Hs/////////////////////////7L/8L21/7z/xpaL/+v/////////yfzx////AOz4////////////////////////",
+      "meanLuma": 239.9943900077155,
       "litFraction": 1
     },
     {
@@ -2133,10 +2133,10 @@
     },
     {
       "id": "synthwave/extreme/max",
-      "hash": "eb9e6b6a",
-      "signature": "O0MzXG9JsLWr/fz8////PT81gYGATlJJTlNKkJCPREY9////+/v7qK2jWm1HR08+9/f3cnNuOD4xLS0s0dPP0NnGLzQqY3BWYG1UPkM4vcaz1dfUMzMyLzUphISA5ubmo6CdXVJI7+/vfYdxJCQkYGVba21mgYx1cHxlcXNsV1xRERERhY959/f3amBVqKSh////////////////+Pn3bW9oi4t/g4p6gYl0iYmIW11W/P37////////////////yOSgGRkZFxcWFhYWeotkdnlvOjs3HSAYJikhKy0obG9mbYJXFhYVERIRFBQU0+6t/////////////////P36aGljjY2Fho5+jZV+k5OLamtl7/Dt////////////////p6OgdWtg+vr6hpB7ICEgaW1jd3hxdYFpfopyZ2libXJnDg4OipR+/f39cGZbqKSh6+vrgYF8KzEkLi4u4eHhzdbDLzQqaXZddoNpMDUqvcaz2NjYQkJCLTMne3x3+fn5QEg4WWxGrbGo9vb2////Njgvjo6NTFFHRUk/i4uKQkU7////7ezrrLChV2pES1NC",
-      "meanLuma": 136.23651060957116,
-      "litFraction": 0.9924768518518519
+      "hash": "8b03a1f6",
+      "signature": "Nj0uOEUsiZKB2dnY5ubmOz02bW1tUFVLUFVLa2tqLzEq6enpzc3MkJiIRlI5NT0u////f4B7MDUrMDAw3t7dytTAOD0zh5Z1ipt4P0Q6vcWz3+DeMTExJywhc3Nv////r6qmlol7////lqKKJiYmeYFwjpGIqbGgqLOWgoV8dn5tHBwbjpmB////iXtuurWx5OXj7/Dt7Ozs5ubmw8XBSUpFZ3VZaHdaTFs+ZHJWUFFMx8nF6urq4eHh4uPh3NzbwOKYFxcXISEhGhsadYhhZmhgHiAcJighHR8YNTYyZGZeZXlQGBgYERERHBwbv9yZ////////////////////hYd+k5OPkZGIkJCMkJGJf4F4////////////////////mpiWW1JK5+jmbHRjHR0dTlNIREZAaHNdbXhiXF1YVltPERERVl5O4+TiVEtDmZaU+fn4ent2ISYdMjMy09PTzNbCOkA0m62KnK6KLDImytS/2dnZOTk5KS4lhoeC+Pj4RU85Wm5GxsrA////////VFZKtra1fYR1hYWAo6OiUlVJ////////1dXPXnJJSVQ+",
+      "meanLuma": 135.77565467785925,
+      "litFraction": 0.9936342592592593
     },
     {
       "id": "bass-circle/extreme/min",
@@ -2189,9 +2189,9 @@
     },
     {
       "id": "gatefold/extreme/max",
-      "hash": "2f129579",
-      "signature": "8tKo4sym3tC4/ezL7d2949XF//HY8OLM4tbJ/vPZ69q338+w+N2r3baHzJ1ps4BL5u2+7tWz2c245di9++/Y4dbK7eHT//zz7evo8+vj//jl4NPF6teu+N2s1cCP0qBu0+fDx7Kd5u3S39XJ897G5t3T7eXd////9fX1+Pj4//rv6+DU6tzJ9NGs4NCn3sOTkLCts7il0d7Jy8O1///03tjO4dvW////9vb27e3t///85dzT3NLH/O3O3tGw1cKdT1toiNHZj5acyd3Lvbu58vfk1tTS7ero////7u3t7+rl9e3l29TM6NrF7eHI08iysLuxcoiSS2J5k9PajJ+xyffZwsfM8frm4ODh2tnZ4+Hf4trS2NTP4dvV28q61My9eI6Ps8e9qsjENFl/R2yRlfL/fpy5y+LVus7i4uzay8/S3ePpzs/Qy8vL4NvXy8O8ZYKCmrqxcpebudzVv87NJleJYMPZZabHgLfGrdzgo8bS6PrgtMzdt8fOr7vHusPMNEtJbpKGb5iVlsC2nsnJrN7fk8bRHl2dVtPuNHKwmdfRY5/a2vLXf6vLkLfbhqTC",
-      "meanLuma": 201.42209928626704,
+      "hash": "b7d54f7d",
+      "signature": "t5l7wKKEyqyO0LKU0rSX1LeZ2Lue2r6i17ug2Lue0bGSzKqHxaF9t5FroXlSg1039v7G6sur79q69uXE+uvO+evT/O/d//nu//35//zy/fDe/evH+OG289Ok7MKQ2qdz+//s++jM///9///x///7///////////////////////////9///y///g//jL/+uyb4+Lg4l5pseeopiN1eS1vbGk0MW77+/v7u7u7Ozs3dLHzrypyLKcxq6WwKaLtJd6T1tojtvjiI6VzPfSxcPB9v/j7erm+vf0/////////Pfx9e3i8+nU8+bO7drA6s+x0t7VgZupYoCes///qL7U/P//7PL3///////////////////////////+//7y//rnYnRzi5ySeI6MKEZjN1RxbLDGY3uSodK3iJaly+G7oKivoaaqpKWnpaWjo5+cn5mTXHh6mbmvgKaostjOvuTcKFyPWbXeZKzRgr/Pqtngpsnb6vjprMPatcfZt8TRs7zER2Zih7Ome6ysw/fsxfv7zv//u+TxJHLAZvf/RJXlvf//d739////m9H+rNr9rtX5",
+      "meanLuma": 201.56828566744005,
       "litFraction": 1
     },
     {

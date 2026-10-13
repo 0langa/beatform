@@ -21,15 +21,55 @@ export interface TrackAnalysis {
   travel: TravelCurve | null;
 }
 
+/**
+ * How long a job may go unanswered before the worker is presumed dead. A
+ * real analysis takes seconds; this only has to be shorter than "forever".
+ * It exists for the worker that dies WITHOUT an error event — an OOM kill
+ * fires no `onerror` — because an unanswered job leaves the store's
+ * `analyzing` flag up for good, and every export then waits out its whole
+ * analysis timeout and refuses with advice ("reload the track") that cannot
+ * help: the reload posts into the same dead worker.
+ */
+export const ANALYSIS_LIVENESS_MS = 10 * 60_000;
+
 let worker: Worker | null = null;
 let nextId = 1;
-const pending = new Map<number, (result: TrackAnalysis) => void>();
+interface PendingJob {
+  resolve: (result: TrackAnalysis) => void;
+  liveness: ReturnType<typeof setTimeout>;
+}
+const pending = new Map<number, PendingJob>();
+
+const nullAnalysis = (): TrackAnalysis => ({ grid: null, key: null, sections: [], travel: null });
+
+function settle(id: number, result: TrackAnalysis): void {
+  const job = pending.get(id);
+  if (!job) return;
+  pending.delete(id);
+  clearTimeout(job.liveness);
+  job.resolve(result);
+}
+
+/**
+ * Drop a worker that will never answer again, so the NEXT job gets a fresh
+ * one. The old handler resolved the pending jobs null but kept the broken
+ * instance: a worker whose module failed to load (404, CSP, a boot throw)
+ * stayed the singleton, every later `analyzeTrack` posted into it, no reply
+ * ever came, and the promise never settled. Every in-flight job dies with
+ * the worker, so each resolves null here — callers degrade, they do not hang.
+ */
+function discardWorker(reason: string): void {
+  console.error("[analysis]", reason);
+  worker?.terminate();
+  worker = null;
+  for (const id of [...pending.keys()]) settle(id, nullAnalysis());
+}
 
 function ensureWorker(): Worker | null {
   if (typeof Worker === "undefined") return null;
   if (!worker) {
-    worker = new Worker(new URL("./analysisWorker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (
+    const w = new Worker(new URL("./analysisWorker.ts", import.meta.url), { type: "module" });
+    w.onmessage = (
       e: MessageEvent<
         | {
             type: "analysis";
@@ -43,23 +83,24 @@ function ensureWorker(): Worker | null {
       >,
     ) => {
       const msg = e.data;
-      const resolve = pending.get(msg.id);
-      if (!resolve) return;
-      pending.delete(msg.id);
       if (msg.type === "analysis") {
-        resolve({ grid: msg.grid, key: msg.key, sections: msg.sections, travel: msg.travel });
+        settle(msg.id, {
+          grid: msg.grid,
+          key: msg.key,
+          sections: msg.sections,
+          travel: msg.travel,
+        });
       } else {
         console.error("[analysis]", msg.message);
-        resolve({ grid: null, key: null, sections: [], travel: null });
+        settle(msg.id, nullAnalysis());
       }
     };
-    worker.onerror = () => {
-      // Worker failed to boot — resolve everything null; callers fall back
-      for (const resolve of pending.values()) {
-        resolve({ grid: null, key: null, sections: [], travel: null });
-      }
-      pending.clear();
+    w.onerror = () => {
+      // Only if it is still the live instance — a liveness timeout may have
+      // already replaced it, and the pending jobs then belong to the new one.
+      if (worker === w) discardWorker("worker failed — recycling it");
     };
+    worker = w;
   }
   return worker;
 }
@@ -91,11 +132,25 @@ export function analyzeTrack(audio: AudioBuffer): { id: number; result: Promise<
     };
   }
   const result = new Promise<TrackAnalysis>((resolve) => {
-    pending.set(id, resolve);
-    w.postMessage(
-      { type: "analyze", id, pcm: copy },
-      copy.channels.map((c) => c.buffer),
-    );
+    const liveness = setTimeout(() => {
+      if (!pending.has(id)) return;
+      discardWorker(
+        `job ${id} unanswered for ${ANALYSIS_LIVENESS_MS / 1000} s — recycling the worker`,
+      );
+    }, ANALYSIS_LIVENESS_MS);
+    pending.set(id, { resolve, liveness });
+    try {
+      w.postMessage(
+        { type: "analyze", id, pcm: copy },
+        copy.channels.map((c) => c.buffer),
+      );
+    } catch (e) {
+      // Never reached the worker (a clone failure): nothing to wait for, and
+      // a timer left armed here would later kill a healthy worker for it.
+      pending.delete(id);
+      clearTimeout(liveness);
+      throw e;
+    }
   });
   return { id, result };
 }

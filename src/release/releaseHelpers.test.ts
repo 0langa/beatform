@@ -7,9 +7,41 @@ import {
   pickReleaseRun,
   releaseSubject,
   remoteMismatches,
+  updaterKeyId,
   type CommitFacts,
   type WorkflowRun,
 } from "../../scripts/lib/release-helpers.mjs";
+import { readFileSync } from "node:fs";
+
+describe("updaterKeyId", () => {
+  /** The signature 3.1.0 shipped in its latest.json (public data), made by
+   * the key whose public half tauri.conf.json pins. */
+  const SIG_3_1_0 =
+    "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUcHZHMDY0b3MxNUNEUHN1T2Jsa01QOGVqa01wYXlWZnppT05QcVNQb0VNcEJxdTlRdTl6L0pSMWZma3Q5eDkvZGFDbzZMdFh6bHIrUU5oZDZlVG14L3hWemthM2RObVFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTE1NzAzCWZpbGU6QmVhdGZvcm1fMy4xLjBfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjMuMS4wCi9jOTlCMGRGYlI2M1VnYWt1TGl4K0J0MXRueEltYmFQR28xQ0w2bEJTSVFuUEVQMzE2cU9nR0tkUHltcG0yUUJlUW5UQ0FVamJQWDJ2U2dLUllCYUNnPT0K";
+
+  it("reads the same key id off the pinned pubkey and a signature that key made", () => {
+    const conf = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8")) as {
+      plugins: { updater: { pubkey: string } };
+    };
+    const pinned = updaterKeyId(conf.plugins.updater.pubkey);
+    expect(pinned).toMatch(/^[0-9a-f]{16}$/);
+    expect(updaterKeyId(SIG_3_1_0)).toBe(pinned);
+  });
+
+  it("tells a signature from another key apart, and refuses a non-minisign blob", () => {
+    const payload = Buffer.concat([
+      Buffer.from("Ed"),
+      Buffer.from("0011223344556677", "hex"),
+      Buffer.alloc(64),
+    ]).toString("base64");
+    const file = Buffer.from("untrusted comment: other key\n" + payload + "\n").toString("base64");
+    expect(updaterKeyId(file)).toBe("0011223344556677");
+    expect(updaterKeyId(SIG_3_1_0)).not.toBe("0011223344556677");
+    expect(() => updaterKeyId(Buffer.from("just one line").toString("base64"))).toThrow(
+      /no payload line/,
+    );
+  });
+});
 
 /**
  * Pure decision logic of the one-command release (scripts/release.mjs),

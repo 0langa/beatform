@@ -154,6 +154,13 @@ export function useAppShortcuts(store: typeof useVizStore.getState): void {
       // keys, and a focused <select> owns letters too (they jump options).
       // Everything else (G, T, B, Q, F, \, [, ], digits…) still works.
       if ((tag === "INPUT" || tag === "SELECT") && NATIVE_CONTROL_KEYS.has(e.key)) return;
+      // A focused <button> owes its user Space. Switch, Segmented tiles, the
+      // mode chips, the rail items and every dialog button are <button>s, and
+      // the preventDefault() in the Space case below cancels Chromium's
+      // button activation — so one press used to play/pause the track AND
+      // leave the control inert. Space only: Enter and every other key still
+      // reach the map from a button.
+      if (tag === "BUTTON" && e.key === " ") return;
       if (tag === "SELECT") return;
       // Number keys 1-9 jump to a mode by position, beat-quantized when the
       // Quantize control is on (the switch lands on the next beat/bar).

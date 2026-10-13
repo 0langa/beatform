@@ -114,15 +114,26 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       // calls), so the first Ctrl+Z would look like a silent no-op and only
       // a second one would actually restore the old WGSL.
       let persisted = false;
-      ctx.asOneGesture("shader-save", () => {
-        registerCustomPreset(def);
-        const customDefs = [...get().customDefs.filter((d) => d.id !== def.id), def];
-        set({ customDefs });
-        // Quota failure must not hide behind a success toast — the shader
-        // would exist this session and silently vanish on restart.
-        persisted = saveCustomPresets(customDefs);
-        get().switchPreset(def.id);
-      });
+      // The def's PREVIOUS version rides into the snapshot (same reason as
+      // deleteCustomPreset's `doomed` below): a snapshot's customDefs is
+      // referencedCustomDefs — the active visual + timeline scenes only — so
+      // re-saving a shader that is NOT the active visual (ShaderEditor's
+      // loadExisting can open any def) recorded a snapshot without it, and
+      // Ctrl+Z reported "Undone" while the new WGSL stayed in place.
+      const previous = get().customDefs.find((d) => d.id === def.id);
+      ctx.asOneGesture(
+        "shader-save",
+        () => {
+          registerCustomPreset(def);
+          const customDefs = [...get().customDefs.filter((d) => d.id !== def.id), def];
+          set({ customDefs });
+          // Quota failure must not hide behind a success toast — the shader
+          // would exist this session and silently vanish on restart.
+          persisted = saveCustomPresets(customDefs);
+          get().switchPreset(def.id);
+        },
+        previous ? [previous] : undefined,
+      );
       ctx.flashNotice(
         persisted
           ? `Custom visual "${def.name}" saved`
@@ -173,7 +184,9 @@ export function customShaderActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
       if (!def) return;
       try {
         const path = await saveTextFile(
-          `${safeName(def.name)}.bfshader`,
+          // A user-typed title, not a filename: "v2.1 Glow" has no extension
+          // to strip (safeName strips one by default for the export lane).
+          `${safeName(def.name, { stripExtension: false })}.bfshader`,
           serializeCustomPreset(def, APP_VERSION),
           [{ name: "Beatform shader", extensions: ["bfshader"] }],
         );

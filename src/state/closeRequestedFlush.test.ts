@@ -67,6 +67,19 @@ const getCurrentWindow = vi.fn(() => ({ onCloseRequested, destroy }));
 
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow }));
 
+/** FEAT-009 lifecycle (installed by the same initApp): `listen` captures the
+ * perform:* handlers so a test can fire them; `invoke("perform_is_open")`
+ * answers false (no output window at boot). */
+type TauriEventHandler = () => void;
+const eventHandlers = new Map<string, TauriEventHandler>();
+const unlistenEvent = vi.fn();
+const listen = vi.fn(async (name: string, handler: TauriEventHandler) => {
+  eventHandlers.set(name, handler);
+  return unlistenEvent;
+});
+vi.mock("@tauri-apps/api/event", () => ({ listen }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => false) }));
+
 function fakeCanvas(): HTMLCanvasElement {
   return {
     width: 1,
@@ -89,6 +102,9 @@ afterEach(() => {
   vi.mocked(askConfirm).mockClear();
   shared.exportAbort = null;
   registeredHandler = null;
+  eventHandlers.clear();
+  listen.mockClear();
+  unlistenEvent.mockClear();
 });
 
 describe("Tauri onCloseRequested — the awaited close-flush", () => {
@@ -331,5 +347,123 @@ describe("Tauri onCloseRequested — the awaited close-flush", () => {
       warnSpy.mockRestore();
       dispose();
     });
+  });
+
+  /**
+   * The clean-exit marker on this path. `markCleanExit` used to be written
+   * only by the `pagehide` listener (persistence.ts), and this handler ends
+   * in `destroy()`, which can skip pagehide — so every ordinary desktop quit
+   * left the marker at "0" and the next launch's bootDesktopDocument turned
+   * that into a false "Recovered your work from the last session". The
+   * handler now marks the exit clean itself, once the flush has landed and
+   * before destroy(); a flush that failed or timed out leaves the marker
+   * alone, because the file on disk really is older than the screen then.
+   */
+  describe("the clean-exit marker", () => {
+    const CLEAN_EXIT_KEY = "viz.cleanExit";
+
+    it("a successful flush marks the exit clean — after the flush, before destroy", async () => {
+      const dispose = useVizStore.getState().initApp(fakeCanvas());
+      await vi.waitFor(() => expect(onCloseRequested).toHaveBeenCalledTimes(1));
+      const order: string[] = [];
+      vi.spyOn(useVizStore.getState(), "flushAutosave").mockImplementation(async () => {
+        order.push("flush");
+      });
+      const setItem = vi
+        .spyOn(localStorage, "setItem")
+        .mockImplementation((k: string, v: string) => {
+          if (k === CLEAN_EXIT_KEY) order.push(`marker=${v}`);
+        });
+      destroy.mockImplementation(async () => {
+        order.push("destroy");
+      });
+
+      await registeredHandler!({ preventDefault: vi.fn() });
+
+      expect(order).toEqual(["flush", "marker=1", "destroy"]);
+      setItem.mockRestore();
+      dispose();
+    });
+
+    it("a failed flush leaves the marker alone — the next launch SHOULD recover", async () => {
+      const dispose = useVizStore.getState().initApp(fakeCanvas());
+      await vi.waitFor(() => expect(onCloseRequested).toHaveBeenCalledTimes(1));
+      vi.spyOn(useVizStore.getState(), "flushAutosave").mockRejectedValue(new Error("disk full"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const setItem = vi.spyOn(localStorage, "setItem");
+
+      await registeredHandler!({ preventDefault: vi.fn() });
+
+      expect(destroy).toHaveBeenCalledTimes(1);
+      expect(setItem.mock.calls.some(([k, v]) => k === CLEAN_EXIT_KEY && v === "1")).toBe(false);
+      setItem.mockRestore();
+      errorSpy.mockRestore();
+      dispose();
+    });
+
+    it("a timed-out flush leaves the marker alone too", async () => {
+      const dispose = useVizStore.getState().initApp(fakeCanvas());
+      await vi.waitFor(() => expect(onCloseRequested).toHaveBeenCalledTimes(1));
+      vi.spyOn(useVizStore.getState(), "flushAutosave").mockReturnValue(
+        new Promise<void>(() => undefined),
+      );
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const setItem = vi.spyOn(localStorage, "setItem");
+
+      vi.useFakeTimers();
+      try {
+        const handlerPromise = registeredHandler!({ preventDefault: vi.fn() }) as Promise<void>;
+        await vi.advanceTimersByTimeAsync(10_000);
+        await handlerPromise;
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(destroy).toHaveBeenCalledTimes(1);
+      expect(setItem.mock.calls.some(([k, v]) => k === CLEAN_EXIT_KEY && v === "1")).toBe(false);
+      setItem.mockRestore();
+      warnSpy.mockRestore();
+      dispose();
+    });
+  });
+});
+
+/**
+ * FEAT-009 lifecycle — `perform:closed`, installed by the same initApp.
+ * setStageMode deliberately leaves `blackout` standing while the performance
+ * window is open (it belongs to the audience surface, not the operator's
+ * local view), so with Stage OFF, `0` pressed, and the window then closed,
+ * nothing could clear it: the Perform button sat disabled on "Blacked out —
+ * tap to restore", `0`/`.` were inert, `S` entered Stage straight into black,
+ * and reopening the window published blackout:true. The listener now clears
+ * it with performOpen — unless Stage is on, where the blackout is the
+ * operator's own and clears the usual way.
+ */
+describe("Tauri perform:closed — the output window takes its blackout with it", () => {
+  it("outside Stage, closing the window clears blackout along with performOpen", async () => {
+    const dispose = useVizStore.getState().initApp(fakeCanvas());
+    await vi.waitFor(() => expect(eventHandlers.has("perform:closed")).toBe(true));
+    useVizStore.setState({ performOpen: true, stageMode: false, blackout: true });
+
+    eventHandlers.get("perform:closed")!();
+
+    expect(useVizStore.getState().performOpen).toBe(false);
+    expect(useVizStore.getState().blackout).toBe(false);
+    dispose();
+  });
+
+  it("in Stage, the blackout is the operator's own and survives the close", async () => {
+    const dispose = useVizStore.getState().initApp(fakeCanvas());
+    await vi.waitFor(() => expect(eventHandlers.has("perform:closed")).toBe(true));
+    useVizStore.setState({ performOpen: true, stageMode: true, blackout: true });
+
+    eventHandlers.get("perform:closed")!();
+
+    expect(useVizStore.getState().performOpen).toBe(false);
+    expect(useVizStore.getState().blackout).toBe(true);
+    // ...and leaving Stage with no window open clears it, exactly as before.
+    useVizStore.getState().setStageMode(false);
+    expect(useVizStore.getState().blackout).toBe(false);
+    dispose();
   });
 });

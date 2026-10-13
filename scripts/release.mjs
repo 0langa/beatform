@@ -11,7 +11,7 @@
  * Steps (state in node_modules/.cache/release-state.json, keyed by version —
  * a rerun resumes at the first incomplete step):
  *   1. preflight   clean tree on main, bump-version --verify, gh auth reachable,
- *                  prints the GATES.md checklist and requires --gates-ran
+ *                  prints the gates checklist and requires --gates-ran
  *                  (it does NOT rerun the gates — you run them, it records
  *                  your acknowledgment)
  *   2. bump        bump-version.mjs X.Y.Z + npm i --package-lock-only +
@@ -35,7 +35,7 @@
  *   7. verify      download live latest.json + SHA256SUMS.txt + the setup
  *                  exe; assert manifest version, signature present, URL
  *                  targets the tag, and the SHA-256 matches — prints a
- *                  verification block (the GATES.md §4 set)
+ *                  verification block (the post-release checks)
  *   8. reminder    ALIGN-002: after the installed app auto-updates, HKCU
  *                  uninstall DisplayVersion must equal X.Y.Z (exact-version
  *                  check) — printed, then marked done
@@ -69,9 +69,21 @@ import {
   pickReleaseRun,
   releaseSubject,
   remoteMismatches,
+  updaterKeyId,
 } from "./lib/release-helpers.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+/** What a release commit may contain: the five version files the bump step
+ * writes, the lockfile `npm i --package-lock-only` rewrites, and the notes. */
+const RELEASE_COMMIT_FILES = [
+  "package.json",
+  "package-lock.json",
+  "src/version.ts",
+  "src-tauri/Cargo.toml",
+  "src-tauri/Cargo.lock",
+  "src-tauri/tauri.conf.json",
+  "CHANGELOG.md",
+];
 const stateFile = path.join(root, "node_modules", ".cache", "release-state.json");
 const STEPS = [
   "preflight",
@@ -102,7 +114,7 @@ if (flag("help") || argv.length === 0) {
       "",
       "options:",
       '  --title "..."    release title (required by the commit step; stored in state)',
-      "  --gates-ran      acknowledge the GATES.md checklist was run green (preflight)",
+      "  --gates-ran      acknowledge the gates checklist was run green (preflight)",
       "  --continue       resume after the changelog stop (same as a plain rerun)",
       `  --from=<step>    redo from a step onward (${STEPS.join(", ")})`,
       "  --dry-run        print the plan and state; execute NOTHING",
@@ -292,6 +304,7 @@ function printGatesChecklist() {
       [
         "  npm run typecheck && npm run lint && npm run format:check && npm test",
         "  (cd src-tauri && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace --lib --bins)",
+        "  npm audit --audit-level=high && (cd src-tauri && cargo audit)",
         "  npm run build",
         "  the device harnesses that touch what changed (TESTING.md names them)",
       ].join("\n"),
@@ -396,7 +409,21 @@ const steps = {
     const plan = commitPlan(commitFacts(title));
     for (const note of plan.notes) console.log(`commit: ${note}`);
     if (plan.commit) {
-      run("git", ["add", "-A"]);
+      // Only the release set goes into the release commit. Preflight's
+      // clean-tree check ran BEFORE the changelog stop, so a scratch file
+      // left in the tree while the notes were written must be refused here,
+      // not swept into the tagged commit.
+      const stray = run("git", ["status", "--porcelain"], { capture: true })
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((l) => l.slice(3).trim().replace(/^"|"$/g, ""))
+        .filter((p) => !RELEASE_COMMIT_FILES.includes(p));
+      if (stray.length) {
+        throw new Error(
+          `commit: the tree holds changes outside the release set — commit or remove them first:\n  ${stray.join("\n  ")}`,
+        );
+      }
+      run("git", ["add", "--", ...RELEASE_COMMIT_FILES]);
       run("git", ["commit", "-m", releaseSubject(version, title)]);
     }
     if (plan.tag) run("git", ["tag", tag]);
@@ -513,6 +540,19 @@ const steps = {
     if (!plat?.signature || plat.signature.length < 100) {
       throw new Error("verify: updater signature missing/implausible in latest.json");
     }
+    // Present is not enough: a .sig from any key but the one pinned in
+    // tauri.conf.json publishes just as green, and every installed app then
+    // rejects the update. release.yml makes the same check before upload.
+    const pinnedKey = updaterKeyId(
+      JSON.parse(readFileSync(path.join(root, "src-tauri", "tauri.conf.json"), "utf8")).plugins
+        .updater.pubkey,
+    );
+    const signedBy = updaterKeyId(plat.signature);
+    if (signedBy !== pinnedKey) {
+      throw new Error(
+        `verify: latest.json is signed by key ${signedBy}, but tauri.conf.json pins ${pinnedKey} — installed apps will reject this update`,
+      );
+    }
     if (!plat.url?.includes(`/${tag}/`) || !plat.url.endsWith(setupName)) {
       throw new Error(`verify: manifest url does not target ${tag}: ${plat.url}`);
     }
@@ -537,7 +577,7 @@ const steps = {
         `  version        ${version} (tag ${tag})`,
         `  live manifest  ${liveUrl}`,
         `  manifest ver   ${manifest.version}  OK`,
-        `  signature      present (${plat.signature.length} chars)  OK`,
+        `  signature      present (${plat.signature.length} chars), key ${signedBy} = pinned  OK`,
         `  manifest url   ${plat.url}  OK`,
         `  installer      ${setupName} (${setupBytes.length} bytes)`,
         `  sha256         ${actual}`,
@@ -557,7 +597,7 @@ const steps = {
         `entry's DisplayVersion must equal ${version} EXACTLY. Check with:`,
         "  powershell -NoProfile -Command \"Get-ItemProperty HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | Where-Object { $_.DisplayName -like 'Beatform*' } | Select-Object DisplayName, DisplayVersion\"",
         "Also smoke the installed artifact (scripts/installed-runtime-smoke.mjs) —",
-        "source/dev server alone is insufficient (GATES.md §4).",
+        "source/dev server alone is insufficient.",
       ].join("\n"),
     );
     return true;
@@ -592,7 +632,7 @@ if (dryRun) {
     console.log(`  ${state.done[s] ? "done   " : "pending"}  ${s}`);
   }
   console.log("\nnotes: gh runs with GITHUB_TOKEN stripped (env -u equivalent, keyring auth);");
-  console.log("gates are NOT rerun here — preflight prints GATES.md and needs --gates-ran.");
+  console.log("gates are NOT rerun here — preflight prints the checklist and needs --gates-ran.");
   process.exit(0);
 }
 

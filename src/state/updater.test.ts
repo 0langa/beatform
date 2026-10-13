@@ -172,6 +172,25 @@ describe("installing (G5)", () => {
     stop();
   });
 
+  it("Try again after a failed install still names the version in `ready`", async () => {
+    // The retry starts from `error`, which carries no version, and the old
+    // read was "phase.version if available, else empty" — so the prompt
+    // after a successful retry said "Version  is installed". The staged
+    // handle is what gets installed, so its version is what "ready" names.
+    const update = stagedUpdate("9.9.9");
+    (update.downloadAndInstall as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("signature mismatch"),
+    );
+    env.check.mockResolvedValue(update);
+    await runUpdateCheck(true);
+    await installUpdate();
+    expect(getUpdatePhase()).toEqual({ state: "error", message: "signature mismatch" });
+
+    await installUpdate(); // the prompt's "Try again": same staged handle
+
+    expect(getUpdatePhase()).toEqual({ state: "ready", version: "9.9.9" });
+  });
+
   it("a failed install lands on `error`, not on a stuck progress bar", async () => {
     const update = stagedUpdate("9.9.9");
     (update.downloadAndInstall as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(

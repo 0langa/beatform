@@ -24,10 +24,103 @@ Releases — there is no paid tier, cloud service, or telemetry.
   (Oscilloscope, Metaballs, Echo Trails) keep their own, since any finish on
   their output would compound through their history, and Builder, Particle
   Flow and Spectrum Scape draw outside the fragment path. Every kit knob is
-  an exact no-op at its default, so no saved look changes by a pixel.
+  an exact no-op at its default, so no saved look changes by a pixel. Grain
+  and Scanlines are drawn in screen space over the finished frame — a
+  Mirror never mirrors the grain, a Spin never tilts the lines, a Beat zoom
+  never pumps them — and in a transparent export the kit's grain scales
+  with the light under it, so an empty frame stays empty instead of
+  filling with speckled coverage. A spectrum window whose Low edge is
+  dragged above its High edge reads the same slice the right way round,
+  never a reversed spectrum.
 - Dev: `scripts/preset-frames.mjs` renders a preset at given parameter values
   on the app's own WebGPU path and writes PNGs (dev hook
   `__renderPresetFrames`) — how a new knob gets judged by eye.
+- **An export never eats the file it is replacing.** The four ffmpeg lanes
+  (ProRes 4444, 10-bit AV1, GIF, animated WebP) rendered straight onto the
+  picked path, so re-exporting over an existing file and then cancelling,
+  running out of disk, or closing the app truncated and deleted the
+  previous render. They now write a `.partial` sibling like the MP4/WebM
+  lane does and replace the target in one rename only after ffmpeg has
+  finished cleanly; a refused replace (the file is open in a player) keeps
+  the finished render under the sibling name and the message says where.
+  Cancelling one of those exports no longer reports "ffmpeg pipe write
+  failed" for the frame that was in flight. Batch titles keep their dots
+  ("Ms.Jackson" exported as `Ms.mp4`), and the AV1 capability probe asks
+  for the level 1080p60 and 1440p actually need instead of one below it.
+- **Lyrics: nothing left behind, nothing lost at the edges.** Closing the
+  app or cancelling during transcription left the isolated vocal (a WAV
+  the length of the track) and whisper's JSON in the temp folder for good;
+  the scratch files now sit next to the app's own job file and are swept
+  with it. A transcript in which whisper split one accented or CJK
+  character across two tokens no longer fails the whole job as "not valid
+  UTF-8" — the line takes whisper's own text for that segment. A first
+  word timed a frame before its segment, or a last word at its end, is no
+  longer dropped from the line. A model download whose resumable `.part`
+  had grown past the file, or that the server refuses to resume, starts
+  over instead of failing forever. The 10-second cancel fallback can no
+  longer hit a brand-new run that inherited the old one's process id.
+- **A crafted Shadertoy paste is an error, not a crash.** A call written
+  inside a function's parameter list sent the translator past its panic
+  guard and took the app down; every stage now runs inside it, and the
+  import dialog gets the message.
+- **The analysis worker heals itself.** If the track-analysis worker died
+  (a load failure, or the browser killing it on a two-hour file), every
+  later analysis waited on a corpse: the beat grid never arrived, and each
+  export waited five minutes before refusing. A dead worker is now
+  discarded and recreated, and a job unanswered for ten minutes is given
+  up on. Files with more than two channels are analysed live as the same
+  (L+R)/2 mix the export uses, instead of the average of all six; and
+  each "Listen to the system" session no longer leaves a running audio
+  processor behind in the audio graph.
+- **"Try again" after a failed update install** now installs and reports
+  the version instead of an empty name.
+- **Keyboard fixes.** Space on a focused button (a switch, a segmented
+  tile, a mode chip, a rail item, any dialog button) activated nothing and
+  toggled playback; the global shortcut now steps aside for it. Arrowing
+  through the Visuals rail no longer also moves the volume, and resizing a
+  dock with the arrow keys no longer also seeks the track. The header's
+  Save look button disarms a pending MIDI Learn like leaving the Live page
+  does, and closing a dock mid-drag can no longer leave an Escape handler
+  behind that swallowed the next Escape anywhere.
+- **Drag and drop.** Reordering modes in Preferences no longer raises the
+  "Drop to load" overlay over the dialog, and a picture or a video
+  dropped on the window says where the background image, logo layer and
+  video background are actually set, instead of failing as an undecodable
+  track; any track dropped with it still loads.
+- **Custom shaders are kept — every copy of them.** On the desktop app a
+  shader you imported or wrote was remembered only while a project
+  referenced it: relaunch with another visual active and it was gone from
+  your library. The library is now saved on desktop as it always was in
+  the browser build. Opening a project or theme that embeds an OLDER copy
+  of one of your shaders kept your newer version in the library but left
+  the GPU on the older one, so the preview and the export disagreed; the
+  library's copy now stays the one that renders. A look saved while a
+  custom visual was active vanished at the next launch and its exported
+  `.bfpreset` could not be re-imported; it is kept, and applying it while
+  that visual is not loaded says so. Undo after re-saving a shader that was
+  not the active visual really restores the previous version. Shader and
+  theme file names keep their dots ("v2.1 Glow").
+- **"Listen to the system" gives the track its analysis back.** Switching
+  live input on and off left the loaded track without its beat grid, key
+  and sections: tempo-locked LFOs fell back to 120 BPM, beat-quantized
+  switching had no grid, and an export silently rendered without them
+  until the file was dropped again. The analysis re-runs when live input
+  stops.
+- **Stage and the performance window.** Closing the performance window
+  outside Stage mode no longer leaves the output blacked out — the
+  drawer's blackout button was disabled yet read "Blacked out", the 0 key
+  did nothing, and the next Stage entry started black. A clean desktop
+  close is now recorded as one, so the next launch no longer offers
+  "Recovered your work from the last session" after an ordinary session.
+- Dev: the release gate set is the same everywhere now — CI and the
+  release workflow verify that the five version files agree (and the tag
+  matches), the release workflow runs the dependency audits CI already
+  ran, the updater signature is checked against the key pinned in
+  `tauri.conf.json` before `latest.json` is published (and again by the
+  release script's verify step), the release commit holds only the release
+  set, and the ffmpeg sidecar's zip is hashed before it is extracted. Docs:
+  style counts, the security network inventory (the GPU pack), and the
+  links that pointed at the removed CONTRIBUTING.md.
 
 ## [3.1.0] - 2026-10-13
 

@@ -686,3 +686,69 @@ describe("deleteCustomPreset undo restores an unreferenced shader (R2-20)", () =
     expect(String(write![1])).toContain("custom-r220");
   });
 });
+
+/**
+ * A look saved while a custom visual is active used to be accepted and
+ * written, then dropped by the next boot's loadUserPresets (its validator
+ * checked the strip array alone) and refused on re-import. The store-level
+ * half of the userPresets.test.ts pins: the real saveUserPreset -> persisted
+ * payload -> boot loader round trip, plus applyUserPreset's refusal of a look
+ * whose custom visual is not loaded (validUserPreset keeps those on purpose).
+ */
+describe("a look saved with a custom visual active survives the reload", () => {
+  it("saveUserPreset -> loadUserPresets keeps it, and its exported .bfpreset parses", async () => {
+    const { useVizStore } = await import("./store");
+    const { loadUserPresets, parseUserPreset, serializeUserPreset } = await import("./userPresets");
+    const { NEW_SHADER_TEMPLATE, unregisterCustomPreset } =
+      await import("../render/presets/custom");
+    const def = { id: "custom-lookhost", name: "Host", params: [], wgsl: NEW_SHADER_TEMPLATE };
+    useVizStore.setState({ checkCustomPreset: vi.fn(async () => []) });
+    await useVizStore.getState().saveCustomPreset(def);
+    expect(useVizStore.getState().presetId).toBe(def.id);
+    try {
+      setItemMock.mockClear();
+      useVizStore.getState().saveUserPreset("Custom look");
+      const look = useVizStore.getState().userPresets.find((p) => p.presetId === def.id);
+      expect(look).toBeDefined();
+      // "Reload": feed the exact payload saveUserPreset persisted back through
+      // the boot loader — this is where the look used to vanish.
+      const write = setItemMock.mock.calls.filter((c) => c[0] === "viz.userPresets.v1").pop();
+      expect(write).toBeDefined();
+      const getItem = vi
+        .spyOn(localStorage, "getItem")
+        .mockImplementation((k: string) => (k === "viz.userPresets.v1" ? String(write![1]) : null));
+      try {
+        expect(loadUserPresets().map((p) => p.presetId)).toContain(def.id);
+      } finally {
+        getItem.mockRestore();
+      }
+      // ...and the exported file is importable, not "malformed".
+      expect(parseUserPreset(serializeUserPreset(look!)).presetId).toBe(def.id);
+    } finally {
+      unregisterCustomPreset(def.id);
+      useVizStore.setState({ presetId: "spectrum-bars", customDefs: [], userPresets: [] });
+    }
+  });
+
+  it("applyUserPreset refuses a look whose custom visual is not loaded instead of painting the default mode", async () => {
+    const { useVizStore } = await import("./store");
+    const before = useVizStore.getState().presetId;
+    useVizStore.setState({
+      userPresets: [
+        {
+          id: "up-orphan",
+          name: "Orphan",
+          presetId: "custom-notloaded",
+          params: { hue: 0.5 },
+          createdAt: "2026-10-13T00:00:00.000Z",
+        },
+      ],
+    });
+
+    useVizStore.getState().applyUserPreset("up-orphan");
+
+    expect(useVizStore.getState().presetId).toBe(before);
+    expect(useVizStore.getState().notice).toContain("isn't loaded");
+    useVizStore.setState({ userPresets: [], notice: null });
+  });
+});

@@ -33,6 +33,7 @@ describe("commitVisualsWidth (whole-lane review, IMPORTANT on top of E2-U1)", ()
 function escState() {
   return {
     exporting: null,
+    exportPreparing: false,
     batchStatus: "idle",
     stageMode: false,
     setShowHelp: vi.fn(),
@@ -45,6 +46,7 @@ function escState() {
     setShowLibrary: vi.fn(),
     setShowGallery: vi.fn(),
     setShowTimeline: vi.fn(),
+    setShowPerform: vi.fn(),
   };
 }
 
@@ -265,5 +267,116 @@ describe("DockResizeHandle — Escape mid-drag (E2-U1)", () => {
     expect(onCommit).toHaveBeenCalledOnce();
     expect(onCommit).toHaveBeenCalledWith(400);
     expect(handle.getAttribute("aria-valuenow")).toBe("400");
+  });
+});
+
+/** Two more ways the handle's keys leaked out of it. */
+describe("DockResizeHandle — keys that must stay inside the handle", () => {
+  it("←/→ on the handle resize the dock WITHOUT also seeking the track", () => {
+    // resizeKeyValue only ever called preventDefault(); the handle is a DIV,
+    // which useAppShortcuts' INPUT/SELECT guard does not cover, so each
+    // ArrowRight also reached its seekBy(5) — four taps narrowed Visuals by
+    // 64 px AND jumped the song 20 s. The same double-fire PlayerBar's own
+    // DIV slider documents and stops.
+    function Harness({ state }: { state: Record<string, unknown> }) {
+      useAppShortcuts((() => state) as unknown as typeof useVizStore.getState);
+      const [visualsW, setVisualsW] = useState(500);
+      return (
+        <DockResizeHandle
+          className="panel-resize-handle chrome"
+          ariaLabel="Resize Visuals"
+          title="Drag to resize Visuals"
+          value={visualsW}
+          ariaValueNow={visualsW}
+          min={380}
+          max={760}
+          compute={(ev) => Math.min(760, Math.max(380, 1000 - ev.clientX))}
+          onDrag={() => undefined}
+          onCommit={() => undefined}
+          onCancel={() => undefined}
+          // The real visualsResizeKey's shape (App.tsx), sign=-1 as there.
+          onKeyDown={(e) => {
+            const next = resizeKeyValue(e, visualsW, 380, 760, -1);
+            if (next === null || next === visualsW) return;
+            setVisualsW(next);
+          }}
+        />
+      );
+    }
+    const state = { seekBy: vi.fn() };
+    render(<Harness state={state} />);
+    const handle = screen.getByRole("separator", { name: /Resize Visuals/i });
+    handle.focus();
+
+    fireEvent.keyDown(handle, { key: "ArrowRight" });
+
+    expect(handle.getAttribute("aria-valuenow")).toBe("484"); // the resize itself ran
+    expect(state.seekBy).not.toHaveBeenCalled();
+
+    // Control: the same key with focus elsewhere still seeks.
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    expect(state.seekBy).toHaveBeenCalledWith(5);
+  });
+
+  it("unmounting mid-drag (Q/G closes the dock) tears the capture-phase Escape listener down with it", () => {
+    // end() — the only place the window keydown listener was removed — runs
+    // on pointerup/pointercancel/Escape. Close the dock with Q while
+    // dragging its handle and none of those ever fire: the listener outlived
+    // the handle, and the NEXT Escape pressed anywhere (a text field, a
+    // dialog) was swallowed by its stopPropagation and reverted the width.
+    // ModulationPage.tsx keeps a cancelDragRef + unmount effect for the same
+    // leak; the handle now does too.
+    function Harness({
+      state,
+      mounted,
+      onCancel,
+    }: {
+      state: Record<string, unknown>;
+      mounted: boolean;
+      onCancel: (v: number) => void;
+    }) {
+      // The shortcut map lives at App root and OUTLIVES the handle — mounted
+      // here, outside the conditional, for the same reason.
+      useAppShortcuts((() => state) as unknown as typeof useVizStore.getState);
+      const [panelW, setPanelW] = useState(300);
+      return mounted ? (
+        <DockResizeHandle
+          className="panel-resize-handle library-resize-handle chrome"
+          ariaLabel="Resize the library"
+          title="Drag to resize the library"
+          value={panelW}
+          ariaValueNow={panelW}
+          min={240}
+          max={440}
+          compute={(ev) => Math.min(440, Math.max(240, ev.clientX - 14))}
+          onDrag={setPanelW}
+          onCommit={() => undefined}
+          onCancel={(v) => {
+            setPanelW(v);
+            onCancel(v);
+          }}
+          onKeyDown={() => undefined}
+        />
+      ) : null;
+    }
+    const state = escState();
+    const onCancel = vi.fn();
+    const { rerender } = render(<Harness state={state} mounted onCancel={onCancel} />);
+    const handle = screen.getByRole("separator", { name: /Resize the library/i });
+    stubCapture(handle);
+    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 314 }); // starts at 300
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 414 }); // mid-drag, at 400
+
+    rerender(<Harness state={state} mounted={false} onCancel={onCancel} />); // Q: the dock closes under the drag
+
+    // The unmount IS the cancel: nothing committed, the pre-drag width back.
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(onCancel).toHaveBeenCalledWith(300);
+
+    // The next Escape, anywhere, belongs to the cascade again — not to the
+    // dead drag.
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(state.setShowLibrary).toHaveBeenCalledWith(false); // reached useAppShortcuts: not swallowed
+    expect(onCancel).toHaveBeenCalledOnce(); // and did not cancel the drag a second time
   });
 });

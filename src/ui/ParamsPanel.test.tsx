@@ -1755,6 +1755,33 @@ describe("Visuals section rail", { timeout: 30_000 }, () => {
     expect(getPrefs().visualsPage).toBe(first);
   });
 
+  it("R7b: rail arrows stop at the rail — the window shortcut map (volume ±5 %) never sees them", () => {
+    render(<ParamsPanel />);
+    // No useAppShortcuts here (none of the rail tests mount it): a bare
+    // window listener stands in for it. ↑/↓ are its volume keys and a
+    // focused <button> is not a tag it exempts, so a keydown that reaches
+    // window IS the bug — three ↓ presses moved the page to Sync AND dropped
+    // the volume 15 %, OSD flashing.
+    const reachedWindow = vi.fn();
+    window.addEventListener("keydown", reachedWindow);
+    try {
+      const at = () => document.activeElement as HTMLButtonElement;
+      const second = railItems()[1].dataset.section;
+      railItems()[0].focus();
+      fireEvent.keyDown(at(), { key: "ArrowDown" });
+      expect(at().dataset.section).toBe(second); // still navigates
+      fireEvent.keyDown(at(), { key: "ArrowUp" });
+      fireEvent.keyDown(at(), { key: "End" });
+      fireEvent.keyDown(at(), { key: "Home" });
+      expect(reachedWindow).not.toHaveBeenCalled();
+      // Control: a key the rail does not own still bubbles out as before.
+      fireEvent.keyDown(at(), { key: "g" });
+      expect(reachedWindow).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener("keydown", reachedWindow);
+    }
+  });
+
   it("R8: an unavailable destination is dimmed and clickable, and its page says why", () => {
     // led-matrix drives none of the three motion masters (presetMasters).
     act(() => useVizStore.setState({ presetId: "led-matrix" }));
@@ -2386,6 +2413,21 @@ describe("H14 — context-header actions", { timeout: 30_000 }, () => {
     expect(
       screen.getByRole("button", { name: "Looks & themes" }).getAttribute("aria-current"),
     ).toBe("true");
+  });
+
+  it("header Save look disarms a pending MIDI learn when it leaves Live — the rail's R2-31a rule, by hand", () => {
+    setPrefs({ visualsPage: "live" });
+    act(() => useVizStore.setState({ midiLearn: { kind: "cc", param: "hue", min: 0, max: 360 } }));
+    render(<ParamsPanel />);
+
+    fireEvent.click(header().getByRole("button", { name: "Save look" }));
+
+    // jumpToSaveLook bypasses changePage on purpose (Q3: the jump must not
+    // persist), so it used to skip the disarm too — the learn stayed armed
+    // with no surface showing it, and the next knob touched minted a binding.
+    expect(useVizStore.getState().midiLearn).toBeNull();
+    expect(document.querySelector("form.save-look-row")).not.toBeNull(); // the jump itself still happens
+    expect(getPrefs().visualsPage).toBe("live"); // …and still does not persist
   });
 
   it("the header title truncates through a header-scoped class with the full name on hover", () => {

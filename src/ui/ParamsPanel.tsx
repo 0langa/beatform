@@ -723,6 +723,11 @@ export function ParamsPanel() {
    * `changePage`: next session still opens on the page the user last CHOSE,
    * not on wherever a save happened to land them. */
   const jumpToSaveLook = () => {
+    // R2-31a applies here too: this leaves Live exactly like the rail does,
+    // and a learn armed with no surface showing it lets the next knob touched
+    // on the controller mint a binding. Disarmed by hand, since this
+    // deliberately bypasses changePage (see above).
+    if (page === "live" && store().midiLearn) store().setMidiLearn(null);
     setPage("themes");
     setSavingLook(true);
   };
@@ -771,6 +776,12 @@ export function ParamsPanel() {
   const onRailKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
     e.preventDefault();
+    // ↑ and ↓ are GLOBAL shortcuts (volume ±5 %) and a focused <button> is
+    // not one of the tags useAppShortcuts exempts, so without this every
+    // arrow press also moved the volume and flashed its OSD. preventDefault
+    // alone is not enough — it stops the browser scrolling the rail, not the
+    // window listener above us (PresetStrip's chips stop ←/→ the same way).
+    e.stopPropagation();
     // Read from the DOM rather than an index: the search item shares the rail
     // and must never be a wrap-around target.
     const items = railRef.current

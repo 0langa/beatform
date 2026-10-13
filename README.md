@@ -45,7 +45,7 @@ Free and open source. Built to become a professional-grade tool for producers an
   **Bass Circle** (circular bass visualizer with album art), and **Builder** — a real
   layer compositor: stack up to twelve layers, each with its own blend mode,
   color and parameters; share stacks as `.bfbuilder` files
-- Every mode but Builder: 6-15 curated factory **styles**, plus its controls
+- Every mode but Builder: 7-16 curated factory **styles**, plus its controls
   sorted into groups (over 550 app-wide). Each group leads with the controls that change the
   look and folds its internal constants behind its own **expert line**, closed
   by default and counting what you have changed; **Show every control** opens

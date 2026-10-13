@@ -16,8 +16,8 @@ GitHub is the only channel and everything is free forever.
 2. **Drop your track** anywhere on the window (MP3/FLAC/WAV/OGG/M4A). The app
    reads its tags, detects BPM + key, and locks grid-synced visuals to the
    real beats.
-3. **Pick a look.** Twenty visual modes across the top; each ships six to
-   fifteen curated styles (Builder ships six whole-stack starting points
+3. **Pick a look.** Twenty visual modes across the top; each ships seven to
+   sixteen curated styles (Builder ships six whole-stack starting points
    instead). Or open _Visuals ▸ Looks & themes_ and click a factory
    theme — Cover Story, Hyperlane, Chrome Sunset, Ion Storm, and more — for a
    complete tuned setup in one click. The in-app **Gallery** carries a curated
@@ -44,7 +44,8 @@ GitHub is the only channel and everything is free forever.
 - **[Themes (.bftheme)](templates)** — share a complete look as one file
 - **[Preset SDK](presets)** — add a visual mode with one WGSL file
 - **[Export design](EXPORT-DESIGN)** — indexed A/V timing and parity boundaries
-- **[Contributing](https://github.com/0langa/beatform/blob/main/CONTRIBUTING.md)**
+- **[Contributing](https://github.com/0langa/beatform#dev)** — setup, the
+  gates CI runs, and the design rules, in the README
 
 ## Highlights
 

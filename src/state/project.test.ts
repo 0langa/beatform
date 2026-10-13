@@ -13,7 +13,12 @@ import {
   validateDocument,
 } from "./project";
 import { BG_SOLID } from "../render/types";
-import { presets } from "../render/presets";
+import { presetById, presets } from "../render/presets";
+import {
+  customPresetById,
+  registerCustomPreset,
+  unregisterCustomPreset,
+} from "../render/presets/custom";
 
 const PIXEL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -231,6 +236,38 @@ describe("project files (.bfproj)", () => {
     expect(parsed.timeline.scenes).toHaveLength(1);
     expect(parsed.customDefs).toHaveLength(1); // invalid def dropped
     expect(parsed.customDefs[0].id).toBe(customDef.id);
+  });
+
+  it("v9: an embedded copy of an ALREADY-registered custom def never overwrites the registry — parse is not apply", () => {
+    const id = "custom-projtest2";
+    const local = {
+      id,
+      name: "Mine",
+      params: [],
+      wgsl: "fn preset(uv: vec2f) -> vec4f { return vec4f(1.0); } // NEWER, IN THE LIBRARY",
+    };
+    const embedded = {
+      ...local,
+      wgsl: "fn preset(uv: vec2f) -> vec4f { return vec4f(0.0); } // OLDER, IN THE FILE",
+    };
+    registerCustomPreset(local);
+    try {
+      const file = JSON.parse(serializeProject(doc, "x"));
+      file.document.presetId = id;
+      file.document.customDefs = [embedded];
+      const parsed = parseProject(JSON.stringify(file));
+      // The document still carries ITS copy — applyDocument's merge decides
+      // which one wins — and the id still resolves, so nothing falls back...
+      expect(parsed.presetId).toBe(id);
+      expect(parsed.customDefs[0].wgsl).toBe(embedded.wgsl);
+      // ...but the registry (what the GPU renders) is untouched: a refused
+      // or S1-kept document must not leave the preview on a copy that the
+      // library, the editor, the save file and the export worker do not hold.
+      expect(customPresetById(id)?.wgsl).toBe(local.wgsl);
+      expect(presetById(id).wgsl).toBe(local.wgsl);
+    } finally {
+      unregisterCustomPreset(id);
+    }
   });
 
   it("sanitizes mod routes (bad sources/amounts dropped or clamped)", () => {

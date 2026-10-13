@@ -590,6 +590,15 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                     proresChain = proresChain
                       .then(() => proresWrite(data))
                       .catch((e: unknown) => {
+                        // A write that fails AFTER a cancel is the cancel's
+                        // own doing: proresAbort kills ffmpeg before it can
+                        // take the stdin mutex the in-flight write holds, so
+                        // the write's broken pipe lands first — and used to
+                        // be recorded as the failure, so cancelling a slow
+                        // encode (ProRes 4444, GIF, 4K) showed "ffmpeg pipe
+                        // write failed: os error 232" plus ffmpeg's log for
+                        // exactly what the user asked for.
+                        if (ac.signal.aborted) return;
                         proresFail.err ??= e;
                         ac.abort(); // stop rendering — ffmpeg is gone
                       });
@@ -623,6 +632,8 @@ export function exportActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                         proresWrite(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)),
                       )
                       .catch((e: unknown) => {
+                        // Same cancel-first ordering as the PNG lane above.
+                        if (ac.signal.aborted) return;
                         proresFail.err ??= e;
                         ac.abort(); // stop rendering — ffmpeg is gone
                       });

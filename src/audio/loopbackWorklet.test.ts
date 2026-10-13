@@ -352,3 +352,35 @@ describe("stalled-graph overflow protection (R2-32e)", () => {
     expect(statsOf(node).underrunFrames).toBeGreaterThan(0);
   });
 });
+
+/**
+ * Processor lifetime. An AudioWorkletProcessor whose process() returns true
+ * is an ACTIVE SOURCE: the context keeps it scheduled whether or not its
+ * port is open or its node connected, so `stopLiveInput` closing the port
+ * and disconnecting the node ended nothing — every live session left a
+ * processor (two 2-second Float32 rings) running until the app closed. The
+ * engine now posts {type:"close"} first, and the processor answers by
+ * returning false from then on, which is what lets the node be collected.
+ */
+describe("close handshake (processor lifetime)", () => {
+  it("runs until told to close, then returns false for good", () => {
+    const Ctor = loadWorklet();
+    const node = new Ctor();
+    const L = new Float32Array(QUANTUM);
+    const R = new Float32Array(QUANTUM);
+
+    expect(node.process(null, [[L, R]])).toBe(true);
+
+    node.port.onmessage?.({ data: { type: "close" } });
+    expect(node.process(null, [[L, R]])).toBe(false);
+
+    // A chunk that raced the close must not revive it, and a stats request
+    // after close gets no reply — nobody is listening on the other end.
+    node.port.onmessage?.({ data: new ArrayBuffer(QUANTUM * 2 * 4) });
+    const reports: unknown[] = [];
+    node.port.postMessage = (data) => reports.push(data);
+    node.port.onmessage?.({ data: { type: "stats", requestId: 1 } });
+    expect(reports).toEqual([]);
+    expect(node.process(null, [[L, R]])).toBe(false);
+  });
+});

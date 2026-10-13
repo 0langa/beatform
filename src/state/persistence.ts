@@ -31,9 +31,10 @@ import { isTauri } from "./platform";
  * localStorage persistence for the current session. Keys and formats are the
  * pre-store ones, so existing installs keep their settings.
  *
- * P-11: on desktop, the 17 DOCUMENT-key savers below (one per
+ * P-11: on desktop, 16 of the 17 DOCUMENT-key savers below (one per
  * `ProjectDocument` field — see .superpowers/p11-lane-log.md's Task 1 map
- * for the exhaustive list) are each guarded `if (isTauri()) return;` at the
+ * for the exhaustive list; `saveCustomPresets` is the one exemption, see
+ * its own comment) are each guarded `if (isTauri()) return;` at the
  * top of their own body. The autosave `.bfproj` (store.ts's
  * `scheduleAutosave`/`writeAutosave`) is now the ONE desktop serialization
  * path — this is the SS-2 quota-split-brain class closed at the root, not
@@ -43,13 +44,16 @@ import { isTauri } from "./platform";
  * both platforms — desktop's synchronous boot still reads them as the
  * fallback (Task 2), and the browser build's boot/persistence is completely
  * unaffected (still reads AND writes every key, exactly as before this
- * lane). The two boolean-returning savers (`saveStoredOverlay`,
- * `saveCustomPresets`) return `true`, not the `safeSetItem`-shaped `false`,
- * when gated off — from every caller's point of view the write SUCCEEDED
- * (the document is captured by the autosave writer instead), and a handful
- * of call sites gate a dependent write or a user-facing "too large to
- * remember" notice on that return value; answering `false` there would fire
- * a false quota warning on every desktop image/shader save.
+ * lane). The gated boolean-returning saver (`saveStoredOverlay`) returns
+ * `true`, not the `safeSetItem`-shaped `false`, when gated off — from every
+ * caller's point of view the write SUCCEEDED (the document is captured by
+ * the autosave writer instead), and a handful of call sites gate a
+ * dependent write or a user-facing "too large to remember" notice on that
+ * return value; answering `false` there would fire a false quota warning on
+ * every desktop image save. `saveCustomPresets` is NOT gated: the shader
+ * library is a library, not a document field, and the autosave embeds only
+ * the defs the document references — gating it lost every unreferenced
+ * shader at relaunch (see the function's own comment).
  *
  * Non-document keys (`viz.exportSettings.v1`, `viz.midiBindings.v1`, the
  * `viz.docSchema.v1` stamp, `viz.cleanExit`) are untouched by any of this —
@@ -269,7 +273,14 @@ export function markSessionDirty(): void {
   }
 }
 
-function markCleanExit(): void {
+/**
+ * Exported for the desktop close handler (store.ts `initApp`'s
+ * `onCloseRequested`): that path ends in `appWindow.destroy()`, which can
+ * skip the page's own `pagehide` — the only other caller — so every ordinary
+ * desktop quit left the marker at "0" and the next launch greeted the user
+ * with a false "Recovered your work from the last session".
+ */
+export function markCleanExit(): void {
   try {
     localStorage.setItem(LS_CLEAN_EXIT, "1");
   } catch {
@@ -444,10 +455,18 @@ export function loadCustomPresets(): PresetDef[] {
 }
 
 export function saveCustomPresets(defs: PresetDef[]): boolean {
-  // P-11: `true`, not `false` — see saveStoredOverlay above and this file's
-  // top-of-file comment. saveCustomPreset (customShaderActions.ts) gates its
-  // "saved" vs. "too large to remember" toast on this return value.
-  if (isTauri()) return true;
+  // Deliberately NOT P-11-gated on desktop — the one exemption among the
+  // document-key savers. This key is the shader LIBRARY, not a document
+  // field: the autosave .bfproj embeds only `referencedCustomDefs` (the
+  // active visual + timeline scenes), so with this write gated off every
+  // shader the current document did not happen to reference was gone at the
+  // next launch — while `loadCustomPresets` above kept reading a key nothing
+  // on desktop ever wrote. KBs of WGSL text, not the multi-MB asset blobs
+  // P-11's quota split-brain was about; the browser build has always
+  // persisted the library here and merged the document's embedded copies
+  // over it (mergeEmbeddedDefs), and desktop now does the same. The real
+  // safeSetItem result is returned so saveCustomPreset's "too large to
+  // remember" toast (customShaderActions.ts) is honest on both platforms.
   return safeSetItem(LS_CUSTOM_PRESETS, JSON.stringify(defs));
 }
 

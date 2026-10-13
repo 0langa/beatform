@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BeatGrid } from "../audio/analysis/beatGrid";
 import type { AudioEngine } from "../audio/engine";
 import type { PlaybackState } from "../audio/types";
+import type { TrackAnalysis } from "../audio/analysis/trackAnalysis";
 
 /**
  * Live-capture async-setup window (BACKLOG hardening row; store.ts
@@ -176,8 +177,14 @@ vi.mock("./platform", async (importOriginal) => {
 vi.stubGlobal("AudioContext", FakeAudioContext);
 vi.stubGlobal("AudioWorkletNode", FakeAudioWorkletNode);
 
+// Leaving live re-runs the loaded track's analysis (the last describe); the
+// worker is mocked away as in every store test — only the store's wiring
+// around it is under test.
+vi.mock("../audio/analysis/trackAnalysis", () => ({ analyzeTrack: vi.fn() }));
+
 const { useVizStore } = await import("./store");
 const { isTauri, startLoopback, stopLoopback } = await import("./platform");
+const { analyzeTrack } = await import("../audio/analysis/trackAnalysis");
 const { AudioEngine: RealAudioEngine } = await import("../audio/engine");
 
 const s = () => useVizStore.getState();
@@ -194,6 +201,14 @@ async function flush(turns = 20) {
   for (let i = 0; i < turns; i++) await Promise.resolve();
 }
 
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(async () => {
   workletLoads = [];
   vi.mocked(isTauri).mockReturnValue(true);
@@ -202,6 +217,13 @@ beforeEach(async () => {
   analyzer.reset.mockClear();
   analyzer.setBeatGrid.mockClear();
   analyzer.setSections.mockClear();
+  analyzer.setTravel.mockClear();
+  // A job that never lands, unless a test wires its own.
+  vi.mocked(analyzeTrack).mockReset();
+  vi.mocked(analyzeTrack).mockReturnValue({
+    id: 0,
+    result: new Promise<TrackAnalysis>(() => undefined),
+  });
 
   engine = new RealAudioEngine();
   // services.ts, verbatim: the engine's state reports are the ONLY way the
@@ -320,5 +342,64 @@ describe("toggleLiveInput's worklet-load window (live-capture async setup)", () 
     await engine.play();
     expect(engine.playing).toBe(true);
     expect(s().playback.playing).toBe(true);
+  });
+});
+
+/**
+ * The EXIT path. Entering live voids the loaded track's grid/key/sections/
+ * travel (and supersedes an in-flight job) so the dead track cannot pulse over
+ * live audio — correct — but leaving live never put them back, and only the
+ * load paths call analyzeCurrentTrack: the still-loaded track then played with
+ * bpm 0 / beatPhase 0 / sectionIndex -1, tempo LFOs fell back to 120 BPM, and
+ * an export (awaitAnalysis had nothing to wait for) rendered without the grid
+ * until the file was dropped again.
+ */
+describe("leaving live mode re-analyses the still-loaded track", () => {
+  it("toggle on, toggle off: the analysis re-runs, gates exports until it lands, and the grid comes back", async () => {
+    const landed = deferred<TrackAnalysis>();
+    vi.mocked(analyzeTrack).mockReturnValue({ id: 1, result: landed.promise });
+
+    const on = s().toggleLiveInput();
+    await flush();
+    workletLoads[0].land();
+    await on;
+    expect(s().liveInputActive).toBe(true);
+    expect(s().beatGrid).toBeNull(); // voided on entry, as before
+    expect(analyzeTrack).not.toHaveBeenCalled();
+
+    await s().toggleLiveInput();
+
+    expect(s().liveInputActive).toBe(false);
+    expect(engine.liveInput).toBe(false);
+    expect(engine.audioBuffer).not.toBeNull(); // the track is still loaded...
+    expect(analyzeTrack).toHaveBeenCalledTimes(1); // ...so its analysis re-runs
+    expect(s().analyzing).toBe(true); // and the export gate is closed until it lands
+
+    landed.resolve({ grid: GRID, key: null, sections: [0, 15], travel: null });
+    await flush();
+
+    expect(s().beatGrid).toBe(GRID);
+    expect(s().sections).toEqual([0, 15]);
+    expect(s().analyzing).toBe(false);
+    expect(analyzer.setBeatGrid).toHaveBeenLastCalledWith(GRID);
+    expect(analyzer.setSections).toHaveBeenLastCalledWith([0, 15]);
+  });
+
+  it("with no track loaded there is nothing to re-analyse", async () => {
+    engine = new RealAudioEngine();
+    engine.onStateChange = (st: PlaybackState) => useVizStore.setState({ playback: st });
+    useVizStore.setState({ beatGrid: null, sections: [] });
+
+    const on = s().toggleLiveInput();
+    await flush();
+    workletLoads[0].land();
+    await on;
+    expect(s().liveInputActive).toBe(true);
+
+    await s().toggleLiveInput();
+
+    expect(s().liveInputActive).toBe(false);
+    expect(analyzeTrack).not.toHaveBeenCalled();
+    expect(s().analyzing).toBe(false);
   });
 });

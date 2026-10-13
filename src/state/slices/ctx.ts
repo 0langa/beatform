@@ -24,8 +24,9 @@ export interface SliceCtx {
    * even when nothing references it, or undo cannot restore it. */
   record: (key: string, extraDefs?: PresetDef[]) => void;
   /** Record ONE history entry for `key`, then run `fn` with inner record()
-   * calls suppressed — a compound action must cost exactly one Ctrl+Z. */
-  asOneGesture: (key: string, fn: () => void) => void;
+   * calls suppressed — a compound action must cost exactly one Ctrl+Z.
+   * `extraDefs` is forwarded to record() above, for the same reason. */
+  asOneGesture: (key: string, fn: () => void, extraDefs?: PresetDef[]) => void;
   /** Transient positive feedback toast (auto-clears). */
   flashNotice: (notice: string) => void;
   /** Decode the track's cover art and hand it to the renderer (race-guarded). */

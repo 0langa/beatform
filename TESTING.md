@@ -85,24 +85,29 @@ when automation cannot judge them.
   error over the six English songs is 22 % with Turbo and 18 % with Large
   v3, and red flags are a few per song — where red means both whisper and
   the aligner doubted the words.
-- **A8 — The look kit on every visual.** Open any visual's settings and the
-  expert rows now carry the shared finishing knobs the mode did not own
-  (Mirror, Angle, Spin, Beat zoom, Beat flash, Hue spin, Grain, Scanlines,
-  Low/High edge). Expected: every default look is pixel-identical to 3.1.0
-  (the GPU matrix's @defaults and style cases did not move; only the
-  extreme sweeps of the fourteen kit modes did); Mirror folds the frame into
-  the club's 2-12 wedges, Angle/Spin turn the whole frame and follow
-  Motion→Rotation, the beat knobs follow Motion→Pulse, the spectrum window
-  audibly narrows what the mode reacts to. `node scripts/preset-frames.mjs
---cases <json> --out <dir>` renders any mode at any values to PNGs
-  (needs Vite running). Owner's eyes: the four new looks on Spectro Falls,
-  Lyric Stage, Gatefold and Overgrowth (CRT Monitor … Ember Moss) read as
-  designed looks, not knob demos.
   Expected by ear: a red line is wrong or garbled often enough to be worth
   the click; amber lines (soft, breathy, processed or backing vocals) are
   mostly right; the German track transcribes as German. Known limit: a
   confident mishearing by whisper (an invented but plausible word) can pass
   unflagged — the aligner cannot tell it from soft singing.
+- **A8 — The look kit on every visual.** Open any visual's settings and the
+  expert rows now carry the shared finishing knobs the mode did not own
+  (Mirror, Angle, Spin, Beat zoom, Beat flash, Hue spin, Grain, Scanlines,
+  Low/High edge). Expected: every default look is pixel-identical to 3.1.0
+  (the GPU matrix's @defaults and style cases did not move — except
+  Gatefold's Turntable, which pairs Spin with Scanlines — only the extreme
+  sweeps of the fourteen kit modes did); Mirror folds the frame into the
+  club's 2-12 wedges, Angle/Spin turn the whole frame and follow
+  Motion→Rotation, the beat knobs follow Motion→Pulse, the spectrum window
+  audibly narrows what the mode reacts to. Grain and Scanlines stay in
+  screen space: with Spin or Angle set the picture turns while the lines
+  stay horizontal, under a Mirror the grain is not mirrored, and on a
+  Transparent background with Grain up a PNG-sequence frame's empty area
+  stays empty (no speckled alpha). `node scripts/preset-frames.mjs --cases
+<json> --out <dir>` renders any mode at any values to PNGs (needs Vite
+  running). Owner's eyes: the four new looks on Spectro Falls, Lyric Stage,
+  Gatefold and Overgrowth (CRT Monitor … Ember Moss) read as designed
+  looks, not knob demos.
 
 ## Sign-off
 

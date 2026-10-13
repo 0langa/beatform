@@ -36,6 +36,11 @@ const URL = `https://github.com/BtbN/FFmpeg-Builds/releases/download/${TAG}/${AS
 // run, with the result bundled into the shipped installer. Verified below;
 // a mismatch is fatal rather than a warning.
 const EXPECTED_SHA256 = "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb";
+// SHA-256 of the zip as downloaded, checked BEFORE anything is extracted:
+// the archive is handed to Expand-Archive unattended on every CI and release
+// run, and the asset is mutable (see above). Recorded 2026-10-13 from the
+// pinned asset; the exe inside it hashes to EXPECTED_SHA256.
+const EXPECTED_ZIP_SHA256 = "089e4169e93b2b3f3acbfced3c0704d24276a225641bdda04d796d28b07a2a38";
 
 function sha256(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
@@ -52,6 +57,17 @@ mkdirSync(path.dirname(tmpZip), { recursive: true });
 // Bounded retry for transient host failures (5xx/429/network drops); a 404
 // or the checksum mismatch below stays immediately fatal — see lib/download.mjs.
 await downloadToFile(URL, tmpZip);
+
+const zipActual = sha256(tmpZip);
+if (zipActual !== EXPECTED_ZIP_SHA256) {
+  rmSync(tmpZip, { force: true });
+  throw new Error(
+    `ffmpeg archive checksum mismatch — refusing to extract.\n` +
+      `  expected ${EXPECTED_ZIP_SHA256}\n  actual   ${zipActual}\n` +
+      `The pinned release asset changed. Verify the upstream build before ` +
+      `updating EXPECTED_ZIP_SHA256 in this script.`,
+  );
+}
 
 console.log("Extracting ffmpeg.exe…");
 const binDir = path.join(ROOT, "src-tauri", "binaries");

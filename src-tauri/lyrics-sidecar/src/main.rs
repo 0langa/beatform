@@ -312,16 +312,35 @@ fn remove_temps() {
     }
 }
 
-/// A unique path in the OS temp dir for this process: `<tag>-<pid>-<ms>`.
-fn temp_prefix(tag: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "beatform-{tag}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or_default()
-    ))
+/// A scratch path derived from `--out`: `<out><suffix>`, next to the LRC.
+///
+/// The names used to be this process's own (`%TEMP%/beatform-lyrics-*-<pid>-
+/// <ms>`), which only the fail/cancel/success exits above could remove. The
+/// app ends a job abnormally too — its cancel-kill fallback, the reap
+/// deadline, app close, a panic in here — and then the whole-track stem WAV
+/// (hundreds of MB for a long set) stayed in %TEMP% forever, because the app
+/// never knew the names. Deriving them from a path the app chose makes them
+/// the app's to sweep: lyrics.rs `sidecar_scratch_files` spells out the same
+/// four suffixes (`.stem.wav`, `.whisper.json`, `.lang.wav`, `.lang.json`)
+/// and that pairing is the contract. `--whisper-json` (the dev replay hook)
+/// and `scripts/lyrics-eval.mjs` are untouched: neither names a scratch file.
+fn scratch_path(out: &std::path::Path, suffix: &str) -> PathBuf {
+    let mut s = out.as_os_str().to_os_string();
+    s.push(suffix);
+    PathBuf::from(s)
+}
+
+/// whisper-cli's `-ojf` JSON, decoded LOSSILY. whisper.cpp writes each
+/// token's text as the raw bytes of its byte-level BPE vocabulary entry and
+/// escapes nothing but quotes and backslashes, so a multi-byte character
+/// (CJK, Thai, an accented letter) split across two tokens leaves invalid
+/// UTF-8 in the file. `read_to_string` refused the whole file — "stream did
+/// not contain valid UTF-8" — and a job died minutes in, after isolation and
+/// transcription had both succeeded. The replacement characters land only
+/// in the token pieces; the segment's `text` (the same bytes concatenated)
+/// stays intact, and lines.rs falls back to it for such a segment.
+fn read_whisper_json(path: &std::path::Path) -> std::io::Result<String> {
+    std::fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn main() {
@@ -558,7 +577,7 @@ fn run(args: Args) {
     };
 
     // ---- transcribe (the vocal stem) -----------------------------------
-    // The stem goes to whisper as a WAV in the OS temp dir (the channels are
+    // The stem goes to whisper as a WAV next to `--out` (the channels are
     // moved, not copied); `--dump-stem` keeps a copy of the same bytes.
     let stem_wav = audio::wav_s16(&audio::Stereo {
         left: stem.0,
@@ -569,10 +588,7 @@ fn run(args: Args) {
             fail(&format!("could not write --dump-stem file: {e}"));
         }
     }
-    let stem_path = PathBuf::from(format!(
-        "{}.wav",
-        temp_prefix("lyrics-stem").to_string_lossy()
-    ));
+    let stem_path = scratch_path(&args.out, ".stem.wav");
     track_temp(&stem_path);
     if let Err(e) = std::fs::write(&stem_path, &stem_wav) {
         fail(&format!("could not write the stem for whisper: {e}"));
@@ -858,9 +874,11 @@ fn detect_language(
     if sample.duration_sec() < 1.0 {
         return None;
     }
-    let prefix = temp_prefix("lyrics-lang");
-    let wav_path = PathBuf::from(format!("{}.wav", prefix.to_string_lossy()));
-    let json_path = PathBuf::from(format!("{}.json", prefix.to_string_lossy()));
+    // whisper appends ".json" to `-of`, so the pair is `<out>.lang.wav` and
+    // `<out>.lang.json` — two of the app's four scratch names.
+    let prefix = scratch_path(&args.out, ".lang");
+    let wav_path = scratch_path(&args.out, ".lang.wav");
+    let json_path = scratch_path(&args.out, ".lang.json");
     track_temp(&wav_path);
     track_temp(&json_path);
     let cleanup = || {
@@ -903,7 +921,7 @@ fn detect_language(
     *cancel.child.lock().expect("cancel mutex") = Some(child);
     let status = wait_registered_child(cancel);
     let code = match status {
-        Ok(s) if s.success() => std::fs::read_to_string(&json_path)
+        Ok(s) if s.success() => read_whisper_json(&json_path)
             .ok()
             .and_then(|j| whisper::parse(&j).ok())
             .map(|w| w.result.language)
@@ -946,7 +964,7 @@ fn transcribe(
     cancel: &Arc<Canceller>,
 ) -> Result<Transcript, TranscribeError> {
     if let Some(path) = &args.whisper_json {
-        let json = std::fs::read_to_string(path)
+        let json = read_whisper_json(path)
             .map_err(|e| TranscribeError::Failed(format!("whisper JSON unreadable: {e}")))?;
         let json = whisper::parse(&json).map_err(TranscribeError::Failed)?;
         return Ok(Transcript {
@@ -954,9 +972,10 @@ fn transcribe(
             backend: WhisperBackend::default(),
         });
     }
-    // Unique output prefix in the OS temp dir; whisper appends ".json".
-    let prefix = temp_prefix("lyrics");
-    let json_path = PathBuf::from(format!("{}.json", prefix.to_string_lossy()));
+    // Output prefix next to `--out`; whisper appends ".json", so the file is
+    // `<out>.whisper.json` — one of the app's four scratch names.
+    let prefix = scratch_path(&args.out, ".whisper");
+    let json_path = scratch_path(&args.out, ".whisper.json");
     track_temp(&json_path);
 
     let mut cmd = Command::new(&args.whisper_cli);
@@ -1058,7 +1077,7 @@ fn transcribe(
         )));
     }
     let _ = duration; // duration is carried in events; whisper owns its own pacing
-    let json = std::fs::read_to_string(&json_path)
+    let json = read_whisper_json(&json_path)
         .map_err(|e| TranscribeError::Failed(format!("whisper output missing: {e}")))?;
     let _ = std::fs::remove_file(&json_path);
     let json = whisper::parse(&json).map_err(TranscribeError::Failed)?;
@@ -1458,6 +1477,77 @@ mod tests {
         for bad in ["", "auto", "EN", "e", "english", "e1"] {
             assert!(!valid_language_code(bad), "{bad}");
         }
+    }
+
+    /// The four scratch names are a contract with the app (lyrics.rs
+    /// `sidecar_scratch_files` removes exactly these when it ends a job
+    /// abnormally) — the test pins them from this side.
+    #[test]
+    fn scratch_files_are_named_off_the_out_path() {
+        let out = PathBuf::from("C:/t/av-prores-1-2-lyrics-out.lrc");
+        assert_eq!(
+            scratch_path(&out, ".stem.wav"),
+            PathBuf::from("C:/t/av-prores-1-2-lyrics-out.lrc.stem.wav")
+        );
+        assert_eq!(
+            scratch_path(&out, ".whisper.json"),
+            PathBuf::from("C:/t/av-prores-1-2-lyrics-out.lrc.whisper.json")
+        );
+        assert_eq!(
+            scratch_path(&out, ".lang.wav"),
+            PathBuf::from("C:/t/av-prores-1-2-lyrics-out.lrc.lang.wav")
+        );
+        assert_eq!(
+            scratch_path(&out, ".lang.json"),
+            PathBuf::from("C:/t/av-prores-1-2-lyrics-out.lrc.lang.json")
+        );
+        // whisper-cli gets the prefix and appends ".json" itself.
+        assert_eq!(
+            scratch_path(&out, ".whisper"),
+            PathBuf::from("C:/t/av-prores-1-2-lyrics-out.lrc.whisper")
+        );
+    }
+
+    /// whisper.cpp's JSON with "é" (C3 A9) split across two byte-level BPE
+    /// tokens: the file is not valid UTF-8, the segment text is. The read
+    /// must succeed, keep the segment text intact and mark the two pieces.
+    #[test]
+    fn a_byte_split_token_no_longer_fails_the_whole_transcript() {
+        let mut json = Vec::new();
+        json.extend_from_slice(
+            br#"{ "result": { "language": "fr" }, "transcription": [ { "offsets": {"from": 0, "to": 900}, "text": " caf"#,
+        );
+        json.extend_from_slice("é".as_bytes());
+        json.extend_from_slice(
+            br#"", "tokens": [ { "text": " caf", "offsets": {"from": 0, "to": 300} }, { "text": ""#,
+        );
+        json.push(0xC3);
+        json.extend_from_slice(br#"", "offsets": {"from": 300, "to": 600} }, { "text": ""#);
+        json.push(0xA9);
+        json.extend_from_slice(br#"", "offsets": {"from": 600, "to": 900} } ] } ] }"#);
+        assert!(
+            std::str::from_utf8(&json).is_err(),
+            "the fixture must be invalid UTF-8"
+        );
+
+        let path = std::env::temp_dir().join(format!(
+            "beatform-sidecar-test-lossy-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, &json).unwrap();
+        assert!(
+            std::fs::read_to_string(&path).is_err(),
+            "the strict read is exactly what used to kill the job"
+        );
+        let text = read_whisper_json(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let parsed = whisper::parse(&text).unwrap();
+        let seg = &parsed.transcription[0];
+        assert_eq!(seg.text, " café");
+        assert_eq!(seg.tokens.len(), 3);
+        assert_eq!(seg.tokens[0].text, " caf");
+        assert!(seg.tokens[1].text.contains('\u{FFFD}'));
+        assert!(seg.tokens[2].text.contains('\u{FFFD}'));
     }
 
     #[test]

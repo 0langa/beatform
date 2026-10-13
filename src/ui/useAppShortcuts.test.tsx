@@ -48,6 +48,54 @@ describe("A-B loop shortcuts", () => {
 });
 
 /**
+ * Space on a focused <button>: every Switch, Segmented tile, mode chip, rail
+ * item and dialog button is a <button>, and the native-control guard exempted
+ * only INPUT/SELECT — so Space fell through to the play/pause case, whose
+ * preventDefault() cancels Chromium's button activation. Tab to "Filmic
+ * tonemap", press Space: the track played and the switch stayed put.
+ */
+describe("Space on a focused button", () => {
+  function ButtonHarness({ state }: { state: Record<string, unknown> }) {
+    useAppShortcuts((() => state) as unknown as typeof useVizStore.getState);
+    return <button type="button">Filmic tonemap</button>;
+  }
+
+  it("leaves the press to the button: no play/pause, and the keydown keeps its default", () => {
+    const state = { togglePlay: vi.fn() };
+    const { getByRole } = render(<ButtonHarness state={state} />);
+    const button = getByRole("button", { name: "Filmic tonemap" });
+    button.focus();
+
+    // fireEvent returns dispatchEvent's verdict: false once preventDefault()
+    // ran — which is exactly what used to cancel the button's own activation.
+    const keptDefault = fireEvent.keyDown(button, { key: " ", code: "Space" });
+
+    expect(keptDefault).toBe(true);
+    expect(state.togglePlay).not.toHaveBeenCalled();
+  });
+
+  it("other keys on a button still reach the map — only Space is the button's", () => {
+    const state = { togglePlay: vi.fn(), setShowPanel: vi.fn() };
+    const { getByRole } = render(<ButtonHarness state={state} />);
+    const button = getByRole("button", { name: "Filmic tonemap" });
+    button.focus();
+
+    fireEvent.keyDown(button, { key: "g", code: "KeyG" });
+
+    expect(state.setShowPanel).toHaveBeenCalledOnce();
+  });
+
+  it("control: Space with focus anywhere else still toggles play", () => {
+    const state = { togglePlay: vi.fn() };
+    render(<ButtonHarness state={state} />);
+
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+
+    expect(state.togglePlay).toHaveBeenCalledOnce();
+  });
+});
+
+/**
  * The Escape cascade (audit UI-1): Esc is the universal way out of every
  * surface — EXCEPT while typing, where it must cancel the field and nothing
  * else. Before the guard, cancelling a save-look name or clearing the panel

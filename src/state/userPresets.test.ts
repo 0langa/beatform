@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   loadUserPresets,
   newUserPresetId,
@@ -10,6 +10,11 @@ import {
   type UserPreset,
 } from "./userPresets";
 import { presets } from "../render/presets";
+import {
+  NEW_SHADER_TEMPLATE,
+  registerCustomPreset,
+  unregisterCustomPreset,
+} from "../render/presets/custom";
 import { APP_VERSION } from "../version";
 
 const look: UserPreset = {
@@ -212,5 +217,64 @@ describe("user looks do NOT ride the v14 nebula remap (a chosen gap)", () => {
   // reading why.
   it("E3: USER_PRESET_VERSION is pinned at 1 — bumping it is the owner's call", () => {
     expect(USER_PRESET_VERSION).toBe(1);
+  });
+});
+
+/**
+ * Looks for visuals outside the strip. Save look is offered while a custom
+ * WGSL visual (or the hidden classic `builder`) is active, but the validator
+ * checked the strip array alone — so such a look was accepted and written,
+ * then dropped by the next loadUserPresets, overwritten out of storage by the
+ * next save, and its exported .bfpreset refused as "malformed".
+ */
+describe("looks for custom visuals and the hidden builder survive (the gate is not strip-only)", () => {
+  function fakeLocalStorage() {
+    const map = new Map<string, string>();
+    return {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+    };
+  }
+  const CUSTOM_ID = "custom-lookhost1";
+  const customLook: UserPreset = {
+    id: "up-custom-1",
+    name: "Custom look",
+    presetId: CUSTOM_ID,
+    params: { hue: 0.5 },
+    createdAt: "2026-10-13T00:00:00.000Z",
+  };
+
+  afterEach(() => {
+    unregisterCustomPreset(CUSTOM_ID);
+    vi.unstubAllGlobals();
+  });
+
+  it("a look for a REGISTERED custom visual round-trips storage and the .bfpreset file", () => {
+    registerCustomPreset({ id: CUSTOM_ID, name: "Host", params: [], wgsl: NEW_SHADER_TEMPLATE });
+    vi.stubGlobal("localStorage", fakeLocalStorage());
+    saveUserPresets([customLook]);
+    expect(loadUserPresets()).toEqual([customLook]);
+    expect(parseUserPreset(serializeUserPreset(customLook)).presetId).toBe(CUSTOM_ID);
+  });
+
+  it("a look whose custom visual is NOT registered is kept, not dropped — its def may be imported later", () => {
+    vi.stubGlobal("localStorage", fakeLocalStorage());
+    saveUserPresets([customLook]);
+    expect(loadUserPresets()).toEqual([customLook]);
+    expect(parseUserPreset(serializeUserPreset(customLook)).presetId).toBe(CUSTOM_ID);
+  });
+
+  it("a look for the hidden classic builder loads", () => {
+    const builderLook: UserPreset = { ...look, presetId: "builder" };
+    vi.stubGlobal("localStorage", fakeLocalStorage());
+    saveUserPresets([builderLook]);
+    expect(loadUserPresets()).toEqual([builderLook]);
+  });
+
+  it("an unknown id that is not custom-shaped is still refused", () => {
+    const file = JSON.parse(serializeUserPreset(look));
+    file.preset.presetId = "custom shader"; // not a custom id either (CUSTOM_ID_RE)
+    expect(() => parseUserPreset(JSON.stringify(file))).toThrow(UserPresetParseError);
   });
 });

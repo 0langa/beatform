@@ -75,20 +75,21 @@ reports.
 
 No telemetry, no analytics, nothing in the background. Every request the
 app makes is user-facing and goes to GitHub. The full inventory, verified
-against 2.108.0 (2026-09-02):
+against 3.1.0 (2026-10-13):
 
-| Purpose                             | Host                                                                                                | Process               | When                                            |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------- |
-| Update check (`latest.json`)        | `github.com` (this repo's release assets)                                                           | Rust (updater plugin) | at startup and on a manual "Check for updates"  |
-| Installer download                  | `github.com` (this repo's release assets, minisign-verified)                                        | Rust (updater plugin) | only after you accept an offered update         |
-| Release notes for the update dialog | `raw.githubusercontent.com` (this repo's `CHANGELOG.md` at the offered tag, `main` as fallback)     | Webview               | when an update is offered                       |
-| Gallery registry, content, previews | `raw.githubusercontent.com` (`beatform-app/gallery` — commit-pinned, SHA-256-verified before parse) | Webview               | only while you browse or install in the Gallery |
-| Lyrics AI-model downloads           | `github.com` (`beatform-app/models` release — SHA-256-pinned in the binary, Range-resumable)        | Rust                  | only when you ask to download a model           |
+| Purpose                             | Host                                                                                                                                  | Process               | When                                            |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------- |
+| Update check (`latest.json`)        | `github.com` (this repo's release assets)                                                                                             | Rust (updater plugin) | at startup and on a manual "Check for updates"  |
+| Installer download                  | `github.com` (this repo's release assets, minisign-verified)                                                                          | Rust (updater plugin) | only after you accept an offered update         |
+| Release notes for the update dialog | `raw.githubusercontent.com` (this repo's `CHANGELOG.md` at the offered tag, `main` as fallback)                                       | Webview               | when an update is offered                       |
+| Gallery registry, content, previews | `raw.githubusercontent.com` (`beatform-app/gallery` — commit-pinned, SHA-256-verified before parse)                                   | Webview               | only while you browse or install in the Gallery |
+| Lyrics AI-model downloads           | `github.com` (`beatform-app/models` release — SHA-256-pinned in the binary, Range-resumable)                                          | Rust                  | only when you ask to download a model           |
+| Lyrics GPU acceleration pack        | `github.com` (`ggml-org/whisper.cpp` release asset — the zip and all 17 unpacked files SHA-256-pinned in the binary, Range-resumable) | Rust                  | only when you click "Download GPU acceleration" |
 
 The webview's CSP backs this split up. The only remote host the renderer is
 allowed to contact is `raw.githubusercontent.com`; the `github.com` traffic
-(updater, model downloads) happens in the Rust process, outside the webview
-entirely. The CSP as shipped (`src-tauri/tauri.conf.json`):
+(updater, model and GPU-pack downloads) happens in the Rust process, outside
+the webview entirely. The CSP as shipped (`src-tauri/tauri.conf.json`):
 
 ```
 default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' data: blob: ipc: http://ipc.localhost https://raw.githubusercontent.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'none'

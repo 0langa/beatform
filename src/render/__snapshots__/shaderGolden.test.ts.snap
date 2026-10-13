@@ -351,8 +351,9 @@ fn presetBody(uv: vec2f) -> vec4f {
 }
 
 // ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
-fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
-fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitWin(x: f32) -> f32 { let lo = P_freqLo(); let hi = P_freqHi(); return mix(min(lo, hi), max(lo, hi), x); }
+fn kitBin(x: f32) -> f32 { return binAt(kitWin(x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(kitWin(x)); }
 fn kitFold(uvIn: vec2f) -> vec2f {
   var uv = uvIn;
   let ka = P_angle() + P_spin() * u.time * u.spin;
@@ -374,13 +375,15 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   let sl = P_scanline();
   if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
   let gr = P_grain();
-  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  if (gr > 0.0) {
+    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);
+    rgb += vec3f(grain(uv, gr * 0.2) * lit);
+  }
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -761,8 +764,9 @@ fn presetBody(uv: vec2f) -> vec4f {
 }
 
 // ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
-fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
-fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitWin(x: f32) -> f32 { let lo = P_freqLo(); let hi = P_freqHi(); return mix(min(lo, hi), max(lo, hi), x); }
+fn kitBin(x: f32) -> f32 { return binAt(kitWin(x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(kitWin(x)); }
 fn kitFold(uvIn: vec2f) -> vec2f {
   var uv = uvIn;
   return uv;
@@ -776,13 +780,15 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   let sl = P_scanline();
   if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
   let gr = P_grain();
-  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  if (gr > 0.0) {
+    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);
+    rgb += vec3f(grain(uv, gr * 0.2) * lit);
+  }
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -2374,8 +2380,9 @@ fn presetBody(uv: vec2f) -> vec4f {
 }
 
 // ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
-fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
-fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitWin(x: f32) -> f32 { let lo = P_freqLo(); let hi = P_freqHi(); return mix(min(lo, hi), max(lo, hi), x); }
+fn kitBin(x: f32) -> f32 { return binAt(kitWin(x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(kitWin(x)); }
 fn kitFold(uvIn: vec2f) -> vec2f {
   var uv = uvIn;
   let ka = P_angle() + P_spin() * u.time * u.spin;
@@ -2399,9 +2406,8 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -2810,8 +2816,9 @@ fn presetBody(uv: vec2f) -> vec4f {
 }
 
 // ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
-fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
-fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitWin(x: f32) -> f32 { let lo = P_freqLo(); let hi = P_freqHi(); return mix(min(lo, hi), max(lo, hi), x); }
+fn kitBin(x: f32) -> f32 { return binAt(kitWin(x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(kitWin(x)); }
 fn kitFold(uvIn: vec2f) -> vec2f {
   var uv = uvIn;
   return uv;
@@ -2823,9 +2830,8 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -3249,8 +3255,9 @@ fn presetBody(uv: vec2f) -> vec4f {
 }
 
 // ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
-fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
-fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitWin(x: f32) -> f32 { let lo = P_freqLo(); let hi = P_freqHi(); return mix(min(lo, hi), max(lo, hi), x); }
+fn kitBin(x: f32) -> f32 { return binAt(kitWin(x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(kitWin(x)); }
 fn kitFold(uvIn: vec2f) -> vec2f {
   var uv = uvIn;
   return uv;
@@ -3264,13 +3271,15 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   let sl = P_scanline();
   if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
   let gr = P_grain();
-  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  if (gr > 0.0) {
+    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);
+    rgb += vec3f(grain(uv, gr * 0.2) * lit);
+  }
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -4127,13 +4136,15 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   let sl = P_scanline();
   if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
   let gr = P_grain();
-  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  if (gr > 0.0) {
+    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);
+    rgb += vec3f(grain(uv, gr * 0.2) * lit);
+  }
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -5435,9 +5446,8 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -6330,13 +6340,15 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   let sl = P_scanline();
   if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
   let gr = P_grain();
-  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  if (gr > 0.0) {
+    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);
+    rgb += vec3f(grain(uv, gr * 0.2) * lit);
+  }
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -6679,8 +6691,9 @@ fn presetBody(uv: vec2f) -> vec4f {
 }
 
 // ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
-fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
-fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitWin(x: f32) -> f32 { let lo = P_freqLo(); let hi = P_freqHi(); return mix(min(lo, hi), max(lo, hi), x); }
+fn kitBin(x: f32) -> f32 { return binAt(kitWin(x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(kitWin(x)); }
 fn kitFold(uvIn: vec2f) -> vec2f {
   var uv = uvIn;
   let bz = P_beatZoom();
@@ -6694,13 +6707,15 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   let sl = P_scanline();
   if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
   let gr = P_grain();
-  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  if (gr > 0.0) {
+    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);
+    rgb += vec3f(grain(uv, gr * 0.2) * lit);
+  }
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -8505,13 +8520,15 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   let sl = P_scanline();
   if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
   let gr = P_grain();
-  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  if (gr > 0.0) {
+    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);
+    rgb += vec3f(grain(uv, gr * 0.2) * lit);
+  }
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -8819,13 +8836,15 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   let sl = P_scanline();
   if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
   let gr = P_grain();
-  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  if (gr > 0.0) {
+    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);
+    rgb += vec3f(grain(uv, gr * 0.2) * lit);
+  }
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -9413,13 +9432,15 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   let sl = P_scanline();
   if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
   let gr = P_grain();
-  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  if (gr > 0.0) {
+    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);
+    rgb += vec3f(grain(uv, gr * 0.2) * lit);
+  }
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -10171,8 +10192,9 @@ fn presetBody(uv: vec2f) -> vec4f {
 }
 
 // ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
-fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
-fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitWin(x: f32) -> f32 { let lo = P_freqLo(); let hi = P_freqHi(); return mix(min(lo, hi), max(lo, hi), x); }
+fn kitBin(x: f32) -> f32 { return binAt(kitWin(x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(kitWin(x)); }
 fn kitFold(uvIn: vec2f) -> vec2f {
   var uv = uvIn;
   return uv;
@@ -10182,13 +10204,15 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   let sl = P_scanline();
   if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
   let gr = P_grain();
-  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  if (gr > 0.0) {
+    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);
+    rgb += vec3f(grain(uv, gr * 0.2) * lit);
+  }
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;
@@ -10614,8 +10638,9 @@ fn presetBody(uv: vec2f) -> vec4f {
 }
 
 // ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
-fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
-fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitWin(x: f32) -> f32 { let lo = P_freqLo(); let hi = P_freqHi(); return mix(min(lo, hi), max(lo, hi), x); }
+fn kitBin(x: f32) -> f32 { return binAt(kitWin(x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(kitWin(x)); }
 fn kitFold(uvIn: vec2f) -> vec2f {
   var uv = uvIn;
   let bz = P_beatZoom();
@@ -10639,13 +10664,15 @@ fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
   let sl = P_scanline();
   if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
   let gr = P_grain();
-  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  if (gr > 0.0) {
+    let lit = select(1.0, clamp(max(rgb.r, max(rgb.g, rgb.b)), 0.0, 1.0), u.bgMode == 2u);
+    rgb += vec3f(grain(uv, gr * 0.2) * lit);
+  }
   return rgb;
 }
 fn preset(uv: vec2f) -> vec4f {
-  let kuv = kitFold(uv);
-  let c = presetBody(kuv);
-  return vec4f(kitFinish(c.rgb, kuv), c.a);
+  let c = presetBody(kitFold(uv));
+  return vec4f(kitFinish(c.rgb, uv), c.a); // screen-space finish (rule 4)
 }
 "
 `;

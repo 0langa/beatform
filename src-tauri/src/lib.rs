@@ -112,10 +112,11 @@ fn export_allow_partial(
 }
 
 /// The one place the temp-sibling name is derived on this side; the TS writer
-/// (videoExporter.ts, createTauriWriter) appends the identical suffix. A plain
-/// string append keeps the sibling in the SAME directory — same volume — which
-/// is what makes the final rename atomic.
-fn partial_sibling(path: &str) -> String {
+/// (videoExporter.ts, createTauriWriter) appends the identical suffix, and the
+/// ffmpeg lanes (prores.rs) stage into the same sibling. A plain string append
+/// keeps the sibling in the SAME directory — same volume — which is what makes
+/// the final rename atomic.
+pub(crate) fn partial_sibling(path: &str) -> String {
     format!("{path}.partial")
 }
 

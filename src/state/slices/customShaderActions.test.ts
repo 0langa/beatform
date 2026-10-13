@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NEW_SHADER_TEMPLATE } from "../../render/presets/custom";
+import { NEW_SHADER_TEMPLATE, unregisterCustomPreset } from "../../render/presets/custom";
+import { presetById } from "../../render/presets";
 import type { PresetDef } from "../../render/types";
+import { clearHistory } from "../history";
 
 /**
  * Whole-lane review, CRITICAL on top of E2-U4 — the `signal` parameter
@@ -28,11 +30,29 @@ vi.mock("../platform", async (importOriginal) => {
     ...actual,
     isTauri: vi.fn(() => false),
     transpileShadertoy: vi.fn(async () => ({ ok: true, wgsl: null, errors: [] })),
+    // The .bfshader export dialog; the filename test below reads its first arg.
+    saveTextFile: vi.fn(async () => null),
   };
 });
 
+// The undo test at the bottom drives the REAL switchPreset and undo ->
+// applyDocument, which reach the analyzer; the same narrow mock
+// projectIOActions.test.ts uses (initApp is never called, so the renderer
+// side takes its null-renderer early returns for free).
+vi.mock("../services", () => ({
+  initServices: vi.fn(() => vi.fn()),
+  getEngine: vi.fn(() => {
+    throw new Error("getEngine: not expected without initApp");
+  }),
+  getAnalyzer: vi.fn(() => ({ setSync: vi.fn() })),
+  peekAnalyzer: vi.fn(() => null),
+  getRenderer: vi.fn(() => null),
+  setLiveRenderPaused: vi.fn(),
+  remeasure: vi.fn(),
+}));
+
 const { useVizStore } = await import("../store");
-const { isTauri, transpileShadertoy } = await import("../platform");
+const { isTauri, saveTextFile, transpileShadertoy } = await import("../platform");
 
 const PRISTINE = { ...useVizStore.getState() };
 
@@ -199,5 +219,67 @@ describe("importShadertoyGlsl — signal abort", () => {
 
     expect(saveCustomPresetMock).toHaveBeenCalledTimes(1);
     expect(saveCustomPresetMock.mock.calls[0][1]).toBe(controller.signal);
+  });
+});
+
+/**
+ * Undo after re-saving a custom shader that is NOT the active visual.
+ * ShaderEditor's loadExisting can open any def; the snapshot asOneGesture
+ * recorded was docOf(state), whose customDefs is referencedCustomDefs (the
+ * active visual + timeline scenes only) — so the def being re-saved was absent
+ * from it, and Ctrl+Z said "Undone" while the new WGSL stayed in place.
+ * deleteCustomPreset had already solved the identical problem with
+ * record("delete-preset", [doomed]); the save now hands asOneGesture the
+ * previous version the same way.
+ */
+describe("re-saving a NON-active custom shader is undoable", () => {
+  const ID = "custom-nonactive-resave";
+  const V1 = "fn preset(uv: vec2f) -> vec4f { return vec4f(1.0); } // VERSION ONE";
+  const V2 = "fn preset(uv: vec2f) -> vec4f { return vec4f(0.5); } // VERSION TWO";
+
+  afterEach(() => {
+    clearHistory();
+    unregisterCustomPreset(ID);
+  });
+
+  it("Ctrl+Z restores the previous WGSL in customDefs AND the registry, in exactly one step", async () => {
+    clearHistory();
+    useVizStore.setState({ checkCustomPreset: vi.fn(async () => []) });
+    const store = () => useVizStore.getState();
+
+    await store().saveCustomPreset({ id: ID, name: "Other", params: [], wgsl: V1 });
+    // Make it NOT the active visual: the document now references no custom
+    // def at all, so a plain snapshot would not carry it.
+    store().switchPreset("spectrum-bars");
+    expect(store().presetId).toBe("spectrum-bars");
+    const depthBefore = store().undoDepth;
+
+    // The in-place re-save (ShaderEditor loaded the def and hit Save).
+    await store().saveCustomPreset({ id: ID, name: "Other", params: [], wgsl: V2 });
+    expect(store().customDefs.find((d) => d.id === ID)?.wgsl).toBe(V2);
+    expect(presetById(ID).wgsl).toBe(V2);
+    expect(store().undoDepth).toBe(depthBefore + 1); // still exactly one entry
+
+    store().undo();
+
+    expect(store().customDefs.find((d) => d.id === ID)?.wgsl).toBe(V1);
+    expect(presetById(ID).wgsl).toBe(V1);
+    expect(store().presetId).toBe("spectrum-bars");
+  });
+});
+
+describe("exportCustomPreset's filename", () => {
+  it("keeps a dotted title intact — safeName's extension strip is for filenames, and a shader name is free text", async () => {
+    vi.mocked(saveTextFile).mockClear();
+    useVizStore.setState({
+      customDefs: [
+        { id: "custom-dotname", name: "v2.1 Glow", params: [], wgsl: NEW_SHADER_TEMPLATE },
+      ],
+    });
+
+    await useVizStore.getState().exportCustomPreset("custom-dotname");
+
+    expect(saveTextFile).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveTextFile).mock.calls[0][0]).toBe("v2.1 Glow.bfshader");
   });
 });

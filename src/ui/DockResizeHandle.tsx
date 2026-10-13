@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 /**
  * The pointer-capture resize-drag idiom shared by App.tsx's two dock
  * handles (Library, Visuals) — extracted (E2-U1) so both get the SAME
@@ -47,6 +49,19 @@ interface DockResizeHandleProps {
 export function DockResizeHandle(props: DockResizeHandleProps) {
   const { compute, onDrag, onCommit, onCancel, value } = props;
 
+  /** Escape hatch for a drag left in progress when this handle unmounts
+   *  (Q/G closes the Library/Visuals dock mid-drag). Nothing else tears
+   *  down the raw addEventListener calls onPointerDown makes outside React:
+   *  the element's own pointer listeners die with it, but the CAPTURE-phase
+   *  window `keydown` listener would not otherwise ever go away — the next
+   *  Escape pressed anywhere, even in a text field, was swallowed by its
+   *  stopPropagation and reverted the width. Reassigned by every
+   *  pointerdown, cleared by its own `end()` (ModulationPage.tsx's
+   *  cancelDragRef idiom); the unmount effect below just needs SOMETHING to
+   *  call if one is still armed. */
+  const cancelDragRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => cancelDragRef.current?.(), []);
+
   // Plain closure, recreated every render (matching ModulationPage's
   // startRouteDrag — no useCallback): `startValue` below must read
   // whatever `value` this component was passed AT THE MOMENT pointerdown
@@ -92,6 +107,7 @@ export function DockResizeHandle(props: DockResizeHandleProps) {
       el.removeEventListener("pointercancel", onUp);
       window.removeEventListener("keydown", onKey, true);
       el.releasePointerCapture(e.pointerId);
+      cancelDragRef.current = null;
       if (commit) {
         if (latest !== null) onCommit(latest);
       } else {
@@ -111,6 +127,7 @@ export function DockResizeHandle(props: DockResizeHandleProps) {
     // deliberate Escape reverts.
     el.addEventListener("pointercancel", onUp);
     window.addEventListener("keydown", onKey, true);
+    cancelDragRef.current = () => end(false);
   };
 
   return (

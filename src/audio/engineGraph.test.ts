@@ -66,6 +66,11 @@ class FakeAudioContext {
       ...node("analyser"),
       fftSize: 2048,
       frequencyBinCount: 1024,
+      // The AnalyserNode defaults (Web Audio §1.6) — what the engine gets
+      // unless it says otherwise, and what the channel-parity test models.
+      channelCount: 2,
+      channelCountMode: "max",
+      channelInterpretation: "speakers",
       getFloatTimeDomainData() {},
       getByteFrequencyData() {},
     }) as FakeNode;
@@ -97,6 +102,90 @@ function findByKind(kind: string): FakeNode[] {
   return created.filter((n) => n.kind === kind);
 }
 
+/** What `startLiveInput` builds. The port log is ordered on purpose: the
+ * close handshake is a claim about what reaches the processor BEFORE the
+ * port shuts, not merely that something does. */
+class FakeAudioWorkletNode {
+  static instances: FakeAudioWorkletNode[] = [];
+  portLog: string[] = [];
+  port = {
+    postMessage: (m: unknown) => {
+      this.portLog.push(`post:${JSON.stringify(m)}`);
+    },
+    close: () => {
+      this.portLog.push("close");
+    },
+  };
+  outputs: FakeNode[] = [];
+  connect(dst: FakeNode) {
+    this.outputs.push(dst);
+    return dst;
+  }
+  disconnect() {
+    this.outputs.length = 0;
+  }
+  constructor() {
+    FakeAudioWorkletNode.instances.push(this);
+  }
+}
+
+interface ChannelConfig {
+  channelCount: number;
+  channelCountMode: string;
+  channelInterpretation: string;
+}
+
+/**
+ * Web Audio channel mixing (§4), for the shapes this graph meets. "speakers"
+ * is the spec's layout table; only the layouts a 1-, 2- or 6-channel track
+ * can reach are written out, and anything else throws so a changed setting
+ * fails loudly here instead of being quietly mis-modelled.
+ */
+function speakersMix(src: number[], to: number): number[] {
+  const n = src.length;
+  const q = Math.SQRT1_2;
+  if (n === 1 && to === 2) return [src[0], src[0]];
+  if (n === 2 && to === 1) return [0.5 * (src[0] + src[1])];
+  if (n === 6 && to === 2) {
+    const [L, R, C, , SL, SR] = src;
+    return [L + q * (C + SL), R + q * (C + SR)];
+  }
+  if (n === 6 && to === 1) {
+    const [L, R, C, , SL, SR] = src;
+    return [q * (L + R) + C + 0.5 * (SL + SR)];
+  }
+  throw new Error(`unmodelled speakers mix ${n} -> ${to}`);
+}
+
+/** One sample of N-channel programme as the analyser's mono tap sees it:
+ * the input stage mixes to the node's computed channel count per its
+ * channelCount/Mode/Interpretation, then getFloatTimeDomainData reads the
+ * AnalyserNode's own "speakers" down-mix to mono (§1.6). */
+function analysedMono(a: ChannelConfig, programme: number[]): number {
+  const n = programme.length;
+  const computed =
+    a.channelCountMode === "explicit"
+      ? a.channelCount
+      : a.channelCountMode === "clamped-max"
+        ? Math.min(n, a.channelCount)
+        : n;
+  let mixed = programme;
+  if (computed !== n) {
+    mixed =
+      a.channelInterpretation === "discrete"
+        ? Array.from({ length: computed }, (_, i) => programme[i] ?? 0)
+        : speakersMix(programme, computed);
+  }
+  return mixed.length === 1 ? mixed[0] : speakersMix(mixed, 1)[0];
+}
+
+/** The export's mixdown: the PCM is sliced to its first two channels
+ * (videoExporter.ts) and OfflineSource averages what is left. */
+function exportMono(programme: number[]): number {
+  const two = programme.slice(0, 2);
+  return two.reduce((s, v) => s + v, 0) / two.length;
+}
+
 /**
  * TIMEOUTS: an explicit 30 s budget rather than vitest's 5 s default. Every
  * case here calls `vi.resetModules()` and re-imports `./engine`, so its cost is
@@ -110,7 +199,72 @@ function findByKind(kind: string): FakeNode[] {
 describe("audio graph", { timeout: 30_000 }, () => {
   afterEach(() => {
     created.length = 0;
+    FakeAudioWorkletNode.instances.length = 0;
     vi.unstubAllGlobals();
+  });
+
+  /**
+   * Channel parity with the offline analysers. Export and beat/section
+   * analysis both work on the PCM's FIRST TWO channels — c0 for mono,
+   * (c0+c1)/2 otherwise — while an AnalyserNode at its defaults takes every
+   * channel and down-mixes by the speaker rules, so a 5.1 file was analysed
+   * one way live and another way in the export: a preview/export divergence
+   * on the programme material itself. The fix is a channel configuration,
+   * and this models the spec's mixing for it, because the obvious settings
+   * are each wrong in one direction: "explicit" up-mixes mono to [m, 0] and
+   * halves it, "speakers" folds a 5.1 file's centre and surrounds in.
+   */
+  it("feeds the detector analysers exactly what the export analyses — mono, stereo and 5.1", async () => {
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    vi.resetModules();
+    const { AudioEngine } = await import("./engine");
+    const engine = new AudioEngine();
+
+    const programmes = {
+      mono: [0.8],
+      stereo: [0.8, 0.2],
+      "5.1": [0.8, 0.2, 0.5, 0.1, 0.3, 0.4],
+    };
+    for (const analyser of [engine.analyser, engine.displayAnalyser]) {
+      for (const [name, programme] of Object.entries(programmes)) {
+        expect(analysedMono(analyser, programme), `${name} programme`).toBeCloseTo(
+          exportMono(programme),
+          9,
+        );
+      }
+    }
+    // The L/R taps sit behind a ChannelSplitter, discrete by definition, and
+    // are left alone: mono still feeds a silent right, exactly as the
+    // offline meter assumes (offlineSource.ts, meterChannels).
+    const splitter = findByKind("splitter")[0];
+    const [tapL, tapR] = [engine.analyserL, engine.analyserR] as unknown as FakeNode[];
+    expect(reaches(splitter, tapL)).toBe(true);
+    expect(reaches(splitter, tapR)).toBe(true);
+  });
+
+  /**
+   * An AudioWorkletProcessor whose process() returns true is an active
+   * source the context keeps alive; closing the port and disconnecting the
+   * node end nothing. stopLiveInput must tell the processor to stand down
+   * BEFORE the port closes — after, there is no channel left to say it on.
+   */
+  it("tells the live worklet to close before shutting its port", async () => {
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    vi.stubGlobal("AudioWorkletNode", FakeAudioWorkletNode);
+    vi.resetModules();
+    const { AudioEngine } = await import("./engine");
+    const engine = new AudioEngine();
+
+    const push = await engine.startLiveInput();
+    const node = FakeAudioWorkletNode.instances[0];
+    expect(engine.liveInput).toBe(true);
+    push(new ArrayBuffer(16));
+
+    engine.stopLiveInput();
+
+    expect(node.portLog.slice(-2)).toEqual(['post:{"type":"close"}', "close"]);
+    expect(node.outputs).toHaveLength(0);
+    expect(engine.liveInput).toBe(false);
   });
 
   it("routes a playing source through the tap so the analysers actually hear it", async () => {

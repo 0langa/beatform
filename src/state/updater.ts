@@ -36,6 +36,11 @@ import { getPrefs } from "./prefs";
 import type { Update } from "@tauri-apps/plugin-updater";
 
 let current: Update | null = null;
+/** The version `current` would install. Kept beside the handle rather than
+ * read off the phase: after a failed install the phase is `error`, which
+ * carries no version, and the prompt's "Try again" then landed on
+ * "Version  is installed" with nothing in the gap. */
+let stagedVersion: string | null = null;
 
 export interface AvailableUpdate {
   version: string;
@@ -128,9 +133,11 @@ export async function checkForUpdate(): Promise<AvailableUpdate | null> {
   const update = await check();
   if (!update) {
     current = null;
+    stagedVersion = null;
     return null;
   }
   current = update;
+  stagedVersion = update.version;
   return { version: update.version, notes: update.body ?? null };
 }
 
@@ -183,16 +190,19 @@ export async function downloadAndInstallUpdate(
       }
     });
     current = null;
+    stagedVersion = null;
   } finally {
     installing = false;
   }
 }
 
 /** Install what the last check found, moving the phase as it goes. The
- * version is read off the CURRENT phase rather than passed in: `downloading`
- * does not carry it, so "ready" would otherwise have nothing to name. */
+ * version "ready" names is the STAGED one — what the handle will actually
+ * install — not the current phase's: `downloading` does not carry it, and
+ * neither does the `error` a retry starts from. The phase is only the
+ * fallback for the dev hook, which poses an `available` with nothing staged. */
 export async function installUpdate(): Promise<void> {
-  const version = phase.state === "available" ? phase.version : "";
+  const version = stagedVersion ?? (phase.state === "available" ? phase.version : "");
   phase = { state: "downloading", received: 0, total: null };
   emit();
   try {

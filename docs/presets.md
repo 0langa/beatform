@@ -21,8 +21,8 @@ Three ways in:
   `mainSound`/`mainVR` next to `mainImage` is simply ignored).
 - **A TypeScript preset file** in the repo: one file exporting a
   `PresetDef` plus a registry line in `src/render/presets/index.ts` — the
-  path for contributing a built-in. Workflow:
-  [CONTRIBUTING.md](https://github.com/0langa/beatform/blob/main/CONTRIBUTING.md).
+  path for contributing a built-in. Setup and gates: the README's
+  [Dev section](https://github.com/0langa/beatform#dev).
 
 Everything below applies to the WGSL paths; an imported Shadertoy visual is a
 complete translated program and uses its own uniform contract instead of the
@@ -45,7 +45,7 @@ export const myMode: PresetDef = {
   name: "My Mode",
   description: "One user-facing line.",
   styles: [
-    // curated looks; first = defaults. The shipped modes carry 6–15 each
+    // curated looks; first = defaults. The shipped modes carry 7–16 each
     { id: "default", name: "Default", values: {} },
     { id: "ember", name: "Ember", values: { hue: 20, glow: 0.8 } },
   ],

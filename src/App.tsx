@@ -117,8 +117,41 @@ export function resizeKeyValue(
   else if (e.key === "End") next = hi;
   else return null;
   e.preventDefault();
+  // The window-level shortcut handler also seeks on arrows and its guard
+  // only skips INPUT/SELECT/TEXTAREA — the handle is a DIV, so without this
+  // each ←/→ press resized the dock AND jumped the track 5 s (PlayerBar's
+  // own DIV slider stops propagation for the same double-fire).
+  e.stopPropagation();
   return Math.min(hi, Math.max(lo, next));
 }
+
+/**
+ * Whether a drag carries files from OUTSIDE the app — the only kind the
+ * root's drag handlers own. They used to light the "Drop to load" overlay
+ * for ANY dragenter that reached them, and an internal HTML5 drag (the row
+ * reorder in Preferences › Modes, PresetOrderEditor) bubbles exactly like a
+ * file drag, so the z-index-20 overlay sat over the z-index-10 dialog for
+ * the whole gesture. Exported for App.test.ts (this file's exported-helper
+ * pattern). `types` is a frozen string array in current engines but a
+ * DOMStringList in older WebViews — Array.from reads both.
+ */
+export function isFileDrag(dt: DataTransfer | null | undefined): boolean {
+  const types = dt?.types;
+  return types != null && Array.from(types).includes("Files");
+}
+
+/** Dropped file kinds the app has a home for — just not the track slot. */
+const IMAGE_DROP_EXT = /\.(png|jpe?g|webp|gif|bmp)$/i;
+const VIDEO_DROP_EXT = /\.(mp4|webm|mov|mkv)$/i;
+/** Where the Visuals dock actually takes a picture: the Scene page's
+ *  Background section (mode "Image" opens the picker) or its Layers section
+ *  ("+ Image…" adds a logo layer). The ▸ path spelling is GalleryDialog's
+ *  REMOVAL_SURFACE idiom. Video is desktop-only (ParamsPanel appends the
+ *  option under Tauri), so the hint says so rather than branching. */
+export const IMAGE_DROP_HINT =
+  "That's an image, not a track — set it as the background on Visuals ▸ Scene ▸ Background ▸ Image, or add it as a logo layer on Visuals ▸ Scene ▸ Layers ▸ + Image…";
+export const VIDEO_DROP_HINT =
+  "That's a video, not a track — set it as the background on Visuals ▸ Scene ▸ Background ▸ Video (desktop app only)";
 
 /**
  * The drop dispatch: which surface a set of dropped files routes to.
@@ -174,7 +207,22 @@ export function dispatchDroppedFiles(files: File[], store: typeof useVizStore.ge
   const applyLyrics = lyricFile
     ? () => lyricFile.text().then((t) => store().loadLyricsText(lyricFile.name, t))
     : null;
-  if (rest.length === 0) {
+  // Pictures and clips are not tracks: a .png/.jpg dropped to set a
+  // background fell through to the AUDIO decoder and died as
+  // `Could not decode "x.png"`, and an .mp4 dropped as a video background
+  // loaded as a silent audio track. Say where those are actually set — on
+  // the same toast the decode failure used; setError is the store's only
+  // public message action, flashNotice is slice-internal — and still route
+  // whatever tracks came with them.
+  const picture = rest.find((f) => IMAGE_DROP_EXT.test(f.name));
+  const clip = rest.find((f) => VIDEO_DROP_EXT.test(f.name));
+  if (picture) store().setError(IMAGE_DROP_HINT);
+  else if (clip) store().setError(VIDEO_DROP_HINT);
+  const tracks =
+    picture || clip
+      ? rest.filter((f) => !IMAGE_DROP_EXT.test(f.name) && !VIDEO_DROP_EXT.test(f.name))
+      : rest;
+  if (tracks.length === 0) {
     if (applyLyrics) void applyLyrics();
     return;
   }
@@ -182,11 +230,11 @@ export function dispatchDroppedFiles(files: File[], store: typeof useVizStore.ge
   // "drop in a folder of tracks", and replacing the live track with
   // files[0] while ignoring the rest betrayed exactly that promise.
   if (store().showBatch) {
-    void store().addBatchTracks(rest);
+    void store().addBatchTracks(tracks);
     if (applyLyrics) void applyLyrics();
   } else {
     void store()
-      .loadFile(rest[0])
+      .loadFile(tracks[0])
       .then(() => applyLyrics?.());
   }
 }
@@ -583,8 +631,15 @@ export default function App() {
       // user tabbing during playback lands on idle-hidden chrome. onFocus
       // bubbles (focusin), so focusing any control wakes the chrome.
       onFocus={() => store().pokeChrome()}
-      onDragOver={(e) => e.preventDefault()}
+      // Files only: an INTERNAL HTML5 drag (reordering rows in Preferences ›
+      // Modes) bubbles dragenter here exactly like a file drag, and the
+      // "Drop to load" overlay then covered the dialog for the whole gesture
+      // — see isFileDrag.
+      onDragOver={(e) => {
+        if (isFileDrag(e.dataTransfer)) e.preventDefault();
+      }}
       onDragEnter={(e) => {
+        if (!isFileDrag(e.dataTransfer)) return;
         e.preventDefault();
         dragDepthRef.current++;
         store().setDragOver(true);
@@ -594,6 +649,7 @@ export default function App() {
         if (dragDepthRef.current === 0) store().setDragOver(false);
       }}
       onDrop={(e) => {
+        if (!isFileDrag(e.dataTransfer)) return;
         e.preventDefault();
         dragDepthRef.current = 0;
         store().setDragOver(false);

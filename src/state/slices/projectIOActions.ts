@@ -80,7 +80,9 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
     async exportCurrentTheme(meta) {
       try {
         const path = await saveTextFile(
-          `${safeName(meta.name)}.bftheme`,
+          // A user-typed title, not a filename: "v2.1 Glow" has no extension
+          // to strip (safeName strips one by default for the export lane).
+          `${safeName(meta.name, { stripExtension: false })}.bftheme`,
           serializeTheme(ctx.docOf(get()), meta, APP_VERSION),
           [{ name: "Beatform theme", extensions: ["bftheme"] }],
         );

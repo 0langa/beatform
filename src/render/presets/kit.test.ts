@@ -56,9 +56,10 @@ describe("look kit", () => {
   it("a frequency window remaps every spectrum read, and only where the mode reads one", () => {
     for (const preset of WIRED) {
       if (kitChoiceOf(preset.id)?.freq) {
-        expect(preset.wgsl).toContain(
-          "fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }",
-        );
+        expect(preset.wgsl).toContain("fn kitBin(x: f32) -> f32 { return binAt(kitWin(x)); }");
+        // A crossed window (Low edge above High edge) still reads the slice
+        // the right way round: the edges are sorted before the mix.
+        expect(preset.wgsl).toContain("return mix(min(lo, hi), max(lo, hi), x);");
         // The body's own reads all go through the window; the only raw
         // binAt/peakAt left are the two kit wrappers themselves.
         expect(preset.wgsl.match(/\bbinAt\(/g)).toHaveLength(1);
@@ -71,11 +72,31 @@ describe("look kit", () => {
     for (const id of ["spectro-falls", "overgrowth", "led-matrix"]) {
       const preset = presets.find((p) => p.id === id)!;
       expect(presetUsesFeedback(preset)).toBe(true);
-      expect(preset.wgsl).toContain("return vec4f(kitFinish(c.rgb, kuv), c.a);");
+      expect(preset.wgsl).toContain("return vec4f(kitFinish(c.rgb, uv), c.a);");
       // No fold on a feedback mode: the history would be read through a
       // folded coordinate.
       expect(preset.wgsl).not.toContain("kaleido(p, km)");
       expect(preset.wgsl).not.toContain("P_beatZoom()");
+    }
+  });
+
+  it("the finish is screen-space: the fold feeds the body only, grain and scanlines see the frame's own uv", () => {
+    for (const preset of WIRED) {
+      expect(preset.wgsl).toContain("let c = presetBody(kitFold(uv));");
+      expect(preset.wgsl).toContain("return vec4f(kitFinish(c.rgb, uv), c.a);");
+      expect(preset.wgsl).not.toContain("kitFinish(c.rgb, kuv)");
+    }
+  });
+
+  it("grain cannot manufacture coverage in the transparent delivery", () => {
+    // composite() derives a transparent frame's alpha from max(rgb): grain
+    // added to black would be speckled coverage in a PNG/VP9-alpha export.
+    // The kit scales it by the light under it there, exactly as the post
+    // chain's grain does (n * grain * a), and leaves every opaque path alone.
+    for (const preset of WIRED) {
+      const grain = Boolean(kitChoiceOf(preset.id)?.grain);
+      expect(preset.wgsl.includes("u.bgMode == 2u"), preset.id).toBe(grain);
+      if (grain) expect(preset.wgsl).toContain("rgb += vec3f(grain(uv, gr * 0.2) * lit);");
     }
   });
 

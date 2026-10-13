@@ -1,7 +1,8 @@
 name: CI
 
-# Gate set implemented here is DEFINED in GATES.md (§1, §2, §5) — change
-# gates there first, then here and in release.yml in the same commit.
+# The gate set. scripts/release.mjs's printGatesChecklist() prints the same
+# list for the release preflight and release.yml runs it before every build —
+# change all three in the same commit.
 on:
   push:
     branches: [main]
@@ -23,6 +24,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The five version files (package.json, tauri.conf.json, Cargo.toml,
+      # Cargo.lock, src/version.ts) must agree — src/version.ts drifted for
+      # ten releases once because nothing checked.
+      - run: node scripts/bump-version.mjs --verify
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check

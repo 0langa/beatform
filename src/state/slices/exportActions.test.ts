@@ -1016,6 +1016,52 @@ describe("cancel during sidecar finalize reaches proresAbort (R2-10)", () => {
     expect(s().exportError).toContain("Conversion failed!");
   });
 
+  it("a user cancel whose abort breaks the in-flight write shows no error (cancel-first ordering)", async () => {
+    // The mirror image of R2-30e. Whenever ffmpeg is slower than the GPU
+    // (ProRes 4444, software AV1, GIF, 4K) a frame write is blocking on its
+    // stdin when Cancel lands. The Rust abort kills ffmpeg FIRST and only
+    // then takes the stdin mutex that write holds, so the write's broken
+    // pipe rejects before the abort resolves — and the chain's catch used
+    // to record it as THE failure, turning a cancel the user asked for into
+    // "ffmpeg pipe write failed: os error 232 — ffmpeg log: …".
+    useVizStore.setState({
+      beatGrid: GRID,
+      sections: SECTIONS,
+      analyzing: false,
+      exportSettings: { ...s().exportSettings, mode: "video", format: "webp", codec: "h264" },
+    });
+    vi.mocked(isTauri).mockReturnValueOnce(true);
+    vi.mocked(pickSavePath).mockResolvedValueOnce("C:\\exports\\loop.webp");
+    const write = deferred<void>();
+    vi.mocked(proresWrite).mockReturnValueOnce(write.promise);
+    vi.mocked(proresAbort).mockImplementationOnce(async () => {
+      // prores_abort on the Rust side: ffmpeg dies, the blocked write_all
+      // fails, and only then does the abort get the mutex and return.
+      write.reject("ffmpeg pipe write failed: os error 232");
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      return "[libwebp_anim @ 0x1] 12 frames written";
+    });
+    vi.mocked(exportVideo).mockImplementationOnce(async (_buf, o) => {
+      // One frame at ffmpeg's stdin, not yet accepted…
+      void o.onPngFrame!(new Uint8Array([1]), 0);
+      // …when the user clicks Cancel: the worker aborts and the core
+      // surfaces the AbortError, exactly as the real render loop would.
+      s().cancelExport();
+      const err = new Error("Export cancelled");
+      err.name = "AbortError";
+      throw err;
+    });
+
+    await s().runExport();
+
+    expect(proresAbort).toHaveBeenCalledTimes(1);
+    // The user asked for this. Nothing is shown — least of all a pipe error
+    // dressed up with ffmpeg's log.
+    expect(s().exportError).toBeNull();
+    expect(s().exportDone).toBeNull();
+    expect(s().exporting).toBeNull();
+  });
+
   it("a finalize that completes normally never arms an abort and still reports success", async () => {
     useVizStore.setState({
       beatGrid: GRID,

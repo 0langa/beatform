@@ -27,7 +27,7 @@ use sha2::{Digest, Sha256};
 use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 use tauri::Manager;
@@ -353,8 +353,52 @@ pub struct LyricsJob {
     /// --align-line: one line's slice).
     input_path: PathBuf,
     /// The reserved LRC temp. `None` for --align-line, which returns words
-    /// over the wire and writes no file.
+    /// over the wire and writes no file. Also the stem the sidecar's scratch
+    /// files are named off — see `sidecar_scratch_files`.
     lrc_path: Option<PathBuf>,
+    /// This job's place in the process-wide sequence (`next_generation`):
+    /// the identity the delayed cancel-kill checks before it fires. It used
+    /// to compare the child's PID, and Windows reuses PIDs quickly: cancel,
+    /// the sidecar exits within a second, the user starts a new run inside
+    /// the 10 s grace, the new sidecar is handed the freed PID — and the
+    /// fallback killed the new job. A generation is never reused.
+    generation: u64,
+}
+
+/// Process-wide job counter — one number per spawned sidecar, never reused,
+/// so a stale cancel-kill can always tell "the job it targeted" from "the
+/// job in the slot now" (see `LyricsJob::generation`).
+static JOB_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+fn next_generation() -> u64 {
+    JOB_GENERATION.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+/// The sidecar's scratch files for a job, named off the LRC path THIS
+/// process reserved: the whole-track vocal stem whisper reads, whisper's
+/// `-ojf` JSON, and the language probe's WAV/JSON pair. The sidecar used to
+/// pick its own `%TEMP%/beatform-lyrics-*-<pid>-<ms>` names and only its own
+/// fail/cancel/success exits removed them, so every abnormal end on this
+/// side — `end_job` (cancel's kill fallback, app close), the reap deadline,
+/// a sidecar panic — left them behind forever, hundreds of MB of stem for a
+/// long set. The four suffixes are the contract with the sidecar's
+/// `scratch_path` (lyrics-sidecar/src/main.rs); each side's test pins them.
+fn sidecar_scratch_files(lrc_path: &Path) -> [PathBuf; 4] {
+    [".stem.wav", ".whisper.json", ".lang.wav", ".lang.json"].map(|suffix| {
+        let mut s = lrc_path.as_os_str().to_os_string();
+        s.push(suffix);
+        PathBuf::from(s)
+    })
+}
+
+/// Remove the reserved LRC and every scratch file the sidecar derives from
+/// it (`None` = --align-line, which writes nothing).
+fn remove_lrc_and_scratch(lrc_path: Option<&Path>) {
+    let Some(lrc) = lrc_path else { return };
+    let _ = std::fs::remove_file(lrc);
+    for scratch in sidecar_scratch_files(lrc) {
+        let _ = std::fs::remove_file(scratch);
+    }
 }
 
 #[derive(Default)]
@@ -733,9 +777,9 @@ async fn download_part(
     sha256: &str,
     on_progress: &tauri::ipc::Channel<String>,
 ) -> Result<(), String> {
-    let offset = part_path.metadata().map(|m| m.len()).unwrap_or(0);
-    // A .part at (or beyond) full size skips straight to verification —
-    // beyond happens when a previous run appended after a 200-not-206.
+    let offset = resume_offset(part_path, total);
+    // A .part at full size skips straight to verification (a bad hash there
+    // deletes it, so the next attempt starts clean either way).
     if offset < total {
         // reqwest with `rustls-no-provider` PANICS (not Err) on Client build
         // unless a process-level crypto provider is installed first — the
@@ -775,6 +819,23 @@ async fn download_part(
                 Err(e) => return Err(format!("download failed (offline?): {e}")),
             };
             let status = resp.status();
+            if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+                // The server will not resume from this offset (the asset
+                // changed under the pin, or the .part outgrew the file in
+                // some earlier way). The part is unrecoverable: it used to
+                // stay on disk and every retry re-sent the same Range and
+                // got the same 416, forever. Discard it and start from zero
+                // — within this call while attempts remain.
+                let _ = std::fs::remove_file(part_path);
+                if attempt < RESUME_ATTEMPTS {
+                    attempt += 1;
+                    offset = 0;
+                    continue;
+                }
+                return Err(format!(
+                    "download failed: HTTP {status} for {url} — the partial download was discarded; try again"
+                ));
+            }
             if !status.is_success() {
                 return Err(format!("download failed: HTTP {status} for {url}"));
             }
@@ -846,6 +907,21 @@ async fn download_part(
         ));
     }
     Ok(())
+}
+
+/// Where a resume starts: the `.part`'s size — or 0, after discarding a part
+/// that is already LONGER than the file. Such a part (a previous run
+/// appended after a 200-not-206) used to skip the request, fail the size
+/// check, and be KEPT, so every later attempt failed the same way and the
+/// only way out was the model's remove button. A part exactly at `total` is
+/// left for verification: a good hash just needs the rename.
+fn resume_offset(part_path: &Path, total: u64) -> u64 {
+    let offset = part_path.metadata().map(|m| m.len()).unwrap_or(0);
+    if offset > total {
+        let _ = std::fs::remove_file(part_path);
+        return 0;
+    }
+    offset
 }
 
 // ---------------------------------------------------------------------------
@@ -1387,9 +1463,9 @@ fn end_job(job: LyricsJob) {
     job.tree.terminate();
     kill_and_reap(job.child);
     let _ = std::fs::remove_file(&job.input_path);
-    if let Some(lrc) = &job.lrc_path {
-        let _ = std::fs::remove_file(lrc);
-    }
+    // The reserved LRC plus the sidecar's scratch files — a killed sidecar
+    // never ran its own cleanup, and the stem WAV is the whole track.
+    remove_lrc_and_scratch(job.lrc_path.as_deref());
 }
 
 /// Kill a running sidecar (bounded reap) and clear the job slot. Used by
@@ -1412,12 +1488,15 @@ pub fn kill_running_job(state: &LyricsState) {
 }
 
 /// The delayed half of a graceful cancel: kill ONLY if the slot still holds
-/// the pid the cancel targeted. By the time the grace expires the job may
+/// the job the cancel targeted. By the time the grace expires the job may
 /// have exited and a new one claimed the slot — killing by slot alone would
-/// murder the newcomer, so the pid is the identity check.
-fn kill_job_if_pid(state: &LyricsState, pid: u32) {
+/// murder the newcomer, so the job's generation is the identity check. Not
+/// its PID: Windows hands a freed PID to the next process within seconds,
+/// and a new run started inside the grace could get the cancelled one's
+/// (see `LyricsJob::generation`).
+fn kill_job_if_generation(state: &LyricsState, generation: u64) {
     if let Ok(mut guard) = state.job.lock() {
-        if guard.as_ref().map(|j| j.child.id()) != Some(pid) {
+        if guard.as_ref().map(|j| j.generation) != Some(generation) {
             return;
         }
         if let Some(job) = guard.take() {
@@ -1465,15 +1544,15 @@ pub fn lyrics_generate_cancel(
         return Ok(());
     }
     // The write only proved delivery, not that anyone will act on it. Arm
-    // the bounded kill against exactly this child (see kill_job_if_pid).
-    let pid = {
+    // the bounded kill against exactly this job (see kill_job_if_generation).
+    let generation = {
         let guard = state.job.lock().map_err(|_| "state poisoned")?;
-        guard.as_ref().map(|j| j.child.id())
+        guard.as_ref().map(|j| j.generation)
     };
-    if let Some(pid) = pid {
+    if let Some(generation) = generation {
         std::thread::spawn(move || {
             std::thread::sleep(CANCEL_KILL_GRACE);
-            kill_job_if_pid(&app.state::<LyricsState>(), pid);
+            kill_job_if_generation(&app.state::<LyricsState>(), generation);
         });
     }
     Ok(())
@@ -1739,6 +1818,7 @@ pub fn lyrics_generate(
         tree,
         input_path: staged.clone(),
         lrc_path: Some(lrc_path.clone()),
+        generation: next_generation(),
     });
     drop(job_guard);
 
@@ -1791,7 +1871,9 @@ pub fn lyrics_generate(
             _ => Err("lyrics sidecar ended without a result".into()),
         },
     };
-    let _ = std::fs::remove_file(&lrc_path);
+    // The scratch files too: a sidecar that panicked, or was ended at the
+    // reap deadline above, never ran its own cleanup.
+    remove_lrc_and_scratch(Some(&lrc_path));
     result
 }
 
@@ -1947,6 +2029,7 @@ pub fn lyrics_align_line(
         input_path: staged.clone(),
         // --align-line answers over the wire; it writes no LRC.
         lrc_path: None,
+        generation: next_generation(),
     });
     drop(job_guard);
 
@@ -2292,7 +2375,86 @@ mod tests {
             tree,
             input_path: std::env::temp_dir().join("av-lyrics-test-absent-input.wav"),
             lrc_path: None,
+            generation: next_generation(),
         }
+    }
+
+    #[test]
+    fn the_scratch_names_are_the_sidecars_contract() {
+        // lyrics-sidecar/src/main.rs `scratch_path` builds exactly these off
+        // `--out`; its own test pins the same four. A drift on either side
+        // means the app sweeps names the sidecar never writes.
+        let names = sidecar_scratch_files(Path::new("C:/t/av-prores-1-2-lyrics-out.lrc"));
+        assert_eq!(
+            names,
+            [
+                PathBuf::from("C:/t/av-prores-1-2-lyrics-out.lrc.stem.wav"),
+                PathBuf::from("C:/t/av-prores-1-2-lyrics-out.lrc.whisper.json"),
+                PathBuf::from("C:/t/av-prores-1-2-lyrics-out.lrc.lang.wav"),
+                PathBuf::from("C:/t/av-prores-1-2-lyrics-out.lrc.lang.json"),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_abnormal_end_sweeps_the_sidecars_scratch_files() {
+        // The sidecar names its stem WAV, whisper JSON and language-probe
+        // pair off the LRC path this process reserved, so a kill from this
+        // side (cancel's fallback, app close) can remove what the killed
+        // sidecar never got to. The stem is the whole track as s16 stereo —
+        // the one file that must not be left behind.
+        let state = LyricsState::default();
+        let (f, lrc) = crate::prores::create_temp_new("test-scratch-lyrics-out.lrc").unwrap();
+        drop(f);
+        let scratch = sidecar_scratch_files(&lrc);
+        for p in &scratch {
+            std::fs::write(p, b"scratch").unwrap();
+        }
+        let mut child = spawn_wedged();
+        let tree = proc_tree::ProcessTree::adopt(&child);
+        *state.job_stdin.lock().unwrap() = child.stdin.take();
+        *state.job.lock().unwrap() = Some(LyricsJob {
+            child,
+            tree,
+            input_path: std::env::temp_dir().join("av-lyrics-test-absent-input.wav"),
+            lrc_path: Some(lrc.clone()),
+            generation: next_generation(),
+        });
+
+        kill_running_job(&state);
+
+        assert!(!lrc.exists(), "reserved LRC swept");
+        for p in &scratch {
+            assert!(!p.exists(), "scratch file must be swept: {}", p.display());
+        }
+    }
+
+    #[test]
+    fn an_oversize_part_is_discarded_so_a_resume_can_start_clean() {
+        // A .part longer than the file skipped the request, failed the size
+        // check and was kept — every retry repeated the same failure.
+        let dir = std::env::temp_dir().join(format!("bf-resume-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("model.bin.part");
+        std::fs::write(&part, [0u8; 10]).unwrap();
+        assert_eq!(resume_offset(&part, 5), 0, "longer than the file: restart");
+        assert!(!part.exists(), "the unrecoverable part is removed");
+        std::fs::write(&part, [0u8; 10]).unwrap();
+        assert_eq!(
+            resume_offset(&part, 10),
+            10,
+            "exactly full: verify, then rename"
+        );
+        assert!(part.exists());
+        assert_eq!(
+            resume_offset(&part, 20),
+            10,
+            "short: resume where it stopped"
+        );
+        assert!(part.exists());
+        assert_eq!(resume_offset(&dir.join("absent.part"), 20), 0);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -2317,6 +2479,7 @@ mod tests {
             tree,
             input_path: input.clone(),
             lrc_path: Some(lrc.clone()),
+            generation: next_generation(),
         });
 
         kill_running_job(&state);
@@ -2376,6 +2539,7 @@ mod tests {
             child,
             input_path: std::env::temp_dir().join("av-lyrics-test-absent-input.wav"),
             lrc_path: None,
+            generation: next_generation(),
         };
 
         let mut sys = System::new();
@@ -2484,22 +2648,51 @@ mod tests {
     fn the_delayed_cancel_kill_reaches_only_the_job_it_targeted() {
         // A graceful cancel arms a bounded kill fallback. By the time it
         // fires, the cancelled job may have exited and a NEW job claimed the
-        // slot — the pid pin keeps the fallback from murdering the newcomer.
+        // slot — the generation pin keeps the fallback from murdering the
+        // newcomer.
         let state = LyricsState::default();
         let job = test_job(spawn_wedged());
-        let pid = job.child.id();
+        let generation = job.generation;
         *state.job.lock().unwrap() = Some(job);
 
-        kill_job_if_pid(&state, pid.wrapping_add(1));
+        kill_job_if_generation(&state, generation + 1);
         assert!(
             state.job.lock().unwrap().is_some(),
-            "a mismatched pid means the targeted job is gone — leave the slot alone"
+            "a mismatched generation means the targeted job is gone — leave the slot alone"
         );
 
-        kill_job_if_pid(&state, pid);
+        kill_job_if_generation(&state, generation);
         assert!(
             state.job.lock().unwrap().is_none(),
             "the targeted job must be killed and cleared"
         );
+    }
+
+    #[test]
+    fn the_delayed_cancel_kill_does_not_trust_a_reused_pid() {
+        // The identity used to be the child's PID, and Windows recycles a
+        // freed PID within seconds: cancel -> the sidecar exits in ~1 s ->
+        // the user starts a new run inside the 10 s grace -> the new sidecar
+        // can get the old PID -> the fallback killed the NEW job. A fresh job
+        // in the slot must survive the old cancel's kill whatever PID it was
+        // handed, so the check cannot consult the PID at all.
+        let state = LyricsState::default();
+        let cancelled = test_job(spawn_wedged());
+        let armed = cancelled.generation;
+        *state.job.lock().unwrap() = Some(cancelled);
+        // The cancelled job exits on its own (the graceful ack) ...
+        kill_running_job(&state);
+        // ... and a new run claims the slot before the grace expires. Every
+        // generation is fresh — even a job that reused the PID has its own.
+        let newcomer = test_job(spawn_wedged());
+        assert_ne!(newcomer.generation, armed, "generations are never reused");
+        *state.job.lock().unwrap() = Some(newcomer);
+
+        kill_job_if_generation(&state, armed);
+        assert!(
+            state.job.lock().unwrap().is_some(),
+            "the stale fallback must leave the newcomer alone"
+        );
+        kill_running_job(&state);
     }
 }

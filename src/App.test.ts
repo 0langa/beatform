@@ -5,7 +5,14 @@
 // so this needs a DOM environment even though raceBootVeilDrop itself
 // touches neither React nor the store.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { armBootVeilRace, dispatchDroppedFiles, raceBootVeilDrop } from "./App";
+import {
+  armBootVeilRace,
+  dispatchDroppedFiles,
+  IMAGE_DROP_HINT,
+  isFileDrag,
+  raceBootVeilDrop,
+  VIDEO_DROP_HINT,
+} from "./App";
 import type { useVizStore } from "./state/store";
 
 /**
@@ -120,6 +127,7 @@ describe("dispatchDroppedFiles", () => {
       loadLyricsText: vi.fn(),
       addBatchTracks: vi.fn(async () => {}),
       loadFile: vi.fn(async () => {}),
+      setError: vi.fn(),
     };
     return { state, store: (() => state) as unknown as typeof useVizStore.getState };
   }
@@ -157,6 +165,73 @@ describe("dispatchDroppedFiles", () => {
     expect(state.loadFile).toHaveBeenCalledWith(audio);
     expect(state.importUserPresetText).not.toHaveBeenCalled();
     expect(state.importBuilderStackText).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Pictures and clips have a home in the app, just not the track slot: a
+   * .png dropped to set a background fell through to the audio decoder
+   * (`Could not decode "x.png"`) and an .mp4 dropped as a video background
+   * loaded as a silent audio track. Both now say where they go instead, on
+   * the same toast the decode failure used — setError is the store's only
+   * public message action (flashNotice is slice-internal).
+   */
+  it("an image points at Scene ▸ Background and the Layers' + Image… instead of the audio decoder", async () => {
+    const { state, store } = fakeStore();
+    dispatchDroppedFiles([dropped("cover.PNG")], store);
+    await flush();
+    expect(state.loadFile).not.toHaveBeenCalled();
+    expect(state.setError).toHaveBeenCalledWith(IMAGE_DROP_HINT);
+    expect(IMAGE_DROP_HINT).toMatch(/Visuals ▸ Scene ▸ Background/);
+    expect(IMAGE_DROP_HINT).toMatch(/Layers/);
+  });
+
+  it("a video points at Scene ▸ Background ▸ Video instead of loading as a track", async () => {
+    const { state, store } = fakeStore();
+    dispatchDroppedFiles([dropped("loop.mp4")], store);
+    await flush();
+    expect(state.loadFile).not.toHaveBeenCalled();
+    expect(state.addBatchTracks).not.toHaveBeenCalled();
+    expect(state.setError).toHaveBeenCalledWith(VIDEO_DROP_HINT);
+    expect(VIDEO_DROP_HINT).toMatch(/Visuals ▸ Scene ▸ Background/);
+  });
+
+  it("a track dropped together with an image still loads — the hint rides alongside, not instead", async () => {
+    const { state, store } = fakeStore();
+    const audio = dropped("song.flac");
+    dispatchDroppedFiles([dropped("art.jpg"), audio], store);
+    await flush();
+    expect(state.loadFile).toHaveBeenCalledWith(audio);
+    expect(state.setError).toHaveBeenCalledWith(IMAGE_DROP_HINT);
+  });
+});
+
+/**
+ * The root's drag handlers lit the "Drop to load" overlay for ANY dragenter
+ * that bubbled to them, and an internal HTML5 drag (PresetOrderEditor's row
+ * reorder in Preferences › Modes) bubbles exactly like a file drag: the
+ * z-index-20 overlay covered the z-index-10 dialog for the whole gesture.
+ * The handlers now gate on this helper (same exported-helper pattern as
+ * dispatchDroppedFiles — the JSX handlers themselves need a full App mount).
+ */
+describe("isFileDrag", () => {
+  const dt = (types: unknown) => ({ types }) as unknown as DataTransfer;
+
+  it("true for a drag from the OS — types carries Files", () => {
+    expect(isFileDrag(dt(["Files"]))).toBe(true);
+  });
+
+  it("false for an internal drag — a text/plain payload is the row reorder, not a file", () => {
+    expect(isFileDrag(dt(["text/plain"]))).toBe(false);
+    expect(isFileDrag(dt([]))).toBe(false);
+  });
+
+  it("false with no dataTransfer at all", () => {
+    expect(isFileDrag(null)).toBe(false);
+    expect(isFileDrag(undefined)).toBe(false);
+  });
+
+  it("reads a DOMStringList-shaped types (older WebViews), not only a real array", () => {
+    expect(isFileDrag(dt({ length: 1, 0: "Files" }))).toBe(true);
   });
 });
 

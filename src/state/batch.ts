@@ -147,8 +147,18 @@ const RESERVED_NAMES = new Set([
  */
 const MAX_STEM_LENGTH = 200;
 
-export function safeName(name: string): string {
-  let base = name.replace(/\.[a-z0-9]+$/i, "");
+/** A filename minus its extension. Only a FILENAME has one: an ID3 title is
+ * free text, and "Ms.Jackson" is not "Ms" with a .jackson extension. */
+export function stripExt(fileName: string): string {
+  return fileName.replace(/\.[a-z0-9]+$/i, "");
+}
+
+export function safeName(name: string, opts: { stripExtension?: boolean } = {}): string {
+  // Stripping stays the default — the single-export lane passes the loaded
+  // track's filename. Title callers opt out: run over a tag, the rule took
+  // "Ms.Jackson", "Mr.Brightside" and "Pt.2" to Ms.mp4, Mr.mp4 and Pt.mp4,
+  // and a batch of such titles collided into "(2)" suffixes.
+  let base = opts.stripExtension === false ? name : stripExt(name);
   for (const ch of ILLEGAL_IN_FILENAME) base = base.split(ch).join("");
   // Control characters (NUL and 0x01-0x1F) are illegal in Windows filenames.
   // A literal control-character regex trips eslint's no-control-regex (it's
@@ -171,6 +181,12 @@ export function safeName(name: string): string {
   return base;
 }
 
+/** A track's output stem: its tag title, else its filename. The extension is
+ * stripped from the FILENAME only, before sanitising — never from a title. */
+function trackStem(track: BatchTrack): string {
+  return safeName(track.meta.title || stripExt(track.file.name), { stripExtension: false });
+}
+
 /**
  * Cartesian product of tracks x formats, with collision-safe output paths.
  *
@@ -190,7 +206,7 @@ export function expandJobs(
   const jobs: BatchJob[] = [];
   for (const track of tracks) {
     for (const fmt of formats) {
-      const stem = safeName(track.meta.title || track.file.name);
+      const stem = trackStem(track);
       const withFmt = formats.length > 1 ? `${stem}_${fmt.w}x${fmt.h}` : stem;
       const ext = fmt.codec === "vp9a" ? "webm" : "mp4";
       let name = `${withFmt}.${ext}`;
@@ -352,7 +368,7 @@ export function retryFailed(
     const fmt = run.formats.find((f) => f.id === j.formatId);
     let outPath = j.outPath;
     if (track && fmt) {
-      const stem = safeName(track.meta.title || track.file.name);
+      const stem = trackStem(track);
       const withFmt = run.formats.length > 1 ? `${stem}_${fmt.w}x${fmt.h}` : stem;
       const ext = fmt.codec === "vp9a" ? "webm" : "mp4";
       let name = `${withFmt}.${ext}`;

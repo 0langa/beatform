@@ -1,6 +1,7 @@
 import { sanitizeSync, type SyncSettings } from "../audio/types";
 import type { ParamValues } from "../render/types";
-import { canonicalPresetId, presets } from "../render/presets";
+import { canonicalPresetId, knownPresetId } from "../render/presets";
+import { CUSTOM_ID_RE } from "../render/presets/custom";
 import { safeSetItem } from "./persistence";
 import { APP_VERSION } from "../version";
 
@@ -126,6 +127,24 @@ export function parseUserPreset(json: string): UserPreset {
 }
 
 /**
+ * Which visual ids a look may belong to. The strip (`presets`) alone was the
+ * old gate — but Save look is offered while a custom WGSL visual or the
+ * hidden classic `builder` is active too, and a look saved there was
+ * accepted, written, then DROPPED by the next boot's loadUserPresets and
+ * overwritten out of storage by the next save; its exported .bfpreset could
+ * never be re-imported ("Preset file is malformed"). knownPresetId covers the
+ * strip, the hidden builder, Builder Studio and every REGISTERED custom def;
+ * a custom id that is not registered right now is kept as well rather than
+ * dropped — its def may arrive later (a .bfshader import, a project that
+ * embeds it), and the look only ever shows under its own mode (ParamsPanel's
+ * looksForMode) while applyUserPreset refuses it, so an orphan is invisible,
+ * not harmful.
+ */
+function lookHostKnown(presetId: string): boolean {
+  return knownPresetId(presetId) || CUSTOM_ID_RE.test(presetId);
+}
+
+/**
  * Validate an untrusted value and build a clean UserPreset from ONLY its
  * known fields, or return null.
  *
@@ -154,7 +173,7 @@ function validUserPreset(v: unknown): UserPreset | null {
     typeof p.name !== "string" ||
     p.name.length === 0 ||
     presetId === null ||
-    !presets.some((x) => x.id === presetId) ||
+    !lookHostKnown(presetId) ||
     typeof p.params !== "object" ||
     p.params === null ||
     !Object.values(p.params).every((n) => typeof n === "number" && Number.isFinite(n))

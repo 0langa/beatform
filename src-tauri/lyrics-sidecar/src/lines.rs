@@ -211,7 +211,17 @@ pub fn stage_segments(input: AssembleInput) -> Staged {
                 .collect();
             let toks: String = pieces.iter().map(|(t, _)| *t).collect();
             let from_tokens = !toks.trim().is_empty();
-            let text = normalize_text(if from_tokens { &toks } else { &seg.text });
+            // Pieces with a replacement character are whisper's byte-level
+            // BPE splitting one multi-byte character across two tokens (see
+            // `pieces_are_lossy`): the segment's own `text` is the readable
+            // form. The per-word vote still comes from the pieces — their
+            // whitespace shape is the segment's, and `matched_word_p` drops
+            // it if a mangled byte happened to be a space.
+            let text = normalize_text(if from_tokens && !pieces_are_lossy(&pieces) {
+                &toks
+            } else {
+                &seg.text
+            });
             if text.is_empty() || is_non_speech_text(&text) {
                 return None;
             }
@@ -383,16 +393,24 @@ fn split_segment(
     vad_trusted: bool,
     out: &mut Vec<Line>,
 ) {
-    let gap = if vad_trusted {
+    // Every real token of the segment takes part. There used to be a time
+    // filter here (`start <= s < end` against the segment's offsets) and it
+    // only ever dropped WORDS: with `-dtw` a token's start is its measured
+    // time, which whisper.cpp does not clamp to the segment header, so a
+    // first word heard a frame before the header (or a last word at the
+    // header's end) vanished from the line text. Membership is already
+    // index-based — the recursion below hands the second half its own
+    // token slice — so the filter had nothing left to decide.
+    let toks: Vec<TokenSpanText> = token_spans(&seg.tokens);
+    // A segment whose pieces lost bytes to the lossy JSON decode cannot be
+    // cut: half-lines would have to be spelled from the pieces, and the only
+    // readable text is the whole segment's. It ships as one line instead.
+    let lossy = toks.iter().any(|(_, _, t, _)| t.contains(REPLACEMENT));
+    let gap = if vad_trusted && !lossy {
         vad::largest_gap_within(regions, start, end).filter(|(gs, ge)| ge - gs >= SPLIT_GAP_SEC)
     } else {
         None
     };
-    // Tokens with real text inside [start, end).
-    let toks: Vec<TokenSpanText> = token_spans(&seg.tokens)
-        .into_iter()
-        .filter(|(s, _, _, _)| *s >= start - 1e-9 && *s < end)
-        .collect();
 
     if let Some((gap_start, gap_end)) = gap {
         if !toks.is_empty() {
@@ -447,9 +465,27 @@ fn split_segment(
                 words: Vec::new(),
             });
         }
+    } else if lossy {
+        // Token timing, segment text — the pieces spell garbage (above).
+        let pieces: Vec<(&str, f64)> = toks.iter().map(|(_, _, t, p)| (*t, *p)).collect();
+        push_spanned_line(&toks, normalize_text(&seg.text), &pieces, out);
     } else {
         push_token_line(&toks, out);
     }
+}
+
+/// U+FFFD, what `String::from_utf8_lossy` leaves where a byte sequence was
+/// not UTF-8. whisper.cpp writes each token's text as the raw bytes of its
+/// byte-level BPE vocabulary entry, so a multi-byte character (CJK, Thai, an
+/// accented letter) split across two tokens is invalid UTF-8 in BOTH token
+/// strings while the segment's `text` — the tokens concatenated — is intact.
+/// The sidecar decodes the JSON lossily rather than failing the whole job
+/// minutes in; this is how the assembly tells such pieces apart.
+const REPLACEMENT: char = '\u{FFFD}';
+
+/// True when any token piece carries a replacement character.
+fn pieces_are_lossy(pieces: &[(&str, f64)]) -> bool {
+    pieces.iter().any(|(t, _)| t.contains(REPLACEMENT))
 }
 
 /// (start, end, text, whisper probability) of one real token.
@@ -498,7 +534,18 @@ pub fn token_spans(tokens: &[WhisperToken]) -> Vec<TokenSpanText<'_>> {
 fn push_token_line(toks: &[TokenSpanText], out: &mut Vec<Line>) {
     let pieces: Vec<(&str, f64)> = toks.iter().map(|(_, _, t, p)| (*t, *p)).collect();
     let text: String = pieces.iter().map(|(t, _)| *t).collect();
-    let text = normalize_text(&text);
+    push_spanned_line(toks, normalize_text(&text), &pieces, out);
+}
+
+/// One line timed by `toks` (first start, last end) carrying `text`, which
+/// is normally the pieces' own concatenation and, for lossy pieces, the
+/// segment's text; the word vote comes from `pieces` either way.
+fn push_spanned_line(
+    toks: &[TokenSpanText],
+    text: String,
+    pieces: &[(&str, f64)],
+    out: &mut Vec<Line>,
+) {
     if text.is_empty() || is_non_speech_text(&text) {
         return;
     }
@@ -511,7 +558,7 @@ fn push_token_line(toks: &[TokenSpanText], out: &mut Vec<Line>) {
     out.push(Line {
         t,
         end,
-        word_p: matched_word_p(word_probabilities(&pieces), &text),
+        word_p: matched_word_p(word_probabilities(pieces), &text),
         text,
         words: Vec::new(),
     });
@@ -1158,5 +1205,106 @@ mod tests {
     #[test]
     fn whitespace_normalizes_but_case_and_punctuation_stay() {
         assert_eq!(normalize_text("  O   say can't\tyou "), "O say can't you");
+    }
+
+    /// A DTW time is measured, not clamped to the segment header: the first
+    /// word of a segment at 12.00-15.00 s was heard at 11.96 s. It used to be
+    /// filtered out of the line text for starting before the header; so was
+    /// a last word timed at the header's end.
+    #[test]
+    fn dtw_words_timed_just_outside_the_segment_header_are_kept() {
+        let mut s = seg(
+            12_000,
+            15_000,
+            " hello world",
+            &[(12_000, 13_500, " hello"), (13_500, 15_000, " world")],
+        );
+        s.tokens[0].t_dtw = 1196; // 11.96 s, before offsets.from
+        s.tokens[1].t_dtw = 1500; // 15.00 s, at offsets.to
+        let vad = vec![region(11.5, 15.5)];
+        let lines = assemble(AssembleInput {
+            segments: &[s],
+            vad: &vad,
+            stem_peak_db: -10.0,
+            track_duration_sec: 20.0,
+        });
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0].text, "hello world");
+        assert!((lines[0].t - 11.96).abs() < 1e-9, "{lines:?}");
+    }
+
+    /// whisper's byte-level BPE split "é" (C3 A9) across two tokens; the
+    /// lossy decode left U+FFFD in both pieces while the segment text is
+    /// intact. The line must read as the segment does, keep its token
+    /// timing and its per-word vote — and never be cut at a vocal gap into
+    /// halves that could only be spelled from the garbage.
+    #[test]
+    fn lossy_token_pieces_fall_back_to_the_segments_text() {
+        let s = seg(
+            0,
+            10_000,
+            " café au lait",
+            &[
+                (0, 1_000, " caf"),
+                (1_000, 1_500, "\u{FFFD}"),
+                (1_500, 2_000, "\u{FFFD}"),
+                (6_000, 8_000, " au"),
+                (8_000, 10_000, " lait"),
+            ],
+        );
+        // A 4 s hole in the VAD would split a clean segment in two.
+        let vad = vec![region(0.0, 2.0), region(6.0, 10.0)];
+        let lines = assemble(AssembleInput {
+            segments: &[s],
+            vad: &vad,
+            stem_peak_db: -10.0,
+            track_duration_sec: 10.0,
+        });
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0].text, "café au lait");
+        assert!((lines[0].t - 0.0).abs() < 1e-9 && (lines[0].end - 10.0).abs() < 1e-9);
+        assert_eq!(lines[0].word_p.len(), 3, "{lines:?}");
+
+        let s = seg(
+            0,
+            10_000,
+            " café au lait",
+            &[
+                (0, 1_000, " caf"),
+                (1_000, 1_500, "\u{FFFD}"),
+                (1_500, 2_000, "\u{FFFD}"),
+                (6_000, 8_000, " au"),
+                (8_000, 10_000, " lait"),
+            ],
+        );
+        let staged = stage_segments(AssembleInput {
+            segments: &[s],
+            vad: &vad,
+            stem_peak_db: -10.0,
+            track_duration_sec: 10.0,
+        });
+        assert_eq!(staged.segments[0].line.text, "café au lait");
+        assert_eq!(staged.segments[0].line.word_p.len(), 3);
+        assert_eq!(staged.segments[0].fallback.len(), 1);
+        assert_eq!(staged.segments[0].fallback[0].text, "café au lait");
+        // The clean twin still splits at the gap — the no-cut rule is only
+        // for pieces that cannot spell their halves.
+        let clean = seg(
+            0,
+            10_000,
+            " café au lait",
+            &[
+                (0, 2_000, " café"),
+                (6_000, 8_000, " au"),
+                (8_000, 10_000, " lait"),
+            ],
+        );
+        let lines = assemble(AssembleInput {
+            segments: &[clean],
+            vad: &vad,
+            stem_peak_db: -10.0,
+            track_duration_sec: 10.0,
+        });
+        assert_eq!(lines.len(), 2, "{lines:?}");
     }
 }

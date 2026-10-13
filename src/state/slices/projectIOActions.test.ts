@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { serializeProject, validateDocument } from "../project";
 import { clearHistory } from "../history";
 import { unregisterCustomPreset } from "../../render/presets/custom";
+import { presetById } from "../../render/presets";
 
 /**
  * P-11 Task 2 — the boot chokepoint switch: desktop boot now prefers the
@@ -51,6 +52,8 @@ vi.mock("../platform", async (importOriginal) => {
     quarantineSupersededAutosave: vi.fn(async () => null),
     // HD-10: the theme import dialog; tests hand it a file or a cancel.
     openTextFile: vi.fn(async () => null),
+    // The theme export dialog; the filename test at the bottom reads its first arg.
+    saveTextFile: vi.fn(async () => null),
   };
 });
 
@@ -64,8 +67,14 @@ vi.mock("../persistence", async (importOriginal) => {
 });
 
 const { useVizStore } = await import("../store");
-const { isTauri, readAutosave, writeAutosave, quarantineSupersededAutosave, openTextFile } =
-  await import("../platform");
+const {
+  isTauri,
+  readAutosave,
+  writeAutosave,
+  quarantineSupersededAutosave,
+  openTextFile,
+  saveTextFile,
+} = await import("../platform");
 const { wasPreviousExitClean } = await import("../persistence");
 
 const PRISTINE = { ...useVizStore.getState() };
@@ -819,6 +828,35 @@ describe("E2-D2 fix — an in-place custom-shader re-save must be undoable (.sup
     // openProjectText -> applyDocument never passes fromHistory — S1 keeps
     // the local (newer) edit exactly as it did before this fix.
     expect(store().customDefs.find((d) => d.id === ID)?.wgsl).toBe(EDITED);
+    // ...and the GPU-side registry agrees. Before validateDocument stopped
+    // overwriting already-registered ids, the parse of the incoming file
+    // (and the validateDocument call above that built it) re-registered
+    // OLDER while the library kept EDITED: preview rendered the old shader,
+    // export (which carries customDefs to the worker) rendered the new one.
+    expect(presetById(ID).wgsl).toBe(EDITED);
+  });
+
+  it("a REFUSED boot document (memory outran the autosave read) leaves the registry on the library's copy too", async () => {
+    clearHistory();
+    useVizStore.setState({ checkCustomPreset: vi.fn(async () => []) });
+    const store = () => useVizStore.getState();
+    await store().saveCustomPreset({ id: ID, name: "Mine", params: [], wgsl: V2 });
+    expect(presetById(ID).wgsl).toBe(V2);
+
+    // The autosave on disk still embeds the older copy; by the time the read
+    // resolves the user has edited (undoDepth > 0), so the document is
+    // refused — but parseProject already ran on it, and used to re-register
+    // the file's copy over the library's on the way.
+    const file = JSON.parse(serializeProject(validateDocument({ presetId: ID }), "test"));
+    file.document.customDefs = [{ id: ID, name: "Mine", params: [], wgsl: V1 }];
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(readAutosave).mockResolvedValueOnce(JSON.stringify(file));
+    useVizStore.setState({ undoDepth: 1 });
+
+    await store().bootDesktopDocument();
+
+    expect(store().customDefs.find((d) => d.id === ID)?.wgsl).toBe(V2);
+    expect(presetById(ID).wgsl).toBe(V2);
   });
 });
 
@@ -848,5 +886,18 @@ describe("importThemeFromFile (HD-10)", () => {
     vi.mocked(openTextFile).mockResolvedValueOnce({ name: "junk.bftheme", contents: "{not json" });
     await useVizStore.getState().importThemeFromFile();
     expect(useVizStore.getState().error).toMatch(/^Could not import theme/);
+  });
+});
+
+describe("exportCurrentTheme's filename", () => {
+  it("keeps a dotted title intact — safeName's extension strip is for filenames, and a theme name is free text", async () => {
+    vi.mocked(saveTextFile).mockClear();
+
+    await useVizStore
+      .getState()
+      .exportCurrentTheme({ name: "v2.1 Glow", author: "test", license: "CC0-1.0" });
+
+    expect(saveTextFile).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveTextFile).mock.calls[0][0]).toBe("v2.1 Glow.bftheme");
   });
 });

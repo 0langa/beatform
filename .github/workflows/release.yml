@@ -46,6 +46,21 @@ jobs:
 
       - run: npm ci
 
+      # The five version files must agree with each other AND with the tag:
+      # a hand bump that missed Cargo.toml would label the installer one
+      # version and stamp another into Apps & features at first boot
+      # (uninstall_entry.rs heals DisplayVersion from CARGO_PKG_VERSION).
+      - run: node scripts/bump-version.mjs --verify
+      - name: The tag names the version the tree carries
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="$(node -p "require('./package.json').version")"
+          if [ "v$V" != "$RELEASE_TAG" ]; then
+            echo "::error::tag $RELEASE_TAG does not match the tree's version $V"
+            exit 1
+          fi
+
       # The ProRes sidecar (~110 MB, gitignored) — tauri build fails without it
       - run: node scripts/fetch-ffmpeg.mjs
 
@@ -55,7 +70,8 @@ jobs:
       - run: node scripts/fetch-onnxruntime.mjs
       - run: node scripts/build-lyrics-sidecar.mjs
 
-      # The SAME gate set as ci.yml (canonical definition: GATES.md §5).
+      # The SAME gate set as ci.yml (scripts/release.mjs printGatesChecklist()
+      # prints the list for the release preflight; change all three together).
       # Running a smaller one here is how two releases shipped off a main
       # that was failing `format:check` — a red main was invisible at
       # release time because the release path enforced a different contract.
@@ -71,6 +87,12 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
         working-directory: src-tauri
       - run: cargo test --workspace --lib --bins
+        working-directory: src-tauri
+      # ci.yml's audit job, both ecosystems: an advisory that turns main red
+      # must not ship in an installer.
+      - run: npm audit --audit-level=high
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
         working-directory: src-tauri
 
       # The signing key produces the .sig updater artifacts the in-app
@@ -110,6 +132,22 @@ jobs:
           fi
           export V="$VERSION"
           export SIG="$(cat "$SIG_FILE")"
+          # The .sig must come from the key whose public half is pinned in
+          # tauri.conf.json: any other key publishes just as green, and every
+          # installed app then rejects the update. (minisign key id = bytes
+          # 2..10 of the decoded payload; release-helpers.mjs reads it.)
+          node --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            import { updaterKeyId } from './scripts/lib/release-helpers.mjs';
+            const conf = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            const pinned = updaterKeyId(conf.plugins.updater.pubkey);
+            const signedBy = updaterKeyId(process.env.SIG);
+            if (signedBy !== pinned) {
+              console.error('::error::updater signature made by key ' + signedBy + ', but tauri.conf.json pins ' + pinned);
+              process.exit(1);
+            }
+            console.log('updater signature key id ' + signedBy + ' matches tauri.conf.json');
+          "
           export URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/Beatform_${VERSION}_x64-setup.exe"
           export PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           # notes = this version's own CHANGELOG section. The dialog normally

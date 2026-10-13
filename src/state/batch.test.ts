@@ -86,6 +86,37 @@ describe("expandJobs", () => {
     expect(jobs[0].outPath).toBe("/out/ABCD.mp4");
   });
 
+  it("keeps a dot in a tag TITLE — only a filename has an extension to strip", () => {
+    // "Ms.Jackson" is a title, not "Ms" with a .jackson extension. The old
+    // rule ran over tags too, so "Ms.Jackson", "Mr.Brightside" and "Pt.2"
+    // rendered as Ms.mp4, Mr.mp4 and Pt.mp4 — and two such titles collided
+    // into a "(2)" suffix, the mapping back to the tracks lost.
+    const jobs = expandJobs(
+      [track("t1", "Ms.Jackson"), track("t2", "Mr.Brightside"), track("t3", "Pt.2")],
+      [F16],
+      "/out",
+    );
+    expect(jobs.map((j) => j.outPath)).toEqual([
+      "/out/Ms.Jackson.mp4",
+      "/out/Mr.Brightside.mp4",
+      "/out/Pt.2.mp4",
+    ]);
+  });
+
+  it("still strips the extension when the stem falls back to the filename", () => {
+    const untagged: BatchTrack = {
+      ...track("t1", ""),
+      file: new File([], "Mr.Brightside.mp3"),
+      meta: { title: "", artist: "" },
+      metaFromTags: false,
+    };
+    expect(expandJobs([untagged], [F16], "/out")[0].outPath).toBe("/out/Mr.Brightside.mp4");
+    // The single-export lane's default is unchanged: a filename loses its
+    // extension, a dotted title opts out.
+    expect(safeName("Ms.Jackson.mp3")).toBe("Ms.Jackson");
+    expect(safeName("Ms.Jackson", { stripExtension: false })).toBe("Ms.Jackson");
+  });
+
   it("keeps non-ASCII titles instead of collapsing them together", () => {
     // The old rule was [^\w\- ], and \w is ASCII-only — so every CJK/Cyrillic
     // title sanitised to empty and a whole batch piled up as
@@ -346,6 +377,23 @@ describe("retryFailed", () => {
       tracks: [track("t2", "Fixed Title")],
     };
     expect(retryFailed(r, 1).jobs[0].outPath).toBe("/out/Fixed Title.mp4");
+  });
+
+  it("re-derives a dotted title by the same rule as the first pass", () => {
+    const r: BatchRun = {
+      ...run([
+        {
+          id: "b",
+          trackId: "t2",
+          formatId: "16:9",
+          outPath: "/out/Ms.mp4",
+          totalFrames: 1,
+          status: { k: "failed", kind: "gpu", message: "lost" },
+        },
+      ]),
+      tracks: [track("t2", "Ms.Jackson")],
+    };
+    expect(retryFailed(r, 1).jobs[0].outPath).toBe("/out/Ms.Jackson.mp4");
   });
 
   it("never reuses a path a completed job already wrote", () => {

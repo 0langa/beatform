@@ -51,9 +51,16 @@ export function codecString(
       if (px > 130_000_000) return "hvc1.1.6.L150.B0";
       return "hvc1.1.6.L123.B0";
     case "av1":
-      // Main profile, main tier, 8-bit; levels 4.0 / 5.0 / 5.1
-      if (px > 260_000_000) return "av01.0.13M.08";
-      if (px > 130_000_000) return "av01.0.12M.08";
+      // Main profile, main tier, 8-bit; levels 4.0 / 4.1 / 5.0 / 5.1, cut
+      // at each level's own MaxDisplayRate (AV1 spec, Annex A.3) rather
+      // than the H.264 ladder's 130/260 M: level 4.0 allows 70 778 880
+      // samples/s, so the old "08M for anything up to 130 M" declared it
+      // for 1080p60 (124.4 M) and 1440p30 (110.6 M), which need 4.1 — and
+      // a strict hardware isConfigSupported then reported AV1 unavailable
+      // on a machine that has it.
+      if (px > 267_386_880) return "av01.0.13M.08";
+      if (px > 141_557_760) return "av01.0.12M.08";
+      if (px > 70_778_880) return "av01.0.09M.08";
       return "av01.0.08M.08";
     case "vp9a":
       // Profile 0, 8-bit; levels 4.1 / 5.0 / 5.1 (alpha rides as side data —

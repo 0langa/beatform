@@ -59,6 +59,9 @@ export function parseLsRemoteTag(output: string, tag: string): string | null;
 
 export function parseVerifiedVersion(output: string): string | null;
 
+/** Hex key id (8 bytes) of a base64-wrapped minisign public key or signature file. */
+export function updaterKeyId(fileBase64: string): string;
+
 export function remoteMismatches(
   head: string,
   remote: { remoteMain: string | null; remoteTagTarget: string | null },
