@@ -1,9 +1,5 @@
 # Beatform — manual acceptance checklist
 
-The living manual-test checklist. Reset **2026-10-12 at the v3.0.0 cut**; the
-v3.0.0 batch with its sign-off is preserved verbatim in
-[archive/ledgers/TESTING-through-v3.0.0.md](archive/ledgers/TESTING-through-v3.0.0.md),
-every earlier run in the other archived batches.
 
 **Reusing this file:** when the next batch opens, add its items under a
 dated heading, update the "State as of" line, and keep the environment facts

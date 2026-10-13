@@ -267,15 +267,6 @@ npm run lint         # eslint
 npm run typecheck    # tsc --noEmit
 ```
 
-The full gate list — web, Rust, and the device/E2E suites with the rules for
-when each is mandatory — is [`GATES.md`](GATES.md). CI runs the web gates
-(typecheck, lint, format check, tests, build) on every push/PR, plus a desktop
-job (`npm run build` for tauri's compile-time resource check, `cargo fmt --all`,
-`cargo clippy --workspace`, and `cargo test --workspace --lib --bins` — CI
-narrows the canonical `cargo test --workspace` to lib and bin targets to bound
-runtime, the same coverage minus doc-tests; GATES.md §2 has the detail) and a
-dependency audit. Always pass `--workspace`/`--all` to cargo: bare cargo
-silently skips the lyrics-sidecar member.
 
 ## Roadmap
 
@@ -285,21 +276,4 @@ shipped** — beat-quantized switching, Web MIDI, Stage mode, and the
 second-display output window with its Perform drawer all landed (v2.104.0).
 Everything stays free and open source, GitHub-only, with no monetization.
 
-**3.0.0 — the stable cut.** Version 3.0.0 is the release after which
-Beatform sits still for a while: nothing that was started ships half-done,
-every 2.x project, look, theme and shader file opens unchanged, and the
-updater carries every 2.x install forward. It is not a feature release —
-the features landed across the 2.x line, the last of them in v2.113.0. How
-it was prepared is [`archive/ledgers/V3-RELEASE-PLAN.md`](archive/ledgers/V3-RELEASE-PLAN.md);
-the ledger with every verdict and the evidence is
-[`archive/ledgers/BACKLOG-through-v3.0.0.md`](archive/ledgers/BACKLOG-through-v3.0.0.md);
-open work, if any, lives in [`BACKLOG.md`](BACKLOG.md). After 3.0.0 the project sits; when work
-resumes it runs on the 3.x line under the same gates, the same ledger and
-the same determinism law — new ideas go through the ledger, never straight
-into a release.
 
-Manual acceptance evidence lives in [`TESTING.md`](TESTING.md) (the current
-batch) and [`archive/ledgers/`](archive/ledgers/README.md) (every earlier run,
-including the full 2026-07-27 on-hardware pass: real drag-and-drop, a physical
-non-US keyboard, a two-hour export soak and a ProRes 4444 alpha round-trip in
-DaVinci Resolve).
