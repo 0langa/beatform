@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-13
+
 - **Every visual gets the same finishing knobs.** The modes were unequally
   customizable: measured across 24 knob concepts, Particles answered 19 and
   Synthwave 8, because symmetry, a tilt, a beat zoom, a beat flash, a hue
@@ -3595,7 +3597,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/0langa/beatform/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/0langa/beatform/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/0langa/beatform/compare/v2.113.0...v3.0.0
 [2.113.0]: https://github.com/0langa/beatform/compare/v2.112.1...v2.113.0
