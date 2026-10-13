@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_PALETTE_PHASE, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
@@ -42,7 +43,7 @@ import { WGSL_PALETTE_PHASE, WGSL_RGB_CONTROLS } from "../wgslLib";
  * tube on three depth shells, streaking past the camera with real parallax.
  * All three default to 0 and are guarded off.
  */
-export const tunnelRings: PresetDef = {
+const tunnelRingsBase: PresetDef = {
   id: "tunnel-rings",
   name: "Tunnel",
   description:
@@ -1427,3 +1428,6 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): grain, scanline, freq — the finishing knobs this mode did not own natively. */
+export const tunnelRings = withKit(tunnelRingsBase, { grain: true, scanline: true, freq: true });

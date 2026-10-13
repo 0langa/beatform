@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_PALETTE_STD } from "../wgslLib";
 
 /**
@@ -32,7 +33,7 @@ import { WGSL_PALETTE_STD } from "../wgslLib";
  * All three are exactly neutral at factory defaults: the 0-default gates skip
  * their blocks whole, and the colour tier's neutral path returns its input.
  */
-export const particles: PresetDef = {
+const particlesBase: PresetDef = {
   // Renamed from the legacy internal id "starfield" (the display name has been
   // "Particles" since long before). Loaders migrate the old id everywhere it
   // persists — see RENAMED_PRESET_IDS in ./index.ts.
@@ -1277,3 +1278,6 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): hueSpin, grain, scanline — the finishing knobs this mode did not own natively. */
+export const particles = withKit(particlesBase, { hueSpin: true, grain: true, scanline: true });

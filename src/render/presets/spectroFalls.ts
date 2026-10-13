@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
@@ -52,7 +53,7 @@ import { WGSL_COLOR_CONTROLS } from "../wgslLib";
  * entered), so the beat grid can be printed onto the record and scroll in
  * lockstep with it, anchored to the detected grid through beatPhase.
  */
-export const spectroFalls: PresetDef = {
+const spectroFallsBase: PresetDef = {
   id: "spectro-falls",
   name: "Spectro Falls",
   description:
@@ -187,6 +188,99 @@ export const spectroFalls: PresetDef = {
         beatMarks: 0.7,
         floorLevel: 0.02,
         vignette: 0.1,
+      },
+    },
+    // 3.2 look-kit looks: the finishing knobs the mode gained, in use.
+    {
+      id: "crt",
+      name: "CRT Monitor",
+      values: {
+        direction: 2,
+        slices: 120,
+        speed: 24,
+        hue: 120,
+        hueSpread: 30,
+        saturation: 0.8,
+        loud: 0.85,
+        glow: 0.35,
+        edge: 0.3,
+        hotWhite: 0.2,
+        spill: 0.3,
+        grid: 0.2,
+        gridLines: 6,
+        floorLevel: 0.05,
+        vignette: 0.5,
+        grain: 0.25,
+        scanline: 0.6,
+      },
+    },
+    {
+      id: "thermal",
+      name: "Thermal",
+      values: {
+        axis: 1,
+        slices: 90,
+        speed: 40,
+        hue: 20,
+        hueSpread: 90,
+        quiet: 0.08,
+        loud: 0.75,
+        airLift: 0.3,
+        glow: 0.7,
+        edge: 0.9,
+        hotWhite: 0.9,
+        spill: 0.6,
+        fade: 0.2,
+        vignette: 0.25,
+        grain: 0.35,
+      },
+    },
+    {
+      id: "radar",
+      name: "Night Radar",
+      values: {
+        axis: 2,
+        slices: 150,
+        speed: 10,
+        hue: 95,
+        hueSpread: 15,
+        saturation: 0.9,
+        quiet: 0.03,
+        loud: 0.95,
+        glow: 1.2,
+        edge: 0.2,
+        spill: 0.9,
+        fade: 0.85,
+        beatMarks: 0.6,
+        grid: 0.5,
+        gridLines: 16,
+        floorLevel: 0.015,
+        vignette: 0.7,
+        scanline: 0.35,
+      },
+    },
+    {
+      id: "strip",
+      name: "Studio Strip",
+      values: {
+        direction: 3,
+        slices: 480,
+        speed: 45,
+        hue: 275,
+        hueSpread: -90,
+        prism: 0.4,
+        loud: 0.88,
+        airLift: 0.7,
+        beatBoost: 0.6,
+        glow: 0.6,
+        edge: 1.2,
+        hotWhite: 0.5,
+        spill: 0.35,
+        fade: 0.15,
+        bassGlow: 0.2,
+        vignette: 0.2,
+        grain: 0.15,
+        scanline: 0.15,
       },
     },
   ],
@@ -709,3 +803,6 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): grain, scanline — the finishing knobs this mode did not own natively. */
+export const spectroFalls = withKit(spectroFallsBase, { grain: true, scanline: true });

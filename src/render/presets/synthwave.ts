@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_COLOR_CONTROLS, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
@@ -42,7 +43,7 @@ import { WGSL_COLOR_CONTROLS, WGSL_RGB_CONTROLS } from "../wgslLib";
  * shared noiseClock changes default pixels, so it is deliberately NOT part
  * of this wave — it belongs to a batched hash-input re-bless.
  */
-export const synthwave: PresetDef = {
+const synthwaveBase: PresetDef = {
   id: "synthwave",
   name: "Synthwave",
   description:
@@ -877,3 +878,13 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): mirror, rotation, beatFlash, hueSpin, grain, scanline — the finishing knobs this mode did not own natively. */
+export const synthwave = withKit(synthwaveBase, {
+  mirror: true,
+  rotation: true,
+  beatFlash: true,
+  hueSpin: true,
+  grain: true,
+  scanline: true,
+});

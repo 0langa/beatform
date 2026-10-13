@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
@@ -91,7 +92,7 @@ import { WGSL_COLOR_CONTROLS } from "../wgslLib";
  * CHEMISTRY term, not dt, so a drop can surge growth without touching
  * the stability bound.
  */
-export const overgrowth: PresetDef = {
+const overgrowthBase: PresetDef = {
   id: "overgrowth",
   name: "Overgrowth",
   description:
@@ -205,6 +206,77 @@ export const overgrowth: PresetDef = {
         haze: 0.6,
         floorLevel: 0.03,
         grain: 0.4,
+      },
+    },
+    // 3.2 look-kit looks: the finishing knobs the mode gained, in use.
+    {
+      id: "tidepool",
+      name: "Tidepool",
+      values: {
+        form: 4,
+        scale: 1.4,
+        hue: 170,
+        hueSpread: 100,
+        surge: 0.6,
+        seeds: 0.5,
+        glow: 0.8,
+        relief: 0.5,
+        vignette: 0.3,
+        beatFlash: 0.2,
+        scanline: 0.3,
+      },
+    },
+    {
+      id: "microscope",
+      name: "Microscope",
+      values: {
+        form: 2,
+        scale: 0.6,
+        speed: 0.7,
+        saturation: 0.4,
+        lightness: 1.1,
+        glow: 0.2,
+        relief: 1.1,
+        paper: 0.7,
+        vignette: 0.6,
+        grain: 0.4,
+        scanline: 0.55,
+      },
+    },
+    {
+      id: "spore",
+      name: "Neon Spore",
+      values: {
+        hue: 290,
+        hueSpread: 170,
+        etch: 0.6,
+        surge: 0.7,
+        seeds: 0.9,
+        glow: 1.2,
+        haze: 0.15,
+        floorLevel: 0.02,
+        vignette: 0.4,
+        beatFlash: 0.45,
+        hueSpin: 25,
+      },
+    },
+    {
+      id: "emberMoss",
+      name: "Ember Moss",
+      values: {
+        hue: 25,
+        hueSpread: 40,
+        duo: 0.2,
+        growth: 0.7,
+        etch: 0.5,
+        glow: 0.7,
+        relief: 1.3,
+        haze: 0.6,
+        floorLevel: 0.07,
+        bassGlow: 0.3,
+        vignette: 0.5,
+        grain: 0.4,
+        beatFlash: 0.3,
       },
     },
   ],
@@ -870,3 +942,10 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): beatFlash, hueSpin, scanline — the finishing knobs this mode did not own natively. */
+export const overgrowth = withKit(overgrowthBase, {
+  beatFlash: true,
+  hueSpin: true,
+  scanline: true,
+});

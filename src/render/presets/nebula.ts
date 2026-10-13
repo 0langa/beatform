@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_PALETTE_PHASE, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
@@ -26,7 +27,7 @@ export const NEBULA_SAT_AUTHORED = 0.75;
  * (0..1 authored -> 0..2 whole-visual scaler, neutral 1) folds onto the old
  * default so the factory frame is bit-identical.
  */
-export const nebula: PresetDef = {
+const nebulaBase: PresetDef = {
   id: "nebula",
   name: "Kaleido Nebula",
   description:
@@ -924,3 +925,6 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): grain, scanline — the finishing knobs this mode did not own natively. */
+export const nebula = withKit(nebulaBase, { grain: true, scanline: true });

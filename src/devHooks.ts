@@ -12,7 +12,7 @@ import { truePeakDbfs } from "./audio/dsp/truepeak";
 import { expandJobs, type BatchRun } from "./state/batch";
 import { runBatch } from "./state/batchRunner";
 import type { ProjectDocument } from "./state/project";
-import { runGpuPixelMatrix } from "./render/gpuMatrix";
+import { renderPresetFrames, runGpuPixelMatrix } from "./render/gpuMatrix";
 import { getPrefs, setPrefs } from "./state/prefs";
 import { newUserPresetId, serializeUserPreset } from "./state/userPresets";
 import { serializeTheme, type ThemeMeta } from "./state/themes";
@@ -215,6 +215,11 @@ function fnv1a(bytes: Uint8Array): string {
 
 export function installDevHooks(store: typeof useVizStore.getState): void {
   (window as unknown as { __runGpuMatrix: unknown }).__runGpuMatrix = runGpuPixelMatrix;
+  // Frames to look at (scripts/preset-frames.mjs): render one preset with
+  // param overrides on the matrix's own offscreen path and hand back PNGs,
+  // so a new knob can be judged by eye and not only by a hash moving.
+  (window as unknown as { __renderPresetFrames: unknown }).__renderPresetFrames =
+    renderPresetFrames;
   // The app's store instance (HMR-safe), for state assertions in E2E runs
   (window as unknown as { __store: unknown }).__store = useVizStore;
   // Tauri invoke via the APP's module graph. CDP `Runtime.evaluate` cannot

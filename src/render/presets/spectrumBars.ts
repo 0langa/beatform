@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
@@ -18,7 +19,7 @@ import { WGSL_COLOR_CONTROLS } from "../wgslLib";
  *    by u.spin so the Motion→Rotation master finally has a handle here.
  *  - freqLo/freqHi (advanced): trim dead spectrum edges off the drawn span.
  */
-export const spectrumBars: PresetDef = {
+const spectrumBarsBase: PresetDef = {
   id: "spectrum-bars",
   name: "Spectrum Bars",
   description:
@@ -682,3 +683,11 @@ fn preset(uvIn: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): rotation, hueSpin, grain, scanline — the finishing knobs this mode did not own natively. */
+export const spectrumBars = withKit(spectrumBarsBase, {
+  rotation: true,
+  hueSpin: true,
+  grain: true,
+  scanline: true,
+});

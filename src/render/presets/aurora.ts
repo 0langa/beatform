@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_PALETTE_PHASE, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
@@ -13,7 +14,7 @@ import { WGSL_PALETTE_PHASE, WGSL_RGB_CONTROLS } from "../wgslLib";
  * response is staggered per curtain, and curtain peaks blow out to a hot
  * white core. Up to five curtains over a genuinely dark sky.
  */
-export const aurora: PresetDef = {
+const auroraBase: PresetDef = {
   id: "aurora",
   name: "Aurora",
   description:
@@ -934,3 +935,13 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): rotation, beatFlash, hueSpin, grain, scanline, freq — the finishing knobs this mode did not own natively. */
+export const aurora = withKit(auroraBase, {
+  rotation: true,
+  beatFlash: true,
+  hueSpin: true,
+  grain: true,
+  scanline: true,
+  freq: true,
+});

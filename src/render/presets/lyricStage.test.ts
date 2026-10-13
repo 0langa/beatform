@@ -4,6 +4,7 @@ import { allParams, defaultParams, presetMasters } from "../types";
 import { PLATE_MAIN_BAND, PLATE_NEXT_BAND, PLATE_PREV_BAND, PLATE_STATUS_PX } from "../lyricPlate";
 import { presets } from "./index";
 import { lyricStage } from "./lyricStage";
+import { kitChoiceOf, kitSpecs } from "./kit";
 
 /**
  * LYRIC STAGE (P-19 entry 2) — typography as the visual.
@@ -103,7 +104,9 @@ describe("lyric-stage", { timeout: 30_000 }, () => {
       expect(groups.has(lens), `main tier missing ${lens}`).toBe(true);
     }
     expect(lyricStage.params.length).toBe(16);
-    expect(lyricStage.advanced?.length).toBe(9);
+    // Its own expert block; the look kit (kit.ts) appends its suffix after it.
+    const kit = kitSpecs(kitChoiceOf("lyric-stage")!).length;
+    expect((lyricStage.advanced?.length ?? 0) - kit).toBe(9);
     // Backdrop's curated face is the skyline, IN params[] — so no advanced
     // spec needs a tier override, and the ABI stays untouched by curation.
     expect(main.get("ghostBars")?.group).toBe("backdrop");

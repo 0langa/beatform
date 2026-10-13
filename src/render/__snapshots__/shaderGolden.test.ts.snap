@@ -33,6 +33,14 @@ fn P_groundRough() -> f32 { return params[28u]; }
 fn P_moonX() -> f32 { return params[29u]; }
 fn P_moonY() -> f32 { return params[30u]; }
 fn P_moonGlow() -> f32 { return params[31u]; }
+fn P_angle() -> f32 { return params[32u]; }
+fn P_spin() -> f32 { return params[33u]; }
+fn P_beatFlash() -> f32 { return params[34u]; }
+fn P_hueSpin() -> f32 { return params[35u]; }
+fn P_grain() -> f32 { return params[36u]; }
+fn P_scanline() -> f32 { return params[37u]; }
+fn P_freqLo() -> f32 { return params[38u]; }
+fn P_freqHi() -> f32 { return params[39u]; }
 
 fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
   let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
@@ -133,7 +141,7 @@ fn auroraCurtains(x: f32, specX: f32, y: f32, drive: f32) -> vec3f {
     // Non-wrapping spectrum window per curtain (clamp, never fract) so there
     // is no hard seam where the sample index would roll over.
     let sx = clamp(specX * 0.82 + fi * 0.09, 0.0, 1.0);
-    let spec = binAt(sx);
+    let spec = kitBin(sx);
     // Wavy vertical center of the curtain, drifting slower with depth. Drift
     // slides the whole field sideways over time (monotonic, so it never reads
     // as reversing), parallaxed by depth like the vertical churn.
@@ -204,7 +212,7 @@ fn auroraCurtains(x: f32, specX: f32, y: f32, drive: f32) -> vec3f {
   return acc;
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   let y = uv.y;
 
   // Optional left/right symmetry — folds curtains AND stars together using
@@ -341,6 +349,39 @@ fn preset(uv: vec2f) -> vec4f {
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  let ka = P_angle() + P_spin() * u.time * u.spin;
+  let km = 1.0;
+  if (ka != 0.0 || km >= 1.5) {
+    var p = centered(uv);
+    if (ka != 0.0) { p = rot2(ka * TAU / 360.0) * p; }
+    p = kaleido(p, km);
+    uv = vec2f(p.x / u.aspect + 0.5, p.y + 0.5);
+  }
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let bf = P_beatFlash();
+  if (bf > 0.0) { rgb *= 1.0 + u.driveBeat * bf * 0.8 * u.pulse; }
+  let hs = P_hueSpin();
+  if (hs != 0.0) { rgb = hueRotate(rgb, hs * u.time); }
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  let gr = P_grain();
+  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
+}
 "
 `;
 
@@ -474,6 +515,38 @@ exports[`shader golden baseline > aurora: param ABI (key + default, in order) is
     "default": 0.35,
     "key": "moonGlow",
   },
+  {
+    "default": 0,
+    "key": "angle",
+  },
+  {
+    "default": 0,
+    "key": "spin",
+  },
+  {
+    "default": 0,
+    "key": "beatFlash",
+  },
+  {
+    "default": 0,
+    "key": "hueSpin",
+  },
+  {
+    "default": 0,
+    "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
+  },
+  {
+    "default": 0,
+    "key": "freqLo",
+  },
+  {
+    "default": 1,
+    "key": "freqHi",
+  },
 ]
 `;
 
@@ -510,6 +583,12 @@ fn P_coverZoom() -> f32 { return params[28u]; }
 fn P_coverX() -> f32 { return params[29u]; }
 fn P_coverY() -> f32 { return params[30u]; }
 fn P_vignette() -> f32 { return params[31u]; }
+fn P_beatFlash() -> f32 { return params[32u]; }
+fn P_hueSpin() -> f32 { return params[33u]; }
+fn P_grain() -> f32 { return params[34u]; }
+fn P_scanline() -> f32 { return params[35u]; }
+fn P_freqLo() -> f32 { return params[36u]; }
+fn P_freqHi() -> f32 { return params[37u]; }
 
 fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -520,7 +599,7 @@ fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
   return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   let c = centered(uv);
   let r = length(c);
   let a = atan2(c.y, c.x);
@@ -613,9 +692,9 @@ fn preset(uv: vec2f) -> vec4f {
               * smoothstep(gapHalf, gapHalf + 0.05, 1.0 - fc);
     // Notch through the VALUE: v = 0 collapses bar length AND tip glow to
     // nothing, so no downstream expression needs a second mask.
-    v = binAt(xs) * notch;
+    v = kitBin(xs) * notch;
   } else {
-    v = binAt(xs);
+    v = kitBin(xs);
   }
   let barInner = circleR + P_gap();
   // Bar tips compress toward the frame border along their own angle (soft
@@ -679,6 +758,31 @@ fn preset(uv: vec2f) -> vec4f {
   // toward it. The final max() enforces the same rule on everything above.
   col *= max(1.0 - r * r * P_vignette(), 0.0);
   return vec4f(max(col, vec3f(0.0)), 1.0);
+}
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let bf = P_beatFlash();
+  if (bf > 0.0) { rgb *= 1.0 + u.driveBeat * bf * 0.8 * u.pulse; }
+  let hs = P_hueSpin();
+  if (hs != 0.0) { rgb = hueRotate(rgb, hs * u.time); }
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  let gr = P_grain();
+  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
 }
 "
 `;
@@ -812,6 +916,30 @@ exports[`shader golden baseline > bass-circle: param ABI (key + default, in orde
   {
     "default": 0.3,
     "key": "vignette",
+  },
+  {
+    "default": 0,
+    "key": "beatFlash",
+  },
+  {
+    "default": 0,
+    "key": "hueSpin",
+  },
+  {
+    "default": 0,
+    "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
+  },
+  {
+    "default": 0,
+    "key": "freqLo",
+  },
+  {
+    "default": 1,
+    "key": "freqHi",
   },
 ]
 `;
@@ -2025,6 +2153,13 @@ fn P_grain() -> f32 { return params[22u]; }
 fn P_reflectFade() -> f32 { return params[23u]; }
 fn P_emblem() -> f32 { return params[24u]; }
 fn P_vignette() -> f32 { return params[25u]; }
+fn P_angle() -> f32 { return params[26u]; }
+fn P_spin() -> f32 { return params[27u]; }
+fn P_beatFlash() -> f32 { return params[28u]; }
+fn P_hueSpin() -> f32 { return params[29u]; }
+fn P_scanline() -> f32 { return params[30u]; }
+fn P_freqLo() -> f32 { return params[31u]; }
+fn P_freqHi() -> f32 { return params[32u]; }
 
 fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -2134,7 +2269,7 @@ fn artBlur(buv: vec2f, boxAspect: f32) -> vec3f {
   return acc;
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   let beat = max(u.driveBeat, gridPulse(7.0));
   // The kick lands in the ART: the frame scales on the beat (Pulse-gated),
   // and swells slowly with the energy envelope on top.
@@ -2192,7 +2327,7 @@ fn preset(uv: vec2f) -> vec4f {
     let cx = (floor(uv.x * cols) + 0.5) / cols;
     let fx = fract(uv.x * cols);
     let gapMask = smoothstep(0.0, 0.10, fx) * smoothstep(1.0, 0.90, fx);
-    let lv = binAt(cx);
+    let lv = kitBin(cx);
     let ht = lv * 0.26 * P_skirt();
     let inSkirt = smoothstep(1.0 - ht - 0.006, 1.0 - ht + 0.006, uv.y);
     col += presetColor(P_hue() + cx * P_hueSpread(), 0.75, 0.42)
@@ -2236,6 +2371,37 @@ fn preset(uv: vec2f) -> vec4f {
   // the same floor dither every mode in the roster carries.
   col += grain(uv, 0.006 + P_grain() * 0.05 * (0.35 + 0.65 * u.energy));
   return vec4f(max(col, vec3f(0.0)), 1.0);
+}
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  let ka = P_angle() + P_spin() * u.time * u.spin;
+  let km = 1.0;
+  if (ka != 0.0 || km >= 1.5) {
+    var p = centered(uv);
+    if (ka != 0.0) { p = rot2(ka * TAU / 360.0) * p; }
+    p = kaleido(p, km);
+    uv = vec2f(p.x / u.aspect + 0.5, p.y + 0.5);
+  }
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let bf = P_beatFlash();
+  if (bf > 0.0) { rgb *= 1.0 + u.driveBeat * bf * 0.8 * u.pulse; }
+  let hs = P_hueSpin();
+  if (hs != 0.0) { rgb = hueRotate(rgb, hs * u.time); }
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
 }
 "
 `;
@@ -2346,6 +2512,34 @@ exports[`shader golden baseline > gatefold: param ABI (key + default, in order) 
     "default": 0.4,
     "key": "vignette",
   },
+  {
+    "default": 0,
+    "key": "angle",
+  },
+  {
+    "default": 0,
+    "key": "spin",
+  },
+  {
+    "default": 0,
+    "key": "beatFlash",
+  },
+  {
+    "default": 0,
+    "key": "hueSpin",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
+  },
+  {
+    "default": 0,
+    "key": "freqLo",
+  },
+  {
+    "default": 1,
+    "key": "freqHi",
+  },
 ]
 `;
 
@@ -2379,6 +2573,9 @@ fn P_scanline() -> f32 { return params[25u]; }
 fn P_flicker() -> f32 { return params[26u]; }
 fn P_panelVariance() -> f32 { return params[27u]; }
 fn P_vignette() -> f32 { return params[28u]; }
+fn P_hueSpin() -> f32 { return params[29u]; }
+fn P_freqLo() -> f32 { return params[30u]; }
+fn P_freqHi() -> f32 { return params[31u]; }
 
 fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -2420,7 +2617,7 @@ fn ledGlow(l: vec2f) -> f32 {
   return exp(-dot(c, c) * 6.0);
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   let cols = max(4.0, P_cols());
   let rows = max(4.0, P_rows());
 
@@ -2430,8 +2627,8 @@ fn preset(uv: vec2f) -> vec4f {
   let cy = floor(yb * rows);
   let ly = fract(yb * rows);
 
-  let v = binAt((cx + 0.5) / cols);
-  let pk = peakAt((cx + 0.5) / cols);
+  let v = kitBin((cx + 0.5) / cols);
+  let pk = kitPeak((cx + 0.5) / cols);
 
   let level = v * rows;
   let lit = step(cy + 0.5, level);
@@ -2611,6 +2808,25 @@ fn preset(uv: vec2f) -> vec4f {
   col += grain(uv, 0.01);
   return vec4f(max(col, vec3f(0.0)), dataA);
 }
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let hs = P_hueSpin();
+  if (hs != 0.0) { rgb = hueRotate(rgb, hs * u.time); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
+}
 "
 `;
 
@@ -2732,6 +2948,18 @@ exports[`shader golden baseline > led-matrix: param ABI (key + default, in order
     "default": 0.5,
     "key": "vignette",
   },
+  {
+    "default": 0,
+    "key": "hueSpin",
+  },
+  {
+    "default": 0,
+    "key": "freqLo",
+  },
+  {
+    "default": 1,
+    "key": "freqHi",
+  },
 ]
 `;
 
@@ -2761,6 +2989,12 @@ fn P_bassStage() -> f32 { return params[21u]; }
 fn P_flutter() -> f32 { return params[22u]; }
 fn P_rehearse() -> f32 { return params[23u]; }
 fn P_vignette() -> f32 { return params[24u]; }
+fn P_beatFlash() -> f32 { return params[25u]; }
+fn P_hueSpin() -> f32 { return params[26u]; }
+fn P_grain() -> f32 { return params[27u]; }
+fn P_scanline() -> f32 { return params[28u]; }
+fn P_freqLo() -> f32 { return params[29u]; }
+fn P_freqHi() -> f32 { return params[30u]; }
 
 fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -2913,7 +3147,7 @@ fn greekRow(x: f32, fy: f32, row: f32, sweep: f32) -> vec2f {
   return vec2f(cov * core, lit * core);
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   let status = stageStatus();
   let presence = max(status.r, max(status.g, status.b));
   let beat = max(u.driveBeat, gridPulse(7.0));
@@ -2935,7 +3169,7 @@ fn preset(uv: vec2f) -> vec4f {
   if (P_ghostBars() > 0.001) {
     let cols = max(floor(48.0 * mix(0.4, 1.0, u.detail)), 8.0);
     let cx = (floor(buv.x * cols) + 0.5) / cols;
-    let level = binAt(cx) * 0.55;
+    let level = kitBin(cx) * 0.55;
     let sky = smoothstep(level + 0.02, level - 0.10, 1.0 - buv.y);
     col += presetColor(P_hue(), 0.55, 0.30) * sky * P_ghostBars() * 0.55;
   }
@@ -3012,6 +3246,31 @@ fn preset(uv: vec2f) -> vec4f {
   col = tonemap(col * 1.05);
   col += grain(uv, 0.008);
   return vec4f(max(col, vec3f(0.0)), 1.0);
+}
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let bf = P_beatFlash();
+  if (bf > 0.0) { rgb *= 1.0 + u.driveBeat * bf * 0.8 * u.pulse; }
+  let hs = P_hueSpin();
+  if (hs != 0.0) { rgb = hueRotate(rgb, hs * u.time); }
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  let gr = P_grain();
+  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
 }
 "
 `;
@@ -3117,6 +3376,30 @@ exports[`shader golden baseline > lyric-stage: param ABI (key + default, in orde
   {
     "default": 0.35,
     "key": "vignette",
+  },
+  {
+    "default": 0,
+    "key": "beatFlash",
+  },
+  {
+    "default": 0,
+    "key": "hueSpin",
+  },
+  {
+    "default": 0,
+    "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
+  },
+  {
+    "default": 0,
+    "key": "freqLo",
+  },
+  {
+    "default": 1,
+    "key": "freqHi",
   },
 ]
 `;
@@ -3590,6 +3873,8 @@ fn P_driveGlow() -> f32 { return params[26u]; }
 fn P_vignette() -> f32 { return params[27u]; }
 fn P_hotCore() -> f32 { return params[28u]; }
 fn P_windAngle() -> f32 { return params[29u]; }
+fn P_grain() -> f32 { return params[30u]; }
+fn P_scanline() -> f32 { return params[31u]; }
 
 fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
   let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
@@ -3621,7 +3906,7 @@ fn duoPal(palIn: vec3f, t: f32, density: f32, chroma: f32) -> vec3f {
   return mix(palIn, pal2, P_duo() * smoothstep(0.25, 0.8, density));
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   var p = centered(uv);
 
   // Kaleidoscope fold (club mirror). The mirror axes spin slowly so a
@@ -3831,6 +4116,25 @@ fn preset(uv: vec2f) -> vec4f {
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  let gr = P_grain();
+  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
+}
 "
 `;
 
@@ -3955,6 +4259,14 @@ exports[`shader golden baseline > nebula: param ABI (key + default, in order) is
   {
     "default": 0,
     "key": "windAngle",
+  },
+  {
+    "default": 0,
+    "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
   },
 ]
 `;
@@ -4695,6 +5007,9 @@ fn P_floorLevel() -> f32 { return params[20u]; }
 fn P_bassGlow() -> f32 { return params[21u]; }
 fn P_vignette() -> f32 { return params[22u]; }
 fn P_grain() -> f32 { return params[23u]; }
+fn P_beatFlash() -> f32 { return params[24u]; }
+fn P_hueSpin() -> f32 { return params[25u]; }
+fn P_scanline() -> f32 { return params[26u]; }
 
 fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -4977,7 +5292,7 @@ fn develop(b: f32) -> f32 {
   return smoothstep(lo, hi, b);
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   // -------- state advance for THIS pixel's tile ---------------------------
   let tileA = uv.y < 0.5;
   var q = uv;
@@ -5103,6 +5418,27 @@ fn preset(uv: vec2f) -> vec4f {
   // as advanced this tick, read back by the next advance one tick later.
   return vec4f(max(col, vec3f(0.0)), stored);
 }
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let bf = P_beatFlash();
+  if (bf > 0.0) { rgb *= 1.0 + u.driveBeat * bf * 0.8 * u.pulse; }
+  let hs = P_hueSpin();
+  if (hs != 0.0) { rgb = hueRotate(rgb, hs * u.time); }
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
+}
 "
 `;
 
@@ -5203,6 +5539,18 @@ exports[`shader golden baseline > overgrowth: param ABI (key + default, in order
   {
     "default": 0.25,
     "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "beatFlash",
+  },
+  {
+    "default": 0,
+    "key": "hueSpin",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
   },
 ]
 `;
@@ -5376,6 +5724,9 @@ fn P_mirror() -> f32 { return params[28u]; }
 fn P_sizeVar() -> f32 { return params[29u]; }
 fn P_bandColor() -> f32 { return params[30u]; }
 fn P_beatPop() -> f32 { return params[31u]; }
+fn P_hueSpin() -> f32 { return params[32u]; }
+fn P_grain() -> f32 { return params[33u]; }
+fn P_scanline() -> f32 { return params[34u]; }
 
 // Per-beat resting spot for one star: direction and radius hashed from the
 // star's cell seed AND the beat index. beatRamp() indexes beats mod 4, so the
@@ -5524,7 +5875,7 @@ fn cstPoint(cell: vec2f, wt: f32, gCur: vec2f, bPrev: f32, bIdx: f32, bFr: f32,
   return vec3f(cell + vec2f(0.5) + off, 1.0);
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   var p = kaleido(centered(uv), P_mirror());
 
   // ---- Pulse + beat-grid masters (v2.66 overhaul) --------------------------
@@ -5966,6 +6317,27 @@ fn preset(uv: vec2f) -> vec4f {
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let hs = P_hueSpin();
+  if (hs != 0.0) { rgb = hueRotate(rgb, hs * u.time); }
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  let gr = P_grain();
+  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
+}
 "
 `;
 
@@ -6099,6 +6471,18 @@ exports[`shader golden baseline > particles: param ABI (key + default, in order)
     "default": 0,
     "key": "beatPop",
   },
+  {
+    "default": 0,
+    "key": "hueSpin",
+  },
+  {
+    "default": 0,
+    "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
+  },
 ]
 `;
 
@@ -6137,6 +6521,12 @@ fn P_coverX() -> f32 { return params[30u]; }
 fn P_coverY() -> f32 { return params[31u]; }
 fn P_rimBright() -> f32 { return params[32u]; }
 fn P_vignette() -> f32 { return params[33u]; }
+fn P_beatZoom() -> f32 { return params[34u]; }
+fn P_hueSpin() -> f32 { return params[35u]; }
+fn P_grain() -> f32 { return params[36u]; }
+fn P_scanline() -> f32 { return params[37u]; }
+fn P_freqLo() -> f32 { return params[38u]; }
+fn P_freqHi() -> f32 { return params[39u]; }
 
 fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -6147,7 +6537,7 @@ fn presetColor(h: f32, s: f32, l: f32) -> vec3f {
   return hsl2rgb(h, colorScale(s, P_saturation()), colorScale(l, P_lightness()));
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   let p = centered(uv);
   let r = length(p);
   // Beat kicks ride the tempo grid when the track has one (gridPulse falls
@@ -6171,8 +6561,8 @@ fn preset(uv: vec2f) -> vec4f {
   let sym = max(1.0, P_symmetry());
   let seg = fract(a / TAU * sym + 10.0);
   let xs = abs(seg * 2.0 - 1.0);
-  let v = binAt(xs);
-  let pk = peakAt(xs);
+  let v = kitBin(xs);
+  let pk = kitPeak(xs);
 
   // Frame-safety is SOFT since v2.44: geometry compresses toward the frame
   // border (softLimit/frameReach) instead of clipping at a fixed circle —
@@ -6286,6 +6676,31 @@ fn preset(uv: vec2f) -> vec4f {
   // The final max() is the same rule as the vignette: this preset must never
   // hand the compositor a negative channel to subtract from the background.
   return vec4f(max(col, vec3f(0.0)), 1.0);
+}
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  let bz = P_beatZoom();
+  if (bz > 0.0) { uv = (uv - 0.5) / (1.0 + u.driveBeat * bz * u.pulse) + 0.5; }
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let hs = P_hueSpin();
+  if (hs != 0.0) { rgb = hueRotate(rgb, hs * u.time); }
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  let gr = P_grain();
+  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
 }
 "
 `;
@@ -6427,6 +6842,30 @@ exports[`shader golden baseline > radial-burst: param ABI (key + default, in ord
   {
     "default": 0.5,
     "key": "vignette",
+  },
+  {
+    "default": 0,
+    "key": "beatZoom",
+  },
+  {
+    "default": 0,
+    "key": "hueSpin",
+  },
+  {
+    "default": 0,
+    "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
+  },
+  {
+    "default": 0,
+    "key": "freqLo",
+  },
+  {
+    "default": 1,
+    "key": "freqHi",
   },
 ]
 `;
@@ -7827,6 +8266,8 @@ fn P_beatMarks() -> f32 { return params[21u]; }
 fn P_axisFocus() -> f32 { return params[22u]; }
 fn P_bassGlow() -> f32 { return params[23u]; }
 fn P_vignette() -> f32 { return params[24u]; }
+fn P_grain() -> f32 { return params[25u]; }
+fn P_scanline() -> f32 { return params[26u]; }
 
 fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -7966,7 +8407,7 @@ fn develop(raw: f32, fx: f32) -> f32 {
   return smoothstep(P_quiet(), max(P_loud(), P_quiet() + 0.02), lifted);
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   let rows = sliceCount();
   let shift = slideSlices();
   let s = fallS(uv);
@@ -8052,6 +8493,25 @@ fn preset(uv: vec2f) -> vec4f {
   // Alpha is this pixel's DATA lane, not its opacity: the raw level the next
   // state advance reads back one slice further from the entry edge.
   return vec4f(max(col, vec3f(0.0)), raw);
+}
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  let gr = P_grain();
+  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
 }
 "
 `;
@@ -8158,6 +8618,14 @@ exports[`shader golden baseline > spectro-falls: param ABI (key + default, in or
     "default": 0.35,
     "key": "vignette",
   },
+  {
+    "default": 0,
+    "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
+  },
 ]
 `;
 
@@ -8188,6 +8656,11 @@ fn P_vignette() -> f32 { return params[22u]; }
 fn P_reflectFade() -> f32 { return params[23u]; }
 fn P_freqLo() -> f32 { return params[24u]; }
 fn P_freqHi() -> f32 { return params[25u]; }
+fn P_angle() -> f32 { return params[26u]; }
+fn P_spin() -> f32 { return params[27u]; }
+fn P_hueSpin() -> f32 { return params[28u]; }
+fn P_grain() -> f32 { return params[29u]; }
+fn P_scanline() -> f32 { return params[30u]; }
 
 fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -8208,7 +8681,7 @@ fn spanPos(pos: f32) -> f32 {
   return lo + (hi - lo) * pos;
 }
 
-fn preset(uvIn: vec2f) -> vec4f {
+fn presetBody(uvIn: vec2f) -> vec4f {
   // Beat zoom: scale around center (Motion→Pulse master scales it)
   var uv = (uvIn - 0.5) / (1.0 + u.driveBeat * P_beatZoom() * u.pulse) + 0.5;
 
@@ -8325,6 +8798,35 @@ fn preset(uvIn: vec2f) -> vec4f {
   col *= 1.0 - d * d * P_vignette();
   return vec4f(col, 1.0);
 }
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  let ka = P_angle() + P_spin() * u.time * u.spin;
+  let km = 1.0;
+  if (ka != 0.0 || km >= 1.5) {
+    var p = centered(uv);
+    if (ka != 0.0) { p = rot2(ka * TAU / 360.0) * p; }
+    p = kaleido(p, km);
+    uv = vec2f(p.x / u.aspect + 0.5, p.y + 0.5);
+  }
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let hs = P_hueSpin();
+  if (hs != 0.0) { rgb = hueRotate(rgb, hs * u.time); }
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  let gr = P_grain();
+  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
+}
 "
 `;
 
@@ -8433,6 +8935,26 @@ exports[`shader golden baseline > spectrum-bars: param ABI (key + default, in or
   {
     "default": 1,
     "key": "freqHi",
+  },
+  {
+    "default": 0,
+    "key": "angle",
+  },
+  {
+    "default": 0,
+    "key": "spin",
+  },
+  {
+    "default": 0,
+    "key": "hueSpin",
+  },
+  {
+    "default": 0,
+    "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
   },
 ]
 `;
@@ -8620,6 +9142,13 @@ fn P_starDensity() -> f32 { return params[27u]; }
 fn P_gridLock() -> f32 { return params[28u]; }
 fn P_fog() -> f32 { return params[29u]; }
 fn P_vignette() -> f32 { return params[30u]; }
+fn P_mirror() -> f32 { return params[31u]; }
+fn P_angle() -> f32 { return params[32u]; }
+fn P_spin() -> f32 { return params[33u]; }
+fn P_beatFlash() -> f32 { return params[34u]; }
+fn P_hueSpin() -> f32 { return params[35u]; }
+fn P_grain() -> f32 { return params[36u]; }
+fn P_scanline() -> f32 { return params[37u]; }
 
 fn colorScale(value: f32, control: f32) -> f32 {
   if (control <= 1.0) { return value * control; }
@@ -8641,7 +9170,7 @@ fn presetRgb(rgb: vec3f) -> vec3f {
   return presetRgbAt(rgb, P_saturation(), P_lightness());
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   var col = vec3f(0.0);
   let cx = (uv.x - 0.5) * u.aspect;
   let horizon = P_horizonY();
@@ -8861,6 +9390,37 @@ fn preset(uv: vec2f) -> vec4f {
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  let ka = P_angle() + P_spin() * u.time * u.spin;
+  let km = P_mirror();
+  if (ka != 0.0 || km >= 1.5) {
+    var p = centered(uv);
+    if (ka != 0.0) { p = rot2(ka * TAU / 360.0) * p; }
+    p = kaleido(p, km);
+    uv = vec2f(p.x / u.aspect + 0.5, p.y + 0.5);
+  }
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let bf = P_beatFlash();
+  if (bf > 0.0) { rgb *= 1.0 + u.driveBeat * bf * 0.8 * u.pulse; }
+  let hs = P_hueSpin();
+  if (hs != 0.0) { rgb = hueRotate(rgb, hs * u.time); }
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  let gr = P_grain();
+  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
+}
 "
 `;
 
@@ -8990,6 +9550,34 @@ exports[`shader golden baseline > synthwave: param ABI (key + default, in order)
     "default": 0.3,
     "key": "vignette",
   },
+  {
+    "default": 1,
+    "key": "mirror",
+  },
+  {
+    "default": 0,
+    "key": "angle",
+  },
+  {
+    "default": 0,
+    "key": "spin",
+  },
+  {
+    "default": 0,
+    "key": "beatFlash",
+  },
+  {
+    "default": 0,
+    "key": "hueSpin",
+  },
+  {
+    "default": 0,
+    "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
+  },
 ]
 `;
 
@@ -9031,6 +9619,10 @@ fn P_twist() -> f32 { return params[33u]; }
 fn P_roundness() -> f32 { return params[34u]; }
 fn P_surfaceWarp() -> f32 { return params[35u]; }
 fn P_beatBright() -> f32 { return params[36u]; }
+fn P_grain() -> f32 { return params[37u]; }
+fn P_scanline() -> f32 { return params[38u]; }
+fn P_freqLo() -> f32 { return params[39u]; }
+fn P_freqHi() -> f32 { return params[40u]; }
 
 fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
   let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
@@ -9073,7 +9665,7 @@ fn hexEdge(p: vec2f) -> f32 {
   return 0.5 - max(dot(q, vec2f(0.5, 0.8660254)), q.x);
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   // Club mirror folds the tube into radial wedges. 1 = off.
   let mirrorN = P_mirror();
   var p = kaleido(centered(uv), mirrorN);
@@ -9230,8 +9822,8 @@ fn preset(uv: vec2f) -> vec4f {
   let foldSpan = select(TAU * 0.5, TAU * 0.5 / mirrorN, mirrorN >= 2.5);
   let xs = select(abs(fract(a / TAU + 0.5) * 2.0 - 1.0),
                   abs(fract(((a - foldLo) / foldSpan + 1.0) * 0.5) * 2.0 - 1.0), folded);
-  let v = binAt(xs);
-  let pk = peakAt(xs);
+  let v = kitBin(xs);
+  let pk = kitPeak(xs);
 
   // Cosine palette by depth -- consecutive rings are related, saturated
   // colours instead of a drifting hue (a drifting hue is how this went muddy).
@@ -9577,6 +10169,27 @@ fn preset(uv: vec2f) -> vec4f {
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
 }
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  let gr = P_grain();
+  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
+}
 "
 `;
 
@@ -9730,6 +10343,22 @@ exports[`shader golden baseline > tunnel-rings: param ABI (key + default, in ord
     "default": 0.15,
     "key": "beatBright",
   },
+  {
+    "default": 0,
+    "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
+  },
+  {
+    "default": 0,
+    "key": "freqLo",
+  },
+  {
+    "default": 1,
+    "key": "freqHi",
+  },
 ]
 `;
 
@@ -9767,6 +10396,15 @@ fn P_satOrbit() -> f32 { return params[29u]; }
 fn P_sparkleScale() -> f32 { return params[30u]; }
 fn P_bgLevel() -> f32 { return params[31u]; }
 fn P_vignette() -> f32 { return params[32u]; }
+fn P_angle() -> f32 { return params[33u]; }
+fn P_spin() -> f32 { return params[34u]; }
+fn P_beatZoom() -> f32 { return params[35u]; }
+fn P_beatFlash() -> f32 { return params[36u]; }
+fn P_hueSpin() -> f32 { return params[37u]; }
+fn P_grain() -> f32 { return params[38u]; }
+fn P_scanline() -> f32 { return params[39u]; }
+fn P_freqLo() -> f32 { return params[40u]; }
+fn P_freqHi() -> f32 { return params[41u]; }
 
 fn presetRgbAt(rgb: vec3f, saturation: f32, lightness: f32) -> vec3f {
   let gray = vec3f(dot(rgb, vec3f(0.2126, 0.7152, 0.0722)));
@@ -9779,7 +10417,7 @@ fn presetRgb(rgb: vec3f) -> vec3f {
   return presetRgbAt(rgb, P_saturation(), P_lightness());
 }
 
-fn preset(uv: vec2f) -> vec4f {
+fn presetBody(uv: vec2f) -> vec4f {
   var p = centered(uv);
   p = kaleido(p, P_mirror());
   let r = length(p);
@@ -9804,9 +10442,9 @@ fn preset(uv: vec2f) -> vec4f {
   // track wide formant-band averages (~200 Hz - 3 kHz). The shape itself is
   // always smooth — voice only modulates how much each mode swells, so the
   // edge undulates organically instead of twitching per-bin.
-  let f1 = (binAt(0.32) + binAt(0.36) + binAt(0.40)) / 3.0;
-  let f2 = (binAt(0.44) + binAt(0.48) + binAt(0.52)) / 3.0;
-  let f3 = (binAt(0.55) + binAt(0.58) + binAt(0.61)) / 3.0;
+  let f1 = (kitBin(0.32) + kitBin(0.36) + kitBin(0.40)) / 3.0;
+  let f2 = (kitBin(0.44) + kitBin(0.48) + kitBin(0.52)) / 3.0;
+  let f3 = (kitBin(0.55) + kitBin(0.58) + kitBin(0.61)) / 3.0;
   let m1 = sin(a * 3.0 + u.time * 0.6);
   let m2 = sin(a * 5.0 - u.time * 0.8 + 1.7);
   let m3 = sin(a * 8.0 + u.time * 1.1 + 4.1);
@@ -9930,7 +10568,7 @@ fn preset(uv: vec2f) -> vec4f {
       let fi = f32(i);
       if (fi < P_satellites() - 0.5) {
         // Non-overlapping two-bin formant slices per satellite (0.30..0.60).
-        let band = (binAt(0.30 + fi * 0.12) + binAt(0.36 + fi * 0.12)) * 0.5;
+        let band = (kitBin(0.30 + fi * 0.12) + kitBin(0.36 + fi * 0.12)) * 0.5;
         // Slow deterministic orbit off track time (never wall clock), with
         // staggered speeds so the trio never freezes into one constellation.
         let aSat = u.time * P_satOrbit() * (0.5 + fi * 0.23) + fi * (TAU / 3.0) + 0.7;
@@ -9973,6 +10611,41 @@ fn preset(uv: vec2f) -> vec4f {
   col = presetRgb(col);
   col += grain(uv, 0.012);
   return vec4f(max(col, vec3f(0.0)), 1.0);
+}
+
+// ---- Look kit (presets/kit.ts): shared finishing knobs, exact no-ops at their defaults.
+fn kitBin(x: f32) -> f32 { return binAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitPeak(x: f32) -> f32 { return peakAt(mix(P_freqLo(), P_freqHi(), x)); }
+fn kitFold(uvIn: vec2f) -> vec2f {
+  var uv = uvIn;
+  let bz = P_beatZoom();
+  if (bz > 0.0) { uv = (uv - 0.5) / (1.0 + u.driveBeat * bz * u.pulse) + 0.5; }
+  let ka = P_angle() + P_spin() * u.time * u.spin;
+  let km = 1.0;
+  if (ka != 0.0 || km >= 1.5) {
+    var p = centered(uv);
+    if (ka != 0.0) { p = rot2(ka * TAU / 360.0) * p; }
+    p = kaleido(p, km);
+    uv = vec2f(p.x / u.aspect + 0.5, p.y + 0.5);
+  }
+  return uv;
+}
+fn kitFinish(rgbIn: vec3f, uv: vec2f) -> vec3f {
+  var rgb = rgbIn;
+  let bf = P_beatFlash();
+  if (bf > 0.0) { rgb *= 1.0 + u.driveBeat * bf * 0.8 * u.pulse; }
+  let hs = P_hueSpin();
+  if (hs != 0.0) { rgb = hueRotate(rgb, hs * u.time); }
+  let sl = P_scanline();
+  if (sl > 0.0) { rgb *= 1.0 - sl * 0.45 * (0.5 + 0.5 * sin(uv.y * 120.0 * TAU)); }
+  let gr = P_grain();
+  if (gr > 0.0) { rgb += vec3f(grain(uv, gr * 0.2)); }
+  return rgb;
+}
+fn preset(uv: vec2f) -> vec4f {
+  let kuv = kitFold(uv);
+  let c = presetBody(kuv);
+  return vec4f(kitFinish(c.rgb, kuv), c.a);
 }
 "
 `;
@@ -10110,6 +10783,42 @@ exports[`shader golden baseline > voice-orb: param ABI (key + default, in order)
   {
     "default": 0.45,
     "key": "vignette",
+  },
+  {
+    "default": 0,
+    "key": "angle",
+  },
+  {
+    "default": 0,
+    "key": "spin",
+  },
+  {
+    "default": 0,
+    "key": "beatZoom",
+  },
+  {
+    "default": 0,
+    "key": "beatFlash",
+  },
+  {
+    "default": 0,
+    "key": "hueSpin",
+  },
+  {
+    "default": 0,
+    "key": "grain",
+  },
+  {
+    "default": 0,
+    "key": "scanline",
+  },
+  {
+    "default": 0,
+    "key": "freqLo",
+  },
+  {
+    "default": 1,
+    "key": "freqHi",
   },
 ]
 `;

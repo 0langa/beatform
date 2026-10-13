@@ -1,11 +1,12 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
  * Circular spectrum: bars radiate outward from a calm breathing core, with
  * optional rotational symmetry and beat-kicked rotation.
  */
-export const radialBurst: PresetDef = {
+const radialBurstBase: PresetDef = {
   id: "radial-burst",
   name: "Radial Burst",
   description:
@@ -697,3 +698,12 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): beatZoom, hueSpin, grain, scanline, freq — the finishing knobs this mode did not own natively. */
+export const radialBurst = withKit(radialBurstBase, {
+  beatZoom: true,
+  hueSpin: true,
+  grain: true,
+  scanline: true,
+  freq: true,
+});

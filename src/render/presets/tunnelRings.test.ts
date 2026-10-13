@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { tunnelRings } from "./tunnelRings";
+import { kitChoiceOf, kitSpecs } from "./kit";
 import { allParams, isModTarget } from "../types";
 import { SHADER_SOURCES } from "../webgpuRenderer";
 
@@ -278,6 +279,8 @@ describe("tunnel depth wave (v2.76)", () => {
         "junction",
         "saturation",
         "lightness",
+        // the look kit's suffix (kit.ts), appended after the wave
+        ...kitSpecs(kitChoiceOf("tunnel-rings")!).map((p) => p.key),
         "sway",
         "lamps",
         "dust",

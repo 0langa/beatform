@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bassCircle } from "./bassCircle";
+import { kitChoiceOf, kitSpecs } from "./kit";
 import { allParams, defaultParams, groupParams, paramSpecMap } from "../types";
 
 /**
@@ -75,7 +76,9 @@ describe("bass-circle depth wave", () => {
     const newKeys = allParams(bassCircle)
       .map((p) => p.key)
       .filter((k) => !(k in PRE_WAVE_DEFAULTS));
-    expect(newKeys.sort()).toEqual(["coreFill", "partBeat", "segGap", "segments"].sort());
+    // ...plus the look kit's suffix (kit.ts, 3.2), appended after the wave.
+    const kit = kitSpecs(kitChoiceOf("bass-circle")!).map((p) => p.key);
+    expect(newKeys.sort()).toEqual(["coreFill", "partBeat", "segGap", "segments", ...kit].sort());
     // The three feature gates: 0 = continuous ring / drifting bokeh / flat
     // fill. segGap is a tuning knob BEHIND the segments gate, so its default
     // cannot change pixels either.
@@ -97,7 +100,9 @@ describe("bass-circle depth wave", () => {
     expect(body).toContain("var sz = (0.06 + h1 * 0.12) * (1.0 - fl * 0.2);");
     expect(body).toContain("var fill = presetColor(P_hue(), 0.5, 0.04 + u.drive * 0.07);");
     // The continuous ring's sampling lives in the else branch, verbatim.
-    expect(body).toMatch(/\} else \{\s*v = binAt\(xs\);\s*\}/);
+    // (kitBin: the 3.2 look kit routes every spectrum read through the mode's
+    // Low/High edge window, an exact pass-through at its defaults.)
+    expect(body).toMatch(/\} else \{\s*v = kitBin\(xs\);\s*\}/);
     // Cover art still wins exactly as before: same sample, same blend.
     expect(body).toContain("let art = coverSample(cuv).rgb * P_coverBright();");
     expect(body).toContain("fill = mix(fill, art, P_coverMix());");

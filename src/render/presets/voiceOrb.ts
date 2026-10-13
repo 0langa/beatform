@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_PALETTE_STD, WGSL_RGB_CONTROLS } from "../wgslLib";
 
 /**
@@ -34,7 +35,7 @@ import { WGSL_PALETTE_STD, WGSL_RGB_CONTROLS } from "../wgslLib";
  * Both features are gated off at their defaults, so existing projects and
  * the default chip render pixel-identically to the pre-wave shader.
  */
-export const voiceOrb: PresetDef = {
+const voiceOrbBase: PresetDef = {
   id: "voice-orb",
   name: "Voice Orb",
   description:
@@ -857,3 +858,14 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): rotation, beatZoom, beatFlash, hueSpin, grain, scanline, freq — the finishing knobs this mode did not own natively. */
+export const voiceOrb = withKit(voiceOrbBase, {
+  rotation: true,
+  beatZoom: true,
+  beatFlash: true,
+  hueSpin: true,
+  grain: true,
+  scanline: true,
+  freq: true,
+});

@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
@@ -42,7 +43,7 @@ import { WGSL_COLOR_CONTROLS } from "../wgslLib";
  * diverge. Cross-machine font rasterization stays measured parity, exactly
  * as the shipped caption overlay's — same stack, same contract.
  */
-export const lyricStage: PresetDef = {
+const lyricStageBase: PresetDef = {
   id: "lyric-stage",
   name: "Lyric Stage",
   description:
@@ -163,6 +164,78 @@ export const lyricStage: PresetDef = {
         stageLevel: 0.075,
         flutter: 0.05,
         vignette: 0.2,
+      },
+    },
+    // 3.2 look-kit looks: the finishing knobs the mode gained, in use.
+    {
+      id: "broadcast",
+      name: "Broadcast",
+      values: {
+        layout: 1,
+        size: 0.75,
+        hue: 200,
+        hueSpread: 0,
+        saturation: 0.6,
+        glow: 0.3,
+        chromaSplit: 0,
+        flare: 0.1,
+        ghostBars: 0.05,
+        unsungDim: 0.6,
+        vignette: 0.25,
+        beatFlash: 0.15,
+        grain: 0.2,
+        scanline: 0.45,
+      },
+    },
+    {
+      id: "disco",
+      name: "Disco Ball",
+      values: {
+        hue: 0,
+        hueSpread: 180,
+        drift: 0.4,
+        beatPunch: 0.6,
+        wordGlow: 1.2,
+        chromaSplit: 0.3,
+        glow: 1,
+        flare: 0.6,
+        vignette: 0.4,
+        beatFlash: 0.5,
+        hueSpin: 30,
+      },
+    },
+    {
+      id: "letterpress",
+      name: "Letterpress",
+      values: {
+        saturation: 0.15,
+        lightness: 1.2,
+        drift: 0.05,
+        beatPunch: 0.2,
+        wordGlow: 0.3,
+        chromaSplit: 0,
+        glow: 0.05,
+        flare: 0,
+        ghostBars: 0.15,
+        stageLevel: 0.09,
+        vignette: 0.3,
+        grain: 0.55,
+      },
+    },
+    {
+      id: "bassStage",
+      name: "Bass Stage",
+      values: {
+        hue: 15,
+        hueSpread: 60,
+        beatPunch: 0.5,
+        glow: 0.7,
+        ghostBars: 0.8,
+        bassStage: 0.8,
+        vignette: 0.5,
+        beatFlash: 0.3,
+        freqLo: 0.02,
+        freqHi: 0.4,
       },
     },
   ],
@@ -678,3 +751,12 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): beatFlash, hueSpin, grain, scanline, freq — the finishing knobs this mode did not own natively. */
+export const lyricStage = withKit(lyricStageBase, {
+  beatFlash: true,
+  hueSpin: true,
+  grain: true,
+  scanline: true,
+  freq: true,
+});

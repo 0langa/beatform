@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { voiceOrb } from "./voiceOrb";
+import { kitChoiceOf, kitSpecs } from "./kit";
 import { allParams, defaultParams, groupParams, paramSpecMap } from "../types";
 
 /**
@@ -78,6 +79,8 @@ describe("voice-orb depth wave", () => {
         "satellites",
         "saturation",
         "lightness",
+        // the look kit's suffix (kit.ts), appended after the wave
+        ...kitSpecs(kitChoiceOf("voice-orb")!).map((p) => p.key),
       ].sort(),
     );
     // The two feature gates: 0 = off / classic line. Everything else is a

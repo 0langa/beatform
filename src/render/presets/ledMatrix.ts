@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
@@ -33,7 +34,7 @@ import { WGSL_COLOR_CONTROLS } from "../wgslLib";
  * Default Display = Bars, whose branch keeps the pre-wave expressions
  * unchanged, expression for expression.
  */
-export const ledMatrix: PresetDef = {
+const ledMatrixBase: PresetDef = {
   id: "led-matrix",
   name: "LED Matrix",
   description:
@@ -816,3 +817,6 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): hueSpin, freq — the finishing knobs this mode did not own natively. */
+export const ledMatrix = withKit(ledMatrixBase, { hueSpin: true, freq: true });

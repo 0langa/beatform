@@ -127,7 +127,7 @@ export const GUIDE: readonly GuideSection[] = [
             { strong: "Grouped controls" },
             " — Shape, Color, Motion, Reaction, Glow, Image, Camera, Backdrop, and ",
             { em: "More" },
-            " for anything that fits none of them. Every group a visual uses is on the page, and each one leads with the handful of controls that change the look.",
+            " for anything that fits none of them. Every group a visual uses is on the page, and each one leads with the handful of controls that change the look. Every visual also carries the same finishing knobs in its expert rows — a Mirror fold, Angle and Spin for the whole frame, Beat zoom and Beat flash, Hue spin, Grain, Scanlines, and a Low/High edge window on the spectrum it listens to — each sitting at its off value until you move it.",
           ],
           [
             { strong: "An expert line per group" },

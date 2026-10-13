@@ -11,6 +11,24 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+- **Every visual gets the same finishing knobs.** The modes were unequally
+  customizable: measured across 24 knob concepts, Particles answered 19 and
+  Synthwave 8, because symmetry, a tilt, a beat zoom, a beat flash, a hue
+  drift, grain, scanlines and a frequency window had each been built into
+  some modes and never reached the others. A shared look kit now appends
+  exactly the knobs a mode lacked to its Advanced block — Mirror (the club
+  1-12 fold), Angle and Spin (the whole frame, honouring Motion→Rotation),
+  Beat zoom and Beat flash (honouring Motion→Pulse), Hue spin, Grain,
+  Scanlines, and a Low/High edge spectrum window that every spectrum read
+  of the mode goes through. Fourteen modes take it; the three trail modes
+  (Oscilloscope, Metaballs, Echo Trails) keep their own, since any finish on
+  their output would compound through their history, and Builder, Particle
+  Flow and Spectrum Scape draw outside the fragment path. Every kit knob is
+  an exact no-op at its default, so no saved look changes by a pixel.
+- Dev: `scripts/preset-frames.mjs` renders a preset at given parameter values
+  on the app's own WebGPU path and writes PNGs (dev hook
+  `__renderPresetFrames`) — how a new knob gets judged by eye.
+
 ## [3.1.0] - 2026-10-13
 
 The GPU release of the lyrics pipeline — measured on an RTX 5060 Ti /

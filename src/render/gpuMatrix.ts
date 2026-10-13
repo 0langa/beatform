@@ -666,3 +666,61 @@ export async function runGpuPixelMatrix(width = 192, height = 108): Promise<GpuP
     cases,
   };
 }
+
+/**
+ * Frames to LOOK at (dev hook `__renderPresetFrames`, driven by
+ * scripts/preset-frames.mjs): one preset at its defaults plus `values`,
+ * walked on the matrix's offscreen path and read back as PNG data URLs at
+ * the requested track times. The matrix proves a knob moves pixels; this is
+ * how a new knob is judged to move them the right way. Feedback modes
+ * integrate their history across the walk exactly as in the matrix, so a
+ * later time costs the frames before it.
+ */
+export async function renderPresetFrames(
+  presetId: string,
+  values: ParamValues = {},
+  opts: {
+    width?: number;
+    height?: number;
+    times?: number[];
+    motion?: Partial<MotionSettings>;
+  } = {},
+): Promise<{ t: number; png: string }[]> {
+  const preset = presets.find((p) => p.id === presetId);
+  if (!preset) throw new Error(`renderPresetFrames: unknown preset ${presetId}`);
+  const width = opts.width ?? 640;
+  const height = opts.height ?? 360;
+  const times = opts.times ?? [1, 3];
+  const canvas = new OffscreenCanvas(width, height);
+  const renderer = await WebGPURenderer.create(canvas);
+  renderer.resize(width, height, 1);
+  renderer.setBackground({ mode: 0, color: [0, 0, 0] });
+  renderer.setPost(DEFAULT_POST);
+  renderer.setMotion({ ...DEFAULT_MOTION, ...opts.motion });
+  renderer.setBuilderParams(packBuilderParams(defaultBuilderStack()));
+  const errors = await renderer.compilePresetCheck(preset);
+  if (errors.length) throw new Error(`${presetId} does not compile: ${errors.join("; ")}`);
+  renderer.setPreset(preset);
+  const params = defaultParams(preset);
+  for (const [key, value] of Object.entries(values)) {
+    if (typeof value === "number") params[key] = value;
+  }
+  const out: { t: number; png: string }[] = [];
+  let frame = 0;
+  for (const target of [...times].sort((a, b) => a - b)) {
+    const last = Math.round(target * 60);
+    for (; frame <= last; frame++) {
+      const t = frame / 60;
+      renderer.render(demoFeatures(t), t, params);
+    }
+    await renderer.gpuDone();
+    const blob = await canvas.convertToBlob({ type: "image/png" });
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    out.push({ t: target, png: `data:image/png;base64,${btoa(bin)}` });
+  }
+  return out;
+}

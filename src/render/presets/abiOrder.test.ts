@@ -33,44 +33,50 @@ import { allParams, type PresetDef } from "../types";
  * from the same list, so the shifted indexes render identically; only the
  * extreme/min|max matrix cases move, because they sweep the new keys.
  */
+// 3.2 look kit (presets/kit.ts): the shared finishing knobs APPENDED to
+// advanced[] on fourteen modes — mirror, angle, spin, beatZoom, beatFlash,
+// hueSpin, grain, scanline, freqLo, freqHi, each only where the mode had no
+// knob of its own for the concept. Additive at the tail like HD-06, so every
+// existing accessor index is unchanged; the extreme/min|max matrix cases move
+// because they sweep the new keys.
 const ABI_BASELINE: Record<string, string> = {
   "spectrum-bars":
-    "hue,hueSpread,saturation,lightness,glow,barGap,beatZoom,mirror,peaks,stereoSplit,capShape,reflect,sway,barHeight,barSat,barLift,glowReach,capBright,bgLevel,bgBassGlow,beatFlash,beatBright,vignette,reflectFade,freqLo,freqHi",
+    "hue,hueSpread,saturation,lightness,glow,barGap,beatZoom,mirror,peaks,stereoSplit,capShape,reflect,sway,barHeight,barSat,barLift,glowReach,capBright,bgLevel,bgBassGlow,beatFlash,beatBright,vignette,reflectFade,freqLo,freqHi,angle,spin,hueSpin,grain,scanline",
   "radial-burst":
-    "hue,hueSpread,saturation,lightness,innerRadius,symmetry,angle,rotSpeed,glow,peaks,cover,coverHue,barLen,ringBreathe,coreSize,corePump,coreBeat,wobBase,wobAmp,wobClamp,spinBase,spinEnergy,coreBright,detailRing,detailPos,beatBloom,coverMix,coverBright,coverFit,coverZoom,coverX,coverY,rimBright,vignette",
+    "hue,hueSpread,saturation,lightness,innerRadius,symmetry,angle,rotSpeed,glow,peaks,cover,coverHue,barLen,ringBreathe,coreSize,corePump,coreBeat,wobBase,wobAmp,wobClamp,spinBase,spinEnergy,coreBright,detailRing,detailPos,beatBloom,coverMix,coverBright,coverFit,coverZoom,coverX,coverY,rimBright,vignette,beatZoom,hueSpin,grain,scanline,freqLo,freqHi",
   oscilloscope:
     "hue,saturation,lightness,gain,calm,glow,traceBright,fill,mirror,traces,renderMode,persist,display,traceClamp,coreWidth,traceSpread,agFloor,agRange,hueWave,bandHue,ghostDim,fillDim,bandDim,graticule,gridLevel,gridBeat,scanline,beatLift,bgLevel,vignette,kaleido,xyRotate",
   particles:
-    "hue,saturation,lightness,density,size,speed,direction,beatDance,sizePulse,fly,clump,streak,hotCore,shootingStars,constellation,energyDrive,wander,wanderSpeed,fill,layers,parallax,hueVariance,twinkle,glow,brightness,beatFlash,bgLevel,vignette,mirror,sizeVar,bandColor,beatPop",
+    "hue,saturation,lightness,density,size,speed,direction,beatDance,sizePulse,fly,clump,streak,hotCore,shootingStars,constellation,energyDrive,wander,wanderSpeed,fill,layers,parallax,hueVariance,twinkle,glow,brightness,beatFlash,bgLevel,vignette,mirror,sizeVar,bandColor,beatPop,hueSpin,grain,scanline",
   // 3.0 travel rework: sway, lamps, dust, roll APPENDED to params[] (so the
   // advanced block shifts by four) — a genuine param addition, same class
   // as HD-06. Every tunnel hash moved with the travel model in the same
   // commit; nothing outside the mode reads the new keys.
   "tunnel-rings":
-    "hue,hueSpread,saturation,lightness,colorFade,speed,rings,spokes,material,beatPulse,junction,curve,coverWall,centerGlow,sway,lamps,dust,roll,cruiseFloor,curveScale,cruiseEnergy,beatSpeed,tileLevel,tileSpectrum,pulseWidth,tileSat,checker,groutWidth,groutLevel,fogNear,fogFar,vignette,mirror,twist,roundness,surfaceWarp,beatBright",
+    "hue,hueSpread,saturation,lightness,colorFade,speed,rings,spokes,material,beatPulse,junction,curve,coverWall,centerGlow,sway,lamps,dust,roll,cruiseFloor,curveScale,cruiseEnergy,beatSpeed,tileLevel,tileSpectrum,pulseWidth,tileSat,checker,groutWidth,groutLevel,fogNear,fogFar,vignette,mirror,twist,roundness,surfaceWarp,beatBright,grain,scanline,freqLo,freqHi",
   nebula:
-    "hue,scale,flow,kaleido,contrast,sparkle,beatRipple,duo,hue2,windStrength,stars,warp,angle,spin,depth,hueRange,midHueShift,brightFloor,bassBright,saturation,lightness,sparkleScale,sparkleSharp,rippleWidth,rippleWarp,beatBloom,driveGlow,vignette,hotCore,windAngle",
+    "hue,scale,flow,kaleido,contrast,sparkle,beatRipple,duo,hue2,windStrength,stars,warp,angle,spin,depth,hueRange,midHueShift,brightFloor,bassBright,saturation,lightness,sparkleScale,sparkleSharp,rippleWidth,rippleWarp,beatBloom,driveGlow,vignette,hotCore,windAngle,grain,scanline",
   metaballs:
     "hue,saturation,lightness,count,size,speed,glow,threshold,gloss,beatSwell,smear,orbitX,orbitY,radiusFloor,energyGrow,radiusBand,rimStart,innerGrad,hueField,beatBright,bgLevel,vignette,mirror,lightAngle,squash,bassWeight,eccentric,environment",
   "led-matrix":
-    "display,cols,rows,gap,rounded,hueShift,saturation,lightness,ghost,scrollSpeed,beatBoost,dim,hueLow,hueHigh,spectrumColor,gradStart,gradEnd,litLevel,hotBoost,bassGlow,beatFlash,peaks,peakBright,bloom,histFade,scanline,flicker,panelVariance,vignette",
+    "display,cols,rows,gap,rounded,hueShift,saturation,lightness,ghost,scrollSpeed,beatBoost,dim,hueLow,hueHigh,spectrumColor,gradStart,gradEnd,litLevel,hotBoost,bassGlow,beatFlash,peaks,peakBright,bloom,histFade,scanline,flicker,panelVariance,vignette,hueSpin,freqLo,freqHi",
   // P-19: the spectrogram-waterfall archetype. New in this release, so its
   // row is a first baseline rather than a frozen historical one — every later
   // edit answers to it exactly like the fifteen above.
   "spectro-falls":
-    "direction,slices,axis,speed,hue,hueSpread,saturation,lightness,prism,quiet,loud,airLift,beatBoost,glow,edge,fade,hotWhite,spill,floorLevel,grid,gridLines,beatMarks,axisFocus,bassGlow,vignette",
+    "direction,slices,axis,speed,hue,hueSpread,saturation,lightness,prism,quiet,loud,airLift,beatBoost,glow,edge,fade,hotWhite,spill,floorLevel,grid,gridLines,beatMarks,axisFocus,bassGlow,vignette,grain,scanline",
   // P-19 entry 2: the typography mode. First baseline, same contract.
   "lyric-stage":
-    "layout,size,context,tilt,hue,hueSpread,saturation,lightness,drift,entrance,beatPunch,wordGlow,chromaSplit,glow,flare,ghostBars,stageLevel,unsungDim,contextScale,greekRows,glowReach,bassStage,flutter,rehearse,vignette",
+    "layout,size,context,tilt,hue,hueSpread,saturation,lightness,drift,entrance,beatPunch,wordGlow,chromaSplit,glow,flare,ghostBars,stageLevel,unsungDim,contextScale,greekRows,glowReach,bassStage,flutter,rehearse,vignette,beatFlash,hueSpin,grain,scanline,freqLo,freqHi",
   // P-19 entry 3: the cover-art-first mode. First baseline, same contract.
   gatefold:
-    "layout,artSize,reflection,hue,hueSpread,saturation,lightness,drift,breathe,beatZoom,flare,glow,skirt,wash,cover,coverHue,border,coverFit,coverZoom,coverX,coverY,roomLevel,grain,reflectFade,emblem,vignette",
+    "layout,artSize,reflection,hue,hueSpread,saturation,lightness,drift,breathe,beatZoom,flare,glow,skirt,wash,cover,coverHue,border,coverFit,coverZoom,coverX,coverY,roomLevel,grain,reflectFade,emblem,vignette,angle,spin,beatFlash,hueSpin,scanline,freqLo,freqHi",
   // P-19 entry 5 (the roster's last): the reaction-diffusion mode. First
   // baseline, same contract.
   overgrowth:
-    "form,scale,speed,hue,hueSpread,saturation,lightness,duo,growth,etch,surge,seeds,glow,relief,flow,contrast,seedSize,barSurge,paper,haze,floorLevel,bassGlow,vignette,grain",
+    "form,scale,speed,hue,hueSpread,saturation,lightness,duo,growth,etch,surge,seeds,glow,relief,flow,contrast,seedSize,barSurge,paper,haze,floorLevel,bassGlow,vignette,grain,beatFlash,hueSpin,scanline",
   "voice-orb":
-    "hue,saturation,lightness,size,satellites,ring,ringStyle,mirror,texture,response,voiceFocus,wobble,sparkle,flare,rmsBlend,growth,idleBreath,wobScale,mode1,mode2,mode3,coreGlow,breathGlow,rimGlow,ringDist,ringWave,ringCount,satSize,satDist,satOrbit,sparkleScale,bgLevel,vignette",
+    "hue,saturation,lightness,size,satellites,ring,ringStyle,mirror,texture,response,voiceFocus,wobble,sparkle,flare,rmsBlend,growth,idleBreath,wobScale,mode1,mode2,mode3,coreGlow,breathGlow,rimGlow,ringDist,ringWave,ringCount,satSize,satDist,satOrbit,sparkleScale,bgLevel,vignette,angle,spin,beatZoom,beatFlash,hueSpin,grain,scanline,freqLo,freqHi",
   "echo-trails":
     "hue,saturation,lightness,decay,zoom,swirl,radius,source,react,inject,beatZoom,flowSwirl,thick,hueSpin,hueDrift,kickFlash,vignette,mirror,echoHue,sides,beatStar,warp,centerX,centerY",
   "particle-flow":
@@ -81,11 +87,11 @@ const ABI_BASELINE: Record<string, string> = {
   "spectrum-scape":
     "hue,heightScale,camPitch,camDist,camSpin,emissive,layout,barShape,saturation,lightness,hotBeat,bandGlow,fov,hueRange,barWidth,spacing,light,camYaw,targetY,driveHeight,hotDrive,glowBeat,hotWindow,hueLift,fillLight,ambientLight,fogDensity,terrainSmooth",
   aurora:
-    "hue,saturation,lightness,bright,react,flow,thick,baseY,wave,layers,beatPulse,palWarm,moon,ground,specAmt,bassSwell,drift,reflect,horizon,reflectFade,hueStep,hueSpread,palSpan,rays,sat,stars,bgGlow,mirror,groundRough,moonX,moonY,moonGlow",
+    "hue,saturation,lightness,bright,react,flow,thick,baseY,wave,layers,beatPulse,palWarm,moon,ground,specAmt,bassSwell,drift,reflect,horizon,reflectFade,hueStep,hueSpread,palSpan,rays,sat,stars,bgGlow,mirror,groundRough,moonX,moonY,moonGlow,angle,spin,beatFlash,hueSpin,grain,scanline,freqLo,freqHi",
   synthwave:
-    "hue,gridHue,saturation,lightness,speed,react,beatPulse,sunR,roadW,skyline,mountains,gridGlow,scan,sunWarm,sunY,sunX,scanCount,scanWidth,scanPhase,sunRays,roadLanes,roadGlow,skyDensity,windows,gridScale,horizonY,stars,starDensity,gridLock,fog,vignette",
+    "hue,gridHue,saturation,lightness,speed,react,beatPulse,sunR,roadW,skyline,mountains,gridGlow,scan,sunWarm,sunY,sunX,scanCount,scanWidth,scanPhase,sunRays,roadLanes,roadGlow,skyDensity,windows,gridScale,horizonY,stars,starDensity,gridLock,fog,vignette,mirror,angle,spin,beatFlash,hueSpin,grain,scanline",
   "bass-circle":
-    "hue,saturation,lightness,radius,pump,barLen,segments,particles,spin,rimBright,cover,coreFill,coverHue,symmetry,angle,hueSpread,beatPump,gap,segGap,barGlow,partDensity,partFill,partFloat,beatBurst,partBeat,coverMix,coverBright,coverFit,coverZoom,coverX,coverY,vignette",
+    "hue,saturation,lightness,radius,pump,barLen,segments,particles,spin,rimBright,cover,coreFill,coverHue,symmetry,angle,hueSpread,beatPump,gap,segGap,barGlow,partDensity,partFill,partFloat,beatBurst,partBeat,coverMix,coverBright,coverFit,coverZoom,coverX,coverY,vignette,beatFlash,hueSpin,grain,scanline,freqLo,freqHi",
   builder2:
     "l0.opacity,l0.hue,l0.hueSpread,l0.glow,l0.flash,l1.opacity,l1.hue,l1.hueSpread,l1.density,l1.speed,l1.streak,l2.opacity,l2.hue,l2.hueSpread,l2.height,l2.gap,l2.glow,l2.peaks,l3.opacity,l3.hue,l3.hueSpread,l3.start,l3.end,l3.sharp,l3.bright",
   builder:

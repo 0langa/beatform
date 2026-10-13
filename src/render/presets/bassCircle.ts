@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
@@ -17,7 +18,7 @@ import { WGSL_COLOR_CONTROLS } from "../wgslLib";
  * art — plus Ring spin promoted to the curated tier. Every feature gate
  * defaults to the pre-wave path, so factory defaults render bit-identically.
  */
-export const bassCircle: PresetDef = {
+const bassCircleBase: PresetDef = {
   id: "bass-circle",
   name: "Bass Circle",
   description:
@@ -807,3 +808,12 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): beatFlash, hueSpin, grain, scanline, freq — the finishing knobs this mode did not own natively. */
+export const bassCircle = withKit(bassCircleBase, {
+  beatFlash: true,
+  hueSpin: true,
+  grain: true,
+  scanline: true,
+  freq: true,
+});

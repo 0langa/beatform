@@ -1,4 +1,5 @@
 import type { PresetDef } from "../types";
+import { withKit } from "./kit";
 import { WGSL_COLOR_CONTROLS } from "../wgslLib";
 
 /**
@@ -37,7 +38,7 @@ import { WGSL_COLOR_CONTROLS } from "../wgslLib";
  * texture in-shader — no CPU analysis sits on the render path, so preview and
  * export resolve identical frames by construction.
  */
-export const gatefold: PresetDef = {
+const gatefoldBase: PresetDef = {
   id: "gatefold",
   name: "Gatefold",
   description:
@@ -152,6 +153,71 @@ export const gatefold: PresetDef = {
         hueSpread: 0,
         glow: 0.1,
         vignette: 0.2,
+      },
+    },
+    // 3.2 look-kit looks: the finishing knobs the mode gained, in use.
+    {
+      id: "turntable",
+      name: "Turntable",
+      values: {
+        artSize: 0.95,
+        reflection: 0.3,
+        glow: 0.5,
+        flare: 0.2,
+        vignette: 0.45,
+        spin: 6,
+        beatFlash: 0.2,
+        scanline: 0.1,
+      },
+    },
+    {
+      id: "polaroid",
+      name: "Polaroid",
+      values: {
+        artSize: 1.05,
+        saturation: 0.8,
+        lightness: 1.05,
+        beatZoom: 0.15,
+        glow: 0.25,
+        skirt: 0.05,
+        wash: 0.2,
+        border: 0.9,
+        coverFit: 1,
+        grain: 0.45,
+        vignette: 0.35,
+        angle: 352,
+      },
+    },
+    {
+      id: "booth",
+      name: "Broadcast Booth",
+      values: {
+        layout: 1,
+        hue: 190,
+        hueSpread: 30,
+        glow: 0.4,
+        skirt: 0.5,
+        wash: 0.6,
+        grain: 0.2,
+        vignette: 0.5,
+        beatFlash: 0.25,
+        scanline: 0.5,
+        freqLo: 0.05,
+        freqHi: 0.5,
+      },
+    },
+    {
+      id: "prismSleeve",
+      name: "Prism Sleeve",
+      values: {
+        reflection: 0.6,
+        hue: 300,
+        hueSpread: 120,
+        beatZoom: 0.45,
+        flare: 0.5,
+        glow: 1,
+        grain: 0.1,
+        hueSpin: 20,
       },
     },
   ],
@@ -663,3 +729,12 @@ fn preset(uv: vec2f) -> vec4f {
 }
 `,
 };
+
+/** The look kit (kit.ts): rotation, beatFlash, hueSpin, scanline, freq — the finishing knobs this mode did not own natively. */
+export const gatefold = withKit(gatefoldBase, {
+  rotation: true,
+  beatFlash: true,
+  hueSpin: true,
+  scanline: true,
+  freq: true,
+});

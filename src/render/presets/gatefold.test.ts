@@ -3,6 +3,7 @@ import { presetUsesFeedback } from "../webgpuRenderer";
 import { allParams, defaultParams, presetMasters } from "../types";
 import { presets } from "./index";
 import { gatefold } from "./gatefold";
+import { kitChoiceOf, kitSpecs } from "./kit";
 
 /**
  * GATEFOLD (P-19 roster entry 3) — the artwork as the composition.
@@ -102,7 +103,9 @@ describe("gatefold", { timeout: 30_000 }, () => {
       expect(groups.has(lens), `main tier missing ${lens}`).toBe(true);
     }
     expect(gatefold.params.length).toBe(16);
-    expect(gatefold.advanced?.length).toBe(10);
+    // Its own expert block; the look kit (kit.ts) appends its suffix after it.
+    const kit = kitSpecs(kitChoiceOf("gatefold")!).length;
+    expect((gatefold.advanced?.length ?? 0) - kit).toBe(10);
     expect((gatefold.advanced ?? []).every((s) => s.tier === undefined)).toBe(true);
   });
 
