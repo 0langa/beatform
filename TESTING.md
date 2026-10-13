@@ -31,6 +31,18 @@ when automation cannot judge them.
   `BEATFORM_LYRICS_CORPUS=C:/bf-test/e2e-corpus`,
   `BEATFORM_LYRICS_OUT=C:/bf-test/out/e2e`, `BEATFORM_LYRICS_TIER=turbo`,
   always `--skip-dense` (the dense-mix fixture did not move with the machine).
+- Lyrics quality bench: the owner's real test collection lives in
+  `C:\Users\Julius\OneDrive\Music\bf-lyrics-testsongs` (six English songs
+  with line-synced `.lrc` references, one German rap track without); decoded
+  44.1 kHz copies, their isolated stems and the references sit in
+  `C:\bf-test\songs\{mix,stem}` + `<slug>.ref.lrc`, with `langs.json` pinning
+  each song's language. `node scripts/lyrics-eval.mjs --config <name>` scores
+  the sidecar against the references (WER, wrong lines, true/false flags,
+  line-start timing around the reference's own per-song shift);
+  `--mode replay` runs whisper-cli here with any flags and replays its JSON
+  through the real VAD/assembly/alignment stages (`--whisper-json`), cached
+  per config; `--json-from <config>` reuses another config's transcript for
+  aligner experiments. Results and transcripts: `C:\bf-test\out\eval\<config>`.
 - `BEATFORM_DEV_MONITOR=secondary` (debug builds only) parks the operator
   window on the largest non-primary monitor — the Huawei 1080p screen on the
   left — so harness runs and `tauri dev` stay off the main screen; a monitor
@@ -63,6 +75,21 @@ when automation cannot judge them.
 - **A5 — The pack offer on the laptop path.** On a PC without an NVIDIA
   driver (or with `nvcuda.dll` renamed in a VM): no Download GPU acceleration
   button, the hint names the CPU, Small is recommended.
+- **A7 — The flags mean something now.** Generate lyrics for the seven bench
+  songs (the GPU pack; Large v3 is what this card gets recommended, Turbo
+  the faster second) and open the editor. Measured 2026-10-13 against the
+  references: before, Enter Sandman came back as 110 copies of one unsung
+  line and 63 % of all lines were flagged; after (whisper on the isolated
+  vocal, no text context carried between windows, whisper's own word
+  certainty merged into the aligner's reading) the loops are gone, word
+  error over the six English songs is 22 % with Turbo and 18 % with Large
+  v3, and red flags are a few per song — where red means both whisper and
+  the aligner doubted the words.
+  Expected by ear: a red line is wrong or garbled often enough to be worth
+  the click; amber lines (soft, breathy, processed or backing vocals) are
+  mostly right; the German track transcribes as German. Known limit: a
+  confident mishearing by whisper (an invented but plausible word) can pass
+  unflagged — the aligner cannot tell it from soft singing.
 
 ## Sign-off
 

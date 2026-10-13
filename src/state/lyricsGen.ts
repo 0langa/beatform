@@ -266,8 +266,22 @@ export const TIER_NAMES: Record<LyricsTier, string> = {
  * transcript the small model cannot match), Small on the CPU — where turbo
  * costs 5x small's time for its better words, a trade the user makes
  * knowingly from the estimate, not by default. */
-export function recommendedTier(cuda: boolean): LyricsTier {
-  return cuda ? "turbo" : "small";
+/** The shipped Large v3 (q5_0) peaked at 2.2 GB of VRAM on CUDA, Turbo at
+ * 2.1 GB (idle RTX 5060 Ti, 2026-10-13); a 4 GB card has the headroom for
+ * either, and a smaller or unknown card keeps the faster Turbo. */
+export const LARGE_TIER_MIN_VRAM_MB = 4096;
+
+/** The tier to preselect. Measured 2026-10-13 on seven real songs against
+ * reference lyrics (whisper on the isolated vocal, no carried context):
+ * Large v3 made 19 wrong lines of ~215 where Turbo made 31 (word error 18 %
+ * vs 22 %), at about 2.5x Turbo's GPU time — 11 s against 4 s for a
+ * 2-minute song on an RTX 5060 Ti, still nothing. So a CUDA card with the
+ * VRAM for it gets Large; a smaller CUDA card Turbo; a CPU-only PC Small,
+ * where Small with the same pipeline measured within two wrong lines of
+ * Turbo. */
+export function recommendedTier(cuda: boolean, vramMb: number | null = null): LyricsTier {
+  if (!cuda) return "small";
+  return (vramMb ?? 0) >= LARGE_TIER_MIN_VRAM_MB ? "large" : "turbo";
 }
 
 export interface TierOption {
@@ -277,13 +291,17 @@ export interface TierOption {
 
 /** Picker rows, the recommended one marked. Plain words about the trade —
  * the estimate next to the Generate button carries the time. */
-export function tierOptions(cuda: boolean): TierOption[] {
-  const rec = recommendedTier(cuda);
+export function tierOptions(cuda: boolean, vramMb: number | null = null): TierOption[] {
+  const rec = recommendedTier(cuda, vramMb);
   const blurb: Record<LyricsTier, string> = {
     small: "fastest, any PC",
     medium: "better words, slower",
     turbo: cuda ? "best words per second" : "near-best words, slow on CPU",
-    large: cuda ? "most accurate, 3x turbo's time" : "most accurate, very slow on CPU",
+    large: !cuda
+      ? "most accurate, very slow on CPU"
+      : rec === "large"
+        ? "most accurate, 2-3x turbo's time"
+        : "most accurate, wants a 4 GB card",
   };
   return LYRICS_TIERS.map((value) => ({
     value,

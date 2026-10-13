@@ -486,7 +486,7 @@ export const GUIDE: readonly GuideSection[] = [
         p: [
           "A selected line's toolbar can nudge it earlier or later, split it at the text cursor, merge it into the next line, insert an empty line above or below, delete it (",
           { kbd: "Ctrl+Z" },
-          " brings it straight back), or re-align it — re-running the word aligner against the isolated vocal for that line's text (desktop only, once the lyrics models are downloaded and a track is loaded). Lines the aligner wasn't confident about are flagged red or amber, and a ",
+          " brings it straight back), or re-align it — re-running the word aligner against the isolated vocal for that line's text (desktop only, once the lyrics models are downloaded and a track is loaded). Generated lines carry two opinions: Whisper's own certainty about the words and the aligner's about whether the isolated vocal matches them. A line both doubt is flagged red; a line only one of them doubts is amber (soft, breathy or heavily processed singing often reads that way while being right), and a ",
           { strong: "⚑ next" },
           " button jumps to the next one.",
         ],

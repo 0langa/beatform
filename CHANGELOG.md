@@ -24,11 +24,46 @@ laptop.
   reports which runtime actually ran, and the time estimate uses the
   desktop numbers. No NVIDIA driver, no offer; the pack without a device
   falls back to the CPU and says so.
-- **Two new Whisper models: Large v3 Turbo and Large v3.** Pinned to
-  whisper.cpp's own Hugging Face conversions (1.62 GB and 3.1 GB). Turbo
-  becomes the recommended tier once the GPU pack is installed — its
-  transcript of a sung anthem was word-perfect where Small stumbled.
-  Both run on the CPU too, slowly, and the estimate says so.
+- **The GPU pack's compiled kernels stay compiled.** A newer card than the
+  pack was built for (RTX 50-series) compiles the pack's PTX on first use
+  — 30-90 s once — and the driver caches the result in its shared
+  `%APPDATA%\NVIDIA\ComputeCache`, a ~1 GiB cache every other CUDA
+  program on the PC evicts from. The sidecar now points the driver at a
+  Beatform-owned `runtimes/cuda-cache` folder with the cap raised to the
+  driver's 4 GiB maximum (`CUDA_CACHE_PATH` / `CUDA_CACHE_MAXSIZE`, inherited
+  by whisper-cli). Measured: first run 32 s and 19 files written there,
+  every later run 1 s, the shared cache untouched.
+- **Two new Whisper models: Large v3 Turbo and Large v3.** whisper.cpp's
+  own conversions, both mirrored on the Beatform release: Turbo at 1.62 GB
+  and Large v3 as its q5_0 quantization at 1.08 GB — GitHub caps a release
+  asset at 2 GiB, and on the owner's seven-song bench the q5 model made 19
+  wrong lines where the 3.1 GB fp16 one made 20 — and peaks at 2.2 GB of
+  VRAM where the fp16 model took 4.2 GB. Large v3 made a third fewer wrong
+  lines than Turbo (word error 18 % vs 22 %) at 2-3x its GPU time (11 s
+  against 4 s for a 2-minute song on the reference card), so a CUDA card
+  with 4 GB of VRAM or more gets Large recommended, a smaller card Turbo,
+  a CPU-only PC Small. Every tier runs on the CPU too, slowly, and the
+  estimate says so.
+- **Whisper hears the vocal, forgets between windows, and the loops are
+  gone.** Measured on the owner's seven real test songs against reference
+  lyrics (the new `scripts/lyrics-eval.mjs` bench): with whisper's text
+  context carried from one 30-second window to the next — its default — one
+  window that hallucinated over an intro or a chopped drop poisoned every
+  window after it. A metal track came back as 110 copies of one line nobody
+  sang (word error 296 %), an EDM track with a 20-line loop, and 63 % of all
+  lines flagged. Transcription now runs on the isolated vocal with no
+  carried context: word error over the set fell from 78 % to 22 %, the
+  loops vanished, and whisper is faster for it.
+- **A flag now means two opinions agreed.** Most remaining flags were false:
+  the word aligner cannot follow soft, breathy, processed or backing vocals
+  (a quiet duet's lines read 0.02-0.19 while transcribed right). Whisper's
+  own certainty about those words is high where the aligner's is not, and
+  low where whisper really misheard, so each word's confidence now merges
+  both: a word only the aligner doubts shows amber ("look again"), a word
+  both doubt stays red. A decoder loop — confident in every copy — keeps no
+  whisper vote, so it stays red. Accented letters (ä, é, ß) now fold to
+  the letters the aligner knows instead of dropping out of German, French
+  or Spanish lines.
 - **The language is read from the isolated vocal.** Whisper's own
   auto-detect listens to the first 30 seconds of whatever it gets, and on a
   full mix that is often an instrumental intro — the Medium model heard

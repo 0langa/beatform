@@ -76,6 +76,7 @@ mod tests {
             t,
             end,
             text: text.into(),
+            word_p: Vec::new(),
             words: Vec::new(),
         }
     }
@@ -119,6 +120,7 @@ mod tests {
             t,
             end,
             conf: 0.9,
+            p: 0.9,
             text: text.into(),
         };
         let lines = vec![
@@ -126,6 +128,7 @@ mod tests {
                 t: 12.0,
                 end: 14.5,
                 text: "Out of my mind".into(),
+                word_p: Vec::new(),
                 words: vec![
                     word(12.0, 12.4, "Out"),
                     word(12.4, 12.6, "of"),
@@ -152,10 +155,12 @@ mod tests {
             t: 1.0,
             end: 2.0,
             text: "two words".into(),
+            word_p: Vec::new(),
             words: vec![Word {
                 t: 1.0,
                 end: 1.5,
                 conf: 0.9,
+                p: 0.9,
                 text: "two".into(),
             }],
         }];

@@ -232,13 +232,23 @@ describe("tier math", () => {
     expect(tierModelIds("large")[3]).toBe("whisper-large");
   });
 
-  it("recommends Large v3 Turbo on a CUDA machine and Small everywhere else", () => {
+  it("recommends Large v3 on a roomy CUDA card, Turbo on a small one, Small everywhere else", () => {
+    // Measured 2026-10-13: Large v3 (q5_0) made a third fewer wrong lines
+    // than Turbo on real songs and peaks at 2.2 GB of VRAM — a 4 GB card.
+    expect(recommendedTier(true, 16311)).toBe("large");
+    expect(recommendedTier(true, 4096)).toBe("large");
+    expect(recommendedTier(true, 2048)).toBe("turbo");
+    expect(recommendedTier(true, null)).toBe("turbo");
     expect(recommendedTier(true)).toBe("turbo");
+    expect(recommendedTier(false, 16311)).toBe("small");
     expect(recommendedTier(false)).toBe("small");
-    const gpuOpts = tierOptions(true);
+    const gpuOpts = tierOptions(true, 16311);
     expect(gpuOpts.map((o) => o.value)).toEqual(["small", "medium", "turbo", "large"]);
-    expect(gpuOpts.find((o) => o.value === "turbo")?.label).toMatch(/recommended/);
-    expect(gpuOpts.find((o) => o.value === "small")?.label).not.toMatch(/recommended/);
+    expect(gpuOpts.find((o) => o.value === "large")?.label).toMatch(/recommended/);
+    expect(gpuOpts.find((o) => o.value === "turbo")?.label).not.toMatch(/recommended/);
+    const smallCard = tierOptions(true, 2048);
+    expect(smallCard.find((o) => o.value === "turbo")?.label).toMatch(/recommended/);
+    expect(smallCard.find((o) => o.value === "large")?.label).toMatch(/4 GB card/);
     const cpuOpts = tierOptions(false);
     expect(cpuOpts.find((o) => o.value === "small")?.label).toMatch(/recommended/);
     expect(cpuOpts.find((o) => o.value === "large")?.label).toMatch(/slow/);

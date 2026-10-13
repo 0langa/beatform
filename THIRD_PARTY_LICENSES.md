@@ -25,12 +25,12 @@ in this repository) that orchestrates the following third-party components:
   source, and ship exactly as the whisper.cpp project packages them. Using
   them requires the user's own NVIDIA driver.
 - **Whisper models** (OpenAI; ggml conversions from
-  <https://huggingface.co/ggerganov/whisper.cpp>) — downloaded on first use
+  <https://huggingface.co/ggerganov/whisper.cpp>: Small, Medium, Large v3
+  Turbo and the q5_0 quantization of Large v3) — downloaded on first use
   from Beatform's pinned mirror
-  (<https://github.com/beatform-app/models/releases/tag/v1>) or, for the
-  Large v3 and Large v3 Turbo models, directly from the whisper.cpp
-  project's Hugging Face repository, SHA-256-verified in-app in both cases.
-  License: **MIT** (OpenAI Whisper weights).
+  (<https://github.com/beatform-app/models/releases/tag/v1>), the same
+  bytes as the whisper.cpp project's Hugging Face files, SHA-256-verified
+  in-app. License: **MIT** (OpenAI Whisper weights).
 - **Ultimate Vocal Remover (UVR) MDX-Net vocal model**
   (`UVR-MDX-NET-Voc_FT.onnx`) — trained and published by the UVR project
   (<https://github.com/Anjok07/ultimatevocalremovergui>), downloaded on first

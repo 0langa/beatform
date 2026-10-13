@@ -53,13 +53,19 @@ pub const LOW_CONF: f64 = 0.2;
 // ---------------------------------------------------------------------------
 // Vocab
 
-/// The wav2vec2-base-960h character vocabulary (vocab.json from the model
-/// release): single-character tokens A-Z + apostrophe, `|` as the word
-/// delimiter, `<pad>` as the CTC blank.
+/// A CTC character vocabulary (vocab.json from the model release). Two
+/// shapes are known: wav2vec2-base-960h — A-Z + apostrophe, `|` as the word
+/// delimiter, `<pad>` as the CTC blank — and the MMS forced aligner
+/// (mms-300m-1130) — a-z + apostrophe, `<blank>` as the blank and no
+/// delimiter token at all (words are told apart by their character
+/// ranges). Lookups try the character as written, then its lowercase and
+/// uppercase forms, so either case convention works.
 pub struct Vocab {
     chars: HashMap<char, u32>,
     pub blank: u32,
-    pub delim: u32,
+    /// None = this vocabulary separates words by nothing; the token
+    /// sequence is the characters alone.
+    pub delim: Option<u32>,
     /// Logit dimension the model must produce (max id + 1).
     pub size: usize,
 }
@@ -75,8 +81,11 @@ impl Vocab {
                     .ok_or("vocab.json ids must be integers".to_string())
             })
             .collect::<Result<_, _>>()?;
-        let blank = *map.get("<pad>").ok_or("vocab.json has no <pad> token")?;
-        let delim = *map.get("|").ok_or("vocab.json has no | delimiter")?;
+        let blank = *map
+            .get("<blank>")
+            .or_else(|| map.get("<pad>"))
+            .ok_or("vocab.json has no <blank> or <pad> token")?;
+        let delim = map.get("|").copied();
         let size = map.values().max().map(|m| *m as usize + 1).unwrap_or(0);
         let chars = map
             .iter()
@@ -102,15 +111,48 @@ impl Vocab {
         Self::parse(&json)
     }
 
-    /// Vocab id for one text character, after uppercasing and normalizing
-    /// typographic apostrophes. None = the character has no acoustic token
-    /// (digits, punctuation) and simply contributes nothing to the trellis.
+    /// Vocab id for one text character, after uppercasing, normalizing
+    /// typographic apostrophes and folding Latin diacritics. None = the
+    /// character has no acoustic token (digits, punctuation) and simply
+    /// contributes nothing to the trellis.
     fn char_id(&self, c: char) -> Option<u32> {
         let c = match c {
             '\u{2019}' | '\u{02BC}' | '`' => '\'',
             other => other,
         };
-        c.to_uppercase().find_map(|u| self.chars.get(&u).copied())
+        let folded = c.to_lowercase().next().map(fold_latin).unwrap_or(c);
+        self.chars.get(&folded).copied().or_else(|| {
+            folded
+                .to_uppercase()
+                .find_map(|u| self.chars.get(&u).copied())
+        })
+    }
+}
+
+/// Accented Latin letters to the base letter the English CTC vocabulary
+/// knows. The model has no token for "ä", "é" or "ß"; dropping them left a
+/// German line's "ändern" aligned as "ndern" and every umlaut word
+/// interpolated at confidence 0 (measured 2026-10-13: 89 % of a German rap
+/// track's lines flagged). The base letter is the nearest sound the model
+/// can vote for, which is what a forced alignment needs.
+fn fold_latin(c: char) -> char {
+    match c {
+        'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' | 'æ' => 'a',
+        'ç' | 'ć' | 'č' => 'c',
+        'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ė' | 'ę' | 'ě' => 'e',
+        'ì' | 'í' | 'î' | 'ï' | 'ī' | 'į' | 'ı' => 'i',
+        'ñ' | 'ń' | 'ň' => 'n',
+        'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' | 'ő' | 'œ' => 'o',
+        'ù' | 'ú' | 'û' | 'ü' | 'ū' | 'ů' | 'ű' => 'u',
+        'ý' | 'ÿ' => 'y',
+        'ß' | 'ś' | 'š' | 'ş' => 's',
+        'ź' | 'ž' | 'ż' => 'z',
+        'ł' => 'l',
+        'ř' => 'r',
+        'ď' | 'đ' => 'd',
+        'ť' => 't',
+        'ğ' => 'g',
+        other => other,
     }
 }
 
@@ -136,8 +178,8 @@ pub fn tokenize(text: &str, vocab: &Vocab) -> LineTokens {
             word_ranges.push(None);
             continue;
         }
-        if any_before {
-            tokens.push(vocab.delim);
+        if let (true, Some(delim)) = (any_before, vocab.delim) {
+            tokens.push(delim);
         }
         let start = tokens.len();
         tokens.extend(ids);
@@ -168,6 +210,11 @@ pub fn tokenize(text: &str, vocab: &Vocab) -> LineTokens {
 ///   fp32 flagged 6/7 good lines on int8.
 ///
 /// `mean_logp` (absolute frame-mean) stays for diagnostics.
+///
+/// (A blank-conditional variant — the char's share of the frame's non-blank
+/// mass — was measured on 2026-10-13 against reference lyrics and separated
+/// wrong from right lines no better than this reading; the aligner's own
+/// posteriors are the limit, which is what `merged_conf` is for.)
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TokenSpan {
     pub start: usize,
@@ -175,6 +222,40 @@ pub struct TokenSpan {
     pub end: usize,
     pub mean_logp: f64,
     pub peak_rel_logp: f64,
+}
+
+/// What whisper's own word probability adds to the aligner's reading.
+///
+/// The aligner cannot follow soft, breathy or heavily processed singing:
+/// measured 2026-10-13 on seven real songs against reference lyrics, a
+/// quiet duet's lines and a rock song's backing lines read 0.00-0.19 while
+/// transcribed correctly, and of the 69 lines under LOW_CONF, 50 were right.
+/// Whisper's token probabilities on those right lines sat at 0.95+ (p10
+/// 0.76), where its genuine mishearings sat far lower (median 0.79, p10
+/// 0.31). So a word the aligner doubts is lifted by whisper's certainty —
+/// linearly from LOW_CONF at p = WHISPER_SURE to CONF_CLEAR at p = 1 — into
+/// the editor's "look again" band rather than its "wrong" band, and only a
+/// word BOTH doubt stays flagged (measured: 12 of 19 wrong low-confidence
+/// lines still flagged, 6 instead of 50 right ones). The aligner's own
+/// reading is never lowered, and a word without a whisper vote (p = 0: a
+/// user-typed line) keeps it unchanged.
+pub const WHISPER_SURE: f64 = 0.8;
+/// The editor's warn ceiling (`CONF_WARN` in src/state/lyricsEdit.ts).
+pub const CONF_CLEAR: f64 = 0.45;
+
+pub fn merged_conf(align_conf: f64, whisper_p: f64) -> f64 {
+    if align_conf >= LOW_CONF || whisper_p < WHISPER_SURE {
+        return align_conf;
+    }
+    let lift =
+        LOW_CONF + (CONF_CLEAR - LOW_CONF) * (whisper_p - WHISPER_SURE) / (1.0 - WHISPER_SURE);
+    align_conf.max(lift.min(CONF_CLEAR))
+}
+
+/// A line's reported confidence: the mean of its words' merged readings.
+pub fn line_conf(words: &[Word]) -> Option<f64> {
+    (!words.is_empty())
+        .then(|| words.iter().map(|w| merged_conf(w.conf, w.p)).sum::<f64>() / words.len() as f64)
 }
 
 /// Forced alignment of `tokens` against per-frame log-probabilities.
@@ -435,13 +516,26 @@ fn align_with_context(
     seg: &Line,
     hi: f64,
 ) -> Result<Vec<Word>, String> {
+    let prev_words = prev.text.split_whitespace().count();
+    let own = seg.text.split_whitespace().count();
+    // The joint line's votes: both halves' or none — a half without votes
+    // would shift the other's onto the wrong words.
+    let word_p = if prev.word_p.len() == prev_words && seg.word_p.len() == own {
+        prev.word_p
+            .iter()
+            .chain(seg.word_p.iter())
+            .copied()
+            .collect()
+    } else {
+        Vec::new()
+    };
     let joint = Line {
         t: prev.t,
         end: prev.end.max(seg.end),
         text: format!("{} {}", prev.text, seg.text),
+        word_p,
         words: Vec::new(),
     };
-    let own = seg.text.split_whitespace().count();
     let mut words = align_bounded(aligner, stem16, track_sec, &joint, hi)?;
     if own == 0 || words.len() < own {
         return Err("joint alignment lost words".into());
@@ -513,31 +607,77 @@ pub fn align_segments(
         prev = Some(line);
         on_segment(i + 1, total);
     }
-    let lines = lines::finish(out);
+    let lines = withhold_lift_from_loops(lines::finish(out));
     let mut summary = Summary {
         words: 0,
         aligned_lines: 0,
         low_conf_lines: 0,
     };
     for (i, line) in lines.iter().enumerate() {
-        if line.words.is_empty() {
+        let Some(merged) = line_conf(&line.words) else {
             summary.low_conf_lines += 1;
             continue;
-        }
+        };
         let conf = line.words.iter().map(|w| w.conf).sum::<f64>() / line.words.len() as f64;
-        // Diagnostic only (stderr is not protocol): per-line confidence for
-        // tuning the LOW_CONF threshold against real material.
+        let p = line.words.iter().map(|w| w.p).sum::<f64>() / line.words.len() as f64;
+        // Diagnostic only (stderr is not protocol): the aligner's own reading,
+        // whisper's vote and the merged confidence per line, for calibrating
+        // against real material (scripts/lyrics-eval.mjs parses this line).
         eprintln!(
-            "[lyrics-sidecar] align line {i}: conf {conf:.3}, {} words",
+            "[lyrics-sidecar] align line {i}: conf {conf:.3} p {p:.3} merged {merged:.3}, {} words",
             line.words.len()
         );
         summary.words += line.words.len();
         summary.aligned_lines += 1;
-        if conf < LOW_CONF {
+        if merged < LOW_CONF {
             summary.low_conf_lines += 1;
         }
     }
     Outcome::Done { lines, summary }
+}
+
+/// Repeats this many times with the aligner hearing none of them is a
+/// whisper loop, not a chorus.
+const LOOP_MIN_RUN: usize = 3;
+const LOOP_MAX_CONF: f64 = 0.1;
+
+/// Whisper's vote is withheld from a loop. A decoder stuck repeating one
+/// line is confident in every copy (measured 2026-10-13: 110 copies of one
+/// line over a whole song at p 0.8-0.9), so `merged_conf` would lift the
+/// lot. A run of `LOOP_MIN_RUN` or more consecutive lines with the same
+/// words where the aligner heard none of them (every line under
+/// `LOOP_MAX_CONF`) keeps the aligner's reading alone. A real chorus
+/// repeat is sung, and the aligner hears at least one copy.
+fn withhold_lift_from_loops(mut lines: Vec<Line>) -> Vec<Line> {
+    let key = |l: &Line| -> String {
+        l.text
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(|c| c.to_lowercase())
+            .collect()
+    };
+    let deaf = |l: &Line| -> bool {
+        !l.words.is_empty()
+            && (l.words.iter().map(|w| w.conf).sum::<f64>() / l.words.len() as f64) < LOOP_MAX_CONF
+    };
+    let mut i = 0;
+    while i < lines.len() {
+        let k = key(&lines[i]);
+        let mut j = i + 1;
+        while j < lines.len() && key(&lines[j]) == k {
+            j += 1;
+        }
+        if j - i >= LOOP_MIN_RUN && !k.is_empty() && lines[i..j].iter().all(deaf) {
+            for line in &mut lines[i..j] {
+                for w in &mut line.words {
+                    w.p = 0.0;
+                }
+                line.word_p = line.words.iter().map(|w| w.p).collect();
+            }
+        }
+        i = j;
+    }
+    lines
 }
 
 /// Align ONE line. Public for the `--align-line` mode (phase 4), which
@@ -603,6 +743,7 @@ pub fn align_bounded(
     // scales drift under quantization; the ratio-to-argmax catches
     // fabricated text and survives both).
     let display: Vec<&str> = line.text.split_whitespace().collect();
+    let vote = |i: usize| line.word_p.get(i).copied().unwrap_or(0.0);
     let mut aligned: Vec<Option<(f64, f64, f64)>> = Vec::with_capacity(display.len());
     for range in &toks.word_ranges {
         aligned.push(range.map(|(a, b)| {
@@ -624,6 +765,7 @@ pub fn align_bounded(
                 t: start,
                 end: end.max(start + FRAME_SEC),
                 conf,
+                p: vote(i),
                 text: display[i].to_string(),
             });
             i += 1;
@@ -648,6 +790,7 @@ pub fn align_bounded(
                 t: t0,
                 end: t1,
                 conf: 0.0,
+                p: vote(run_start + j),
                 text: text.to_string(),
             });
         }
@@ -682,10 +825,30 @@ mod tests {
     }
 
     #[test]
+    fn the_mms_vocab_shape_parses_too() {
+        // mms-300m-1130-forced-aligner: lowercase letters, <blank> as the
+        // blank, <pad> present but NOT the blank, no delimiter token.
+        let v = Vocab::parse(
+            r#"{ "<blank>": 0, "<pad>": 1, "</s>": 2, "<unk>": 3, "a": 4, "i": 5, "e": 6, "'": 28 }"#,
+        )
+        .unwrap();
+        assert_eq!(v.blank, 0);
+        assert_eq!(v.delim, None);
+        assert_eq!(v.size, 29);
+        assert_eq!(v.char_id('A'), Some(4));
+        assert_eq!(v.char_id('ä'), Some(4));
+        assert_eq!(v.char_id('\u{2019}'), Some(28));
+        // Two words, no delimiter between them: the ranges still tell them apart.
+        let lt = tokenize("ai e", &v);
+        assert_eq!(lt.tokens, vec![4, 5, 6]);
+        assert_eq!(lt.word_ranges, vec![Some((0, 2)), Some((2, 3))]);
+    }
+
+    #[test]
     fn vocab_parses_the_release_shape() {
         let v = vocab();
         assert_eq!(v.blank, 0);
-        assert_eq!(v.delim, 4);
+        assert_eq!(v.delim, Some(4));
         assert_eq!(v.size, 32);
         assert_eq!(v.char_id('a'), Some(7));
         assert_eq!(v.char_id('A'), Some(7));
@@ -693,6 +856,14 @@ mod tests {
         assert_eq!(v.char_id('\u{2019}'), Some(27)); // typographic apostrophe
         assert_eq!(v.char_id('9'), None);
         assert_eq!(v.char_id(','), None);
+        // Diacritics fold to the base letter, in either case.
+        assert_eq!(v.char_id('ä'), Some(7));
+        assert_eq!(v.char_id('Ö'), Some(8));
+        assert_eq!(v.char_id('é'), Some(5));
+        assert_eq!(v.char_id('ß'), Some(12));
+        assert_eq!(v.char_id('ñ'), Some(9));
+        // A German word keeps every letter instead of losing its umlaut.
+        assert_eq!(tokenize("ändern", &v).tokens.len(), 6);
     }
 
     #[test]
@@ -742,8 +913,67 @@ mod tests {
             t,
             end,
             text: "x".into(),
+            word_p: Vec::new(),
             words: Vec::new(),
         }
+    }
+
+    fn word(conf: f64, p: f64, text: &str) -> Word {
+        Word {
+            t: 0.0,
+            end: 0.1,
+            conf,
+            p,
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn whispers_certainty_lifts_a_doubted_word_into_the_warn_band_only() {
+        // The aligner's reading stands on its own above the flag line...
+        assert_eq!(merged_conf(0.5, 1.0), 0.5);
+        assert_eq!(merged_conf(0.2, 1.0), 0.2);
+        // ...and below it when whisper is not sure either, or did not vote.
+        assert_eq!(merged_conf(0.05, 0.79), 0.05);
+        assert_eq!(merged_conf(0.05, 0.0), 0.05);
+        // Whisper's certainty lifts: to the flag line at 0.8, to the warn
+        // ceiling at 1.0, never beyond, never below the aligner's own.
+        assert!((merged_conf(0.05, 0.8) - LOW_CONF).abs() < 1e-9);
+        assert!((merged_conf(0.05, 0.9) - 0.325).abs() < 1e-9);
+        assert!((merged_conf(0.05, 1.0) - CONF_CLEAR).abs() < 1e-9);
+        assert!((merged_conf(0.15, 0.8) - LOW_CONF).abs() < 1e-9);
+        // An interpolated word (no acoustic tokens, conf 0) is lifted too.
+        assert!((merged_conf(0.0, 0.95) - 0.3875).abs() < 1e-9);
+        // The line reads the merged words.
+        let line = [word(0.02, 0.98, "caught"), word(0.03, 0.98, "in")];
+        assert!(line_conf(&line).unwrap() > LOW_CONF);
+        assert_eq!(line_conf(&[]), None);
+    }
+
+    #[test]
+    fn a_loop_the_aligner_cannot_hear_keeps_no_whisper_vote() {
+        let looped = |conf: f64| Line {
+            t: 0.0,
+            end: 1.0,
+            text: "I'm so excited".into(),
+            word_p: vec![0.9; 3],
+            words: vec![
+                word(conf, 0.9, "I'm"),
+                word(conf, 0.9, "so"),
+                word(conf, 0.9, "excited"),
+            ],
+        };
+        // Three deaf copies: votes withdrawn, the merged reading stays flagged.
+        let lines = withhold_lift_from_loops(vec![looped(0.01), looped(0.02), looped(0.0)]);
+        assert!(lines.iter().all(|l| l.words.iter().all(|w| w.p == 0.0)));
+        assert!(lines
+            .iter()
+            .all(|l| line_conf(&l.words).unwrap() < LOW_CONF));
+        // Two copies are a chorus, as are three where one is heard.
+        let lines = withhold_lift_from_loops(vec![looped(0.01), looped(0.02)]);
+        assert!(lines.iter().all(|l| l.words.iter().all(|w| w.p == 0.9)));
+        let lines = withhold_lift_from_loops(vec![looped(0.01), looped(0.3), looped(0.0)]);
+        assert!(lines.iter().all(|l| l.words.iter().all(|w| w.p == 0.9)));
     }
 
     fn voiced(start: f64, end: f64) -> Region {

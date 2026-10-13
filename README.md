@@ -161,10 +161,11 @@ Free and open source. Built to become a professional-grade tool for producers an
   streaming service re-encodes it. Audio-only — toggling normalization does
   not change that export's visual analysis or raw frames. Off by default
 - **Automatic lyrics, locally**: vocal isolation (UVR MDX-Net on DirectML),
-  Whisper transcription (Small / Medium / Large v3 Turbo / Large v3 — on an
-  NVIDIA card a one-time GPU acceleration download runs whisper.cpp's CUDA
-  build, 10-20x the CPU speed), language read off the isolated vocal, and
-  wav2vec2 word timing; nothing leaves the machine
+  Whisper transcription of the isolated vocal (Small / Medium / Large v3
+  Turbo / Large v3 — on an NVIDIA card a one-time GPU acceleration download
+  runs whisper.cpp's CUDA build, 10-20x the CPU speed), language read off
+  the vocal, wav2vec2 word timing, and a per-word confidence that merges
+  Whisper's certainty with the aligner's; nothing leaves the machine
 - **Timed lyrics (.lrc / .srt)**: drop a lyrics file on the window and the
   current line renders karaoke-style over the visual — position, size, color
   and fades configurable from the same timed definition in every export

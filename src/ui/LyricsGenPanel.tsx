@@ -86,7 +86,8 @@ export function LyricsGenPanel() {
 
   const { models, dml, gpu, runtimes, phase, download, gen, modelOp } = lyricsGen;
   const cuda = cudaReady(gpu, runtimes);
-  const tier = tierChoice ?? recommendedTier(cuda);
+  const vramMb = gpu?.vramMb ?? null;
+  const tier = tierChoice ?? recommendedTier(cuda, vramMb);
   const duration = trackDuration();
   const estimate =
     duration > 0
@@ -311,7 +312,7 @@ export function LyricsGenPanel() {
         hint="Which speech model transcribes the vocals — larger ones read sung words better; the estimate on the button says what each costs on this PC"
         value={tier}
         onChange={(v) => setTierChoice(v)}
-        options={tierOptions(cuda)}
+        options={tierOptions(cuda, vramMb)}
       />
       <SelectRow
         label="Language"

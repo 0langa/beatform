@@ -29,20 +29,58 @@ pub struct Line {
     /// line's start).
     pub end: f64,
     pub text: String,
+    /// Whisper's probability for each whitespace-split word of `text`, in
+    /// order (`word_probabilities`); the aligner's second opinion
+    /// (align.rs `merged_conf`). Empty = no such vote: a user-typed line,
+    /// or a line built without token data.
+    pub word_p: Vec<f64>,
     /// Per-word timing from the phase-3 forced-alignment stage. Empty =
     /// line-level only (alignment not run, or degraded for this line).
     pub words: Vec<Word>,
 }
 
-/// One aligned word (track-time seconds). `conf` is the geometric-mean
-/// probability of the frames the aligner chose (0 = interpolated, not
-/// aligned — e.g. digits, which have no acoustic tokens).
+/// One aligned word (track-time seconds). `conf` is the aligner's own
+/// reading — the geometric-mean peak-relative probability of the frames it
+/// chose (0 = interpolated, not aligned — e.g. digits, which have no
+/// acoustic tokens); `p` is whisper's probability for the word (0 = no vote).
+/// What the app sees is `align::merged_conf(conf, p)`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Word {
     pub t: f64,
     pub end: f64,
     pub conf: f64,
+    pub p: f64,
     pub text: String,
+}
+
+/// Whisper's per-word probabilities for the text made of `pieces` (token
+/// text, token probability): each whitespace-split word takes the mean over
+/// the characters it is made of, so a word spanning several BPE tokens
+/// averages them and a token spanning two words serves both. The count
+/// equals `normalize_text(..).split_whitespace().count()` for the same
+/// pieces, which is what lets the probabilities ride along with the words.
+pub fn word_probabilities(pieces: &[(&str, f64)]) -> Vec<f64> {
+    let mut out = Vec::new();
+    let mut sum = 0.0;
+    let mut n = 0usize;
+    for (text, p) in pieces {
+        for c in text.chars() {
+            if c.is_whitespace() {
+                if n > 0 {
+                    out.push(sum / n as f64);
+                    sum = 0.0;
+                    n = 0;
+                }
+            } else {
+                sum += p;
+                n += 1;
+            }
+        }
+    }
+    if n > 0 {
+        out.push(sum / n as f64);
+    }
+    out
 }
 
 /// A segment overlapping its VAD-active cover by less than this fraction is
@@ -165,24 +203,28 @@ pub fn stage_segments(input: AssembleInput) -> Staged {
         .filter_map(|(seg, s, e)| {
             let mut fallback = Vec::new();
             split_segment(seg, s, e, input.vad, vad_trusted, &mut fallback);
-            let toks: String = seg
+            let pieces: Vec<(&str, f64)> = seg
                 .tokens
                 .iter()
                 .filter(|t| !is_meta_token(&t.text))
-                .map(|t| t.text.as_str())
+                .map(|t| (t.text.as_str(), t.p))
                 .collect();
-            let text = normalize_text(if toks.trim().is_empty() {
-                &seg.text
-            } else {
-                &toks
-            });
+            let toks: String = pieces.iter().map(|(t, _)| *t).collect();
+            let from_tokens = !toks.trim().is_empty();
+            let text = normalize_text(if from_tokens { &toks } else { &seg.text });
             if text.is_empty() || is_non_speech_text(&text) {
                 return None;
             }
+            let word_p = if from_tokens {
+                word_probabilities(&pieces)
+            } else {
+                Vec::new()
+            };
             Some(StagedSegment {
                 line: Line {
                     t: s,
                     end: e,
+                    word_p: matched_word_p(word_p, &text),
                     text,
                     words: Vec::new(),
                 },
@@ -290,7 +332,19 @@ fn worded_line(words: Vec<Word>) -> Line {
             .map(|w| w.text.as_str())
             .collect::<Vec<_>>()
             .join(" "),
+        word_p: words.iter().map(|w| w.p).collect(),
         words,
+    }
+}
+
+/// `word_p` only when it has one entry per word of `text` — a count that
+/// disagrees (a token shape this code did not foresee) is no vote at all
+/// rather than a vote on the wrong words.
+fn matched_word_p(word_p: Vec<f64>, text: &str) -> Vec<f64> {
+    if word_p.len() == text.split_whitespace().count() {
+        word_p
+    } else {
+        Vec::new()
     }
 }
 
@@ -335,9 +389,9 @@ fn split_segment(
         None
     };
     // Tokens with real text inside [start, end).
-    let toks: Vec<(f64, f64, &str)> = token_spans(&seg.tokens)
+    let toks: Vec<TokenSpanText> = token_spans(&seg.tokens)
         .into_iter()
-        .filter(|(s, _, _)| *s >= start - 1e-9 && *s < end)
+        .filter(|(s, _, _, _)| *s >= start - 1e-9 && *s < end)
         .collect();
 
     if let Some((gap_start, gap_end)) = gap {
@@ -345,7 +399,7 @@ fn split_segment(
             let gap_mid = 0.5 * (gap_start + gap_end);
             // First token starting at/after the gap midpoint opens the second
             // half; everything before closes the first half.
-            if let Some(split_idx) = toks.iter().position(|(s, _, _)| *s >= gap_mid) {
+            if let Some(split_idx) = toks.iter().position(|(s, _, _, _)| *s >= gap_mid) {
                 if split_idx > 0 && split_idx < toks.len() {
                     let (first, second) = toks.split_at(split_idx);
                     push_token_line(first, out);
@@ -359,13 +413,13 @@ fn split_segment(
                             from: (second_start * 1000.0) as i64,
                             to: (end * 1000.0) as i64,
                         },
-                        text: second.iter().map(|(_, _, t)| *t).collect::<String>(),
+                        text: second.iter().map(|(_, _, t, _)| *t).collect::<String>(),
                         tokens: seg
                             .tokens
                             .iter()
                             .filter(|t| !is_meta_token(&t.text))
                             .zip(spans.iter())
-                            .filter(|(_, (s, _, _))| *s >= second_start - 1e-9)
+                            .filter(|(_, (s, _, _, _))| *s >= second_start - 1e-9)
                             .map(|(t, _)| crate::whisper::WhisperToken {
                                 text: t.text.clone(),
                                 offsets: t.offsets,
@@ -389,6 +443,7 @@ fn split_segment(
                 t: start,
                 end: end.max(start + MONOTONIC_STEP),
                 text: text.to_string(),
+                word_p: Vec::new(),
                 words: Vec::new(),
             });
         }
@@ -397,7 +452,10 @@ fn split_segment(
     }
 }
 
-/// (start, end, text) for every real (non-meta) token, in order.
+/// (start, end, text, whisper probability) of one real token.
+pub type TokenSpanText<'a> = (f64, f64, &'a str, f64);
+
+/// (start, end, text, p) for every real (non-meta) token, in order.
 ///
 /// With DTW timestamps (whisper-cli `-dtw`, available since the app passes
 /// the model's alignment-heads preset) a token starts where whisper's
@@ -410,7 +468,7 @@ fn split_segment(
 /// Units: `offsets` are milliseconds, but `t_dtw` is whisper's own 10 ms
 /// tick (the `-ojf` writer scales t0/t1 and leaves t_dtw raw — verified
 /// 2026-10-13 against the spoken intro of the SSB corpus clip).
-pub fn token_spans(tokens: &[WhisperToken]) -> Vec<(f64, f64, &str)> {
+pub fn token_spans(tokens: &[WhisperToken]) -> Vec<TokenSpanText<'_>> {
     let real: Vec<&WhisperToken> = tokens.iter().filter(|t| !is_meta_token(&t.text)).collect();
     let dtw = !real.is_empty() && real.iter().all(|t| t.t_dtw >= 0);
     let mut out = Vec::with_capacity(real.len());
@@ -432,13 +490,14 @@ pub fn token_spans(tokens: &[WhisperToken]) -> Vec<(f64, f64, &str)> {
             e = s;
         }
         prev_start = s;
-        out.push((s, e, t.text.as_str()));
+        out.push((s, e, t.text.as_str(), t.p));
     }
     out
 }
 
-fn push_token_line(toks: &[(f64, f64, &str)], out: &mut Vec<Line>) {
-    let text: String = toks.iter().map(|(_, _, t)| *t).collect();
+fn push_token_line(toks: &[TokenSpanText], out: &mut Vec<Line>) {
+    let pieces: Vec<(&str, f64)> = toks.iter().map(|(_, _, t, p)| (*t, *p)).collect();
+    let text: String = pieces.iter().map(|(t, _)| *t).collect();
     let text = normalize_text(&text);
     if text.is_empty() || is_non_speech_text(&text) {
         return;
@@ -446,12 +505,13 @@ fn push_token_line(toks: &[(f64, f64, &str)], out: &mut Vec<Line>) {
     let t = toks[0].0;
     let end = toks
         .iter()
-        .map(|(_, e, _)| *e)
+        .map(|(_, e, _, _)| *e)
         .fold(f64::NEG_INFINITY, f64::max)
         .max(t + MONOTONIC_STEP);
     out.push(Line {
         t,
         end,
+        word_p: matched_word_p(word_probabilities(&pieces), &text),
         text,
         words: Vec::new(),
     });
@@ -495,11 +555,20 @@ fn cap_length(line: Line, out: &mut Vec<Line>) {
             // character position so both halves keep plausible spans.
             let frac = idx as f64 / chars.len() as f64;
             let cut = (line.t + (line.end - line.t).max(0.0) * frac).max(line.t + MONOTONIC_STEP);
+            // The word votes follow their words into the halves.
+            let first_words = first.split_whitespace().count();
+            let (p_first, p_second) = if line.word_p.len() >= first_words {
+                let (a, b) = line.word_p.split_at(first_words);
+                (a.to_vec(), b.to_vec())
+            } else {
+                (Vec::new(), Vec::new())
+            };
             cap_length(
                 Line {
                     t: line.t,
                     end: cut,
                     text: first.trim().to_string(),
+                    word_p: p_first,
                     words: Vec::new(),
                 },
                 out,
@@ -509,6 +578,7 @@ fn cap_length(line: Line, out: &mut Vec<Line>) {
                     t: cut,
                     end: line.end.max(cut + MONOTONIC_STEP),
                     text: second.trim().to_string(),
+                    word_p: p_second,
                     words: Vec::new(),
                 },
                 out,
@@ -587,8 +657,70 @@ mod tests {
             t,
             end,
             conf: 0.9,
+            p: 0.9,
             text: text.to_string(),
         }
+    }
+
+    /// Whisper's BPE pieces: a leading space opens a word, a piece without
+    /// one continues it, and a word's probability averages its pieces.
+    #[test]
+    fn word_probabilities_follow_whispers_pieces_into_words() {
+        let pieces = [
+            (" I'm", 0.9),
+            (" defib", 0.6),
+            ("rill", 0.4),
+            ("ators", 0.8),
+            (",", 1.0),
+            (" yeah", 0.5),
+        ];
+        let p = word_probabilities(&pieces);
+        assert_eq!(p.len(), 3);
+        assert!((p[0] - 0.9).abs() < 1e-9);
+        // "defibrillators," — 5 + 4 + 5 chars of the three pieces plus the comma.
+        let expect = (5.0 * 0.6 + 4.0 * 0.4 + 5.0 * 0.8 + 1.0) / 15.0;
+        assert!((p[1] - expect).abs() < 1e-9, "{p:?}");
+        assert!((p[2] - 0.5).abs() < 1e-9);
+        // A piece carrying two words serves both; stray whitespace adds none.
+        assert_eq!(word_probabilities(&[(" a b ", 0.7), ("  ", 0.1)]).len(), 2);
+        assert!(word_probabilities(&[]).is_empty());
+        // The count matches the text split the lines are built from.
+        let text = normalize_text(&pieces.iter().map(|(t, _)| *t).collect::<String>());
+        assert_eq!(text.split_whitespace().count(), p.len());
+    }
+
+    /// The staged segment carries one vote per word, and a token-cut line
+    /// too; a user-shaped line (no tokens) carries none.
+    #[test]
+    fn staged_lines_carry_whispers_word_votes() {
+        let s = seg(
+            0,
+            4_000,
+            " hello there",
+            &[(0, 2_000, " hello"), (2_000, 4_000, " there")],
+        );
+        let vad = vec![region(0.0, 4.0)];
+        let staged = stage_segments(AssembleInput {
+            segments: &[s],
+            vad: &vad,
+            stem_peak_db: -10.0,
+            track_duration_sec: 5.0,
+        });
+        assert_eq!(staged.segments[0].line.word_p, vec![0.9, 0.9]);
+        assert_eq!(staged.segments[0].fallback[0].word_p, vec![0.9, 0.9]);
+        let plain = WhisperSegment {
+            offsets: MsSpan { from: 0, to: 4_000 },
+            text: " no tokens here".into(),
+            tokens: Vec::new(),
+        };
+        let staged = stage_segments(AssembleInput {
+            segments: &[plain],
+            vad: &vad,
+            stem_peak_db: -10.0,
+            track_duration_sec: 5.0,
+        });
+        assert!(staged.segments[0].line.word_p.is_empty());
+        assert!(staged.segments[0].fallback[0].word_p.is_empty());
     }
 
     /// The device probe's failure, reduced: a sung line after a 4 s intro and
@@ -805,9 +937,9 @@ mod tests {
         assert_eq!(
             token_spans(&s.tokens),
             vec![
-                (0.0, 2.7, " hello"),
-                (2.7, 5.4, " world"),
-                (5.4, 8.0, " again")
+                (0.0, 2.7, " hello", 0.9),
+                (2.7, 5.4, " world", 0.9),
+                (5.4, 8.0, " again", 0.9)
             ]
         );
         // With DTW (10 ms ticks): starts are the measured times, ends the
@@ -819,14 +951,14 @@ mod tests {
         assert_eq!(
             token_spans(&s.tokens),
             vec![
-                (4.02, 4.5, " hello"),
-                (4.5, 4.5, " world"),
-                (4.5, 8.0, " again")
+                (4.02, 4.5, " hello", 0.9),
+                (4.5, 4.5, " world", 0.9),
+                (4.5, 8.0, " again", 0.9)
             ]
         );
         // A partial DTW (one token unmeasured) falls back whole.
         s.tokens[1].t_dtw = -1;
-        assert_eq!(token_spans(&s.tokens)[0], (0.0, 2.7, " hello"));
+        assert_eq!(token_spans(&s.tokens)[0], (0.0, 2.7, " hello", 0.9));
         // Meta tokens never take part.
         s.tokens.insert(
             0,

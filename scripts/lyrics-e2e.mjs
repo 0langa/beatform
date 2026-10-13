@@ -96,7 +96,7 @@ const TIER_FILE = {
   small: "ggml-small.bin",
   medium: "ggml-medium.bin",
   turbo: "ggml-large-v3-turbo.bin",
-  large: "ggml-large-v3.bin",
+  large: "ggml-large-v3-q5_0.bin",
 }[TIER];
 if (!TIER_FILE)
   throw new Error(`BEATFORM_LYRICS_TIER must be small|medium|turbo|large, got ${TIER}`);

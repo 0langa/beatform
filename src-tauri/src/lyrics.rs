@@ -89,21 +89,27 @@ pub const MODELS: &[ModelSpec] = &[
     // a transcript the small model cannot match; large-v3 is the most
     // accurate whisper there is, at ~3x turbo's time and 4.2 GB of VRAM. On
     // the CPU both are slow enough that the UI says so up front.
+    // Both mirrored on the Beatform release (uploaded 2026-10-13, the same
+    // bytes as whisper.cpp's Hugging Face conversions). Large is the q5_0
+    // quantization: GitHub caps a release asset at 2 GiB (the fp16 file is
+    // 3.1 GB), and on the seven-song bench the q5 model made 19 wrong lines
+    // where the fp16 one made 20 (word error 18 % vs 16 %) at a third of the
+    // download and the VRAM.
     ModelSpec {
         id: "whisper-turbo",
         file_name: "ggml-large-v3-turbo.bin",
         bytes: 1_624_555_275,
         sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
         role: "whisper-turbo",
-        base_url: HF_WHISPER_BASE_URL,
+        base_url: MODELS_BASE_URL,
     },
     ModelSpec {
         id: "whisper-large",
-        file_name: "ggml-large-v3.bin",
-        bytes: 3_095_033_483,
-        sha256: "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
+        file_name: "ggml-large-v3-q5_0.bin",
+        bytes: 1_081_140_203,
+        sha256: "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1",
         role: "whisper-large",
-        base_url: HF_WHISPER_BASE_URL,
+        base_url: MODELS_BASE_URL,
     },
     // Phase-3 word alignment: first-party ONNX export from the Apache-2.0
     // facebook/wav2vec2-base-960h safetensors, MatMul-only dynamic int8
@@ -468,6 +474,31 @@ fn runtimes_dir(app: &tauri::AppHandle, state: &LyricsState) -> Result<PathBuf, 
         .map(Path::to_path_buf)
         .unwrap_or(models)
         .join("runtimes"))
+}
+
+/// The CUDA driver's JIT cache, pinned to a Beatform-owned folder.
+///
+/// The pack's ggml-cuda.dll carries SASS up to sm_90 and PTX; a newer card
+/// (the RTX 50-series is sm_120) compiles that PTX on first use — 40-90 s
+/// once on the reference RTX 5060 Ti — and the driver caches the result. By
+/// default that cache is the shared `%APPDATA%\NVIDIA\ComputeCache`, capped
+/// at about 1 GiB and evicted by every other CUDA program on the PC, so the
+/// minute could come back unannounced. Our own folder under the runtimes
+/// dir, with the cap raised to the driver's 4 GiB maximum, keeps the
+/// compiled kernels for as long as the pack is installed. Both variables
+/// are read by the driver in whichever process loads it; whisper-cli
+/// inherits them from the sidecar.
+pub(crate) const CUDA_CACHE_DIR_NAME: &str = "cuda-cache";
+pub(crate) const CUDA_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+
+pub(crate) fn cuda_cache_env(cmd: &mut Command, runtimes: &Path) {
+    let dir = runtimes.join(CUDA_CACHE_DIR_NAME);
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("[lyrics] could not create {}: {e}", dir.display());
+        return;
+    }
+    cmd.env("CUDA_CACHE_PATH", &dir)
+        .env("CUDA_CACHE_MAXSIZE", CUDA_CACHE_MAX_BYTES.to_string());
 }
 
 /// The installed CUDA whisper-cli, when the pack is complete; None = use
@@ -1613,12 +1644,13 @@ pub fn lyrics_generate(
     // The CUDA pack's whisper-cli when it is installed and asked for; the
     // bundled CPU build otherwise. (The pack on a PC without an NVIDIA driver
     // would run on the CPU too — the sidecar reports what actually ran.)
-    let resolved = (|| -> Result<(PathBuf, PathBuf, PathBuf), String> {
+    let resolved = (|| -> Result<(PathBuf, PathBuf, PathBuf, bool), String> {
         let cuda_cli = if use_cuda {
             installed_runtime_cli(&app, &state, "whisper-cuda")?
         } else {
             None
         };
+        let cuda_pack = cuda_cli.is_some();
         let whisper_cli = match cuda_cli {
             Some(p) => p,
             None => resolve_bundled(&app, "whisper/whisper-cli.exe")?,
@@ -1627,9 +1659,10 @@ pub fn lyrics_generate(
             ffmpeg_exe(&app)?,
             whisper_cli,
             resolve_bundled(&app, "onnxruntime/onnxruntime.dll")?,
+            cuda_pack,
         ))
     })();
-    let (ffmpeg, whisper_cli, ort_dylib) = match resolved {
+    let (ffmpeg, whisper_cli, ort_dylib, cuda_pack) = match resolved {
         Ok(v) => v,
         Err(e) => {
             cleanup_staged(&staged);
@@ -1646,6 +1679,14 @@ pub fn lyrics_generate(
     drop(lrc_file); // the sidecar writes it; the reserved name is what matters
 
     let mut cmd = Command::new(&exe);
+    if cuda_pack {
+        // whisper-cli inherits the sidecar's environment, so this reaches
+        // the CUDA driver inside it.
+        match runtimes_dir(&app, &state) {
+            Ok(runtimes) => cuda_cache_env(&mut cmd, &runtimes),
+            Err(e) => eprintln!("[lyrics] CUDA cache dir unavailable: {e}"),
+        }
+    }
     cmd.arg("--input")
         .arg(&staged)
         .arg("--out")
@@ -2080,23 +2121,33 @@ mod tests {
             "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"
         );
         assert_eq!(turbo.role, "whisper-turbo");
-        assert_eq!(turbo.base_url, HF_WHISPER_BASE_URL);
         let large = spec_by_id("whisper-large").unwrap();
-        assert_eq!(large.file_name, "ggml-large-v3.bin");
-        assert_eq!(large.bytes, 3_095_033_483);
+        // The q5_0 quantization: under GitHub's 2 GiB asset cap, measured
+        // within a line of the fp16 model on the bench.
+        assert_eq!(large.file_name, "ggml-large-v3-q5_0.bin");
+        assert_eq!(large.bytes, 1_081_140_203);
         assert_eq!(
             large.sha256,
-            "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2"
+            "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1"
         );
         assert_eq!(large.role, "whisper-large");
+        assert!(
+            large.bytes < 2 * 1024 * 1024 * 1024,
+            "GitHub release asset cap"
+        );
         for mirrored in [
             "mdx-voc-ft",
             "whisper-small",
             "whisper-medium",
+            "whisper-turbo",
+            "whisper-large",
             "wav2vec2-align",
         ] {
             assert_eq!(spec_by_id(mirrored).unwrap().base_url, MODELS_BASE_URL);
         }
+        // Nothing is left on Hugging Face; the constant stays for the day a
+        // model outgrows the release again.
+        assert!(HF_WHISPER_BASE_URL.starts_with("https://huggingface.co/"));
     }
 
     #[test]

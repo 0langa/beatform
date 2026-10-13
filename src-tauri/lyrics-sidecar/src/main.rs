@@ -2,9 +2,10 @@
 //! lyrics.
 //!
 //! decode (ffmpeg) -> MDX-Net vocal isolation (ONNX Runtime, DirectML-first)
-//! -> separation-as-VAD -> whisper.cpp on the FULL MIX with VAD post-split
-//! -> (phase 3, when the alignment model is provided) wav2vec2 CTC forced
-//! alignment of each line against the vocal stem -> enhanced word-tag LRC.
+//! -> separation-as-VAD -> whisper.cpp on the VOCAL STEM (since 2026-10-13;
+//! the full mix before) with VAD post-split -> (phase 3, when the alignment
+//! model is provided) wav2vec2 CTC forced alignment of each line against the
+//! vocal stem -> enhanced word-tag LRC.
 //! One JSON event per stdout line (protocol.rs); cancel = one "cancel" line
 //! on stdin, or a plain kill. Every path/argument comes from the supervising
 //! app — this binary never invents paths of its own.
@@ -58,6 +59,11 @@ struct Args {
     /// e.g. "small", "large.v3.turbo"). The app derives it from the model it
     /// picked; absent = whisper's evenly-spread token offsets, as before.
     whisper_dtw: Option<String>,
+    /// Dev hook: replay this whisper-cli `-ojf` JSON instead of running
+    /// whisper-cli — `scripts/lyrics-eval.mjs` scores whisper configurations
+    /// through the real VAD, assembly and alignment stages this way. The
+    /// language pre-pass is skipped too; the app never passes this.
+    whisper_json: Option<PathBuf>,
 }
 
 /// `--align-line` (phase 4): re-align ONE line's text against a short WAV
@@ -192,6 +198,7 @@ fn parse_args(argv: &[String]) -> Result<Mode, String> {
         align_model: map.remove("align-model").map(PathBuf::from),
         align_vocab: map.remove("align-vocab").map(PathBuf::from),
         whisper_dtw: map.remove("whisper-dtw"),
+        whisper_json: map.remove("whisper-json").map(PathBuf::from),
     };
     if args.align_model.is_some() != args.align_vocab.is_some() {
         return Err("--align-model and --align-vocab must be passed together".into());
@@ -275,12 +282,46 @@ fn hard_exit(code: i32) -> ! {
 
 fn fail(message: &str) -> ! {
     emit(&Event::Error { message });
+    remove_temps();
     hard_exit(EXIT_ERROR);
 }
 
 fn cancelled_exit() -> ! {
     emit(&Event::Cancelled);
+    remove_temps();
     hard_exit(EXIT_CANCELLED);
+}
+
+/// Temp files this process created (the stem WAV whisper reads, whisper's
+/// JSON, the language probe's pair). `hard_exit` skips every destructor, so
+/// the exits above remove them by hand — a failed run must not leave a
+/// 60 MB stem in the OS temp dir.
+static TEMP_FILES: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+fn track_temp(path: &std::path::Path) {
+    if let Ok(mut files) = TEMP_FILES.lock() {
+        files.push(path.to_path_buf());
+    }
+}
+
+fn remove_temps() {
+    if let Ok(mut files) = TEMP_FILES.lock() {
+        for path in files.drain(..) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// A unique path in the OS temp dir for this process: `<tag>-<pid>-<ms>`.
+fn temp_prefix(tag: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "beatform-{tag}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or_default()
+    ))
 }
 
 fn main() {
@@ -379,6 +420,7 @@ fn run_align_line(args: AlignLineArgs) {
         t: args.line_t.min(duration),
         end: args.line_end.min(duration),
         text: args.text.clone(),
+        word_p: Vec::new(), // the user's own words: no whisper vote
         words: Vec::new(),
     };
     let track_sec = stem16.len() as f64 / resample::OUT_RATE as f64;
@@ -478,15 +520,6 @@ fn run(args: Args) {
         rtf: Some(isolate_wall / duration),
         detail: Some(if ep == "dml" { "DirectML" } else { "CPU" }),
     });
-    if let Some(dump) = &args.dump_stem {
-        let wav = audio::wav_s16(&audio::Stereo {
-            left: stem.0.clone(),
-            right: stem.1.clone(),
-        });
-        if let Err(e) = std::fs::write(dump, wav) {
-            fail(&format!("could not write --dump-stem file: {e}"));
-        }
-    }
     if cancel.cancelled() {
         cancelled_exit();
     }
@@ -509,7 +542,9 @@ fn run(args: Args) {
     });
 
     // ---- language (from the vocal stem, before the stem is dropped) ----
-    let language = if args.language == "auto" {
+    let language = if args.whisper_json.is_some() {
+        "auto".to_string() // replayed transcript: its language is in the JSON
+    } else if args.language == "auto" {
         match detect_language(&args, &stem, &regions, &cancel) {
             Some(code) => {
                 eprintln!("[lyrics-sidecar] language {code} (whisper on the vocal stem)");
@@ -521,18 +556,38 @@ fn run(args: Args) {
     } else {
         args.language.clone()
     };
-    drop(stem);
 
-    // ---- transcribe (full mix — spike adjustment 3) --------------------
+    // ---- transcribe (the vocal stem) -----------------------------------
+    // The stem goes to whisper as a WAV in the OS temp dir (the channels are
+    // moved, not copied); `--dump-stem` keeps a copy of the same bytes.
+    let stem_wav = audio::wav_s16(&audio::Stereo {
+        left: stem.0,
+        right: stem.1,
+    });
+    if let Some(dump) = &args.dump_stem {
+        if let Err(e) = std::fs::write(dump, &stem_wav) {
+            fail(&format!("could not write --dump-stem file: {e}"));
+        }
+    }
+    let stem_path = PathBuf::from(format!(
+        "{}.wav",
+        temp_prefix("lyrics-stem").to_string_lossy()
+    ));
+    track_temp(&stem_path);
+    if let Err(e) = std::fs::write(&stem_path, &stem_wav) {
+        fail(&format!("could not write the stem for whisper: {e}"));
+    }
+    drop(stem_wav);
     let t0 = Instant::now();
     let Transcript {
         json: parsed,
         backend,
-    } = match transcribe(&args, &language, duration, &cancel) {
+    } = match transcribe(&args, &stem_path, &language, duration, &cancel) {
         Ok(p) => p,
         Err(TranscribeError::Cancelled) => cancelled_exit(),
         Err(TranscribeError::Failed(e)) => fail(&e),
     };
+    let _ = std::fs::remove_file(&stem_path);
     let transcribe_wall = t0.elapsed().as_secs_f64();
     let backend_label = backend.label();
     emit(&Event::StageDone {
@@ -596,10 +651,12 @@ fn run(args: Args) {
         assembled
             .iter()
             .map(|l| protocol::LineDetail {
-                conf: (!l.words.is_empty()).then(|| {
-                    l.words.iter().map(|w| w.conf).sum::<f64>() / l.words.len().max(1) as f64
-                }),
-                words: l.words.iter().map(|w| w.conf).collect(),
+                conf: align::line_conf(&l.words),
+                words: l
+                    .words
+                    .iter()
+                    .map(|w| align::merged_conf(w.conf, w.p))
+                    .collect(),
             })
             .collect()
     });
@@ -619,6 +676,7 @@ fn run(args: Args) {
         whisper_device: backend.device.as_deref(),
         line_details: line_details.as_deref(),
     });
+    remove_temps();
 }
 
 /// Run the forced-alignment stage when requested. Alignment is an
@@ -800,16 +858,11 @@ fn detect_language(
     if sample.duration_sec() < 1.0 {
         return None;
     }
-    let prefix = std::env::temp_dir().join(format!(
-        "beatform-lyrics-lang-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or_default()
-    ));
+    let prefix = temp_prefix("lyrics-lang");
     let wav_path = PathBuf::from(format!("{}.wav", prefix.to_string_lossy()));
     let json_path = PathBuf::from(format!("{}.json", prefix.to_string_lossy()));
+    track_temp(&wav_path);
+    track_temp(&json_path);
     let cleanup = || {
         let _ = std::fs::remove_file(&wav_path);
         let _ = std::fs::remove_file(&json_path);
@@ -865,31 +918,52 @@ fn detect_language(
     code
 }
 
-/// Spawn whisper-cli on the ORIGINAL input file (full mix), stream progress
+/// Spawn whisper-cli on `input` (the isolated vocal stem), stream progress
 /// from its stderr, parse the `-ojf` JSON it writes. `language` is the
 /// forced code (or "auto").
+///
+/// Measured 2026-10-13 on seven real songs against reference lyrics
+/// (scripts/lyrics-eval.mjs, large-v3-turbo on the GPU):
+/// - `-mc 0` (no text context carried between 30 s windows) is the single
+///   biggest win. With the context on, a window that hallucinated — an
+///   instrumental intro, a chopped vocal drop — fed its text to every
+///   window after it: one metal track came back as 110 copies of a line
+///   nobody sang (WER 296 %), an EDM track as a 20-line loop. Without it,
+///   word error over the set fell from 78 % to 25 % and the loops vanished.
+/// - The vocal stem instead of the mix cut the wrong lines a further
+///   quarter (42 to 31 of ~240) and the word error to 22 %; the stem also
+///   spares whisper the instrumental stretches it used to invent over. The
+///   earlier worry about run-on segments on stem input no longer applies:
+///   lines are cut on the aligner's word timing, not whisper's segments.
+/// - Suppressing non-speech tokens, disabling the temperature fallback and
+///   whisper's own silero VAD were all measured too: the first two changed
+///   nothing of note, the VAD threw away most of the singing.
 fn transcribe(
     args: &Args,
+    input: &std::path::Path,
     language: &str,
     duration: f64,
     cancel: &Arc<Canceller>,
 ) -> Result<Transcript, TranscribeError> {
+    if let Some(path) = &args.whisper_json {
+        let json = std::fs::read_to_string(path)
+            .map_err(|e| TranscribeError::Failed(format!("whisper JSON unreadable: {e}")))?;
+        let json = whisper::parse(&json).map_err(TranscribeError::Failed)?;
+        return Ok(Transcript {
+            json,
+            backend: WhisperBackend::default(),
+        });
+    }
     // Unique output prefix in the OS temp dir; whisper appends ".json".
-    let prefix = std::env::temp_dir().join(format!(
-        "beatform-lyrics-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or_default()
-    ));
+    let prefix = temp_prefix("lyrics");
     let json_path = PathBuf::from(format!("{}.json", prefix.to_string_lossy()));
+    track_temp(&json_path);
 
     let mut cmd = Command::new(&args.whisper_cli);
     cmd.arg("-m")
         .arg(&args.whisper_model)
         .arg("-f")
-        .arg(&args.input)
+        .arg(input)
         .arg("-ojf")
         .arg("-of")
         .arg(&prefix)
@@ -897,6 +971,8 @@ fn transcribe(
         .arg(args.threads.to_string())
         .arg("-bs")
         .arg("5")
+        .arg("-mc")
+        .arg("0")
         .arg("-l")
         .arg(language)
         .arg("-pp");
@@ -1081,11 +1157,14 @@ mod tests {
             "C:/vocab.json",
             "--whisper-dtw",
             "large.v3.turbo",
+            "--whisper-json",
+            "C:/replay.json",
         ]);
         let Ok(Mode::Run(args)) = parse_args(&argv) else {
             panic!("should parse");
         };
         assert_eq!(args.whisper_dtw.as_deref(), Some("large.v3.turbo"));
+        assert_eq!(args.whisper_json, Some(PathBuf::from("C:/replay.json")));
         assert_eq!(args.gpu, mdx::GpuMode::Cpu);
         assert_eq!(args.language, "en");
         assert_eq!(args.threads, 2);
@@ -1121,6 +1200,7 @@ mod tests {
         assert_eq!(args.dump_stem, None);
         assert_eq!(args.align_model, None);
         assert_eq!(args.align_vocab, None);
+        assert_eq!(args.whisper_json, None);
     }
 
     #[test]
