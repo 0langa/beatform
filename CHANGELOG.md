@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-13
+
 The GPU release of the lyrics pipeline — measured on an RTX 5060 Ti /
 Ryzen 9 9900X desktop after every previous number came from an Iris Xe
 laptop.
@@ -3482,7 +3484,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/0langa/beatform/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/0langa/beatform/compare/v2.113.0...v3.0.0
 [2.113.0]: https://github.com/0langa/beatform/compare/v2.112.1...v2.113.0
 [2.112.1]: https://github.com/0langa/beatform/compare/v2.112.0...v2.112.1
