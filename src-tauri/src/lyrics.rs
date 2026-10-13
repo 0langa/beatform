@@ -35,15 +35,13 @@ use tauri::Manager;
 /// Where the pinned models live. GitHub release assets are mutable in
 /// principle — which is why every download is SHA-256-verified against the
 /// hashes below (recorded in the FEAT-004 spike's license/hash matrix and
-/// cross-checked against the upstream HF LFS oids byte-for-byte).
+/// cross-checked against the upstream HF LFS oids byte-for-byte). The
+/// whisper models are whisper.cpp's own ggml conversions, mirrored here
+/// unchanged; an LFS object's oid on Hugging Face IS its SHA-256, so the
+/// pins below are those oids. A model that outgrows GitHub's 2 GiB asset
+/// cap would need its own base URL again (`ModelSpec::base_url` is per
+/// entry for that reason).
 const MODELS_BASE_URL: &str = "https://github.com/beatform-app/models/releases/download/v1/";
-
-/// The upstream ggml conversions of OpenAI's weights, published by the
-/// whisper.cpp project. Hugging Face serves LFS files with Range support, and
-/// an LFS object's oid IS its SHA-256 — the pins below are those oids. The
-/// two large-v3 tiers (2026-10-13) fetch from here until the Beatform mirror
-/// carries them; switching is one constant per entry.
-const HF_WHISPER_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/";
 
 #[derive(Clone, Copy)]
 pub struct ModelSpec {
@@ -2145,9 +2143,6 @@ mod tests {
         ] {
             assert_eq!(spec_by_id(mirrored).unwrap().base_url, MODELS_BASE_URL);
         }
-        // Nothing is left on Hugging Face; the constant stays for the day a
-        // model outgrows the release again.
-        assert!(HF_WHISPER_BASE_URL.starts_with("https://huggingface.co/"));
     }
 
     #[test]
