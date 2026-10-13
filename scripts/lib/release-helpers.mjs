@@ -204,6 +204,22 @@ export function updaterKeyId(fileBase64) {
   return raw.subarray(2, 10).toString("hex");
 }
 
+/**
+ * The paths in `git status --porcelain` output, exactly as git names them:
+ * the two status columns and their separating blank stripped, a quoted
+ * path unquoted. Pass the RAW stdout — a trimmed string loses the first
+ * line's leading blank (an unstaged modification has a blank X column) and
+ * the path's first letter with it; that is how the 3.2.0 cut refused its
+ * own CHANGELOG.md as "HANGELOG.md". A rename line yields "old -> new",
+ * which no allow-list matches, so it is refused like any other stray.
+ */
+export function porcelainPaths(output) {
+  return output
+    .split(/\r?\n/)
+    .filter((l) => l.length > 3)
+    .map((l) => l.slice(3).replace(/^"|"$/g, ""));
+}
+
 export function remoteMismatches(head, { remoteMain, remoteTagTarget }, tag) {
   const problems = [];
   if (remoteMain !== head) {

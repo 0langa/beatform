@@ -5,12 +5,26 @@ import {
   parseLsRemoteTag,
   parseVerifiedVersion,
   pickReleaseRun,
+  porcelainPaths,
   releaseSubject,
   remoteMismatches,
   updaterKeyId,
   type CommitFacts,
   type WorkflowRun,
 } from "../../scripts/lib/release-helpers.mjs";
+
+describe("porcelainPaths", () => {
+  it("keeps the first line's path whole when its X column is blank (the 3.2.0 cut)", () => {
+    // Raw porcelain: an unstaged modification starts with a blank X column.
+    // Trimming the output first ate that blank and the path's first letter.
+    const raw = " M CHANGELOG.md\n M package.json\n?? new.txt\nA  src/x.ts\n";
+    expect(porcelainPaths(raw)).toEqual(["CHANGELOG.md", "package.json", "new.txt", "src/x.ts"]);
+    expect(porcelainPaths(raw.trim())).not.toContain("CHANGELOG.md");
+    expect(porcelainPaths("")).toEqual([]);
+    expect(porcelainPaths(' M "a b.md"\n')).toEqual(["a b.md"]);
+    expect(porcelainPaths("R  old.md -> new.md\n")).toEqual(["old.md -> new.md"]);
+  });
+});
 import { readFileSync } from "node:fs";
 
 describe("updaterKeyId", () => {

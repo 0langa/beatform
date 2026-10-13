@@ -67,6 +67,7 @@ import {
   parseLsRemoteTag,
   parseVerifiedVersion,
   pickReleaseRun,
+  porcelainPaths,
   releaseSubject,
   remoteMismatches,
   updaterKeyId,
@@ -413,11 +414,22 @@ const steps = {
       // clean-tree check ran BEFORE the changelog stop, so a scratch file
       // left in the tree while the notes were written must be refused here,
       // not swept into the tagged commit.
-      const stray = run("git", ["status", "--porcelain"], { capture: true })
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .map((l) => l.slice(3).trim().replace(/^"|"$/g, ""))
-        .filter((p) => !RELEASE_COMMIT_FILES.includes(p));
+      // RAW stdout, not run()'s captured-and-trimmed string: the first
+      // porcelain line starts with a blank X column, and trimming it took
+      // the path's first letter with it (the 3.2.0 cut refused its own
+      // CHANGELOG.md as "HANGELOG.md").
+      const status = spawnSync("git", ["status", "--porcelain"], {
+        cwd: root,
+        encoding: "utf8",
+        windowsHide: true,
+      });
+      if (status.error) throw status.error;
+      if (status.status !== 0) {
+        throw new Error(`git status --porcelain exited ${status.status}\n${status.stderr ?? ""}`);
+      }
+      const stray = porcelainPaths(status.stdout ?? "").filter(
+        (p) => !RELEASE_COMMIT_FILES.includes(p),
+      );
       if (stray.length) {
         throw new Error(
           `commit: the tree holds changes outside the release set — commit or remove them first:\n  ${stray.join("\n  ")}`,
