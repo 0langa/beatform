@@ -11,6 +11,8 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+## [3.2.1] - 2026-10-13
+
 - **ProRes, AV1 and GIF exports work again.** 3.2.0's staged export (the
   render goes to a `.partial` sibling and replaces the target only when it
   has finished) handed ffmpeg a file whose extension names no container,
@@ -3607,7 +3609,8 @@ Initial public release.
 - Onboarding UI, keyboard shortcuts, auto-hiding chrome.
 - Three synthesized demo tracks.
 
-[Unreleased]: https://github.com/0langa/beatform/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/0langa/beatform/compare/v3.2.1...HEAD
+[3.2.1]: https://github.com/0langa/beatform/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/0langa/beatform/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/0langa/beatform/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/0langa/beatform/compare/v2.113.0...v3.0.0
