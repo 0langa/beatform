@@ -197,6 +197,13 @@ fn prores_args(fps: u32, width: u32, height: u32, wav: &str, out: &str) -> Vec<S
         "-c:a",
         "pcm_s16le",
         "-shortest",
+        // The muxer, pinned: ffmpeg writes the `.partial` sibling (R2-02
+        // staging), whose extension names no container, and without this
+        // it refused the output at spawn ("Error opening output file") —
+        // 3.2.0 shipped exactly that. every_lane_opens_its_partial_output
+        // drives the real binary through this vector.
+        "-f",
+        "mov",
         out,
     ]
     .iter()
@@ -266,6 +273,9 @@ fn av1_args(fps: u32, width: u32, height: u32, wav: &str, out: &str) -> Vec<Stri
         "-movflags",
         "+faststart",
         "-shortest",
+        // Muxer pinned for the `.partial` sibling — see prores_args.
+        "-f",
+        "mp4",
         out,
     ]
     .iter()
@@ -297,6 +307,9 @@ fn anim_args(format: &str, fps: u32, out: &str) -> Vec<String> {
                 "[0:v]split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:alpha_threshold=128",
                 "-loop",
                 "0",
+                // Muxer pinned for the `.partial` sibling — see prores_args.
+                "-f",
+                "gif",
             ]
             .iter()
             .map(|s| s.to_string()),
@@ -307,8 +320,10 @@ fn anim_args(format: &str, fps: u32, out: &str) -> Vec<String> {
                 // extension and lands on the image2 family for .webp, which
                 // applies printf formatting to the filename: a save path
                 // containing a %d token wrote ONE frame to a renamed file
-                // instead of an animation. (.gif already resolves to the gif
-                // muxer, so only webp needs pinning.)
+                // instead of an animation. (Every lane pins its muxer now:
+                // ffmpeg writes the `.partial` sibling, whose extension names
+                // no container at all — see the gif branch above and
+                // every_lane_opens_its_partial_output.)
                 "-f",
                 "webp",
                 "-c:v",
@@ -1120,6 +1135,9 @@ mod tests {
                 "-c:a",
                 "pcm_s16le",
                 "-shortest",
+                // The `.partial` sibling has no container extension; pinned.
+                "-f",
+                "mov",
                 "C:/t/out.mov",
             ]
         );
@@ -1143,6 +1161,9 @@ mod tests {
                 "[0:v]split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:alpha_threshold=128",
                 "-loop",
                 "0",
+                // The `.partial` sibling has no container extension; pinned.
+                "-f",
+                "gif",
                 "C:/t/out.gif",
             ]
         );
@@ -1319,6 +1340,9 @@ mod tests {
                 "-movflags",
                 "+faststart",
                 "-shortest",
+                // The `.partial` sibling has no container extension; pinned.
+                "-f",
+                "mp4",
                 "C:/t/out.mp4",
             ]
         );
@@ -1830,5 +1854,100 @@ mod tests {
                 "C:/t/out.webp",
             ]
         );
+    }
+
+    /// Every lane must be able to OPEN the file it is told to write, and
+    /// since R2-02 staging that file is the `.partial` sibling, whose
+    /// extension names no container. 3.2.0 shipped ProRes, AV1 and GIF
+    /// vectors without a pinned muxer: ffmpeg died at spawn with "Error
+    /// opening output file x.mov.partial" and the app reported "ffmpeg pipe
+    /// write failed (os error 232)" — a contract the arg-vector tests above
+    /// cannot see. This drives the REAL bundled ffmpeg through each lane's
+    /// vector into a `.partial` path with a few synthetic frames.
+    #[test]
+    fn every_lane_opens_its_partial_output() {
+        let ffmpeg = ffmpeg_path().expect("ffmpeg sidecar — run scripts/fetch-ffmpeg.mjs");
+        let dir = std::env::temp_dir().join(format!("bf-partial-mux-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // 0.2 s of silence, 44.1 kHz stereo s16: the audio the video lanes take.
+        let wav = dir.join("tone.wav");
+        {
+            let data_len: u32 = 8_820 * 4;
+            let mut f = File::create(&wav).unwrap();
+            f.write_all(b"RIFF").unwrap();
+            f.write_all(&(36 + data_len).to_le_bytes()).unwrap();
+            f.write_all(b"WAVEfmt ").unwrap();
+            f.write_all(&16u32.to_le_bytes()).unwrap();
+            f.write_all(&1u16.to_le_bytes()).unwrap();
+            f.write_all(&2u16.to_le_bytes()).unwrap();
+            f.write_all(&44_100u32.to_le_bytes()).unwrap();
+            f.write_all(&(44_100u32 * 4).to_le_bytes()).unwrap();
+            f.write_all(&4u16.to_le_bytes()).unwrap();
+            f.write_all(&16u16.to_le_bytes()).unwrap();
+            f.write_all(b"data").unwrap();
+            f.write_all(&data_len.to_le_bytes()).unwrap();
+            f.write_all(&vec![0u8; data_len as usize]).unwrap();
+        }
+        // Two PNG frames for the image2pipe lanes, made by the same binary.
+        let png = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:s=64x64:r=10:d=0.2",
+                "-f",
+                "image2pipe",
+                "-c:v",
+                "png",
+                "-",
+            ])
+            .stderr(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(png.status.success() && !png.stdout.is_empty(), "png frames");
+        let raw = vec![0u8; 64 * 64 * 8 * 2]; // two rgba64le frames
+        let wav_s = wav.to_string_lossy().to_string();
+        let partial = |name: &str| crate::partial_sibling(&dir.join(name).to_string_lossy());
+        let lanes: Vec<(&str, Vec<String>, &[u8])> = vec![
+            (
+                "prores",
+                prores_args(10, 64, 64, &wav_s, &partial("a.mov")),
+                &raw,
+            ),
+            ("av1", av1_args(10, 64, 64, &wav_s, &partial("b.mp4")), &raw),
+            ("gif", anim_args("gif", 10, &partial("c.gif")), &png.stdout),
+            (
+                "webp",
+                anim_args("webp", 10, &partial("d.webp")),
+                &png.stdout,
+            ),
+        ];
+        for (lane, args, input) in lanes {
+            let out = args.last().unwrap().clone();
+            assert!(out.ends_with(".partial"), "{lane}: {out}");
+            // stderr to a file, never a pipe: SVT-AV1's banner alone would
+            // fill a pipe nobody drains while this thread blocks on stdin.
+            let log = dir.join(format!("{lane}.log"));
+            let mut child = std::process::Command::new(&ffmpeg)
+                .args(&args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::from(File::create(&log).unwrap()))
+                .spawn()
+                .unwrap();
+            child.stdin.take().unwrap().write_all(input).unwrap();
+            let status = child.wait().unwrap();
+            let text = std::fs::read_to_string(&log).unwrap_or_default();
+            assert!(
+                status.success(),
+                "{lane}: ffmpeg exited {:?}\n{text}",
+                status.code()
+            );
+            let bytes = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
+            assert!(bytes > 0, "{lane}: {out} is empty\n{text}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

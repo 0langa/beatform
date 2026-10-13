@@ -11,6 +11,16 @@ Releases — there is no paid tier, cloud service, or telemetry.
 
 ## [Unreleased]
 
+- **ProRes, AV1 and GIF exports work again.** 3.2.0's staged export (the
+  render goes to a `.partial` sibling and replaces the target only when it
+  has finished) handed ffmpeg a file whose extension names no container,
+  and ffmpeg refused to open it: those three lanes failed at once with
+  "ffmpeg pipe write failed", while WebP, whose muxer was already pinned,
+  kept working. Every lane now names its container explicitly, and a test
+  drives the real bundled ffmpeg through each lane's exact arguments into a
+  `.partial` path, so the arguments and the file name can no longer drift
+  apart unnoticed.
+
 ## [3.2.0] - 2026-10-13
 
 - **Every visual gets the same finishing knobs.** The modes were unequally
