@@ -4,6 +4,7 @@
 //! sustained CPU (adjustment 2) — with silent-but-reported CPU fallback.
 
 use crate::stft::{self, MdxStft};
+use ort::environment::Environment;
 use ort::session::Session;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,13 +28,12 @@ impl GpuMode {
 }
 
 /// Load the pinned onnxruntime.dll. Must run before any session is built.
-pub fn init_runtime(dylib: &Path) -> Result<(), String> {
+pub fn init_runtime(dylib: &Path) -> Result<Environment, String> {
     let builder = ort::init_from(dylib)
         .map_err(|e| format!("could not load onnxruntime at {}: {e}", dylib.display()))?;
-    // commit() returns false only when an environment was already committed,
-    // which cannot happen in this single-init binary.
-    builder.commit();
-    Ok(())
+    builder
+        .build()
+        .map_err(|e| format!("could not initialize onnxruntime: {e}"))
 }
 
 /// Planar stereo stem, (left, right).
@@ -50,9 +50,14 @@ impl Mdx {
     /// Build the isolation session. `Auto`/`Dml` try DirectML with
     /// error-on-failure so the fallback is DETECTED, not silent — the UI's
     /// time estimate differs 4–5x between the two and must not guess.
-    pub fn create(model: &Path, gpu: GpuMode, threads: usize) -> Result<Self, String> {
+    pub fn create(
+        env: &Environment,
+        model: &Path,
+        gpu: GpuMode,
+        threads: usize,
+    ) -> Result<Self, String> {
         if gpu != GpuMode::Cpu {
-            match Self::build(model, true, threads) {
+            match Self::build(env, model, true, threads) {
                 Ok(s) => return Ok(s),
                 Err(e) => {
                     if gpu == GpuMode::Dml {
@@ -62,11 +67,11 @@ impl Mdx {
                 }
             }
         }
-        Self::build(model, false, threads)
+        Self::build(env, model, false, threads)
     }
 
-    fn build(model: &Path, dml: bool, threads: usize) -> Result<Self, String> {
-        let mut builder = Session::builder().map_err(|e| e.to_string())?;
+    fn build(env: &Environment, model: &Path, dml: bool, threads: usize) -> Result<Self, String> {
+        let mut builder = Session::builder(env).map_err(|e| e.to_string())?;
         if dml {
             builder = builder
                 .with_execution_providers([ort::ep::DirectML::default().build().error_on_failure()])
@@ -152,5 +157,5 @@ impl Mdx {
 /// time estimates before any download.
 pub fn probe_dml() -> bool {
     use ort::ep::ExecutionProvider;
-    ort::ep::DirectML::default().is_available().unwrap_or(false)
+    ort::ep::DirectML::is_available().unwrap_or(false)
 }

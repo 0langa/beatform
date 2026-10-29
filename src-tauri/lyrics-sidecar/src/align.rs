@@ -377,9 +377,14 @@ pub struct Aligner {
 impl Aligner {
     /// CPU EP deliberately — the spike measured wav2vec2 via DirectML 4x
     /// SLOWER than CPU on the reference iGPU (REPORT adjustment 2).
-    pub fn create(model: &Path, vocab_path: &Path, threads: usize) -> Result<Self, String> {
+    pub fn create(
+        env: &ort::environment::Environment,
+        model: &Path,
+        vocab_path: &Path,
+        threads: usize,
+    ) -> Result<Self, String> {
         let vocab = Vocab::load(vocab_path)?;
-        let mut builder = Session::builder().map_err(|e| e.to_string())?;
+        let mut builder = Session::builder(env).map_err(|e| e.to_string())?;
         if threads > 0 {
             builder = builder
                 .with_intra_threads(threads)

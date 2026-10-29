@@ -354,9 +354,10 @@ fn main() {
     };
     match mode {
         Mode::ProbeGpu { ort_dylib } => {
-            if let Err(e) = mdx::init_runtime(&ort_dylib) {
-                fail(&e);
-            }
+            let _env = match mdx::init_runtime(&ort_dylib) {
+                Ok(env) => env,
+                Err(e) => fail(&e),
+            };
             emit(&Event::Probe {
                 dml: mdx::probe_dml(),
             });
@@ -398,10 +399,11 @@ fn run_align_line(args: AlignLineArgs) {
         cancelled_exit();
     }
 
-    if let Err(e) = mdx::init_runtime(&args.ort_dylib) {
-        fail(&e);
-    }
-    let mut session = match mdx::Mdx::create(&args.mdx_model, args.gpu, args.threads) {
+    let env = match mdx::init_runtime(&args.ort_dylib) {
+        Ok(env) => env,
+        Err(e) => fail(&e),
+    };
+    let mut session = match mdx::Mdx::create(&env, &args.mdx_model, args.gpu, args.threads) {
         Ok(s) => s,
         Err(e) => fail(&e),
     };
@@ -431,7 +433,7 @@ fn run_align_line(args: AlignLineArgs) {
     }
 
     let mut aligner =
-        match align::Aligner::create(&args.align_model, &args.align_vocab, args.threads) {
+        match align::Aligner::create(&env, &args.align_model, &args.align_vocab, args.threads) {
             Ok(a) => a,
             Err(e) => fail(&e),
         };
@@ -496,10 +498,11 @@ fn run(args: Args) {
     }
 
     // ---- isolate -------------------------------------------------------
-    if let Err(e) = mdx::init_runtime(&args.ort_dylib) {
-        fail(&e);
-    }
-    let mut session = match mdx::Mdx::create(&args.mdx_model, args.gpu, args.threads) {
+    let env = match mdx::init_runtime(&args.ort_dylib) {
+        Ok(env) => env,
+        Err(e) => fail(&e),
+    };
+    let mut session = match mdx::Mdx::create(&env, &args.mdx_model, args.gpu, args.threads) {
         Ok(s) => s,
         Err(e) => fail(&e),
     };
@@ -634,6 +637,7 @@ fn run(args: Args) {
 
     // ---- align (phase 3 — only when the model was provided) ------------
     let align_summary = align_stage(
+        &env,
         &args,
         &stem16,
         &mut assembled,
@@ -700,6 +704,7 @@ fn run(args: Args) {
 /// the job to line-level with a diagnostic — the transcript still ships.
 /// Only cancellation exits.
 fn align_stage(
+    env: &ort::environment::Environment,
     args: &Args,
     stem16: &[f32],
     assembled: &mut Vec<lines::Line>,
@@ -717,7 +722,7 @@ fn align_stage(
         rtf: None,
     });
     let t0 = Instant::now();
-    let mut aligner = match align::Aligner::create(model, vocab, args.threads) {
+    let mut aligner = match align::Aligner::create(env, model, vocab, args.threads) {
         Ok(a) => a,
         Err(e) => {
             eprintln!("[lyrics-sidecar] alignment unavailable: {e}");
