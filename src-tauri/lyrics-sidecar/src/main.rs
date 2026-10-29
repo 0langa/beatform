@@ -363,22 +363,15 @@ fn main() {
             });
             hard_exit(0);
         }
-        Mode::AlignLine(args) => {
-            run_align_line(*args);
-            hard_exit(0);
-        }
-        Mode::Run(args) => {
-            run(*args);
-            // run() emitted the result; never fall into DLL teardown.
-            hard_exit(0);
-        }
+        Mode::AlignLine(args) => run_align_line(*args),
+        Mode::Run(args) => run(*args),
     }
 }
 
 /// `--align-line`: decode the slice, isolate its vocal, re-align the given
 /// text against it, emit ONE AlignedLine event. Times stay slice-relative —
 /// the app knows where the slice sits in the track; this process never does.
-fn run_align_line(args: AlignLineArgs) {
+fn run_align_line(args: AlignLineArgs) -> ! {
     let cancel = Arc::new(Canceller {
         flag: AtomicBool::new(false),
         child: Mutex::new(None),
@@ -460,9 +453,11 @@ fn run_align_line(args: AlignLineArgs) {
         }
         Err(e) => fail(&format!("could not align this line: {e}")),
     }
+    // Keep the explicit ORT environment alive until process termination.
+    hard_exit(0);
 }
 
-fn run(args: Args) {
+fn run(args: Args) -> ! {
     let cancel = Arc::new(Canceller {
         flag: AtomicBool::new(false),
         child: Mutex::new(None),
@@ -697,6 +692,8 @@ fn run(args: Args) {
         line_details: line_details.as_deref(),
     });
     remove_temps();
+    // Returning would drop the explicit ORT environment before hard_exit.
+    hard_exit(0);
 }
 
 /// Run the forced-alignment stage when requested. Alignment is an
