@@ -19,7 +19,7 @@ serde_json = "1"
 # third-party-compiled binaries; api-22 = bind the ONNX Runtime 1.22 API that
 # matches that dylib. directml = the EP the spike measured 4-5x faster than
 # sustained CPU on the reference Iris Xe (REPORT.md adjustment 2).
-ort = { version = "=2.0.0-rc.13", default-features = false, features = [
+ort = { version = "=2.0.0-rc.15", default-features = false, features = [
   "std",
   "load-dynamic",
   "directml",
