@@ -1042,8 +1042,8 @@ button:disabled {
 
 /* ---------- shader editor ---------- */
 
-/* Width comes from the `modal-lg` step in the modals section — this block only
-   owns what is peculiar to the shader editor. */
+/* Width comes from `.modal.wide` / `.modal.shader-editor` in the modals
+   section — this block only owns what is peculiar to the shader editor. */
 .modal.shader-editor {
   gap: 9px;
 }
@@ -2337,30 +2337,13 @@ button.row-value:focus-visible {
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
 }
 
-/* Size variants (P-10). The 380px base is a one-column form, so every dialog
-   that was anything else had to escape it with a width of its own, and the
-   number got restated per dialog — `.wide` and `.shader-editor` BOTH said
-   720px, and ShaderEditor wears both at once. Three steps, declared once; new
-   dialogs pick one instead of inventing a fourth number.
-
-   `.wide` and `.shader-editor` are the pre-variant spellings of `modal-lg` and
-   select the same rule rather than repeating it. They keep their class names:
-   the markup lives in files this change does not own, and the rename buys
-   nothing the shared declaration has not already bought.
+/* `.wide` and `.shader-editor` share 720px (the shader editor wears both).
+   The 380px base on `.modal` is the one-column form.
 
    NOT every dialog belongs here. `.gallery-dialog` and `.guide-dialog` are
    rooms, not forms — viewport-relative width AND height, their own padding and
-   an internal flex column — so a width variant would describe about a third of
+   an internal flex column — so a shared width would describe about a third of
    what they are. They stay as they are; see their own blocks. */
-.modal.modal-sm {
-  width: 380px;
-}
-
-.modal.modal-md {
-  width: 560px;
-}
-
-.modal.modal-lg,
 .modal.wide,
 .modal.shader-editor {
   width: 720px;
@@ -4058,9 +4041,9 @@ kbd {
 
 /* ---------- batch queue ---------- */
 
-/* The batch queue's modifier is `.wide`, which is now an alias of the
-   `modal-lg` size step (see the modals section) — a track table with editable
-   titles needs the room, and the number lives in one place. */
+/* The batch queue's modifier is `.wide` (720px, shared with `.shader-editor`
+   in the modals section) — a track table with editable titles needs the room,
+   and the number lives in one place. */
 
 .batch-list {
   max-height: 46vh;
