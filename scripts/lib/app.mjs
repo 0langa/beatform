@@ -10,7 +10,6 @@
 //   9220   midi-probe.mjs
 //   9300   wave-shots.mjs             (historical base, kept)
 //   9380   midi-e2e.mjs
-//   9460   v268-visual-check.mjs
 //   9600   gallery-e2e.mjs            (historical)
 //   9700   gallery-seed-shots.mjs     (historical)
 //   9800   shadertoy-smoke.mjs        (historical)
@@ -22,9 +21,7 @@
 //   10300  gallery-builtin-shots.mjs   (CDP debug port only — Vite itself
 //                                       runs on :1427, --strictPort, a
 //                                       separate port this harness owns)
-//   10380  segment-parity-probe.mjs    (moved off 10220 — three scripts had
-//                                       independently claimed it)
-//   10460  deepcolor-verify.mjs --prores  (same collision, same move)
+//   10460  deepcolor-verify.mjs --prores
 //   10540  dock-device-pass.mjs
 //   10620  second-display-pass.mjs    (TESTING.md A2, the automatable half)
 //   10700  preset-frames.mjs          (PNG frames of a preset at given params)
@@ -76,15 +73,14 @@ export function harnessPort(base) {
 // retry exactly like the old probe intended.
 
 // STALE DEV SERVER (G9): no harness starts Vite — they spawn the debug shell,
-// which loads the `devUrl` baked into tauri.conf.json. On this machine
-// `host: false` makes Vite listen on `localhost`, and `localhost` resolves to
-// `[::1]` BEFORE `127.0.0.1` — so a leftover dev server can hold `[::1]:1420`
-// while a fresh one binds `127.0.0.1:1420` without either noticing. The app
-// then loads someone else's tree and the harness dies on its first eval with
-// "Cannot find execution context", which names nothing. The probe below
-// stamps whatever answers that URL against THIS checkout before the first
-// eval can lie about the cause. The dual-stack incantations are in GATES.md
-// §3: `npm run dev -- --host`, or `TAURI_DEV_HOST=127.0.0.1 npm run dev`.
+// which loads the `devUrl` baked into tauri.conf.json
+// (http://localhost:1420). vite.config.ts binds 127.0.0.1, so plain
+// `npm run dev` is the server these harnesses load. `localhost` is still both
+// address families, and a leftover server on the other family can answer the
+// same URL: the app then loads someone else's tree and the harness dies on
+// its first eval with "Cannot find execution context", which names nothing.
+// The probe below stamps whatever answers that URL against THIS checkout —
+// both 127.0.0.1 and [::1] — before the first eval can lie about the cause.
 
 /** `public/icon.svg` is the stamp: index.html links it, so it cannot silently
  * disappear, and Vite serves publicDir files VERBATIM from the server's OWN
@@ -170,7 +166,7 @@ async function probeDevServer(root, devUrl, timeoutMs) {
     throw new Error(
       `no dev server answered ${devUrl} (tried ${probeOrigins(devUrl).join(", ")}) — the debug ` +
         `shell loads that URL and will render nothing. Start Vite first:\n` +
-        `  npm run dev -- --host`,
+        `  npm run dev`,
     );
   }
   const wrong = answered.filter((a) => !a.ours);
@@ -181,9 +177,7 @@ async function probeDevServer(root, devUrl, timeoutMs) {
       `  ${wrong[0].origin} served ${url} from another tree` +
       (who ? ` (rooted at ${who})` : "") +
       `\n  this harness is ${root}\n` +
-      `  Kill it and serve THIS tree instead. Two dev servers coexist on one ` +
-      `port here — plain \`npm run dev\` listens on [::1] only — so start it ` +
-      `dual-stack: npm run dev -- --host   (GATES.md §3)`,
+      `  Kill it and serve THIS tree instead (\`npm run dev\`).`,
   );
 }
 
