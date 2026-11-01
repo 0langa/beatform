@@ -39,7 +39,7 @@ import { presets } from "../render/presets";
 const RUNS = { numRuns: 300, seed: 0x2f8a_11c3 };
 
 /**
- * Explicit 30 s budget on every describe below, per GATES.md §1 — on the
+ * Explicit 30 s budget on every describe below — on the
  * describe, never on individual `it`s, so no test is left on vitest's 5 s
  * per-test default. Each property here drives its 300 fast-check cases
  * through the real parsers and validators, and on a genuine failure

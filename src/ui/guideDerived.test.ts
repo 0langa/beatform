@@ -29,7 +29,7 @@ describe("derivedTables", () => {
   });
 
   it("carries the two H7a facts (Drive, Drive pulse) — asserted by id read FROM MOD_SOURCES, never hardcoded", () => {
-    // BACKLOG.md H7a: "Missing from BOTH (2, found in the code): Drive and
+    // "Missing from BOTH (2, found in the code): Drive and
     // Drive pulse, the first two entries of MOD_SOURCES" — the exact
     // regression a hand-copied list could reintroduce. Reading the ids from
     // MOD_SOURCES itself (rather than typing literal id strings here) means

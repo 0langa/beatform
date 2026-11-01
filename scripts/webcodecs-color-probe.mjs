@@ -21,8 +21,8 @@
 //   node scripts/webcodecs-color-probe.mjs --out=<devstorage artifacts dir>
 //
 // Prereq: Vite dev server on 127.0.0.1:1420 and a built debug shell
-// (src-tauri/target/debug/beatform.exe). Not a gate (GATES.md §3 lists it
-// under probe harnesses) until it earns a table row; exit 1 on a finding.
+// (src-tauri/target/debug/beatform.exe). Not a gate until it earns a table
+// row; exit 1 on a finding.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
 import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";

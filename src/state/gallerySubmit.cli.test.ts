@@ -29,8 +29,8 @@ import { FACTORY_THEMES } from "./factoryThemes";
  *
  * Each case boots a real Vite SSR module runner in a child process, which
  * costs real wall-clock time (observed ~1-2s per invocation) — hence the
- * describe-level budget, the same SUITE idiom GATES.md documents for the
- * audio suites (realtimeSource.test.ts, dspCharacterization.test.ts, etc.).
+ * describe-level budget, the same SUITE idiom the audio suites use
+ * (realtimeSource.test.ts, dspCharacterization.test.ts, etc.).
  */
 const SUITE = { timeout: 30_000 };
 

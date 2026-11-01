@@ -69,7 +69,7 @@ function finalLufs(pcm: PcmData): number {
  * full-suite run but 1.6 s with the pool oversubscribed 2:1. Nothing in the
  * file asserts wall-clock timing (the analyzer's clock is its frame index), so
  * the default timeout was its only load-sensitive failure mode. Same remedy as
- * `dspCharacterization.test.ts`; see GATES.md §1.
+ * `dspCharacterization.test.ts`.
  */
 describe("OfflineAnalyzer", { timeout: 30_000 }, () => {
   it("computes the expected frame count", () => {

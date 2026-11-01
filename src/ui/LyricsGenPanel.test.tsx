@@ -106,7 +106,7 @@ const allButtons = (container: HTMLElement, name: RegExp) =>
   ) as HTMLButtonElement[];
 
 /**
- * Budget on the describe, not the `it`s (GATES.md §1): every case mounts the
+ * Budget on the describe, not the `it`s: every case mounts the
  * real panel against the real store (`mount` calls `render()`), and the first
  * one pays the whole subtree's cold render. The full-suite run saw exactly
  * this case cross vitest's 5 s default under parallel-worker contention — the

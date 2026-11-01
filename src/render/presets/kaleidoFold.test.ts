@@ -68,8 +68,7 @@ const kaleidoSrc = /fn kaleido\(p: vec2f, segments: f32\) -> vec2f \{([\s\S]*?)\
  * case below lifts a `let` chain out of the shipped WGSL and compiles it with
  * `new Function()`, several sweeping it across a whole spectrum or waveform
  * range — the whole-branch review saw exactly this suite time out under
- * parallel-worker contention. Same remedy as `engineGraph.test.ts`; see
- * GATES.md §1.
+ * parallel-worker contention. Same remedy as `engineGraph.test.ts`.
  */
 describe("the shared fold this file composes against", { timeout: 30_000 }, () => {
   it("still has the shape the shims below reconstruct", () => {

@@ -72,9 +72,7 @@ export interface SliceCtx {
    * longer land while bootDesktopDocument's anti-clobber guard (and the
    * quarantine-aside it performs on refusal) is still deciding what "the
    * document" even is. See store.ts's own comment above the module-scope
-   * declaration for the full mechanism and
-   * .superpowers-repro/e2-deepstate-findings.md (E2-D1) for the bug this
-   * closes.
+   * declaration for the full mechanism and the bug this closes.
    */
   beginBootRead: () => void;
   endBootRead: () => void;

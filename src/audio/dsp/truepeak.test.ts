@@ -66,7 +66,7 @@ function limitAll(
  * normal full-suite run against 1.3 s with the pool oversubscribed 2:1. The
  * per-sample form is the point (a limiter that shifts the signal by one sample
  * has to fail here), so the budget is what gives way. Same remedy as
- * `dspCharacterization.test.ts`; see GATES.md §1.
+ * `dspCharacterization.test.ts`.
  */
 const SUITE = { timeout: 30_000 };
 

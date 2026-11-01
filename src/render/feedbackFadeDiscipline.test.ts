@@ -9,8 +9,7 @@ import { WebGPURenderer } from "./webgpuRenderer";
 
 /**
  * F3 — "the live timeline crossfade poisons the alpha data lane for every
- * feedback preset" (filed in BACKLOG.md's 2.103.0 entry by the Overgrowth
- * adversarial review).
+ * feedback preset" (Overgrowth adversarial review, 2.103.0).
  *
  * The contract under pin: feedback HISTORY only ever stores RAW preset
  * output. `composite()` replaces the alpha lane in every branch (forced 1.0

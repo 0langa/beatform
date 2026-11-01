@@ -196,10 +196,10 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
 
     /**
      * P-11: the desktop boot chokepoint. The synchronous initial state (built
-     * at module scope in store.ts from the 17 localStorage document keys —
-     * see .superpowers/p11-lane-log.md's Task 1 map) is already on screen by
-     * the time this runs; it is now ONLY the fallback this function falls
-     * back to, never the thing a user is meant to keep looking at. Runs once,
+     * at module scope in store.ts from the 17 localStorage document keys) is
+     * already on screen by the time this runs; it is now ONLY the fallback this
+     * function falls back to, never the thing a user is meant to keep looking
+     * at. Runs once,
      * unconditionally, every desktop launch — not gated on "did we crash"
      * the way the old `checkAutosaveRecovery` was, because the autosave file
      * is simply the document now, not a special crash artifact.
@@ -351,8 +351,7 @@ export function projectIOActions(set: SetFn, get: GetFn, ctx: SliceCtx) {
                   // Best-effort (quarantineSupersededAutosave never
                   // throws): a failed write here must not be what breaks
                   // boot, same standard as the corrupt-file quarantine
-                  // above. See .superpowers-repro/e2-deepstate-findings.md
-                  // (E2-D1).
+                  // above.
                   const quarantined = await quarantineSupersededAutosave(contents);
                   // I1 fix (review round): UNCONDITIONAL — a silent failure
                   // here would mean the gated write this same refusal is

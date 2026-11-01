@@ -10,8 +10,7 @@ import { PREFS_TABS } from "./SettingsDialog";
  * the Preferences tab strip. Nothing here re-types content — every field is
  * the source registry itself (or a string built straight from it), so a row
  * added to SHORTCUT_SHEET/MOD_SOURCES/PREFS_TABS shows up in the guide with
- * no second edit and no way to fall behind (this is P-21's whole point,
- * closing BACKLOG.md's H7a).
+ * no second edit and no way to fall behind (this is P-21's whole point).
  */
 export interface DerivedTables {
   shortcutSheet: typeof SHORTCUT_SHEET;

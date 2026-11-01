@@ -505,14 +505,6 @@ export function ParamsPanel() {
   // render. The shared derivations live in state/selectors.ts; lint blocks
   // the allocating shapes at author time.
   const preset = useVizStore(selectPreset);
-  /* TOMBSTONE (G4, this release) — `const params = useVizStore(s =>
-   * s.activeParams)` lived here, and it is why dragging one slider reconciled
-   * the whole dock: setParam writes a fresh activeParams object on every
-   * pointermove. Rows read their own value now (<ParamSlot>, ParamGroups.tsx).
-   * The two things up HERE that genuinely depend on param values subscribe
-   * DERIVED SCALARS instead — see changedCount and activeStyleId below — so
-   * this panel re-renders when what it displays changes, not when a number it
-   * only passed through does. Never re-add a whole-object subscription here. */
   const bg = useVizStore(selectEffectiveBg);
   const bgPerMode = useVizStore(selectBgPerMode);
   const centerImageName = useVizStore(selectCenterImageName);
