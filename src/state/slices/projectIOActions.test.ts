@@ -6,10 +6,9 @@ import { presetById } from "../../render/presets";
 
 /**
  * P-11 Task 2 — the boot chokepoint switch: desktop boot now prefers the
- * atomic autosave `.bfproj` over the localStorage document cache. See
- * .superpowers/p11-lane-log.md for the full design (the sync-init/async-read
- * seam, the undoDepth===0 anti-clobber guard, and why this replaces
- * `checkAutosaveRecovery` rather than sitting alongside it).
+ * atomic autosave `.bfproj` over the localStorage document cache (the
+ * sync-init/async-read seam, the undoDepth===0 anti-clobber guard, and why
+ * this replaces `checkAutosaveRecovery` rather than sitting alongside it).
  *
  * `initApp` is never called here, so `liveCanvas`/`renderer` stay null and
  * `applyDocument`'s renderer-facing calls all take their `getRenderer() ??`
@@ -746,7 +745,7 @@ describe("D1 fix — GATE AUTOSAVE ON BOOT SETTLEMENT + QUARANTINE-ASIDE ON REFU
   });
 });
 
-describe("E2-D2 fix — an in-place custom-shader re-save must be undoable (.superpowers-repro/e2-deepstate-findings.md)", () => {
+describe("E2-D2 fix — an in-place custom-shader re-save must be undoable", () => {
   // saveCustomPreset (customShaderActions.ts) used to mutate customDefs via a
   // bare set() before any record() — by the time switchPreset()'s own
   // record("preset") ran, the edit was already baked into the "before"

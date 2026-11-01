@@ -151,7 +151,7 @@ async function waitUntil(cond: () => boolean, ms = 5000): Promise<void> {
   }
 }
 
-/** TIMEOUTS: real timers over real stalls; see GATES.md §1. */
+/** TIMEOUTS: real timers over real stalls. */
 describe("export liveness pulse (E4a)", { timeout: 30_000 }, () => {
   beforeEach(() => {
     vi.stubGlobal(

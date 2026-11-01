@@ -797,7 +797,7 @@ interface Actions {
   ): void;
   /**
    * P-11: the desktop boot chokepoint — see projectIOActions.ts's own doc
-   * comment and .superpowers/p11-lane-log.md for the full design.
+   * comment for the full design.
    *
    * Final review round, item 2: returns `null` SYNCHRONOUSLY, not a
    * Promise, when this particular call is not the owner (isTauri() false,
@@ -1017,10 +1017,9 @@ const EXPORT_TEARDOWN_TIMEOUT_MS = 2000;
  * to apply it over the fresh edit, but the armed autosave then went on to
  * serialize the stale-base document straight over the newer file the guard
  * had just refused to touch — a *legitimately successful* write of the
- * wrong content, no error, no quarantine, nothing to notice. See
- * .superpowers-repro/e2-deepstate-findings.md (E2-D1) for the full trace,
- * including the no-edit variant (closing the window mid-read has the same
- * effect via `flushAutosave`, with no edit needed at all).
+ * wrong content, no error, no quarantine, nothing to notice, including the
+ * no-edit variant (closing the window mid-read has the same effect via
+ * `flushAutosave`, with no edit needed at all).
  *
  * The fix: every write-back through `runScheduledAutosaveWrite`
  * (`flushAutosave` funnels through the same function) waits for the boot

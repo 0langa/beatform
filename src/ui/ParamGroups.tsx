@@ -146,14 +146,6 @@ export interface ParamGroupExtra {
 
 export interface ParamGroupsProps {
   preset: PresetDef;
-  /* TOMBSTONE (G3/G4, this release) — `params: ParamValues`, `onParam` and
-   * `onHint` lived here. All three were pointer-rate channels routed through
-   * the caller, which is what made a drag (`onParam`) and a hover (`onHint`)
-   * reconcile the whole ~2,000-line dock. Values are now read per ROW straight
-   * off the store (see <ParamSlot> below) and hints go to the kit's hint
-   * channel, so neither passes through ParamsPanel at all. `driven` and
-   * `collapsed` stay props: both change at DOCUMENT rate, and keeping them
-   * here is what lets one subscription serve every row. */
   /**
    * Group ids whose expert tier is OPEN. Empty = every tier closed.
    *
@@ -164,12 +156,6 @@ export interface ParamGroupsProps {
   advancedGroups: readonly string[];
   /** Reports the BARE group id; the caller owns persistence. */
   onToggleAdvanced: (groupId: string, open: boolean) => void;
-  /* TOMBSTONE (P-9, v2.82.0) — a `showAdvanced?: boolean` prop lived here for
-   * one wave, mapping the retired global Essentials/All switch onto "every
-   * tier open" so this file could land before ParamsPanel was rewritten. Both
-   * the switch and that call site are gone; opening every tier at once is now
-   * ParamsPanel's "Show every control", which writes every group id into
-   * `advancedGroups` rather than bypassing it. */
 
   /**
    * Param keys something ELSE is moving right now — a modulation route or a
@@ -223,82 +209,6 @@ export function ParamGroups(props: ParamGroupsProps) {
     : all;
 
   const extras = (props.extras ?? []).filter((e) => !searching || e.search.includes(query));
-  /**
-   * ── FROZEN SPEC: how a page declares a group subset ────────────────────────
-   * Not implemented in 2.82.0 — there is no consumer, and an orphan surface is
-   * a defect here (see the .builder-factory-chips note in App.css). When the
-   * first real carve-out page exists, copy this EXACTLY. Two rules are binding.
-   *
-   * RULE 1 — filter the RESOLVED views, never the ParamSpec[].
-   *   types.ts:339 is the ONLY place that resolves an absent/unknown `group` to
-   *   FALLBACK_GROUP ("more"), and custom.ts:60-68 rebuilds every imported
-   *   ParamSpec WITHOUT `group`. Filtering specs therefore strands 100% of every
-   *   custom shader and every imported Shadertoy visual, and forces the caller to
-   *   re-implement the fallback — the exact duplication the group model prevents.
-   *
-   * RULE 2 — the catch-all page is the COMPLEMENT, never an allow-list.
-   *   The id space is open: 8 shared PARAM_GROUPS ids, "more", and preset-declared
-   *   groups (classic `builder` declares ten). One constant, two consumers:
-   *     const CARVED_GROUPS = ["color"] as const;              // page A
-   *     <ParamGroups groups={{ only:   CARVED_GROUPS }} />     // the carve-out
-   *     <ParamGroups groups={{ except: CARVED_GROUPS }} />     // Mode, always
-   *   With an allow-list, a new PARAM_GROUPS entry becomes silently unreachable.
-   *
-   * ── src/render/types.ts ────────────────────────────────────────────────────
-   * export type GroupFilter =
-   *   | { only: readonly string[] }
-   *   | { except: readonly string[] };
-   *
-   * export function filterGroupViews(
-   *   views: ParamGroupView[],
-   *   filter?: GroupFilter,
-   * ): ParamGroupView[] {
-   *   if (!filter) return views;
-   *   return "only" in filter
-   *     ? views.filter((v) => filter.only.includes(v.group.id))
-   *     : views.filter((v) => !filter.except.includes(v.group.id));
-   * }
-   *
-   * ── src/ui/ParamGroups.tsx ─────────────────────────────────────────────────
-   *   groups?: GroupFilter;   // in ParamGroupsProps; omitted = every group
-   *
-   *   // applied to BOTH the views and the extras, before the empty-group
-   *   // re-insert loop (or an extra re-inserts a group this page excluded):
-   *   const inPage = (id: string) =>
-   *     !props.groups ||
-   *     ("only" in props.groups
-   *       ? props.groups.only.includes(id)
-   *       : !props.groups.except.includes(id));
-   *   const extras = (props.extras ?? [])
-   *     .filter((e) => inPage(e.group))
-   *     .filter((e) => !searching || e.search.includes(query));
-   *   const shown = filterGroupViews(groupParams(preset, visible), props.groups);
-   *
-   * ── THREE THINGS THAT BREAK IF THE CALLER FORGETS THEM ─────────────────────
-   * 1. SEARCH BLOBS. ParamsPanel.tsx:2175 filters SECTIONS by s.search.includes(q)
-   *    while ParamGroups filters ROWS. They agree today only because ParamGroups
-   *    renders every group. Each new page's SectionDef.search must be derived from
-   *    ITS OWN subset (groupParams -> paramSearchText per member) and the Mode blob
-   *    must LOSE the text of the groups it no longer renders. Subsets are disjoint,
-   *    so every row still matches exactly once. Do NOT "fix" this by making
-   *    ParamGroups ignore the subset while searching — that duplicates every hit
-   *    once per page section.
-   * 2. EMPTY PAGES. ParamGroups returns null when nothing is shown, but
-   *    ParamsPanel's "Nothing here for X." only fires when visibleSections.length
-   *    === 0 — a section whose BODY renders null still counts as visible and leaves
-   *    a bare PageSection header. Exclude the SectionDef from the array when its
-   *    subset is empty for the active preset. Measured absences: `camera` missing
-   *    from 15 of 17 presets, `image` from 11, `motion` from spectrum-scape.
-   * 3. A NEW RAIL ID IS A PERSISTED VALUE. It must be added to BOTH the
-   *    `visualsPage` union (prefs.ts:76) AND the runtime oneOf list
-   *    (prefs.ts:239-250). Editing only the type gives green typecheck, green
-   *    lint, green tests, and a page that silently never persists. And note the
-   *    non-obvious default: an invalid visualsPage does NOT fall back to "mode",
-   *    it falls back to TAB_TO_PAGE[paramsTab] — removing an id later needs an
-   *    explicit RETIRED_PAGE remap consulted BEFORE oneOf, plus a seeded-storage
-   *    test. Never rename a page id in place.
-   * ──────────────────────────────────────────────────────────────────────────
-   */
   const shown = groupParams(preset, visible);
   // An extra whose group ended up with no visible rows still has to render —
   // groupParams drops empty groups. Only reachable while searching now; kept,

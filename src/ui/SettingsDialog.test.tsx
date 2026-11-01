@@ -90,7 +90,7 @@ function stagedUpdate(version: string): Update {
  * machine (openUpdatesTab/renderProbe both call `render()`), one driving
  * async `waitFor` on top — the whole-branch review saw exactly this suite
  * time out under parallel-worker contention. Same remedy as
- * `engineGraph.test.ts`; see GATES.md §1.
+ * `engineGraph.test.ts`.
  */
 describe("Preferences › Updates drives the machine itself (G5)", { timeout: 30_000 }, () => {
   it("the check button runs the real check and the result lands in the DOM", async () => {

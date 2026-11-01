@@ -25,7 +25,7 @@
 // Prereqs: the lyrics sidecar built (node scripts/build-lyrics-sidecar.mjs),
 // the whisper + onnxruntime runtimes fetched, and the model cache on the
 // devstorage drive (same cache scripts/lyrics-e2e.mjs reads). A probe, not a
-// gate (GATES.md §3): a red run is information.
+// gate: a red run is information.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";

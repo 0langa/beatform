@@ -2,7 +2,7 @@
 // pipeline carries MORE than 8 bits of information end to end. No existing
 // tool measured exported pixel fidelity — every prior check was container
 // metadata or decode-exits-0, which is exactly how an 8-bit-fed "10-bit"
-// output can masquerade (see BACKLOG.md FEAT-005: ProRes does today).
+// output can masquerade (ProRes does today).
 //
 // Method: synthesize rgba64le frames carrying a smooth horizontal luminance
 // ramp that spans 1024 distinct 10-bit steps but would collapse to ≤256
