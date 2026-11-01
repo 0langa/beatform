@@ -1136,7 +1136,7 @@ export function ParamsPanel() {
                     Builder's stand-in for the style chips every other visual
                     has. Applied copies get fresh layer ids; active detection
                     compares structure + values, ids ignored. */}
-                <div className="panel-section builder-factory-chips">
+                <div className="panel-section">
                   <div className="style-chips">
                     {BUILDER_FACTORY_STACKS.map((f) => {
                       const active = sameStackValues(builderStack, f.stack);
