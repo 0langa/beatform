@@ -19,7 +19,7 @@
 //   node scripts/dock-device-pass.mjs
 //
 // Prereqs: debug shell built (cargo build in src-tauri/), Vite dev on
-// 127.0.0.1:1420. A probe, not a gate (GATES.md §3).
+// 127.0.0.1:1420. A probe, not a gate.
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

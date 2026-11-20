@@ -32,8 +32,7 @@ import { isTauri } from "./platform";
  * pre-store ones, so existing installs keep their settings.
  *
  * P-11: on desktop, 16 of the 17 DOCUMENT-key savers below (one per
- * `ProjectDocument` field — see .superpowers/p11-lane-log.md's Task 1 map
- * for the exhaustive list; `saveCustomPresets` is the one exemption, see
+ * `ProjectDocument` field; `saveCustomPresets` is the one exemption, see
  * its own comment) are each guarded `if (isTauri()) return;` at the
  * top of their own body. The autosave `.bfproj` (store.ts's
  * `scheduleAutosave`/`writeAutosave`) is now the ONE desktop serialization

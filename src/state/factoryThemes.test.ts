@@ -42,7 +42,7 @@ const POST_KEYS = new Set(POST_MOD_TARGETS.map((s) => s.key));
  * masters and route amounts. Preset params, scene overrides and lane
  * keyframes are NOT yet — the shipped pack carries 19 values off their
  * sliders' 0.02/0.05 grids, and legalising them is a per-param step-retune
- * pass, tracked in BACKLOG.md, after which that leg belongs here too.
+ * pass, after which that leg belongs here too.
  */
 function expectOnGrid(v: number, min: number, step: number, what: string) {
   if (!(step > 0)) return;

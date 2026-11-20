@@ -10,7 +10,7 @@
  * The perceptual metrics (16x9 RGB signature error, mean-luma delta,
  * lit-fraction delta) are kept as printed DIAGNOSTICS on each failing case
  * so a human can judge the magnitude; they gate nothing anymore. `--update`
- * is the only bless path, and GATES.md §3 carries the re-bless protocol.
+ * is the only bless path.
  */
 
 /** Mean/max absolute error between two base64-encoded 16x9 RGB signatures. */
@@ -79,7 +79,7 @@ export function compareMatrix(baseline, matrix) {
       `STRICT MODE: ${failures.length} raw hash delta(s) fail the matrix regardless of ` +
         `perceptual size. Verify the change visually on device, confirm the moved set is ` +
         `exactly what you touched, then re-bless with --update and justify it in the ` +
-        `commit (GATES.md §3).`,
+        `commit.`,
     );
   }
   return { failures, diagnostics };

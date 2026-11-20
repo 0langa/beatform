@@ -108,7 +108,7 @@ describe("beat grid", () => {
  * This suite proves it end to end through the REAL pipeline, not a hand-typed
  * `BeatGrid`, because the interaction between `estimateTempo`'s degenerate
  * fallback and `trackBeats`' DP is not obvious from reading either function in
- * isolation. Real DSP seconds: see GATES.md §1.
+ * isolation. Real DSP seconds.
  */
 describe(
   "BPM badge honesty: selectBpm over analyzeBeatGrid's real output",

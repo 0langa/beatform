@@ -17,8 +17,7 @@ import type { PcmData } from "./types";
  * real work; the heaviest measured 1.0 s in a normal full-suite run and 1.7 s
  * with the pool oversubscribed 2:1. The assertions are on OFFSETS in track
  * time, never on wall clock, so the default timeout was the file's only
- * load-sensitive failure mode. Same remedy as `dspCharacterization.test.ts`;
- * see GATES.md §1.
+ * load-sensitive failure mode. Same remedy as `dspCharacterization.test.ts`.
  */
 const SUITE = { timeout: 30_000 };
 

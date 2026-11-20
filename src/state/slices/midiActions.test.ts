@@ -138,7 +138,7 @@ afterEach(() => {
 });
 
 // Real async work (permission await, initApp) — the same describe budget
-// every suite doing real work carries (GATES.md §1).
+// every suite doing real work carries.
 describe("MIDI enable flag is a preference (HD-18)", { timeout: 30_000 }, () => {
   it("a successful enable sets the pref; disable clears it", async () => {
     expect(getPrefs().midiEnabled).toBe(false);

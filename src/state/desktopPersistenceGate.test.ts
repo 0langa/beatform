@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * test pins the absence (a boot + edit session on the desktop path performs
  * zero document-key localStorage writes)." The grep proof is the 16
  * `if (isTauri()) return[ true];` guards in persistence.ts (one per
- * `ProjectDocument`-backing key — see .superpowers/p11-lane-log.md's Task 1
- * table — minus `saveCustomPresets`, the one exemption: the shader LIBRARY
+ * `ProjectDocument`-backing key, minus `saveCustomPresets`, the one
+ * exemption: the shader LIBRARY
  * is not the document, and the autosave embeds only the defs the document
  * references, so that key keeps writing on desktop — pinned by the last two
  * describes below); this file is the runtime pin, plus the browser-path

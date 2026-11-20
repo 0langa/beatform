@@ -131,7 +131,7 @@ const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi 
  * meaningful — so the two pickers stay <select>s. What died is the 96px
  * `.mod-select` cap: both get the full content column with `min-width: 0`.
  * The rule itself was deleted in 2.84.0 once it was confirmed to have no
- * emitter left anywhere; see its tombstone in App.css beside `.mod-create`.
+ * emitter left anywhere.
  */
 function TargetOptions(props: {
   groups: ParamGroupView[];

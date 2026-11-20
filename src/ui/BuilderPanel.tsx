@@ -32,15 +32,6 @@ const BLEND_OPTIONS: Array<{ value: BuilderBlend; label: string; hint: string }>
  * Builder Studio layer-stack editor. Store-direct (like LayersPanel): every
  * mutation rebuilds a NEW BuilderStack and hands it to setBuilderStack — the
  * store owns recompile/upload. Never mutates the subscribed stack.
- *
- * TOMBSTONE (G3, this release) — an `onHint` prop threaded the footer hint back
- * up to ParamsPanel's `useState`, which is what put every hover in this editor
- * on the whole dock's reconciliation bill. The hint is a kit-level channel now
- * (`emitHint`, kit.tsx) — still NOT a store field, for the reason the old
- * comment here gave and BACKLOG G3 makes binding: zustand notifies every
- * subscriber in the app, so pointer-rate churn there is worse than the problem.
- * The prop is gone rather than re-pointed: this editor only ever had one
- * caller, and one sink means one place to change it.
  */
 export function BuilderPanel() {
   const stack = useVizStore((s) => s.builderStack);

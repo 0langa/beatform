@@ -26,8 +26,7 @@
 //      BT.601 pixels, not just missing labels — which is exactly the class
 //      this gate exists to keep dead.
 //
-// GATES.md §3: mandatory when ProRes/AV1 sidecar arg vectors or color code
-// changed.
+// Mandatory when ProRes/AV1 sidecar arg vectors or color code changed.
 //
 //   node scripts/export-color-verify.mjs
 //

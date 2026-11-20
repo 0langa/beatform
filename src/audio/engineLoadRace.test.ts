@@ -131,7 +131,7 @@ async function freshEngine() {
   return new AudioEngine();
 }
 
-/** Same remedy and reasoning as the other src/audio suites — see GATES.md §1.
+/** Same remedy and reasoning as the other src/audio suites.
  * Every case rebuilds the module graph via `vi.resetModules()`, the one cost
  * here that scales with pool contention. */
 describe(

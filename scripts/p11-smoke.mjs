@@ -1,5 +1,5 @@
-// P-11 device smoke — desktop boots from the autosave file, not localStorage
-// (PLAN-P11.md / .superpowers/p11-lane-log.md). Runs the six coordinator
+// P-11 device smoke — desktop boots from the autosave file, not localStorage.
+// Runs the six coordinator
 // scenarios (S1-S6) against a REAL Tauri shell built under an identifier
 // OVERLAY (com.olanga.audiovisualizer.p11smoke, see scripts/p11-smoke.conf.json)
 // so it can never adopt or overwrite the owner's real document at
@@ -15,12 +15,9 @@
 // every scenario resets it explicitly rather than relying on profile
 // isolation to do that job.
 //
-// Port base 10220: the next free slot after lib/app.mjs's map (which tops
-// out at 10140 for installed-runtime-smoke.mjs), kept >=80 past it so a
-// concurrent run of any mapped harness cannot collide. Not added to that
-// file's own comment — this script isn't in the map's file, and the task
-// scope for this lane is exactly the two files named in the smoke's own
-// instructions.
+// Port base 10220 — the slot in lib/app.mjs's port map, spaced >=80 from
+// the neighbouring bases so a concurrent run of any mapped harness cannot
+// collide.
 //
 // Requires the exe to have been built with VITE_E2E_HOOKS=1 (installDevHooks
 // gate, src/App.tsx) — a release `vite build` otherwise never installs

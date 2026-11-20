@@ -113,8 +113,8 @@ function runAtRefresh(hz: number, seconds: number) {
  * that were measured as heaviest and left three others in the same class
  * (~1.5 s oversubscribed) on the default — the same gap that made
  * `featurePipelineFuzz.test.ts` tip over long after the suites around it were
- * fixed. Same remedy as `dspCharacterization.test.ts` and `store.test.ts`; see
- * GATES.md §1. Shortening the fixtures is not an option: their whole point is
+ * fixed. Same remedy as `dspCharacterization.test.ts` and `store.test.ts`.
+ * Shortening the fixtures is not an option: their whole point is
  * that the detector stays BUSY for long enough that the count is decided by the
  * cadence rather than by the refractory.
  */

@@ -21,24 +21,11 @@ import { useVizStore } from "../state/store";
  *    captured pristine state (the ParamsPanel.test.tsx discipline);
  *  - the hint channel is module-level, so afterEach clears it too.
  *
- * TOMBSTONE (P-9, v2.82.0) — "essentials hides the expert tier; All reveals
- * it" is gone. It named the global Essentials/All Segmented, which no longer
- * exists: the tier is a per-group disclosure now, so the same subject is
- * asserted by G2 against one group instead of the whole panel.
- *
  * The second describe below owns the `driven` mark (P-1 stage 3). It is kept
  * separate rather than folded in because every test in the first one is about
  * the panel with nothing driven, which is the state it must keep rendering
  * exactly as it always did — `driven` defaults to empty in `view()` for that
  * reason, so no assertion above changed meaning when the prop landed.
- *
- * TOMBSTONE (P-9, v2.82.0) — "keeps the deprecated showAdvanced shim opening
- * every tier at once" is gone with the prop it pinned. It existed for exactly
- * one wave, so this file could land against an un-rewritten ParamsPanel. Its
- * two halves both survive elsewhere: that an OPEN tier renders its expert rows
- * is G2, and that one click can open every tier at once is ParamsPanel's R14
- * over the real "Show every control" button, which writes each group id into
- * `advancedGroups` instead of overriding it.
  */
 
 const num = (key: string, over: Partial<ParamSpec> = {}): ParamSpec =>

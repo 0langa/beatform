@@ -194,7 +194,7 @@ function exportMono(programme: number[]): number {
  * 0.3 s in a normal full-suite run against 1.3 s with the pool oversubscribed
  * 2:1. Nothing here awaits a real clock (`FakeAudioContext` resolves
  * immediately), so the default timeout was the only load-sensitive failure
- * mode. Same remedy as `dspCharacterization.test.ts`; see GATES.md §1.
+ * mode. Same remedy as `dspCharacterization.test.ts`.
  */
 describe("audio graph", { timeout: 30_000 }, () => {
   afterEach(() => {

@@ -112,7 +112,7 @@ function renderBar(playback: PlaybackState = PLAYBACK) {
  * (renderBar/mountProbed/mountHoverable/mountBar all call `render()`), several
  * driving it through real `userEvent` interactions on top — the whole-branch
  * review saw exactly this suite time out under parallel-worker contention.
- * Same remedy as `engineGraph.test.ts`; see GATES.md §1.
+ * Same remedy as `engineGraph.test.ts`.
  */
 describe("PlayerBar A-B loop", { timeout: 30_000 }, () => {
   it("shows the selected region and drives the engine from the marker buttons", async () => {
