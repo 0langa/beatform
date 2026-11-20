@@ -617,7 +617,7 @@ export default function App() {
 
   return (
     <div
-      className={`app ${dragOver ? "drag-over" : ""} ${idle ? "idle" : ""} ${stageMode ? "stage-mode" : ""}`}
+      className={`app ${idle ? "idle" : ""} ${stageMode ? "stage-mode" : ""}`}
       style={
         {
           "--panel-w": `${panelW}px`,
